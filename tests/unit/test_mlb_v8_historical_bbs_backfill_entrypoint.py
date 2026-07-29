@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 from botocore.exceptions import ClientError
 
+import run_mlb_v8_historical_bbs_backfill as backfill
 import run_mlb_v8_historical_bbs_backfill_entrypoint as entrypoint
 
 
@@ -112,6 +113,140 @@ def test_historical_discovery_forces_stored_match_surface():
     ]
 
 
+def test_historical_resource_surfaces_are_real_cached_stored_endpoints():
+    class Client:
+        def __init__(self):
+            self.requests = []
+            self.fallbacks = []
+
+        def get_mlb_match_resource(
+            self, match_id, resource, *, game_date=None, as_of=None
+        ):
+            self.fallbacks.append((match_id, resource, game_date, as_of))
+            return {"data": {}, "meta": {}, "error": None}
+
+        def _request(self, endpoint, params):
+            self.requests.append((endpoint, dict(params)))
+            meta = {
+                "source": "bigballsdata",
+                "asOfUtc": "2026-07-27T22:00:00Z",
+                "confirmed": True,
+            }
+            if endpoint.endswith("/lineups"):
+                return (
+                    {
+                        "data": {
+                            "home": {
+                                "startingPitcher": {
+                                    "id": "hp",
+                                    "name": "Home Pitcher",
+                                    "confirmed": True,
+                                },
+                                "lineup": [{"id": "h1", "slot": 1}],
+                                "confirmed": True,
+                            },
+                            "away": {
+                                "startingPitcher": {
+                                    "id": "ap",
+                                    "name": "Away Pitcher",
+                                    "confirmed": True,
+                                },
+                                "lineup": [{"id": "a1", "slot": 1}],
+                                "confirmed": True,
+                            },
+                        },
+                        "meta": meta,
+                        "error": None,
+                    },
+                    {},
+                )
+            return (
+                {
+                    "data": {
+                        "home": {
+                            "bullpen": {"era": 3.1},
+                            "teamStats": {"record": "60-40"},
+                        },
+                        "away": {
+                            "bullpen": {"era": 4.2},
+                            "teamStats": {"record": "50-50"},
+                        },
+                    },
+                    "meta": meta,
+                    "error": None,
+                },
+                {},
+            )
+
+        @staticmethod
+        def _transport(
+            headers, *, requested_date=None, requested_as_of=None, endpoint=None
+        ):
+            return {
+                "requestedDate": requested_date,
+                "requestedAsOfUtc": requested_as_of,
+                "endpoint": endpoint,
+            }
+
+    entrypoint.install_historical_resource_surfaces(Client)
+    client = Client()
+    kwargs = {
+        "game_date": "2026-07-27",
+        "as_of": "2026-07-27T22:15:00Z",
+    }
+
+    pitchers = client.get_mlb_match_resource("match id", "pitchers", **kwargs)
+    lineups = client.get_mlb_match_resource("match id", "lineups", **kwargs)
+    bullpens = client.get_mlb_match_resource("match id", "bullpens", **kwargs)
+    teams = client.get_mlb_match_resource("match id", "team_context", **kwargs)
+
+    assert pitchers["data"]["home"]["name"] == "Home Pitcher"
+    assert lineups["data"]["away"]["players"][0]["id"] == "a1"
+    assert bullpens["data"]["home"]["era"] == 3.1
+    assert teams["data"]["away"]["record"] == "50-50"
+    assert client.requests == [
+        (
+            "/v1/stored/matches/match%20id/lineups",
+            {
+                "sport": "baseball",
+                "league": "mlb",
+                "date": "2026-07-27",
+                "as_of": "2026-07-27T22:15:00Z",
+            },
+        ),
+        (
+            "/v1/stored/matches/match%20id/stats",
+            {
+                "sport": "baseball",
+                "league": "mlb",
+                "date": "2026-07-27",
+                "as_of": "2026-07-27T22:15:00Z",
+            },
+        ),
+    ]
+    assert client.fallbacks == []
+
+
+def test_unavailable_point_in_time_resource_is_not_fabricated():
+    class Client:
+        def get_mlb_match_resource(self, *_args, **_kwargs):
+            return {"data": {}}
+
+    entrypoint.install_historical_resource_surfaces(Client)
+    client = Client()
+
+    with pytest.raises(
+        backfill.BBSClientError,
+        match="BBS_HISTORICAL_INJURIES_POINT_IN_TIME_UNAVAILABLE",
+    ):
+        client.get_mlb_match_resource(
+            "m1",
+            "injuries",
+            game_date="2026-07-27",
+            as_of="2026-07-27T22:15:00Z",
+        )
+
+
 def test_coverage_window_reverses_only_canonical_traversal_order():
     module = SimpleNamespace(
         _load_canonical_games=lambda _state, _s3: [
@@ -126,7 +261,7 @@ def test_coverage_window_reverses_only_canonical_traversal_order():
     assert [row["officialGamePk"] for row in rows] == ["2", "1"]
 
 
-def test_diagnostics_publish_only_counts_and_error_names(tmp_path):
+def test_diagnostics_publish_only_shapes_counts_and_error_names(tmp_path):
     module = None
 
     def crosswalk(provider_rows, canonical_games, **_kwargs):
@@ -151,7 +286,23 @@ def test_diagnostics_publish_only_counts_and_error_names(tmp_path):
                 {"slateDateEt": "2026-07-27", "officialGamePk": "2"},
             ],
         )
-        module.build_training_snapshot()
+        module.build_training_snapshot(
+            None,
+            None,
+            None,
+            {
+                "lineups": {
+                    "data": {"home": {"players": [{"id": "not-emitted"}]}},
+                    "meta": {},
+                    "error": None,
+                },
+                "injuries": {
+                    "data": None,
+                    "meta": {},
+                    "error": "BBS_HISTORICAL_INJURIES_POINT_IN_TIME_UNAVAILABLE",
+                },
+            },
+        )
         return {
             "ok": False,
             "selectedGameCount": 2,
@@ -175,6 +326,12 @@ def test_diagnostics_publish_only_counts_and_error_names(tmp_path):
     assert report["eligibilityErrorCounts"] == {
         "pitchers_source_effective_time_missing": 1
     }
+    assert report["resourceErrorCounts"] == {
+        "injuries:BBS_HISTORICAL_INJURIES_POINT_IN_TIME_UNAVAILABLE": 1
+    }
+    assert report["resourceDataShapes"]["lineups"]["home"] == "object"
     assert report["diagnosticsContainProviderValues"] is False
-    assert "opaque-row" not in output.read_text()
+    durable_text = output.read_text()
+    assert "opaque-row" not in durable_text
+    assert "not-emitted" not in durable_text
     assert durable == report
