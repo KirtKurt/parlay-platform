@@ -248,6 +248,7 @@ def install(model_module: Any) -> Any:
 
     # Install the proven V2.5 coverage, fit, calibration, and train wrappers first.
     base.VERSION = VERSION
+    base.REGULARIZATION_GRID = tuple(REGULARIZATION_GRID)
     prior.VERSION = VERSION
     prior.install(model_module)
 
