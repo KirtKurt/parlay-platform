@@ -26,6 +26,13 @@ import run_mlb_v8_historical_bbs_backfill_entrypoint as operational
 VERSION = "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v1-isolated-pointer"
 REPORT_TYPE = "MLB_V8_HISTORICAL_CONTEXT_BACKFILL"
 RECORD_TYPE = "mlb_v8_historical_context_active_manifest_v1"
+ARCHIVED_WEATHER_MODEL = "ecmwf_ifs"
+
+
+def install_weather_archive_contract(module: Any) -> Any:
+    """Select the Single Runs archive model identifier proven by its API contract."""
+    module.WEATHER_MODEL = ARCHIVED_WEATHER_MODEL
+    return module
 
 
 def install_pointer_isolation(module: Any) -> Any:
@@ -314,6 +321,7 @@ def install_report_contract(module: Any) -> Any:
                 "confirmedOrProjectionSafeTargetIdentityRequired": True,
                 "requiredDomains": list(module.REQUIRED_RESOURCES),
                 "requiredPointInTimeOptionalDomains": list(module.OPTIONAL_RESOURCES),
+                "weatherArchiveModel": context_source.WEATHER_MODEL,
                 "sameDayResultsExcluded": True,
                 "targetGameOutcomeUsed": False,
                 "selectionUsedOutcomes": False,
@@ -338,6 +346,7 @@ def install() -> Any:
     fundamentals_stack = os.environ.get(
         "FUNDAMENTALS_STACK", backfill.DEFAULT_FUNDAMENTALS_STACK
     )
+    install_weather_archive_contract(context_source)
     install_pointer_isolation(backfill)
     operational.install_bucket_fallback(
         backfill,
