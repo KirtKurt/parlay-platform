@@ -2,6 +2,11 @@ name: MLB Supervised Shadow V2 Recurring
 
 "on":
   workflow_dispatch:
+  workflow_run:
+    workflows:
+      - MLB V8 Historical BBD Prior-Game Backfill
+    types:
+      - completed
   push:
     branches: [main]
     paths:
@@ -39,12 +44,13 @@ env:
 
 jobs:
   retrain-shadow:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
