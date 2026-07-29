@@ -1,0 +1,19 @@
+{
+  "authority": "V8_HISTORICAL_BBS_SHADOW_ONLY",
+  "backfillExitCode": "1",
+  "backfillOutcome": "failure",
+  "blockers": [
+    "historical_context_execution_failed_before_report"
+  ],
+  "createdAtUtc": "2026-07-29T23:38:39.637541+00:00",
+  "errorLogTail": "Traceback (most recent call last):\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v8_historical_context_backfill_entrypoint.py\", line 363, in <module>\n    raise SystemExit(main())\n                     ^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v8_historical_context_backfill_entrypoint.py\", line 358, in main\n    install()\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v8_historical_context_backfill_entrypoint.py\", line 349, in install\n    install_resource_shape_compatibility(backfill)\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v8_historical_context_backfill_entrypoint.py\", line 130, in install_resource_shape_compatibility\n    original = module.collector.normalize_match\n               ^^^^^^^^^^^^^^^^\nAttributeError: module 'run_mlb_v8_historical_bbs_backfill' has no attribute 'collector'\n",
+  "ok": false,
+  "productionAuthorityChanged": false,
+  "proofType": "MLB_V8_HISTORICAL_CONTEXT_BACKFILL",
+  "runId": "30500149898",
+  "sameDayResultsExcluded": true,
+  "selectionUsedOutcomes": false,
+  "sourceSha": "3ab52cd21cf229236d89ad7aef01cf9d3c0d0099",
+  "targetGameOutcomeUsed": false,
+  "version": "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v1-isolated-pointer"
+}
