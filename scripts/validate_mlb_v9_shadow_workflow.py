@@ -36,6 +36,7 @@ TESTS = (
     "tests/unit/test_mlb_historical_v7_selective_objective_v1.py",
     "tests/unit/test_mlb_historical_v7_selective_search_v2.py",
     "tests/unit/test_mlb_v7_v9_workflow_recovery_contract.py",
+    "tests/unit/test_validate_mlb_v9_shadow_workflow_identity.py",
 )
 
 
@@ -43,11 +44,37 @@ def _tail(value: str, limit: int = 12000) -> str:
     return value[-limit:]
 
 
+def _expected_source_sha() -> str:
+    """Return the commit actually checked out by the workflow.
+
+    On pull_request events GitHub sets GITHUB_SHA to a synthetic merge commit,
+    while the workflow intentionally checks out pull_request.head.sha.  Reading
+    the event payload keeps source identity strict without rejecting valid PRs.
+    """
+    override = str(os.environ.get("MLB_V9_EXPECTED_SOURCE_SHA") or "").strip()
+    if override:
+        return override
+    event_path = str(os.environ.get("GITHUB_EVENT_PATH") or "").strip()
+    if event_path:
+        try:
+            payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
+            pull_request = payload.get("pull_request") if isinstance(payload, dict) else None
+            head = pull_request.get("head") if isinstance(pull_request, dict) else None
+            sha = str(head.get("sha") or "").strip() if isinstance(head, dict) else ""
+            if sha:
+                return sha
+        except (OSError, ValueError, TypeError):
+            pass
+    return str(os.environ.get("GITHUB_SHA") or "").strip()
+
+
 def main() -> int:
+    expected_source_sha = _expected_source_sha()
     evidence = {
         "proofType": "MLB_V9_WORKFLOW_VALIDATION",
         "createdAtUtc": datetime.now(timezone.utc).isoformat(),
-        "sourceSha": os.environ.get("GITHUB_SHA"),
+        "sourceSha": expected_source_sha,
+        "workflowSha": os.environ.get("GITHUB_SHA"),
         "compile": [],
         "tests": [],
         "ok": False,
@@ -99,9 +126,10 @@ def main() -> int:
             check=False,
         )
         evidence["checkedOutSha"] = (head.stdout or "").strip()
-        expected = str(os.environ.get("GITHUB_SHA") or "")
-        evidence["sourceIdentityMatched"] = bool(expected and evidence["checkedOutSha"] == expected)
-        if expected and not evidence["sourceIdentityMatched"]:
+        evidence["sourceIdentityMatched"] = bool(
+            expected_source_sha and evidence["checkedOutSha"] == expected_source_sha
+        )
+        if expected_source_sha and not evidence["sourceIdentityMatched"]:
             evidence["blockers"].append("checked_out_sha_mismatch")
         evidence["ok"] = not evidence["blockers"]
     except Exception as exc:

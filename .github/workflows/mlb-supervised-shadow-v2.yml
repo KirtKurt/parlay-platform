@@ -6,18 +6,26 @@ name: MLB Supervised Shadow V2
     paths:
       - 'hello_world/mlb_supervised_*.py'
       - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
+      - 'hello_world/mlb_historical_state_integrity_v1.py'
       - 'scripts/run_mlb_supervised_shadow_v2.py'
+      - 'scripts/publish_monotonic_json.py'
       - 'tests/unit/test_mlb_supervised_shadow_v2.py'
       - 'tests/unit/test_mlb_supervised_daily_objective_v2_1.py'
+      - 'tests/unit/test_mlb_historical_state_integrity_v1.py'
+      - 'tests/unit/test_publish_monotonic_json.py'
       - '.github/workflows/mlb-supervised-shadow-v2.yml'
   push:
     branches: [main]
     paths:
       - 'hello_world/mlb_supervised_*.py'
       - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
+      - 'hello_world/mlb_historical_state_integrity_v1.py'
       - 'scripts/run_mlb_supervised_shadow_v2.py'
+      - 'scripts/publish_monotonic_json.py'
       - 'tests/unit/test_mlb_supervised_shadow_v2.py'
       - 'tests/unit/test_mlb_supervised_daily_objective_v2_1.py'
+      - 'tests/unit/test_mlb_historical_state_integrity_v1.py'
+      - 'tests/unit/test_publish_monotonic_json.py'
       - '.github/workflows/mlb-supervised-shadow-v2.yml'
 
 permissions:
@@ -30,7 +38,7 @@ concurrency:
 env:
   STACK_NAME: parlay-platform-mlb-historical-optimizer
   REPORT_PATH: runtime_reports/mlb_supervised_shadow_v2_latest.json
-  EXPECTED_FEATURE_DATASET: MLB-HISTORICAL-FEATURE-DATASET-v8-supervised-trainable
+  EXPECTED_FEATURE_DATASET: MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable
 
 jobs:
   validate:
@@ -51,14 +59,18 @@ jobs:
             hello_world/mlb_supervised_model_v2.py \
             hello_world/mlb_supervised_daily_objective_v2_1.py \
             hello_world/mlb_supervised_v8_dataset_patch_v1.py \
+            hello_world/mlb_historical_state_integrity_v1.py \
             hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py \
-            scripts/run_mlb_supervised_shadow_v2.py
-          PYTHONPATH=hello_world python -m pytest -q --tb=short \
+            scripts/run_mlb_supervised_shadow_v2.py \
+            scripts/publish_monotonic_json.py
+          PYTHONPATH=.:hello_world:scripts python -m pytest -q --tb=short \
             tests/unit/test_mlb_supervised_shadow_v2.py \
             tests/unit/test_mlb_supervised_daily_objective_v2_1.py \
             tests/unit/test_mlb_historical_v7_status_bypass.py \
             tests/unit/test_mlb_historical_feature_rematerialization_v1.py \
-            tests/unit/test_mlb_odds_market_expansion_v8.py
+            tests/unit/test_mlb_odds_market_expansion_v8.py \
+            tests/unit/test_mlb_historical_state_integrity_v1.py \
+            tests/unit/test_publish_monotonic_json.py
           grep -Fq 'authority": "SHADOW_ONLY"' hello_world/mlb_supervised_model_v2.py
           grep -Fq 'productionPromotionEligible": False' hello_world/mlb_supervised_model_v2.py
           grep -Fq 'sameSlateOutcomeFeaturesProhibited' hello_world/mlb_supervised_v8_dataset_patch_v1.py
@@ -260,7 +272,7 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
 
-      - name: Publish durable supervised shadow evidence
+      - name: Publish durable supervised shadow evidence monotonically
         if: always()
         run: |
           set -euo pipefail
@@ -272,7 +284,10 @@ jobs:
             git fetch origin main
             git checkout -B mlb-supervised-shadow-proof origin/main
             mkdir -p runtime_reports
-            cp /tmp/mlb-supervised-shadow-v2.json "$REPORT_PATH"
+            python scripts/publish_monotonic_json.py \
+              --candidate /tmp/mlb-supervised-shadow-v2.json \
+              --existing "$REPORT_PATH" \
+              --output "$REPORT_PATH"
             git add "$REPORT_PATH"
             git diff --cached --quiet && exit 0
             git commit -m 'Publish MLB supervised shadow V2 evidence'

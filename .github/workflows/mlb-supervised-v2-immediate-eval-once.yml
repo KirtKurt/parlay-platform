@@ -7,6 +7,8 @@ name: MLB Supervised V2 Immediate Evaluation Once
     branches: [main]
     paths:
       - '.github/workflows/mlb-supervised-v2-immediate-eval-once.yml'
+      - 'scripts/publish_monotonic_json.py'
+      - 'tests/unit/test_publish_monotonic_json.py'
 
 permissions:
   contents: write
@@ -18,7 +20,7 @@ concurrency:
 env:
   STACK_NAME: parlay-platform-mlb-historical-optimizer
   REPORT_PATH: runtime_reports/mlb_supervised_shadow_v2_latest.json
-  EXPECTED_FEATURE_DATASET: MLB-HISTORICAL-FEATURE-DATASET-v8-supervised-trainable
+  EXPECTED_FEATURE_DATASET: MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable
 
 jobs:
   evaluate:
@@ -46,10 +48,12 @@ jobs:
             hello_world/mlb_supervised_features_v2.py \
             hello_world/mlb_supervised_model_v2.py \
             hello_world/mlb_supervised_daily_objective_v2_1.py \
-            scripts/run_mlb_supervised_shadow_v2.py
-          PYTHONPATH=hello_world python -m pytest -q --tb=short \
+            scripts/run_mlb_supervised_shadow_v2.py \
+            scripts/publish_monotonic_json.py
+          PYTHONPATH=.:hello_world:scripts python -m pytest -q --tb=short \
             tests/unit/test_mlb_supervised_shadow_v2.py \
-            tests/unit/test_mlb_supervised_daily_objective_v2_1.py
+            tests/unit/test_mlb_supervised_daily_objective_v2_1.py \
+            tests/unit/test_publish_monotonic_json.py
 
       - name: Verify AWS evidence schema
         env:
@@ -134,29 +138,32 @@ jobs:
           PY
           fi
           python -m json.tool "$REPORT_PATH" >/dev/null
+          cp "$REPORT_PATH" /tmp/mlb-supervised-v2-immediate-report.json
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: mlb-supervised-v2-immediate-${{ github.run_id }}
           path: |
-            runtime_reports/mlb_supervised_shadow_v2_latest.json
+            /tmp/mlb-supervised-v2-immediate-report.json
             /tmp/mlb-supervised-v2-immediate.log
           retention-days: 90
           if-no-files-found: warn
 
-      - name: Publish durable evidence
+      - name: Publish durable evidence monotonically
         if: always()
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          cp "$REPORT_PATH" /tmp/mlb-supervised-v2-immediate-report.json
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             git checkout -B mlb-supervised-v2-immediate-proof origin/main
             mkdir -p runtime_reports
-            cp /tmp/mlb-supervised-v2-immediate-report.json "$REPORT_PATH"
+            python scripts/publish_monotonic_json.py \
+              --candidate /tmp/mlb-supervised-v2-immediate-report.json \
+              --existing "$REPORT_PATH" \
+              --output "$REPORT_PATH"
             git add "$REPORT_PATH"
             git diff --cached --quiet && exit 0
             git commit -m 'Publish MLB supervised shadow V2 evidence'
@@ -171,7 +178,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          value=json.loads(Path('runtime_reports/mlb_supervised_shadow_v2_latest.json').read_text())
+          value=json.loads(Path('/tmp/mlb-supervised-v2-immediate-report.json').read_text())
           assert value.get('ok') is True, value
           assert value.get('authority')=='SHADOW_ONLY', value
           assert value.get('productionAuthorityChanged') is False, value
