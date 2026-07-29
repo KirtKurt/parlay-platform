@@ -1,19 +1,189 @@
 {
+  "acceptedCrosswalkCount": 15,
+  "activePointerRevision": 0,
   "authority": "V8_HISTORICAL_BBS_SHADOW_ONLY",
-  "backfillExitCode": "1",
-  "backfillOutcome": "failure",
+  "automaticWagerAllowed": false,
   "blockers": [
-    "historical_context_execution_failed_before_report"
+    "current_batch_added_zero_training_eligible_rows",
+    "no_training_eligible_point_in_time_bbs_rows"
   ],
-  "createdAtUtc": "2026-07-29T23:38:39.637541+00:00",
-  "errorLogTail": "Traceback (most recent call last):\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v8_historical_context_backfill_entrypoint.py\", line 363, in <module>\n    raise SystemExit(main())\n                     ^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v8_historical_context_backfill_entrypoint.py\", line 358, in main\n    install()\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v8_historical_context_backfill_entrypoint.py\", line 349, in install\n    install_resource_shape_compatibility(backfill)\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v8_historical_context_backfill_entrypoint.py\", line 130, in install_resource_shape_compatibility\n    original = module.collector.normalize_match\n               ^^^^^^^^^^^^^^^^\nAttributeError: module 'run_mlb_v8_historical_bbs_backfill' has no attribute 'collector'\n",
+  "confirmedOrProjectionSafeTargetIdentityRequired": true,
+  "createdAtUtc": "2026-07-29T23:45:13.414071+00:00",
+  "crosswalkQuarantine": [],
+  "crosswalkQuarantineCount": 0,
+  "diagnosticsContainProviderValues": false,
+  "eligibilityErrorCounts": {
+    "weather_resource_unavailable": 10,
+    "weather_run_factor_missing": 10
+  },
+  "eligibleGameCount": 0,
+  "featureFamily": "targetGame",
+  "ineligibleGameCount": 10,
+  "manifest": {
+    "alreadyExisted": false,
+    "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
+    "key": "mlb/v8/historical-context/manifests/9bddbb07ed8851d29a6b314557f385b83854b66550ab4e52e77561031a88e28f.json",
+    "sha256": "bee5bad0ec682b2268450d9da55dee1a7e71610e508a726cdfdc775545a75d03",
+    "versionId": "h7WBnIYQg0ZFt7zGZS.Qf5wZUb1BlrLf"
+  },
+  "manifestDigest": "9bddbb07ed8851d29a6b314557f385b83854b66550ab4e52e77561031a88e28f",
+  "manifestPointerPk": "MLB_V8_HISTORICAL_CONTEXT#V1",
+  "manifestPointerSk": "ACTIVE",
+  "newEligibleGameCount": 0,
+  "newRecordCount": 10,
+  "officialContextRequestsMade": 624,
   "ok": false,
+  "pointInTimeRequired": true,
+  "processedGameCount": 10,
   "productionAuthorityChanged": false,
   "proofType": "MLB_V8_HISTORICAL_CONTEXT_BACKFILL",
-  "runId": "30500149898",
+  "provider": "bigballsdata_stored_confirmation_plus_official_prior_context",
+  "providerCallsMade": 71,
+  "providerDiscovery": [
+    {
+      "acceptedCrosswalkCount": 15,
+      "canonicalGameCount": 15,
+      "providerRowCount": 0,
+      "quarantinedProviderRowCount": 0,
+      "slateDateEt": "2026-07-28",
+      "unmatchedCanonicalGameCount": 0
+    }
+  ],
+  "providerDiscoveryDateCount": 1,
+  "providerRowsReturned": 0,
+  "remainingGameCount": 4010,
+  "requiredDomains": [
+    "pitchers",
+    "bullpens",
+    "lineups",
+    "injuries",
+    "team_context"
+  ],
+  "requiredPointInTimeOptionalDomains": [
+    "weather",
+    "park"
+  ],
+  "resourceDataShapes": {
+    "bullpens": {
+      "away": {
+        "availableRelievers": "int",
+        "closerAvailable": "bool",
+        "era": "float",
+        "expectedInnings": "float",
+        "fip": "float",
+        "highLeverageAvailable": "bool",
+        "historyGameCount": "int",
+        "last2DaysPitches": "int",
+        "last3DaysInnings": "float"
+      },
+      "home": {
+        "availableRelievers": "int",
+        "closerAvailable": "bool",
+        "era": "float",
+        "expectedInnings": "float",
+        "fip": "float",
+        "highLeverageAvailable": "bool",
+        "historyGameCount": "int",
+        "last2DaysPitches": "int",
+        "last3DaysInnings": "float"
+      }
+    },
+    "injuries": {
+      "away": {
+        "count": 0,
+        "item": "empty",
+        "type": "array"
+      },
+      "home": {
+        "count": 0,
+        "item": "empty",
+        "type": "array"
+      }
+    },
+    "lineups": {
+      "away": {
+        "confirmed": "bool",
+        "players": "array[9]",
+        "projected": "bool",
+        "projectionMethod": "str"
+      },
+      "home": {
+        "confirmed": "bool",
+        "players": "array[9]",
+        "projected": "bool",
+        "projectionMethod": "str"
+      }
+    },
+    "park": {
+      "historyEndDate": "str",
+      "name": "str",
+      "priorLeagueGameCount": "int",
+      "priorVenueGameCount": "int",
+      "runFactor": "float",
+      "venueId": "str"
+    },
+    "pitchers": {
+      "away": {
+        "confirmed": "bool",
+        "expectedInnings": "float",
+        "id": "str",
+        "lastStartDate": "str",
+        "name": "str",
+        "projected": "bool",
+        "projectionMethod": "str",
+        "recentThreeStarts": "object",
+        "stats": "object"
+      },
+      "home": {
+        "confirmed": "bool",
+        "expectedInnings": "float",
+        "id": "str",
+        "lastStartDate": "str",
+        "name": "str",
+        "projected": "bool",
+        "projectionMethod": "str",
+        "recentThreeStarts": "object",
+        "stats": "object"
+      }
+    },
+    "team_context": {
+      "away": {
+        "defense": "object",
+        "homeAwaySplit": "object",
+        "id": "str",
+        "name": "str",
+        "offense": "object",
+        "recentForm": "object",
+        "record": "object",
+        "restDays": "int",
+        "travel": "object"
+      },
+      "home": {
+        "defense": "object",
+        "homeAwaySplit": "object",
+        "id": "str",
+        "name": "str",
+        "offense": "object",
+        "recentForm": "object",
+        "record": "object",
+        "restDays": "int",
+        "travel": "object"
+      }
+    }
+  },
+  "resourceErrorCounts": {
+    "weather:HISTORICAL_CONTEXT_WEATHER_HTTPError:HTTP Error 400: Bad Request": 10
+  },
+  "runId": "30500480599",
   "sameDayResultsExcluded": true,
+  "selectedGameCount": 10,
+  "selectionOrder": "newest_unprocessed_canonical_games_first",
   "selectionUsedOutcomes": false,
-  "sourceSha": "3ab52cd21cf229236d89ad7aef01cf9d3c0d0099",
+  "sourceSha": "a321b89025d089066f7d3cf6b60cde8039522eac",
+  "storedDiscoveryErrorCount": 1,
+  "syntheticOfficialIdentityCount": 15,
   "targetGameOutcomeUsed": false,
+  "trainingCoverage": 0.0,
+  "unmatchedCanonicalGameCount": 0,
   "version": "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v1-isolated-pointer"
 }
