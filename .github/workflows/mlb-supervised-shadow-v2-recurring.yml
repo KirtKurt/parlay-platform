@@ -114,7 +114,7 @@ jobs:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
           AWS_EC2_METADATA_DISABLED: 'true'
           MLB_V8_HISTORICAL_BBS_OVERLAY_ENABLED: 'true'
-          MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED: 'false'
+          MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED: 'true'
           MLB_V8_HISTORICAL_BBS_TABLE: parlay_platform_snapshots
         run: |
           set +e
@@ -199,10 +199,9 @@ jobs:
           bbd=value.get('historicalBbsFundamentals') or {}
           assert bbd.get('authority') == 'V8_HISTORICAL_BBS_SHADOW_ONLY', bbd
           assert bbd.get('productionAuthorityChanged') is False, bbd
-          assert bbd.get('status') in {'APPLIED','MANIFEST_NOT_AVAILABLE'}, bbd
-          if bbd.get('status') == 'APPLIED':
-              assert int(bbd.get('appliedGameCount') or 0) > 0, bbd
-              assert bbd.get('selectionUsedOutcomes') is False, bbd
+          assert bbd.get('status') == 'APPLIED', bbd
+          assert int(bbd.get('appliedGameCount') or 0) > 0, bbd
+          assert bbd.get('selectionUsedOutcomes') is False, bbd
           PY
 
       - uses: actions/upload-artifact@v4
@@ -259,6 +258,6 @@ jobs:
           bbd=value.get('historicalBbsFundamentals') or {}
           assert bbd.get('authority') == 'V8_HISTORICAL_BBS_SHADOW_ONLY', bbd
           assert bbd.get('productionAuthorityChanged') is False, bbd
-          if bbd.get('status') == 'APPLIED':
-              assert int(bbd.get('appliedGameCount') or 0) > 0, bbd
+          assert bbd.get('status') == 'APPLIED', bbd
+          assert int(bbd.get('appliedGameCount') or 0) > 0, bbd
           PY
