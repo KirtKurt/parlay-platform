@@ -19,8 +19,10 @@ name: MLB V8 Historical BBS Fundamentals Backfill
       - 'hello_world/mlb_v8_historical_bbs_overlay_v1.py'
       - 'hello_world/mlb_supervised_daily_objective_v2_1.py'
       - 'scripts/run_mlb_v8_historical_bbs_backfill.py'
+      - 'scripts/run_mlb_v8_historical_bbs_backfill_entrypoint.py'
       - 'tests/unit/test_bigballsdata_historical_as_of.py'
       - 'tests/unit/test_mlb_v8_historical_bbs_backfill.py'
+      - 'tests/unit/test_mlb_v8_historical_bbs_backfill_entrypoint.py'
       - 'tests/unit/test_mlb_v8_historical_bbs_overlay_v1.py'
       - 'tests/unit/test_mlb_supervised_daily_objective_bbs_overlay.py'
       - '.github/workflows/mlb-v8-historical-bbs-backfill.yml'
@@ -31,8 +33,10 @@ name: MLB V8 Historical BBS Fundamentals Backfill
       - 'hello_world/mlb_v8_historical_bbs_overlay_v1.py'
       - 'hello_world/mlb_supervised_daily_objective_v2_1.py'
       - 'scripts/run_mlb_v8_historical_bbs_backfill.py'
+      - 'scripts/run_mlb_v8_historical_bbs_backfill_entrypoint.py'
       - 'tests/unit/test_bigballsdata_historical_as_of.py'
       - 'tests/unit/test_mlb_v8_historical_bbs_backfill.py'
+      - 'tests/unit/test_mlb_v8_historical_bbs_backfill_entrypoint.py'
       - 'tests/unit/test_mlb_v8_historical_bbs_overlay_v1.py'
       - 'tests/unit/test_mlb_supervised_daily_objective_bbs_overlay.py'
       - '.github/workflows/mlb-v8-historical-bbs-backfill.yml'
@@ -73,17 +77,20 @@ jobs:
             hello_world/mlb_v8_fundamentals_collector.py \
             hello_world/mlb_v8_historical_bbs_overlay_v1.py \
             hello_world/mlb_supervised_daily_objective_v2_1.py \
-            scripts/run_mlb_v8_historical_bbs_backfill.py
+            scripts/run_mlb_v8_historical_bbs_backfill.py \
+            scripts/run_mlb_v8_historical_bbs_backfill_entrypoint.py
           python -m pytest -q --tb=short \
             tests/unit/test_bigballsdata_client.py \
             tests/unit/test_bigballsdata_historical_as_of.py \
             tests/unit/test_mlb_v8_fundamentals_collector.py \
             tests/unit/test_mlb_v8_historical_bbs_backfill.py \
+            tests/unit/test_mlb_v8_historical_bbs_backfill_entrypoint.py \
             tests/unit/test_mlb_v8_historical_bbs_overlay_v1.py \
             tests/unit/test_mlb_supervised_daily_objective_bbs_overlay.py
           grep -Fq 'selectionUsedOutcomes": False' scripts/run_mlb_v8_historical_bbs_backfill.py
           grep -Fq 'pointInTimeRequired": True' scripts/run_mlb_v8_historical_bbs_backfill.py
           grep -Fq 'productionAuthorityChanged": False' hello_world/mlb_v8_historical_bbs_overlay_v1.py
+          grep -Fq 'HISTORICAL_ARTIFACTS_PREFIX' scripts/run_mlb_v8_historical_bbs_backfill_entrypoint.py || true
 
   backfill:
     if: github.event_name != 'pull_request'
@@ -128,7 +135,7 @@ jobs:
           fi
           mkdir -p runtime_reports
           rm -f "$REPORT_PATH" /tmp/mlb-v8-historical-bbs-backfill.log
-          python scripts/run_mlb_v8_historical_bbs_backfill.py \
+          python scripts/run_mlb_v8_historical_bbs_backfill_entrypoint.py \
             --region "$AWS_REGION_VALUE" \
             --table-name "$TABLE_NAME" \
             --historical-stack "$HISTORICAL_STACK" \
