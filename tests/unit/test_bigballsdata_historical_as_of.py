@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 
-from bigballsdata_client import BigBallsDataClient
+import pytest
+
+from bigballsdata_client import BBSClientError, BigBallsDataClient
 
 
 class Response:
@@ -50,7 +52,7 @@ def test_resource_request_includes_historical_as_of(monkeypatch):
     assert value["_transport"]["requestedAsOfUtc"] == "2026-07-01T22:15:00Z"
 
 
-def test_stored_historical_match_surface_is_explicit():
+def test_stored_historical_match_surface_accepts_data_plus_pagination():
     seen = {}
 
     def opener(request, timeout):
@@ -58,8 +60,7 @@ def test_stored_historical_match_surface_is_explicit():
         return Response(
             {
                 "data": [],
-                "meta": {"source": "cache"},
-                "error": None,
+                "pagination": {"limit": 200, "offset": 0, "total": 0},
             }
         )
 
@@ -71,3 +72,19 @@ def test_stored_historical_match_surface_is_explicit():
     assert "league=mlb" in seen["url"]
     assert "date=2025-04-01" in seen["url"]
     assert value["_transport"]["endpoint"] == "/v1/stored/matches"
+    assert value["meta"]["catalogueContract"] == "data_plus_pagination"
+
+
+def test_live_endpoint_does_not_accept_catalogue_envelope():
+    def opener(request, timeout):
+        return Response(
+            {
+                "data": [],
+                "pagination": {"limit": 50, "offset": 0, "total": 0},
+            }
+        )
+
+    client = BigBallsDataClient(api_key="bbs_live_abcdefghijkl", opener=opener)
+
+    with pytest.raises(BBSClientError, match="BBS_RESPONSE_ENVELOPE_INCOMPLETE"):
+        client.list_mlb_matches("2026-07-29")
