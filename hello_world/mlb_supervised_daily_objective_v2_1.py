@@ -1,9 +1,9 @@
-"""Stable daily-slate objective for the supervised MLB shadow model.
+"""Stable daily-slate objective for the supervised MLB V8 shadow model.
 
-V2.3 keeps calibration fail-closed, requires repeatable market-relative accuracy
-uplift, excludes under-covered optional feature groups, installs leakage-safe
-nonlinear interactions, and falls back to the market prior rather than publishing
-an inferior learned residual. It never changes production authority.
+V2.4 keeps calibration and repeatable-uplift gates fail-closed, separates BBD
+prior-game evidence from target-game fundamentals, and permits full-game V8
+signals to compete without pretending first-five history exists. It never changes
+production authority.
 """
 from __future__ import annotations
 
@@ -11,16 +11,18 @@ from typing import Any, Mapping, Tuple
 
 try:
     import mlb_supervised_feature_interactions_v2_2 as feature_interactions
-    import mlb_supervised_selection_guard_v2_3 as selection_guard
+    import mlb_supervised_feature_groups_v2_4 as feature_groups
+    import mlb_supervised_selection_guard_v2_4 as selection_guard
     import mlb_v8_historical_bbs_overlay_v1 as historical_bbs_overlay
     import mlb_v8_historical_bbs_prior_game_features_v1 as historical_bbs_prior_features
 except ImportError:  # package import used by unit tests
     from . import mlb_supervised_feature_interactions_v2_2 as feature_interactions
-    from . import mlb_supervised_selection_guard_v2_3 as selection_guard
+    from . import mlb_supervised_feature_groups_v2_4 as feature_groups
+    from . import mlb_supervised_selection_guard_v2_4 as selection_guard
     from . import mlb_v8_historical_bbs_overlay_v1 as historical_bbs_overlay
     from . import mlb_v8_historical_bbs_prior_game_features_v1 as historical_bbs_prior_features
 
-VERSION = "MLB-SUPERVISED-SHADOW-v2.3-coverage-stable-uplift-market-fallback"
+VERSION = "MLB-SUPERVISED-SHADOW-v2.4-supported-cohort-fullgame-v8"
 MAX_BRIER_DEGRADATION = 0.005
 MAX_LOG_LOSS_DEGRADATION = 0.010
 MAX_ECE = 0.080
@@ -72,12 +74,13 @@ def daily_objective_key(
 
 
 def install(model_module: Any) -> Any:
-    if getattr(model_module, "_INQSI_MLB_DAILY_OBJECTIVE_V2_3_INSTALLED", False):
+    if getattr(model_module, "_INQSI_MLB_DAILY_OBJECTIVE_V2_4_INSTALLED", False):
         return model_module
     feature_module = getattr(model_module, "features", None)
     if feature_module is not None:
         feature_interactions.install(feature_module)
         historical_bbs_prior_features.install(feature_module)
+        feature_groups.install(feature_module)
     # Some contract tests intentionally provide only model-selection attributes.
     # Install the training overlay and selection guard only when a trainer exists.
     if callable(getattr(model_module, "train_and_evaluate", None)):
@@ -103,6 +106,10 @@ def install(model_module: Any) -> Any:
         },
         "selectionGuardVersion": selection_guard.VERSION,
         "coverageEligibilityRequired": True,
+        "coverageDenominatorVersion": selection_guard.VERSION,
+        "bbsPriorSupportedCohortStartDate": historical_bbs_prior_features.BBS_PRIOR_SUPPORT_START_DATE,
+        "v8FullGameCandidateRequiresFirstFive": False,
+        "featureGroupsVersion": feature_groups.VERSION,
         "foldStabilityRequired": True,
         "marketBaselineFallbackEnabled": True,
         "featureInteractionVersion": feature_interactions.VERSION,
@@ -116,4 +123,5 @@ def install(model_module: Any) -> Any:
         "productionAuthorityChanged": False,
     }
     model_module._INQSI_MLB_DAILY_OBJECTIVE_V2_3_INSTALLED = True
+    model_module._INQSI_MLB_DAILY_OBJECTIVE_V2_4_INSTALLED = True
     return model_module
