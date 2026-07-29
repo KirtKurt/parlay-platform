@@ -1,4 +1,4 @@
-# Second push activates this one-time workflow.
+# Retrigger after stored-catalogue pacing was installed.
 name: MLB V8 BBD Supported Completion Once
 
 "on":
@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: mlb-v8-bbd-supported-completion-once
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   REPORT_PATH: runtime_reports/mlb_v8_historical_bbs_backfill_latest.json
