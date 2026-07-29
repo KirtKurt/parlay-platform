@@ -7,7 +7,7 @@
     "current_batch_added_zero_training_eligible_rows",
     "no_training_eligible_point_in_time_bbs_rows"
   ],
-  "createdAtUtc": "2026-07-29T06:03:52.387129+00:00",
+  "createdAtUtc": "2026-07-29T06:38:22.691412+00:00",
   "crosswalkQuarantine": [
     {
       "candidateOfficialGamePks": [],
@@ -60,9 +60,9 @@
     "injuries": 17,
     "injuries_resource_unavailable": 17,
     "lineups": 17,
-    "lineups_resource_unavailable": 17,
+    "lineups_source_effective_time_missing": 17,
     "pitchers": 17,
-    "pitchers_resource_unavailable": 17,
+    "pitchers_source_effective_time_missing": 17,
     "team_context": 17,
     "team_context_resource_unavailable": 17
   },
@@ -71,11 +71,11 @@
   "manifest": {
     "alreadyExisted": false,
     "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
-    "key": "mlb/v8/historical-bbs/manifests/8061c8a766b898212b636f37c40f004e129fe2523293319a116f44052fceaaaa.json",
-    "sha256": "56741d0480c021b664ef3b8b6d369e9f3551d86ea8cad5ed1b5e82105f4bfe4a",
-    "versionId": "sS_tjVnYWe7q9_68Smi6yBsi_mJgxoIF"
+    "key": "mlb/v8/historical-bbs/manifests/617c24c51c5e48da1463eeada86f4d1de6346949e7c898b0acb5850a72bdfaa7.json",
+    "sha256": "e36d21d7bcb4b16c8af24226852246e63dc872fd31a92f2a930ef2f9db686654",
+    "versionId": "eh9qhqicXVVVNZAn3xW1YJVvS.eSbY2f"
   },
-  "manifestDigest": "8061c8a766b898212b636f37c40f004e129fe2523293319a116f44052fceaaaa",
+  "manifestDigest": "617c24c51c5e48da1463eeada86f4d1de6346949e7c898b0acb5850a72bdfaa7",
   "newEligibleGameCount": 0,
   "newRecordCount": 25,
   "ok": false,
@@ -106,11 +106,34 @@
   "providerDiscoveryDateCount": 2,
   "providerRowsReturned": 22,
   "remainingGameCount": 3995,
-  "runId": "30426911379",
+  "resourceDataShapes": {
+    "lineups": {
+      "away": {
+        "confirmed": "null",
+        "players": "array[0]"
+      },
+      "home": {
+        "confirmed": "null",
+        "players": "array[0]"
+      }
+    },
+    "pitchers": {
+      "away": {},
+      "home": {}
+    }
+  },
+  "resourceErrorCounts": {
+    "bullpens:BBS_RESPONSE_ENVELOPE_INCOMPLETE_KEYS_data": 17,
+    "injuries:BBS_HISTORICAL_INJURIES_POINT_IN_TIME_UNAVAILABLE": 17,
+    "park:BBS_HISTORICAL_PARK_POINT_IN_TIME_UNAVAILABLE": 17,
+    "team_context:BBS_RESPONSE_ENVELOPE_INCOMPLETE_KEYS_data": 17,
+    "weather:BBS_HISTORICAL_WEATHER_POINT_IN_TIME_UNAVAILABLE": 17
+  },
+  "runId": "30428790066",
   "selectedGameCount": 25,
   "selectionOrder": "newest_unprocessed_canonical_games_first",
   "selectionUsedOutcomes": false,
-  "sourceSha": "85c2932374c5b889999eb538ada644ce8f2e1ef7",
+  "sourceSha": "66262b0a9d876046aad4d45dca889d1470a99e2a",
   "trainingCoverage": 0.0,
   "unmatchedCanonicalGameCount": 8,
   "version": "MLB-V8-HISTORICAL-BBS-BACKFILL-v1-point-in-time"
