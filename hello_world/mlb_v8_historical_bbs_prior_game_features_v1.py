@@ -79,7 +79,8 @@ def feature_map(record: Mapping[str, Any]) -> Dict[str, float]:
     home_games = _number(home.get("bbsHistoryGames"))
     away_games = _number(away.get("bbsHistoryGames"))
     available = bool(
-        payload.get("priorCompletedGamesUsed") is True
+        supported > 0.5
+        and payload.get("priorCompletedGamesUsed") is True
         and payload.get("sameDayResultsExcluded") is True
         and payload.get("targetGameOutcomeUsed") is False
         and home_games is not None
