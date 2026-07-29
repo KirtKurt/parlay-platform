@@ -24,7 +24,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: mlb-backend-full-recovery
+  group: mlb-backend-full-recovery-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: false
 
 env:
