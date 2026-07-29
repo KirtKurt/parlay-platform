@@ -1,0 +1,184 @@
+name: MLB V8 Regularization Search Fix Once
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v8-regularization-search-fix-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-v8-regularization-search-fix-once
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: .:hello_world:scripts
+
+jobs:
+  patch-test-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Apply seed-aligned bounded regularization search
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p=Path(path)
+              text=p.read_text()
+              if new in text:
+                  return
+              if old not in text:
+                  raise SystemExit(f'marker missing in {path}: {old[:100]!r}')
+              p.write_text(text.replace(old,new,1))
+
+          base='hello_world/mlb_supervised_selection_guard_v2_3.py'
+          replace_once(
+              base,
+              'MIN_V8_FIRST_FIVE_COVERAGE = 0.40\n\n\ndef _f',
+              'MIN_V8_FIRST_FIVE_COVERAGE = 0.40\nREGULARIZATION_GRID = (0.02, 0.20)\n\n\ndef _candidate_seed(seed: int, group_index: int, fold_index: int) -> int:\n    """Keep optimization shuffle identical across L2 values."""\n    return int(seed) + int(group_index) * 1000 + int(fold_index)\n\n\ndef _f',
+          )
+          replace_once(base, '        l2_values = (0.02, 0.20)\n', '        l2_values = tuple(REGULARIZATION_GRID)\n')
+          replace_once(
+              base,
+              '                        seed=seed + group_index * 1000 + l2_index * 100 + fold_index,\n',
+              '                        seed=_candidate_seed(seed, group_index, fold_index),\n',
+          )
+          replace_once(
+              base,
+              '                    "minimumV8FirstFiveCoverage": MIN_V8_FIRST_FIVE_COVERAGE,\n',
+              '                    "minimumV8FirstFiveCoverage": MIN_V8_FIRST_FIVE_COVERAGE,\n'
+              '                    "regularizationGrid": list(l2_values),\n'
+              '                    "regularizationComparisonSeedAligned": True,\n',
+          )
+
+          tests=Path('tests/unit/test_mlb_supervised_selection_guard_v2_3.py')
+          text=tests.read_text()
+          name='test_candidate_seed_is_regularization_invariant'
+          if name not in text:
+              text += '''\n\n\ndef test_candidate_seed_is_regularization_invariant():\n    first = guard._candidate_seed(7, 2, 1)\n    second = guard._candidate_seed(7, 2, 1)\n    other_fold = guard._candidate_seed(7, 2, 2)\n\n    assert first == second == 2008\n    assert other_fold == 2009\n'''
+              tests.write_text(text)
+
+          objective='hello_world/mlb_supervised_daily_objective_v2_1.py'
+          replace_once(
+              objective,
+              'V2.5 keeps calibration and repeatable-uplift gates fail-closed, separates BBD\n'
+              'prior-game evidence from target-game fundamentals, permits full-game V8 signals\n'
+              'to compete without pretending first-five history exists, and evaluates BBD\n'
+              'coverage only in chronological folds with enough provider-horizon overlap. It\n'
+              'never changes production authority.\n',
+              'V2.6 keeps every V2.5 fail-closed gate and provider-horizon rule while\n'
+              'comparing a bounded regularization grid with identical deterministic shuffles\n'
+              'inside each feature-group and chronological-fold comparison. It never changes\n'
+              'production authority.\n',
+          )
+          text=Path(objective).read_text()
+          text=text.replace('mlb_supervised_selection_guard_v2_5 as selection_guard','mlb_supervised_selection_guard_v2_6 as selection_guard')
+          text=text.replace('VERSION = "MLB-SUPERVISED-SHADOW-v2.5-provider-horizon-evaluable-folds"','VERSION = "MLB-SUPERVISED-SHADOW-v2.6-seed-aligned-regularization-grid"')
+          text=text.replace('_INQSI_MLB_DAILY_OBJECTIVE_V2_5_INSTALLED", False','_INQSI_MLB_DAILY_OBJECTIVE_V2_6_INSTALLED", False')
+          marker='        "bbsUnsupportedFoldsCountAsPassing": False,\n'
+          addition=(
+              marker
+              + '        "regularizationGrid": list(selection_guard.REGULARIZATION_GRID),\n'
+              + '        "regularizationComparisonSeedAligned": True,\n'
+          )
+          if '"regularizationComparisonSeedAligned": True' not in text:
+              if marker not in text:
+                  raise SystemExit('objective regularization metadata marker missing')
+              text=text.replace(marker,addition,1)
+          if 'model_module._INQSI_MLB_DAILY_OBJECTIVE_V2_6_INSTALLED = True' not in text:
+              marker='    model_module._INQSI_MLB_DAILY_OBJECTIVE_V2_5_INSTALLED = True\n'
+              if marker not in text:
+                  raise SystemExit('objective install flag marker missing')
+              text=text.replace(marker,marker+'    model_module._INQSI_MLB_DAILY_OBJECTIVE_V2_6_INSTALLED = True\n',1)
+          Path(objective).write_text(text)
+
+          def add_after(path, marker, addition):
+              p=Path(path)
+              text=p.read_text()
+              if addition.strip() in text:
+                  return
+              if marker not in text:
+                  raise SystemExit(f'workflow marker missing in {path}: {marker!r}')
+              p.write_text(text.replace(marker,marker+addition,1))
+
+          recurring='.github/workflows/mlb-supervised-shadow-v2-recurring.yml'
+          add_after(recurring, "      - 'hello_world/mlb_supervised_selection_guard_v2_5.py'\n", "      - 'hello_world/mlb_supervised_selection_guard_v2_6.py'\n")
+          add_after(recurring, "      - 'tests/unit/test_mlb_supervised_selection_guard_v2_5.py'\n", "      - 'tests/unit/test_mlb_supervised_selection_guard_v2_6.py'\n")
+          add_after(recurring, '            hello_world/mlb_supervised_selection_guard_v2_5.py \\\n', '            hello_world/mlb_supervised_selection_guard_v2_6.py \\\n')
+          add_after(recurring, '            tests/unit/test_mlb_supervised_selection_guard_v2_5.py \\\n', '            tests/unit/test_mlb_supervised_selection_guard_v2_6.py \\\n')
+
+          ci='.github/workflows/mlb-v8-selection-guard-ci.yml'
+          text=Path(ci).read_text()
+          text=text.replace("      - 'hello_world/mlb_supervised_selection_guard_v2_5.py'\n", "      - 'hello_world/mlb_supervised_selection_guard_v2_5.py'\n      - 'hello_world/mlb_supervised_selection_guard_v2_6.py'\n")
+          text=text.replace("      - 'tests/unit/test_mlb_supervised_selection_guard_v2_5.py'\n", "      - 'tests/unit/test_mlb_supervised_selection_guard_v2_5.py'\n      - 'tests/unit/test_mlb_supervised_selection_guard_v2_6.py'\n")
+          text=text.replace('            hello_world/mlb_supervised_selection_guard_v2_5.py \\\n', '            hello_world/mlb_supervised_selection_guard_v2_5.py \\\n            hello_world/mlb_supervised_selection_guard_v2_6.py \\\n')
+          text=text.replace('            tests/unit/test_mlb_supervised_selection_guard_v2_5.py \\\n', '            tests/unit/test_mlb_supervised_selection_guard_v2_5.py \\\n            tests/unit/test_mlb_supervised_selection_guard_v2_6.py \\\n')
+          Path(ci).write_text(text)
+          PY
+
+      - name: Compile and test optimizer contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'PyYAML>=6,<7' 'pytest>=8,<9' 'boto3>=1.34,<2'
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          for name in (
+              '.github/workflows/mlb-supervised-shadow-v2-recurring.yml',
+              '.github/workflows/mlb-v8-selection-guard-ci.yml',
+          ):
+              assert isinstance(yaml.safe_load(Path(name).read_text()),dict), name
+          PY
+          python -m py_compile \
+            hello_world/mlb_supervised_daily_objective_v2_1.py \
+            hello_world/mlb_supervised_selection_guard_v2_3.py \
+            hello_world/mlb_supervised_selection_guard_v2_5.py \
+            hello_world/mlb_supervised_selection_guard_v2_6.py
+          PYTHONPATH=.:hello_world python -m pytest -q --tb=short \
+            tests/unit/test_mlb_supervised_daily_objective_v2_1.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_3.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_4.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_5.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_6.py
+          grep -Fq 'regularizationComparisonSeedAligned' hello_world/mlb_supervised_selection_guard_v2_6.py
+          grep -Fq 'mlb_supervised_selection_guard_v2_6 as selection_guard' hello_world/mlb_supervised_daily_objective_v2_1.py
+          grep -Fq 'seed=_candidate_seed(seed, group_index, fold_index)' hello_world/mlb_supervised_selection_guard_v2_3.py
+          ! grep -Fq 'l2_index * 100' hello_world/mlb_supervised_selection_guard_v2_3.py
+
+      - name: Publish optimizer fix and remove installer
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            .github/workflows/mlb-supervised-shadow-v2-recurring.yml \
+            .github/workflows/mlb-v8-selection-guard-ci.yml \
+            hello_world/mlb_supervised_daily_objective_v2_1.py \
+            hello_world/mlb_supervised_selection_guard_v2_3.py \
+            hello_world/mlb_supervised_selection_guard_v2_6.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_3.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_6.py
+          git rm .github/workflows/mlb-v8-regularization-search-fix-once.yml
+          git diff --cached --check
+          git commit -m 'Align V8 regularization search seeds'
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
