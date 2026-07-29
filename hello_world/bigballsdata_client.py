@@ -15,6 +15,7 @@ import boto3
 DEFAULT_BASE_URL = "https://api.bigballsdata.com"
 DEFAULT_TIMEOUT_SECONDS = 4
 DEFAULT_MAX_ATTEMPTS = 1
+DEFAULT_HISTORICAL_REQUEST_DELAY_SECONDS = 0.5
 ALLOWED_MLB_RESOURCES = {
     "pitchers", "bullpens", "lineups", "injuries", "team_context", "weather", "park"
 }
@@ -60,6 +61,18 @@ def _historical_as_of_param() -> str:
     if not _SAFE_QUERY_NAME.fullmatch(value):
         raise BBSClientError("BBS_HISTORICAL_AS_OF_PARAM_INVALID")
     return value
+
+
+def _historical_request_delay_seconds() -> float:
+    raw = os.environ.get(
+        "BBS_HISTORICAL_REQUEST_DELAY_SECONDS",
+        str(DEFAULT_HISTORICAL_REQUEST_DELAY_SECONDS),
+    )
+    try:
+        value = float(raw or 0.0)
+    except (TypeError, ValueError):
+        return DEFAULT_HISTORICAL_REQUEST_DELAY_SECONDS
+    return min(max(value, 0.0), 5.0)
 
 
 def _shape(value: Any) -> str:
@@ -137,6 +150,10 @@ class BigBallsDataClient:
             "Authorization": f"Bearer {self._api_key}",
             "User-Agent": "inqsi-mlb-bbs-shadow/2.3",
         }, method="GET")
+        if path == "/v1/stored/matches":
+            delay = _historical_request_delay_seconds()
+            if delay:
+                self._sleeper(delay)
         last_error = "BBS_REQUEST_FAILED"
         for attempt in range(1, self._max_attempts + 1):
             try:
