@@ -1,4 +1,3 @@
-# Second push activates this one-time workflow after installation on main.
 name: MLB V8 Backfill Ordering Fix Once
 
 "on":
@@ -34,92 +33,8 @@ jobs:
       - name: Patch chronological learning priority
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-
-          script = Path('scripts/run_mlb_v8_historical_bbs_prior_game_backfill.py')
-          text = script.read_text()
-
-          marker = '''def _historical_bucket(outputs: Mapping[str, Any]) -> str:
-'''
-          helper = '''def _learning_priority(
-              rows: Sequence[Mapping[str, Any]], batch_size: int
-          ) -> List[Mapping[str, Any]]:
-              """Fill the earliest chronological development evidence first."""
-              return sorted(
-                  rows,
-                  key=lambda row: (
-                      str(row.get("slateDateEt") or ""),
-                      str(row.get("predictionLockAtUtc") or ""),
-                      str(row.get("officialGamePk") or ""),
-                  ),
-              )[:batch_size]
-
-
-'''
-          if 'def _learning_priority(' not in text:
-              if marker not in text:
-                  raise SystemExit('historical bucket insertion marker missing')
-              text = text.replace(marker, helper + marker, 1)
-
-          old_selection = '''    selected = sorted(
-                  pending,
-                  key=lambda row: (
-                      str(row.get("slateDateEt") or ""),
-                      str(row.get("predictionLockAtUtc") or ""),
-                      str(row.get("officialGamePk") or ""),
-                  ),
-                  reverse=True,
-              )[:batch_size]
-'''
-          new_selection = '''    selected = _learning_priority(pending, batch_size)
-'''
-          if old_selection in text:
-              text = text.replace(old_selection, new_selection, 1)
-          elif new_selection not in text:
-              raise SystemExit('pending selection block missing')
-
-          old_rule = '"selectionRule": "newest unprocessed canonical games within BBD coverage",'
-          new_rule = '"selectionRule": "oldest unprocessed canonical games first to repair chronological development folds",'
-          if old_rule in text:
-              text = text.replace(old_rule, new_rule, 1)
-          elif new_rule not in text:
-              raise SystemExit('selection rule marker missing')
-
-          script.write_text(text)
-
-          test = Path('tests/unit/test_run_mlb_v8_historical_bbs_prior_game_backfill.py')
-          tests = test.read_text()
-          test_name = 'test_learning_priority_repairs_earliest_chronological_fold_first'
-          if test_name not in tests:
-              tests += '''
-
-
-def test_learning_priority_repairs_earliest_chronological_fold_first():
-    rows = [
-        {
-            "slateDateEt": "2026-06-03",
-            "predictionLockAtUtc": "2026-06-03T20:00:00Z",
-            "officialGamePk": "3",
-        },
-        {
-            "slateDateEt": "2026-03-02",
-            "predictionLockAtUtc": "2026-03-02T22:00:00Z",
-            "officialGamePk": "2",
-        },
-        {
-            "slateDateEt": "2026-03-02",
-            "predictionLockAtUtc": "2026-03-02T19:00:00Z",
-            "officialGamePk": "1",
-        },
-    ]
-
-    selected = backfill._learning_priority(rows, 2)
-
-    assert [row["officialGamePk"] for row in selected] == ["1", "2"]
-'''
-              test.write_text(tests)
-          PY
+          echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCmltcG9ydCByZQoKc2NyaXB0ID0gUGF0aCgic2NyaXB0cy9ydW5fbWxiX3Y4X2hpc3RvcmljYWxfYmJzX3ByaW9yX2dhbWVfYmFja2ZpbGwucHkiKQp0ZXh0ID0gc2NyaXB0LnJlYWRfdGV4dCgpCgptYXJrZXIgPSAiZGVmIF9oaXN0b3JpY2FsX2J1Y2tldChvdXRwdXRzOiBNYXBwaW5nW3N0ciwgQW55XSkgLT4gc3RyOlxuIgpoZWxwZXIgPSAiIiJkZWYgX2xlYXJuaW5nX3ByaW9yaXR5KAogICAgcm93czogU2VxdWVuY2VbTWFwcGluZ1tzdHIsIEFueV1dLCBiYXRjaF9zaXplOiBpbnQKKSAtPiBMaXN0W01hcHBpbmdbc3RyLCBBbnldXToKICAgIFwiIiJGaWxsIHRoZSBlYXJsaWVzdCBjaHJvbm9sb2dpY2FsIGRldmVsb3BtZW50IGV2aWRlbmNlIGZpcnN0LlwiIiIKICAgIHJldHVybiBzb3J0ZWQoCiAgICAgICAgcm93cywKICAgICAgICBrZXk9bGFtYmRhIHJvdzogKAogICAgICAgICAgICBzdHIocm93LmdldCgic2xhdGVEYXRlRXQiKSBvciAiIiksCiAgICAgICAgICAgIHN0cihyb3cuZ2V0KCJwcmVkaWN0aW9uTG9ja0F0VXRjIikgb3IgIiIpLAogICAgICAgICAgICBzdHIocm93LmdldCgib2ZmaWNpYWxHYW1lUGsiKSBvciAiIiksCiAgICAgICAgKSwKICAgIClbOmJhdGNoX3NpemVdCgoKIiIiCmlmICJkZWYgX2xlYXJuaW5nX3ByaW9yaXR5KCIgbm90IGluIHRleHQ6CiAgICBpZiBtYXJrZXIgbm90IGluIHRleHQ6CiAgICAgICAgcmFpc2UgU3lzdGVtRXhpdCgiaGlzdG9yaWNhbCBidWNrZXQgaW5zZXJ0aW9uIG1hcmtlciBtaXNzaW5nIikKICAgIHRleHQgPSB0ZXh0LnJlcGxhY2UobWFya2VyLCBoZWxwZXIgKyBtYXJrZXIsIDEpCgpwYXR0ZXJuID0gcmUuY29tcGlsZSgKICAgIHIiICAgIHNlbGVjdGVkID0gc29ydGVkXChcbiIKICAgIHIiICAgICAgICBwZW5kaW5nLFxuIgogICAgciIgICAgICAgIGtleT1sYW1iZGEgcm93OiBcKFxuIgogICAgciIgICAgICAgICAgICBzdHJcKHJvd1wuZ2V0XChcInNsYXRlRGF0ZUV0XCJcKSBvciBcIlwiXCksXG4iCiAgICByIiAgICAgICAgICAgIHN0clwocm93XC5nZXRcKFwicHJlZGljdGlvbkxvY2tBdFV0Y1wiXCkgb3IgXCJcIlwpLFxuIgogICAgciIgICAgICAgICAgICBzdHJcKHJvd1wuZ2V0XChcIm9mZmljaWFsR2FtZVBrXCJcKSBvciBcIlwiXCksXG4iCiAgICByIiAgICAgICAgXCksXG4iCiAgICByIiAgICAgICAgcmV2ZXJzZT1UcnVlLFxuIgogICAgciIgICAgXClcWzpiYXRjaF9zaXplXF1cbiIKKQp0ZXh0LCByZXBsYWNlbWVudHMgPSBwYXR0ZXJuLnN1Ym4oCiAgICAiICAgIHNlbGVjdGVkID0gX2xlYXJuaW5nX3ByaW9yaXR5KHBlbmRpbmcsIGJhdGNoX3NpemUpXG4iLCB0ZXh0LCBjb3VudD0xCikKaWYgcmVwbGFjZW1lbnRzID09IDAgYW5kICJzZWxlY3RlZCA9IF9sZWFybmluZ19wcmlvcml0eShwZW5kaW5nLCBiYXRjaF9zaXplKSIgbm90IGluIHRleHQ6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCJwZW5kaW5nIHNlbGVjdGlvbiBibG9jayBtaXNzaW5nIikKCm9sZF9ydWxlID0gJyJzZWxlY3Rpb25SdWxlIjogIm5ld2VzdCB1bnByb2Nlc3NlZCBjYW5vbmljYWwgZ2FtZXMgd2l0aGluIEJCRCBjb3ZlcmFnZSIsJwpuZXdfcnVsZSA9ICcic2VsZWN0aW9uUnVsZSI6ICJvbGRlc3QgdW5wcm9jZXNzZWQgY2Fub25pY2FsIGdhbWVzIGZpcnN0IHRvIHJlcGFpciBjaHJvbm9sb2dpY2FsIGRldmVsb3BtZW50IGZvbGRzIiwnCmlmIG9sZF9ydWxlIGluIHRleHQ6CiAgICB0ZXh0ID0gdGV4dC5yZXBsYWNlKG9sZF9ydWxlLCBuZXdfcnVsZSwgMSkKZWxpZiBuZXdfcnVsZSBub3QgaW4gdGV4dDoKICAgIHJhaXNlIFN5c3RlbUV4aXQoInNlbGVjdGlvbiBydWxlIG1hcmtlciBtaXNzaW5nIikKCnNjcmlwdC53cml0ZV90ZXh0KHRleHQpCgp0ZXN0ID0gUGF0aCgidGVzdHMvdW5pdC90ZXN0X3J1bl9tbGJfdjhfaGlzdG9yaWNhbF9iYnNfcHJpb3JfZ2FtZV9iYWNrZmlsbC5weSIpCnRlc3RzID0gdGVzdC5yZWFkX3RleHQoKQp0ZXN0X25hbWUgPSAidGVzdF9sZWFybmluZ19wcmlvcml0eV9yZXBhaXJzX2VhcmxpZXN0X2Nocm9ub2xvZ2ljYWxfZm9sZF9maXJzdCIKaWYgdGVzdF9uYW1lIG5vdCBpbiB0ZXN0czoKICAgIHRlc3RzICs9ICIiIgoKCmRlZiB0ZXN0X2xlYXJuaW5nX3ByaW9yaXR5X3JlcGFpcnNfZWFybGllc3RfY2hyb25vbG9naWNhbF9mb2xkX2ZpcnN0KCk6CiAgICByb3dzID0gWwogICAgICAgIHsKICAgICAgICAgICAgInNsYXRlRGF0ZUV0IjogIjIwMjYtMDYtMDMiLAogICAgICAgICAgICAicHJlZGljdGlvbkxvY2tBdFV0YyI6ICIyMDI2LTA2LTAzVDIwOjAwOjAwWiIsCiAgICAgICAgICAgICJvZmZpY2lhbEdhbWVQayI6ICIzIiwKICAgICAgICB9LAogICAgICAgIHsKICAgICAgICAgICAgInNsYXRlRGF0ZUV0IjogIjIwMjYtMDMtMDIiLAogICAgICAgICAgICAicHJlZGljdGlvbkxvY2tBdFV0YyI6ICIyMDI2LTAzLTAyVDIyOjAwOjAwWiIsCiAgICAgICAgICAgICJvZmZpY2lhbEdhbWVQayI6ICIyIiwKICAgICAgICB9LAogICAgICAgIHsKICAgICAgICAgICAgInNsYXRlRGF0ZUV0IjogIjIwMjYtMDMtMDIiLAogICAgICAgICAgICAicHJlZGljdGlvbkxvY2tBdFV0YyI6ICIyMDI2LTAzLTAyVDE5OjAwOjAwWiIsCiAgICAgICAgICAgICJvZmZpY2lhbEdhbWVQayI6ICIxIiwKICAgICAgICB9LAogICAgXQoKICAgIHNlbGVjdGVkID0gYmFja2ZpbGwuX2xlYXJuaW5nX3ByaW9yaXR5KHJvd3MsIDIpCgogICAgYXNzZXJ0IFtyb3dbIm9mZmljaWFsR2FtZVBrIl0gZm9yIHJvdyBpbiBzZWxlY3RlZF0gPT0gWyIxIiwgIjIiXQoiIiIKICAgIHRlc3Qud3JpdGVfdGV4dCh0ZXN0cykK' | base64 --decode > /tmp/patch_v8_ordering.py
+          python /tmp/patch_v8_ordering.py
 
       - name: Compile and test ordering contract
         run: |
@@ -135,11 +50,13 @@ def test_learning_priority_repairs_earliest_chronological_fold_first():
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add \
-            scripts/run_mlb_v8_historical_bbs_prior_game_backfill.py \
-            tests/unit/test_run_mlb_v8_historical_bbs_prior_game_backfill.py
+          git add scripts/run_mlb_v8_historical_bbs_prior_game_backfill.py tests/unit/test_run_mlb_v8_historical_bbs_prior_game_backfill.py
           git rm .github/workflows/mlb-v8-backfill-ordering-fix-once.yml
           git diff --cached --check
           git commit -m 'Prioritize V8 chronological fold recovery'
-          git pull --rebase origin main
-          git push origin HEAD:main
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
