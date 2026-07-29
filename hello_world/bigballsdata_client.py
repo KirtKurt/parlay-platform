@@ -8,7 +8,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
 import boto3
 
@@ -95,7 +95,7 @@ class BigBallsDataClient:
         return f"{type(self).__name__}(base_url={self._base_url!r}, timeout_seconds={self._timeout_seconds}, credential=<redacted>)"
 
     @staticmethod
-    def _validated_envelope(payload: Any) -> Dict[str, Any]:
+    def _validated_envelope(payload: Any, *, stored_catalogue: bool = False) -> Dict[str, Any]:
         if not isinstance(payload, dict):
             raise BBSClientError("BBS_RESPONSE_NOT_OBJECT")
         # The public contract documents errors without a data key, while older
@@ -105,9 +105,29 @@ class BigBallsDataClient:
             error = payload.get("error")
             code = str(error.get("code") or "UNKNOWN") if isinstance(error, dict) else "UNKNOWN"
             raise BBSClientError(f"BBS_RESPONSE_REPORTED_ERROR_{code[:80]}")
-        if "data" not in payload or not isinstance(payload.get("meta"), dict):
-            raise BBSClientError("BBS_RESPONSE_ENVELOPE_INCOMPLETE")
-        return payload
+        if "data" not in payload:
+            raise BBSClientError(
+                "BBS_RESPONSE_ENVELOPE_INCOMPLETE_KEYS_"
+                + ",".join(sorted(str(key) for key in payload)[:20])
+            )
+        if isinstance(payload.get("meta"), dict):
+            return payload
+        # The provider's stored catalogue examples and deployed route use
+        # `{data, pagination}` rather than the live `{data, meta}` envelope.
+        # Accept only that exact bounded catalogue form and synthesize explicit
+        # transport metadata; do not relax resource or live response validation.
+        if stored_catalogue and isinstance(payload.get("pagination"), Mapping):
+            value = dict(payload)
+            value["meta"] = {
+                "source": "stored-catalogue",
+                "catalogueContract": "data_plus_pagination",
+            }
+            value.setdefault("error", None)
+            return value
+        raise BBSClientError(
+            "BBS_RESPONSE_ENVELOPE_INCOMPLETE_KEYS_"
+            + ",".join(sorted(str(key) for key in payload)[:20])
+        )
 
     def _request(self, path: str, params: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], Dict[str, str]]:
         query = urllib.parse.urlencode({k: v for k, v in (params or {}).items() if v is not None})
@@ -115,7 +135,7 @@ class BigBallsDataClient:
         request = urllib.request.Request(url, headers={
             "Accept": "application/json",
             "Authorization": f"Bearer {self._api_key}",
-            "User-Agent": "inqsi-mlb-bbs-shadow/2.2",
+            "User-Agent": "inqsi-mlb-bbs-shadow/2.3",
         }, method="GET")
         last_error = "BBS_REQUEST_FAILED"
         for attempt in range(1, self._max_attempts + 1):
@@ -130,7 +150,10 @@ class BigBallsDataClient:
                     payload = json.loads(raw.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError):
                     raise BBSClientError("BBS_RESPONSE_NOT_JSON") from None
-                return self._validated_envelope(payload), headers
+                return self._validated_envelope(
+                    payload,
+                    stored_catalogue=path == "/v1/stored/matches",
+                ), headers
             except urllib.error.HTTPError as exc:
                 if exc.code in (401, 403):
                     raise BBSAuthenticationError(f"BBS_AUTH_REJECTED_HTTP_{exc.code}") from None
