@@ -1,0 +1,109 @@
+name: MLB V8 Recurring Overlay Required Fix Once
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v8-recurring-overlay-required-fix-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-v8-recurring-overlay-required-fix-once
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: .:hello_world:scripts
+
+jobs:
+  patch-test-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Make the immutable BBD manifest mandatory
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path=Path('.github/workflows/mlb-supervised-shadow-v2-recurring.yml')
+          text=path.read_text()
+
+          replacements=(
+              (
+                  "          MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED: 'false'\n",
+                  "          MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED: 'true'\n",
+              ),
+              (
+                  "          assert bbd.get('status') in {'APPLIED','MANIFEST_NOT_AVAILABLE'}, bbd\n"
+                  "          if bbd.get('status') == 'APPLIED':\n"
+                  "              assert int(bbd.get('appliedGameCount') or 0) > 0, bbd\n"
+                  "              assert bbd.get('selectionUsedOutcomes') is False, bbd\n",
+                  "          assert bbd.get('status') == 'APPLIED', bbd\n"
+                  "          assert int(bbd.get('appliedGameCount') or 0) > 0, bbd\n"
+                  "          assert bbd.get('selectionUsedOutcomes') is False, bbd\n",
+              ),
+              (
+                  "          if bbd.get('status') == 'APPLIED':\n"
+                  "              assert int(bbd.get('appliedGameCount') or 0) > 0, bbd\n",
+                  "          assert bbd.get('status') == 'APPLIED', bbd\n"
+                  "          assert int(bbd.get('appliedGameCount') or 0) > 0, bbd\n",
+              ),
+          )
+          for old,new in replacements:
+              if new in text:
+                  continue
+              if old not in text:
+                  raise SystemExit(f'recurring overlay marker missing: {old[:90]!r}')
+              text=text.replace(old,new,1)
+          path.write_text(text)
+          PY
+
+      - name: Validate recurring trainer contract
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'PyYAML>=6,<7' 'pytest>=8,<9' 'boto3>=1.34,<2' 'numpy>=1.26,<3'
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          path=Path('.github/workflows/mlb-supervised-shadow-v2-recurring.yml')
+          text=path.read_text()
+          value=yaml.safe_load(text)
+          assert isinstance(value,dict)
+          assert "MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED: 'true'" in text
+          assert "MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED: 'false'" not in text
+          assert text.count("assert bbd.get('status') == 'APPLIED', bbd") >= 2
+          PY
+          python -m pytest -q --tb=short \
+            tests/unit/test_run_mlb_supervised_shadow_v2_readiness.py \
+            tests/unit/test_publish_monotonic_json.py \
+            tests/unit/test_mlb_supervised_daily_objective_v2_1.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_5.py \
+            tests/unit/test_mlb_v8_historical_bbs_overlay_v1.py
+
+      - name: Publish fix and remove installer
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/mlb-supervised-shadow-v2-recurring.yml
+          git rm .github/workflows/mlb-v8-recurring-overlay-required-fix-once.yml
+          git diff --cached --check
+          git commit -m 'Require BBD overlay in recurring V8 trainer'
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
