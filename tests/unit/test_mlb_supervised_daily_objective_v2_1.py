@@ -91,3 +91,10 @@ def test_install_is_shadow_only_and_idempotent():
     assert Model.VERSION == objective.VERSION
     assert Model.SUPERVISED_SELECTION_OBJECTIVE["productionAuthorityChanged"] is False
     assert Model.SUPERVISED_SELECTION_OBJECTIVE["untouchedAuditUsedForSelection"] is False
+    assert Model.SUPERVISED_SELECTION_OBJECTIVE["selectionGuardVersion"] == (
+        objective.selection_guard.VERSION
+    )
+    assert Model.SUPERVISED_SELECTION_OBJECTIVE["bbsProviderHorizonFoldPolicy"] == (
+        "require_two_evaluable_training_and_validation_folds"
+    )
+    assert Model.SUPERVISED_SELECTION_OBJECTIVE["bbsUnsupportedFoldsCountAsPassing"] is False
