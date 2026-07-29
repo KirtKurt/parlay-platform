@@ -11,12 +11,14 @@ from typing import Any, Mapping, Tuple
 
 try:
     import mlb_supervised_feature_interactions_v2_2 as feature_interactions
+    import mlb_supervised_feature_boundaries_v2_4 as feature_boundaries
     import mlb_supervised_feature_groups_v2_4 as feature_groups
     import mlb_supervised_selection_guard_v2_4 as selection_guard
     import mlb_v8_historical_bbs_overlay_v1 as historical_bbs_overlay
     import mlb_v8_historical_bbs_prior_game_features_v1 as historical_bbs_prior_features
 except ImportError:  # package import used by unit tests
     from . import mlb_supervised_feature_interactions_v2_2 as feature_interactions
+    from . import mlb_supervised_feature_boundaries_v2_4 as feature_boundaries
     from . import mlb_supervised_feature_groups_v2_4 as feature_groups
     from . import mlb_supervised_selection_guard_v2_4 as selection_guard
     from . import mlb_v8_historical_bbs_overlay_v1 as historical_bbs_overlay
@@ -79,6 +81,7 @@ def install(model_module: Any) -> Any:
     feature_module = getattr(model_module, "features", None)
     if feature_module is not None:
         feature_interactions.install(feature_module)
+        feature_boundaries.install_features(feature_module)
         historical_bbs_prior_features.install(feature_module)
         feature_groups.install(feature_module)
     # Some contract tests intentionally provide only model-selection attributes.
@@ -88,6 +91,8 @@ def install(model_module: Any) -> Any:
     model_module._config_key = daily_objective_key
     model_module._INQSI_MLB_CALIBRATION_ELIGIBLE = calibration_eligible
     selection_guard.install(model_module)
+    if callable(getattr(model_module, "train_and_evaluate", None)):
+        feature_boundaries.install_model(model_module)
     model_module.VERSION = VERSION
     model_module.SUPERVISED_SELECTION_OBJECTIVE = {
         "version": VERSION,
@@ -110,6 +115,8 @@ def install(model_module: Any) -> Any:
         "bbsPriorSupportedCohortStartDate": historical_bbs_prior_features.BBS_PRIOR_SUPPORT_START_DATE,
         "v8FullGameCandidateRequiresFirstFive": False,
         "featureGroupsVersion": feature_groups.VERSION,
+        "featureBoundariesVersion": feature_boundaries.VERSION,
+        "targetGameFundamentalsExcludeBbsPriorGameSnapshots": True,
         "foldStabilityRequired": True,
         "marketBaselineFallbackEnabled": True,
         "featureInteractionVersion": feature_interactions.VERSION,
