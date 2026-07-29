@@ -124,10 +124,15 @@ def install_pointer_isolation(module: Any) -> Any:
 
 
 def install_resource_shape_compatibility(module: Any) -> Any:
-    """Expose reconstructed recent-start form through the collector's accepted alias."""
+    """Expose reconstructed recent-start form through the fundamentals compiler alias."""
     if getattr(module, "_INQSI_MLB_CONTEXT_SHAPE_COMPAT_INSTALLED", False):
         return module
-    original = module.collector.normalize_match
+    fundamentals = getattr(module, "fundamentals", None)
+    if fundamentals is None:
+        fundamentals = getattr(module, "collector", None)
+    if fundamentals is None or not callable(getattr(fundamentals, "normalize_match", None)):
+        raise RuntimeError("historical_context_fundamentals_compiler_unavailable")
+    original = fundamentals.normalize_match
 
     def normalize(match: Mapping[str, Any], captured_at: datetime, resources=None):
         copied = copy.deepcopy(resources or {})
@@ -148,7 +153,7 @@ def install_resource_shape_compatibility(module: Any) -> Any:
             copied["pitchers"] = {**dict(envelope), "data": data}
         return original(match, captured_at, copied)
 
-    module.collector.normalize_match = normalize
+    fundamentals.normalize_match = normalize
     module._INQSI_MLB_CONTEXT_SHAPE_COMPAT_INSTALLED = True
     return module
 
