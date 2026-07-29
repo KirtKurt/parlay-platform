@@ -16,7 +16,7 @@
   },
   "authority": "SHADOW_ONLY",
   "automaticWagerAllowed": false,
-  "createdAtUtc": "2026-07-29T20:33:29.363310+00:00",
+  "createdAtUtc": "2026-07-29T20:36:35.520801+00:00",
   "featureCoverage": {
     "bbsPriorAvailable": 0.0,
     "bbsPriorSupported": 0.40074627,
@@ -4969,7 +4969,7 @@
     "featureGroup": "market_baseline",
     "intercept": 0.0,
     "l2": 0.0,
-    "modelDigest": "4e0762f3bdad6a50b1ba3cb3459f7bee1c4791570efa58fec5710fa8e7c954d7",
+    "modelDigest": "931c21608d008d95cbfb86092b16a0e4a05e1fd5be0dd49a869629c8a997678b",
     "seed": 269726,
     "standardizer": {
       "featureNames": [],
@@ -4977,7 +4977,7 @@
       "scales": []
     },
     "trainingSteps": 0,
-    "version": "MLB-SUPERVISED-SHADOW-v2.4-supported-cohort-fullgame-v8",
+    "version": "MLB-SUPERVISED-SHADOW-v2.5-provider-horizon-evaluable-folds",
     "weights": []
   },
   "ok": true,
@@ -5347,15 +5347,15 @@
       "walk_forward_minimum_daily_accuracy_below_80_percent"
     ],
     "passed": false,
-    "selectionGuardVersion": "MLB-SUPERVISED-SELECTION-GUARD-v2.4-supported-cohort",
+    "selectionGuardVersion": "MLB-SUPERVISED-SELECTION-GUARD-v2.5-provider-horizon-evaluable-folds",
     "version": "MLB-SUPERVISED-SHADOW-PROMOTION-GATE-v1"
   },
   "proofType": "MLB_SUPERVISED_SHADOW_AWS_EVALUATION",
   "recordCountLoaded": 4020,
-  "resultDigest": "c709e0572677eb58b7548cd5b3745ce3eb5371b1bd053155cebd9ef1d4bacb44",
+  "resultDigest": "0c0161e626a2498170192e76927433d5e661f696f0300c8f64f0fa45d4412ca6",
   "retrospectiveArchitectureEvaluation": true,
-  "runId": "30488866702",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30488866702",
+  "runId": "30489066379",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30489066379",
   "runtimeIdentity": {
     "checks": {
       "featureMaterializationReady": true,
@@ -6972,6 +6972,7 @@
             "denominators": {},
             "eligible": true,
             "errors": [],
+            "foldEvaluation": {},
             "overall": {},
             "requirements": {},
             "supportCounts": {},
@@ -9896,6 +9897,7 @@
             "denominators": {},
             "eligible": true,
             "errors": [],
+            "foldEvaluation": {},
             "overall": {},
             "requirements": {},
             "supportCounts": {},
@@ -12832,6 +12834,7 @@
             "denominators": {},
             "eligible": true,
             "errors": [],
+            "foldEvaluation": {},
             "overall": {},
             "requirements": {},
             "supportCounts": {},
@@ -15788,6 +15791,7 @@
             "denominators": {},
             "eligible": true,
             "errors": [],
+            "foldEvaluation": {},
             "overall": {},
             "requirements": {},
             "supportCounts": {},
@@ -18761,14 +18765,62 @@
             "eligible": false,
             "errors": [
               "overall_bbs_prior_available_below_0.50",
-              "train_fold_1_bbs_prior_available_below_0.50",
-              "train_fold_1_bbs_supported_game_floor_not_met",
               "train_fold_2_bbs_prior_available_below_0.50",
               "train_fold_3_bbs_prior_available_below_0.50",
               "validation_fold_1_bbs_prior_available_below_0.50",
               "validation_fold_2_bbs_prior_available_below_0.50",
               "validation_fold_3_bbs_prior_available_below_0.50"
             ],
+            "foldEvaluation": {
+              "policy": "provider_horizon_evaluable_folds_only",
+              "training": [
+                {
+                  "evaluable": false,
+                  "fold": 1,
+                  "minimumSupportedGameCount": 200,
+                  "reason": "provider_horizon_overlap_below_floor",
+                  "supportedGameCount": 20
+                },
+                {
+                  "evaluable": true,
+                  "fold": 2,
+                  "minimumSupportedGameCount": 200,
+                  "reason": null,
+                  "supportedGameCount": 391
+                },
+                {
+                  "evaluable": true,
+                  "fold": 3,
+                  "minimumSupportedGameCount": 200,
+                  "reason": null,
+                  "supportedGameCount": 764
+                }
+              ],
+              "unsupportedFoldsCountAsPassing": false,
+              "validation": [
+                {
+                  "evaluable": true,
+                  "fold": 1,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 371
+                },
+                {
+                  "evaluable": true,
+                  "fold": 2,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 373
+                },
+                {
+                  "evaluable": true,
+                  "fold": 3,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 365
+                }
+              ]
+            },
             "overall": {
               "bbs_prior_available": 0.0
             },
@@ -18776,15 +18828,33 @@
               "bbs_prior_available": 0.5
             },
             "supportCounts": {
+              "evaluableTrainingFoldCount": 2,
+              "evaluableValidationFoldCount": 3,
               "feature": "bbs_prior_supported",
               "minimumOverall": 500,
               "minimumTrainingFold": 200,
               "minimumValidationFold": 150,
               "overall": 1129,
+              "requiredEvaluableTrainingFoldCount": 2,
+              "requiredEvaluableValidationFoldCount": 2,
+              "skippedTrainingFolds": [
+                1
+              ],
+              "skippedValidationFolds": [],
+              "trainingFoldEvaluable": [
+                false,
+                true,
+                true
+              ],
               "trainingFolds": [
                 20,
                 391,
                 764
+              ],
+              "validationFoldEvaluable": [
+                true,
+                true,
+                true
               ],
               "validationFolds": [
                 371,
@@ -18818,8 +18888,6 @@
           "eligible": false,
           "errors": [
             "overall_bbs_prior_available_below_0.50",
-            "train_fold_1_bbs_prior_available_below_0.50",
-            "train_fold_1_bbs_supported_game_floor_not_met",
             "train_fold_2_bbs_prior_available_below_0.50",
             "train_fold_3_bbs_prior_available_below_0.50",
             "validation_fold_1_bbs_prior_available_below_0.50",
@@ -21776,14 +21844,62 @@
             "eligible": false,
             "errors": [
               "overall_bbs_prior_available_below_0.50",
-              "train_fold_1_bbs_prior_available_below_0.50",
-              "train_fold_1_bbs_supported_game_floor_not_met",
               "train_fold_2_bbs_prior_available_below_0.50",
               "train_fold_3_bbs_prior_available_below_0.50",
               "validation_fold_1_bbs_prior_available_below_0.50",
               "validation_fold_2_bbs_prior_available_below_0.50",
               "validation_fold_3_bbs_prior_available_below_0.50"
             ],
+            "foldEvaluation": {
+              "policy": "provider_horizon_evaluable_folds_only",
+              "training": [
+                {
+                  "evaluable": false,
+                  "fold": 1,
+                  "minimumSupportedGameCount": 200,
+                  "reason": "provider_horizon_overlap_below_floor",
+                  "supportedGameCount": 20
+                },
+                {
+                  "evaluable": true,
+                  "fold": 2,
+                  "minimumSupportedGameCount": 200,
+                  "reason": null,
+                  "supportedGameCount": 391
+                },
+                {
+                  "evaluable": true,
+                  "fold": 3,
+                  "minimumSupportedGameCount": 200,
+                  "reason": null,
+                  "supportedGameCount": 764
+                }
+              ],
+              "unsupportedFoldsCountAsPassing": false,
+              "validation": [
+                {
+                  "evaluable": true,
+                  "fold": 1,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 371
+                },
+                {
+                  "evaluable": true,
+                  "fold": 2,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 373
+                },
+                {
+                  "evaluable": true,
+                  "fold": 3,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 365
+                }
+              ]
+            },
             "overall": {
               "bbs_prior_available": 0.0
             },
@@ -21791,15 +21907,33 @@
               "bbs_prior_available": 0.5
             },
             "supportCounts": {
+              "evaluableTrainingFoldCount": 2,
+              "evaluableValidationFoldCount": 3,
               "feature": "bbs_prior_supported",
               "minimumOverall": 500,
               "minimumTrainingFold": 200,
               "minimumValidationFold": 150,
               "overall": 1129,
+              "requiredEvaluableTrainingFoldCount": 2,
+              "requiredEvaluableValidationFoldCount": 2,
+              "skippedTrainingFolds": [
+                1
+              ],
+              "skippedValidationFolds": [],
+              "trainingFoldEvaluable": [
+                false,
+                true,
+                true
+              ],
               "trainingFolds": [
                 20,
                 391,
                 764
+              ],
+              "validationFoldEvaluable": [
+                true,
+                true,
+                true
               ],
               "validationFolds": [
                 371,
@@ -21833,8 +21967,6 @@
           "eligible": false,
           "errors": [
             "overall_bbs_prior_available_below_0.50",
-            "train_fold_1_bbs_prior_available_below_0.50",
-            "train_fold_1_bbs_supported_game_floor_not_met",
             "train_fold_2_bbs_prior_available_below_0.50",
             "train_fold_3_bbs_prior_available_below_0.50",
             "validation_fold_1_bbs_prior_available_below_0.50",
@@ -24786,8 +24918,6 @@
             "errors": [
               "overall_bbs_prior_available_below_0.50",
               "overall_v8_f5_available_below_0.40",
-              "train_fold_1_bbs_prior_available_below_0.50",
-              "train_fold_1_bbs_supported_game_floor_not_met",
               "train_fold_1_v8_f5_available_below_0.40",
               "train_fold_2_bbs_prior_available_below_0.50",
               "train_fold_2_v8_f5_available_below_0.40",
@@ -24800,6 +24930,56 @@
               "validation_fold_3_bbs_prior_available_below_0.50",
               "validation_fold_3_v8_f5_available_below_0.40"
             ],
+            "foldEvaluation": {
+              "policy": "provider_horizon_evaluable_folds_only",
+              "training": [
+                {
+                  "evaluable": false,
+                  "fold": 1,
+                  "minimumSupportedGameCount": 200,
+                  "reason": "provider_horizon_overlap_below_floor",
+                  "supportedGameCount": 20
+                },
+                {
+                  "evaluable": true,
+                  "fold": 2,
+                  "minimumSupportedGameCount": 200,
+                  "reason": null,
+                  "supportedGameCount": 391
+                },
+                {
+                  "evaluable": true,
+                  "fold": 3,
+                  "minimumSupportedGameCount": 200,
+                  "reason": null,
+                  "supportedGameCount": 764
+                }
+              ],
+              "unsupportedFoldsCountAsPassing": false,
+              "validation": [
+                {
+                  "evaluable": true,
+                  "fold": 1,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 371
+                },
+                {
+                  "evaluable": true,
+                  "fold": 2,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 373
+                },
+                {
+                  "evaluable": true,
+                  "fold": 3,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 365
+                }
+              ]
+            },
             "overall": {
               "bbs_prior_available": 0.0,
               "v8_available": 1.0,
@@ -24811,15 +24991,33 @@
               "v8_f5_available": 0.4
             },
             "supportCounts": {
+              "evaluableTrainingFoldCount": 2,
+              "evaluableValidationFoldCount": 3,
               "feature": "bbs_prior_supported",
               "minimumOverall": 500,
               "minimumTrainingFold": 200,
               "minimumValidationFold": 150,
               "overall": 1129,
+              "requiredEvaluableTrainingFoldCount": 2,
+              "requiredEvaluableValidationFoldCount": 2,
+              "skippedTrainingFolds": [
+                1
+              ],
+              "skippedValidationFolds": [],
+              "trainingFoldEvaluable": [
+                false,
+                true,
+                true
+              ],
               "trainingFolds": [
                 20,
                 391,
                 764
+              ],
+              "validationFoldEvaluable": [
+                true,
+                true,
+                true
               ],
               "validationFolds": [
                 371,
@@ -24866,8 +25064,6 @@
           "errors": [
             "overall_bbs_prior_available_below_0.50",
             "overall_v8_f5_available_below_0.40",
-            "train_fold_1_bbs_prior_available_below_0.50",
-            "train_fold_1_bbs_supported_game_floor_not_met",
             "train_fold_1_v8_f5_available_below_0.40",
             "train_fold_2_bbs_prior_available_below_0.50",
             "train_fold_2_v8_f5_available_below_0.40",
@@ -27795,14 +27991,62 @@
             "eligible": false,
             "errors": [
               "overall_bbs_prior_available_below_0.50",
-              "train_fold_1_bbs_prior_available_below_0.50",
-              "train_fold_1_bbs_supported_game_floor_not_met",
               "train_fold_2_bbs_prior_available_below_0.50",
               "train_fold_3_bbs_prior_available_below_0.50",
               "validation_fold_1_bbs_prior_available_below_0.50",
               "validation_fold_2_bbs_prior_available_below_0.50",
               "validation_fold_3_bbs_prior_available_below_0.50"
             ],
+            "foldEvaluation": {
+              "policy": "provider_horizon_evaluable_folds_only",
+              "training": [
+                {
+                  "evaluable": false,
+                  "fold": 1,
+                  "minimumSupportedGameCount": 200,
+                  "reason": "provider_horizon_overlap_below_floor",
+                  "supportedGameCount": 20
+                },
+                {
+                  "evaluable": true,
+                  "fold": 2,
+                  "minimumSupportedGameCount": 200,
+                  "reason": null,
+                  "supportedGameCount": 391
+                },
+                {
+                  "evaluable": true,
+                  "fold": 3,
+                  "minimumSupportedGameCount": 200,
+                  "reason": null,
+                  "supportedGameCount": 764
+                }
+              ],
+              "unsupportedFoldsCountAsPassing": false,
+              "validation": [
+                {
+                  "evaluable": true,
+                  "fold": 1,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 371
+                },
+                {
+                  "evaluable": true,
+                  "fold": 2,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 373
+                },
+                {
+                  "evaluable": true,
+                  "fold": 3,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 365
+                }
+              ]
+            },
             "overall": {
               "bbs_prior_available": 0.0,
               "v8_available": 1.0
@@ -27812,15 +28056,33 @@
               "v8_available": 0.6
             },
             "supportCounts": {
+              "evaluableTrainingFoldCount": 2,
+              "evaluableValidationFoldCount": 3,
               "feature": "bbs_prior_supported",
               "minimumOverall": 500,
               "minimumTrainingFold": 200,
               "minimumValidationFold": 150,
               "overall": 1129,
+              "requiredEvaluableTrainingFoldCount": 2,
+              "requiredEvaluableValidationFoldCount": 2,
+              "skippedTrainingFolds": [
+                1
+              ],
+              "skippedValidationFolds": [],
+              "trainingFoldEvaluable": [
+                false,
+                true,
+                true
+              ],
               "trainingFolds": [
                 20,
                 391,
                 764
+              ],
+              "validationFoldEvaluable": [
+                true,
+                true,
+                true
               ],
               "validationFolds": [
                 371,
@@ -27860,8 +28122,6 @@
           "eligible": false,
           "errors": [
             "overall_bbs_prior_available_below_0.50",
-            "train_fold_1_bbs_prior_available_below_0.50",
-            "train_fold_1_bbs_supported_game_floor_not_met",
             "train_fold_2_bbs_prior_available_below_0.50",
             "train_fold_3_bbs_prior_available_below_0.50",
             "validation_fold_1_bbs_prior_available_below_0.50",
@@ -30839,14 +31099,62 @@
             "eligible": false,
             "errors": [
               "overall_bbs_prior_available_below_0.50",
-              "train_fold_1_bbs_prior_available_below_0.50",
-              "train_fold_1_bbs_supported_game_floor_not_met",
               "train_fold_2_bbs_prior_available_below_0.50",
               "train_fold_3_bbs_prior_available_below_0.50",
               "validation_fold_1_bbs_prior_available_below_0.50",
               "validation_fold_2_bbs_prior_available_below_0.50",
               "validation_fold_3_bbs_prior_available_below_0.50"
             ],
+            "foldEvaluation": {
+              "policy": "provider_horizon_evaluable_folds_only",
+              "training": [
+                {
+                  "evaluable": false,
+                  "fold": 1,
+                  "minimumSupportedGameCount": 200,
+                  "reason": "provider_horizon_overlap_below_floor",
+                  "supportedGameCount": 20
+                },
+                {
+                  "evaluable": true,
+                  "fold": 2,
+                  "minimumSupportedGameCount": 200,
+                  "reason": null,
+                  "supportedGameCount": 391
+                },
+                {
+                  "evaluable": true,
+                  "fold": 3,
+                  "minimumSupportedGameCount": 200,
+                  "reason": null,
+                  "supportedGameCount": 764
+                }
+              ],
+              "unsupportedFoldsCountAsPassing": false,
+              "validation": [
+                {
+                  "evaluable": true,
+                  "fold": 1,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 371
+                },
+                {
+                  "evaluable": true,
+                  "fold": 2,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 373
+                },
+                {
+                  "evaluable": true,
+                  "fold": 3,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 365
+                }
+              ]
+            },
             "overall": {
               "bbs_prior_available": 0.0,
               "v8_available": 1.0
@@ -30856,15 +31164,33 @@
               "v8_available": 0.6
             },
             "supportCounts": {
+              "evaluableTrainingFoldCount": 2,
+              "evaluableValidationFoldCount": 3,
               "feature": "bbs_prior_supported",
               "minimumOverall": 500,
               "minimumTrainingFold": 200,
               "minimumValidationFold": 150,
               "overall": 1129,
+              "requiredEvaluableTrainingFoldCount": 2,
+              "requiredEvaluableValidationFoldCount": 2,
+              "skippedTrainingFolds": [
+                1
+              ],
+              "skippedValidationFolds": [],
+              "trainingFoldEvaluable": [
+                false,
+                true,
+                true
+              ],
               "trainingFolds": [
                 20,
                 391,
                 764
+              ],
+              "validationFoldEvaluable": [
+                true,
+                true,
+                true
               ],
               "validationFolds": [
                 371,
@@ -30904,8 +31230,6 @@
           "eligible": false,
           "errors": [
             "overall_bbs_prior_available_below_0.50",
-            "train_fold_1_bbs_prior_available_below_0.50",
-            "train_fold_1_bbs_supported_game_floor_not_met",
             "train_fold_2_bbs_prior_available_below_0.50",
             "train_fold_3_bbs_prior_available_below_0.50",
             "validation_fold_1_bbs_prior_available_below_0.50",
@@ -33881,8 +34205,6 @@
             "errors": [
               "overall_bbs_prior_available_below_0.50",
               "overall_v8_f5_available_below_0.40",
-              "train_fold_1_bbs_prior_available_below_0.50",
-              "train_fold_1_bbs_supported_game_floor_not_met",
               "train_fold_1_v8_f5_available_below_0.40",
               "train_fold_2_bbs_prior_available_below_0.50",
               "train_fold_2_v8_f5_available_below_0.40",
@@ -33895,6 +34217,56 @@
               "validation_fold_3_bbs_prior_available_below_0.50",
               "validation_fold_3_v8_f5_available_below_0.40"
             ],
+            "foldEvaluation": {
+              "policy": "provider_horizon_evaluable_folds_only",
+              "training": [
+                {
+                  "evaluable": false,
+                  "fold": 1,
+                  "minimumSupportedGameCount": 200,
+                  "reason": "provider_horizon_overlap_below_floor",
+                  "supportedGameCount": 20
+                },
+                {
+                  "evaluable": true,
+                  "fold": 2,
+                  "minimumSupportedGameCount": 200,
+                  "reason": null,
+                  "supportedGameCount": 391
+                },
+                {
+                  "evaluable": true,
+                  "fold": 3,
+                  "minimumSupportedGameCount": 200,
+                  "reason": null,
+                  "supportedGameCount": 764
+                }
+              ],
+              "unsupportedFoldsCountAsPassing": false,
+              "validation": [
+                {
+                  "evaluable": true,
+                  "fold": 1,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 371
+                },
+                {
+                  "evaluable": true,
+                  "fold": 2,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 373
+                },
+                {
+                  "evaluable": true,
+                  "fold": 3,
+                  "minimumSupportedGameCount": 150,
+                  "reason": null,
+                  "supportedGameCount": 365
+                }
+              ]
+            },
             "overall": {
               "bbs_prior_available": 0.0,
               "v8_available": 1.0,
@@ -33906,15 +34278,33 @@
               "v8_f5_available": 0.4
             },
             "supportCounts": {
+              "evaluableTrainingFoldCount": 2,
+              "evaluableValidationFoldCount": 3,
               "feature": "bbs_prior_supported",
               "minimumOverall": 500,
               "minimumTrainingFold": 200,
               "minimumValidationFold": 150,
               "overall": 1129,
+              "requiredEvaluableTrainingFoldCount": 2,
+              "requiredEvaluableValidationFoldCount": 2,
+              "skippedTrainingFolds": [
+                1
+              ],
+              "skippedValidationFolds": [],
+              "trainingFoldEvaluable": [
+                false,
+                true,
+                true
+              ],
               "trainingFolds": [
                 20,
                 391,
                 764
+              ],
+              "validationFoldEvaluable": [
+                true,
+                true,
+                true
               ],
               "validationFolds": [
                 371,
@@ -33961,8 +34351,6 @@
           "errors": [
             "overall_bbs_prior_available_below_0.50",
             "overall_v8_f5_available_below_0.40",
-            "train_fold_1_bbs_prior_available_below_0.50",
-            "train_fold_1_bbs_supported_game_floor_not_met",
             "train_fold_1_v8_f5_available_below_0.40",
             "train_fold_2_bbs_prior_available_below_0.50",
             "train_fold_2_v8_f5_available_below_0.40",
@@ -36948,6 +37336,7 @@
               "validation_fold_3_fundamentals_available_below_0.50",
               "validation_fold_3_fundamentals_group_coverage_below_0.50"
             ],
+            "foldEvaluation": {},
             "overall": {
               "fundamentals_available": 0.0,
               "fundamentals_group_coverage": 0.0
@@ -39976,6 +40365,7 @@
               "validation_fold_3_fundamentals_available_below_0.50",
               "validation_fold_3_fundamentals_group_coverage_below_0.50"
             ],
+            "foldEvaluation": {},
             "overall": {
               "fundamentals_available": 0.0,
               "fundamentals_group_coverage": 0.0
@@ -42989,6 +43379,7 @@
               "validation_fold_3_fundamentals_group_coverage_below_0.50",
               "validation_fold_3_v8_f5_available_below_0.40"
             ],
+            "foldEvaluation": {},
             "overall": {
               "fundamentals_available": 0.0,
               "fundamentals_group_coverage": 0.0,
@@ -46031,6 +46422,7 @@
               "validation_fold_3_fundamentals_group_coverage_below_0.50",
               "validation_fold_3_v8_f5_available_below_0.40"
             ],
+            "foldEvaluation": {},
             "overall": {
               "fundamentals_available": 0.0,
               "fundamentals_group_coverage": 0.0,
@@ -49088,6 +49480,7 @@
             "denominators": {},
             "eligible": true,
             "errors": [],
+            "foldEvaluation": {},
             "overall": {},
             "requirements": {},
             "supportCounts": {},
@@ -52053,6 +52446,7 @@
               "validation_fold_2_v8_f5_available_below_0.40",
               "validation_fold_3_v8_f5_available_below_0.40"
             ],
+            "foldEvaluation": {},
             "overall": {
               "v8_available": 1.0,
               "v8_f5_available": 0.0
@@ -55026,6 +55420,7 @@
             },
             "eligible": true,
             "errors": [],
+            "foldEvaluation": {},
             "overall": {
               "v8_available": 1.0
             },
@@ -58012,6 +58407,7 @@
             },
             "eligible": true,
             "errors": [],
+            "foldEvaluation": {},
             "overall": {
               "v8_available": 1.0
             },
@@ -60995,6 +61391,7 @@
               "validation_fold_2_v8_f5_available_below_0.40",
               "validation_fold_3_v8_f5_available_below_0.40"
             ],
+            "foldEvaluation": {},
             "overall": {
               "v8_available": 1.0,
               "v8_f5_available": 0.0
@@ -63701,6 +64098,7 @@
         "denominators": {},
         "eligible": true,
         "errors": [],
+        "foldEvaluation": {},
         "overall": {},
         "requirements": {},
         "supportCounts": {},
@@ -63734,6 +64132,8 @@
       "thresholds": {
         "bbsCoverageDenominator": "bbs_prior_supported",
         "maximumWorstFoldAccuracyRegression": 0.01,
+        "minimumBbsEvaluableTrainingFolds": 2,
+        "minimumBbsEvaluableValidationFolds": 2,
         "minimumBbsPriorCoverage": 0.5,
         "minimumBbsSupportedOverallGames": 500,
         "minimumBbsSupportedTrainingFoldGames": 200,
@@ -63745,20 +64145,24 @@
         "minimumPositiveFoldRatio": 0.6666666666666666,
         "minimumV8FirstFiveCoverage": 0.4,
         "minimumV8MarketCoverage": 0.6,
+        "providerHorizonUnsupportedFoldsCountAsPassing": false,
+        "providerHorizonUnsupportedFoldsFailCoverage": false,
         "v8FullGameRequiresFirstFive": false
       },
-      "version": "MLB-SUPERVISED-SELECTION-GUARD-v2.4-supported-cohort"
+      "version": "MLB-SUPERVISED-SELECTION-GUARD-v2.5-provider-horizon-evaluable-folds"
     },
     "selectionUsedUntouchedAudit": false
   },
   "selectionObjective": {
     "bbsPriorSupportedCohortStartDate": "2026-03-01",
+    "bbsProviderHorizonFoldPolicy": "require_two_evaluable_training_and_validation_folds",
+    "bbsUnsupportedFoldsCountAsPassing": false,
     "calibrationEligibility": {
       "maximumBrierDegradation": 0.005,
       "maximumExpectedCalibrationError": 0.08,
       "maximumLogLossDegradation": 0.01
     },
-    "coverageDenominatorVersion": "MLB-SUPERVISED-SELECTION-GUARD-v2.4-supported-cohort",
+    "coverageDenominatorVersion": "MLB-SUPERVISED-SELECTION-GUARD-v2.5-provider-horizon-evaluable-folds",
     "coverageEligibilityRequired": true,
     "featureBoundariesVersion": "MLB-SUPERVISED-FEATURE-BOUNDARIES-v2.4",
     "featureGroupsVersion": "MLB-SUPERVISED-FEATURE-GROUPS-v2.4-coverage-honest",
@@ -63780,12 +64184,12 @@
       "minimumDailyAccuracy"
     ],
     "productionAuthorityChanged": false,
-    "selectionGuardVersion": "MLB-SUPERVISED-SELECTION-GUARD-v2.4-supported-cohort",
+    "selectionGuardVersion": "MLB-SUPERVISED-SELECTION-GUARD-v2.5-provider-horizon-evaluable-folds",
     "targetGameFundamentalsExcludeBbsPriorGameSnapshots": true,
     "untouchedAuditUsedForSelection": false,
     "v8FullGameCandidateRequiresFirstFive": false,
-    "version": "MLB-SUPERVISED-SHADOW-v2.4-supported-cohort-fullgame-v8"
+    "version": "MLB-SUPERVISED-SHADOW-v2.5-provider-horizon-evaluable-folds"
   },
-  "sourceSha": "e832e5c654407646e7c50adc5f0505e9e2fdb7ac",
-  "version": "MLB-SUPERVISED-SHADOW-v2.4-supported-cohort-fullgame-v8"
+  "sourceSha": "cb8f368b4172341d8a974a5908bdd68d6642288a",
+  "version": "MLB-SUPERVISED-SHADOW-v2.5-provider-horizon-evaluable-folds"
 }
