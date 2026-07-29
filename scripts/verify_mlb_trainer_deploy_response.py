@@ -13,6 +13,12 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 
+# These immutable identities intentionally remain literal in the public entry
+# point because the deployment source stabilizer independently attests them.
+TRAINER_VERSION = "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow"
+EXPERIMENT_ID = "mlb-v2-2026-07-29-future-prospective-r5"
+RELEASE_CUTOFF_UTC = "2026-07-29T04:00:00+00:00"
+
 _CORE_PATH = Path(__file__).with_name("_verify_mlb_trainer_deploy_response_core.py")
 _CORE_GIT_BLOB_SHA1 = "6366c6c0fa36f66654e396c78e6655acfe7728bd"
 
