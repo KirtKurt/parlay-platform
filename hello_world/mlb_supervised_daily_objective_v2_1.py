@@ -1,9 +1,9 @@
 """Stable daily-slate objective for the supervised MLB V8 shadow model.
 
-V2.6 keeps every V2.5 fail-closed calibration, coverage, repeatable-uplift,
-provider-horizon, and market-fallback rule while executing a bounded L2 search
-with identical deterministic shuffles inside each feature-group and chronological-
-fold comparison. It never changes production authority.
+V2.7 preserves every V2.6 fail-closed calibration, coverage, repeatable-uplift,
+provider-horizon, and market-fallback rule while separating target-game point-in-
+time fundamentals from strictly prior-game form snapshots. It never changes
+production authority.
 """
 from __future__ import annotations
 
@@ -14,17 +14,17 @@ try:
     import mlb_supervised_feature_boundaries_v2_4 as feature_boundaries
     import mlb_supervised_feature_groups_v2_4 as feature_groups
     import mlb_supervised_selection_guard_v2_6 as selection_guard
-    import mlb_v8_historical_bbs_overlay_v1 as historical_bbs_overlay
+    import mlb_v8_historical_bbs_overlay_v2 as historical_bbs_overlay
     import mlb_v8_historical_bbs_prior_game_features_v1 as historical_bbs_prior_features
-except ImportError:  # package import used by unit tests
+except ImportError:
     from . import mlb_supervised_feature_interactions_v2_2 as feature_interactions
     from . import mlb_supervised_feature_boundaries_v2_4 as feature_boundaries
     from . import mlb_supervised_feature_groups_v2_4 as feature_groups
     from . import mlb_supervised_selection_guard_v2_6 as selection_guard
-    from . import mlb_v8_historical_bbs_overlay_v1 as historical_bbs_overlay
+    from . import mlb_v8_historical_bbs_overlay_v2 as historical_bbs_overlay
     from . import mlb_v8_historical_bbs_prior_game_features_v1 as historical_bbs_prior_features
 
-VERSION = "MLB-SUPERVISED-SHADOW-v2.6-seed-aligned-regularization-grid"
+VERSION = "MLB-SUPERVISED-SHADOW-v2.7-separated-point-in-time-fundamentals"
 MAX_BRIER_DEGRADATION = 0.005
 MAX_LOG_LOSS_DEGRADATION = 0.010
 MAX_ECE = 0.080
@@ -39,28 +39,17 @@ def _f(value: Any, default: float) -> float:
 
 def calibration_eligible(metrics: Mapping[str, Any], market: Mapping[str, Any]) -> bool:
     return bool(
-        _f(metrics.get("brierScore"), 1.0)
-        <= _f(market.get("brierScore"), 1.0) + MAX_BRIER_DEGRADATION
-        and _f(metrics.get("logLoss"), 10.0)
-        <= _f(market.get("logLoss"), 10.0) + MAX_LOG_LOSS_DEGRADATION
+        _f(metrics.get("brierScore"), 1.0) <= _f(market.get("brierScore"), 1.0) + MAX_BRIER_DEGRADATION
+        and _f(metrics.get("logLoss"), 10.0) <= _f(market.get("logLoss"), 10.0) + MAX_LOG_LOSS_DEGRADATION
         and _f(metrics.get("expectedCalibrationError"), 1.0) <= MAX_ECE
     )
 
 
-def daily_objective_key(
-    metrics: Mapping[str, Any], market: Mapping[str, Any]
-) -> Tuple[float, ...]:
-    """Return a lower-is-better key aligned to repeatable predictive edge."""
+def daily_objective_key(metrics: Mapping[str, Any], market: Mapping[str, Any]) -> Tuple[float, ...]:
     eligible_penalty = 0.0 if calibration_eligible(metrics, market) else 1.0
-    overall_uplift = _f(metrics.get("overallAccuracy"), 0.0) - _f(
-        market.get("overallAccuracy"), 0.0
-    )
-    mean_daily_uplift = _f(metrics.get("meanDailyAccuracy"), 0.0) - _f(
-        market.get("meanDailyAccuracy"), 0.0
-    )
-    pass_rate_uplift = _f(metrics.get("dailyPassRate"), 0.0) - _f(
-        market.get("dailyPassRate"), 0.0
-    )
+    overall_uplift = _f(metrics.get("overallAccuracy"), 0.0) - _f(market.get("overallAccuracy"), 0.0)
+    mean_daily_uplift = _f(metrics.get("meanDailyAccuracy"), 0.0) - _f(market.get("meanDailyAccuracy"), 0.0)
+    pass_rate_uplift = _f(metrics.get("dailyPassRate"), 0.0) - _f(market.get("dailyPassRate"), 0.0)
     return (
         eligible_penalty,
         -overall_uplift,
@@ -76,7 +65,7 @@ def daily_objective_key(
 
 
 def install(model_module: Any) -> Any:
-    if getattr(model_module, "_INQSI_MLB_DAILY_OBJECTIVE_V2_6_INSTALLED", False):
+    if getattr(model_module, "_INQSI_MLB_DAILY_OBJECTIVE_V2_7_INSTALLED", False):
         return model_module
     feature_module = getattr(model_module, "features", None)
     if feature_module is not None:
@@ -84,8 +73,6 @@ def install(model_module: Any) -> Any:
         feature_boundaries.install_features(feature_module)
         historical_bbs_prior_features.install(feature_module)
         feature_groups.install(feature_module)
-    # Some contract tests intentionally provide only model-selection attributes.
-    # Install the training overlay and selection guard only when a trainer exists.
     if callable(getattr(model_module, "train_and_evaluate", None)):
         historical_bbs_overlay.install(model_module)
     model_module._config_key = daily_objective_key
@@ -122,6 +109,8 @@ def install(model_module: Any) -> Any:
         "featureGroupsVersion": feature_groups.VERSION,
         "featureBoundariesVersion": feature_boundaries.VERSION,
         "targetGameFundamentalsExcludeBbsPriorGameSnapshots": True,
+        "targetGameFundamentalsPointer": historical_bbs_overlay.TARGET_POINTER_PK,
+        "priorGameFormPointer": historical_bbs_overlay.PRIOR_POINTER_PK,
         "foldStabilityRequired": True,
         "marketBaselineFallbackEnabled": True,
         "featureInteractionVersion": feature_interactions.VERSION,
@@ -138,4 +127,5 @@ def install(model_module: Any) -> Any:
     model_module._INQSI_MLB_DAILY_OBJECTIVE_V2_4_INSTALLED = True
     model_module._INQSI_MLB_DAILY_OBJECTIVE_V2_5_INSTALLED = True
     model_module._INQSI_MLB_DAILY_OBJECTIVE_V2_6_INSTALLED = True
+    model_module._INQSI_MLB_DAILY_OBJECTIVE_V2_7_INSTALLED = True
     return model_module
