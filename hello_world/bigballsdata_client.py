@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -17,6 +18,7 @@ DEFAULT_MAX_ATTEMPTS = 1
 ALLOWED_MLB_RESOURCES = {
     "pitchers", "bullpens", "lineups", "injuries", "team_context", "weather", "park"
 }
+_SAFE_QUERY_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 
 
 class BBSClientError(RuntimeError):
@@ -51,6 +53,13 @@ def resolve_api_key(api_key: Optional[str] = None, *, secret_arn: Optional[str] 
     if not arn:
         raise BBSClientError("BBS_CREDENTIAL_NOT_CONFIGURED")
     return _secret_value(str(arn), secrets_client=secrets_client)
+
+
+def _historical_as_of_param() -> str:
+    value = str(os.environ.get("BBS_HISTORICAL_AS_OF_PARAM", "as_of") or "as_of").strip()
+    if not _SAFE_QUERY_NAME.fullmatch(value):
+        raise BBSClientError("BBS_HISTORICAL_AS_OF_PARAM_INVALID")
+    return value
 
 
 class BigBallsDataClient:
@@ -88,7 +97,7 @@ class BigBallsDataClient:
         request = urllib.request.Request(url, headers={
             "Accept": "application/json",
             "Authorization": f"Bearer {self._api_key}",
-            "User-Agent": "inqsi-mlb-bbs-shadow/2.0",
+            "User-Agent": "inqsi-mlb-bbs-shadow/2.1",
         }, method="GET")
         last_error = "BBS_REQUEST_FAILED"
         for attempt in range(1, self._max_attempts + 1):
@@ -131,28 +140,44 @@ class BigBallsDataClient:
                 break
         raise BBSTransientError(last_error)
 
+    @staticmethod
+    def _transport(headers: Dict[str, str], *, requested_date: Optional[str], requested_as_of: Optional[str]) -> Dict[str, Any]:
+        return {
+            "rateLimit": headers.get("x-ratelimit-limit"),
+            "rateRemaining": headers.get("x-ratelimit-remaining"),
+            "rateReset": headers.get("x-ratelimit-reset"),
+            "requestedDate": requested_date,
+            "requestedAsOfUtc": requested_as_of,
+        }
+
     def account(self) -> Dict[str, Any]:
         payload, _ = self._request("/v1/user/me")
         if not isinstance(payload.get("data"), dict):
             raise BBSClientError("BBS_ACCOUNT_DATA_INVALID")
         return payload
 
-    def list_mlb_matches(self, game_date: str, *, limit: int = 50) -> Dict[str, Any]:
-        payload, headers = self._request("/v1/matches", {
+    def list_mlb_matches(self, game_date: str, *, limit: int = 50, as_of: Optional[str] = None) -> Dict[str, Any]:
+        params: Dict[str, Any] = {
             "sport": "baseball", "league": "mlb", "date": game_date,
             "limit": min(max(int(limit), 1), 200),
-        })
+        }
+        if as_of:
+            params[_historical_as_of_param()] = as_of
+        payload, headers = self._request("/v1/matches", params)
         if not isinstance(payload.get("data"), list):
             raise BBSClientError("BBS_MLB_MATCH_DATA_INVALID")
         out = dict(payload)
-        out["_transport"] = {
-            "rateLimit": headers.get("x-ratelimit-limit"),
-            "rateRemaining": headers.get("x-ratelimit-remaining"),
-            "rateReset": headers.get("x-ratelimit-reset"),
-        }
+        out["_transport"] = self._transport(headers, requested_date=game_date, requested_as_of=as_of)
         return out
 
-    def get_mlb_match_resource(self, match_id: str, resource: str, *, game_date: Optional[str] = None) -> Dict[str, Any]:
+    def get_mlb_match_resource(
+        self,
+        match_id: str,
+        resource: str,
+        *,
+        game_date: Optional[str] = None,
+        as_of: Optional[str] = None,
+    ) -> Dict[str, Any]:
         name = str(resource).strip().lower()
         if name not in ALLOWED_MLB_RESOURCES:
             raise BBSClientError("BBS_MLB_RESOURCE_UNSUPPORTED")
@@ -162,7 +187,12 @@ class BigBallsDataClient:
         env_name = f"BBS_MLB_{name.upper()}_PATH"
         template = os.environ.get(env_name, "/v1/matches/{match_id}/{resource}")
         path = template.format(match_id=safe_id, resource=urllib.parse.quote(name, safe=""))
-        payload, _ = self._request(path, {"sport": "baseball", "league": "mlb", "date": game_date})
+        params: Dict[str, Any] = {"sport": "baseball", "league": "mlb", "date": game_date}
+        if as_of:
+            params[_historical_as_of_param()] = as_of
+        payload, headers = self._request(path, params)
         if not isinstance(payload.get("data"), (dict, list)):
             raise BBSClientError(f"BBS_MLB_{name.upper()}_DATA_INVALID")
-        return payload
+        out = dict(payload)
+        out["_transport"] = self._transport(headers, requested_date=game_date, requested_as_of=as_of)
+        return out
