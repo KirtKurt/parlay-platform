@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       enable_schedule_after_canary:
-        description: Enable the 15-minute schedule after a successful provider canary
+        description: Enable the 15-minute schedule only after a successful provider-resource canary
         required: true
-        default: 'true'
+        default: 'false'
         type: choice
         options: ['true', 'false']
   push:
@@ -54,8 +54,8 @@ jobs:
           BBS_API_SECRET_ARN: ${{ secrets.BBS_API_SECRET_ARN }}
         run: |
           set -euo pipefail
-          sam validate --lint --template-file mlb_v8_fundamentals/template.yaml || sam validate --template-file mlb_v8_fundamentals/template.yaml
-          sam build --template-file mlb_v8_fundamentals/template.yaml
+          sam validate --lint --template-file mlb_v8_fundamentals/template.yaml
+          sam build --no-cached --template-file mlb_v8_fundamentals/template.yaml
           sam deploy \
             --stack-name "$STACK_NAME" \
             --region "$AWS_REGION_VALUE" \
@@ -67,14 +67,16 @@ jobs:
               BbsApiSecretArn="$BBS_API_SECRET_ARN" \
               DeployGitSha="${GITHUB_SHA}" \
               FundamentalsScheduleEnabled=false
-      - name: Invoke live provider canary and verify payload
+      - name: Invoke live provider canary and verify all required resource feeds
         id: canary
         run: |
           set -euo pipefail
           function_name=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='FundamentalsCollectorFunctionName'].OutputValue" --output text)
-          test -n "$function_name"
+          bucket_name=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='FundamentalsArtifactsBucketName'].OutputValue" --output text)
+          test -n "$function_name"; test "$function_name" != None
+          test -n "$bucket_name"; test "$bucket_name" != None
           aws lambda invoke --function-name "$function_name" --region "$AWS_REGION_VALUE" --payload '{"mode":"manual_canary"}' --cli-binary-format raw-in-base64-out /tmp/v8-fundamentals-canary.json >/tmp/v8-fundamentals-invoke.json
-          python - <<'PY'
+          artifact_key=$(python - <<'PY'
           import json
           from pathlib import Path
           value=json.loads(Path('/tmp/v8-fundamentals-canary.json').read_text())
@@ -83,11 +85,29 @@ jobs:
           assert value.get('productionV7Unchanged') is True, value
           assert value.get('fingerprint'), value
           assert value.get('artifactKey'), value
-          assert int(value.get('gameCount') or 0) >= 0, value
-          print(json.dumps(value, indent=2, sort_keys=True))
+          assert int(value.get('gameCount') or 0) > 0, 'canary returned no MLB games; provider coverage is unproven'
+          print(value['artifactKey'])
           PY
-      - name: Enable 15-minute schedule after successful canary
-        if: ${{ github.event_name == 'push' || inputs.enable_schedule_after_canary == 'true' }}
+          )
+          aws s3 cp "s3://${bucket_name}/${artifact_key}" /tmp/v8-fundamentals-artifact.json --region "$AWS_REGION_VALUE"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          value=json.loads(Path('/tmp/v8-fundamentals-artifact.json').read_text())
+          required={'pitchers','bullpens','lineups','injuries','team_context'}
+          games=value.get('games') or []
+          assert games, 'artifact contains no games'
+          fully_available=[]
+          for game in games:
+              evidence=game.get('providerEvidence') or {}
+              available={name for name in required if (evidence.get(name) or {}).get('available') is True}
+              if available == required:
+                  fully_available.append(game.get('matchId'))
+          assert fully_available, 'no game proved all required provider resource endpoints available'
+          print(json.dumps({'gameCount':len(games),'fullyAvailableGameCount':len(fully_available),'fullyAvailableMatchIds':fully_available},indent=2,sort_keys=True))
+          PY
+      - name: Enable 15-minute schedule only after explicit manual authorization
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_schedule_after_canary == 'true' }}
         env:
           BBS_API_SECRET_ARN: ${{ secrets.BBS_API_SECRET_ARN }}
         run: |
@@ -110,5 +130,6 @@ jobs:
           path: |
             /tmp/v8-fundamentals-canary.json
             /tmp/v8-fundamentals-invoke.json
+            /tmp/v8-fundamentals-artifact.json
           retention-days: 90
           if-no-files-found: warn
