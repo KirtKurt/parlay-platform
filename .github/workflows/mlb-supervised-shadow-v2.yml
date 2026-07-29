@@ -1,290 +1,192 @@
-name: MLB Supervised Shadow V2
+name: MLB V8 Source And Enforcement Normalizer
 
 "on":
-  workflow_dispatch:
   pull_request:
-    paths:
-      - 'hello_world/mlb_supervised_*.py'
-      - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
-      - 'scripts/run_mlb_supervised_shadow_v2.py'
-      - 'scripts/guard_mlb_v8_shadow_report.py'
-      - 'tests/unit/test_mlb_supervised_shadow_v2.py'
-      - 'tests/unit/test_mlb_supervised_daily_objective_v2_1.py'
-      - 'tests/unit/test_guard_mlb_v8_shadow_report.py'
-      - '.github/workflows/mlb-supervised-shadow-v2.yml'
-  push:
     branches: [main]
     paths:
-      - 'hello_world/mlb_supervised_*.py'
-      - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
-      - 'scripts/run_mlb_supervised_shadow_v2.py'
-      - 'scripts/guard_mlb_v8_shadow_report.py'
-      - 'tests/unit/test_mlb_supervised_shadow_v2.py'
-      - 'tests/unit/test_mlb_supervised_daily_objective_v2_1.py'
-      - 'tests/unit/test_guard_mlb_v8_shadow_report.py'
       - '.github/workflows/mlb-supervised-shadow-v2.yml'
 
 permissions:
   contents: write
 
 concurrency:
-  group: mlb-supervised-shadow-v2
+  group: mlb-v8-source-normalizer-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
-env:
-  STACK_NAME: parlay-platform-mlb-historical-optimizer
-  REPORT_PATH: runtime_reports/mlb_supervised_shadow_v2_latest.json
-  EXPECTED_FEATURE_DATASET: MLB-HISTORICAL-FEATURE-DATASET-v8-supervised-trainable
-
 jobs:
-  validate:
+  normalize:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Compile and test supervised architecture
-        run: |
-          set -euo pipefail
-          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
-          python -m py_compile \
-            hello_world/mlb_supervised_features_v2.py \
-            hello_world/mlb_supervised_model_v2.py \
-            hello_world/mlb_supervised_daily_objective_v2_1.py \
-            hello_world/mlb_supervised_v8_dataset_patch_v1.py \
-            hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py \
-            scripts/run_mlb_supervised_shadow_v2.py \
-            scripts/guard_mlb_v8_shadow_report.py
-          PYTHONPATH=hello_world python -m pytest -q --tb=short \
-            tests/unit/test_mlb_supervised_shadow_v2.py \
-            tests/unit/test_mlb_supervised_daily_objective_v2_1.py \
-            tests/unit/test_guard_mlb_v8_shadow_report.py \
-            tests/unit/test_mlb_historical_v7_status_bypass.py \
-            tests/unit/test_mlb_historical_feature_rematerialization_v1.py \
-            tests/unit/test_mlb_odds_market_expansion_v8.py
-          grep -Fq 'authority": "SHADOW_ONLY"' hello_world/mlb_supervised_model_v2.py
-          grep -Fq 'productionPromotionEligible": False' hello_world/mlb_supervised_model_v2.py
-          grep -Fq 'sameSlateOutcomeFeaturesProhibited' hello_world/mlb_supervised_v8_dataset_patch_v1.py
-          grep -Fq 'productionAuthorityChanged": False' hello_world/mlb_supervised_daily_objective_v2_1.py
-
-  evaluate-aws:
-    if: github.event_name != 'pull_request'
-    needs: validate
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Verify deployed evidence dataset and complete no-cost rematerialization
-        id: rematerialize
-        continue-on-error: true
-        env:
-          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
-          AWS_EC2_METADATA_DISABLED: 'true'
-        run: |
-          set -o pipefail
-          python -m pip install --quiet 'boto3>=1.34,<2'
-          python - <<'PY' 2>&1 | tee /tmp/mlb-supervised-v2-rematerialization.log
-          import json, os, time
-          from datetime import datetime, timezone
-          from pathlib import Path
-          import boto3
-
-          region=os.environ['AWS_REGION_VALUE']
-          expected_dataset=os.environ['EXPECTED_FEATURE_DATASET']
-          model_source_sha=os.environ['GITHUB_SHA']
-          cf=boto3.client('cloudformation',region_name=region)
-          lam=boto3.client('lambda',region_name=region)
-          outputs={str(x.get('OutputKey')):str(x.get('OutputValue')) for x in (cf.describe_stacks(StackName=os.environ['STACK_NAME']).get('Stacks') or [])[0].get('Outputs') or []}
-          function_name=outputs.get('HistoricalOptimizerFunctionName')
-          if not function_name:
-              raise RuntimeError('historical optimizer function output missing')
-          progress=[]
-
-          def invoke(payload):
-              response=lam.invoke(FunctionName=function_name,InvocationType='RequestResponse',Payload=json.dumps(payload,separators=(',',':')).encode())
-              value=json.loads(response['Payload'].read().decode())
-              if response.get('FunctionError'):
-                  raise RuntimeError(f"lambda_function_error:{response.get('FunctionError')}:{value}")
-              return value
-
-          # The shadow model executes from this exact checked-out commit on the
-          # runner. Only the immutable evidence schema must be deployed. Requiring
-          # Lambda's deploy SHA to equal every model-only commit caused a permanent
-          # wait even though model code has no production authority.
-          deadline=time.monotonic()+900
-          attempt=0
-          while time.monotonic()<deadline:
-              attempt+=1
-              config=lam.get_function_configuration(FunctionName=function_name)
-              env=(config.get('Environment') or {}).get('Variables') or {}
-              deployed_sha=env.get('INQSI_DEPLOY_GIT_SHA')
-              if config.get('Handler')!='mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler':
-                  progress.append({'attempt':attempt,'status':'WAITING_FOR_HANDLER','handler':config.get('Handler'),'atUtc':datetime.now(timezone.utc).isoformat()})
-                  time.sleep(15)
-                  continue
-              status=invoke({'mode':'status','run':f'supervised_v2_status_{attempt}'})
-              state=status.get('state') or {}
-              complete=(state.get('featureRematerializationComplete') is True and state.get('featureDatasetVersion')==expected_dataset and not state.get('featureRematerializationErrors'))
-              progress.append({'attempt':attempt,'status':status.get('status') or state.get('phase'),'modelSourceSha':model_source_sha,'deployedEvidenceSha':deployed_sha,'featureDatasetVersion':state.get('featureDatasetVersion'),'rematerialized':state.get('featureRematerializedSlateCount'),'total':state.get('featureRematerializationTotalSlateCount'),'complete':complete,'atUtc':datetime.now(timezone.utc).isoformat()})
-              if complete:
-                  Path('/tmp/supervised-rematerialization-progress.json').write_text(json.dumps({'functionName':function_name,'modelSourceSha':model_source_sha,'deployedEvidenceSha':deployed_sha,'progress':progress[-40:],'finalState':state},indent=2,sort_keys=True)+'\n')
-                  break
-              value=invoke({'mode':'orchestrate','run':f'supervised_v2_rematerialize_{os.environ["GITHUB_RUN_ID"]}_{attempt}'})
-              if value.get('ok') is not True:
-                  raise RuntimeError(f'rematerialization_orchestration_failed:{value}')
-              time.sleep(3 if value.get('status')!='LEASE_HELD' else 12)
-          else:
-              Path('/tmp/supervised-rematerialization-progress.json').write_text(json.dumps({'functionName':function_name,'modelSourceSha':model_source_sha,'progress':progress[-40:]},indent=2,sort_keys=True)+'\n')
-              raise TimeoutError('supervised V8 evidence rematerialization did not complete within 15 minutes')
-          PY
-          status=${PIPESTATUS[0]}
-          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
-          exit "$status"
-
-      - name: Evaluate immutable historical data
-        id: evaluation
-        if: steps.rematerialize.outcome == 'success'
-        continue-on-error: true
-        env:
-          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
-          AWS_EC2_METADATA_DISABLED: 'true'
-          PYTHONPATH: hello_world
-        run: |
-          set -o pipefail
-          mkdir -p runtime_reports
-          rm -f "$REPORT_PATH"
-          python scripts/run_mlb_supervised_shadow_v2.py \
-            --region "$AWS_REGION_VALUE" \
-            --stack-name "$STACK_NAME" \
-            --table-name parlay_platform_snapshots \
-            --output "$REPORT_PATH" \
-            2>&1 | tee /tmp/mlb-supervised-shadow-v2-summary.json
-          status=${PIPESTATUS[0]}
-          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
-          exit "$status"
-
-      - name: Ensure durable supervised evidence exists
-        if: always()
-        env:
-          REMATERIALIZE_OUTCOME: ${{ steps.rematerialize.outcome }}
-          REMATERIALIZE_EXIT_CODE: ${{ steps.rematerialize.outputs.exit_code }}
-          EVALUATION_OUTCOME: ${{ steps.evaluation.outcome }}
-          EVALUATION_EXIT_CODE: ${{ steps.evaluation.outputs.exit_code }}
-        run: |
-          set -euo pipefail
-          mkdir -p runtime_reports
-          if test ! -s "$REPORT_PATH"; then
-            python - <<'PY'
-          import json, os
-          from datetime import datetime, timezone
-          from pathlib import Path
-
-          def tail(path):
-              value=Path(path)
-              return value.read_text(errors='replace')[-16000:] if value.exists() else ''
-
-          progress=None
-          if Path('/tmp/supervised-rematerialization-progress.json').exists():
-              progress=json.loads(Path('/tmp/supervised-rematerialization-progress.json').read_text())
-          blockers=[]
-          if os.environ.get('REMATERIALIZE_OUTCOME')!='success':
-              blockers.append('rematerialization_or_evidence_schema_verification_failed')
-          if os.environ.get('EVALUATION_OUTCOME')!='success':
-              blockers.append('supervised_evaluation_failed_or_skipped')
-          value={
-              'proofType':'MLB_SUPERVISED_SHADOW_V2_EVIDENCE',
-              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
-              'sourceSha':os.environ['GITHUB_SHA'],
-              'runId':os.environ['GITHUB_RUN_ID'],
-              'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
-              'authority':'SHADOW_ONLY',
-              'productionAuthorityChanged':False,
-              'automaticWagerAllowed':False,
-              'productionPromotionEligible':False,
-              'rematerializationOutcome':os.environ.get('REMATERIALIZE_OUTCOME'),
-              'rematerializationExitCode':os.environ.get('REMATERIALIZE_EXIT_CODE'),
-              'evaluationOutcome':os.environ.get('EVALUATION_OUTCOME'),
-              'evaluationExitCode':os.environ.get('EVALUATION_EXIT_CODE'),
-              'rematerializationProgress':progress,
-              'rematerializationLogTail':tail('/tmp/mlb-supervised-v2-rematerialization.log'),
-              'evaluationLogTail':tail('/tmp/mlb-supervised-shadow-v2-summary.json'),
-              'blockers':blockers,
-              'ok':False,
-          }
-          Path(os.environ['REPORT_PATH']).write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
-          PY
-          fi
-          python -m json.tool "$REPORT_PATH" >/dev/null
-
-      - name: Enforce shadow safety and complete evaluation
-        if: always()
+      - name: Normalize V8 verifier and publisher enforcement
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json
+          import hashlib
           from pathlib import Path
-          value=json.loads(Path('runtime_reports/mlb_supervised_shadow_v2_latest.json').read_text())
-          assert value.get('ok') is True, value
-          assert value.get('authority') == 'SHADOW_ONLY', value
-          assert value.get('productionAuthorityChanged') is False, value
-          assert value.get('automaticWagerAllowed') is False, value
-          assert value.get('productionPromotionEligible') is False, value
-          assert int(value.get('recordCountLoaded') or 0) >= 1400, value
-          assert (value.get('selection') or {}).get('selectionUsedUntouchedAudit') is False, value
-          assert (value.get('selectionObjective') or {}).get('productionAuthorityChanged') is False, value
-          assert float((value.get('featureCoverage') or {}).get('strictlyPastTeamHistory') or 0) > 0.80, value
-          assert float((value.get('featureCoverage') or {}).get('v8Any') or 0) > 0.80, value
-          assert (value.get('metrics') or {}).get('walkForward'), value
-          assert (value.get('metrics') or {}).get('untouchedAudit'), value
-          assert not value.get('blockers'), value
+
+          def git_blob_sha1(body: bytes) -> str:
+              header = f"blob {len(body)}\0".encode("ascii")
+              return hashlib.sha1(header + body).hexdigest()
+
+          verifier_core = Path("scripts/_verify_mlb_trainer_deploy_response_core.py")
+          verifier_body = verifier_core.read_bytes()
+          assert git_blob_sha1(verifier_body) == "6366c6c0fa36f66654e396c78e6655acfe7728bd"
+          verifier_text = verifier_body.decode("utf-8")
+          old = (
+              '    if status_after.get("runtimeAuthorityActivationAvailable") is not True:\n'
+              '        errors.append("runtime_authority_activation_not_available")\n'
+          )
+          new = (
+              '    if status_after.get("manualReviewCreatesShadowApprovalOnly") is not True:\n'
+              '        errors.append("manual_review_shadow_only_contract_missing")\n'
+              '    if status_after.get("runtimeAuthorityActivationAvailable") is not False:\n'
+              '        errors.append("runtime_authority_activation_must_remain_unavailable")\n'
+          )
+          assert verifier_text.count(old) == 1
+          Path("scripts/verify_mlb_trainer_deploy_response.py").write_text(
+              verifier_text.replace(old, new), encoding="utf-8"
+          )
+
+          test_core = Path("tests/unit/_test_mlb_trainer_deploy_response_core.py")
+          test_body = test_core.read_bytes()
+          assert git_blob_sha1(test_body) == "3f0a60ec4a47fcc71c611a04e29d60905e72d873"
+          test_text = test_body.decode("utf-8")
+          old_fixture = (
+              '        "firstPromotionRequiresManualReview": True,\n'
+              '        "v2InferenceConsumerInstalled": False,\n'
+              '        "runtimeAuthorityActivationAvailable": True,\n'
+          )
+          new_fixture = (
+              '        "firstPromotionRequiresManualReview": True,\n'
+              '        "manualReviewCreatesShadowApprovalOnly": True,\n'
+              '        "v2InferenceConsumerInstalled": False,\n'
+              '        "runtimeAuthorityActivationAvailable": False,\n'
+          )
+          assert test_text.count(old_fixture) == 1
+          test_text = test_text.replace(old_fixture, new_fixture)
+          test_text += '''\n\n
+def test_rejects_runtime_authority_activation_exposure() -> None:
+    training, selection, after = _payloads()
+    after["runtimeAuthorityActivationAvailable"] = True
+
+    assert "runtime_authority_activation_must_remain_unavailable" in _verify(
+        training, selection, after
+    )
+
+
+def test_rejects_missing_shadow_only_manual_review_attestation() -> None:
+    training, selection, after = _payloads()
+    after["manualReviewCreatesShadowApprovalOnly"] = False
+
+    assert "manual_review_shadow_only_contract_missing" in _verify(
+        training, selection, after
+    )
+'''
+          Path("tests/unit/test_mlb_trainer_deploy_response.py").write_text(
+              test_text, encoding="utf-8"
+          )
+          verifier_core.unlink()
+          test_core.unlink()
+
+          recurring = Path(".github/workflows/mlb-supervised-shadow-v2-recurring.yml")
+          recurring_text = recurring.read_text(encoding="utf-8")
+          old_recurring = "value=json.loads(Path(os.environ['REPORT_PATH']).read_text())"
+          assert recurring_text.count(old_recurring) == 2
+          prefix, separator, suffix = recurring_text.rpartition(old_recurring)
+          assert separator
+          recurring.write_text(
+              prefix
+              + "value=json.loads(Path('/tmp/mlb-supervised-shadow-v2.json').read_text())"
+              + suffix,
+              encoding="utf-8",
+          )
+
+          immediate = Path(".github/workflows/mlb-supervised-v2-immediate-eval-once.yml")
+          immediate_text = immediate.read_text(encoding="utf-8")
+          old_immediate = (
+              "value=json.loads(Path('runtime_reports/"
+              "mlb_supervised_shadow_v2_latest.json').read_text())"
+          )
+          assert immediate_text.count(old_immediate) == 1
+          immediate.write_text(
+              immediate_text.replace(
+                  old_immediate,
+                  "value=json.loads(Path('/tmp/mlb-supervised-v2-immediate-report.json').read_text())",
+              ),
+              encoding="utf-8",
+          )
+
+          v9 = Path(".github/workflows/mlb-v9-event-id-direct-recovery-once.yml")
+          v9_text = v9.read_text(encoding="utf-8")
+          old_recovery = (
+              "recovery=json.loads(Path('runtime_reports/"
+              "mlb_v9_event_id_recovery_latest.json').read_text())"
+          )
+          old_shadow = (
+              "shadow=json.loads(Path('runtime_reports/"
+              "mlb_supervised_shadow_v2_latest.json').read_text())"
+          )
+          assert v9_text.count(old_recovery) == 1
+          assert v9_text.count(old_shadow) == 1
+          v9_text = v9_text.replace(
+              old_recovery,
+              "recovery=json.loads(Path('/tmp/mlb-v9-recovery-report.json').read_text())",
+          ).replace(
+              old_shadow,
+              "shadow=json.loads(Path('/tmp/mlb-v9-shadow-report.json').read_text())",
+          )
+          v9.write_text(v9_text, encoding="utf-8")
           PY
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mlb-supervised-shadow-v2-${{ github.run_id }}
-          path: |
-            runtime_reports/mlb_supervised_shadow_v2_latest.json
-            /tmp/mlb-supervised-shadow-v2-summary.json
-            /tmp/supervised-rematerialization-progress.json
-            /tmp/mlb-supervised-v2-rematerialization.log
-          retention-days: 90
-          if-no-files-found: warn
-
-      - name: Publish durable supervised shadow evidence
-        if: always()
+      - name: Verify normalized V8 contracts
         run: |
           set -euo pipefail
-          test -s "$REPORT_PATH"
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
+          python -m py_compile \
+            scripts/verify_mlb_trainer_deploy_response.py \
+            scripts/guard_mlb_v8_shadow_report.py
+          PYTHONPATH=hello_world:. python -m pytest -q --tb=short \
+            tests/unit/test_mlb_trainer_deploy_response.py \
+            tests/unit/test_guard_mlb_v8_shadow_report.py \
+            tests/unit/test_mlb_v8_shadow_report_publishers.py
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          for path in (
+              '.github/workflows/mlb-supervised-shadow-v2-recurring.yml',
+              '.github/workflows/mlb-supervised-v2-immediate-eval-once.yml',
+              '.github/workflows/mlb-v9-event-id-direct-recovery-once.yml',
+          ):
+              value = yaml.safe_load(Path(path).read_text(encoding='utf-8'))
+              assert isinstance(value, dict), path
+          PY
+          test ! -e scripts/_verify_mlb_trainer_deploy_response_core.py
+          test ! -e tests/unit/_test_mlb_trainer_deploy_response_core.py
+          grep -Fq 'runtime_authority_activation_must_remain_unavailable' scripts/verify_mlb_trainer_deploy_response.py
+          grep -Fq 'manual_review_shadow_only_contract_missing' scripts/verify_mlb_trainer_deploy_response.py
+          grep -Fq "Path('/tmp/mlb-supervised-shadow-v2.json')" .github/workflows/mlb-supervised-shadow-v2-recurring.yml
+          grep -Fq "Path('/tmp/mlb-supervised-v2-immediate-report.json')" .github/workflows/mlb-supervised-v2-immediate-eval-once.yml
+          grep -Fq "Path('/tmp/mlb-v9-shadow-report.json')" .github/workflows/mlb-v9-event-id-direct-recovery-once.yml
+      - name: Commit normalized V8 source
+        run: |
+          set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          cp "$REPORT_PATH" /tmp/mlb-supervised-shadow-v2.json
-          for attempt in 1 2 3 4 5; do
-            git fetch origin main
-            git checkout -B mlb-supervised-shadow-proof origin/main
-            mkdir -p runtime_reports
-            python scripts/guard_mlb_v8_shadow_report.py \
-              --incoming /tmp/mlb-supervised-shadow-v2.json \
-              --destination "$REPORT_PATH"
-            git add "$REPORT_PATH"
-            git diff --cached --quiet && exit 0
-            git commit -m 'Publish MLB supervised shadow V2 evidence'
-            git push origin HEAD:main && exit 0
-            sleep $((attempt * 3))
-          done
-          exit 1
+          git add -A -- \
+            scripts/verify_mlb_trainer_deploy_response.py \
+            scripts/_verify_mlb_trainer_deploy_response_core.py \
+            tests/unit/test_mlb_trainer_deploy_response.py \
+            tests/unit/_test_mlb_trainer_deploy_response_core.py \
+            .github/workflows/mlb-supervised-shadow-v2-recurring.yml \
+            .github/workflows/mlb-supervised-v2-immediate-eval-once.yml \
+            .github/workflows/mlb-v9-event-id-direct-recovery-once.yml
+          git diff --cached --check
+          git commit -m 'Normalize V8 shadow contracts and current-run enforcement'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
