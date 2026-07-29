@@ -21,6 +21,7 @@ name: MLB Supervised Shadow V2 Recurring
       - 'hello_world/mlb_supervised_selection_guard_v2_3.py'
       - 'hello_world/mlb_supervised_selection_guard_v2_4.py'
       - 'hello_world/mlb_supervised_selection_guard_v2_5.py'
+      - 'hello_world/mlb_supervised_selection_guard_v2_6.py'
       - 'hello_world/mlb_v8_historical_bbs_overlay_v1.py'
       - 'hello_world/mlb_v8_historical_bbs_prior_game_v1.py'
       - 'hello_world/mlb_v8_historical_bbs_prior_game_features_v1.py'
@@ -33,6 +34,7 @@ name: MLB Supervised Shadow V2 Recurring
       - 'tests/unit/test_mlb_supervised_selection_guard_v2_3.py'
       - 'tests/unit/test_mlb_supervised_selection_guard_v2_4.py'
       - 'tests/unit/test_mlb_supervised_selection_guard_v2_5.py'
+      - 'tests/unit/test_mlb_supervised_selection_guard_v2_6.py'
       - 'tests/unit/test_mlb_v8_historical_bbs_overlay_v1.py'
       - 'tests/unit/test_mlb_v8_historical_bbs_prior_game_v1.py'
       - 'tests/unit/test_mlb_v8_historical_bbs_prior_game_features_v1.py'
@@ -89,6 +91,7 @@ jobs:
             hello_world/mlb_supervised_selection_guard_v2_3.py \
             hello_world/mlb_supervised_selection_guard_v2_4.py \
             hello_world/mlb_supervised_selection_guard_v2_5.py \
+            hello_world/mlb_supervised_selection_guard_v2_6.py \
             hello_world/mlb_v8_historical_bbs_overlay_v1.py \
             hello_world/mlb_v8_historical_bbs_prior_game_v1.py \
             hello_world/mlb_v8_historical_bbs_prior_game_features_v1.py
@@ -101,6 +104,7 @@ jobs:
             tests/unit/test_mlb_supervised_selection_guard_v2_3.py \
             tests/unit/test_mlb_supervised_selection_guard_v2_4.py \
             tests/unit/test_mlb_supervised_selection_guard_v2_5.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_6.py \
             tests/unit/test_mlb_v8_historical_bbs_overlay_v1.py \
             tests/unit/test_mlb_v8_historical_bbs_prior_game_v1.py \
             tests/unit/test_mlb_v8_historical_bbs_prior_game_features_v1.py \
@@ -184,14 +188,20 @@ jobs:
           selection=value.get('selection') or {}
           assert selection.get('selectionUsedUntouchedAudit') is False, value
           guard=selection.get('selectionGuard') or {}
-          assert guard.get('version') == 'MLB-SUPERVISED-SELECTION-GUARD-v2.5-provider-horizon-evaluable-folds', guard
+          assert guard.get('version') == 'MLB-SUPERVISED-SELECTION-GUARD-v2.6-seed-aligned-regularization-grid', guard
           thresholds=guard.get('thresholds') or {}
           assert int(thresholds.get('minimumBbsEvaluableTrainingFolds') or 0) == 2, thresholds
           assert int(thresholds.get('minimumBbsEvaluableValidationFolds') or 0) == 2, thresholds
           assert thresholds.get('providerHorizonUnsupportedFoldsCountAsPassing') is False, thresholds
+          assert thresholds.get('regularizationComparisonSeedAligned') is True, thresholds
+          assert thresholds.get('regularizationGridBounded') is True, thresholds
+          assert len(thresholds.get('regularizationGrid') or []) == 8, thresholds
           objective=value.get('selectionObjective') or {}
           assert objective.get('bbsProviderHorizonFoldPolicy') == 'require_two_evaluable_training_and_validation_folds', objective
           assert objective.get('bbsUnsupportedFoldsCountAsPassing') is False, objective
+          assert objective.get('regularizationComparisonSeedAligned') is True, objective
+          assert objective.get('regularizationGridBounded') is True, objective
+          assert len(objective.get('regularizationGrid') or []) == 8, objective
           assert objective.get('v8FullGameCandidateRequiresFirstFive') is False, objective
           assert objective.get('targetGameFundamentalsExcludeBbsPriorGameSnapshots') is True, objective
           checks=((value.get('runtimeIdentity') or {}).get('checks') or {})
@@ -250,11 +260,14 @@ jobs:
           assert model_digest, value
           assert int(value.get('recordCountLoaded') or 0) > 0, value
           guard=((value.get('selection') or {}).get('selectionGuard') or {})
-          assert guard.get('version') == 'MLB-SUPERVISED-SELECTION-GUARD-v2.5-provider-horizon-evaluable-folds', guard
+          assert guard.get('version') == 'MLB-SUPERVISED-SELECTION-GUARD-v2.6-seed-aligned-regularization-grid', guard
           thresholds=guard.get('thresholds') or {}
           assert int(thresholds.get('minimumBbsEvaluableTrainingFolds') or 0) == 2, thresholds
           assert int(thresholds.get('minimumBbsEvaluableValidationFolds') or 0) == 2, thresholds
           assert thresholds.get('providerHorizonUnsupportedFoldsCountAsPassing') is False, thresholds
+          assert thresholds.get('regularizationComparisonSeedAligned') is True, thresholds
+          assert thresholds.get('regularizationGridBounded') is True, thresholds
+          assert len(thresholds.get('regularizationGrid') or []) == 8, thresholds
           bbd=value.get('historicalBbsFundamentals') or {}
           assert bbd.get('authority') == 'V8_HISTORICAL_BBS_SHADOW_ONLY', bbd
           assert bbd.get('productionAuthorityChanged') is False, bbd
