@@ -80,3 +80,32 @@ def test_non_missing_cloudformation_error_is_not_hidden():
 
     with pytest.raises(ClientError):
         module._outputs(object(), "optional-fundamentals")
+
+
+def test_historical_discovery_forces_stored_match_surface():
+    class Client:
+        calls = []
+
+        def list_mlb_matches(self, game_date, *, limit=50, as_of=None, stored=False):
+            self.calls.append(
+                {
+                    "gameDate": game_date,
+                    "limit": limit,
+                    "asOf": as_of,
+                    "stored": stored,
+                }
+            )
+            return {"data": []}
+
+    entrypoint.install_stored_match_surface(Client)
+    client = Client()
+    client.list_mlb_matches("2025-04-01", limit=200)
+
+    assert client.calls == [
+        {
+            "gameDate": "2025-04-01",
+            "limit": 200,
+            "asOf": None,
+            "stored": True,
+        }
+    ]
