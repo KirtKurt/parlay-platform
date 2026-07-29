@@ -174,3 +174,33 @@ def test_snapshot_contract_accepts_strictly_prior_projection_without_claiming_co
     assert value["confirmedTargetLineups"] is False
     assert value["projectedTargetStarters"] is True
     assert value["projectedTargetLineups"] is True
+
+
+def test_resource_shape_compatibility_preserves_recent_starter_form():
+    captured = {}
+
+    class Collector:
+        @staticmethod
+        def normalize_match(match, captured_at, resources=None):
+            captured.update(resources or {})
+            return {"ok": True}
+
+    module = SimpleNamespace(collector=Collector)
+    entrypoint.install_resource_shape_compatibility(module)
+    source = {
+        "pitchers": {
+            "data": {
+                "away": {"recentThreeStarts": {"fip": 3.1}},
+                "home": {"recentThreeStarts": {"fip": 3.5}},
+            }
+        }
+    }
+
+    value = module.collector.normalize_match(
+        {}, datetime.now(timezone.utc), source
+    )
+
+    assert value == {"ok": True}
+    assert captured["pitchers"]["data"]["away"]["recent"] == {"fip": 3.1}
+    assert captured["pitchers"]["data"]["home"]["recent"] == {"fip": 3.5}
+    assert "recent" not in source["pitchers"]["data"]["away"]
