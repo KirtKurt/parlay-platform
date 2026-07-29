@@ -1,9 +1,9 @@
 """Stable daily-slate objective for the supervised MLB shadow model.
 
-V2.2 keeps calibration fail-closed, rewards repeatable market-relative accuracy
-uplift, installs leakage-safe nonlinear regime interactions, and optionally applies
-historical BigBallsData evidence without changing production authority or touching
-the untouched audit during selection.
+V2.3 keeps calibration fail-closed, requires repeatable market-relative accuracy
+uplift, excludes under-covered optional feature groups, installs leakage-safe
+nonlinear interactions, and falls back to the market prior rather than publishing
+an inferior learned residual. It never changes production authority.
 """
 from __future__ import annotations
 
@@ -11,14 +11,16 @@ from typing import Any, Mapping, Tuple
 
 try:
     import mlb_supervised_feature_interactions_v2_2 as feature_interactions
+    import mlb_supervised_selection_guard_v2_3 as selection_guard
     import mlb_v8_historical_bbs_overlay_v1 as historical_bbs_overlay
     import mlb_v8_historical_bbs_prior_game_features_v1 as historical_bbs_prior_features
 except ImportError:  # package import used by unit tests
     from . import mlb_supervised_feature_interactions_v2_2 as feature_interactions
+    from . import mlb_supervised_selection_guard_v2_3 as selection_guard
     from . import mlb_v8_historical_bbs_overlay_v1 as historical_bbs_overlay
     from . import mlb_v8_historical_bbs_prior_game_features_v1 as historical_bbs_prior_features
 
-VERSION = "MLB-SUPERVISED-SHADOW-v2.2-regime-interactions-market-uplift-calibration-safe"
+VERSION = "MLB-SUPERVISED-SHADOW-v2.3-coverage-stable-uplift-market-fallback"
 MAX_BRIER_DEGRADATION = 0.005
 MAX_LOG_LOSS_DEGRADATION = 0.010
 MAX_ECE = 0.080
@@ -70,23 +72,25 @@ def daily_objective_key(
 
 
 def install(model_module: Any) -> Any:
-    if getattr(model_module, "_INQSI_MLB_DAILY_OBJECTIVE_V2_2_INSTALLED", False):
+    if getattr(model_module, "_INQSI_MLB_DAILY_OBJECTIVE_V2_3_INSTALLED", False):
         return model_module
     feature_module = getattr(model_module, "features", None)
     if feature_module is not None:
         feature_interactions.install(feature_module)
         historical_bbs_prior_features.install(feature_module)
     # Some contract tests intentionally provide only model-selection attributes.
-    # Install the training overlay only when a trainer function actually exists.
+    # Install the training overlay and selection guard only when a trainer exists.
     if callable(getattr(model_module, "train_and_evaluate", None)):
         historical_bbs_overlay.install(model_module)
     model_module._config_key = daily_objective_key
+    model_module._INQSI_MLB_CALIBRATION_ELIGIBLE = calibration_eligible
+    selection_guard.install(model_module)
     model_module.VERSION = VERSION
     model_module.SUPERVISED_SELECTION_OBJECTIVE = {
         "version": VERSION,
         "primary": [
-            "marketRelativeOverallAccuracyUplift",
-            "marketRelativeMeanDailyAccuracyUplift",
+            "stableMarketRelativeOverallAccuracyUplift",
+            "stableMarketRelativeMeanDailyAccuracyUplift",
             "marketRelativeDailyPassRateUplift",
             "overallAccuracy",
             "meanDailyAccuracy",
@@ -97,6 +101,10 @@ def install(model_module: Any) -> Any:
             "maximumLogLossDegradation": MAX_LOG_LOSS_DEGRADATION,
             "maximumExpectedCalibrationError": MAX_ECE,
         },
+        "selectionGuardVersion": selection_guard.VERSION,
+        "coverageEligibilityRequired": True,
+        "foldStabilityRequired": True,
+        "marketBaselineFallbackEnabled": True,
         "featureInteractionVersion": feature_interactions.VERSION,
         "historicalBbsOverlayVersion": historical_bbs_overlay.VERSION,
         "historicalBbsPriorGameFeatureVersion": historical_bbs_prior_features.VERSION,
@@ -107,5 +115,5 @@ def install(model_module: Any) -> Any:
         "untouchedAuditUsedForSelection": False,
         "productionAuthorityChanged": False,
     }
-    model_module._INQSI_MLB_DAILY_OBJECTIVE_V2_2_INSTALLED = True
+    model_module._INQSI_MLB_DAILY_OBJECTIVE_V2_3_INSTALLED = True
     return model_module
