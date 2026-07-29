@@ -12,8 +12,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: mlb-supervised-v2-immediate-evaluation-once
-  cancel-in-progress: true
+  group: mlb-supervised-shadow-v2
+  cancel-in-progress: false
 
 env:
   STACK_NAME: parlay-platform-mlb-historical-optimizer
@@ -46,10 +46,12 @@ jobs:
             hello_world/mlb_supervised_features_v2.py \
             hello_world/mlb_supervised_model_v2.py \
             hello_world/mlb_supervised_daily_objective_v2_1.py \
-            scripts/run_mlb_supervised_shadow_v2.py
+            scripts/run_mlb_supervised_shadow_v2.py \
+            scripts/guard_mlb_v8_shadow_report.py
           PYTHONPATH=hello_world python -m pytest -q --tb=short \
             tests/unit/test_mlb_supervised_shadow_v2.py \
-            tests/unit/test_mlb_supervised_daily_objective_v2_1.py
+            tests/unit/test_mlb_supervised_daily_objective_v2_1.py \
+            tests/unit/test_guard_mlb_v8_shadow_report.py
 
       - name: Verify AWS evidence schema
         env:
@@ -156,7 +158,9 @@ jobs:
             git fetch origin main
             git checkout -B mlb-supervised-v2-immediate-proof origin/main
             mkdir -p runtime_reports
-            cp /tmp/mlb-supervised-v2-immediate-report.json "$REPORT_PATH"
+            python scripts/guard_mlb_v8_shadow_report.py \
+              --incoming /tmp/mlb-supervised-v2-immediate-report.json \
+              --destination "$REPORT_PATH"
             git add "$REPORT_PATH"
             git diff --cached --quiet && exit 0
             git commit -m 'Publish MLB supervised shadow V2 evidence'
