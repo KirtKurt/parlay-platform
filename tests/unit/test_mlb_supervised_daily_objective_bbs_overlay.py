@@ -23,15 +23,23 @@ class Model:
         return {"ok": True, "recordCount": len(records), "resultDigest": "old"}
 
 
-def test_install_adds_disabled_overlay_without_aws(monkeypatch):
+def test_install_adds_disabled_overlays_without_aws(monkeypatch):
     monkeypatch.delenv("MLB_V8_HISTORICAL_BBS_OVERLAY_ENABLED", raising=False)
+    monkeypatch.setenv("MLB_V8_HISTORICAL_CONTEXT_OVERLAY_ENABLED", "false")
 
     objective.install(Model)
     result = Model.train_and_evaluate([{"officialGamePk": "1"}])
 
     assert result["historicalBbsFundamentals"]["status"] == "DISABLED"
+    assert result["historicalTargetGameContext"]["status"] == "DISABLED"
     assert result["resultDigest"] != "old"
     assert (
         Model.SUPERVISED_SELECTION_OBJECTIVE["historicalBbsPointInTimeRequired"]
+        is True
+    )
+    assert (
+        Model.SUPERVISED_SELECTION_OBJECTIVE[
+            "targetGameContextRequiresStarterBullpenLineupInjuryParkWeather"
+        ]
         is True
     )

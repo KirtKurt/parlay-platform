@@ -12,12 +12,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Mapping, Sequence
 
-try:
-    import mlb_supervised_selection_guard_v2_3 as base
-    import mlb_supervised_selection_guard_v2_5 as prior
-except ImportError:  # package import used by unit tests
+if __package__:
     from . import mlb_supervised_selection_guard_v2_3 as base
     from . import mlb_supervised_selection_guard_v2_5 as prior
+else:
+    import mlb_supervised_selection_guard_v2_3 as base
+    import mlb_supervised_selection_guard_v2_5 as prior
 
 VERSION = "MLB-SUPERVISED-SELECTION-GUARD-v2.6-seed-aligned-regularization-grid"
 REGULARIZATION_GRID = (0.005, 0.01, 0.02, 0.05, 0.10, 0.20, 0.50, 1.00)

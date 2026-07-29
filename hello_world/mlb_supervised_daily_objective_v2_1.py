@@ -4,6 +4,10 @@ V2.6 keeps every V2.5 fail-closed calibration, coverage, repeatable-uplift,
 provider-horizon, and market-fallback rule while executing a bounded L2 search
 with identical deterministic shuffles inside each feature-group and chronological-
 fold comparison. It never changes production authority.
+
+The target-game context overlay is installed inside the existing prior-game overlay
+so both independently validated manifest families are composed before features are
+compiled. No selection or promotion threshold is changed.
 """
 from __future__ import annotations
 
@@ -16,6 +20,7 @@ try:
     import mlb_supervised_selection_guard_v2_6 as selection_guard
     import mlb_v8_historical_bbs_overlay_v1 as historical_bbs_overlay
     import mlb_v8_historical_bbs_prior_game_features_v1 as historical_bbs_prior_features
+    import mlb_v8_historical_context_overlay_v1 as historical_context_overlay
 except ImportError:  # package import used by unit tests
     from . import mlb_supervised_feature_interactions_v2_2 as feature_interactions
     from . import mlb_supervised_feature_boundaries_v2_4 as feature_boundaries
@@ -23,6 +28,7 @@ except ImportError:  # package import used by unit tests
     from . import mlb_supervised_selection_guard_v2_6 as selection_guard
     from . import mlb_v8_historical_bbs_overlay_v1 as historical_bbs_overlay
     from . import mlb_v8_historical_bbs_prior_game_features_v1 as historical_bbs_prior_features
+    from . import mlb_v8_historical_context_overlay_v1 as historical_context_overlay
 
 VERSION = "MLB-SUPERVISED-SHADOW-v2.6-seed-aligned-regularization-grid"
 MAX_BRIER_DEGRADATION = 0.005
@@ -84,9 +90,11 @@ def install(model_module: Any) -> Any:
         feature_boundaries.install_features(feature_module)
         historical_bbs_prior_features.install(feature_module)
         feature_groups.install(feature_module)
-    # Some contract tests intentionally provide only model-selection attributes.
-    # Install the training overlay and selection guard only when a trainer exists.
+    # Install the target overlay first. The existing prior-game wrapper is then the
+    # outer wrapper, so target context sees and composes the prior snapshot instead
+    # of either family overwriting the other.
     if callable(getattr(model_module, "train_and_evaluate", None)):
+        historical_context_overlay.install(model_module)
         historical_bbs_overlay.install(model_module)
     model_module._config_key = daily_objective_key
     model_module._INQSI_MLB_CALIBRATION_ELIGIBLE = calibration_eligible
@@ -122,10 +130,15 @@ def install(model_module: Any) -> Any:
         "featureGroupsVersion": feature_groups.VERSION,
         "featureBoundariesVersion": feature_boundaries.VERSION,
         "targetGameFundamentalsExcludeBbsPriorGameSnapshots": True,
+        "targetGameContextComposedAfterPriorGameOverlay": True,
+        "targetGameContextRequiresStarterBullpenLineupInjuryParkWeather": True,
+        "targetGameContextTargetOutcomeUsed": False,
+        "targetGameContextSameDayResultsExcluded": True,
         "foldStabilityRequired": True,
         "marketBaselineFallbackEnabled": True,
         "featureInteractionVersion": feature_interactions.VERSION,
         "historicalBbsOverlayVersion": historical_bbs_overlay.VERSION,
+        "historicalTargetContextOverlayVersion": historical_context_overlay.VERSION,
         "historicalBbsPriorGameFeatureVersion": historical_bbs_prior_features.VERSION,
         "historicalBbsPointInTimeRequired": True,
         "historicalBbsSelectionUsesOutcomes": False,
