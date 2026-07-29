@@ -10,7 +10,7 @@
     "rangeExtensionAuthorized": true,
     "statusOk": true
   },
-  "createdAtUtc": "2026-07-28T12:50:07.907144+00:00",
+  "createdAtUtc": "2026-07-29T04:28:16.348302+00:00",
   "ok": true,
   "orchestrateResult": {
     "oddsMarketExpansion": {
@@ -6304,7 +6304,7 @@
       ],
       "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable",
       "featureRematerializationComplete": true,
-      "featureRematerializationCompletedAtUtc": "2026-07-28T12:50:05.513352+00:00",
+      "featureRematerializationCompletedAtUtc": "2026-07-29T03:56:44.625174+00:00",
       "featureRematerializationCursor": 324,
       "featureRematerializationErrors": [],
       "featureRematerializationPaidHistoricalCalls": 0,
@@ -6328,12 +6328,11 @@
         "versionId": "LUnGidRJdwPmF6Xz2Klwr90E_SBIg2kp"
       },
       "lastCompletedQuarantineCount": 0,
-      "lastError": "configured historical range ended before the 1,000-train plus validation/audit evidence floor",
       "lastErrorAtUtc": "2026-07-25T08:27:49.393989+00:00",
       "lastQuota": {
         "x-requests-last": 0,
-        "x-requests-remaining": 4609534,
-        "x-requests-used": 390466
+        "x-requests-remaining": 4605659,
+        "x-requests-used": 394341
       },
       "lastRejectedSlateError": "incomplete_full_slate_dataset",
       "lastRematerializedSlateDate": "2026-07-27",
@@ -9765,7 +9764,14 @@
         "settledHorizonDate": "2026-07-27",
         "version": "MLB-HISTORICAL-INCREMENTAL-RANGE-EXTENSION-v1-settled-horizon"
       },
-      "rangeExtensionDeferredDates": [],
+      "rangeExtensionDeferredDates": [
+        {
+          "classification": "NOT_YET_PROVABLY_SETTLED",
+          "details": "OrchestrationError:official slate 2026-07-28 is not fully final",
+          "slateDateEt": "2026-07-28"
+        }
+      ],
+      "rangeExtensionNextRetryDate": "2026-07-28",
       "rejectedSlates": [
         {
           "reason": "official_off_day",
@@ -9871,7 +9877,7 @@
           "slateDateEt": "2026-07-15"
         }
       ],
-      "revision": 2511,
+      "revision": 3428,
       "skippedHistoricalSlots": [
         {
           "reason": "historical response is too stale for a 15-minute grid",
@@ -10199,7 +10205,7 @@
       "snapshotStartAtEt": "01:00",
       "startDate": "2025-04-01",
       "targetSettledGames": 4149,
-      "updatedAtUtc": "2026-07-28T12:50:06.543534+00:00",
+      "updatedAtUtc": "2026-07-29T04:28:13.873361+00:00",
       "version": "MLB-HISTORICAL-OPTIMIZER-AWS-v1.9-quarantine-ledger-complete-versioned-dataset-key-v3"
     },
     "status": "DATA_RANGE_EXHAUSTED",
@@ -10218,7 +10224,7 @@
       "freshProspectiveAuditRequiredBeforeProduction": true,
       "fullSelectiveSearchIncrementGames": 50,
       "incrementalRangeExtensionVersion": "MLB-HISTORICAL-INCREMENTAL-RANGE-EXTENSION-v1-settled-horizon",
-      "integrityPatchVersion": "MLB-HISTORICAL-SUPERVISED-INTEGRITY-v2-strict-label-v8-fallback-pattern-complete",
+      "integrityPatchVersion": "MLB-HISTORICAL-SUPERVISED-INTEGRITY-v2.1-finite-fallback-empty-input-guard",
       "invalidOrMissingLabelsExcluded": true,
       "jointPolicyThresholdReliabilitySearch": true,
       "labelIntegrityVersion": "MLB-HISTORICAL-V7-LABEL-INTEGRITY-v1",
@@ -10243,8 +10249,10 @@
       "selectiveObjectiveVersion": "MLB-HISTORICAL-V7-SELECTIVE-OBJECTIVE-v1",
       "selectiveSearchVersion": "MLB-HISTORICAL-V7-SELECTIVE-SEARCH-v2",
       "separateFullSlateAndSelectiveAccuracy": true,
+      "settledHorizonWaitingPhase": "WAITING_FOR_SETTLED_HORIZON",
       "shadowRefitIncrementGames": 50,
       "shadowRefitsMayPromote": false,
+      "stateIntegrityVersion": "MLB-HISTORICAL-STATE-INTEGRITY-v1-settled-horizon-idempotent",
       "strictBinaryLabels": true,
       "thresholdFrozenBeforeUntouchedHoldout": true,
       "thresholdStabilityRequired": true,
@@ -10259,7 +10267,7 @@
     "currentDate": "2026-07-28",
     "eligibleGameCount": 4005,
     "endDate": "2026-07-27",
-    "lastError": "configured historical range ended before the 1,000-train plus validation/audit evidence floor",
+    "lastError": null,
     "networkRequestCount": 25681,
     "phase": "DATA_RANGE_EXHAUSTED",
     "rangeExtension": {
@@ -10282,9 +10290,9 @@
       "settledHorizonDate": "2026-07-27",
       "version": "MLB-HISTORICAL-INCREMENTAL-RANGE-EXTENSION-v1-settled-horizon"
     },
-    "rangeExtensionNextRetryDate": null,
-    "revision": 2511,
-    "updatedAtUtc": "2026-07-28T12:50:06.543534+00:00"
+    "rangeExtensionNextRetryDate": "2026-07-28",
+    "revision": 3428,
+    "updatedAtUtc": "2026-07-29T04:28:13.873361+00:00"
   },
   "preState": {
     "completeSlateCount": 324,
@@ -10294,12 +10302,12 @@
     "endDate": "2026-07-27",
     "networkRequestCount": 25681,
     "phase": "DATA_RANGE_EXHAUSTED",
-    "revision": 2508
+    "revision": 3427
   },
   "productionAuthorityChanged": false,
   "proofType": "MLB_V8_INCREMENTAL_RANGE_EXTENSION_DEPLOYMENT",
-  "runId": "30360549186",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30360549186",
+  "runId": "30422274203",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30422274203",
   "runtimeResolution": {
     "attempts": [
       {
@@ -10314,5 +10322,5 @@
     "authority": "CLOUDFORMATION_OUTPUT",
     "functionName": "parlay-platform-mlb-histo-HistoricalOptimizerFunct-8e5kYFR21rxv"
   },
-  "sourceSha": "fd0487d21d7a7e1640097a373bdbc74189812513"
+  "sourceSha": "786b55d3a050809c7cb1475cee7448b913285bc7"
 }
