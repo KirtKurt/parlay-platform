@@ -1,0 +1,144 @@
+name: MLB V8 Backfill Ordering Fix Once
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v8-backfill-ordering-fix-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-v8-backfill-ordering-fix-once
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: .:hello_world:scripts
+
+jobs:
+  patch-test-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Patch chronological learning priority
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          script = Path('scripts/run_mlb_v8_historical_bbs_prior_game_backfill.py')
+          text = script.read_text()
+
+          marker = '''def _historical_bucket(outputs: Mapping[str, Any]) -> str:
+'''
+          helper = '''def _learning_priority(
+              rows: Sequence[Mapping[str, Any]], batch_size: int
+          ) -> List[Mapping[str, Any]]:
+              """Fill the earliest chronological development evidence first."""
+              return sorted(
+                  rows,
+                  key=lambda row: (
+                      str(row.get("slateDateEt") or ""),
+                      str(row.get("predictionLockAtUtc") or ""),
+                      str(row.get("officialGamePk") or ""),
+                  ),
+              )[:batch_size]
+
+
+'''
+          if 'def _learning_priority(' not in text:
+              if marker not in text:
+                  raise SystemExit('historical bucket insertion marker missing')
+              text = text.replace(marker, helper + marker, 1)
+
+          old_selection = '''    selected = sorted(
+                  pending,
+                  key=lambda row: (
+                      str(row.get("slateDateEt") or ""),
+                      str(row.get("predictionLockAtUtc") or ""),
+                      str(row.get("officialGamePk") or ""),
+                  ),
+                  reverse=True,
+              )[:batch_size]
+'''
+          new_selection = '''    selected = _learning_priority(pending, batch_size)
+'''
+          if old_selection in text:
+              text = text.replace(old_selection, new_selection, 1)
+          elif new_selection not in text:
+              raise SystemExit('pending selection block missing')
+
+          old_rule = '"selectionRule": "newest unprocessed canonical games within BBD coverage",'
+          new_rule = '"selectionRule": "oldest unprocessed canonical games first to repair chronological development folds",'
+          if old_rule in text:
+              text = text.replace(old_rule, new_rule, 1)
+          elif new_rule not in text:
+              raise SystemExit('selection rule marker missing')
+
+          script.write_text(text)
+
+          test = Path('tests/unit/test_run_mlb_v8_historical_bbs_prior_game_backfill.py')
+          tests = test.read_text()
+          test_name = 'test_learning_priority_repairs_earliest_chronological_fold_first'
+          if test_name not in tests:
+              tests += '''
+
+
+def test_learning_priority_repairs_earliest_chronological_fold_first():
+    rows = [
+        {
+            "slateDateEt": "2026-06-03",
+            "predictionLockAtUtc": "2026-06-03T20:00:00Z",
+            "officialGamePk": "3",
+        },
+        {
+            "slateDateEt": "2026-03-02",
+            "predictionLockAtUtc": "2026-03-02T22:00:00Z",
+            "officialGamePk": "2",
+        },
+        {
+            "slateDateEt": "2026-03-02",
+            "predictionLockAtUtc": "2026-03-02T19:00:00Z",
+            "officialGamePk": "1",
+        },
+    ]
+
+    selected = backfill._learning_priority(rows, 2)
+
+    assert [row["officialGamePk"] for row in selected] == ["1", "2"]
+'''
+              test.write_text(tests)
+          PY
+
+      - name: Compile and test ordering contract
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+          python -m py_compile scripts/run_mlb_v8_historical_bbs_prior_game_backfill.py
+          python -m pytest -q --tb=short tests/unit/test_run_mlb_v8_historical_bbs_prior_game_backfill.py
+          grep -Fq 'oldest unprocessed canonical games first to repair chronological development folds' scripts/run_mlb_v8_historical_bbs_prior_game_backfill.py
+          ! grep -Fq 'reverse=True' scripts/run_mlb_v8_historical_bbs_prior_game_backfill.py
+
+      - name: Publish fix and remove installer
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            scripts/run_mlb_v8_historical_bbs_prior_game_backfill.py \
+            tests/unit/test_run_mlb_v8_historical_bbs_prior_game_backfill.py
+          git rm .github/workflows/mlb-v8-backfill-ordering-fix-once.yml
+          git diff --cached --check
+          git commit -m 'Prioritize V8 chronological fold recovery'
+          git pull --rebase origin main
+          git push origin HEAD:main
