@@ -8,6 +8,7 @@ existing selection and promotion guard.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -36,10 +37,7 @@ def install_pointer_isolation(module: Any) -> Any:
     module.REPORT_TYPE = REPORT_TYPE
 
     def put_immutable(s3: Any, bucket: str, key: str, body: bytes):
-        isolated = key.replace(
-            "mlb/v8/historical-bbs/manifests/",
-            "mlb/v8/historical-context/manifests/",
-        )
+        isolated = f"mlb/v8/historical-context/manifests/{Path(key).name}"
         digest = hashlib.sha256(body).hexdigest()
         try:
             response = s3.put_object(
@@ -122,6 +120,36 @@ def install_pointer_isolation(module: Any) -> Any:
     module._put_immutable = put_immutable
     module._activate = activate
     module._INQSI_MLB_TARGET_CONTEXT_POINTER_INSTALLED = True
+    return module
+
+
+def install_resource_shape_compatibility(module: Any) -> Any:
+    """Expose reconstructed recent-start form through the collector's accepted alias."""
+    if getattr(module, "_INQSI_MLB_CONTEXT_SHAPE_COMPAT_INSTALLED", False):
+        return module
+    original = module.collector.normalize_match
+
+    def normalize(match: Mapping[str, Any], captured_at: datetime, resources=None):
+        copied = copy.deepcopy(resources or {})
+        envelope = copied.get("pitchers")
+        data = envelope.get("data") if isinstance(envelope, Mapping) else None
+        if isinstance(data, Mapping):
+            data = copy.deepcopy(dict(data))
+            for side in ("away", "home"):
+                raw = data.get(side)
+                if isinstance(raw, Mapping):
+                    raw = copy.deepcopy(dict(raw))
+                    if (
+                        raw.get("recent") is None
+                        and raw.get("recentThreeStarts") is not None
+                    ):
+                        raw["recent"] = copy.deepcopy(raw.get("recentThreeStarts"))
+                    data[side] = raw
+            copied["pitchers"] = {**dict(envelope), "data": data}
+        return original(match, captured_at, copied)
+
+    module.collector.normalize_match = normalize
+    module._INQSI_MLB_CONTEXT_SHAPE_COMPAT_INSTALLED = True
     return module
 
 
@@ -318,6 +346,7 @@ def install() -> Any:
     context_source.install_crosswalk_registry(backfill)
     context_source.install_resource_provider(backfill.BigBallsDataClient)
     context_source.install_strict_optional_point_in_time_gate(backfill)
+    install_resource_shape_compatibility(backfill)
     install_snapshot_contract(backfill)
     operational.install_newest_coverage_window(backfill)
     operational.install_safe_diagnostics(backfill)
