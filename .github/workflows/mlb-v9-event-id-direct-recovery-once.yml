@@ -306,8 +306,8 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          recovery=json.loads(Path('runtime_reports/mlb_v9_event_id_recovery_latest.json').read_text())
-          shadow=json.loads(Path('runtime_reports/mlb_supervised_shadow_v2_latest.json').read_text())
+          recovery=json.loads(Path('/tmp/mlb-v9-recovery-report.json').read_text())
+          shadow=json.loads(Path('/tmp/mlb-v9-shadow-report.json').read_text())
           assert recovery.get('ok') is True, recovery
           assert recovery.get('productionAuthorityChanged') is False, recovery
           assert int(recovery.get('providerCallsMadeByRematerialization') or 0)==0, recovery
