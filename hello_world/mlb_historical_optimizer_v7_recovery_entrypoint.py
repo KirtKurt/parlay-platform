@@ -7,7 +7,14 @@ a fresh chronological audit and the canonical promotion write path.
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, Mapping
+
+# Accelerate research feedback while preserving the canonical 200-game untouched
+# audit and all promotion requirements. These overrides are applied before the
+# hourly evaluator reads its cadence environment.
+os.environ["MLB_V7_SHADOW_REFIT_INCREMENT_GAMES"] = "20"
+os.environ["MLB_V7_LIGHTWEIGHT_INCREMENT_GAMES"] = "10"
 
 import mlb_historical_feature_rematerialization_v1 as rematerialization
 import mlb_historical_incremental_range_extension_v1 as incremental_range_extension
@@ -23,7 +30,14 @@ import mlb_historical_v7_selective_search_v2 as selective_search_v2
 import mlb_odds_market_expansion_v8 as odds_market_v8
 import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v16-strict-label-integrity"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v17-fast-shadow-range-repair"
+
+# The deployed stack previously remained on a stale exhausted-range runtime.
+# Process more authorized historical timestamps per invocation after the verified
+# redeployment, while retaining existing quota and immutable-archive guards.
+base.optimizer_handler.MAX_NETWORK_REQUESTS = max(
+    int(getattr(base.optimizer_handler, "MAX_NETWORK_REQUESTS", 1) or 1), 50
+)
 
 incremental_range_extension.install(base)
 round_extension.install(base.optimizer_handler)
@@ -72,10 +86,11 @@ def _with_shadow_contract(value: Any) -> Any:
                 "priorityRepairsVersion": priority_repairs.VERSION,
                 "selectiveObjectiveVersion": selective_objective.VERSION,
                 "selectiveSearchVersion": selective_search_v2.VERSION,
-                "shadowRefitIncrementGames": priority_repairs.SHADOW_REFIT_INCREMENT_GAMES,
-                "lightweightSelectiveEvaluationIncrementGames": selective_search_v2.LIGHTWEIGHT_EVALUATION_INCREMENT_GAMES,
+                "shadowRefitIncrementGames": learning_cadence.SHADOW_REFIT_INCREMENT_GAMES,
+                "lightweightSelectiveEvaluationIncrementGames": learning_cadence.LIGHTWEIGHT_EVALUATION_INCREMENT_GAMES,
                 "fullSelectiveSearchIncrementGames": selective_search_v2.FULL_SEARCH_INCREMENT_GAMES,
                 "canonicalFreshAuditIncrementGames": base.optimizer_handler.FRESH_AUDIT_INCREMENT_GAMES,
+                "maximumHistoricalRequestsPerRun": base.optimizer_handler.MAX_NETWORK_REQUESTS,
                 "shadowRefitsMayPromote": False,
                 "strictBinaryLabels": True,
                 "invalidOrMissingLabelsExcluded": True,
