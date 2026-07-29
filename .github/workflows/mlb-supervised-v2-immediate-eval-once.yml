@@ -7,6 +7,8 @@ name: MLB Supervised V2 Immediate Evaluation Once
     branches: [main]
     paths:
       - '.github/workflows/mlb-supervised-v2-immediate-eval-once.yml'
+      - 'scripts/publish_monotonic_json.py'
+      - 'tests/unit/test_publish_monotonic_json.py'
 
 permissions:
   contents: write
@@ -18,7 +20,7 @@ concurrency:
 env:
   STACK_NAME: parlay-platform-mlb-historical-optimizer
   REPORT_PATH: runtime_reports/mlb_supervised_shadow_v2_latest.json
-  EXPECTED_FEATURE_DATASET: MLB-HISTORICAL-FEATURE-DATASET-v8-supervised-trainable
+  EXPECTED_FEATURE_DATASET: MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable
 
 jobs:
   evaluate:
@@ -46,10 +48,12 @@ jobs:
             hello_world/mlb_supervised_features_v2.py \
             hello_world/mlb_supervised_model_v2.py \
             hello_world/mlb_supervised_daily_objective_v2_1.py \
-            scripts/run_mlb_supervised_shadow_v2.py
-          PYTHONPATH=hello_world python -m pytest -q --tb=short \
+            scripts/run_mlb_supervised_shadow_v2.py \
+            scripts/publish_monotonic_json.py
+          PYTHONPATH=. python -m pytest -q --tb=short \
             tests/unit/test_mlb_supervised_shadow_v2.py \
-            tests/unit/test_mlb_supervised_daily_objective_v2_1.py
+            tests/unit/test_mlb_supervised_daily_objective_v2_1.py \
+            tests/unit/test_publish_monotonic_json.py
 
       - name: Verify AWS evidence schema
         env:
@@ -145,7 +149,7 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
 
-      - name: Publish durable evidence
+      - name: Publish durable evidence monotonically
         if: always()
         run: |
           set -euo pipefail
@@ -156,7 +160,10 @@ jobs:
             git fetch origin main
             git checkout -B mlb-supervised-v2-immediate-proof origin/main
             mkdir -p runtime_reports
-            cp /tmp/mlb-supervised-v2-immediate-report.json "$REPORT_PATH"
+            python scripts/publish_monotonic_json.py \
+              --candidate /tmp/mlb-supervised-v2-immediate-report.json \
+              --existing "$REPORT_PATH" \
+              --output "$REPORT_PATH"
             git add "$REPORT_PATH"
             git diff --cached --quiet && exit 0
             git commit -m 'Publish MLB supervised shadow V2 evidence'
