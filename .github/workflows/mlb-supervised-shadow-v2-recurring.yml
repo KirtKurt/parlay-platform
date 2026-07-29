@@ -112,6 +112,7 @@ jobs:
           PY
           fi
           python -m json.tool "$REPORT_PATH" >/dev/null
+          cp "$REPORT_PATH" /tmp/mlb-supervised-shadow-v2.json
 
       - name: Verify fresh model artifact
         if: steps.evaluation.outcome == 'success'
@@ -120,7 +121,7 @@ jobs:
           python - <<'PY'
           import json, os
           from pathlib import Path
-          value=json.loads(Path(os.environ['REPORT_PATH']).read_text())
+          value=json.loads(Path('/tmp/mlb-supervised-shadow-v2.json').read_text())
           model_digest=value.get('modelDigest') or ((value.get('model') or {}).get('modelDigest'))
           assert value.get('ok') is True, value
           assert value.get('sourceSha') == os.environ.get('GITHUB_SHA'), value
@@ -140,7 +141,7 @@ jobs:
         with:
           name: mlb-supervised-shadow-v2-recurring-${{ github.run_id }}
           path: |
-            runtime_reports/mlb_supervised_shadow_v2_latest.json
+            /tmp/mlb-supervised-shadow-v2.json
             /tmp/mlb-supervised-shadow-v2.log
           retention-days: 90
           if-no-files-found: error
@@ -149,7 +150,6 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          cp "$REPORT_PATH" /tmp/mlb-supervised-shadow-v2.json
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           for attempt in 1 2 3 4 5; do
@@ -174,7 +174,7 @@ jobs:
           python - <<'PY'
           import json, os
           from pathlib import Path
-          value=json.loads(Path(os.environ['REPORT_PATH']).read_text())
+          value=json.loads(Path('/tmp/mlb-supervised-shadow-v2.json').read_text())
           model_digest=value.get('modelDigest') or ((value.get('model') or {}).get('modelDigest'))
           assert value.get('ok') is True, value
           assert value.get('sourceSha') == os.environ.get('GITHUB_SHA'), value
