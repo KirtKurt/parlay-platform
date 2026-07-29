@@ -14,7 +14,7 @@
   },
   "authority": "SHADOW_ONLY",
   "automaticWagerAllowed": false,
-  "createdAtUtc": "2026-07-29T04:26:41.258225+00:00",
+  "createdAtUtc": "2026-07-29T05:20:41.481981+00:00",
   "featureCoverage": {
     "exampleCount": 4005,
     "frozenFundamentals": 0.0,
@@ -23,19 +23,28 @@
     "v8FirstFive": 0.0
   },
   "freshProspectiveAuditRequired": true,
+  "historicalBbsFundamentals": {
+    "appliedGameCount": 0,
+    "authority": "V8_HISTORICAL_BBS_SHADOW_ONLY",
+    "coverage": 0.0,
+    "productionAuthorityChanged": false,
+    "recordCount": 4005,
+    "status": "MANIFEST_NOT_AVAILABLE",
+    "version": "MLB-V8-HISTORICAL-BBS-OVERLAY-v1-point-in-time"
+  },
   "historicalState": {
     "completeSlateCount": 324,
     "currentDate": "2026-07-28",
-    "currentSlotIndex": 0,
+    "currentSlotIndex": 40,
     "eligibleGameCount": 4005,
-    "endDate": "2026-07-27",
+    "endDate": "2026-07-28",
     "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable",
     "featureRematerializationTotalSlateCount": 324,
     "featureRematerializedSlateCount": 324,
-    "networkRequestCount": 25681,
+    "networkRequestCount": 25721,
     "optimizationRound": 10,
-    "phase": "DATA_RANGE_EXHAUSTED",
-    "quotaRemaining": 4605659
+    "phase": "BACKFILLING",
+    "quotaRemaining": 4605010
   },
   "metrics": {
     "marketBaseline": {
@@ -5562,10 +5571,10 @@
   },
   "proofType": "MLB_SUPERVISED_SHADOW_AWS_EVALUATION",
   "recordCountLoaded": 4005,
-  "resultDigest": "ac87e0f4ce260896e2a292c968327587e8b557201820e2509c47690bf49f67ca",
+  "resultDigest": "934582a3332883b31273e99ac9b07a19103500bb7df7c6bf0b8d2cec7f51af88",
   "retrospectiveArchitectureEvaluation": true,
-  "runId": "30422274180",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30422274180",
+  "runId": "30424778390",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30424778390",
   "runtimeIdentity": {
     "checks": {
       "featureMaterializationReady": true,
@@ -5577,7 +5586,7 @@
       "rangeExtensionAuthorized": true
     },
     "configuredHistoricalEndDate": "2026-12-31",
-    "deployGitSha": "fd0487d21d7a7e1640097a373bdbc74189812513",
+    "deployGitSha": "786b55d3a050809c7cb1475cee7448b913285bc7",
     "featureMaterialization": {
       "completedSlateCount": 324,
       "countsComplete": true,
@@ -30199,6 +30208,9 @@
       "maximumLogLossDegradation": 0.01
     },
     "featureInteractionVersion": "MLB-SUPERVISED-FEATURE-INTERACTIONS-v2.2",
+    "historicalBbsOverlayVersion": "MLB-V8-HISTORICAL-BBS-OVERLAY-v1-point-in-time",
+    "historicalBbsPointInTimeRequired": true,
+    "historicalBbsSelectionUsesOutcomes": false,
     "primary": [
       "marketRelativeOverallAccuracyUplift",
       "marketRelativeMeanDailyAccuracyUplift",
@@ -30211,6 +30223,6 @@
     "untouchedAuditUsedForSelection": false,
     "version": "MLB-SUPERVISED-SHADOW-v2.2-regime-interactions-market-uplift-calibration-safe"
   },
-  "sourceSha": "786b55d3a050809c7cb1475cee7448b913285bc7",
+  "sourceSha": "7ad314f3ac0e59e81b85016f595b9fd8f06daddf",
   "version": "MLB-SUPERVISED-SHADOW-v2.2-regime-interactions-market-uplift-calibration-safe"
 }
