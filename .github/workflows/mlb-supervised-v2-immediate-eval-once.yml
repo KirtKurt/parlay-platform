@@ -175,7 +175,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          value=json.loads(Path('runtime_reports/mlb_supervised_shadow_v2_latest.json').read_text())
+          value=json.loads(Path('/tmp/mlb-supervised-v2-immediate-report.json').read_text())
           assert value.get('ok') is True, value
           assert value.get('authority')=='SHADOW_ONLY', value
           assert value.get('productionAuthorityChanged') is False, value
