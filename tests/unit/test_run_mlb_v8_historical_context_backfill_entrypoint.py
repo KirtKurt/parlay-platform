@@ -7,6 +7,16 @@ import mlb_v8_historical_context_overlay_v1 as overlay
 import run_mlb_v8_historical_context_backfill_entrypoint as entrypoint
 
 
+def test_weather_archive_contract_uses_single_runs_hres_model():
+    module = SimpleNamespace(WEATHER_MODEL="ecmwf_ifs025")
+
+    result = entrypoint.install_weather_archive_contract(module)
+
+    assert result is module
+    assert module.WEATHER_MODEL == "ecmwf_ifs"
+    assert entrypoint.ARCHIVED_WEATHER_MODEL == "ecmwf_ifs"
+
+
 def test_pointer_isolation_uses_distinct_target_context_partition():
     calls = {}
 
@@ -48,7 +58,9 @@ def test_pointer_isolation_uses_distinct_target_context_partition():
     )
 
     assert module.overlay.POINTER_PK == overlay.POINTER_PK
-    assert pointer["key"] == "mlb/v8/historical-context/manifests/a.json"
+    assert pointer["key"] == "mlb/v8/historical/context/manifests/a.json".replace(
+        "historical/context", "historical-context"
+    )
     assert (
         calls["s3"]["Metadata"]["record-type"]
         == "mlb-v8-historical-context-manifest"
