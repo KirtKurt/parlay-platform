@@ -1,0 +1,161 @@
+name: V8 Shadow Contract Fix Once
+
+"on":
+  push:
+    branches: [agent/fix-v8-shadow-contracts]
+    paths:
+      - '.github/workflows/v8-shadow-contract-fix-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-v8-shadow-contracts
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Patch V8 shadow contracts
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_exact(path: str, old: str, new: str, *, expected: int = 1) -> None:
+              target = Path(path)
+              text = target.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != expected:
+                  raise SystemExit(f'{path}: expected {expected} matches, found {count}: {old!r}')
+              target.write_text(text.replace(old, new), encoding='utf-8')
+
+          replace_exact(
+              'scripts/verify_mlb_trainer_deploy_response.py',
+              '    if status_after.get("runtimeAuthorityActivationAvailable") is not True:\n'
+              '        errors.append("runtime_authority_activation_not_available")\n',
+              '    if status_after.get("manualReviewCreatesShadowApprovalOnly") is not True:\n'
+              '        errors.append("manual_review_shadow_only_contract_missing")\n'
+              '    if status_after.get("runtimeAuthorityActivationAvailable") is not False:\n'
+              '        errors.append("runtime_authority_activation_must_remain_unavailable")\n',
+          )
+
+          replace_exact(
+              'tests/unit/test_mlb_trainer_deploy_response.py',
+              '        "firstPromotionRequiresManualReview": True,\n'
+              '        "v2InferenceConsumerInstalled": False,\n'
+              '        "runtimeAuthorityActivationAvailable": True,\n',
+              '        "firstPromotionRequiresManualReview": True,\n'
+              '        "manualReviewCreatesShadowApprovalOnly": True,\n'
+              '        "v2InferenceConsumerInstalled": False,\n'
+              '        "runtimeAuthorityActivationAvailable": False,\n',
+          )
+
+          trainer_test = Path('tests/unit/test_mlb_trainer_deploy_response.py')
+          trainer_text = trainer_test.read_text(encoding='utf-8')
+          marker = 'def test_rejects_runtime_authority_activation_exposure() -> None:'
+          if marker in trainer_text:
+              raise SystemExit('trainer verifier regression tests already installed')
+          trainer_text += '''\n\n
+def test_rejects_runtime_authority_activation_exposure() -> None:
+    training, selection, after = _payloads()
+    after["runtimeAuthorityActivationAvailable"] = True
+
+    assert "runtime_authority_activation_must_remain_unavailable" in _verify(
+        training, selection, after
+    )
+
+
+def test_rejects_missing_shadow_only_manual_review_attestation() -> None:
+    training, selection, after = _payloads()
+    after["manualReviewCreatesShadowApprovalOnly"] = False
+
+    assert "manual_review_shadow_only_contract_missing" in _verify(
+        training, selection, after
+    )
+'''
+          trainer_test.write_text(trainer_text, encoding='utf-8')
+
+          workflow = '.github/workflows/mlb-supervised-shadow-v2.yml'
+          replace_exact(
+              workflow,
+              '  group: mlb-supervised-shadow-v2-${{ github.event_name }}\n',
+              '  group: mlb-supervised-shadow-v2\n',
+          )
+          replace_exact(
+              workflow,
+              "      - 'scripts/run_mlb_supervised_shadow_v2.py'\n",
+              "      - 'scripts/run_mlb_supervised_shadow_v2.py'\n"
+              "      - 'scripts/guard_mlb_v8_shadow_report.py'\n",
+              expected=2,
+          )
+          replace_exact(
+              workflow,
+              "      - 'tests/unit/test_mlb_supervised_daily_objective_v2_1.py'\n",
+              "      - 'tests/unit/test_mlb_supervised_daily_objective_v2_1.py'\n"
+              "      - 'tests/unit/test_guard_mlb_v8_shadow_report.py'\n",
+              expected=2,
+          )
+          replace_exact(
+              workflow,
+              '            scripts/run_mlb_supervised_shadow_v2.py\n',
+              '            scripts/run_mlb_supervised_shadow_v2.py \\\n'
+              '            scripts/guard_mlb_v8_shadow_report.py\n',
+          )
+          replace_exact(
+              workflow,
+              '            tests/unit/test_mlb_supervised_daily_objective_v2_1.py \\\n'
+              '            tests/unit/test_mlb_historical_v7_status_bypass.py \\\n',
+              '            tests/unit/test_mlb_supervised_daily_objective_v2_1.py \\\n'
+              '            tests/unit/test_guard_mlb_v8_shadow_report.py \\\n'
+              '            tests/unit/test_mlb_historical_v7_status_bypass.py \\\n',
+          )
+          replace_exact(
+              workflow,
+              '            cp /tmp/mlb-supervised-shadow-v2.json "$REPORT_PATH"\n',
+              '            python scripts/guard_mlb_v8_shadow_report.py \\\n'
+              '              --incoming /tmp/mlb-supervised-shadow-v2.json \\\n'
+              '              --destination "$REPORT_PATH"\n',
+          )
+          PY
+      - name: Verify patched contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
+          python -m py_compile \
+            scripts/verify_mlb_trainer_deploy_response.py \
+            scripts/guard_mlb_v8_shadow_report.py
+          PYTHONPATH=hello_world:. python -m pytest -q --tb=short \
+            tests/unit/test_mlb_trainer_deploy_response.py \
+            tests/unit/test_guard_mlb_v8_shadow_report.py
+          python - <<'PY'
+          import yaml
+          from pathlib import Path
+          for path in (
+              '.github/workflows/mlb-supervised-shadow-v2.yml',
+              '.github/workflows/v8-shadow-contract-fix-once.yml',
+          ):
+              value=yaml.safe_load(Path(path).read_text())
+              assert isinstance(value, dict), path
+          PY
+          grep -Fq 'runtime_authority_activation_must_remain_unavailable' scripts/verify_mlb_trainer_deploy_response.py
+          grep -Fq 'manual_review_shadow_only_contract_missing' scripts/verify_mlb_trainer_deploy_response.py
+          grep -Fq 'group: mlb-supervised-shadow-v2' .github/workflows/mlb-supervised-shadow-v2.yml
+          grep -Fq 'guard_mlb_v8_shadow_report.py' .github/workflows/mlb-supervised-shadow-v2.yml
+      - name: Commit verified repair
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            scripts/verify_mlb_trainer_deploy_response.py \
+            tests/unit/test_mlb_trainer_deploy_response.py \
+            .github/workflows/mlb-supervised-shadow-v2.yml
+          git diff --cached --check
+          git diff --cached --quiet && exit 0
+          git commit -m 'Fix V8 shadow deployment and report authority contracts'
+          git push origin HEAD:agent/fix-v8-shadow-contracts
