@@ -73,7 +73,10 @@ def install(model_module: Any) -> Any:
     feature_module = getattr(model_module, "features", None)
     if feature_module is not None:
         feature_interactions.install(feature_module)
-    historical_bbs_overlay.install(model_module)
+    # Some contract tests intentionally provide only model-selection attributes.
+    # Install the training overlay only when a trainer function actually exists.
+    if callable(getattr(model_module, "train_and_evaluate", None)):
+        historical_bbs_overlay.install(model_module)
     model_module._config_key = daily_objective_key
     model_module.VERSION = VERSION
     model_module.SUPERVISED_SELECTION_OBJECTIVE = {
