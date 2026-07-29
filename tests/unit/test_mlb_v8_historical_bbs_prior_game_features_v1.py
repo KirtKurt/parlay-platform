@@ -80,7 +80,10 @@ def test_unsupported_date_cannot_enter_supported_denominator():
         }
     )
     assert result["bbs_prior_supported"] == 0.0
-    assert result["bbs_prior_available"] == 1.0
+    assert result["bbs_prior_available"] == 0.0
+    assert all(
+        value == 0.0 for name, value in result.items() if name != "bbs_prior_supported"
+    )
 
 
 def test_install_adds_values_without_mutating_feature_groups_and_is_idempotent():
