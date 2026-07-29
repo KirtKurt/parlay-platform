@@ -71,6 +71,22 @@ def test_identical_state_write_is_suppressed():
     assert result["updatedAtUtc"] == "old"
 
 
+def test_schema_version_change_writes_once():
+    old = state()
+    old["version"] = "handler-v0"
+    handler = Handler(old)
+    base = Base(handler)
+    integrity.install(handler, base)
+
+    first = handler._save_state(handler._load_state())
+    second = handler._save_state(handler._load_state())
+
+    assert first["version"] == "handler-v1"
+    assert first["revision"] == 8
+    assert second["revision"] == 8
+    assert handler.write_count == 1
+
+
 def test_material_state_change_still_writes():
     handler = Handler(state())
     base = Base(handler)
