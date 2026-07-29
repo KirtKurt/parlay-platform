@@ -1,0 +1,74 @@
+name: MLB V8 V2.6 Selector Fix Once
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v8-v26-selector-fix-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-v8-v26-selector-fix-once
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: .:hello_world:scripts
+
+jobs:
+  patch-test-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install executable V2.6 selector
+        run: |
+          set -euo pipefail
+          echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCgpkZWYgcmVwbGFjZV9vbmNlKHRleHQ6IHN0ciwgb2xkOiBzdHIsIG5ldzogc3RyLCBsYWJlbDogc3RyKSAtPiBzdHI6CiAgICBpZiBvbGQgaW4gdGV4dDoKICAgICAgICByZXR1cm4gdGV4dC5yZXBsYWNlKG9sZCwgbmV3LCAxKQogICAgaWYgbmV3IGluIHRleHQ6CiAgICAgICAgcmV0dXJuIHRleHQKICAgIHJhaXNlIFN5c3RlbUV4aXQoZiJ7bGFiZWx9IG1hcmtlciBtaXNzaW5nIikKCmJhc2UgPSBQYXRoKCJoZWxsb193b3JsZC9tbGJfc3VwZXJ2aXNlZF9zZWxlY3Rpb25fZ3VhcmRfdjJfMy5weSIpCnRleHQgPSBiYXNlLnJlYWRfdGV4dCgpCnRleHQgPSByZXBsYWNlX29uY2UoCiAgICB0ZXh0LAogICAgJ0JBU0VMSU5FX0dST1VQID0gIm1hcmtldF9iYXNlbGluZSJcbicsCiAgICAnQkFTRUxJTkVfR1JPVVAgPSAibWFya2V0X2Jhc2VsaW5lIlxuUkVHVUxBUklaQVRJT05fR1JJRCA9ICgwLjAyLCAwLjIwKVxuJywKICAgICJiYXNlIHJlZ3VsYXJpemF0aW9uIGNvbnN0YW50IiwKKQp0ZXh0ID0gcmVwbGFjZV9vbmNlKAogICAgdGV4dCwKICAgICcgICAgICAgIGwyX3ZhbHVlcyA9ICgwLjAyLCAwLjIwKVxuJywKICAgICcgICAgICAgIGwyX3ZhbHVlcyA9IHR1cGxlKFJFR1VMQVJJWkFUSU9OX0dSSUQpXG4nLAogICAgInNlbGVjdG9yIGwyIGdyaWQiLAopCnRleHQgPSByZXBsYWNlX29uY2UoCiAgICB0ZXh0LAogICAgJyAgICAgICAgICAgIGZvciBsMl9pbmRleCwgbDIgaW4gZW51bWVyYXRlKGwyX3ZhbHVlcyk6XG4nLAogICAgJyAgICAgICAgICAgIGZvciBsMiBpbiBsMl92YWx1ZXM6XG4nLAogICAgInNlbGVjdG9yIGwyIGxvb3AiLAopCnRleHQgPSByZXBsYWNlX29uY2UoCiAgICB0ZXh0LAogICAgJyAgICAgICAgICAgICAgICAgICAgICAgIHNlZWQ9c2VlZCArIGdyb3VwX2luZGV4ICogMTAwMCArIGwyX2luZGV4ICogMTAwICsgZm9sZF9pbmRleCxcbicsCiAgICAnICAgICAgICAgICAgICAgICAgICAgICAgc2VlZD1zZWVkICsgZ3JvdXBfaW5kZXggKiAxMDAwICsgZm9sZF9pbmRleCxcbicsCiAgICAic2VlZCBhbGlnbm1lbnQiLAopCmJhc2Uud3JpdGVfdGV4dCh0ZXh0KQoKb2JqZWN0aXZlID0gUGF0aCgiaGVsbG9fd29ybGQvbWxiX3N1cGVydmlzZWRfZGFpbHlfb2JqZWN0aXZlX3YyXzEucHkiKQp0ZXh0ID0gb2JqZWN0aXZlLnJlYWRfdGV4dCgpCnRleHQgPSB0ZXh0LnJlcGxhY2UoIlYyLjUga2VlcHMgY2FsaWJyYXRpb24iLCAiVjIuNiBrZWVwcyBjYWxpYnJhdGlvbiIsIDEpCnRleHQgPSByZXBsYWNlX29uY2UoCiAgICB0ZXh0LAogICAgIiAgICBpbXBvcnQgbWxiX3N1cGVydmlzZWRfc2VsZWN0aW9uX2d1YXJkX3YyXzUgYXMgc2VsZWN0aW9uX2d1YXJkXG4iLAogICAgIiAgICBpbXBvcnQgbWxiX3N1cGVydmlzZWRfc2VsZWN0aW9uX2d1YXJkX3YyXzYgYXMgc2VsZWN0aW9uX2d1YXJkXG4iLAogICAgIm9iamVjdGl2ZSBkaXJlY3QgaW1wb3J0IiwKKQp0ZXh0ID0gcmVwbGFjZV9vbmNlKAogICAgdGV4dCwKICAgICIgICAgZnJvbSAuIGltcG9ydCBtbGJfc3VwZXJ2aXNlZF9zZWxlY3Rpb25fZ3VhcmRfdjJfNSBhcyBzZWxlY3Rpb25fZ3VhcmRcbiIsCiAgICAiICAgIGZyb20gLiBpbXBvcnQgbWxiX3N1cGVydmlzZWRfc2VsZWN0aW9uX2d1YXJkX3YyXzYgYXMgc2VsZWN0aW9uX2d1YXJkXG4iLAogICAgIm9iamVjdGl2ZSBwYWNrYWdlIGltcG9ydCIsCikKdGV4dCA9IHJlcGxhY2Vfb25jZSgKICAgIHRleHQsCiAgICAnVkVSU0lPTiA9ICJNTEItU1VQRVJWSVNFRC1TSEFET1ctdjIuNS1wcm92aWRlci1ob3Jpem9uLWV2YWx1YWJsZS1mb2xkcyJcbicsCiAgICAnVkVSU0lPTiA9ICJNTEItU1VQRVJWSVNFRC1TSEFET1ctdjIuNi1zZWVkLWFsaWduZWQtcmVndWxhcml6YXRpb24tZ3JpZCJcbicsCiAgICAib2JqZWN0aXZlIHZlcnNpb24iLAopCnRleHQgPSByZXBsYWNlX29uY2UoCiAgICB0ZXh0LAogICAgJyAgICBpZiBnZXRhdHRyKG1vZGVsX21vZHVsZSwgIl9JTlFTSV9NTEJfREFJTFlfT0JKRUNUSVZFX1YyXzVfSU5TVEFMTEVEIiwgRmFsc2UpOlxuJywKICAgICcgICAgaWYgZ2V0YXR0cihtb2RlbF9tb2R1bGUsICJfSU5RU0lfTUxCX0RBSUxZX09CSkVDVElWRV9WMl82X0lOU1RBTExFRCIsIEZhbHNlKTpcbicsCiAgICAib2JqZWN0aXZlIGluc3RhbGxlZCBndWFyZCIsCikKdGV4dCA9IHJlcGxhY2Vfb25jZSgKICAgIHRleHQsCiAgICAnICAgIG1vZGVsX21vZHVsZS5fSU5RU0lfTUxCX0RBSUxZX09CSkVDVElWRV9WMl81X0lOU1RBTExFRCA9IFRydWVcbicsCiAgICAnICAgIG1vZGVsX21vZHVsZS5fSU5RU0lfTUxCX0RBSUxZX09CSkVDVElWRV9WMl82X0lOU1RBTExFRCA9IFRydWVcbicsCiAgICAib2JqZWN0aXZlIGluc3RhbGxlZCBtYXJrZXIiLAopCm9iamVjdGl2ZS53cml0ZV90ZXh0KHRleHQpCgp3b3JrZmxvdyA9IFBhdGgoIi5naXRodWIvd29ya2Zsb3dzL21sYi1zdXBlcnZpc2VkLXNoYWRvdy12Mi1yZWN1cnJpbmcueW1sIikKdGV4dCA9IHdvcmtmbG93LnJlYWRfdGV4dCgpCmZvciBvbGQsIG5ldywgbGFiZWwgaW4gKAogICAgKAogICAgICAgICIgICAgICAtICdoZWxsb193b3JsZC9tbGJfc3VwZXJ2aXNlZF9zZWxlY3Rpb25fZ3VhcmRfdjJfNS5weSdcbiIsCiAgICAgICAgIiAgICAgIC0gJ2hlbGxvX3dvcmxkL21sYl9zdXBlcnZpc2VkX3NlbGVjdGlvbl9ndWFyZF92Ml81LnB5J1xuIgogICAgICAgICIgICAgICAtICdoZWxsb193b3JsZC9tbGJfc3VwZXJ2aXNlZF9zZWxlY3Rpb25fZ3VhcmRfdjJfNi5weSdcbiIsCiAgICAgICAgIndvcmtmbG93IHYyNiBjb2RlIHBhdGgiLAogICAgKSwKICAgICgKICAgICAgICAiICAgICAgLSAndGVzdHMvdW5pdC90ZXN0X21sYl9zdXBlcnZpc2VkX3NlbGVjdGlvbl9ndWFyZF92Ml81LnB5J1xuIiwKICAgICAgICAiICAgICAgLSAndGVzdHMvdW5pdC90ZXN0X21sYl9zdXBlcnZpc2VkX3NlbGVjdGlvbl9ndWFyZF92Ml81LnB5J1xuIgogICAgICAgICIgICAgICAtICd0ZXN0cy91bml0L3Rlc3RfbWxiX3N1cGVydmlzZWRfc2VsZWN0aW9uX2d1YXJkX3YyXzYucHknXG4iLAogICAgICAgICJ3b3JrZmxvdyB2MjYgdGVzdCBwYXRoIiwKICAgICksCiAgICAoCiAgICAgICAgIiAgICAgICAgICAgIGhlbGxvX3dvcmxkL21sYl9zdXBlcnZpc2VkX3NlbGVjdGlvbl9ndWFyZF92Ml81LnB5IFxcXG4iLAogICAgICAgICIgICAgICAgICAgICBoZWxsb193b3JsZC9tbGJfc3VwZXJ2aXNlZF9zZWxlY3Rpb25fZ3VhcmRfdjJfNS5weSBcXFxuIgogICAgICAgICIgICAgICAgICAgICBoZWxsb193b3JsZC9tbGJfc3VwZXJ2aXNlZF9zZWxlY3Rpb25fZ3VhcmRfdjJfNi5weSBcXFxuIiwKICAgICAgICAid29ya2Zsb3cgdjI2IGNvbXBpbGUiLAogICAgKSwKICAgICgKICAgICAgICAiICAgICAgICAgICAgdGVzdHMvdW5pdC90ZXN0X21sYl9zdXBlcnZpc2VkX3NlbGVjdGlvbl9ndWFyZF92Ml81LnB5IFxcXG4iLAogICAgICAgICIgICAgICAgICAgICB0ZXN0cy91bml0L3Rlc3RfbWxiX3N1cGVydmlzZWRfc2VsZWN0aW9uX2d1YXJkX3YyXzUucHkgXFxcbiIKICAgICAgICAiICAgICAgICAgICAgdGVzdHMvdW5pdC90ZXN0X21sYl9zdXBlcnZpc2VkX3NlbGVjdGlvbl9ndWFyZF92Ml82LnB5IFxcXG4iLAogICAgICAgICJ3b3JrZmxvdyB2MjYgcHl0ZXN0IiwKICAgICksCik6CiAgICB0ZXh0ID0gcmVwbGFjZV9vbmNlKHRleHQsIG9sZCwgbmV3LCBsYWJlbCkKCnRleHQgPSB0ZXh0LnJlcGxhY2UoCiAgICAiTUxCLVNVUEVSVklTRUQtU0VMRUNUSU9OLUdVQVJELXYyLjUtcHJvdmlkZXItaG9yaXpvbi1ldmFsdWFibGUtZm9sZHMiLAogICAgIk1MQi1TVVBFUlZJU0VELVNFTEVDVElPTi1HVUFSRC12Mi42LXNlZWQtYWxpZ25lZC1yZWd1bGFyaXphdGlvbi1ncmlkIiwKKQpuZWVkbGUgPSAiICAgICAgICAgIGFzc2VydCB0aHJlc2hvbGRzLmdldCgncHJvdmlkZXJIb3Jpem9uVW5zdXBwb3J0ZWRGb2xkc0NvdW50QXNQYXNzaW5nJykgaXMgRmFsc2UsIHRocmVzaG9sZHNcbiIKYWRkaXRpb24gPSAoCiAgICBuZWVkbGUKICAgICsgIiAgICAgICAgICBhc3NlcnQgdGhyZXNob2xkcy5nZXQoJ3JlZ3VsYXJpemF0aW9uQ29tcGFyaXNvblNlZWRBbGlnbmVkJykgaXMgVHJ1ZSwgdGhyZXNob2xkc1xuIgogICAgKyAiICAgICAgICAgIGFzc2VydCB0aHJlc2hvbGRzLmdldCgncmVndWxhcml6YXRpb25HcmlkQm91bmRlZCcpIGlzIFRydWUsIHRocmVzaG9sZHNcbiIKICAgICsgIiAgICAgICAgICBhc3NlcnQgbGVuKHRocmVzaG9sZHMuZ2V0KCdyZWd1bGFyaXphdGlvbkdyaWQnKSBvciBbXSkgPT0gOCwgdGhyZXNob2xkc1xuIgopCmlmICJyZWd1bGFyaXphdGlvbkNvbXBhcmlzb25TZWVkQWxpZ25lZCIgbm90IGluIHRleHQ6CiAgICBpZiBuZWVkbGUgbm90IGluIHRleHQ6CiAgICAgICAgcmFpc2UgU3lzdGVtRXhpdCgid29ya2Zsb3cgcmVndWxhcml6YXRpb24gYXNzZXJ0aW9uIG1hcmtlciBtaXNzaW5nIikKICAgIHRleHQgPSB0ZXh0LnJlcGxhY2UobmVlZGxlLCBhZGRpdGlvbiwgMikKd29ya2Zsb3cud3JpdGVfdGV4dCh0ZXh0KQo=' | base64 --decode > /tmp/patch_v8_v26.py
+          python /tmp/patch_v8_v26.py
+
+      - name: Verify grid execution and seed alignment
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'numpy>=1.26,<3' 'pytest>=8,<9'
+          python -m py_compile \
+            hello_world/mlb_supervised_selection_guard_v2_3.py \
+            hello_world/mlb_supervised_selection_guard_v2_5.py \
+            hello_world/mlb_supervised_selection_guard_v2_6.py \
+            hello_world/mlb_supervised_daily_objective_v2_1.py
+          python -m pytest -q --tb=short \
+            tests/unit/test_mlb_supervised_selection_guard_v2_3.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_5.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_6.py \
+            tests/unit/test_mlb_supervised_daily_objective_v2_1.py
+          grep -Fq 'l2_values = tuple(REGULARIZATION_GRID)' hello_world/mlb_supervised_selection_guard_v2_3.py
+          ! grep -Fq 'l2_index * 100' hello_world/mlb_supervised_selection_guard_v2_3.py
+          grep -Fq 'mlb_supervised_selection_guard_v2_6 as selection_guard' hello_world/mlb_supervised_daily_objective_v2_1.py
+
+      - name: Publish fix and remove installer
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            hello_world/mlb_supervised_selection_guard_v2_3.py \
+            hello_world/mlb_supervised_daily_objective_v2_1.py \
+            .github/workflows/mlb-supervised-shadow-v2-recurring.yml
+          git rm .github/workflows/mlb-v8-v26-selector-fix-once.yml
+          git diff --cached --check
+          git commit -m 'Execute V8 seed-aligned regularization search'
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
