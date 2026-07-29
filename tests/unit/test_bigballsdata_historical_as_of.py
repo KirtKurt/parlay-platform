@@ -48,3 +48,26 @@ def test_resource_request_includes_historical_as_of(monkeypatch):
 
     assert "as_of=2026-07-01T22%3A15%3A00Z" in seen["url"]
     assert value["_transport"]["requestedAsOfUtc"] == "2026-07-01T22:15:00Z"
+
+
+def test_stored_historical_match_surface_is_explicit():
+    seen = {}
+
+    def opener(request, timeout):
+        seen["url"] = request.full_url
+        return Response(
+            {
+                "data": [],
+                "meta": {"source": "cache"},
+                "error": None,
+            }
+        )
+
+    client = BigBallsDataClient(api_key="bbs_live_abcdefghijkl", opener=opener)
+    value = client.list_mlb_matches("2025-04-01", limit=200, stored=True)
+
+    assert "/v1/stored/matches?" in seen["url"]
+    assert "sport=baseball" in seen["url"]
+    assert "league=mlb" in seen["url"]
+    assert "date=2025-04-01" in seen["url"]
+    assert value["_transport"]["endpoint"] == "/v1/stored/matches"
