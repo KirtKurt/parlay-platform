@@ -176,16 +176,16 @@ def test_snapshot_contract_accepts_strictly_prior_projection_without_claiming_co
     assert value["projectedTargetLineups"] is True
 
 
-def test_resource_shape_compatibility_preserves_recent_starter_form():
+def test_resource_shape_compatibility_uses_real_fundamentals_alias():
     captured = {}
 
-    class Collector:
+    class Fundamentals:
         @staticmethod
         def normalize_match(match, captured_at, resources=None):
             captured.update(resources or {})
             return {"ok": True}
 
-    module = SimpleNamespace(collector=Collector)
+    module = SimpleNamespace(fundamentals=Fundamentals)
     entrypoint.install_resource_shape_compatibility(module)
     source = {
         "pitchers": {
@@ -196,7 +196,7 @@ def test_resource_shape_compatibility_preserves_recent_starter_form():
         }
     }
 
-    value = module.collector.normalize_match(
+    value = module.fundamentals.normalize_match(
         {}, datetime.now(timezone.utc), source
     )
 
