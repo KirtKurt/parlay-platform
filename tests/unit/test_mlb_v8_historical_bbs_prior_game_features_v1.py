@@ -42,8 +42,14 @@ def snapshot():
 
 
 def test_feature_map_uses_only_verified_prior_game_snapshot():
-    value = features.feature_map({"frozenFundamentalsSnapshot": snapshot()})
+    value = features.feature_map(
+        {
+            "slateDateEt": "2026-06-01",
+            "frozenFundamentalsSnapshot": snapshot(),
+        }
+    )
 
+    assert value["bbs_prior_supported"] == 1.0
     assert value["bbs_prior_available"] == 1.0
     assert value["bbs_prior_win_rate5_diff"] == 0.4
     assert value["bbs_prior_run_diff10_diff"] == 0.2
@@ -52,29 +58,53 @@ def test_feature_map_uses_only_verified_prior_game_snapshot():
     assert value["bbs_prior_history_coverage_min"] == 18 / 30
 
 
-def test_unverified_or_underfloor_snapshot_returns_missingness_only():
+def test_unverified_snapshot_preserves_only_supported_cohort_marker():
     value = snapshot()
     value["sameDayResultsExcluded"] = False
-    result = features.feature_map({"frozenFundamentalsSnapshot": value})
-    assert result == {name: 0.0 for name in features.FEATURES}
+    result = features.feature_map(
+        {
+            "slateDateEt": "2026-06-01",
+            "frozenFundamentalsSnapshot": value,
+        }
+    )
+    expected = {name: 0.0 for name in features.FEATURES}
+    expected["bbs_prior_supported"] = 1.0
+    assert result == expected
 
 
-def test_install_extends_only_fundamentals_groups_and_is_idempotent():
+def test_unsupported_date_cannot_enter_supported_denominator():
+    result = features.feature_map(
+        {
+            "slateDateEt": "2025-07-01",
+            "frozenFundamentalsSnapshot": snapshot(),
+        }
+    )
+    assert result["bbs_prior_supported"] == 0.0
+    assert result["bbs_prior_available"] == 1.0
+
+
+def test_install_adds_values_without_mutating_feature_groups_and_is_idempotent():
     module = SimpleNamespace(
         FEATURE_GROUPS={
             "market": ("market",),
-            "market_fundamentals": ("market", "fund"),
+            "market_temporal_team_bbs_prior": ("market",) + features.FEATURES,
         },
         VERSION="base",
-        feature_map=lambda _record: {"market": 1.0, "fund": 2.0},
+        feature_map=lambda _record: {"market": 1.0},
     )
 
+    original_groups = dict(module.FEATURE_GROUPS)
     features.install(module)
-    first = module.feature_map({"frozenFundamentalsSnapshot": snapshot()})
+    first = module.feature_map(
+        {
+            "slateDateEt": "2026-06-01",
+            "frozenFundamentalsSnapshot": snapshot(),
+        }
+    )
     features.install(module)
 
-    assert module.FEATURE_GROUPS["market"] == ("market",)
-    assert "bbs_prior_available" in module.FEATURE_GROUPS["market_fundamentals"]
+    assert module.FEATURE_GROUPS == original_groups
     assert first["market"] == 1.0
     assert first["bbs_prior_available"] == 1.0
+    assert first["bbs_prior_supported"] == 1.0
     assert module.VERSION.count(features.VERSION) == 1
