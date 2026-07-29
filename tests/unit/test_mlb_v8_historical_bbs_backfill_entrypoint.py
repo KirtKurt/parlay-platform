@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -109,3 +110,69 @@ def test_historical_discovery_forces_stored_match_surface():
             "stored": True,
         }
     ]
+
+
+def test_coverage_window_reverses_only_canonical_traversal_order():
+    module = SimpleNamespace(
+        _load_canonical_games=lambda _state, _s3: [
+            {"officialGamePk": "1", "slateDateEt": "2025-04-01"},
+            {"officialGamePk": "2", "slateDateEt": "2026-07-27"},
+        ]
+    )
+
+    entrypoint.install_newest_coverage_window(module)
+    rows = module._load_canonical_games({}, object())
+
+    assert [row["officialGamePk"] for row in rows] == ["2", "1"]
+
+
+def test_diagnostics_publish_only_counts_and_error_names(tmp_path):
+    def crosswalk(provider_rows, canonical_games, **_kwargs):
+        return {
+            "acceptedCount": 1,
+            "quarantinedCount": 0,
+            "accepted": {},
+            "quarantined": [],
+        }
+
+    def snapshot(*_args, **_kwargs):
+        return {
+            "trainingEligible": False,
+            "eligibilityErrors": ["pitchers_source_effective_time_missing"],
+        }
+
+    def run(*_args, **_kwargs):
+        return {
+            "ok": False,
+            "selectedGameCount": 2,
+            "blockers": ["current_batch_added_zero_training_eligible_rows"],
+        }
+
+    module = SimpleNamespace(
+        crosswalk_provider_rows=crosswalk,
+        build_training_snapshot=snapshot,
+        run=run,
+    )
+    entrypoint.install_safe_diagnostics(module)
+    module.crosswalk_provider_rows(
+        [{"id": "provider-secret-row-not-emitted"}],
+        [
+            {"slateDateEt": "2026-07-27", "officialGamePk": "1"},
+            {"slateDateEt": "2026-07-27", "officialGamePk": "2"},
+        ],
+    )
+    module.build_training_snapshot()
+    output = tmp_path / "report.json"
+
+    report = module.run(output=output)
+    durable = json.loads(output.read_text())
+
+    assert report["providerRowsReturned"] == 1
+    assert report["acceptedCrosswalkCount"] == 1
+    assert report["unmatchedCanonicalGameCount"] == 1
+    assert report["eligibilityErrorCounts"] == {
+        "pitchers_source_effective_time_missing": 1
+    }
+    assert report["diagnosticsContainProviderValues"] is False
+    assert "provider-secret-row-not-emitted" not in output.read_text()
+    assert durable == report
