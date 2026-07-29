@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Any, Mapping, Optional
 
 
+REPORT_GUARD_VERSION = "MLB-V8-SHADOW-REPORT-GUARD-v1"
+
+
 class ReportGuardError(ValueError):
     """Raised when an incoming report cannot be used as authoritative evidence."""
 
@@ -29,6 +32,7 @@ class UpdateDecision:
 
     def as_dict(self) -> dict[str, Any]:
         return {
+            "version": REPORT_GUARD_VERSION,
             "action": self.action,
             "reason": self.reason,
             "incomingCreatedAtUtc": self.incoming_created_at_utc,
@@ -157,7 +161,16 @@ def main() -> int:
             destination_path=args.destination,
         )
     except ReportGuardError as exc:
-        print(json.dumps({"action": "ERROR", "error": str(exc)}, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "version": REPORT_GUARD_VERSION,
+                    "action": "ERROR",
+                    "error": str(exc),
+                },
+                sort_keys=True,
+            )
+        )
         return 2
     print(json.dumps(decision.as_dict(), sort_keys=True))
     return 0
