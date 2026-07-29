@@ -138,13 +138,14 @@ jobs:
           PY
           fi
           python -m json.tool "$REPORT_PATH" >/dev/null
+          cp "$REPORT_PATH" /tmp/mlb-supervised-v2-immediate-report.json
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: mlb-supervised-v2-immediate-${{ github.run_id }}
           path: |
-            runtime_reports/mlb_supervised_shadow_v2_latest.json
+            /tmp/mlb-supervised-v2-immediate-report.json
             /tmp/mlb-supervised-v2-immediate.log
           retention-days: 90
           if-no-files-found: warn
@@ -155,7 +156,6 @@ jobs:
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          cp "$REPORT_PATH" /tmp/mlb-supervised-v2-immediate-report.json
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             git checkout -B mlb-supervised-v2-immediate-proof origin/main
@@ -178,7 +178,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          value=json.loads(Path('runtime_reports/mlb_supervised_shadow_v2_latest.json').read_text())
+          value=json.loads(Path('/tmp/mlb-supervised-v2-immediate-report.json').read_text())
           assert value.get('ok') is True, value
           assert value.get('authority')=='SHADOW_ONLY', value
           assert value.get('productionAuthorityChanged') is False, value
