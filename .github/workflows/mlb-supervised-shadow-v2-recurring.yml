@@ -173,7 +173,7 @@ jobs:
           python - <<'PY'
           import json, os
           from pathlib import Path
-          value=json.loads(Path(os.environ['REPORT_PATH']).read_text())
+          value=json.loads(Path('/tmp/mlb-supervised-shadow-v2.json').read_text())
           model_digest=value.get('modelDigest') or ((value.get('model') or {}).get('modelDigest'))
           assert value.get('ok') is True, value
           assert value.get('sourceSha') == os.environ.get('GITHUB_SHA'), value
