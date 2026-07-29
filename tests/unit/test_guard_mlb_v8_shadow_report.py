@@ -34,6 +34,16 @@ def test_publishes_when_canonical_report_is_missing(tmp_path: Path) -> None:
     assert json.loads(destination.read_text()) == value
 
 
+def test_decision_evidence_is_versioned(tmp_path: Path) -> None:
+    incoming = tmp_path / "incoming.json"
+    destination = tmp_path / "latest.json"
+    _write(incoming, _report("2026-07-29T01:00:00+00:00"))
+
+    decision = guard.guarded_update(incoming_path=incoming, destination_path=destination)
+
+    assert decision.as_dict()["version"] == guard.REPORT_GUARD_VERSION
+
+
 def test_publishes_newer_report(tmp_path: Path) -> None:
     incoming = tmp_path / "incoming.json"
     destination = tmp_path / "latest.json"
