@@ -329,7 +329,9 @@ def test_diagnostics_publish_only_shapes_counts_and_error_names(tmp_path):
     assert report["resourceErrorCounts"] == {
         "injuries:BBS_HISTORICAL_INJURIES_POINT_IN_TIME_UNAVAILABLE": 1
     }
-    assert report["resourceDataShapes"]["lineups"]["home"] == "object"
+    assert report["resourceDataShapes"]["lineups"]["home"] == {
+        "players": "array[1]"
+    }
     assert report["diagnosticsContainProviderValues"] is False
     durable_text = output.read_text()
     assert "opaque-row" not in durable_text
