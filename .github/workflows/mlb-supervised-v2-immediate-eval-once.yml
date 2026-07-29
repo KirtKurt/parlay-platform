@@ -50,7 +50,7 @@ jobs:
             hello_world/mlb_supervised_daily_objective_v2_1.py \
             scripts/run_mlb_supervised_shadow_v2.py \
             scripts/publish_monotonic_json.py
-          PYTHONPATH=. python -m pytest -q --tb=short \
+          PYTHONPATH=.:hello_world:scripts python -m pytest -q --tb=short \
             tests/unit/test_mlb_supervised_shadow_v2.py \
             tests/unit/test_mlb_supervised_daily_objective_v2_1.py \
             tests/unit/test_publish_monotonic_json.py
