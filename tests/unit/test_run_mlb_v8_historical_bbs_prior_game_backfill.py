@@ -105,3 +105,28 @@ def test_ineligible_prior_history_never_creates_training_snapshot():
     assert snapshot["eligibilityErrors"] == [
         "home_bbs_prior_game_floor_not_met"
     ]
+
+
+
+def test_learning_priority_repairs_earliest_chronological_fold_first():
+    rows = [
+        {
+            "slateDateEt": "2026-06-03",
+            "predictionLockAtUtc": "2026-06-03T20:00:00Z",
+            "officialGamePk": "3",
+        },
+        {
+            "slateDateEt": "2026-03-02",
+            "predictionLockAtUtc": "2026-03-02T22:00:00Z",
+            "officialGamePk": "2",
+        },
+        {
+            "slateDateEt": "2026-03-02",
+            "predictionLockAtUtc": "2026-03-02T19:00:00Z",
+            "officialGamePk": "1",
+        },
+    ]
+
+    selected = backfill._learning_priority(rows, 2)
+
+    assert [row["officialGamePk"] for row in selected] == ["1", "2"]

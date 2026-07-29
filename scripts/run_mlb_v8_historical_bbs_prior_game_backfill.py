@@ -48,6 +48,20 @@ def _identity(row: Mapping[str, Any]) -> Tuple[str, str]:
     )
 
 
+def _learning_priority(
+    rows: Sequence[Mapping[str, Any]], batch_size: int
+) -> List[Mapping[str, Any]]:
+    """Fill the earliest chronological development evidence first."""
+    return sorted(
+        rows,
+        key=lambda row: (
+            str(row.get("slateDateEt") or ""),
+            str(row.get("predictionLockAtUtc") or ""),
+            str(row.get("officialGamePk") or ""),
+        ),
+    )[:batch_size]
+
+
 def _historical_bucket(outputs: Mapping[str, Any]) -> str:
     return str(outputs.get("HistoricalArtifactsBucketName") or "").strip()
 
@@ -217,15 +231,7 @@ def run(
         >= coverage_start_date
     ]
     pending = [row for row in supported if _identity(row) not in processed]
-    selected = sorted(
-        pending,
-        key=lambda row: (
-            str(row.get("slateDateEt") or ""),
-            str(row.get("predictionLockAtUtc") or ""),
-            str(row.get("officialGamePk") or ""),
-        ),
-        reverse=True,
-    )[:batch_size]
+    selected = _learning_priority(pending, batch_size)
 
     provider_calls = 0
     provider_by_day: Dict[str, List[Mapping[str, Any]]] = {}
@@ -336,7 +342,7 @@ def run(
                 for row in canonical_games
             ]
         ),
-        "selectionRule": "newest unprocessed canonical games within BBD coverage",
+        "selectionRule": "oldest unprocessed canonical games first to repair chronological development folds",
         "selectionUsedOutcomes": False,
         "targetGameOutcomeUsed": False,
         "sameDayResultsExcluded": True,
