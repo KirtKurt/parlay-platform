@@ -5,8 +5,9 @@ import math
 from datetime import date
 from typing import Any, Dict, Mapping, Optional
 
-VERSION = "MLB-V8-HISTORICAL-BBS-PRIOR-GAME-FEATURES-v2-supported-cohort"
+VERSION = "MLB-V8-HISTORICAL-BBS-PRIOR-GAME-FEATURES-v3-separated-snapshot-role"
 BBS_PRIOR_SUPPORT_START_DATE = "2026-03-01"
+PRIOR_ROLE = "BBD_STRICTLY_PRIOR_COMPLETED_GAME_FEATURES_AT_T_MINUS_45"
 
 FEATURES = (
     "bbs_prior_supported",
@@ -35,13 +36,22 @@ def _number(value: Any) -> Optional[float]:
 
 
 def _payload(record: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Select only a prior-game snapshot; never consume target fundamentals."""
     for value in (
-        record.get("frozenFundamentalsSnapshot"),
         record.get("historicalBbsPriorGameSnapshot"),
         record.get("historicalBbsFundamentalsSnapshot"),
     ):
-        if isinstance(value, Mapping):
-            return value
+        if isinstance(value, Mapping) and value.get("snapshotRole") in (None, PRIOR_ROLE):
+            if value.get("priorCompletedGamesUsed") is True:
+                return value
+    # Backward-compatible read of manifests published before pointer separation.
+    legacy = record.get("frozenFundamentalsSnapshot")
+    if (
+        isinstance(legacy, Mapping)
+        and legacy.get("snapshotRole") in (None, PRIOR_ROLE)
+        and legacy.get("priorCompletedGamesUsed") is True
+    ):
+        return legacy
     return {}
 
 
@@ -120,7 +130,7 @@ def feature_map(record: Mapping[str, Any]) -> Dict[str, float]:
 
 def install(feature_module: Any) -> Any:
     if getattr(
-        feature_module, "_INQSI_MLB_BBS_PRIOR_GAME_FEATURES_V2_INSTALLED", False
+        feature_module, "_INQSI_MLB_BBS_PRIOR_GAME_FEATURES_V3_INSTALLED", False
     ):
         return feature_module
     original = feature_module.feature_map
@@ -135,4 +145,5 @@ def install(feature_module: Any) -> Any:
     feature_module.VERSION = f"{feature_module.VERSION}+{VERSION}"
     feature_module._INQSI_MLB_BBS_PRIOR_GAME_FEATURES_INSTALLED = True
     feature_module._INQSI_MLB_BBS_PRIOR_GAME_FEATURES_V2_INSTALLED = True
+    feature_module._INQSI_MLB_BBS_PRIOR_GAME_FEATURES_V3_INSTALLED = True
     return feature_module
