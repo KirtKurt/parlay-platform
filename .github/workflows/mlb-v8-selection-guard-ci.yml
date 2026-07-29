@@ -8,12 +8,14 @@ name: MLB V8 Selection Guard CI
       - 'hello_world/mlb_supervised_feature_groups_v2_4.py'
       - 'hello_world/mlb_supervised_selection_guard_v2_3.py'
       - 'hello_world/mlb_supervised_selection_guard_v2_4.py'
+      - 'hello_world/mlb_supervised_selection_guard_v2_5.py'
       - 'hello_world/mlb_v8_historical_bbs_prior_game_features_v1.py'
       - 'tests/unit/test_mlb_supervised_daily_objective_v2_1.py'
       - 'tests/unit/test_mlb_supervised_feature_boundaries_v2_4.py'
       - 'tests/unit/test_mlb_supervised_feature_groups_v2_4.py'
       - 'tests/unit/test_mlb_supervised_selection_guard_v2_3.py'
       - 'tests/unit/test_mlb_supervised_selection_guard_v2_4.py'
+      - 'tests/unit/test_mlb_supervised_selection_guard_v2_5.py'
       - 'tests/unit/test_mlb_v8_historical_bbs_prior_game_features_v1.py'
       - '.github/workflows/mlb-v8-selection-guard-ci.yml'
   push:
@@ -24,12 +26,14 @@ name: MLB V8 Selection Guard CI
       - 'hello_world/mlb_supervised_feature_groups_v2_4.py'
       - 'hello_world/mlb_supervised_selection_guard_v2_3.py'
       - 'hello_world/mlb_supervised_selection_guard_v2_4.py'
+      - 'hello_world/mlb_supervised_selection_guard_v2_5.py'
       - 'hello_world/mlb_v8_historical_bbs_prior_game_features_v1.py'
       - 'tests/unit/test_mlb_supervised_daily_objective_v2_1.py'
       - 'tests/unit/test_mlb_supervised_feature_boundaries_v2_4.py'
       - 'tests/unit/test_mlb_supervised_feature_groups_v2_4.py'
       - 'tests/unit/test_mlb_supervised_selection_guard_v2_3.py'
       - 'tests/unit/test_mlb_supervised_selection_guard_v2_4.py'
+      - 'tests/unit/test_mlb_supervised_selection_guard_v2_5.py'
       - 'tests/unit/test_mlb_v8_historical_bbs_prior_game_features_v1.py'
       - '.github/workflows/mlb-v8-selection-guard-ci.yml'
   workflow_dispatch:
@@ -55,6 +59,7 @@ jobs:
             hello_world/mlb_supervised_feature_groups_v2_4.py \
             hello_world/mlb_supervised_selection_guard_v2_3.py \
             hello_world/mlb_supervised_selection_guard_v2_4.py \
+            hello_world/mlb_supervised_selection_guard_v2_5.py \
             hello_world/mlb_v8_historical_bbs_prior_game_features_v1.py
           PYTHONPATH=.:hello_world python -m pytest -q --tb=short \
             tests/unit/test_mlb_supervised_daily_objective_v2_1.py \
@@ -62,4 +67,5 @@ jobs:
             tests/unit/test_mlb_supervised_feature_groups_v2_4.py \
             tests/unit/test_mlb_supervised_selection_guard_v2_3.py \
             tests/unit/test_mlb_supervised_selection_guard_v2_4.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_5.py \
             tests/unit/test_mlb_v8_historical_bbs_prior_game_features_v1.py
