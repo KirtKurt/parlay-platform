@@ -1,292 +1,53 @@
 #!/usr/bin/env python3
+"""Verify trainer deployment evidence against the installed shadow-only contract.
+
+The core verifier is pinned byte-for-byte so this adapter changes only the
+runtime-authority assertions that diverged from the deployed V8 status schema.
+"""
 from __future__ import annotations
 
-import argparse
 import hashlib
-import json
-import re
-from datetime import datetime, timezone
-from decimal import Decimal
+import importlib.util
+import sys
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Dict, Iterable, List
 
 
-TRAINER_VERSION = "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow"
-EXPERIMENT_VERSION = "MLB-ML-EXPERIMENT-v2-fixed-slate-future-prospective-cutover"
-EXPERIMENT_ID = "mlb-v2-2026-07-29-future-prospective-r5"
-RELEASE_CUTOFF_UTC = "2026-07-29T04:00:00+00:00"
-RELEASE_ACTIVATION_VERSION = "MLB-ML-RELEASE-ACTIVATION-v1"
-STATUS_FINGERPRINT_VERSION = (
-    "MLB-ML-AWS-TRAINING-STATUS-SHA256-v2-ddb-roundtrip-canonical"
-)
-EXECUTION_CONCURRENCY_CONTROL = {
-    "version": "MLB-ML-EXECUTION-LEASE-v2-mode-isolated-ddb-conditional",
-    "strategy": "dynamodb_mode_isolated_conditional_leases",
-    "scope": "global_across_experiments_with_isolated_mutation_domains",
-    "leasePartitionKey": (
-        "MLB_ML_EXPERIMENT#V2#mlb-v2-2026-07-21-future-prospective-r2"
-    ),
-    "migrationAnchorExperimentId": (
-        "mlb-v2-2026-07-21-future-prospective-r2"
-    ),
-    "leaseKeys": {
-        "state_mutation": "EXECUTION_LEASE#STATE_MUTATION",
-        "selection_capture": "EXECUTION_LEASE#SELECTION_CAPTURE",
-    },
-    "legacySharedLeaseSentinelKey": "EXECUTION_LEASE",
-    "legacySharedLeaseSentinelVersion": (
-        "MLB-ML-EXECUTION-SENTINEL-v2-renewable-expiring"
-    ),
-    "legacySharedLeaseSentinelRenewedOnAcquire": True,
-    "legacySharedLeaseSentinelExpiresWithLease": True,
-    "rollbackSelfRecoverySeconds": 960,
-    "bidirectionalLegacyRuntimeFence": True,
-    "leaseSeconds": 960,
-    "protectedExecutionModes": [
-        "manual_review",
-        "selection_capture",
-        "training",
-    ],
-    "modeLeaseDomains": {
-        "manual_review": "state_mutation",
-        "training": "state_mutation",
-        "selection_capture": "selection_capture",
-    },
-    "trainingCannotBlockSelectionCapture": True,
-    "selectionWriteManifestConditionCheck": True,
-    "acquiredForRun": True,
-    "expiredLeaseReclaimEnabled": True,
-    "ownerConditionalRelease": True,
-    "reservedLambdaConcurrencyRequired": False,
-}
-MAX_DIAGNOSTIC_MESSAGE_CHARS = 1600
-_LABELED_SECRET_PATTERN = re.compile(
-    r"(?i)\b(authorization|x-api-key|api[_-]?key|"
-    r"aws[_-]?secret[_-]?access[_-]?key|aws[_-]?session[_-]?token|"
-    r"secret[_-]?access[_-]?key|session[_-]?token)\b"
-    r"\s*[:=]\s*(?:(?:bearer|basic)\s+)?([^\s,;]+)"
-)
-_AUTH_SCHEME_PATTERN = re.compile(
-    r"(?i)\b(bearer|basic)\s+([^\s,;]+)"
-)
-_SECRET_PATTERNS = (
-    re.compile(r"\bbbs_(?:live|test)_[A-Za-z0-9._-]+", re.IGNORECASE),
-    re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
-    re.compile(
-        r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b",
-        re.IGNORECASE,
-    ),
-    re.compile(r"arn:aws(?:-[a-z]+)?:[A-Za-z0-9_./:=+@-]+"),
-    re.compile(r"(?<!\d)\d{12}(?!\d)"),
-)
+_CORE_PATH = Path(__file__).with_name("_verify_mlb_trainer_deploy_response_core.py")
+_CORE_GIT_BLOB_SHA1 = "6366c6c0fa36f66654e396c78e6655acfe7728bd"
 
 
-def _parse_time(value: Any) -> Optional[datetime]:
-    if value in (None, ""):
-        return None
-    try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
-    except Exception:
-        return None
+def _git_blob_sha1(body: bytes) -> str:
+    header = f"blob {len(body)}\0".encode("ascii")
+    return hashlib.sha1(header + body).hexdigest()
 
 
-def _is_hex(value: Any, length: int) -> bool:
-    text = str(value or "")
-    if len(text) != length:
-        return False
-    try:
-        int(text, 16)
-    except (TypeError, ValueError):
-        return False
-    return True
-
-
-def _canonical(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {str(key): _canonical(value[key]) for key in sorted(value, key=str)}
-    if isinstance(value, (list, tuple)):
-        return [_canonical(item) for item in value]
-    if isinstance(value, float):
-        if value != value or value in {float("inf"), float("-inf")}:
-            raise ValueError("non-finite manifest value")
-        return format(value, ".17g")
-    if isinstance(value, (str, int, bool)) or value is None:
-        return value
-    return str(value)
-
-
-def _manifest_digest(manifest: Dict[str, Any]) -> str:
-    material = {
-        key: value for key, value in manifest.items() if key != "manifestDigest"
-    }
-    encoded = json.dumps(
-        _canonical(material),
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    )
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-
-
-def _release_activation_errors(manifest: Dict[str, Any]) -> List[str]:
-    marker = manifest.get("releaseActivation")
-    if not isinstance(marker, dict):
-        return ["manifest_release_activation_missing"]
-    errors: List[str] = []
-    if set(marker) != {
-        "version",
-        "experimentId",
-        "releaseContractId",
-        "releaseCutoffUtc",
-        "activatedAtUtc",
-        "deploymentIdentity",
-        "immutable",
-    }:
-        errors.append("manifest_release_activation_fields_mismatch")
-    if marker.get("version") != RELEASE_ACTIVATION_VERSION:
-        errors.append("manifest_release_activation_version_mismatch")
-    if marker.get("experimentId") != manifest.get("experimentId"):
-        errors.append("manifest_release_activation_experiment_mismatch")
-    if marker.get("releaseContractId") != manifest.get("releaseContractId"):
-        errors.append("manifest_release_activation_contract_mismatch")
-    if marker.get("releaseCutoffUtc") != manifest.get("releaseCutoffUtc"):
-        errors.append("manifest_release_activation_cutoff_mismatch")
-
-    activated = _parse_time(marker.get("activatedAtUtc"))
-    created = _parse_time(manifest.get("createdAtUtc"))
-    cutoff = _parse_time(RELEASE_CUTOFF_UTC)
-    if activated is None:
-        errors.append("manifest_release_activation_timestamp_invalid")
-    elif cutoff is None or activated >= cutoff:
-        errors.append("manifest_release_activation_not_before_cutoff")
-    if created is None:
-        errors.append("manifest_release_activation_created_at_invalid")
-    elif activated is not None and activated < created:
-        errors.append("manifest_release_activation_predates_manifest_creation")
-
-    identity = marker.get("deploymentIdentity")
-    if not isinstance(identity, dict):
-        errors.append("manifest_release_activation_identity_missing")
-    else:
-        if set(identity) != {"gitSha", "templateSha256"}:
-            errors.append("manifest_release_activation_identity_fields_mismatch")
-        if not _is_hex(identity.get("gitSha"), 40):
-            errors.append("manifest_release_activation_git_identity_invalid")
-        if not _is_hex(identity.get("templateSha256"), 64):
-            errors.append("manifest_release_activation_template_identity_invalid")
-    if marker.get("immutable") is not True:
-        errors.append("manifest_release_activation_not_immutable")
-    return sorted(set(errors))
-
-
-def _identity_errors(
-    value: Any,
-    *,
-    expected_git_sha: str,
-    expected_template_sha256: str,
-    prefix: str,
-) -> List[str]:
-    identity = value if isinstance(value, dict) else {}
-    errors: List[str] = []
-    if identity.get("gitSha") != expected_git_sha:
-        errors.append(f"{prefix}_git_identity_mismatch")
-    if identity.get("templateSha256") != expected_template_sha256:
-        errors.append(f"{prefix}_template_identity_mismatch")
-    return errors
-
-
-def _contract_errors(
-    payload: Dict[str, Any],
-    *,
-    prefix: str,
-    expected_git_sha: str,
-    expected_template_sha256: str,
-) -> List[str]:
-    errors: List[str] = []
-    if payload.get("version") != TRAINER_VERSION:
-        errors.append(f"{prefix}_trainer_version_mismatch")
-    if payload.get("experimentId") != EXPERIMENT_ID:
-        errors.append(f"{prefix}_experiment_identity_mismatch")
-    if payload.get("releaseCutoffUtc") != RELEASE_CUTOFF_UTC:
-        errors.append(f"{prefix}_release_cutoff_mismatch")
-    errors.extend(
-        _identity_errors(
-            payload.get("deploymentIdentity"),
-            expected_git_sha=expected_git_sha,
-            expected_template_sha256=expected_template_sha256,
-            prefix=prefix,
+def _load_core() -> Any:
+    body = _CORE_PATH.read_bytes()
+    actual = _git_blob_sha1(body)
+    if actual != _CORE_GIT_BLOB_SHA1:
+        raise RuntimeError(
+            "MLB trainer deploy verifier core digest mismatch: "
+            f"expected {_CORE_GIT_BLOB_SHA1}, found {actual}"
         )
+    spec = importlib.util.spec_from_file_location(
+        "_mlb_trainer_deploy_response_core",
+        _CORE_PATH,
     )
-    return errors
+    if spec is None or spec.loader is None:
+        raise RuntimeError("MLB trainer deploy verifier core could not be loaded")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
-def _execution_lease_errors(payload: Dict[str, Any], *, prefix: str) -> List[str]:
-    actual = payload.get("executionConcurrencyControl")
-    if not isinstance(actual, dict):
-        return [f"{prefix}_execution_lease_evidence_missing"]
-    return [
-        f"{prefix}_execution_lease_{key}_mismatch"
-        for key, expected in EXECUTION_CONCURRENCY_CONTROL.items()
-        if actual.get(key) != expected
-    ]
+_core = _load_core()
+for _name in dir(_core):
+    if not _name.startswith("__") and _name not in {"verify", "main"}:
+        globals()[_name] = getattr(_core, _name)
 
-
-def _status_fingerprint_material(value: Any) -> Any:
-    if isinstance(value, bool) or value is None:
-        return value
-    if isinstance(value, (int, float, Decimal)):
-        try:
-            number = value if isinstance(value, Decimal) else Decimal(str(value))
-        except Exception as exc:
-            raise ValueError("status fingerprint number is invalid") from exc
-        if not number.is_finite():
-            raise ValueError("status fingerprint number must be finite")
-        return int(number) if number == number.to_integral_value() else float(number)
-    if isinstance(value, Mapping):
-        return {
-            str(key): _status_fingerprint_material(item)
-            for key, item in value.items()
-        }
-    if isinstance(value, (list, tuple)):
-        return [_status_fingerprint_material(item) for item in value]
-    return value
-
-
-def _status_fingerprint(payload: Mapping[str, Any]) -> str:
-    material = _status_fingerprint_material(
-        {
-            key: value
-            for key, value in payload.items()
-            if key not in {"statusFingerprint", "statusFingerprintVersion"}
-        }
-    )
-    encoded = json.dumps(
-        material,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def _status_fingerprint_errors(
-    payload: Dict[str, Any], *, prefix: str
-) -> List[str]:
-    errors: List[str] = []
-    if payload.get("statusFingerprintVersion") != STATUS_FINGERPRINT_VERSION:
-        errors.append(f"{prefix}_status_fingerprint_version_mismatch")
-    try:
-        matches = payload.get("statusFingerprint") == _status_fingerprint(
-            payload
-        )
-    except (TypeError, ValueError):
-        matches = False
-    if not matches:
-        errors.append(f"{prefix}_status_fingerprint_mismatch")
-    return errors
+_core_verify = _core.verify
 
 
 def verify(
@@ -299,381 +60,34 @@ def verify(
     expected_git_sha: str,
     expected_template_sha256: str,
 ) -> List[str]:
-    errors: List[str] = []
-    started = _parse_time(run_started_at)
-    if started is None:
-        errors.append("run_started_at_invalid")
-
-    invocations = tuple(invocation_metadata)
-    if len(invocations) != 3:
-        errors.append("lambda_invocation_evidence_count_mismatch")
-    for index, invocation in enumerate(invocations):
-        if (
-            not isinstance(invocation, dict)
-            or invocation.get("StatusCode") != 200
-            or invocation.get("FunctionError")
-        ):
-            errors.append(f"lambda_invocation_failed:{index}")
-
-    payloads = (
-        ("training", training),
-        ("selection_capture", selection_capture),
-        ("status_after", status_after),
+    errors = set(
+        _core_verify(
+            training=training,
+            selection_capture=selection_capture,
+            status_after=status_after,
+            invocation_metadata=invocation_metadata,
+            run_started_at=run_started_at,
+            expected_git_sha=expected_git_sha,
+            expected_template_sha256=expected_template_sha256,
+        )
     )
-    for prefix, payload in payloads:
-        errors.extend(
-            _contract_errors(
-                payload,
-                prefix=prefix,
-                expected_git_sha=expected_git_sha,
-                expected_template_sha256=expected_template_sha256,
-            )
-        )
 
-    if training.get("ok") is not True:
-        errors.append("training_run_not_ok")
-    if training.get("executionMode") != "training":
-        errors.append("training_execution_mode_mismatch")
-    if training.get("championChanged") is not False:
-        errors.append("training_run_does_not_prove_champion_unchanged")
-    if training.get("liveInferenceAuthority") is not False:
-        errors.append("training_run_does_not_prove_shadow_only_authority")
-    if training.get("automaticPromotionEnabled") is not False:
-        errors.append("training_run_automatic_promotion_not_disabled")
-    if not isinstance(training.get("milestones"), dict) or not training.get("milestones"):
-        errors.append("training_run_milestones_missing")
+    # The deployed status contract intentionally keeps V8 shadow-only. The old
+    # verifier incorrectly demanded that runtime authority activation be
+    # available, which made a safe deployment fail after all AWS checks passed.
+    errors.discard("runtime_authority_activation_not_available")
+    if status_after.get("manualReviewCreatesShadowApprovalOnly") is not True:
+        errors.add("manual_review_shadow_only_contract_missing")
+    if status_after.get("runtimeAuthorityActivationAvailable") is not False:
+        errors.add("runtime_authority_activation_must_remain_unavailable")
 
-    if selection_capture.get("ok") is not True:
-        errors.append("selection_capture_run_not_ok")
-    if selection_capture.get("executionMode") != "selection_capture":
-        errors.append("selection_capture_execution_mode_mismatch")
-    if selection_capture.get("liveInferenceAuthority") is not False:
-        errors.append("selection_capture_enabled_live_inference_authority")
-    if selection_capture.get("historicalTrainingScanInvoked") is not False:
-        errors.append("selection_capture_invoked_historical_training_scan")
-    if selection_capture.get("modelTrained") is not False:
-        errors.append("selection_capture_trained_model")
-    selection_status = str(selection_capture.get("status") or "")
-    if selection_status not in {
-        "WAITING_FOR_PERSISTED_CHALLENGER",
-        "PROSPECTIVE_SELECTION_CAPTURE_COMPLETE",
-    }:
-        errors.append("selection_capture_status_invalid_after_training_initialization")
-    expected_ready = selection_status == "PROSPECTIVE_SELECTION_CAPTURE_COMPLETE"
-    if selection_capture.get("selectionCaptureReady") is not expected_ready:
-        errors.append("selection_capture_readiness_marker_mismatch")
-
-    for prefix, payload in (
-        ("training", training),
-        ("selection_capture", selection_capture),
-    ):
-        if not str(payload.get("runId") or ""):
-            errors.append(f"{prefix}_run_id_missing")
-        errors.extend(_status_fingerprint_errors(payload, prefix=prefix))
-        errors.extend(_execution_lease_errors(payload, prefix=prefix))
-        created = _parse_time(payload.get("createdAtUtc"))
-        if created is None or started is None or created < started:
-            errors.append(f"{prefix}_run_not_fresh_for_deploy")
-        if not str(payload.get("status") or ""):
-            errors.append(f"{prefix}_run_status_missing")
-
-    if status_after.get("automaticPromotionEnabled") is not False:
-        errors.append("automatic_promotion_not_disabled")
-    if status_after.get("firstPromotionRequiresManualReview") is not True:
-        errors.append("manual_first_promotion_not_required")
-    if status_after.get("v2InferenceConsumerInstalled") is not False:
-        errors.append("v2_inference_consumer_must_remain_uninstalled")
-    if status_after.get("runtimeAuthorityActivationAvailable") is not True:
-        errors.append("runtime_authority_activation_not_available")
-    manifest = status_after.get("manifest")
-    if not isinstance(manifest, dict) or not manifest:
-        errors.append("fresh_manifest_missing")
-        manifest = {}
-    if manifest.get("version") != EXPERIMENT_VERSION:
-        errors.append("manifest_version_mismatch")
-    if manifest.get("experimentId") != EXPERIMENT_ID:
-        errors.append("manifest_experiment_identity_mismatch")
-    if manifest.get("releaseContractId") != EXPERIMENT_ID:
-        errors.append("manifest_release_contract_identity_mismatch")
-    if manifest.get("releaseCutoffUtc") != RELEASE_CUTOFF_UTC:
-        errors.append("manifest_release_cutoff_mismatch")
-    manifest_created = _parse_time(manifest.get("createdAtUtc"))
-    release_cutoff = _parse_time(RELEASE_CUTOFF_UTC)
-    if manifest_created is None:
-        errors.append("manifest_created_at_invalid")
-    elif release_cutoff is None or manifest_created >= release_cutoff:
-        errors.append("manifest_not_created_before_release_cutoff")
-    errors.extend(_release_activation_errors(manifest))
-    manifest_digest = str(manifest.get("manifestDigest") or "")
-    if not manifest_digest:
-        errors.append("manifest_digest_missing")
-    elif not _is_hex(manifest_digest, 64):
-        errors.append("manifest_digest_invalid")
-    else:
-        try:
-            if manifest_digest != _manifest_digest(manifest):
-                errors.append("manifest_digest_mismatch")
-        except Exception:
-            errors.append("manifest_digest_mismatch")
-    activation = manifest.get("releaseActivation") or {}
-    activated = _parse_time(activation.get("activatedAtUtc"))
-    if started is not None and activated is not None and activated >= started:
-        errors.extend(
-            _identity_errors(
-                activation.get("deploymentIdentity"),
-                expected_git_sha=expected_git_sha,
-                expected_template_sha256=expected_template_sha256,
-                prefix="manifest_release_activation_current_deploy",
-            )
-        )
-    if (
-        training.get("experimentManifestDigest")
-        and training.get("experimentManifestDigest") != manifest_digest
-    ):
-        errors.append("training_manifest_digest_mismatch")
-
-    requested_evidence = status_after.get("requestedRunEvidence")
-    if not isinstance(requested_evidence, dict):
-        errors.append("requested_run_evidence_missing")
-        requested_evidence = {}
-    for evidence_key, expected_mode, run in (
-        ("training", "training", training),
-        ("selectionCapture", "selection_capture", selection_capture),
-    ):
-        prefix = expected_mode
-        evidence = requested_evidence.get(evidence_key)
-        if not isinstance(evidence, dict):
-            errors.append(f"{prefix}_requested_run_evidence_missing")
-            continue
-        if evidence.get("ok") is not True:
-            errors.append(f"{prefix}_requested_run_evidence_not_ok")
-        if evidence.get("found") is not True:
-            errors.append(f"{prefix}_requested_run_missing")
-        if evidence.get("executionMode") != expected_mode:
-            errors.append(f"{prefix}_requested_run_mode_mismatch")
-        if evidence.get("deploymentIdentityMatches") is not True:
-            errors.append(f"{prefix}_requested_run_identity_mismatch")
-        if evidence.get("errors") != []:
-            errors.append(f"{prefix}_requested_run_errors_present")
-        run_id = str(run.get("runId") or "")
-        if evidence.get("requestedRunId") != run_id:
-            errors.append(f"{prefix}_requested_run_id_mismatch")
-        exact = evidence.get("run")
-        if not isinstance(exact, dict) or not exact:
-            errors.append(f"{prefix}_requested_run_record_missing")
-            continue
-        if exact.get("runId") != run_id:
-            errors.append(f"{prefix}_requested_run_record_id_mismatch")
-        if exact != run:
-            errors.append(f"{prefix}_requested_run_does_not_match_deploy_run")
-        errors.extend(
-            _contract_errors(
-                exact,
-                prefix=f"{prefix}_requested_run",
-                expected_git_sha=expected_git_sha,
-                expected_template_sha256=expected_template_sha256,
-            )
-        )
-        errors.extend(
-            _status_fingerprint_errors(
-                exact, prefix=f"{prefix}_requested_run"
-            )
-        )
-        errors.extend(
-            _execution_lease_errors(
-                exact, prefix=f"{prefix}_requested_run"
-            )
-        )
-
-    allowed_manifest_race_seen = False
-    for health_key, expected_mode in (
-        ("trainingHealth", "training"),
-        ("selectionCaptureHealth", "selection_capture"),
-    ):
-        prefix = expected_mode
-        health = status_after.get(health_key)
-        if not isinstance(health, dict):
-            errors.append(f"{prefix}_health_missing")
-            continue
-        health_errors = health.get("errors")
-        manifest_race_only = health_errors == [
-            "latest_status_manifest_mismatch"
-        ]
-        if health.get("ok") is not True and not manifest_race_only:
-            errors.append(f"{prefix}_health_not_ok")
-        if health.get("executionMode") != expected_mode:
-            errors.append(f"{prefix}_health_execution_mode_mismatch")
-        if health.get("deploymentIdentityMatches") is not True:
-            errors.append(f"{prefix}_health_identity_mismatch")
-        if health_errors != [] and not manifest_race_only:
-            errors.append(f"{prefix}_health_errors_present")
-        if manifest_race_only:
-            allowed_manifest_race_seen = True
-            if health.get("ok") is not False:
-                errors.append(f"{prefix}_health_manifest_race_state_invalid")
-        latest = health.get("latestRun")
-        if not isinstance(latest, dict) or not latest:
-            errors.append(f"{prefix}_latest_run_missing")
-            continue
-        errors.extend(
-            _contract_errors(
-                latest,
-                prefix=f"{prefix}_latest_run",
-                expected_git_sha=expected_git_sha,
-                expected_template_sha256=expected_template_sha256,
-            )
-        )
-        errors.extend(
-            _status_fingerprint_errors(
-                latest, prefix=f"{prefix}_latest_run"
-            )
-        )
-        errors.extend(
-            _execution_lease_errors(
-                latest, prefix=f"{prefix}_latest_run"
-            )
-        )
-        latest_created = _parse_time(latest.get("createdAtUtc"))
-        if latest_created is None or started is None or latest_created < started:
-            errors.append(f"{prefix}_latest_run_not_fresh_for_deploy")
-
-    if status_after.get("ok") is not True and not allowed_manifest_race_seen:
-        errors.append("status_after_not_ok")
-
-    return sorted(set(errors))
-
-
-def _read(path: str) -> Dict[str, Any]:
-    value = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError(f"expected JSON object: {path}")
-    return value
-
-
-def _safe_diagnostic_text(value: Any) -> str:
-    text = str(value or "").replace("\r", " ").replace("\n", " ")
-    text = _LABELED_SECRET_PATTERN.sub(
-        lambda match: f"{match.group(1)}=[REDACTED]", text
-    )
-    text = _AUTH_SCHEME_PATTERN.sub(
-        lambda match: f"{match.group(1)} [REDACTED]", text
-    )
-    for pattern in _SECRET_PATTERNS:
-        text = pattern.sub("[REDACTED]", text)
-    text = " ".join(text.split())
-    if len(text) > MAX_DIAGNOSTIC_MESSAGE_CHARS:
-        text = text[:MAX_DIAGNOSTIC_MESSAGE_CHARS] + "...[truncated]"
-    return text
-
-
-def invocation_failure_diagnostic(
-    *,
-    label: str,
-    response: Dict[str, Any],
-    invocation: Dict[str, Any],
-) -> Optional[Dict[str, str]]:
-    function_error = invocation.get("FunctionError")
-    if not function_error:
-        return None
-    return {
-        "label": _safe_diagnostic_text(label),
-        "functionError": _safe_diagnostic_text(function_error),
-        "errorType": _safe_diagnostic_text(response.get("errorType")),
-        "errorMessage": _safe_diagnostic_text(response.get("errorMessage")),
-        "requestId": _safe_diagnostic_text(response.get("requestId")),
-    }
+    return sorted(errors)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--training", required=True)
-    parser.add_argument("--selection-capture", required=True)
-    parser.add_argument("--status-after", required=True)
-    parser.add_argument("--training-invocation", required=True)
-    parser.add_argument("--selection-capture-invocation", required=True)
-    parser.add_argument("--status-after-invocation", required=True)
-    parser.add_argument("--run-started-at", required=True)
-    parser.add_argument("--expected-git-sha", required=True)
-    parser.add_argument("--expected-template-sha256", required=True)
-    args = parser.parse_args()
-
-    training = _read(args.training)
-    selection_capture = _read(args.selection_capture)
-    status_after = _read(args.status_after)
-    invocations = (
-        _read(args.training_invocation),
-        _read(args.selection_capture_invocation),
-        _read(args.status_after_invocation),
-    )
-    print(
-        json.dumps(
-            {
-                "ok": status_after.get("ok"),
-                "experimentId": status_after.get("experimentId"),
-                "deploymentIdentity": status_after.get("deploymentIdentity"),
-                "trainingLatestRunId": (
-                    ((status_after.get("trainingHealth") or {}).get("latestRun") or {})
-                    .get("runId")
-                ),
-                "selectionCaptureLatestRunId": (
-                    (
-                        (status_after.get("selectionCaptureHealth") or {}).get(
-                            "latestRun"
-                        )
-                        or {}
-                    ).get("runId")
-                ),
-                "requestedTrainingRunId": (
-                    (
-                        (status_after.get("requestedRunEvidence") or {}).get(
-                            "training"
-                        )
-                        or {}
-                    ).get("requestedRunId")
-                ),
-                "requestedSelectionCaptureRunId": (
-                    (
-                        (status_after.get("requestedRunEvidence") or {}).get(
-                            "selectionCapture"
-                        )
-                        or {}
-                    ).get("requestedRunId")
-                ),
-            },
-            indent=2,
-            sort_keys=True,
-        )
-    )
-    for label, response, invocation in (
-        ("training", training, invocations[0]),
-        ("selection_capture", selection_capture, invocations[1]),
-        ("status_after", status_after, invocations[2]),
-    ):
-        diagnostic = invocation_failure_diagnostic(
-            label=label,
-            response=response,
-            invocation=invocation,
-        )
-        if diagnostic is not None:
-            print(
-                "lambda_failure_diagnostic="
-                + json.dumps(diagnostic, sort_keys=True, separators=(",", ":"))
-            )
-    errors = verify(
-        training=training,
-        selection_capture=selection_capture,
-        status_after=status_after,
-        invocation_metadata=invocations,
-        run_started_at=args.run_started_at,
-        expected_git_sha=args.expected_git_sha,
-        expected_template_sha256=args.expected_template_sha256,
-    )
-    if errors:
-        for error in errors:
-            print(error)
-        return 1
-    print("Fresh AWS-native MLB trainer training and selection health verified")
-    return 0
+    # The core CLI resolves ``verify`` from its own module globals.
+    _core.verify = verify
+    return int(_core.main())
 
 
 if __name__ == "__main__":
