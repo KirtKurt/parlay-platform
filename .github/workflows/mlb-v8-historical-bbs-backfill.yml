@@ -1,0 +1,222 @@
+name: MLB V8 Historical BBS Fundamentals Backfill
+
+"on":
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: Maximum canonical games to attempt in this run
+        required: true
+        default: '25'
+        type: choice
+        options: ['10', '25', '50', '100']
+  schedule:
+    - cron: '37 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'hello_world/bigballsdata_client.py'
+      - 'hello_world/mlb_v8_fundamentals_collector.py'
+      - 'hello_world/mlb_v8_historical_bbs_overlay_v1.py'
+      - 'hello_world/mlb_supervised_daily_objective_v2_1.py'
+      - 'scripts/run_mlb_v8_historical_bbs_backfill.py'
+      - 'tests/unit/test_bigballsdata_historical_as_of.py'
+      - 'tests/unit/test_mlb_v8_historical_bbs_backfill.py'
+      - 'tests/unit/test_mlb_v8_historical_bbs_overlay_v1.py'
+      - 'tests/unit/test_mlb_supervised_daily_objective_bbs_overlay.py'
+      - '.github/workflows/mlb-v8-historical-bbs-backfill.yml'
+  pull_request:
+    paths:
+      - 'hello_world/bigballsdata_client.py'
+      - 'hello_world/mlb_v8_fundamentals_collector.py'
+      - 'hello_world/mlb_v8_historical_bbs_overlay_v1.py'
+      - 'hello_world/mlb_supervised_daily_objective_v2_1.py'
+      - 'scripts/run_mlb_v8_historical_bbs_backfill.py'
+      - 'tests/unit/test_bigballsdata_historical_as_of.py'
+      - 'tests/unit/test_mlb_v8_historical_bbs_backfill.py'
+      - 'tests/unit/test_mlb_v8_historical_bbs_overlay_v1.py'
+      - 'tests/unit/test_mlb_supervised_daily_objective_bbs_overlay.py'
+      - '.github/workflows/mlb-v8-historical-bbs-backfill.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-v8-historical-bbs-backfill-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
+  cancel-in-progress: false
+
+env:
+  REPORT_PATH: runtime_reports/mlb_v8_historical_bbs_backfill_latest.json
+  HISTORICAL_STACK: parlay-platform-mlb-historical-optimizer
+  FUNDAMENTALS_STACK: parlay-platform-mlb-v8-fundamentals-shadow
+  TABLE_NAME: parlay_platform_snapshots
+  PYTHONPATH: .:hello_world:scripts
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Compile and test point-in-time BBS learning path
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+          python -m py_compile \
+            hello_world/bigballsdata_client.py \
+            hello_world/mlb_v8_fundamentals_collector.py \
+            hello_world/mlb_v8_historical_bbs_overlay_v1.py \
+            hello_world/mlb_supervised_daily_objective_v2_1.py \
+            scripts/run_mlb_v8_historical_bbs_backfill.py
+          python -m pytest -q --tb=short \
+            tests/unit/test_bigballsdata_client.py \
+            tests/unit/test_bigballsdata_historical_as_of.py \
+            tests/unit/test_mlb_v8_fundamentals_collector.py \
+            tests/unit/test_mlb_v8_historical_bbs_backfill.py \
+            tests/unit/test_mlb_v8_historical_bbs_overlay_v1.py \
+            tests/unit/test_mlb_supervised_daily_objective_bbs_overlay.py
+          grep -Fq 'selectionUsedOutcomes": False' scripts/run_mlb_v8_historical_bbs_backfill.py
+          grep -Fq 'pointInTimeRequired": True' scripts/run_mlb_v8_historical_bbs_backfill.py
+          grep -Fq 'productionAuthorityChanged": False' hello_world/mlb_v8_historical_bbs_overlay_v1.py
+
+  backfill:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Run bounded historical BBS fundamentals enrichment
+        id: enrichment
+        continue-on-error: true
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+          BBS_API_KEY: ${{ secrets.BBS_API_KEY }}
+          BBS_API_SECRET_ARN: ${{ secrets.BBS_API_SECRET_ARN }}
+          BATCH_SIZE: ${{ github.event.inputs.batch_size || '25' }}
+        run: |
+          set -o pipefail
+          if test -z "${BBS_API_KEY:-}" && test -z "${BBS_API_SECRET_ARN:-}"; then
+            echo 'BBS credential is not configured'
+            exit 1
+          fi
+          mkdir -p runtime_reports
+          rm -f "$REPORT_PATH" /tmp/mlb-v8-historical-bbs-backfill.log
+          python scripts/run_mlb_v8_historical_bbs_backfill.py \
+            --region "$AWS_REGION_VALUE" \
+            --table-name "$TABLE_NAME" \
+            --historical-stack "$HISTORICAL_STACK" \
+            --fundamentals-stack "$FUNDAMENTALS_STACK" \
+            --limit "$BATCH_SIZE" \
+            --start-tolerance-minutes 5 \
+            --output "$REPORT_PATH" \
+            2>&1 | tee /tmp/mlb-v8-historical-bbs-backfill.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Ensure exact durable backfill evidence exists
+        if: always()
+        env:
+          ENRICHMENT_OUTCOME: ${{ steps.enrichment.outcome }}
+          ENRICHMENT_EXIT_CODE: ${{ steps.enrichment.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          if test ! -s "$REPORT_PATH"; then
+            python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          log=Path('/tmp/mlb-v8-historical-bbs-backfill.log').read_text(errors='replace')[-16000:] if Path('/tmp/mlb-v8-historical-bbs-backfill.log').exists() else ''
+          report={
+              'proofType':'MLB_V8_HISTORICAL_BBS_BACKFILL',
+              'version':'MLB-V8-HISTORICAL-BBS-BACKFILL-v1-point-in-time',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ.get('GITHUB_SHA'),
+              'runId':os.environ.get('GITHUB_RUN_ID'),
+              'authority':'V8_HISTORICAL_BBS_SHADOW_ONLY',
+              'productionAuthorityChanged':False,
+              'automaticWagerAllowed':False,
+              'selectionUsedOutcomes':False,
+              'pointInTimeRequired':True,
+              'enrichmentOutcome':os.environ.get('ENRICHMENT_OUTCOME'),
+              'enrichmentExitCode':os.environ.get('ENRICHMENT_EXIT_CODE'),
+              'errorLogTail':log,
+              'blockers':['historical_bbs_backfill_failed_before_report'],
+              'ok':False,
+          }
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          PY
+          fi
+          python -m json.tool "$REPORT_PATH" >/dev/null
+          cp "$REPORT_PATH" /tmp/mlb-v8-historical-bbs-backfill-report.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-v8-historical-bbs-backfill-${{ github.run_id }}
+          path: |
+            /tmp/mlb-v8-historical-bbs-backfill-report.json
+            /tmp/mlb-v8-historical-bbs-backfill.log
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Publish latest historical BBS evidence monotonically
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-v8-historical-bbs-proof origin/main
+            mkdir -p runtime_reports
+            python scripts/publish_monotonic_json.py \
+              --candidate /tmp/mlb-v8-historical-bbs-backfill-report.json \
+              --existing "$REPORT_PATH" \
+              --output "$REPORT_PATH"
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB V8 historical BBS learning evidence'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
+
+      - name: Enforce point-in-time shadow safety
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          value=json.loads(Path('/tmp/mlb-v8-historical-bbs-backfill-report.json').read_text())
+          assert value.get('authority') == 'V8_HISTORICAL_BBS_SHADOW_ONLY', value
+          assert value.get('productionAuthorityChanged') is False, value
+          assert value.get('automaticWagerAllowed') is False, value
+          assert value.get('selectionUsedOutcomes') is False, value
+          assert value.get('pointInTimeRequired') is True, value
+          assert value.get('ok') is True, value
+          assert not value.get('blockers'), value
+          PY

@@ -1,7 +1,8 @@
 """Stable daily-slate objective for the supervised MLB shadow model.
 
 V2.2 keeps calibration fail-closed, rewards repeatable market-relative accuracy
-uplift, and installs leakage-safe nonlinear regime interactions without changing
+uplift, installs leakage-safe nonlinear regime interactions, and optionally applies
+a point-in-time historical BigBallsData fundamentals overlay without changing
 production authority or touching the untouched audit during selection.
 """
 from __future__ import annotations
@@ -10,8 +11,10 @@ from typing import Any, Mapping, Tuple
 
 try:
     import mlb_supervised_feature_interactions_v2_2 as feature_interactions
+    import mlb_v8_historical_bbs_overlay_v1 as historical_bbs_overlay
 except ImportError:  # package import used by unit tests
     from . import mlb_supervised_feature_interactions_v2_2 as feature_interactions
+    from . import mlb_v8_historical_bbs_overlay_v1 as historical_bbs_overlay
 
 VERSION = "MLB-SUPERVISED-SHADOW-v2.2-regime-interactions-market-uplift-calibration-safe"
 MAX_BRIER_DEGRADATION = 0.005
@@ -70,6 +73,10 @@ def install(model_module: Any) -> Any:
     feature_module = getattr(model_module, "features", None)
     if feature_module is not None:
         feature_interactions.install(feature_module)
+    # Some contract tests intentionally provide only model-selection attributes.
+    # Install the training overlay only when a trainer function actually exists.
+    if callable(getattr(model_module, "train_and_evaluate", None)):
+        historical_bbs_overlay.install(model_module)
     model_module._config_key = daily_objective_key
     model_module.VERSION = VERSION
     model_module.SUPERVISED_SELECTION_OBJECTIVE = {
@@ -88,6 +95,9 @@ def install(model_module: Any) -> Any:
             "maximumExpectedCalibrationError": MAX_ECE,
         },
         "featureInteractionVersion": feature_interactions.VERSION,
+        "historicalBbsOverlayVersion": historical_bbs_overlay.VERSION,
+        "historicalBbsPointInTimeRequired": True,
+        "historicalBbsSelectionUsesOutcomes": False,
         "untouchedAuditUsedForSelection": False,
         "productionAuthorityChanged": False,
     }
