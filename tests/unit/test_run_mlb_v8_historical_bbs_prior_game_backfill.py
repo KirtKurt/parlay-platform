@@ -107,7 +107,6 @@ def test_ineligible_prior_history_never_creates_training_snapshot():
     ]
 
 
-
 def test_learning_priority_repairs_earliest_chronological_fold_first():
     rows = [
         {
@@ -130,3 +129,4 @@ def test_learning_priority_repairs_earliest_chronological_fold_first():
     selected = backfill._learning_priority(rows, 2)
 
     assert [row["officialGamePk"] for row in selected] == ["1", "2"]
+    assert [row["officialGamePk"] for row in rows] == ["3", "2", "1"]
