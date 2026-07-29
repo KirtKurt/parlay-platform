@@ -49,8 +49,8 @@ def test_report_exposes_bbs_full_corpus_and_supported_cohort_coverage():
     boundaries.install_model(Model)
     result = Model.train_and_evaluate(records)
 
-    assert result["featureCoverage"]["bbsPriorSupported"] == 2 / 3
-    assert result["featureCoverage"]["bbsPriorAvailable"] == 1 / 3
+    assert result["featureCoverage"]["bbsPriorSupported"] == 0.66666667
+    assert result["featureCoverage"]["bbsPriorAvailable"] == 0.33333333
     assert result["featureCoverage"]["bbsPriorWithinSupported"] == 0.5
     assert result["architecture"][
         "targetGameFundamentalsExcludeBbsPriorGameSnapshots"
