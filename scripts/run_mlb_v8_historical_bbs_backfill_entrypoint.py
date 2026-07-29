@@ -4,8 +4,8 @@
 The optional V8 fundamentals stack may not exist yet. Historical BBS learning does
 not require that Lambda stack; it only requires an immutable S3 bucket. When the
 isolated stack is absent, this adapter maps its expected bucket output to the live
-historical optimizer's versioned artifacts bucket. BBS objects remain isolated by
-their `mlb/v8/historical-bbs/` prefix and the shadow-only manifest pointer.
+historical optimizer's versioned artifacts bucket. Historical game discovery uses
+BBS's stored-match surface rather than its live/scheduled surface.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from botocore.exceptions import ClientError
 
 import run_mlb_v8_historical_bbs_backfill as backfill
 
-VERSION = "MLB-V8-HISTORICAL-BBS-BUCKET-FALLBACK-v1"
+VERSION = "MLB-V8-HISTORICAL-BBS-OPERATIONAL-ENTRYPOINT-v2-stored-matches"
 
 
 def _stack_missing(exc: ClientError) -> bool:
@@ -60,6 +60,31 @@ def install_bucket_fallback(
     return module
 
 
+def install_stored_match_surface(client_class: Any) -> Any:
+    """Force historical discovery through `/v1/stored/matches`.
+
+    The live `/v1/matches` route is for live and scheduled games. The stored route
+    is the provider's DB-backed historical surface and returns the game identities
+    needed for the chronology-only crosswalk.
+    """
+    if getattr(client_class, "_INQSI_HISTORICAL_BBS_STORED_MATCHES_INSTALLED", False):
+        return client_class
+    original = client_class.list_mlb_matches
+
+    def list_stored(self: Any, game_date: str, *, limit: int = 50, as_of: str | None = None, stored: bool = False):
+        return original(
+            self,
+            game_date,
+            limit=limit,
+            as_of=as_of,
+            stored=True,
+        )
+
+    client_class.list_mlb_matches = list_stored
+    client_class._INQSI_HISTORICAL_BBS_STORED_MATCHES_INSTALLED = True
+    return client_class
+
+
 def main() -> int:
     install_bucket_fallback(
         backfill,
@@ -70,6 +95,7 @@ def main() -> int:
             "FUNDAMENTALS_STACK", backfill.DEFAULT_FUNDAMENTALS_STACK
         ),
     )
+    install_stored_match_surface(backfill.BigBallsDataClient)
     return backfill.main()
 
 
