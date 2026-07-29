@@ -1,0 +1,40 @@
+from __future__ import annotations
+
+import hashlib
+import json
+
+import mlb_supervised_daily_objective_v2_1 as objective
+
+
+class Features:
+    pass
+
+
+class Model:
+    features = Features()
+    _config_key = None
+    VERSION = "old"
+
+    @staticmethod
+    def _sha(value):
+        return hashlib.sha256(
+            json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+
+    @staticmethod
+    def train_and_evaluate(records, **kwargs):
+        return {"ok": True, "recordCount": len(records), "resultDigest": "old"}
+
+
+def test_install_adds_disabled_overlay_without_aws(monkeypatch):
+    monkeypatch.delenv("MLB_V8_HISTORICAL_BBS_OVERLAY_ENABLED", raising=False)
+
+    objective.install(Model)
+    result = Model.train_and_evaluate([{"officialGamePk": "1"}])
+
+    assert result["historicalBbsFundamentals"]["status"] == "DISABLED"
+    assert result["resultDigest"] != "old"
+    assert (
+        Model.SUPERVISED_SELECTION_OBJECTIVE["historicalBbsPointInTimeRequired"]
+        is True
+    )
