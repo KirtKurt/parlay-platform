@@ -7,8 +7,10 @@ name: MLB Supervised Shadow V2
       - 'hello_world/mlb_supervised_*.py'
       - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
       - 'scripts/run_mlb_supervised_shadow_v2.py'
+      - 'scripts/guard_mlb_v8_shadow_report.py'
       - 'tests/unit/test_mlb_supervised_shadow_v2.py'
       - 'tests/unit/test_mlb_supervised_daily_objective_v2_1.py'
+      - 'tests/unit/test_guard_mlb_v8_shadow_report.py'
       - '.github/workflows/mlb-supervised-shadow-v2.yml'
   push:
     branches: [main]
@@ -16,15 +18,17 @@ name: MLB Supervised Shadow V2
       - 'hello_world/mlb_supervised_*.py'
       - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
       - 'scripts/run_mlb_supervised_shadow_v2.py'
+      - 'scripts/guard_mlb_v8_shadow_report.py'
       - 'tests/unit/test_mlb_supervised_shadow_v2.py'
       - 'tests/unit/test_mlb_supervised_daily_objective_v2_1.py'
+      - 'tests/unit/test_guard_mlb_v8_shadow_report.py'
       - '.github/workflows/mlb-supervised-shadow-v2.yml'
 
 permissions:
   contents: write
 
 concurrency:
-  group: mlb-supervised-shadow-v2-${{ github.event_name }}
+  group: mlb-supervised-shadow-v2
   cancel-in-progress: false
 
 env:
@@ -52,10 +56,12 @@ jobs:
             hello_world/mlb_supervised_daily_objective_v2_1.py \
             hello_world/mlb_supervised_v8_dataset_patch_v1.py \
             hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py \
-            scripts/run_mlb_supervised_shadow_v2.py
+            scripts/run_mlb_supervised_shadow_v2.py \
+            scripts/guard_mlb_v8_shadow_report.py
           PYTHONPATH=hello_world python -m pytest -q --tb=short \
             tests/unit/test_mlb_supervised_shadow_v2.py \
             tests/unit/test_mlb_supervised_daily_objective_v2_1.py \
+            tests/unit/test_guard_mlb_v8_shadow_report.py \
             tests/unit/test_mlb_historical_v7_status_bypass.py \
             tests/unit/test_mlb_historical_feature_rematerialization_v1.py \
             tests/unit/test_mlb_odds_market_expansion_v8.py
@@ -272,7 +278,9 @@ jobs:
             git fetch origin main
             git checkout -B mlb-supervised-shadow-proof origin/main
             mkdir -p runtime_reports
-            cp /tmp/mlb-supervised-shadow-v2.json "$REPORT_PATH"
+            python scripts/guard_mlb_v8_shadow_report.py \
+              --incoming /tmp/mlb-supervised-shadow-v2.json \
+              --destination "$REPORT_PATH"
             git add "$REPORT_PATH"
             git diff --cached --quiet && exit 0
             git commit -m 'Publish MLB supervised shadow V2 evidence'
