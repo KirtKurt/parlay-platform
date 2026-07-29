@@ -1,6 +1,6 @@
 """State-integrity guards for the MLB historical optimizer.
 
-The optimizer is scheduled frequently.  A settled-range cursor can legitimately be
+The optimizer is scheduled frequently. A settled-range cursor can legitimately be
 unable to advance until yesterday's MLB slate is final, but that state is not active
 backfilling and must not generate a new DynamoDB revision on every invocation.
 """
@@ -26,7 +26,6 @@ def _date(value: Any, fallback: str) -> date:
 
 def _material(handler: Any, state: Mapping[str, Any]) -> dict[str, Any]:
     value = handler._migrate_state(copy.deepcopy(dict(state or {})))
-    value["version"] = handler.VERSION
     for key in _VOLATILE_STATE_FIELDS:
         value.pop(key, None)
     return value
