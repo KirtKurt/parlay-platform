@@ -62,6 +62,21 @@ def _historical_as_of_param() -> str:
     return value
 
 
+def _shape(value: Any) -> str:
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        keys = ",".join(sorted(str(key) for key in value)[:20])
+        return f"object[{keys}]"
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    return "string"
+
+
 class BigBallsDataClient:
     def __init__(self, *, api_key: Optional[str] = None, secret_arn: Optional[str] = None,
                  secrets_client: Any = None, base_url: str = DEFAULT_BASE_URL,
@@ -83,12 +98,15 @@ class BigBallsDataClient:
     def _validated_envelope(payload: Any) -> Dict[str, Any]:
         if not isinstance(payload, dict):
             raise BBSClientError("BBS_RESPONSE_NOT_OBJECT")
-        if not {"data", "meta", "error"}.issubset(payload):
-            raise BBSClientError("BBS_RESPONSE_ENVELOPE_INCOMPLETE")
+        # The public contract documents errors without a data key, while older
+        # deployed responses may retain data=null. Treat either as an error and
+        # never expose the provider message or request values in diagnostics.
         if payload.get("error") is not None:
-            raise BBSClientError("BBS_RESPONSE_REPORTED_ERROR")
-        if not isinstance(payload.get("meta"), dict):
-            raise BBSClientError("BBS_RESPONSE_META_INVALID")
+            error = payload.get("error")
+            code = str(error.get("code") or "UNKNOWN") if isinstance(error, dict) else "UNKNOWN"
+            raise BBSClientError(f"BBS_RESPONSE_REPORTED_ERROR_{code[:80]}")
+        if "data" not in payload or not isinstance(payload.get("meta"), dict):
+            raise BBSClientError("BBS_RESPONSE_ENVELOPE_INCOMPLETE")
         return payload
 
     def _request(self, path: str, params: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], Dict[str, str]]:
@@ -97,7 +115,7 @@ class BigBallsDataClient:
         request = urllib.request.Request(url, headers={
             "Accept": "application/json",
             "Authorization": f"Bearer {self._api_key}",
-            "User-Agent": "inqsi-mlb-bbs-shadow/2.1",
+            "User-Agent": "inqsi-mlb-bbs-shadow/2.2",
         }, method="GET")
         last_error = "BBS_REQUEST_FAILED"
         for attempt in range(1, self._max_attempts + 1):
@@ -141,33 +159,49 @@ class BigBallsDataClient:
         raise BBSTransientError(last_error)
 
     @staticmethod
-    def _transport(headers: Dict[str, str], *, requested_date: Optional[str], requested_as_of: Optional[str]) -> Dict[str, Any]:
+    def _transport(headers: Dict[str, str], *, requested_date: Optional[str], requested_as_of: Optional[str], endpoint: str) -> Dict[str, Any]:
         return {
             "rateLimit": headers.get("x-ratelimit-limit"),
             "rateRemaining": headers.get("x-ratelimit-remaining"),
             "rateReset": headers.get("x-ratelimit-reset"),
             "requestedDate": requested_date,
             "requestedAsOfUtc": requested_as_of,
+            "endpoint": endpoint,
         }
 
     def account(self) -> Dict[str, Any]:
         payload, _ = self._request("/v1/user/me")
         if not isinstance(payload.get("data"), dict):
-            raise BBSClientError("BBS_ACCOUNT_DATA_INVALID")
+            raise BBSClientError(f"BBS_ACCOUNT_DATA_INVALID_{_shape(payload.get('data'))}")
         return payload
 
-    def list_mlb_matches(self, game_date: str, *, limit: int = 50, as_of: Optional[str] = None) -> Dict[str, Any]:
+    def list_mlb_matches(
+        self,
+        game_date: str,
+        *,
+        limit: int = 50,
+        as_of: Optional[str] = None,
+        stored: bool = False,
+    ) -> Dict[str, Any]:
         params: Dict[str, Any] = {
             "sport": "baseball", "league": "mlb", "date": game_date,
             "limit": min(max(int(limit), 1), 200),
         }
         if as_of:
             params[_historical_as_of_param()] = as_of
-        payload, headers = self._request("/v1/matches", params)
+        endpoint = "/v1/stored/matches" if stored else "/v1/matches"
+        payload, headers = self._request(endpoint, params)
         if not isinstance(payload.get("data"), list):
-            raise BBSClientError("BBS_MLB_MATCH_DATA_INVALID")
+            raise BBSClientError(
+                f"BBS_MLB_MATCH_DATA_INVALID_{_shape(payload.get('data'))}_{'STORED' if stored else 'LIVE'}"
+            )
         out = dict(payload)
-        out["_transport"] = self._transport(headers, requested_date=game_date, requested_as_of=as_of)
+        out["_transport"] = self._transport(
+            headers,
+            requested_date=game_date,
+            requested_as_of=as_of,
+            endpoint=endpoint,
+        )
         return out
 
     def get_mlb_match_resource(
@@ -192,7 +226,12 @@ class BigBallsDataClient:
             params[_historical_as_of_param()] = as_of
         payload, headers = self._request(path, params)
         if not isinstance(payload.get("data"), (dict, list)):
-            raise BBSClientError(f"BBS_MLB_{name.upper()}_DATA_INVALID")
+            raise BBSClientError(f"BBS_MLB_{name.upper()}_DATA_INVALID_{_shape(payload.get('data'))}")
         out = dict(payload)
-        out["_transport"] = self._transport(headers, requested_date=game_date, requested_as_of=as_of)
+        out["_transport"] = self._transport(
+            headers,
+            requested_date=game_date,
+            requested_as_of=as_of,
+            endpoint=path,
+        )
         return out
