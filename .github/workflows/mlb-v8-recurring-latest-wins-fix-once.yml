@@ -1,0 +1,73 @@
+name: MLB V8 Recurring Latest Wins Fix Once
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v8-recurring-latest-wins-fix-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Make recurring V8 training latest-code-wins
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path=Path('.github/workflows/mlb-supervised-shadow-v2-recurring.yml')
+          text=path.read_text()
+          old='''concurrency:\n  group: mlb-supervised-shadow-v2-recurring\n  cancel-in-progress: false\n'''
+          new='''concurrency:\n  group: mlb-supervised-shadow-v2-recurring\n  cancel-in-progress: true\n'''
+          if new not in text:
+              if old not in text:
+                  raise SystemExit('recurring concurrency marker missing')
+              text=text.replace(old,new,1)
+          path.write_text(text)
+          PY
+
+      - name: Validate workflow contract
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'PyYAML>=6,<7'
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          path=Path('.github/workflows/mlb-supervised-shadow-v2-recurring.yml')
+          text=path.read_text()
+          value=yaml.safe_load(text)
+          assert isinstance(value,dict)
+          assert value['concurrency']['group'] == 'mlb-supervised-shadow-v2-recurring'
+          assert value['concurrency']['cancel-in-progress'] is True
+          assert 'publish_monotonic_json.py' in text
+          assert "MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED: 'true'" in text
+          PY
+
+      - name: Publish fix and remove installer
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/mlb-supervised-shadow-v2-recurring.yml
+          git rm .github/workflows/mlb-v8-recurring-latest-wins-fix-once.yml
+          git diff --cached --check
+          git commit -m 'Cancel stale V8 recurring retrains'
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
