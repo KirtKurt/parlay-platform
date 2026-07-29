@@ -23,18 +23,25 @@ def test_score_pair_supports_unified_nested_shape():
 
 def test_nonfinal_game_is_not_admitted_to_history():
     assert prior.completed_game(
-        row("2026-07-01", "Yankees", "Red Sox", 5, 3, status="scheduled")
+        row(
+            "2026-07-01",
+            "New York Yankees",
+            "Boston Red Sox",
+            5,
+            3,
+            status="scheduled",
+        )
     ) is None
 
 
 def test_same_day_results_are_excluded_from_target_features():
     rows = [
-        row("2026-07-01", "Yankees", "Red Sox", 5, 3),
-        row("2026-07-02", "Yankees", "Red Sox", 4, 2),
-        row("2026-07-03", "Yankees", "Red Sox", 6, 1),
-        row("2026-07-04", "Yankees", "Red Sox", 2, 1),
-        row("2026-07-05", "Yankees", "Red Sox", 3, 1),
-        row("2026-07-06", "Red Sox", "Yankees", 9, 0),
+        row("2026-07-01", "New York Yankees", "Boston Red Sox", 5, 3),
+        row("2026-07-02", "New York Yankees", "Boston Red Sox", 4, 2),
+        row("2026-07-03", "New York Yankees", "Boston Red Sox", 6, 1),
+        row("2026-07-04", "New York Yankees", "Boston Red Sox", 2, 1),
+        row("2026-07-05", "New York Yankees", "Boston Red Sox", 3, 1),
+        row("2026-07-06", "Boston Red Sox", "New York Yankees", 9, 0),
     ]
     ledger = prior.build_team_ledger(rows)
     features = prior.derive_game_features(
@@ -56,7 +63,7 @@ def test_same_day_results_are_excluded_from_target_features():
 
 def test_prior_game_floor_fails_closed():
     ledger = prior.build_team_ledger(
-        [row("2026-07-01", "Yankees", "Red Sox", 5, 3)]
+        [row("2026-07-01", "New York Yankees", "Boston Red Sox", 5, 3)]
     )
     features = prior.derive_game_features(
         ledger,
@@ -73,7 +80,14 @@ def test_prior_game_floor_fails_closed():
 
 
 def test_duplicate_provider_game_is_counted_once():
-    game = row("2026-07-01", "Yankees", "Red Sox", 5, 3, match_id="same")
+    game = row(
+        "2026-07-01",
+        "New York Yankees",
+        "Boston Red Sox",
+        5,
+        3,
+        match_id="same",
+    )
     ledger = prior.build_team_ledger([game, dict(game)])
     assert len(ledger["new york yankees"]) == 1
     assert len(ledger["boston red sox"]) == 1
