@@ -112,11 +112,15 @@ jobs:
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
           AWS_EC2_METADATA_DISABLED: 'true'
+          BBS_API_KEY: ${{ secrets.BBS_API_KEY }}
           BBS_API_SECRET_ARN: ${{ secrets.BBS_API_SECRET_ARN }}
           BATCH_SIZE: ${{ github.event.inputs.batch_size || '25' }}
         run: |
           set -o pipefail
-          test -n "${BBS_API_SECRET_ARN:-}"
+          if test -z "${BBS_API_KEY:-}" && test -z "${BBS_API_SECRET_ARN:-}"; then
+            echo 'BBS credential is not configured'
+            exit 1
+          fi
           mkdir -p runtime_reports
           rm -f "$REPORT_PATH" /tmp/mlb-v8-historical-bbs-backfill.log
           python scripts/run_mlb_v8_historical_bbs_backfill.py \
