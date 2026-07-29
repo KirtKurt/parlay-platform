@@ -22,6 +22,7 @@ name: MLB V8 Historical BBD Prior-Game Backfill
     paths:
       - 'hello_world/bigballsdata_client.py'
       - 'hello_world/mlb_supervised_daily_objective_v2_1.py'
+      - 'hello_world/mlb_supervised_feature_boundaries_v2_4.py'
       - 'hello_world/mlb_supervised_feature_groups_v2_4.py'
       - 'hello_world/mlb_supervised_selection_guard_v2_4.py'
       - 'hello_world/mlb_v8_historical_bbs_overlay_v1.py'
@@ -33,6 +34,7 @@ name: MLB V8 Historical BBD Prior-Game Backfill
       - 'tests/unit/test_mlb_v8_historical_bbs_prior_game_v1.py'
       - 'tests/unit/test_mlb_v8_historical_bbs_prior_game_features_v1.py'
       - 'tests/unit/test_mlb_supervised_daily_objective_bbs_overlay.py'
+      - 'tests/unit/test_mlb_supervised_feature_boundaries_v2_4.py'
       - 'tests/unit/test_mlb_supervised_feature_groups_v2_4.py'
       - 'tests/unit/test_mlb_supervised_selection_guard_v2_4.py'
       - 'tests/unit/test_run_mlb_v8_historical_bbs_prior_game_backfill.py'
@@ -41,6 +43,7 @@ name: MLB V8 Historical BBD Prior-Game Backfill
     paths:
       - 'hello_world/bigballsdata_client.py'
       - 'hello_world/mlb_supervised_daily_objective_v2_1.py'
+      - 'hello_world/mlb_supervised_feature_boundaries_v2_4.py'
       - 'hello_world/mlb_supervised_feature_groups_v2_4.py'
       - 'hello_world/mlb_supervised_selection_guard_v2_4.py'
       - 'hello_world/mlb_v8_historical_bbs_overlay_v1.py'
@@ -52,6 +55,7 @@ name: MLB V8 Historical BBD Prior-Game Backfill
       - 'tests/unit/test_mlb_v8_historical_bbs_prior_game_v1.py'
       - 'tests/unit/test_mlb_v8_historical_bbs_prior_game_features_v1.py'
       - 'tests/unit/test_mlb_supervised_daily_objective_bbs_overlay.py'
+      - 'tests/unit/test_mlb_supervised_feature_boundaries_v2_4.py'
       - 'tests/unit/test_mlb_supervised_feature_groups_v2_4.py'
       - 'tests/unit/test_mlb_supervised_selection_guard_v2_4.py'
       - 'tests/unit/test_run_mlb_v8_historical_bbs_prior_game_backfill.py'
@@ -95,6 +99,7 @@ jobs:
             hello_world/mlb_v8_historical_bbs_prior_game_v1.py \
             hello_world/mlb_v8_historical_bbs_prior_game_features_v1.py \
             hello_world/mlb_supervised_daily_objective_v2_1.py \
+            hello_world/mlb_supervised_feature_boundaries_v2_4.py \
             scripts/run_mlb_v8_historical_bbs_prior_game_backfill.py
           python -m pytest -q --tb=short \
             tests/unit/test_bigballsdata_client.py \
@@ -103,6 +108,7 @@ jobs:
             tests/unit/test_mlb_v8_historical_bbs_prior_game_v1.py \
             tests/unit/test_mlb_v8_historical_bbs_prior_game_features_v1.py \
             tests/unit/test_mlb_supervised_daily_objective_bbs_overlay.py \
+            tests/unit/test_mlb_supervised_feature_boundaries_v2_4.py \
             tests/unit/test_mlb_supervised_feature_groups_v2_4.py \
             tests/unit/test_mlb_supervised_selection_guard_v2_4.py \
             tests/unit/test_run_mlb_v8_historical_bbs_prior_game_backfill.py
@@ -300,5 +306,6 @@ jobs:
           assert new_eligible > 0 or remaining == 0, value
           assert int(value.get('eligibleGameCount') or 0) > 0, value
           assert int(value.get('activePointerRevision') or 0) > 0, value
+          assert remaining == 0, value
           assert coverage >= 0.50, value
           PY
