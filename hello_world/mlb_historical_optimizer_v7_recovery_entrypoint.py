@@ -13,6 +13,7 @@ import mlb_historical_feature_rematerialization_v1 as rematerialization
 import mlb_historical_incremental_range_extension_v1 as incremental_range_extension
 import mlb_historical_optimizer_entrypoint as base
 import mlb_historical_round_extension_v1 as round_extension
+import mlb_historical_state_integrity_v1 as state_integrity
 import mlb_historical_supervised_v9 as supervised_v9
 import mlb_historical_supervised_v9_integrity_v2 as supervised_integrity_v2
 import mlb_historical_v7_label_integrity_v1 as label_integrity
@@ -23,9 +24,10 @@ import mlb_historical_v7_selective_search_v2 as selective_search_v2
 import mlb_odds_market_expansion_v8 as odds_market_v8
 import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v16-strict-label-integrity"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v17-state-integrity"
 
 incremental_range_extension.install(base)
+state_integrity.install(base.optimizer_handler, base)
 round_extension.install(base.optimizer_handler)
 odds_market_v8.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
 supervised_v8_dataset.install(base.optimizer_handler.optimizer, rematerialization)
@@ -101,6 +103,8 @@ def _with_shadow_contract(value: Any) -> Any:
                 "candidateHandoffFailsClosed": True,
                 "separateFullSlateAndSelectiveAccuracy": True,
                 "incrementalRangeExtensionVersion": incremental_range_extension.VERSION,
+                "stateIntegrityVersion": state_integrity.VERSION,
+                "settledHorizonWaitingPhase": state_integrity.WAITING_PHASE,
                 "rangeExtensionRunsBeforeRematerialization": True,
             },
         )
