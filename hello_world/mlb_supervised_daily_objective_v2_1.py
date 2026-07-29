@@ -1,9 +1,10 @@
 """Stable daily-slate objective for the supervised MLB V8 shadow model.
 
-V2.4 keeps calibration and repeatable-uplift gates fail-closed, separates BBD
-prior-game evidence from target-game fundamentals, and permits full-game V8
-signals to compete without pretending first-five history exists. It never changes
-production authority.
+V2.5 keeps calibration and repeatable-uplift gates fail-closed, separates BBD
+prior-game evidence from target-game fundamentals, permits full-game V8 signals
+to compete without pretending first-five history exists, and evaluates BBD
+coverage only in chronological folds with enough provider-horizon overlap. It
+never changes production authority.
 """
 from __future__ import annotations
 
@@ -13,18 +14,18 @@ try:
     import mlb_supervised_feature_interactions_v2_2 as feature_interactions
     import mlb_supervised_feature_boundaries_v2_4 as feature_boundaries
     import mlb_supervised_feature_groups_v2_4 as feature_groups
-    import mlb_supervised_selection_guard_v2_4 as selection_guard
+    import mlb_supervised_selection_guard_v2_5 as selection_guard
     import mlb_v8_historical_bbs_overlay_v1 as historical_bbs_overlay
     import mlb_v8_historical_bbs_prior_game_features_v1 as historical_bbs_prior_features
 except ImportError:  # package import used by unit tests
     from . import mlb_supervised_feature_interactions_v2_2 as feature_interactions
     from . import mlb_supervised_feature_boundaries_v2_4 as feature_boundaries
     from . import mlb_supervised_feature_groups_v2_4 as feature_groups
-    from . import mlb_supervised_selection_guard_v2_4 as selection_guard
+    from . import mlb_supervised_selection_guard_v2_5 as selection_guard
     from . import mlb_v8_historical_bbs_overlay_v1 as historical_bbs_overlay
     from . import mlb_v8_historical_bbs_prior_game_features_v1 as historical_bbs_prior_features
 
-VERSION = "MLB-SUPERVISED-SHADOW-v2.4-supported-cohort-fullgame-v8"
+VERSION = "MLB-SUPERVISED-SHADOW-v2.5-provider-horizon-evaluable-folds"
 MAX_BRIER_DEGRADATION = 0.005
 MAX_LOG_LOSS_DEGRADATION = 0.010
 MAX_ECE = 0.080
@@ -76,7 +77,7 @@ def daily_objective_key(
 
 
 def install(model_module: Any) -> Any:
-    if getattr(model_module, "_INQSI_MLB_DAILY_OBJECTIVE_V2_4_INSTALLED", False):
+    if getattr(model_module, "_INQSI_MLB_DAILY_OBJECTIVE_V2_5_INSTALLED", False):
         return model_module
     feature_module = getattr(model_module, "features", None)
     if feature_module is not None:
@@ -113,6 +114,8 @@ def install(model_module: Any) -> Any:
         "coverageEligibilityRequired": True,
         "coverageDenominatorVersion": selection_guard.VERSION,
         "bbsPriorSupportedCohortStartDate": historical_bbs_prior_features.BBS_PRIOR_SUPPORT_START_DATE,
+        "bbsProviderHorizonFoldPolicy": "require_two_evaluable_training_and_validation_folds",
+        "bbsUnsupportedFoldsCountAsPassing": False,
         "v8FullGameCandidateRequiresFirstFive": False,
         "featureGroupsVersion": feature_groups.VERSION,
         "featureBoundariesVersion": feature_boundaries.VERSION,
@@ -131,4 +134,5 @@ def install(model_module: Any) -> Any:
     }
     model_module._INQSI_MLB_DAILY_OBJECTIVE_V2_3_INSTALLED = True
     model_module._INQSI_MLB_DAILY_OBJECTIVE_V2_4_INSTALLED = True
+    model_module._INQSI_MLB_DAILY_OBJECTIVE_V2_5_INSTALLED = True
     return model_module
