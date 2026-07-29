@@ -1,0 +1,83 @@
+name: MLB V8 Latest Report Integrity
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - 'runtime_reports/mlb_supervised_shadow_v2_latest.json'
+      - 'scripts/publish_monotonic_json.py'
+      - '.github/workflows/mlb-v8-latest-report-integrity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-v8-latest-report-integrity
+  cancel-in-progress: false
+
+env:
+  REPORT_PATH: runtime_reports/mlb_supervised_shadow_v2_latest.json
+
+jobs:
+  verify-latest-pointer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate publisher
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9'
+          python -m py_compile scripts/publish_monotonic_json.py
+          PYTHONPATH=. python -m pytest -q --tb=short tests/unit/test_publish_monotonic_json.py
+
+      - name: Reject malformed or regressive latest evidence
+        id: reconcile
+        run: |
+          set -euo pipefail
+          test -s "$REPORT_PATH"
+          if git cat-file -e "HEAD^:${REPORT_PATH}" 2>/dev/null; then
+            git show "HEAD^:${REPORT_PATH}" >/tmp/mlb-supervised-shadow-v2-previous.json
+          else
+            cp "$REPORT_PATH" /tmp/mlb-supervised-shadow-v2-previous.json
+          fi
+          cp "$REPORT_PATH" /tmp/mlb-supervised-shadow-v2-candidate.json
+          set +e
+          output=$(python scripts/publish_monotonic_json.py \
+            --candidate /tmp/mlb-supervised-shadow-v2-candidate.json \
+            --existing /tmp/mlb-supervised-shadow-v2-previous.json \
+            --output "$REPORT_PATH" 2>&1)
+          status=$?
+          set -e
+          if test "$status" -ne 0; then
+            cp /tmp/mlb-supervised-shadow-v2-previous.json "$REPORT_PATH"
+            echo "candidateMalformed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "$output"
+            echo "candidateMalformed=false" >> "$GITHUB_OUTPUT"
+          fi
+          python -m json.tool "$REPORT_PATH" >/dev/null
+
+      - name: Restore last valid latest pointer
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add "$REPORT_PATH"
+          git diff --cached --quiet && exit 0
+          git commit -m 'Restore monotonic MLB V8 latest evidence [skip ci]'
+          for attempt in 1 2 3 4 5; do
+            git push origin HEAD:main && exit 0
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 3))
+          done
+          exit 1
