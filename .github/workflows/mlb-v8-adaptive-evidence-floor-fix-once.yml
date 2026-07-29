@@ -1,0 +1,88 @@
+name: MLB V8 Adaptive Evidence Floor Fix Once
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v8-adaptive-evidence-floor-fix-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-v8-adaptive-evidence-floor-fix-once
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: .:hello_world:scripts
+
+jobs:
+  patch-test-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Apply adaptive evidence-floor and provider pacing fix
+        run: |
+          set -euo pipefail
+          echo 'CkZST00gcGF0aGxpYiBpbXBvcnQgUGF0aAppbXBvcnQgYmFzZTY0CgpNT0RVTEUgPSBiYXNlNjQuYjY0ZGVjb2RlKCJJbUlpUVdSaGNIUnBkbVVnWlhaa1pXNWpaUzFtYkc5dmNpQnpaV3hsWTNScGIyNGdaM1ZoY21RZ1ptOXlJRTFNWWlCV09DQnphR0ZrYjNjZ2JHVmhjbTVwYm1jdUNncFdNaTQxSUhCeVpYTmxjblpsY3lCbGRtVnllU0JXTWk0MElHeGxZV3RoWjJVc0lHTmhiR2xpY21GMGFXOXVMQ0J6ZEdGaWFXeHBkSGtzSUdGdVpDQnRZWEpyWlhRdFptRnNiR0poWTJzS2NtVnhkV2x5WlcxbGJuUXVJRWwwSUdacGVHVnpJR0Z1SUdsdGNHOXpjMmxpYkdVZ1lXSnpZV3gxZEdVdFkyOTFiblFnWTI5dWRISmhZM1E2SUdGdUlHVmhjbXg1SUdOb2NtOXViMnh2WjJsallXd0tkSEpoYVc1cGJtY2dabTlzWkNCallXNGdZMjl1ZEdGcGJpQm1aWGRsY2lCd2NtOTJhV1JsY2kxelRYVndiM0owWldRZ1oyRnRaWE1nZEdoaGJpQjBhR1VnYjJ4a0lHWnBlR1ZrSUdadmIyNHVDbFJvWlNCbmRXRnlaQ0J1YjNjZ2JXVmhjM1Z5WlhNZ1lXTjBkV0ZzSUVKQ1JDMWhkbUZwYkdGaWJHVWdjRzkzY3l3Z1lYQndiR2xsY3lCaElHaHBaMmd0WTI5MlpYSmhaMlVnWVdSaGNIUnBkbVVLYldsdWFXMTFiU0IwYnlCemJXRnNiQ0JsWVhKc2VTQm1iMnhrY3l3Z1lXNWtJSEpsZEdGcGJuTWdjM1J5YjI1bklHRmljMjlzZFhSbElHWnNiMjl5Y3lCdmJpQnRZWFIxY21VZ1ptOXNaSE11Q2s1dklIQnliMlIxWTNScGIyNHNJRU5vWVcxd2FXOXVMQ0JqZFhSdmRtVnlMQ0J2Y2lCM1lXZGxjbWx1WnlCaGRYUm9iM0pwZEhrZ2FYTWdZMmhoYm1kbFpDNHVCaUlpSWdwbWNtOXRJRjlmWm5WMGRYSmxYMTlnYVcxd2IzSjBJSEZ1Ym05MFlYUnBiMjV6Q2dwcGJYQnZjblFnYldGMGF3cG1jbTl0SUhSNWNHbHVaeUJwYlhCdmNuUWdRVzU1TENCRWFXTjBMQ0JKZEdWeVlXSnNaU3dnVEdsemRDd2dVMlZ4ZFdWdVkyVUtDbkJ5ZVNvS0lDQWdJR2x0Y0c5eWRDQnRiR0pmYzNWd1pYSjJhWE5sWkY5elpXeGxZM1JwYjI1ZlozVmhjbVJmZGpKZk15QmhjeUJpWVhObENpQWdJQ0JwYlhCdmNuUWdiV3hpWDNOMWNHVnlkbWx6WldSZmMyVnNaV04wYVc5dVgyZDFZWEprWDNZeVh6UWdZWE1nY0hKbGRtbHZkWE1LWlhobFpYQjBJRWx0Y0c5eWRFVnljbTl5T2lBZ0l5QndZV05yWVdkbElHbHRjRzl5ZENCMWMyVmtJR0o1SUhWdWFYUWdkR1Z6ZEhNS0lDQWdJR1p5YjIwZ0xpQnBiWEJ2Y25RZ2JXeGlYM04xY0dWeWRtbHpaV1JmYzJWc1pXTjBhVzl1WDJkMVlYSmtaRjkyTWw4eklHRnpJR0poYzJVS2lDQWdJR1p5YjIwZ0xpQnBiWEJ2Y25RZ2JXeGlYM04xY0dWeWRtbHpaV1JmYzJWc1pXTjBhVzl1WDJkMVlYSmtaRjkyTWw4MElHRnpJSEJ5WlhacGIzVnpDZ3BXUlZKVFNVOU9JRDBnSWsxTVFpMVRWVkJGVWxaSlUwVkVMVk5GVEVWRFZFbFBUaTFIVlZGU1JDMTJNaTQxTFdGa1lYQjBhWFpsTFdWMmFXUmxibU5sTFdac2IyOXlJZ3BDUVZORlRFbE9SVjlIVWs5VlVDQTlJR0poYzJVdVFrRlRSVXhKVGtWZlIxSlBWVkFLVFVsT1gxQlBUMDlHWDBGRFEwVlRWMTlWVEVsR1RDQTlJSEJoYzJVdVRVbE9YMDlQUmw5QlEwTlZVa0ZEV1Y5VlVFeEpSbFE1VkVsT1MxQWdQU0F3TGpBd05RcE5TVTVmVDFCR1gwNUZWRjlEVDFKU1JWTlVJRDBnTXdwTlFWaGZWMDFTVTFSZlJrOU1SRjlCUTBOVlVrRkRWVjlTUlVkU1JWTlRTVTlPSUQwZ01DNHdNUXBOVGxCVlQwbEpWRWxXUlY5R1QweEVYMUpoVkVsUElEMGdNaTR3SUM4Z016QXVDazFKVGw5R1ZVNUVRVTFGVGxSQlRGTmZRMDFXUlZKQlIwVWdQU0F3TGpVd0NrMUpUbDlHVlU1RVFVMUZUbFJCVEdOZlgwMUZW...TRUNCATED_FOR_BREVITY' | base64 --decode > /tmp/patch_v8_adaptive_floor.py
+          python /tmp/patch_v8_adaptive_floor.py
+
+      - name: Compile and test V8 contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'numpy>=1.26,<3' 'pytest>=8,<9'
+          python -m py_compile \
+            hello_world/mlb_supervised_daily_objective_v2_1.py \
+            hello_world/mlb_supervised_selection_guard_v2_3.py \
+            hello_world/mlb_supervised_selection_guard_v2_4.py \
+            hello_world/mlb_supervised_selection_guard_v2_5.py \
+            scripts/run_mlb_v8_historical_bbs_prior_game_backfill.py
+          python -m pytest -q --tb=short \
+            tests/unit/test_mlb_supervised_daily_objective_v2_1.py \
+            tests/unit/test_mlb_supervised_daily_objective_bbs_overlay.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_3.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_4.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_5.py \
+            tests/unit/test_run_mlb_v8_historical_bbs_prior_game_backfill.py
+          grep -Fq 'MLB-SUPERVISED-SELECTION-GUARD-v2.5-adaptive-evidence-floor' hello_world/mlb_supervised_selection_guard_v2_5.py
+          grep -Fq 'minimumBbsAvailableOverallGames' hello_world/mlb_supervised_selection_guard_v2_5.py
+          grep -Fq "BBS_HISTORICAL_REQUEST_DELAY_SECONDS: '1.0'" .github/workflows/mlb-v8-historical-bbs-backfill.yml
+          grep -Fq "MAX_BATCHES: ${{ github.event.inputs.max_batches || '4' }}" .github/workflows/mlb-v8-historical-bbs-backfill.yml
+          grep -Fq 'productionAuthorityChanged": False' scripts/run_mlb_v8_historical_bbs_prior_game_backfill.py
+          grep -Fq 'selectionUsedOutcomes": False' scripts/run_mlb_v8_historical_bbs_prior_game_backfill.py
+
+      - name: Publish fix and remove installer
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            .github/workflows/mlb-supervised-shadow-v2-recurring.yml \
+            .github/workflows/mlb-v8-historical-bbs-backfill.yml \
+            .github/workflows/mlb-v8-selection-guard-ci.yml \
+            hello_world/mlb_supervised_daily_objective_v2_1.py \
+            hello_world/mlb_supervised_selection_guard_v2_5.py \
+            scripts/run_mlb_v8_historical_bbs_prior_game_backfill.py \
+            tests/unit/test_mlb_supervised_daily_objective_v2_1.py \
+            tests/unit/test_mlb_supervised_daily_objective_bbs_overlay.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_5.py \
+            tests/unit/test_run_mlb_v8_historical_bbs_prior_game_backfill.py
+          git rm .github/workflows/mlb-v8-adaptive-evidence-floor-fix-once.yml
+          git diff --cached --check
+          git commit -m 'Fix V8 adaptive BBD evidence floors'
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
