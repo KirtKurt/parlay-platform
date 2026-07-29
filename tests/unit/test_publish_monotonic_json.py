@@ -50,6 +50,19 @@ def test_equal_timestamp_uses_run_id_as_tie_breaker(tmp_path):
     assert json.loads(existing.read_text())["marker"] == "candidate"
 
 
+def test_equal_timestamp_lower_run_id_cannot_replace_latest(tmp_path):
+    candidate = tmp_path / "candidate.json"
+    existing = tmp_path / "latest.json"
+    stamp = "2026-07-28T23:17:00+00:00"
+    write(existing, stamp, "202", "current")
+    write(candidate, stamp, "201", "stale")
+
+    result = publish(candidate, existing, existing)
+
+    assert result["published"] is False
+    assert json.loads(existing.read_text())["marker"] == "current"
+
+
 def test_candidate_without_timestamp_fails_closed(tmp_path):
     candidate = tmp_path / "candidate.json"
     existing = tmp_path / "latest.json"
