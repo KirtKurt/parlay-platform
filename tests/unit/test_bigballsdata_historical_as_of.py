@@ -52,8 +52,10 @@ def test_resource_request_includes_historical_as_of(monkeypatch):
     assert value["_transport"]["requestedAsOfUtc"] == "2026-07-01T22:15:00Z"
 
 
-def test_stored_historical_match_surface_accepts_data_plus_pagination():
+def test_stored_historical_match_surface_accepts_data_plus_pagination(monkeypatch):
     seen = {}
+    sleeps = []
+    monkeypatch.setenv("BBS_HISTORICAL_REQUEST_DELAY_SECONDS", "0.75")
 
     def opener(request, timeout):
         seen["url"] = request.full_url
@@ -64,15 +66,55 @@ def test_stored_historical_match_surface_accepts_data_plus_pagination():
             }
         )
 
-    client = BigBallsDataClient(api_key="bbs_live_abcdefghijkl", opener=opener)
+    client = BigBallsDataClient(
+        api_key="bbs_live_abcdefghijkl",
+        opener=opener,
+        sleeper=sleeps.append,
+    )
     value = client.list_mlb_matches("2025-04-01", limit=200, stored=True)
 
+    assert sleeps == [0.75]
     assert "/v1/stored/matches?" in seen["url"]
     assert "sport=baseball" in seen["url"]
     assert "league=mlb" in seen["url"]
     assert "date=2025-04-01" in seen["url"]
     assert value["_transport"]["endpoint"] == "/v1/stored/matches"
     assert value["meta"]["catalogueContract"] == "data_plus_pagination"
+
+
+def test_stored_historical_delay_is_bounded_and_live_is_unaffected(monkeypatch):
+    sleeps = []
+    monkeypatch.setenv("BBS_HISTORICAL_REQUEST_DELAY_SECONDS", "99")
+
+    def opener(request, timeout):
+        return Response(
+            {
+                "data": [],
+                "meta": {"source": "official-league"},
+                "error": None,
+            }
+        )
+
+    client = BigBallsDataClient(
+        api_key="bbs_live_abcdefghijkl",
+        opener=opener,
+        sleeper=sleeps.append,
+    )
+    client.list_mlb_matches("2026-07-29", stored=False)
+    assert sleeps == []
+
+    stored_client = BigBallsDataClient(
+        api_key="bbs_live_abcdefghijkl",
+        opener=lambda request, timeout: Response(
+            {
+                "data": [],
+                "pagination": {"limit": 200, "offset": 0, "total": 0},
+            }
+        ),
+        sleeper=sleeps.append,
+    )
+    stored_client.list_mlb_matches("2025-04-01", stored=True)
+    assert sleeps == [5.0]
 
 
 def test_live_endpoint_does_not_accept_catalogue_envelope():
