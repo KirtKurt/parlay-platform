@@ -1,0 +1,323 @@
+name: MLB V8 Historical Point-In-Time Fundamentals
+
+"on":
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: Maximum canonical games to enrich in this bounded run
+        required: true
+        default: '25'
+        type: choice
+        options: ['10', '25', '50', '100']
+  schedule:
+    - cron: '52 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'hello_world/mlb_official_point_in_time_fundamentals_v1.py'
+      - 'hello_world/mlb_v8_historical_bbs_overlay_v2.py'
+      - 'hello_world/mlb_v8_historical_bbs_prior_game_features_v1.py'
+      - 'hello_world/mlb_supervised_daily_objective_v2_1.py'
+      - 'scripts/run_mlb_v8_historical_point_in_time_backfill.py'
+      - 'tests/unit/test_mlb_v8_historical_point_in_time_fix.py'
+      - '.github/workflows/mlb-v8-historical-point-in-time-fundamentals.yml'
+  pull_request:
+    paths:
+      - 'hello_world/mlb_official_point_in_time_fundamentals_v1.py'
+      - 'hello_world/mlb_v8_historical_bbs_overlay_v2.py'
+      - 'hello_world/mlb_v8_historical_bbs_prior_game_features_v1.py'
+      - 'hello_world/mlb_supervised_daily_objective_v2_1.py'
+      - 'scripts/run_mlb_v8_historical_point_in_time_backfill.py'
+      - 'tests/unit/test_mlb_v8_historical_point_in_time_fix.py'
+      - '.github/workflows/mlb-v8-historical-point-in-time-fundamentals.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-v8-historical-point-in-time-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
+  cancel-in-progress: false
+
+env:
+  REPORT_PATH: runtime_reports/mlb_v8_historical_point_in_time_fundamentals_latest.json
+  HISTORICAL_STACK: parlay-platform-mlb-historical-optimizer
+  FUNDAMENTALS_STACK: parlay-platform-mlb-v8-fundamentals-shadow
+  TABLE_NAME: parlay_platform_snapshots
+  PYTHONPATH: .:hello_world:scripts
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate point-in-time fundamentals separation
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+          python -m py_compile \
+            hello_world/mlb_official_point_in_time_fundamentals_v1.py \
+            hello_world/mlb_v8_historical_bbs_overlay_v2.py \
+            hello_world/mlb_v8_historical_bbs_prior_game_features_v1.py \
+            hello_world/mlb_supervised_daily_objective_v2_1.py \
+            scripts/run_mlb_v8_historical_point_in_time_backfill.py
+          python -m pytest -q --tb=short \
+            tests/unit/test_mlb_v8_historical_point_in_time_fix.py \
+            tests/unit/test_mlb_v8_historical_bbs_overlay_v1.py \
+            tests/unit/test_mlb_v8_historical_bbs_prior_game_features_v1.py \
+            tests/unit/test_mlb_supervised_daily_objective_bbs_overlay.py
+          grep -Fq 'MLB_V8_HISTORICAL_BBS_TARGET#V2' scripts/run_mlb_v8_historical_point_in_time_backfill.py
+          grep -Fq 'historicalBbsPriorGameSnapshot' hello_world/mlb_v8_historical_bbs_overlay_v2.py
+          grep -Fq 'frozenFundamentalsSnapshot' hello_world/mlb_v8_historical_bbs_overlay_v2.py
+          grep -Fq 'selectionUsedOutcomes": False' hello_world/mlb_v8_historical_bbs_overlay_v2.py
+          grep -Fq 'productionAuthorityChanged": False' hello_world/mlb_v8_historical_bbs_overlay_v2.py
+
+  backfill-and-advance:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'numpy>=1.26,<3'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Enrich target-game fundamentals at immutable lock time
+        id: enrichment
+        continue-on-error: true
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+          BBS_API_KEY: ${{ secrets.BBS_API_KEY }}
+          BBS_API_SECRET_ARN: ${{ secrets.BBS_API_SECRET_ARN }}
+          BATCH_SIZE: ${{ github.event.inputs.batch_size || '25' }}
+        run: |
+          set -o pipefail
+          mkdir -p runtime_reports
+          rm -f "$REPORT_PATH" /tmp/mlb-v8-point-in-time.log
+          python scripts/run_mlb_v8_historical_point_in_time_backfill.py \
+            --region "$AWS_REGION_VALUE" \
+            --table-name "$TABLE_NAME" \
+            --historical-stack "$HISTORICAL_STACK" \
+            --fundamentals-stack "$FUNDAMENTALS_STACK" \
+            --limit "$BATCH_SIZE" \
+            --start-tolerance-minutes 5 \
+            --output "$REPORT_PATH" \
+            2>&1 | tee /tmp/mlb-v8-point-in-time.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Advance newly settled canonical corpus
+        id: corpus
+        if: always()
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=$(aws cloudformation describe-stacks \
+            --stack-name "$HISTORICAL_STACK" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" \
+            --output text)
+          test -n "$FUNCTION_NAME" && test "$FUNCTION_NAME" != None
+          invoke() {
+            aws lambda invoke \
+              --function-name "$FUNCTION_NAME" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --cli-read-timeout 900 \
+              --cli-binary-format raw-in-base64-out \
+              --payload "$1" "$2" >/tmp/invoke-meta.json
+          }
+          invoke '{"mode":"status","run":"mlb_v8_point_in_time_before"}' /tmp/corpus-before.json
+          invoke '{"mode":"orchestrate","run":"mlb_v8_point_in_time_settled_corpus"}' /tmp/corpus-orchestrate.json
+          invoke '{"mode":"status","run":"mlb_v8_point_in_time_after"}' /tmp/corpus-after.json
+
+      - name: Refit and evaluate the enriched shadow corpus
+        id: evaluation
+        if: always()
+        continue-on-error: true
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+          MLB_V8_HISTORICAL_BBS_OVERLAY_ENABLED: 'true'
+          MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED: 'true'
+          MLB_V8_HISTORICAL_BBS_TABLE: parlay_platform_snapshots
+        run: |
+          set -o pipefail
+          rm -f /tmp/mlb-supervised-after-point-in-time.json /tmp/mlb-supervised-after-point-in-time.log
+          python scripts/run_mlb_supervised_shadow_v2.py \
+            --region "$AWS_REGION_VALUE" \
+            --stack-name "$HISTORICAL_STACK" \
+            --table-name "$TABLE_NAME" \
+            --output /tmp/mlb-supervised-after-point-in-time.json \
+            2>&1 | tee /tmp/mlb-supervised-after-point-in-time.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Build durable combined evidence
+        if: always()
+        env:
+          ENRICHMENT_OUTCOME: ${{ steps.enrichment.outcome }}
+          ENRICHMENT_EXIT_CODE: ${{ steps.enrichment.outputs.exit_code }}
+          CORPUS_OUTCOME: ${{ steps.corpus.outcome }}
+          EVALUATION_OUTCOME: ${{ steps.evaluation.outcome }}
+          EVALUATION_EXIT_CODE: ${{ steps.evaluation.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          path=Path(os.environ['REPORT_PATH'])
+          if path.exists() and path.stat().st_size:
+              report=json.loads(path.read_text())
+          else:
+              log=Path('/tmp/mlb-v8-point-in-time.log').read_text(errors='replace')[-16000:] if Path('/tmp/mlb-v8-point-in-time.log').exists() else ''
+              report={
+                  'proofType':'MLB_V8_HISTORICAL_POINT_IN_TIME_FUNDAMENTALS',
+                  'version':'MLB-V8-HISTORICAL-POINT-IN-TIME-BACKFILL-v2',
+                  'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+                  'sourceSha':os.environ.get('GITHUB_SHA'),
+                  'runId':os.environ.get('GITHUB_RUN_ID'),
+                  'authority':'V8_HISTORICAL_BBS_SHADOW_ONLY',
+                  'productionAuthorityChanged':False,
+                  'automaticWagerAllowed':False,
+                  'selectionUsedOutcomes':False,
+                  'pointInTimeRequired':True,
+                  'errorLogTail':log,
+                  'blockers':['point_in_time_backfill_failed_before_report'],
+                  'ok':False,
+              }
+          before=after=orchestrate={}
+          for name,target in [('before','/tmp/corpus-before.json'),('after','/tmp/corpus-after.json'),('orchestrate','/tmp/corpus-orchestrate.json')]:
+              p=Path(target)
+              if p.exists() and p.stat().st_size:
+                  try:
+                      value=json.loads(p.read_text())
+                  except Exception:
+                      value={}
+              else:
+                  value={}
+              if name=='before': before=value
+              elif name=='after': after=value
+              else: orchestrate=value
+          b=before.get('state') or {}
+          a=after.get('state') or {}
+          def i(value):
+              try: return int(value or 0)
+              except Exception: return 0
+          report['settledCorpus']={
+              'workflowOutcome':os.environ.get('CORPUS_OUTCOME'),
+              'orchestrateOk':orchestrate.get('ok') is True,
+              'before':{k:b.get(k) for k in ('phase','currentDate','currentSlotIndex','eligibleGameCount','completeSlateCount','revision','updatedAtUtc','lastError')},
+              'after':{k:a.get(k) for k in ('phase','currentDate','currentSlotIndex','eligibleGameCount','completeSlateCount','revision','updatedAtUtc','lastError')},
+              'eligibleGameDelta':i(a.get('eligibleGameCount'))-i(b.get('eligibleGameCount')),
+              'completeSlateDelta':i(a.get('completeSlateCount'))-i(b.get('completeSlateCount')),
+              'revisionDelta':i(a.get('revision'))-i(b.get('revision')),
+          }
+          evaluation={}
+          evaluation_path=Path('/tmp/mlb-supervised-after-point-in-time.json')
+          if evaluation_path.exists() and evaluation_path.stat().st_size:
+              try:
+                  evaluation=json.loads(evaluation_path.read_text())
+              except Exception:
+                  evaluation={}
+          report['shadowEvaluation']={
+              'workflowOutcome':os.environ.get('EVALUATION_OUTCOME'),
+              'exitCode':os.environ.get('EVALUATION_EXIT_CODE'),
+              'ok':evaluation.get('ok') is True,
+              'learningStatus':evaluation.get('learningStatus'),
+              'modelDigest':evaluation.get('modelDigest') or ((evaluation.get('model') or {}).get('modelDigest')),
+              'resultDigest':evaluation.get('resultDigest'),
+              'recordCountLoaded':evaluation.get('recordCountLoaded'),
+              'productionPromotionEligible':evaluation.get('productionPromotionEligible'),
+              'historicalPointInTimeFundamentals':evaluation.get('historicalPointInTimeFundamentals'),
+          }
+          report['enrichmentOutcome']=os.environ.get('ENRICHMENT_OUTCOME')
+          report['enrichmentExitCode']=os.environ.get('ENRICHMENT_EXIT_CODE')
+          report['targetManifestPointerPk']='MLB_V8_HISTORICAL_BBS_TARGET#V2'
+          report['priorGameManifestPointerPk']='MLB_V8_HISTORICAL_BBS#V1'
+          report['selectionGuardChanged']=False
+          report['promotionGateChanged']=False
+          path.write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          PY
+          python -m json.tool "$REPORT_PATH" >/dev/null
+          cp "$REPORT_PATH" /tmp/mlb-v8-point-in-time-report.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-v8-point-in-time-fundamentals-${{ github.run_id }}
+          path: |
+            /tmp/mlb-v8-point-in-time-report.json
+            /tmp/mlb-v8-point-in-time.log
+            /tmp/corpus-before.json
+            /tmp/corpus-orchestrate.json
+            /tmp/corpus-after.json
+            /tmp/mlb-supervised-after-point-in-time.json
+            /tmp/mlb-supervised-after-point-in-time.log
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Publish latest evidence monotonically
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-v8-point-in-time-proof origin/main
+            mkdir -p runtime_reports
+            python scripts/publish_monotonic_json.py \
+              --candidate /tmp/mlb-v8-point-in-time-report.json \
+              --existing "$REPORT_PATH" \
+              --output "$REPORT_PATH"
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB V8 point-in-time fundamentals evidence'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
+
+      - name: Enforce fail-closed safety
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          value=json.load(open('/tmp/mlb-v8-point-in-time-report.json'))
+          assert value.get('authority') == 'V8_HISTORICAL_BBS_SHADOW_ONLY', value
+          assert value.get('productionAuthorityChanged') is False, value
+          assert value.get('automaticWagerAllowed') is False, value
+          assert value.get('selectionUsedOutcomes') is False, value
+          assert value.get('pointInTimeRequired') is True, value
+          assert value.get('selectionGuardChanged') is False, value
+          assert value.get('promotionGateChanged') is False, value
+          assert value.get('targetManifestPointerPk') != value.get('priorGameManifestPointerPk'), value
+          evaluation=value.get('shadowEvaluation') or {}
+          assert evaluation.get('ok') is True, value
+          assert evaluation.get('modelDigest'), value
+          assert value.get('ok') is True, value
+          assert not value.get('blockers'), value
+          PY
