@@ -127,6 +127,8 @@ def test_coverage_window_reverses_only_canonical_traversal_order():
 
 
 def test_diagnostics_publish_only_counts_and_error_names(tmp_path):
+    module = None
+
     def crosswalk(provider_rows, canonical_games, **_kwargs):
         return {
             "acceptedCount": 1,
@@ -142,6 +144,14 @@ def test_diagnostics_publish_only_counts_and_error_names(tmp_path):
         }
 
     def run(*_args, **_kwargs):
+        module.crosswalk_provider_rows(
+            [{"id": "opaque-row"}],
+            [
+                {"slateDateEt": "2026-07-27", "officialGamePk": "1"},
+                {"slateDateEt": "2026-07-27", "officialGamePk": "2"},
+            ],
+        )
+        module.build_training_snapshot()
         return {
             "ok": False,
             "selectedGameCount": 2,
@@ -154,14 +164,6 @@ def test_diagnostics_publish_only_counts_and_error_names(tmp_path):
         run=run,
     )
     entrypoint.install_safe_diagnostics(module)
-    module.crosswalk_provider_rows(
-        [{"id": "provider-secret-row-not-emitted"}],
-        [
-            {"slateDateEt": "2026-07-27", "officialGamePk": "1"},
-            {"slateDateEt": "2026-07-27", "officialGamePk": "2"},
-        ],
-    )
-    module.build_training_snapshot()
     output = tmp_path / "report.json"
 
     report = module.run(output=output)
@@ -174,5 +176,5 @@ def test_diagnostics_publish_only_counts_and_error_names(tmp_path):
         "pitchers_source_effective_time_missing": 1
     }
     assert report["diagnosticsContainProviderValues"] is False
-    assert "provider-secret-row-not-emitted" not in output.read_text()
+    assert "opaque-row" not in output.read_text()
     assert durable == report
