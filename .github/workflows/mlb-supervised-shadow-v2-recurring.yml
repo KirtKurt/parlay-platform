@@ -16,12 +16,21 @@ name: MLB Supervised Shadow V2 Recurring
       - 'scripts/publish_monotonic_json.py'
       - 'hello_world/mlb_supervised_model_v2.py'
       - 'hello_world/mlb_supervised_daily_objective_v2_1.py'
+      - 'hello_world/mlb_supervised_feature_boundaries_v2_4.py'
+      - 'hello_world/mlb_supervised_feature_groups_v2_4.py'
+      - 'hello_world/mlb_supervised_selection_guard_v2_3.py'
+      - 'hello_world/mlb_supervised_selection_guard_v2_4.py'
       - 'hello_world/mlb_v8_historical_bbs_overlay_v1.py'
       - 'hello_world/mlb_v8_historical_bbs_prior_game_v1.py'
       - 'hello_world/mlb_v8_historical_bbs_prior_game_features_v1.py'
       - 'runtime_reports/mlb_v8_historical_bbs_backfill_latest.json'
       - 'tests/unit/test_run_mlb_supervised_shadow_v2_readiness.py'
       - 'tests/unit/test_publish_monotonic_json.py'
+      - 'tests/unit/test_mlb_supervised_daily_objective_v2_1.py'
+      - 'tests/unit/test_mlb_supervised_feature_boundaries_v2_4.py'
+      - 'tests/unit/test_mlb_supervised_feature_groups_v2_4.py'
+      - 'tests/unit/test_mlb_supervised_selection_guard_v2_3.py'
+      - 'tests/unit/test_mlb_supervised_selection_guard_v2_4.py'
       - 'tests/unit/test_mlb_v8_historical_bbs_overlay_v1.py'
       - 'tests/unit/test_mlb_v8_historical_bbs_prior_game_v1.py'
       - 'tests/unit/test_mlb_v8_historical_bbs_prior_game_features_v1.py'
@@ -73,12 +82,21 @@ jobs:
             scripts/publish_monotonic_json.py \
             hello_world/mlb_supervised_model_v2.py \
             hello_world/mlb_supervised_daily_objective_v2_1.py \
+            hello_world/mlb_supervised_feature_boundaries_v2_4.py \
+            hello_world/mlb_supervised_feature_groups_v2_4.py \
+            hello_world/mlb_supervised_selection_guard_v2_3.py \
+            hello_world/mlb_supervised_selection_guard_v2_4.py \
             hello_world/mlb_v8_historical_bbs_overlay_v1.py \
             hello_world/mlb_v8_historical_bbs_prior_game_v1.py \
             hello_world/mlb_v8_historical_bbs_prior_game_features_v1.py
           python -m pytest -q --tb=short \
             tests/unit/test_run_mlb_supervised_shadow_v2_readiness.py \
             tests/unit/test_publish_monotonic_json.py \
+            tests/unit/test_mlb_supervised_daily_objective_v2_1.py \
+            tests/unit/test_mlb_supervised_feature_boundaries_v2_4.py \
+            tests/unit/test_mlb_supervised_feature_groups_v2_4.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_3.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_4.py \
             tests/unit/test_mlb_v8_historical_bbs_overlay_v1.py \
             tests/unit/test_mlb_v8_historical_bbs_prior_game_v1.py \
             tests/unit/test_mlb_v8_historical_bbs_prior_game_features_v1.py \
@@ -159,7 +177,13 @@ jobs:
           assert value.get('authority') == 'SHADOW_ONLY', value
           assert value.get('productionAuthorityChanged') is False, value
           assert value.get('productionPromotionEligible') is False, value
-          assert (value.get('selection') or {}).get('selectionUsedUntouchedAudit') is False, value
+          selection=value.get('selection') or {}
+          assert selection.get('selectionUsedUntouchedAudit') is False, value
+          guard=selection.get('selectionGuard') or {}
+          assert guard.get('version') == 'MLB-SUPERVISED-SELECTION-GUARD-v2.4-supported-cohort', guard
+          objective=value.get('selectionObjective') or {}
+          assert objective.get('v8FullGameCandidateRequiresFirstFive') is False, objective
+          assert objective.get('targetGameFundamentalsExcludeBbsPriorGameSnapshots') is True, objective
           checks=((value.get('runtimeIdentity') or {}).get('checks') or {})
           assert checks and all(checks.values()), checks
           bbd=value.get('historicalBbsFundamentals') or {}
@@ -216,6 +240,8 @@ jobs:
           assert value.get('runId') == os.environ.get('GITHUB_RUN_ID'), value
           assert model_digest, value
           assert int(value.get('recordCountLoaded') or 0) > 0, value
+          guard=((value.get('selection') or {}).get('selectionGuard') or {})
+          assert guard.get('version') == 'MLB-SUPERVISED-SELECTION-GUARD-v2.4-supported-cohort', guard
           bbd=value.get('historicalBbsFundamentals') or {}
           assert bbd.get('authority') == 'V8_HISTORICAL_BBS_SHADOW_ONLY', bbd
           assert bbd.get('productionAuthorityChanged') is False, bbd
