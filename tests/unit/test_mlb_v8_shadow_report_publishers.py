@@ -14,6 +14,18 @@ EXPECTED_PUBLISHERS = {
     "mlb-supervised-v2-immediate-eval-once.yml",
     "mlb-v9-event-id-direct-recovery-once.yml",
 }
+CURRENT_RUN_EVIDENCE = {
+    "mlb-supervised-shadow-v2-recurring.yml": (
+        "Path('/tmp/mlb-supervised-shadow-v2.json').read_text()",
+    ),
+    "mlb-supervised-v2-immediate-eval-once.yml": (
+        "Path('/tmp/mlb-supervised-v2-immediate-report.json').read_text()",
+    ),
+    "mlb-v9-event-id-direct-recovery-once.yml": (
+        "Path('/tmp/mlb-v9-recovery-report.json').read_text()",
+        "Path('/tmp/mlb-v9-shadow-report.json').read_text()",
+    ),
+}
 
 
 def _canonical_report_publishers() -> dict[str, str]:
@@ -55,3 +67,11 @@ def test_no_canonical_v8_report_publisher_blindly_copies_shadow_evidence() -> No
     for name, text in _canonical_report_publishers().items():
         for command in prohibited:
             assert command not in text, f"{name}: {command}"
+
+
+def test_post_publish_enforcement_uses_current_run_evidence() -> None:
+    publishers = _canonical_report_publishers()
+    for name, evidence_reads in CURRENT_RUN_EVIDENCE.items():
+        text = publishers[name]
+        for evidence_read in evidence_reads:
+            assert evidence_read in text, f"{name}: {evidence_read}"
