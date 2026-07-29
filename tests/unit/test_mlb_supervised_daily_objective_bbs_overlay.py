@@ -4,14 +4,11 @@ import hashlib
 import json
 
 import mlb_supervised_daily_objective_v2_1 as objective
-
-
-class Features:
-    pass
+import mlb_supervised_features_v2 as features
 
 
 class Model:
-    features = Features()
+    features = features
     _config_key = None
     VERSION = "old"
 
