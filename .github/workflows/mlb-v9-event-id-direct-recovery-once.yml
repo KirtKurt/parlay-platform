@@ -11,8 +11,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: mlb-v9-event-id-direct-recovery-once
-  cancel-in-progress: true
+  group: mlb-supervised-shadow-v2
+  cancel-in-progress: false
 
 env:
   STACK_NAME: parlay-platform-mlb-historical-optimizer
@@ -54,13 +54,15 @@ jobs:
             hello_world/mlb_supervised_features_v2.py \
             hello_world/mlb_supervised_model_v2.py \
             hello_world/mlb_supervised_daily_objective_v2_1.py \
-            scripts/run_mlb_supervised_shadow_v2.py
+            scripts/run_mlb_supervised_shadow_v2.py \
+            scripts/guard_mlb_v8_shadow_report.py
           PYTHONPATH=hello_world python -m pytest -q --tb=short \
             tests/unit/test_mlb_v8_provider_event_id_schema.py \
             tests/unit/test_mlb_historical_feature_rematerialization_v1.py \
             tests/unit/test_mlb_supervised_v2_runtime_integration.py \
             tests/unit/test_mlb_supervised_shadow_v2.py \
-            tests/unit/test_mlb_supervised_daily_objective_v2_1.py
+            tests/unit/test_mlb_supervised_daily_objective_v2_1.py \
+            tests/unit/test_guard_mlb_v8_shadow_report.py
           grep -Fq 'FEATURE_DATASET_VERSION = "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable"' hello_world/mlb_supervised_v8_dataset_patch_v1.py
           grep -Fq 'Handler: mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler' mlb_historical_optimizer/template.yaml
           sam validate --lint --template-file mlb_historical_optimizer/template.yaml
@@ -287,7 +289,9 @@ jobs:
             git checkout -B mlb-v9-event-id-proof origin/main
             mkdir -p runtime_reports
             cp /tmp/mlb-v9-recovery-report.json "$RECOVERY_REPORT"
-            cp /tmp/mlb-v9-shadow-report.json "$SHADOW_REPORT"
+            python scripts/guard_mlb_v8_shadow_report.py \
+              --incoming /tmp/mlb-v9-shadow-report.json \
+              --destination "$SHADOW_REPORT"
             git add "$RECOVERY_REPORT" "$SHADOW_REPORT"
             git diff --cached --quiet && exit 0
             git commit -m 'Publish MLB V9 event ID recovery evidence'
