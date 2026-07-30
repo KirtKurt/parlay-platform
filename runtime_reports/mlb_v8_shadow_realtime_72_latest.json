@@ -1,7 +1,7 @@
 {
   "authority": "SHADOW_ONLY",
   "automaticWagerAllowed": false,
-  "createdAtUtc": "2026-07-29T22:14:06.203609+00:00",
+  "createdAtUtc": "2026-07-30T00:10:09.600489+00:00",
   "errorLogTail": "",
   "evaluationExitCode": "0",
   "evaluationOutcome": "success",
@@ -14,8 +14,8 @@
   "proofType": "MLB_V8_REALTIME_SHADOW_72",
   "requireImmutablePregameLock": true,
   "requireSettledResultForGrading": true,
-  "runId": "30494989054",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30494989054",
+  "runId": "30501544056",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30501544056",
   "runtimeResolution": {
     "attempts": [
       {
@@ -47,13 +47,13 @@
     },
     "authority": "SHADOW_ONLY",
     "automaticWagerAllowed": false,
-    "createdAtUtc": "2026-07-29T22:07:54.140371+00:00",
+    "createdAtUtc": "2026-07-30T00:04:53.244099+00:00",
     "featureCoverage": {
       "bbsPriorAvailable": 0.36069652,
       "bbsPriorSupported": 0.40074627,
       "bbsPriorWithinSupported": 0.90006207,
       "exampleCount": 4020,
-      "frozenFundamentals": 0.0,
+      "frozenFundamentals": 0.00248756,
       "strictlyPastTeamHistory": 0.98084577,
       "v8Any": 1.0,
       "v8FirstFive": 0.0
@@ -94,6 +94,29 @@
       "optimizationRound": 10,
       "phase": "WAITING_FOR_SETTLED_HORIZON",
       "quotaRemaining": 4604524
+    },
+    "historicalTargetGameContext": {
+      "appliedGameCount": 10,
+      "authority": "V8_HISTORICAL_BBS_SHADOW_ONLY",
+      "coverage": 0.00248756,
+      "ineligibleGameCount": 0,
+      "invalidGameCount": 0,
+      "manifestDigest": "b07b238f400f66cc5d07a94df53d691b76f950edc6d0e0fdb3f224ee96e86c35",
+      "manifestEligibleGameCount": 10,
+      "manifestPointer": {
+        "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
+        "key": "mlb/v8/historical-context/manifests/b07b238f400f66cc5d07a94df53d691b76f950edc6d0e0fdb3f224ee96e86c35.json",
+        "sha256": "714b727dd39b9dc584c5dade2fa35b9c198c32bd2ba3022b36b3ea02baf17d3a"
+      },
+      "manifestRecordCount": 10,
+      "pointerRevision": 1,
+      "productionAuthorityChanged": false,
+      "recordCount": 4020,
+      "selectionUsedOutcomes": false,
+      "status": "APPLIED",
+      "targetGameOutcomeUsed": false,
+      "unmatchedManifestGameCount": 0,
+      "version": "MLB-V8-HISTORICAL-CONTEXT-OVERLAY-v1-point-in-time"
     },
     "learningStatus": "MARKET_BASELINE_FALLBACK",
     "metrics": {
@@ -5396,10 +5419,10 @@
     },
     "proofType": "MLB_SUPERVISED_SHADOW_AWS_EVALUATION",
     "recordCountLoaded": 4020,
-    "resultDigest": "82b2028ab8cdf4d94337ea933a2e29d672b89d62c7073620174d36bb9bacef1b",
+    "resultDigest": "aeda58a454f3aca1e93fb480d35b3c68b12a742889a73f0561419cdf8750bd62",
     "retrospectiveArchitectureEvaluation": true,
-    "runId": "30494989054",
-    "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30494989054",
+    "runId": "30501544056",
+    "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30501544056",
     "runtimeIdentity": {
       "checks": {
         "featureMaterializationReady": true,
@@ -64147,6 +64170,7 @@
       "historicalBbsSameDayResultsExcluded": true,
       "historicalBbsSelectionUsesOutcomes": false,
       "historicalBbsTargetOutcomeUsed": false,
+      "historicalTargetContextOverlayVersion": "MLB-V8-HISTORICAL-CONTEXT-OVERLAY-v1-point-in-time",
       "marketBaselineFallbackEnabled": true,
       "primary": [
         "stableMarketRelativeOverallAccuracyUplift",
@@ -64170,15 +64194,19 @@
       ],
       "regularizationGridBounded": true,
       "selectionGuardVersion": "MLB-SUPERVISED-SELECTION-GUARD-v2.6-seed-aligned-regularization-grid",
+      "targetGameContextComposedAfterPriorGameOverlay": true,
+      "targetGameContextRequiresStarterBullpenLineupInjuryParkWeather": true,
+      "targetGameContextSameDayResultsExcluded": true,
+      "targetGameContextTargetOutcomeUsed": false,
       "targetGameFundamentalsExcludeBbsPriorGameSnapshots": true,
       "untouchedAuditUsedForSelection": false,
       "v8FullGameCandidateRequiresFirstFive": false,
       "version": "MLB-SUPERVISED-SHADOW-v2.6-seed-aligned-regularization-grid"
     },
-    "sourceSha": "6a18293214be6288cdf1f727a5a82ec82233aeb0",
+    "sourceSha": "8ae48c283ad5a3960049a30c09b67febc5254416",
     "version": "MLB-SUPERVISED-SHADOW-v2.6-seed-aligned-regularization-grid"
   },
-  "sourceSha": "6a18293214be6288cdf1f727a5a82ec82233aeb0",
+  "sourceSha": "8ae48c283ad5a3960049a30c09b67febc5254416",
   "targetAccuracy": 0.72,
   "targetAccuracyPct": 72.0,
   "version": "MLB-V8-SHADOW-REALTIME-POLICY-v1-72pct"
