@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Run V9 shadow evaluation with an atomic frozen-model evidence contract.
+"""Run V9 shadow evaluation with atomic evidence and feature-aware V7 inputs.
 
-The wrapper repairs the legacy handoff resolver, which ignored the frozen nested
-candidate policy, enforces V9 integrity diagnostics, and prevents a cancelled run
-from publishing a handoff or zero-byte report. It remains read-only and has no
-production or promotion authority.
+The wrapper repairs the frozen candidate handoff, composes immutable BBS prior-game
+and target-game context overlays, projects validated record-level fundamentals into
+the legacy V7/V9 team signals, and prevents a cancelled run from publishing a
+handoff or zero-byte report. It remains read-only and has no production authority.
 """
 from __future__ import annotations
 
@@ -17,7 +17,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Mapping
 
+import mlb_historical_supervised_v9 as supervised_v9
+import mlb_historical_v7_feature_bridge_v1 as feature_bridge
 import mlb_historical_v7_priority_repairs_v1 as repairs
+import mlb_v8_historical_bbs_overlay_v1 as bbs_overlay
+import mlb_v8_historical_context_overlay_v1 as context_overlay
 
 try:
     from scripts import run_mlb_historical_supervised_v9_shadow as original
@@ -25,11 +29,14 @@ except ImportError:  # Direct execution from the scripts directory.
     import run_mlb_historical_supervised_v9_shadow as original
 
 VERSION = "MLB-V9-SHADOW-MODEL-ARTIFACT-v1"
+_TRAINING_BRIDGE_EVIDENCE: Dict[str, Any] = {}
 
 
 def _digest(value: Mapping[str, Any]) -> str:
     return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+        json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode(
+            "utf-8"
+        )
     ).hexdigest()
 
 
@@ -64,8 +71,13 @@ def candidate_handoff(result: Mapping[str, Any], fingerprint: str) -> Dict[str, 
         "selectedTemperature": diagnostics.get("selectedTemperature"),
         "featureVersion": diagnostics.get("featureVersion"),
         "featureCount": diagnostics.get("featureCount"),
-        "frozenBeforeUntouchedHoldout": diagnostics.get("holdoutEvaluatedAfterFreeze") is True,
-        "holdoutLabelsUsedForFitOrSelection": diagnostics.get("holdoutLabelsUsedForFitOrSelection"),
+        "frozenBeforeUntouchedHoldout": diagnostics.get(
+            "holdoutEvaluatedAfterFreeze"
+        )
+        is True,
+        "holdoutLabelsUsedForFitOrSelection": diagnostics.get(
+            "holdoutLabelsUsedForFitOrSelection"
+        ),
     }
     model_digest = _digest(stable_model)
     eligible = bool(
@@ -89,15 +101,21 @@ def candidate_handoff(result: Mapping[str, Any], fingerprint: str) -> Dict[str, 
         "promotionAuthority": False,
         "productionAuthority": False,
         "eligibleForCanonicalSeed": eligible,
-        "frozenBeforeUntouchedHoldout": stable_model["frozenBeforeUntouchedHoldout"],
-        "holdoutLabelsUsedForFitOrSelection": stable_model["holdoutLabelsUsedForFitOrSelection"],
+        "frozenBeforeUntouchedHoldout": stable_model[
+            "frozenBeforeUntouchedHoldout"
+        ],
+        "holdoutLabelsUsedForFitOrSelection": stable_model[
+            "holdoutLabelsUsedForFitOrSelection"
+        ],
         "trainingGameCount": stable_model["trainingGameCount"],
         "walkForwardGameCount": stable_model["walkForwardGameCount"],
         "untouchedHoldoutGameCount": stable_model["untouchedHoldoutGameCount"],
         "requiresCanonicalChronologicalReevaluation": True,
         "requiresFresh200GameUntouchedAudit": True,
     }
-    payload["digest"] = _digest({k: v for k, v in payload.items() if k != "createdAtUtc"})
+    payload["digest"] = _digest(
+        {key: value for key, value in payload.items() if key != "createdAtUtc"}
+    )
     return payload
 
 
@@ -133,6 +151,73 @@ def _atomic_write_json(path: Path, value: Mapping[str, Any]) -> None:
     os.replace(temporary, path)
 
 
+def _install_training_record_bridge() -> None:
+    """Compose immutable overlays and expose them to the legacy pair-feature API."""
+    import mlb_historical_optimizer_v7_recovery_entrypoint as runtime
+
+    handler = runtime.base.optimizer_handler
+    if getattr(handler, "_INQSI_V7_FEATURE_BRIDGE_LOADER_INSTALLED", False):
+        feature_bridge.install(repairs)
+        return
+
+    os.environ.setdefault("MLB_V8_HISTORICAL_BBS_OVERLAY_ENABLED", "true")
+    os.environ.setdefault("MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED", "true")
+    os.environ.setdefault("MLB_V8_HISTORICAL_BBS_TABLE", "parlay_platform_snapshots")
+    os.environ.setdefault("MLB_V8_HISTORICAL_CONTEXT_OVERLAY_ENABLED", "true")
+    os.environ.setdefault("MLB_V8_HISTORICAL_CONTEXT_OVERLAY_REQUIRED", "true")
+    os.environ.setdefault(
+        "MLB_V8_HISTORICAL_CONTEXT_TABLE", "parlay_platform_snapshots"
+    )
+
+    original_loader = handler._load_training_records
+
+    def load_training_records_with_context(state: Mapping[str, Any], *args, **kwargs):
+        raw_records = original_loader(state, *args, **kwargs)
+        bbs_records, bbs_proof = bbs_overlay.load_and_apply(raw_records)
+        context_records, context_proof = context_overlay.load_and_apply(bbs_records)
+        bridged_records, bridge_proof = feature_bridge.materialize_training_signals(
+            context_records,
+            supervised_v9,
+        )
+
+        blockers = []
+        if bbs_proof.get("status") != "APPLIED":
+            blockers.append("historical_bbs_overlay_not_applied")
+        if context_proof.get("status") != "APPLIED":
+            blockers.append("historical_target_context_overlay_not_applied")
+        target_applied = int(context_proof.get("appliedGameCount") or 0)
+        if target_applied <= 0:
+            blockers.append("historical_target_context_empty")
+        if int(bridge_proof.get("targetSnapshotRecordCount") or 0) != target_applied:
+            blockers.append("target_context_bridge_record_count_mismatch")
+        if int(bridge_proof.get("targetSignalPairCount") or 0) != target_applied:
+            blockers.append("target_context_not_projected_into_team_signals")
+        if bridge_proof.get("datasetFingerprint") != feature_bridge.dataset_fingerprint(
+            bridged_records
+        ):
+            blockers.append("feature_aware_dataset_fingerprint_mismatch")
+
+        _TRAINING_BRIDGE_EVIDENCE.clear()
+        _TRAINING_BRIDGE_EVIDENCE.update(
+            {
+                "historicalBbsFundamentals": copy.deepcopy(bbs_proof),
+                "historicalTargetGameContext": copy.deepcopy(context_proof),
+                "trainingSignalMaterialization": copy.deepcopy(bridge_proof),
+                "featureBridgeVersion": feature_bridge.VERSION,
+                "blockers": sorted(set(blockers)),
+            }
+        )
+        if blockers:
+            raise RuntimeError(
+                "historical V7 feature bridge failed:" + ",".join(sorted(set(blockers)))
+            )
+        return bridged_records
+
+    handler._load_training_records = load_training_records_with_context
+    handler._INQSI_V7_FEATURE_BRIDGE_LOADER_INSTALLED = True
+    feature_bridge.install(repairs)
+
+
 def _enforce_report_integrity(output: str | None) -> tuple[bool, Dict[str, Any]]:
     if not output:
         return False, {}
@@ -151,16 +236,39 @@ def _enforce_report_integrity(output: str | None) -> tuple[bool, Dict[str, Any]]
             blockers.append("holdout_not_proven_post_freeze")
         if diagnostics.get("holdoutLabelsUsedForFitOrSelection") is not False:
             blockers.append("holdout_used_for_fit_or_selection")
+
+    evidence = copy.deepcopy(_TRAINING_BRIDGE_EVIDENCE)
+    if not evidence:
+        blockers.append("v7_feature_bridge_evidence_missing")
+    else:
+        blockers.extend(evidence.pop("blockers", []))
+        value.update(evidence)
+        materialization = value.get("trainingSignalMaterialization") or {}
+        if value.get("datasetFingerprint") != materialization.get(
+            "datasetFingerprint"
+        ):
+            blockers.append("published_dataset_fingerprint_not_feature_aware")
+        population = ((value.get("featurePopulation") or {}).get("features") or {})
+        populated = sum(
+            int((population.get(name) or {}).get("nonzeroCount") or 0)
+            for name in ("starterAvailable", "bullpenAvailable", "lineupAvailable")
+        )
+        value["legacyFundamentalsTrainingColumnNonzeroCount"] = populated
+        if int(materialization.get("targetSignalPairCount") or 0) > 0 and populated <= 0:
+            blockers.append("target_context_did_not_reach_legacy_training_columns")
+
     blockers = sorted(set(blockers))
     value["blockers"] = blockers
     value["ok"] = value.get("ok") is True and not blockers
     value["integrityEnforcedByWrapper"] = True
+    value["featureAwareRefitEnabled"] = True
     _atomic_write_json(path, value)
     return value["ok"] is True, value
 
 
 def main() -> int:
     repairs.candidate_handoff = candidate_handoff
+    _install_training_record_bridge()
     output = _argument("--output")
     handoff_output = _argument("--handoff-output")
     if not output:
