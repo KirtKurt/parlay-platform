@@ -1,14 +1,16 @@
 """Persistent cadence anchors for MLB V7/V9 shadow learning.
 
-The scheduled evaluator publishes a report every run.  A report timestamp is not a
-model fit, so cadence must be measured from the last actual refit (and last actual
-lightweight selective evaluation), not from the immediately preceding report.
+A scheduled report is not a model fit. Cadence is measured from the last actual
+refit and lightweight evaluation. A material feature-only dataset change at the
+same eligible-game count is also a reason to evaluate immediately; otherwise
+point-in-time feature backfills can never reach the learner until 50 more games
+arrive.
 """
 from __future__ import annotations
 
 from typing import Any, Dict, Mapping
 
-VERSION = "MLB-V7-LEARNING-CADENCE-STATE-v1-accumulating-refit-anchors"
+VERSION = "MLB-V7-LEARNING-CADENCE-STATE-v2-feature-aware-refit-anchors"
 
 
 def _integer(value: Any, default: int = 0) -> int:
@@ -37,7 +39,7 @@ def _legacy_shadow_anchor(
         return previous_count, previous_fingerprint
 
     # Older reports recorded the accumulated delta and the prior fitted
-    # fingerprint but did not yet have explicit anchors.  Recover that state when
+    # fingerprint but did not yet have explicit anchors. Recover that state when
     # available instead of silently resetting the counter to the current report.
     recorded_delta = _integer(previous.get("newEligibleGamesSinceLastShadowFit"), 0)
     legacy_fingerprint = _text(previous.get("previousShadowDatasetFingerprint"))
@@ -100,15 +102,32 @@ def decide_cadence(
     lightweight_dataset_changed = (
         not lightweight_fingerprint or fingerprint != lightweight_fingerprint
     )
+
+    # The feature-aware fingerprint includes immutable target-context and market-
+    # expansion overlays. If that material changes without a game-count change,
+    # waiting for another 50 games would discard usable information indefinitely.
+    shadow_feature_only_change = bool(
+        shadow_fingerprint
+        and shadow_dataset_changed
+        and current_count == shadow_count
+    )
+    lightweight_feature_only_change = bool(
+        lightweight_fingerprint
+        and lightweight_dataset_changed
+        and current_count == lightweight_count
+    )
+
     should_refit = bool(
         force
         or not shadow_fingerprint
+        or shadow_feature_only_change
         or (shadow_dataset_changed and new_shadow_games >= full_increment)
     )
     should_lightweight = bool(
         should_refit
         or force
         or not lightweight_fingerprint
+        or lightweight_feature_only_change
         or (
             lightweight_dataset_changed
             and new_lightweight_games >= lightweight_increment
@@ -133,6 +152,10 @@ def decide_cadence(
         ),
         "shadowDatasetChangedSinceLastFit": shadow_dataset_changed,
         "lightweightDatasetChangedSinceLastEvaluation": lightweight_dataset_changed,
+        "featureOnlyDatasetChangeSinceLastShadowFit": shadow_feature_only_change,
+        "featureOnlyDatasetChangeSinceLastLightweightEvaluation": (
+            lightweight_feature_only_change
+        ),
         "shadowRefitIncrementGames": full_increment,
         "lightweightSelectiveEvaluationIncrementGames": lightweight_increment,
         "forceShadowRefit": bool(force),
@@ -199,6 +222,14 @@ def report_anchor_fields(
         if lightweight_performed
         else _integer(
             decision.get("remainingEligibleGamesUntilLightweightEvaluation"), 0
+        ),
+        "featureOnlyDatasetChangeSinceLastShadowFit": bool(
+            decision.get("featureOnlyDatasetChangeSinceLastShadowFit")
+        ),
+        "featureOnlyDatasetChangeSinceLastLightweightEvaluation": bool(
+            decision.get(
+                "featureOnlyDatasetChangeSinceLastLightweightEvaluation"
+            )
         ),
         "previousShadowDatasetFingerprint": shadow_fingerprint,
     }
