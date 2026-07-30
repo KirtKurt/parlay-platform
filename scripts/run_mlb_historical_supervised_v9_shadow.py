@@ -10,6 +10,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+try:
+    from scripts import run_mlb_historical_supervised_v9_shadow_cadence as cadence_state
+except ImportError:  # Direct execution from the scripts directory.
+    import run_mlb_historical_supervised_v9_shadow_cadence as cadence_state
+
 V9_STRONG_MIN_PROBABILITY = 0.65
 V9_LEAN_MIN_PROBABILITY = 0.55
 V9_DIAGNOSTIC_MAX_ROWS = 5000
@@ -193,15 +198,20 @@ def main() -> int:
     records = handler._load_training_records(state)
     fingerprint = repairs.dataset_fingerprint(records)
     previous = _load_json(Path(args.previous_report)) if args.previous_report else {}
-    previous_count = int((previous.get("state") or {}).get("eligibleGameCount") or 0)
     current_count = int(state.get("eligibleGameCount") or len(records))
-    previous_fingerprint = str(previous.get("datasetFingerprint") or "")
-    new_games = max(0, current_count - previous_count)
     full_increment = int(os.environ.get("MLB_V7_SHADOW_REFIT_INCREMENT_GAMES", "50"))
     light_increment = int(os.environ.get("MLB_V7_LIGHTWEIGHT_INCREMENT_GAMES", "25"))
     force = os.environ.get("MLB_V7_FORCE_SHADOW_REFIT", "false").lower() == "true"
-    should_refit = force or not previous_fingerprint or (fingerprint != previous_fingerprint and new_games >= full_increment)
-    should_lightweight = force or not previous_fingerprint or (fingerprint != previous_fingerprint and new_games >= light_increment)
+    cadence = cadence_state.decide_cadence(
+        previous,
+        current_count=current_count,
+        fingerprint=fingerprint,
+        full_increment=full_increment,
+        lightweight_increment=light_increment,
+        force=force,
+    )
+    should_refit = bool(cadence["shouldRefit"])
+    should_lightweight = bool(cadence["shouldLightweight"])
 
     base_report = {
         "proofType": "MLB_HISTORICAL_V7_V9_SHADOW_EVALUATION",
@@ -216,10 +226,20 @@ def main() -> int:
         "historicalChampionWritten": False,
         "productionCutoverWritten": False,
         "datasetFingerprint": fingerprint,
+        "v7LearningCadenceStateVersion": cadence_state.VERSION,
         "shadowRefitIncrementGames": full_increment,
         "lightweightSelectiveEvaluationIncrementGames": light_increment,
         "canonicalFreshAuditIncrementGames": handler.FRESH_AUDIT_INCREMENT_GAMES,
-        "newEligibleGamesSinceLastShadowFit": new_games,
+        "newEligibleGamesSinceLastShadowFit": cadence["newEligibleGamesSinceLastShadowFit"],
+        "newEligibleGamesSinceLastLightweightEvaluation": cadence[
+            "newEligibleGamesSinceLastLightweightEvaluation"
+        ],
+        "remainingEligibleGamesUntilShadowRefit": cadence[
+            "remainingEligibleGamesUntilShadowRefit"
+        ],
+        "remainingEligibleGamesUntilLightweightEvaluation": cadence[
+            "remainingEligibleGamesUntilLightweightEvaluation"
+        ],
         "state": {
             "phase": state.get("phase"), "currentDate": state.get("currentDate"),
             "currentSlotIndex": state.get("currentSlotIndex"), "eligibleGameCount": current_count,
@@ -259,7 +279,22 @@ def main() -> int:
             base_report["diagnosticSelectedPickBandsReusedFromPreviousReport"] = True
         else:
             blockers.append("v9_diagnostic_selected_pick_bands_missing_until_refit")
-        base_report.update({"ok": not blockers, "shadowRefitPerformed": False, "lightweightSelectiveEvaluationPerformed": should_lightweight, "stalledStage": "WAITING_FOR_50_NEW_ELIGIBLE_GAMES", "blockers": blockers, "previousShadowDatasetFingerprint": previous_fingerprint})
+        base_report.update(
+            cadence_state.report_anchor_fields(
+                cadence,
+                current_count=current_count,
+                fingerprint=fingerprint,
+                shadow_refit_performed=False,
+                lightweight_performed=should_lightweight,
+            )
+        )
+        base_report.update({
+            "ok": not blockers,
+            "shadowRefitPerformed": False,
+            "lightweightSelectiveEvaluationPerformed": should_lightweight,
+            "stalledStage": "WAITING_FOR_50_NEW_ELIGIBLE_GAMES",
+            "blockers": blockers,
+        })
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
         Path(args.output).write_text(json.dumps(base_report, indent=2, sort_keys=True) + "\n")
         print(json.dumps(base_report, indent=2, sort_keys=True))
@@ -296,6 +331,15 @@ def main() -> int:
         "untouchedHoldout": _diagnostic_pick_rows(records, policy, handler.policy_runtime, partitions.get("untouchedHoldout") or []),
     }
 
+    base_report.update(
+        cadence_state.report_anchor_fields(
+            cadence,
+            current_count=current_count,
+            fingerprint=fingerprint,
+            shadow_refit_performed=True,
+            lightweight_performed=True,
+        )
+    )
     base_report.update({
         "ok": not blockers,
         "shadowRefitPerformed": True,
