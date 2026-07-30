@@ -17,6 +17,7 @@ import mlb_historical_round_extension_v1 as round_extension
 import mlb_historical_state_integrity_v1 as state_integrity
 import mlb_historical_supervised_v9 as supervised_v9
 import mlb_historical_supervised_v9_integrity_v2 as supervised_integrity_v2
+import mlb_historical_v7_context_features_v1 as context_features
 import mlb_historical_v7_label_integrity_v1 as label_integrity
 import mlb_historical_v7_learning_cadence_v1 as learning_cadence
 import mlb_historical_v7_priority_repairs_v1 as priority_repairs
@@ -25,7 +26,7 @@ import mlb_historical_v7_selective_search_v2 as selective_search_v2
 import mlb_odds_market_expansion_v8 as odds_market_v8
 import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v18-rematerialization-waiting-repair"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v19-context-features"
 
 incremental_range_extension.install(base)
 state_integrity.install(base.optimizer_handler, base)
@@ -34,6 +35,7 @@ odds_market_v8.install(base.optimizer_handler.optimizer, base.optimizer_handler.
 supervised_v8_dataset.install(base.optimizer_handler.optimizer, rematerialization)
 rematerialization_waiting_repair.install(rematerialization)
 priority_repairs.install_feature_repairs(supervised_v9)
+context_features.install(supervised_v9)
 label_integrity.install(supervised_v9)
 supervised_integrity_v2.install(supervised_v9)
 supervised_v9.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
@@ -70,6 +72,7 @@ def _with_shadow_contract(value: Any) -> Any:
                 "modelVersion": supervised_v9.VERSION,
                 "featureVersion": supervised_v9.FEATURE_VERSION,
                 "featureCount": len(supervised_v9.FEATURES),
+                "contextFeaturesVersion": context_features.VERSION,
                 "integrityPatchVersion": supervised_integrity_v2.VERSION,
                 "labelIntegrityVersion": label_integrity.VERSION,
                 "learningCadenceVersion": learning_cadence.VERSION,
