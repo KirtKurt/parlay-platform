@@ -12,6 +12,7 @@ from typing import Any, Dict, Mapping
 import mlb_historical_feature_rematerialization_v1 as rematerialization
 import mlb_historical_incremental_range_extension_v1 as incremental_range_extension
 import mlb_historical_optimizer_entrypoint as base
+import mlb_historical_rematerialization_waiting_repair_v1 as rematerialization_waiting_repair
 import mlb_historical_round_extension_v1 as round_extension
 import mlb_historical_state_integrity_v1 as state_integrity
 import mlb_historical_supervised_v9 as supervised_v9
@@ -24,13 +25,14 @@ import mlb_historical_v7_selective_search_v2 as selective_search_v2
 import mlb_odds_market_expansion_v8 as odds_market_v8
 import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v17-state-integrity"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v18-rematerialization-waiting-repair"
 
 incremental_range_extension.install(base)
 state_integrity.install(base.optimizer_handler, base)
 round_extension.install(base.optimizer_handler)
 odds_market_v8.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
 supervised_v8_dataset.install(base.optimizer_handler.optimizer, rematerialization)
+rematerialization_waiting_repair.install(rematerialization)
 priority_repairs.install_feature_repairs(supervised_v9)
 label_integrity.install(supervised_v9)
 supervised_integrity_v2.install(supervised_v9)
@@ -106,6 +108,7 @@ def _with_shadow_contract(value: Any) -> Any:
                 "stateIntegrityVersion": state_integrity.VERSION,
                 "settledHorizonWaitingPhase": state_integrity.WAITING_PHASE,
                 "rangeExtensionRunsBeforeRematerialization": True,
+                "rematerializationWaitingRepairVersion": rematerialization_waiting_repair.VERSION,
             },
         )
         value.setdefault("version", VERSION)
