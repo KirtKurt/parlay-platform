@@ -29,7 +29,7 @@ def test_current_supervised_workflow_retains_shadow_only_authority():
         ".github/workflows/mlb-supervised-shadow-v2-recurring.yml"
     ).read_text()
     assert "productionAuthorityChanged') is False" in source
-    assert "automaticWagerAllowed') is False" in source
+    assert "'automaticWagerAllowed':False" in source
     assert "productionPromotionEligible') is False" in source
     assert "selectionUsedUntouchedAudit') is False" in source
     assert "cancel-in-progress: false" in source
