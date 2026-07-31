@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import sys
+
 import scripts.run_mlb_historical_supervised_v9_no_bbd as runner
 
 
@@ -69,3 +72,49 @@ def test_no_feature_or_game_change_does_not_refit():
     )
     assert decision["shouldRefit"] is False
     assert decision["shouldLightweight"] is False
+
+
+def test_install_cadence_patches_guarded_runner_namespace():
+    runner._install_cadence()
+    guarded_namespace = runner.guarded_runner.original.cadence_state
+    assert guarded_namespace.decide_cadence is runner._feature_decision
+    assert guarded_namespace.report_anchor_fields is runner._feature_anchor_fields
+
+
+def test_main_postprocesses_original_output_after_guard_rewrites_argv(
+    monkeypatch, tmp_path
+):
+    output = tmp_path / "report.json"
+    rewritten = tmp_path / "temporary.json"
+    monkeypatch.setattr(sys, "argv", ["runner", "--output", str(output)])
+    monkeypatch.setattr(runner, "_install_record_bridge", lambda: None)
+    monkeypatch.setattr(runner, "_install_cadence", lambda: None)
+    runner._CONTEXT_PROOF = {
+        "eligibleFeatureGameCount": 17,
+        "featureFingerprint": "features",
+        "providerCallsMade": 0,
+        "liveBbdApiRequired": False,
+    }
+
+    def guarded_main():
+        sys.argv[sys.argv.index("--output") + 1] = str(rewritten)
+        output.write_text(
+            json.dumps(
+                {
+                    "ok": True,
+                    "shadowRefitPerformed": False,
+                    "productionAuthorityChanged": False,
+                }
+            )
+        )
+        return 0
+
+    monkeypatch.setattr(runner.guarded_runner, "main", guarded_main)
+    assert runner.main() == 0
+    value = json.loads(output.read_text())
+    assert value["liveBbdApiAvailable"] is False
+    assert value["liveBbdApiRequired"] is False
+    assert value["providerCallsMade"] == 0
+    assert value["contextBridge"]["eligibleFeatureGameCount"] == 17
+    assert value["stalledStage"] == "WAITING_FOR_NEW_ELIGIBLE_GAMES_OR_FEATURE_ROWS"
+    assert value["cadenceWaitIsOperationalFailure"] is False
