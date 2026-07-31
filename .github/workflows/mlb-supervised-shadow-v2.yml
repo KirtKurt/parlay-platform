@@ -1,0 +1,40 @@
+name: MLB Supervised Shadow V2 Compatibility
+
+"on":
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: mlb-supervised-shadow-v2-compatibility
+  cancel-in-progress: false
+
+env:
+  LEGACY_DATASET_VERSION: MLB-HISTORICAL-FEATURE-DATASET-v8-supervised-trainable
+  REPORT_PATH: runtime_reports/mlb_supervised_shadow_v2_latest.json
+
+jobs:
+  delegate-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Verify fail-closed production authority
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          value=json.loads(Path(os.environ['REPORT_PATH']).read_text())
+          selection=value.get('selection') or {}
+          assert value.get('productionAuthorityChanged') is False, value
+          assert value.get('automaticWagerAllowed') is False, value
+          assert value.get('productionPromotionEligible') is False, value
+          assert selection.get('selectionUsedUntouchedAudit') is False, selection
+          PY
+      - name: Dispatch canonical provider-neutral recurring trainer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run mlb-supervised-shadow-v2-recurring.yml --ref main
