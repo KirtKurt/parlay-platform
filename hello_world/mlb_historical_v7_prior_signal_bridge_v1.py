@@ -122,14 +122,14 @@ def materialize_prior_signals(
 
 
 def install(feature_bridge: Any) -> Any:
-    """Compose prior-game signal projection ahead of target-context projection."""
+    """Compose prior-game fields after target projection so both families survive."""
     if getattr(feature_bridge, "_INQSI_V7_PRIOR_SIGNAL_BRIDGE_INSTALLED", False):
         return feature_bridge
     original = feature_bridge.materialize_training_signals
 
     def wrapped(records: Sequence[Mapping[str, Any]], learner: Any):
-        prior_records, prior_proof = materialize_prior_signals(records)
-        output, proof = original(prior_records, learner)
+        target_records, proof = original(records, learner)
+        output, prior_proof = materialize_prior_signals(target_records)
         merged = dict(proof)
         merged["priorSignalMaterialization"] = prior_proof
         merged["priorSnapshotRecordCount"] = prior_proof[
@@ -139,6 +139,7 @@ def install(feature_bridge: Any) -> Any:
         merged["priorHistoryFiveGamePairCount"] = prior_proof[
             "priorHistoryFiveGamePairCount"
         ]
+        merged["priorAndTargetSignalsComposed"] = True
         return output, merged
 
     feature_bridge.materialize_training_signals = wrapped
