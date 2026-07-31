@@ -28,6 +28,18 @@ IdentityCalibrator = prior.IdentityCalibrator
 candidate_stability = prior.candidate_stability
 feature_group_coverage = prior.feature_group_coverage
 
+# Re-export the unchanged predictive-selection thresholds.  This keeps V2.6
+# introspectable by workflow contracts without duplicating or weakening values.
+MIN_OOF_ACCURACY_UPLIFT = prior.MIN_OOF_ACCURACY_UPLIFT
+MIN_OOF_NET_CORRECT = prior.MIN_OOF_NET_CORRECT
+MAX_WORST_FOLD_ACCURACY_REGRESSION = prior.MAX_WORST_FOLD_ACCURACY_REGRESSION
+MIN_POSITIVE_FOLD_RATIO = prior.MIN_POSITIVE_FOLD_RATIO
+MIN_FUNDAMENTALS_COVERAGE = prior.MIN_FUNDAMENTALS_COVERAGE
+MIN_FUNDAMENTALS_METRIC_COVERAGE = prior.MIN_FUNDAMENTALS_METRIC_COVERAGE
+MIN_BBS_PRIOR_COVERAGE = prior.MIN_BBS_PRIOR_COVERAGE
+MIN_V8_MARKET_COVERAGE = prior.MIN_V8_MARKET_COVERAGE
+MIN_V8_FIRST_FIVE_COVERAGE = prior.MIN_V8_FIRST_FIVE_COVERAGE
+
 
 def _baseline_stability(fold_rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     return {
