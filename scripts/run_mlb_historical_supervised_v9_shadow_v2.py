@@ -185,13 +185,22 @@ def _install_training_record_bridge() -> None:
             blockers.append("historical_bbs_overlay_not_applied")
         if context_proof.get("status") != "APPLIED":
             blockers.append("historical_target_context_overlay_not_applied")
+        bbs_applied = int(bbs_proof.get("appliedGameCount") or 0)
         target_applied = int(context_proof.get("appliedGameCount") or 0)
+        if bbs_applied <= 0:
+            blockers.append("historical_bbs_context_empty")
         if target_applied <= 0:
             blockers.append("historical_target_context_empty")
+        if int(bridge_proof.get("priorSnapshotRecordCount") or 0) != bbs_applied:
+            blockers.append("bbs_prior_bridge_record_count_mismatch")
+        if int(bridge_proof.get("priorSignalPairCount") or 0) != bbs_applied:
+            blockers.append("bbs_prior_not_projected_into_team_signals")
         if int(bridge_proof.get("targetSnapshotRecordCount") or 0) != target_applied:
             blockers.append("target_context_bridge_record_count_mismatch")
         if int(bridge_proof.get("targetSignalPairCount") or 0) != target_applied:
             blockers.append("target_context_not_projected_into_team_signals")
+        if bridge_proof.get("priorAndTargetSignalsComposed") is not True:
+            blockers.append("prior_and_target_signal_composition_unproven")
         if bridge_proof.get("datasetFingerprint") != feature_bridge.dataset_fingerprint(
             bridged_records
         ):
@@ -253,9 +262,18 @@ def _enforce_report_integrity(output: str | None) -> tuple[bool, Dict[str, Any]]
             int((population.get(name) or {}).get("nonzeroCount") or 0)
             for name in ("starterAvailable", "bullpenAvailable", "lineupAvailable")
         )
+        prior_populated = int(
+            (population.get("bbsPriorAvailable") or {}).get("nonzeroCount") or 0
+        )
         value["legacyFundamentalsTrainingColumnNonzeroCount"] = populated
+        value["priorHistoryTrainingColumnNonzeroCount"] = prior_populated
         if int(materialization.get("targetSignalPairCount") or 0) > 0 and populated <= 0:
             blockers.append("target_context_did_not_reach_legacy_training_columns")
+        if (
+            int(materialization.get("priorSignalPairCount") or 0) > 0
+            and prior_populated <= 0
+        ):
+            blockers.append("bbs_prior_context_did_not_reach_training_columns")
 
     blockers = sorted(set(blockers))
     value["blockers"] = blockers
