@@ -1,7 +1,7 @@
 {
   "authority": "SHADOW_ONLY",
   "automaticWagerAllowed": false,
-  "createdAtUtc": "2026-07-31T00:15:43.965366+00:00",
+  "createdAtUtc": "2026-07-31T04:34:16.563384+00:00",
   "errorLogTail": "",
   "evaluationExitCode": "0",
   "evaluationOutcome": "success",
@@ -14,8 +14,8 @@
   "proofType": "MLB_V8_REALTIME_SHADOW_72",
   "requireImmutablePregameLock": true,
   "requireSettledResultForGrading": true,
-  "runId": "30592773109",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30592773109",
+  "runId": "30604276269",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30604276269",
   "runtimeResolution": {
     "attempts": [
       {
@@ -47,13 +47,13 @@
     },
     "authority": "SHADOW_ONLY",
     "automaticWagerAllowed": false,
-    "createdAtUtc": "2026-07-31T00:10:51.793357+00:00",
+    "createdAtUtc": "2026-07-31T04:29:33.782974+00:00",
     "featureCoverage": {
       "bbsPriorAvailable": 0.39915758,
       "bbsPriorSupported": 0.4031219,
       "bbsPriorWithinSupported": 0.99016595,
       "exampleCount": 4036,
-      "frozenFundamentals": 0.02973241,
+      "frozenFundamentals": 0.03171457,
       "strictlyPastTeamHistory": 0.9809217,
       "v8Any": 1.0,
       "v8FirstFive": 0.0
@@ -88,28 +88,28 @@
       "eligibleGameCount": 4036,
       "endDate": "2026-07-29",
       "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable",
-      "featureRematerializationTotalSlateCount": 325,
-      "featureRematerializedSlateCount": 325,
+      "featureRematerializationTotalSlateCount": 326,
+      "featureRematerializedSlateCount": 326,
       "networkRequestCount": 25845,
       "optimizationRound": 10,
-      "phase": "WAITING_FOR_SETTLED_HORIZON",
-      "quotaRemaining": 4597610
+      "phase": "DATA_RANGE_EXHAUSTED",
+      "quotaRemaining": 4591586
     },
     "historicalTargetGameContext": {
-      "appliedGameCount": 120,
+      "appliedGameCount": 128,
       "authority": "V8_HISTORICAL_BBS_SHADOW_ONLY",
-      "coverage": 0.02973241,
-      "ineligibleGameCount": 0,
+      "coverage": 0.03171457,
+      "ineligibleGameCount": 2,
       "invalidGameCount": 0,
-      "manifestDigest": "cd88bac217cb2596616fd2321d4512201bf0e27b7de6a48004110c353b93e33d",
-      "manifestEligibleGameCount": 120,
+      "manifestDigest": "b3b9457dbb8553ac40b9b3b9fce40344f3228e0939050e4b6875f8789128292d",
+      "manifestEligibleGameCount": 128,
       "manifestPointer": {
         "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
-        "key": "mlb/v8/historical-context/manifests/cd88bac217cb2596616fd2321d4512201bf0e27b7de6a48004110c353b93e33d.json",
-        "sha256": "7f2b8d6ea7c8ccc82df1778046209b74e5a121a1eefda6aaf2b710302bca8ba9"
+        "key": "mlb/v8/historical-context/manifests/b3b9457dbb8553ac40b9b3b9fce40344f3228e0939050e4b6875f8789128292d.json",
+        "sha256": "a18402022919bd9d17d71c6b73c91bc0935570a6f9eb911c5cf64e0970cf613f"
       },
-      "manifestRecordCount": 120,
-      "pointerRevision": 12,
+      "manifestRecordCount": 130,
+      "pointerRevision": 13,
       "productionAuthorityChanged": false,
       "recordCount": 4036,
       "selectionUsedOutcomes": false,
@@ -5434,10 +5434,10 @@
     },
     "proofType": "MLB_SUPERVISED_SHADOW_AWS_EVALUATION",
     "recordCountLoaded": 4036,
-    "resultDigest": "188c15cec34ee6927b7aababe088b8a532ff2c5afd5fc24dddd8f9b2673a0506",
+    "resultDigest": "3bb1b4c98fdd8a9cbc111c51a019f179cf50d5a3419420faabdda280fdd02f12",
     "retrospectiveArchitectureEvaluation": true,
-    "runId": "30592773109",
-    "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30592773109",
+    "runId": "30604276269",
+    "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30604276269",
     "runtimeIdentity": {
       "checks": {
         "featureMaterializationReady": true,
@@ -5451,11 +5451,11 @@
       "configuredHistoricalEndDate": "2026-12-31",
       "deployGitSha": "786b55d3a050809c7cb1475cee7448b913285bc7",
       "featureMaterialization": {
-        "completedSlateCount": 325,
+        "completedSlateCount": 326,
         "countsComplete": true,
         "errorCount": 0,
         "explicitComplete": true,
-        "totalSlateCount": 325
+        "totalSlateCount": 326
       },
       "functionName": "parlay-platform-mlb-histo-HistoricalOptimizerFunct-8e5kYFR21rxv",
       "functionResolution": {
@@ -65838,10 +65838,10 @@
       "v8FullGameCandidateRequiresFirstFive": false,
       "version": "MLB-SUPERVISED-SHADOW-v2.6-seed-aligned-regularization-grid"
     },
-    "sourceSha": "fc3df37f74d6b2d83d54204599bc565ed3c32297",
+    "sourceSha": "6bb6de57c2bf168ca46326c6731d3926f9e32b09",
     "version": "MLB-SUPERVISED-SHADOW-v2.6-seed-aligned-regularization-grid"
   },
-  "sourceSha": "fc3df37f74d6b2d83d54204599bc565ed3c32297",
+  "sourceSha": "6bb6de57c2bf168ca46326c6731d3926f9e32b09",
   "targetAccuracy": 0.72,
   "targetAccuracyPct": 72.0,
   "version": "MLB-V8-SHADOW-REALTIME-POLICY-v1-72pct"
