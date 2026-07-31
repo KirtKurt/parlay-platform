@@ -52,12 +52,17 @@ def materialize_prior_signals(
     records: Sequence[Mapping[str, Any]],
 ) -> tuple[list[Dict[str, Any]], Dict[str, Any]]:
     output: list[Dict[str, Any]] = []
+    metadata_eligible_count = 0
     snapshot_count = 0
     signal_pair_count = 0
     history_pair_count = 0
 
     for raw in records:
         record = copy.deepcopy(dict(raw))
+        if _mapping(record.get("historicalBbsFundamentals")).get(
+            "trainingEligible"
+        ) is True:
+            metadata_eligible_count += 1
         snapshot = _prior_snapshot(record)
         applied_sides = 0
         history_sides = 0
@@ -90,9 +95,23 @@ def materialize_prior_signals(
             history_pair_count += 1
         output.append(record)
 
+    if snapshot_count != metadata_eligible_count:
+        raise RuntimeError(
+            "eligible BBS prior snapshots failed point-in-time validation:"
+            f"{snapshot_count}/{metadata_eligible_count}"
+        )
+    if signal_pair_count != snapshot_count:
+        raise RuntimeError(
+            "eligible BBS prior snapshots were not projected into both team signals:"
+            f"{signal_pair_count}/{snapshot_count}"
+        )
+    if snapshot_count and history_pair_count <= 0:
+        raise RuntimeError("BBS prior projection contains no five-game history pairs")
+
     return output, {
         "version": VERSION,
         "recordCount": len(output),
+        "metadataEligibleRecordCount": metadata_eligible_count,
         "priorSnapshotRecordCount": snapshot_count,
         "priorSignalPairCount": signal_pair_count,
         "priorHistoryFiveGamePairCount": history_pair_count,
