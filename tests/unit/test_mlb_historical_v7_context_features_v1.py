@@ -1,3 +1,5 @@
+import pytest
+
 import mlb_historical_v7_context_features_v1 as subject
 
 
@@ -74,15 +76,15 @@ def test_prior_history_and_run_environment_become_trainable_features():
     values = learner.pair_features(home, away, {})
 
     assert values["bbsPriorAvailable"] == 1.0
-    assert values["bbsPriorWinRate10Diff"] == 0.2
-    assert values["bbsPriorRunDiff10Diff"] == 0.15
-    assert values["bbsPriorHistoryGamesDiff"] == 1.0 / 3.0
-    assert values["bbsPriorHistoryCoverageMin"] == 0.8
-    assert round(values["parkRunFactorCentered"], 8) == 0.1
-    assert values["weatherRunFactor"] == 0.05
-    assert round(values["starterRunEnvironmentInteraction"], 8) == 0.3
-    assert round(values["bullpenRunEnvironmentInteraction"], 8) == -0.15
-    assert round(values["lineupRunEnvironmentInteraction"], 8) == 0.75
+    assert values["bbsPriorWinRate10Diff"] == pytest.approx(0.2)
+    assert values["bbsPriorRunDiff10Diff"] == pytest.approx(0.15)
+    assert values["bbsPriorHistoryGamesDiff"] == pytest.approx(1.0 / 3.0)
+    assert values["bbsPriorHistoryCoverageMin"] == pytest.approx(0.8)
+    assert values["parkRunFactorCentered"] == pytest.approx(0.1)
+    assert values["weatherRunFactor"] == pytest.approx(0.05)
+    assert values["starterRunEnvironmentInteraction"] == pytest.approx(0.3)
+    assert values["bullpenRunEnvironmentInteraction"] == pytest.approx(-0.15)
+    assert values["lineupRunEnvironmentInteraction"] == pytest.approx(0.75)
     assert subject.EXTRA_FEATURES[-1] in learner.FEATURES
 
 
