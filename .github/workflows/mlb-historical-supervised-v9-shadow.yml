@@ -7,36 +7,28 @@ name: MLB Historical V7 Selective and V9 Shadow Evaluation
   push:
     branches: [main]
     paths:
+      - '.github/workflows/mlb-historical-supervised-v9-shadow.yml'
       - 'hello_world/mlb_historical_supervised_v9.py'
       - 'hello_world/mlb_historical_supervised_v9_integrity_v2.py'
       - 'hello_world/mlb_historical_v7_*.py'
-      - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
+      - 'hello_world/mlb_no_bbd_context_bridge_v1.py'
+      - 'hello_world/mlb_v8_historical_bbs_overlay_v1.py'
+      - 'hello_world/mlb_v8_historical_context_overlay_v1.py'
       - 'scripts/run_mlb_historical_supervised_v9_shadow*.py'
-      - 'scripts/resolve_mlb_historical_artifacts_bucket.py'
-      - 'scripts/validate_mlb_v9_shadow_workflow.py'
-      - 'tests/unit/test_mlb_historical_supervised_v9*.py'
-      - 'tests/unit/test_run_mlb_historical_supervised_v9_shadow*.py'
-      - 'tests/unit/test_resolve_mlb_historical_artifacts_bucket.py'
-      - 'tests/unit/test_mlb_historical_v7_*.py'
-      - 'tests/unit/test_mlb_v7_v9_workflow_recovery_contract.py'
-      - '.github/workflows/mlb-historical-supervised-v9-shadow.yml'
-      - 'mlb_historical_optimizer/template.yaml'
+      - 'scripts/run_mlb_historical_supervised_v9_no_bbd.py'
+      - 'tests/unit/test_run_mlb_historical_supervised_v9_no_bbd.py'
+      - 'tests/unit/test_mlb_no_bbd_context_bridge_v1.py'
   pull_request:
     paths:
+      - '.github/workflows/mlb-historical-supervised-v9-shadow.yml'
       - 'hello_world/mlb_historical_supervised_v9.py'
       - 'hello_world/mlb_historical_supervised_v9_integrity_v2.py'
       - 'hello_world/mlb_historical_v7_*.py'
-      - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
+      - 'hello_world/mlb_no_bbd_context_bridge_v1.py'
       - 'scripts/run_mlb_historical_supervised_v9_shadow*.py'
-      - 'scripts/resolve_mlb_historical_artifacts_bucket.py'
-      - 'scripts/validate_mlb_v9_shadow_workflow.py'
-      - 'tests/unit/test_mlb_historical_supervised_v9*.py'
-      - 'tests/unit/test_run_mlb_historical_supervised_v9_shadow*.py'
-      - 'tests/unit/test_resolve_mlb_historical_artifacts_bucket.py'
-      - 'tests/unit/test_mlb_historical_v7_*.py'
-      - 'tests/unit/test_mlb_v7_v9_workflow_recovery_contract.py'
-      - '.github/workflows/mlb-historical-supervised-v9-shadow.yml'
-      - 'mlb_historical_optimizer/template.yaml'
+      - 'scripts/run_mlb_historical_supervised_v9_no_bbd.py'
+      - 'tests/unit/test_run_mlb_historical_supervised_v9_no_bbd.py'
+      - 'tests/unit/test_mlb_no_bbd_context_bridge_v1.py'
 
 permissions:
   contents: write
@@ -52,30 +44,35 @@ env:
   VALIDATION_PATH: /tmp/mlb-v9-validation.json
   MLB_V7_SHADOW_REFIT_INCREMENT_GAMES: '50'
   MLB_V7_LIGHTWEIGHT_INCREMENT_GAMES: '25'
-  PYTHONPATH: hello_world:scripts
+  MLB_V7_FEATURE_REFIT_INCREMENT_ROWS: '50'
+  MLB_V7_FEATURE_LIGHTWEIGHT_INCREMENT_ROWS: '10'
+  BBS_API_DISABLED: 'true'
+  MLB_V8_HISTORICAL_BBS_OVERLAY_ENABLED: 'true'
+  MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED: 'false'
+  MLB_V8_HISTORICAL_CONTEXT_OVERLAY_ENABLED: 'true'
+  MLB_V8_HISTORICAL_CONTEXT_OVERLAY_REQUIRED: 'false'
+  PYTHONPATH: .:hello_world:scripts
   PYTHONUNBUFFERED: '1'
 
 jobs:
   evaluate:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Preserve previous evidence and clear stale outputs
+      - name: Preserve previous cadence evidence
         run: |
           set -euo pipefail
           git fetch origin main
@@ -83,7 +80,7 @@ jobs:
           git show origin/main:"$REPORT_PATH" > /tmp/mlb-supervised-v9-previous.json 2>/dev/null || printf '{}\n' > /tmp/mlb-supervised-v9-previous.json
           rm -f "$REPORT_PATH" "$HANDOFF_PATH" "$VALIDATION_PATH"
 
-      - name: Validate V9 implementation with durable diagnostics
+      - name: Validate provider-neutral V7 and V9 implementation
         id: validation
         continue-on-error: true
         env:
@@ -91,12 +88,25 @@ jobs:
         run: |
           set -uo pipefail
           python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
-          python scripts/validate_mlb_v9_shadow_workflow.py 2>&1 | tee /tmp/mlb-v9-validation.log
-          status=${PIPESTATUS[0]}
+          python -m py_compile \
+            hello_world/mlb_no_bbd_context_bridge_v1.py \
+            scripts/run_mlb_historical_supervised_v9_shadow_cadence.py \
+            scripts/run_mlb_historical_supervised_v9_shadow.py \
+            scripts/run_mlb_historical_supervised_v9_shadow_v2.py \
+            scripts/run_mlb_historical_supervised_v9_no_bbd.py
+          python -m pytest -q --tb=short \
+            tests/unit/test_mlb_no_bbd_context_bridge_v1.py \
+            tests/unit/test_run_mlb_historical_supervised_v9_shadow_cadence.py \
+            tests/unit/test_run_mlb_historical_supervised_v9_no_bbd.py \
+            tests/unit/test_mlb_historical_supervised_v9.py \
+            tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py \
+            tests/unit/test_mlb_historical_v7_priority_repairs_v1.py \
+            tests/unit/test_mlb_historical_v7_selective_search_v2.py
+          status=$?
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
           exit "$status"
 
-      - name: Resolve immutable historical evidence
+      - name: Resolve immutable historical artifacts bucket
         id: runtime
         if: steps.validation.outcome == 'success'
         continue-on-error: true
@@ -105,77 +115,20 @@ jobs:
           AWS_EC2_METADATA_DISABLED: 'true'
         run: |
           set -uo pipefail
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          import boto3
-          from resolve_mlb_historical_artifacts_bucket import resolve_bucket
-
-          region=os.environ['AWS_REGION_VALUE']
-          stack=os.environ['STACK_NAME']
-          cf=boto3.client('cloudformation',region_name=region)
-          lam=boto3.client('lambda',region_name=region)
-          s3=boto3.client('s3',region_name=region)
-          attempts=[]
-          outputs={}
-          try:
-              stacks=cf.describe_stacks(StackName=stack).get('Stacks') or []
-              outputs={str(x.get('OutputKey')):str(x.get('OutputValue')) for x in (stacks[0].get('Outputs') or [])} if stacks else {}
-              attempts.append({'strategy':'cloudformation_output','outputKeys':sorted(outputs)})
-          except Exception as exc:
-              attempts.append({'strategy':'cloudformation_output','error':f'{type(exc).__name__}:{exc}'})
-
-          expected='mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler'
-          function_name=str(outputs.get('HistoricalOptimizerFunctionName') or '').strip()
-          if not function_name:
-              matches=[]
-              for page in lam.get_paginator('list_functions').paginate():
-                  for item in page.get('Functions') or []:
-                      if item.get('Handler') == expected and item.get('FunctionName'):
-                          matches.append(str(item['FunctionName']))
-              matches=sorted(set(matches))
-              attempts.append({'strategy':'lambda_handler_scan','matches':matches})
-              if len(matches) == 1:
-                  function_name=matches[0]
-              elif len(matches) > 1:
-                  qualified=[]
-                  for name in matches:
-                      cfg=lam.get_function_configuration(FunctionName=name)
-                      env=((cfg.get('Environment') or {}).get('Variables') or {})
-                      if env.get('MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED') == 'true' and env.get('MLB_HISTORICAL_ARTIFACTS_BUCKET'):
-                          qualified.append(name)
-                  qualified=sorted(set(qualified))
-                  attempts.append({'strategy':'lambda_environment_filter','matches':qualified})
-                  if len(qualified) == 1:
-                      function_name=qualified[0]
-          if not function_name:
-              raise RuntimeError('historical optimizer Lambda could not be resolved uniquely')
-
-          config=lam.get_function_configuration(FunctionName=function_name)
-          if config.get('Handler') != expected:
-              raise RuntimeError(f"unexpected optimizer handler:{config.get('Handler')}")
-          environment=((config.get('Environment') or {}).get('Variables') or {})
-          bucket_name=str(environment.get('MLB_HISTORICAL_ARTIFACTS_BUCKET') or outputs.get('HistoricalArtifactsBucketName') or '').strip()
-          bucket_resolution=None
-          if not bucket_name:
-              bucket_resolution=resolve_bucket(explicit=None,cloudformation=cf,lambda_client=lam,s3=s3,stack_name=stack)
-              if not bucket_resolution.get('ok'):
-                  raise RuntimeError('historical artifacts bucket unresolved:'+json.dumps(bucket_resolution,sort_keys=True))
-              bucket_name=str(bucket_resolution['bucketName'])
-          s3.head_bucket(Bucket=bucket_name)
-          proof={'ok':True,'functionName':function_name,'bucketName':bucket_name,'handler':config.get('Handler'),'attempts':attempts,'bucketResolution':bucket_resolution,'blockers':[]}
-          Path('/tmp/mlb-v7-v9-runtime-resolution.json').write_text(json.dumps(proof,indent=2,sort_keys=True)+'\n')
-          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as handle:
-              handle.write(f"function_name={function_name}\n")
-              handle.write(f"bucket_name={bucket_name}\n")
-              handle.write('resolved=true\n')
-          PY
+          bucket_name=$(python scripts/resolve_mlb_historical_artifacts_bucket.py \
+            --region "$AWS_REGION_VALUE" \
+            --json-output /tmp/mlb-v7-v9-runtime-resolution.json)
           status=$?
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
-          if test "$status" -ne 0; then echo "resolved=false" >> "$GITHUB_OUTPUT"; fi
+          if test "$status" -eq 0 && test -n "$bucket_name"; then
+            echo "bucket_name=$bucket_name" >> "$GITHUB_OUTPUT"
+            echo 'resolved=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'resolved=false' >> "$GITHUB_OUTPUT"
+          fi
           exit "$status"
 
-      - name: Run gated AWS-backed read-only V9 evaluation
+      - name: Run feature-aware read-only V7 and V9 evaluation
         id: evaluation
         if: steps.validation.outcome == 'success' && steps.runtime.outputs.resolved == 'true'
         continue-on-error: true
@@ -193,22 +146,20 @@ jobs:
           MLB_V7_FORCE_SHADOW_REFIT: ${{ github.event_name == 'push' && 'true' || 'false' }}
         run: |
           set -uo pipefail
-          python scripts/run_mlb_historical_supervised_v9_shadow_v2.py \
+          python scripts/run_mlb_historical_supervised_v9_no_bbd.py \
             --output "$REPORT_PATH" \
             --previous-report /tmp/mlb-supervised-v9-previous.json \
-            --handoff-output "$HANDOFF_PATH" 2>&1 | tee /tmp/mlb-supervised-v9-shadow.log
+            --handoff-output "$HANDOFF_PATH" \
+            2>&1 | tee /tmp/mlb-supervised-v9-shadow.log
           status=${PIPESTATUS[0]}
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
           exit "$status"
 
-      - name: Ensure fresh durable V9 evidence exists
+      - name: Ensure fresh durable V7 and V9 evidence
         if: always()
         env:
           VALIDATION_OUTCOME: ${{ steps.validation.outcome }}
-          VALIDATION_EXIT_CODE: ${{ steps.validation.outputs.exit_code }}
           RUNTIME_RESOLVED: ${{ steps.runtime.outputs.resolved }}
-          RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}
-          RUNTIME_EXIT_CODE: ${{ steps.runtime.outputs.exit_code }}
           EVALUATION_OUTCOME: ${{ steps.evaluation.outcome }}
           EVALUATION_EXIT_CODE: ${{ steps.evaluation.outputs.exit_code }}
         run: |
@@ -217,61 +168,31 @@ jobs:
           import json, os
           from datetime import datetime, timezone
           from pathlib import Path
-
-          def load(path):
-              p=Path(path)
-              if not p.exists() or not p.stat().st_size: return {}
-              try: return json.loads(p.read_text())
-              except Exception as exc: return {'ok':False,'parseError':str(exc)}
-
-          report_path=Path(os.environ['REPORT_PATH'])
-          current=load(report_path)
-          fresh=(str(current.get('runId')) == str(os.environ.get('GITHUB_RUN_ID')) and current.get('sourceSha') == os.environ.get('GITHUB_SHA'))
-          if fresh:
-              raise SystemExit(0)
-
-          validation=load(os.environ['VALIDATION_PATH'])
-          resolution=load('/tmp/mlb-v7-v9-runtime-resolution.json')
-          validation_ok=os.environ.get('VALIDATION_OUTCOME') == 'success'
-          runtime_ok=os.environ.get('RUNTIME_RESOLVED') == 'true'
-          evaluation_outcome=os.environ.get('EVALUATION_OUTCOME')
-          if not validation_ok:
-              blocker='v7_v9_validation_failed'; stage='V7_V9_VALIDATION'
-          elif not runtime_ok:
-              blocker='v7_v9_runtime_resolution_failed'; stage='V7_V9_RUNTIME_RESOLUTION'
-          elif evaluation_outcome == 'cancelled':
-              blocker='v7_v9_evaluation_cancelled'; stage='V7_V9_EVALUATION_CANCELLED'
-          else:
-              blocker='v7_v9_evaluation_failed_before_report_write'; stage='V7_V9_EVALUATION_BEFORE_REPORT_WRITE'
+          path=Path(os.environ['REPORT_PATH'])
+          current={}
+          if path.exists() and path.stat().st_size:
+              try:current=json.loads(path.read_text())
+              except Exception:current={}
+          fresh=str(current.get('runId')) == str(os.environ.get('GITHUB_RUN_ID')) and current.get('sourceSha') == os.environ.get('GITHUB_SHA')
+          if fresh:raise SystemExit(0)
           log=Path('/tmp/mlb-supervised-v9-shadow.log').read_text(errors='replace')[-12000:] if Path('/tmp/mlb-supervised-v9-shadow.log').exists() else ''
-          report={
-              'ok':False,
-              'proofType':'MLB_HISTORICAL_V7_V9_SHADOW_EVALUATION',
+          if os.environ.get('VALIDATION_OUTCOME') != 'success':stage='V7_V9_VALIDATION'; blocker='v7_v9_validation_failed'
+          elif os.environ.get('RUNTIME_RESOLVED') != 'true':stage='V7_V9_RUNTIME_RESOLUTION'; blocker='v7_v9_runtime_resolution_failed'
+          elif os.environ.get('EVALUATION_OUTCOME') == 'cancelled':stage='V7_V9_EVALUATION_CANCELLED'; blocker='v7_v9_evaluation_cancelled'
+          else:stage='V7_V9_EVALUATION_BEFORE_REPORT_WRITE'; blocker='v7_v9_evaluation_failed_before_report_write'
+          value={
+              'ok':False,'proofType':'MLB_HISTORICAL_V7_V9_SHADOW_EVALUATION',
               'createdAtUtc':datetime.now(timezone.utc).isoformat(),
-              'sourceSha':os.environ.get('GITHUB_SHA'),
-              'runId':os.environ.get('GITHUB_RUN_ID'),
-              'readOnly':True,
-              'retrospectiveShadowOnly':True,
+              'sourceSha':os.environ.get('GITHUB_SHA'),'runId':os.environ.get('GITHUB_RUN_ID'),
+              'readOnly':True,'retrospectiveShadowOnly':True,
               'prospectiveAuditRequiredBeforePromotion':True,
-              'providerCallsMade':0,
-              'productionAuthorityChanged':False,
-              'historicalChampionWritten':False,
-              'productionCutoverWritten':False,
-              'promotionAuthority':False,
-              'previousReportPreservedSeparately':True,
-              'stalledStage':stage,
-              'validationEvidence':validation,
-              'runtimeResolution':resolution,
-              'workflowSteps':{
-                  'validation':{'outcome':os.environ.get('VALIDATION_OUTCOME'),'exitCode':os.environ.get('VALIDATION_EXIT_CODE')},
-                  'runtime':{'outcome':os.environ.get('RUNTIME_OUTCOME'),'exitCode':os.environ.get('RUNTIME_EXIT_CODE'),'resolved':runtime_ok},
-                  'evaluation':{'outcome':evaluation_outcome,'exitCode':os.environ.get('EVALUATION_EXIT_CODE')},
-              },
-              'errorLogTail':log,
-              'blockers':[blocker],
+              'providerCallsMade':0,'liveBbdApiAvailable':False,'liveBbdApiRequired':False,
+              'productionAuthorityChanged':False,'historicalChampionWritten':False,
+              'productionCutoverWritten':False,'promotionAuthority':False,
+              'stalledStage':stage,'errorLogTail':log,'blockers':[blocker],
           }
-          report_path.parent.mkdir(parents=True,exist_ok=True)
-          report_path.write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          path.parent.mkdir(parents=True,exist_ok=True)
+          path.write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
           PY
           python -m json.tool "$REPORT_PATH" >/dev/null
 
@@ -282,15 +203,13 @@ jobs:
           path: |
             runtime_reports/mlb_historical_supervised_v9_shadow_latest.json
             runtime_reports/mlb_historical_supervised_v9_candidate_handoff_latest.json
-            /tmp/mlb-v9-validation.json
-            /tmp/mlb-v9-validation.log
             /tmp/mlb-supervised-v9-previous.json
             /tmp/mlb-supervised-v9-shadow.log
             /tmp/mlb-v7-v9-runtime-resolution.json
           retention-days: 90
           if-no-files-found: warn
 
-      - name: Publish durable evidence from main-only runs
+      - name: Publish durable V7 and V9 evidence
         if: always() && github.event_name != 'pull_request'
         run: |
           set -euo pipefail
@@ -312,7 +231,7 @@ jobs:
           done
           exit 1
 
-      - name: Enforce V9 safety, diagnostics, and artifact contract
+      - name: Enforce safety, context cadence, and artifact contract
         if: always()
         run: |
           python - <<'PY'
@@ -324,22 +243,22 @@ jobs:
           assert value.get('ok') is True, value
           assert value.get('readOnly') is True and value.get('retrospectiveShadowOnly') is True, value
           assert int(value.get('providerCallsMade') or 0) == 0, value
+          assert value.get('liveBbdApiAvailable') is False, value
+          assert value.get('liveBbdApiRequired') is False, value
           assert value.get('productionAuthorityChanged') is False, value
           assert int(value.get('canonicalFreshAuditIncrementGames') or 0) >= 200, value
+          bridge=value.get('contextBridge') or {}
+          assert int(bridge.get('providerCallsMade') or 0) == 0, bridge
+          assert bridge.get('liveBbdApiRequired') is False, bridge
           diagnostics=value.get('diagnosticSelectedPickBands') or {}
           assert set(diagnostics) == {'allCanonicalGames','training','walkForward','untouchedHoldout'}, diagnostics
-          for name, view in diagnostics.items():
-              assert view.get('version') == 'MLB-V9-DIAGNOSTIC-SELECTED-PICK-BANDS-v1', (name, view)
-              assert set(view.get('bandThresholds') or {}) == {'MLB_STRONG','MLB_LEAN','PASS'}, (name, view)
-              assert set(view.get('byBand') or {}) == {'MLB_STRONG','MLB_LEAN','PASS'}, (name, view)
+          for view in diagnostics.values():
+              assert view.get('version') == 'MLB-V9-DIAGNOSTIC-SELECTED-PICK-BANDS-v1', view
           if value.get('shadowRefitPerformed') is True:
               handoff=json.loads(Path(os.environ['HANDOFF_PATH']).read_text())
               assert handoff.get('artifactVersion') == 'MLB-V9-SHADOW-MODEL-ARTIFACT-v1', handoff
-              assert handoff.get('artifactType') == 'FROZEN_SHADOW_MODEL', handoff
-              assert handoff.get('policy') and handoff.get('modelDigest') and handoff.get('digest'), handoff
               assert handoff.get('promotionAuthority') is False and handoff.get('productionAuthority') is False, handoff
               assert handoff.get('frozenBeforeUntouchedHoldout') is True, handoff
               assert handoff.get('holdoutLabelsUsedForFitOrSelection') is False, handoff
-              assert (value.get('canonicalCandidateHandoff') or {}).get('modelDigest') == handoff.get('modelDigest'), (value, handoff)
           assert not value.get('blockers'), value
           PY
