@@ -1,3 +1,5 @@
+import json
+
 from scripts import run_mlb_historical_supervised_v9_shadow_v2 as subject
 
 
@@ -50,3 +52,57 @@ def test_baseline_fallback_is_durable_but_not_seed_eligible():
     assert value["policy"]
     assert value["modelDigest"]
     assert value["eligibleForCanonicalSeed"] is False
+
+
+def _integrity_report(tmp_path, *, prior_nonzero):
+    path = tmp_path / "report.json"
+    path.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "shadowRefitPerformed": False,
+                "datasetFingerprint": "feature-aware-fingerprint",
+                "blockers": [],
+                "featurePopulation": {
+                    "features": {
+                        "starterAvailable": {"nonzeroCount": 1},
+                        "bullpenAvailable": {"nonzeroCount": 1},
+                        "lineupAvailable": {"nonzeroCount": 1},
+                        "bbsPriorAvailable": {"nonzeroCount": prior_nonzero},
+                    }
+                },
+            }
+        )
+        + "\n"
+    )
+    subject._TRAINING_BRIDGE_EVIDENCE.clear()
+    subject._TRAINING_BRIDGE_EVIDENCE.update(
+        {
+            "historicalBbsFundamentals": {"status": "APPLIED"},
+            "historicalTargetGameContext": {"status": "APPLIED"},
+            "trainingSignalMaterialization": {
+                "datasetFingerprint": "feature-aware-fingerprint",
+                "targetSignalPairCount": 1,
+                "priorSignalPairCount": 1,
+            },
+            "featureBridgeVersion": "test",
+            "blockers": [],
+        }
+    )
+    return path
+
+
+def test_integrity_accepts_populated_target_and_prior_training_columns(tmp_path):
+    path = _integrity_report(tmp_path, prior_nonzero=1)
+    ok, value = subject._enforce_report_integrity(str(path))
+    assert ok is True
+    assert value["blockers"] == []
+    assert value["legacyFundamentalsTrainingColumnNonzeroCount"] == 3
+    assert value["priorHistoryTrainingColumnNonzeroCount"] == 1
+
+
+def test_integrity_fails_closed_when_bbs_prior_columns_are_still_zero(tmp_path):
+    path = _integrity_report(tmp_path, prior_nonzero=0)
+    ok, value = subject._enforce_report_integrity(str(path))
+    assert ok is False
+    assert "bbs_prior_context_did_not_reach_training_columns" in value["blockers"]
