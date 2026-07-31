@@ -18,15 +18,17 @@ import mlb_historical_state_integrity_v1 as state_integrity
 import mlb_historical_supervised_v9 as supervised_v9
 import mlb_historical_supervised_v9_integrity_v2 as supervised_integrity_v2
 import mlb_historical_v7_context_features_v1 as context_features
+import mlb_historical_v7_feature_bridge_v1 as feature_bridge
 import mlb_historical_v7_label_integrity_v1 as label_integrity
 import mlb_historical_v7_learning_cadence_v1 as learning_cadence
+import mlb_historical_v7_prior_signal_bridge_v1 as prior_signal_bridge
 import mlb_historical_v7_priority_repairs_v1 as priority_repairs
 import mlb_historical_v7_selective_objective_v1 as selective_objective
 import mlb_historical_v7_selective_search_v2 as selective_search_v2
 import mlb_odds_market_expansion_v8 as odds_market_v8
 import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v19-context-features"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v20-prior-context-bridge"
 
 incremental_range_extension.install(base)
 state_integrity.install(base.optimizer_handler, base)
@@ -34,6 +36,7 @@ round_extension.install(base.optimizer_handler)
 odds_market_v8.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
 supervised_v8_dataset.install(base.optimizer_handler.optimizer, rematerialization)
 rematerialization_waiting_repair.install(rematerialization)
+prior_signal_bridge.install(feature_bridge)
 priority_repairs.install_feature_repairs(supervised_v9)
 context_features.install(supervised_v9)
 label_integrity.install(supervised_v9)
@@ -73,6 +76,8 @@ def _with_shadow_contract(value: Any) -> Any:
                 "featureVersion": supervised_v9.FEATURE_VERSION,
                 "featureCount": len(supervised_v9.FEATURES),
                 "contextFeaturesVersion": context_features.VERSION,
+                "featureBridgeVersion": feature_bridge.VERSION,
+                "priorSignalBridgeVersion": prior_signal_bridge.VERSION,
                 "integrityPatchVersion": supervised_integrity_v2.VERSION,
                 "labelIntegrityVersion": label_integrity.VERSION,
                 "learningCadenceVersion": learning_cadence.VERSION,
