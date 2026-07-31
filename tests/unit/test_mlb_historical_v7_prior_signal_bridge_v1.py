@@ -1,5 +1,7 @@
 import copy
 
+import pytest
+
 import mlb_historical_v7_prior_signal_bridge_v1 as subject
 
 
@@ -46,6 +48,7 @@ def test_prior_snapshot_is_projected_into_copied_team_signals():
     assert rows[0]["homeSignal"]["fundamentalsSnapshotV2"]["bbsWinRate10"] == 0.7
     assert rows[0]["awaySignal"]["fundamentalsSnapshotV2"]["bbsRunDiffPerGame10"] == -0.5
     assert rows[0]["homeSignal"]["historicalBbsPriorContextApplied"] is True
+    assert proof["metadataEligibleRecordCount"] == 1
     assert proof["priorSnapshotRecordCount"] == 1
     assert proof["priorSignalPairCount"] == 1
     assert proof["priorHistoryFiveGamePairCount"] == 1
@@ -53,11 +56,20 @@ def test_prior_snapshot_is_projected_into_copied_team_signals():
     assert proof["productionAuthorityChanged"] is False
 
 
-def test_invalid_prior_snapshot_is_not_projected():
+def test_invalid_eligible_prior_snapshot_fails_closed():
     record = _record()
+    record["frozenFundamentalsSnapshot"]["sameDayResultsExcluded"] = False
+    with pytest.raises(RuntimeError, match="failed point-in-time validation"):
+        subject.materialize_prior_signals([record])
+
+
+def test_ineligible_prior_metadata_is_left_unprojected():
+    record = _record()
+    record["historicalBbsFundamentals"]["trainingEligible"] = False
     record["frozenFundamentalsSnapshot"]["sameDayResultsExcluded"] = False
     rows, proof = subject.materialize_prior_signals([record])
     assert "fundamentalsSnapshotV2" not in rows[0]["homeSignal"]
+    assert proof["metadataEligibleRecordCount"] == 0
     assert proof["priorSnapshotRecordCount"] == 0
 
 
