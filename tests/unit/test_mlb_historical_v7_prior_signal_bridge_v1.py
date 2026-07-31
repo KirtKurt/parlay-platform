@@ -73,15 +73,28 @@ def test_ineligible_prior_metadata_is_left_unprojected():
     assert proof["priorSnapshotRecordCount"] == 0
 
 
-def test_install_composes_prior_projection_before_existing_feature_bridge():
+def test_install_composes_prior_projection_after_target_bridge_without_overwrite():
     class FeatureBridge:
         @staticmethod
         def materialize_training_signals(records, learner):
-            assert records[0]["homeSignal"]["historicalBbsPriorContextApplied"] is True
-            return list(records), {"targetSignalPairCount": 0}
+            output = copy.deepcopy(list(records))
+            for row in output:
+                for side in ("home", "away"):
+                    row[f"{side}Signal"]["fundamentalsSnapshotV2"] = {
+                        "starterQuality": 2.5,
+                        "lineupQuality": 101.0,
+                    }
+                    row[f"{side}Signal"]["historicalTargetContextApplied"] = True
+            return output, {"targetSignalPairCount": 1}
 
     subject.install(FeatureBridge)
     rows, proof = FeatureBridge.materialize_training_signals([_record()], object())
-    assert rows[0]["homeSignal"]["fundamentalsSnapshotV2"]["bbsHistoryGames"] == 30
+    home = rows[0]["homeSignal"]
+    assert home["historicalTargetContextApplied"] is True
+    assert home["historicalBbsPriorContextApplied"] is True
+    assert home["fundamentalsSnapshotV2"]["starterQuality"] == 2.5
+    assert home["fundamentalsSnapshotV2"]["bbsHistoryGames"] == 30
+    assert proof["targetSignalPairCount"] == 1
     assert proof["priorSignalPairCount"] == 1
+    assert proof["priorAndTargetSignalsComposed"] is True
     assert proof["priorSignalMaterialization"]["version"] == subject.VERSION
