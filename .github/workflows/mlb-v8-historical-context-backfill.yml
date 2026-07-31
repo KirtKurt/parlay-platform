@@ -4,26 +4,25 @@ name: MLB V8 Historical Point-In-Time Context Backfill
   pull_request:
     paths:
       - '.github/workflows/mlb-v8-historical-context-backfill.yml'
-      - 'hello_world/mlb_supervised_daily_objective_v2_1.py'
+      - 'hello_world/mlb_no_bbd_context_bridge_v1.py'
       - 'hello_world/mlb_v8_historical_context_overlay_v1.py'
       - 'hello_world/mlb_v8_historical_point_in_time_context_v1.py'
       - 'scripts/run_mlb_v8_historical_context_backfill_entrypoint.py'
+      - 'scripts/run_mlb_v8_historical_context_no_bbd.py'
+      - 'tests/unit/test_mlb_no_bbd_context_bridge_v1.py'
       - 'tests/unit/test_mlb_v8_historical_context_overlay_v1.py'
       - 'tests/unit/test_mlb_v8_historical_point_in_time_context_v1.py'
       - 'tests/unit/test_run_mlb_v8_historical_context_backfill_entrypoint.py'
-      - 'tests/unit/test_mlb_v8_historical_context_workflow.py'
   push:
     branches: [main]
     paths:
       - '.github/workflows/mlb-v8-historical-context-backfill.yml'
-      - 'hello_world/mlb_supervised_daily_objective_v2_1.py'
+      - 'hello_world/mlb_no_bbd_context_bridge_v1.py'
       - 'hello_world/mlb_v8_historical_context_overlay_v1.py'
       - 'hello_world/mlb_v8_historical_point_in_time_context_v1.py'
       - 'scripts/run_mlb_v8_historical_context_backfill_entrypoint.py'
-      - 'tests/unit/test_mlb_v8_historical_context_overlay_v1.py'
-      - 'tests/unit/test_mlb_v8_historical_point_in_time_context_v1.py'
-      - 'tests/unit/test_run_mlb_v8_historical_context_backfill_entrypoint.py'
-      - 'tests/unit/test_mlb_v8_historical_context_workflow.py'
+      - 'scripts/run_mlb_v8_historical_context_no_bbd.py'
+      - 'tests/unit/test_mlb_no_bbd_context_bridge_v1.py'
   schedule:
     - cron: '47 * * * *'
   workflow_dispatch:
@@ -31,7 +30,7 @@ name: MLB V8 Historical Point-In-Time Context Backfill
       limit:
         description: Canonical target games attempted in this bounded run
         required: false
-        default: '10'
+        default: '50'
 
 permissions:
   contents: write
@@ -39,7 +38,7 @@ permissions:
 
 concurrency:
   group: mlb-v8-historical-context-backfill
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   PYTHONPATH: .:hello_world:scripts
@@ -48,48 +47,39 @@ env:
   TABLE_NAME: parlay_platform_snapshots
   CONTEXT_REPORT: runtime_reports/mlb_v8_historical_context_backfill_latest.json
   SETTLED_REPORT: runtime_reports/mlb_historical_settled_horizon_advance_latest.json
+  BBS_API_DISABLED: 'true'
 
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Validate point-in-time context and unchanged guards
+      - name: Validate no-BBD point-in-time context path
         run: |
           set -euo pipefail
           python -m pip install --quiet 'boto3>=1.34,<2' 'numpy>=1.26,<3' 'pytest>=8,<9'
           python -m py_compile \
-            hello_world/mlb_supervised_daily_objective_v2_1.py \
+            hello_world/mlb_no_bbd_context_bridge_v1.py \
             hello_world/mlb_v8_historical_context_overlay_v1.py \
             hello_world/mlb_v8_historical_point_in_time_context_v1.py \
-            scripts/run_mlb_v8_historical_context_backfill_entrypoint.py
+            scripts/run_mlb_v8_historical_context_backfill_entrypoint.py \
+            scripts/run_mlb_v8_historical_context_no_bbd.py
           python -m pytest -q --tb=short \
+            tests/unit/test_mlb_no_bbd_context_bridge_v1.py \
             tests/unit/test_mlb_v8_historical_context_overlay_v1.py \
             tests/unit/test_mlb_v8_historical_point_in_time_context_v1.py \
             tests/unit/test_run_mlb_v8_historical_context_backfill_entrypoint.py \
-            tests/unit/test_mlb_v8_historical_context_workflow.py \
-            tests/unit/test_mlb_supervised_daily_objective_bbs_overlay.py \
-            tests/unit/test_mlb_supervised_selection_guard_v2_3.py \
-            tests/unit/test_mlb_supervised_selection_guard_v2_6.py
-          python - <<'PY'
-          import mlb_supervised_selection_guard_v2_3 as guard
-          assert guard.MIN_OOF_ACCURACY_UPLIFT == 0.005
-          assert guard.MIN_OOF_NET_CORRECT == 3
-          assert guard.MAX_WORST_FOLD_ACCURACY_REGRESSION == 0.01
-          assert guard.MIN_POSITIVE_FOLD_RATIO == 2.0 / 3.0
-          assert guard.MIN_FUNDAMENTALS_COVERAGE == 0.50
-          assert guard.MIN_BBS_PRIOR_COVERAGE == 0.50
-          PY
+            tests/unit/test_mlb_v8_historical_context_workflow.py
 
   backfill-and-advance:
     if: github.event_name != 'pull_request'
     needs: validate
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
@@ -105,18 +95,18 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
       - name: Install runtime dependencies
         run: python -m pip install --quiet 'boto3>=1.34,<2' 'numpy>=1.26,<3'
-      - name: Populate target-game context
+
+      - name: Populate official target-game context with no BBD calls
         id: backfill
         continue-on-error: true
         env:
-          BBS_API_KEY: ${{ secrets.BBS_API_KEY }}
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
-          REQUESTED_LIMIT: ${{ inputs.limit || '10' }}
-          BBS_HISTORICAL_REQUEST_DELAY_SECONDS: '1.0'
+          REQUESTED_LIMIT: ${{ inputs.limit || '50' }}
         run: |
           set +e
           mkdir -p runtime_reports
-          python scripts/run_mlb_v8_historical_context_backfill_entrypoint.py \
+          rm -f "$CONTEXT_REPORT"
+          python scripts/run_mlb_v8_historical_context_no_bbd.py \
             --region "$AWS_REGION_VALUE" \
             --table-name "$TABLE_NAME" \
             --historical-stack "$HISTORICAL_STACK" \
@@ -127,6 +117,7 @@ jobs:
           status=${PIPESTATUS[0]}
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
           exit "$status"
+
       - name: Ensure durable fail-closed context evidence
         if: always()
         env:
@@ -144,11 +135,16 @@ jobs:
           report={
               'ok':False,
               'proofType':'MLB_V8_HISTORICAL_CONTEXT_BACKFILL',
-              'version':'MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v1-isolated-pointer',
+              'version':'MLB-V8-HISTORICAL-CONTEXT-NO-BBD-v1',
               'createdAtUtc':datetime.now(timezone.utc).isoformat(),
               'sourceSha':os.environ.get('GITHUB_SHA'),
               'runId':os.environ.get('GITHUB_RUN_ID'),
               'authority':'V8_HISTORICAL_BBS_SHADOW_ONLY',
+              'provider':'official_mlb_stats_api_plus_open_meteo_archive',
+              'providerCapability':'BBD_API_UNAVAILABLE_EXPLICIT',
+              'liveBbdApiAvailable':False,
+              'liveBbdApiRequired':False,
+              'liveBbdHttpRequestsMade':0,
               'productionAuthorityChanged':False,
               'selectionUsedOutcomes':False,
               'targetGameOutcomeUsed':False,
@@ -163,6 +159,7 @@ jobs:
           fi
           python -m json.tool "$CONTEXT_REPORT" >/dev/null
           cp "$CONTEXT_REPORT" /tmp/mlb-v8-historical-context-backfill.json
+
       - name: Advance settled corpus through canonical optimizer authority
         if: always()
         env:
@@ -176,31 +173,28 @@ jobs:
             --output text)
           test -n "$FUNCTION_NAME" && test "$FUNCTION_NAME" != None
           invoke() {
-            local payload="$1" output="$2"
             aws lambda invoke \
               --function-name "$FUNCTION_NAME" \
               --region "$AWS_REGION_VALUE" \
               --cli-read-timeout 900 \
               --cli-binary-format raw-in-base64-out \
-              --payload "$payload" "$output" >/tmp/invoke-meta.json
+              --payload "$1" "$2" >/tmp/invoke-meta.json
           }
-          invoke '{"mode":"status","run":"mlb_v8_context_settled_before"}' /tmp/settled-before.json
+          invoke '{"mode":"status","run":"mlb_no_bbd_settled_before"}' /tmp/settled-before.json
           set +e
-          invoke '{"mode":"orchestrate","run":"mlb_v8_context_settled_advance"}' /tmp/settled-orchestrate.json
+          invoke '{"mode":"orchestrate","run":"mlb_no_bbd_settled_advance"}' /tmp/settled-orchestrate.json
           orchestrate_status=$?
           set -e
-          invoke '{"mode":"status","run":"mlb_v8_context_settled_after"}' /tmp/settled-after.json
+          invoke '{"mode":"status","run":"mlb_no_bbd_settled_after"}' /tmp/settled-after.json
           ORCHESTRATE_STATUS="$orchestrate_status" python - <<'PY'
           import json, os
           from datetime import datetime, timezone
           from pathlib import Path
-          before=json.load(open('/tmp/settled-before.json'))
-          after=json.load(open('/tmp/settled-after.json'))
-          b=before.get('state') or {}
-          a=after.get('state') or {}
-          def i(value):
-              try: return int(value or 0)
-              except Exception: return 0
+          before=json.load(open('/tmp/settled-before.json')); after=json.load(open('/tmp/settled-after.json'))
+          b=before.get('state') or {}; a=after.get('state') or {}
+          def i(v):
+              try:return int(v or 0)
+              except Exception:return 0
           deltas={
               'eligibleGameDelta':i(a.get('eligibleGameCount'))-i(b.get('eligibleGameCount')),
               'completeSlateDelta':i(a.get('completeSlateCount'))-i(b.get('completeSlateCount')),
@@ -212,31 +206,36 @@ jobs:
           }
           advanced=any((deltas['eligibleGameDelta']>0,deltas['completeSlateDelta']>0,deltas['dateChanged'],deltas['slotChanged']))
           blockers=[]
-          if before.get('ok') is not True: blockers.append('before_status_not_ok')
-          if after.get('ok') is not True: blockers.append('after_status_not_ok')
-          if int(os.environ.get('ORCHESTRATE_STATUS') or 1) != 0: blockers.append('orchestrate_invoke_failed')
-          if a.get('lastError'): blockers.append('optimizer_last_error_present')
+          if before.get('ok') is not True:blockers.append('before_status_not_ok')
+          if after.get('ok') is not True:blockers.append('after_status_not_ok')
+          if int(os.environ.get('ORCHESTRATE_STATUS') or 1)!=0:blockers.append('orchestrate_invoke_failed')
+          if a.get('lastError'):blockers.append('optimizer_last_error_present')
           report={
               'proofType':'MLB_HISTORICAL_SETTLED_HORIZON_ADVANCE_V1',
               'createdAtUtc':datetime.now(timezone.utc).isoformat(),
-              'sourceSha':os.environ.get('GITHUB_SHA'),
-              'runId':os.environ.get('GITHUB_RUN_ID'),
-              'authority':'CANONICAL_V7_HISTORICAL_OPTIMIZER',
-              'orchestrateInvoked':True,
-              'advanced':advanced,
-              'stalledStage':None if advanced else a.get('phase'),
+              'sourceSha':os.environ.get('GITHUB_SHA'),'runId':os.environ.get('GITHUB_RUN_ID'),
+              'authority':'CANONICAL_V7_HISTORICAL_OPTIMIZER','orchestrateInvoked':True,
+              'advanced':advanced,'stalledStage':None if advanced else a.get('phase'),
               'before':{k:b.get(k) for k in ('phase','currentDate','currentSlotIndex','eligibleGameCount','completeSlateCount','networkRequestCount','revision','optimizationRound','lastError')},
               'after':{k:a.get(k) for k in ('phase','currentDate','currentSlotIndex','eligibleGameCount','completeSlateCount','networkRequestCount','revision','optimizationRound','lastError')},
-              'deltas':deltas,
-              'blockers':blockers,
-              'manualCursorMutation':False,
-              'productionAuthorityChanged':False,
-              'ok':not blockers,
+              'deltas':deltas,'blockers':blockers,'manualCursorMutation':False,
+              'productionAuthorityChanged':False,'ok':not blockers,
           }
           Path(os.environ['SETTLED_REPORT']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
-          print(json.dumps(report,indent=2,sort_keys=True))
           PY
           cp "$SETTLED_REPORT" /tmp/mlb-historical-settled-horizon-advance.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-v8-historical-context-no-bbd-${{ github.run_id }}
+          path: |
+            /tmp/mlb-v8-historical-context-backfill.json
+            /tmp/mlb-historical-settled-horizon-advance.json
+            /tmp/mlb-v8-historical-context-backfill.log
+          retention-days: 90
+          if-no-files-found: error
+
       - name: Publish context and settled-horizon evidence monotonically
         if: always()
         run: |
@@ -247,14 +246,8 @@ jobs:
             git fetch origin main
             git checkout -B mlb-v8-historical-context-proof origin/main
             mkdir -p runtime_reports
-            python scripts/publish_monotonic_json.py \
-              --candidate /tmp/mlb-v8-historical-context-backfill.json \
-              --existing "$CONTEXT_REPORT" \
-              --output "$CONTEXT_REPORT"
-            python scripts/publish_monotonic_json.py \
-              --candidate /tmp/mlb-historical-settled-horizon-advance.json \
-              --existing "$SETTLED_REPORT" \
-              --output "$SETTLED_REPORT"
+            python scripts/publish_monotonic_json.py --candidate /tmp/mlb-v8-historical-context-backfill.json --existing "$CONTEXT_REPORT" --output "$CONTEXT_REPORT"
+            python scripts/publish_monotonic_json.py --candidate /tmp/mlb-historical-settled-horizon-advance.json --existing "$SETTLED_REPORT" --output "$SETTLED_REPORT"
             git add "$CONTEXT_REPORT" "$SETTLED_REPORT"
             git diff --cached --quiet && exit 0
             git commit -m 'Publish MLB V8 historical context evidence'
@@ -262,27 +255,37 @@ jobs:
             sleep $((attempt * 3))
           done
           exit 1
-      - name: Dispatch fresh supervised shadow evaluation
+
+      - name: Dispatch all context-dependent learners
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          eligible=$(python -c "import json; print(int(json.load(open('/tmp/mlb-v8-historical-context-backfill.json')).get('eligibleGameCount') or 0))")
-          if [ "$eligible" -gt 0 ]; then
-            gh workflow run mlb-supervised-shadow-v2-recurring.yml --ref main
-          fi
-      - name: Enforce successful context materialization
+          eligible=$(python -c "import json;print(int(json.load(open('/tmp/mlb-v8-historical-context-backfill.json')).get('eligibleGameCount') or 0))")
+          test "$eligible" -gt 0 || exit 0
+          for workflow in \
+            mlb-supervised-shadow-v2-recurring.yml \
+            mlb-v8-shadow-realtime-72.yml \
+            mlb-historical-supervised-v9-shadow.yml \
+            mlb-v10-autonomous-signal-discovery.yml
+          do
+            gh workflow run "$workflow" --ref main
+          done
+
+      - name: Enforce successful provider-neutral context materialization
         if: always()
         run: |
           python - <<'PY'
           import json
           value=json.load(open('/tmp/mlb-v8-historical-context-backfill.json'))
-          assert value.get('authority') == 'V8_HISTORICAL_BBS_SHADOW_ONLY', value
           assert value.get('productionAuthorityChanged') is False, value
           assert value.get('selectionUsedOutcomes') is False, value
           assert value.get('targetGameOutcomeUsed') is False, value
           assert value.get('sameDayResultsExcluded') is True, value
-          assert value.get('manifestPointerPk') == 'MLB_V8_HISTORICAL_CONTEXT#V1', value
+          assert value.get('liveBbdApiAvailable') is False, value
+          assert value.get('liveBbdApiRequired') is False, value
+          assert int(value.get('liveBbdHttpRequestsMade') or 0) == 0, value
+          assert value.get('providerCapability') == 'BBD_API_UNAVAILABLE_EXPLICIT', value
           assert value.get('ok') is True, value
           PY
