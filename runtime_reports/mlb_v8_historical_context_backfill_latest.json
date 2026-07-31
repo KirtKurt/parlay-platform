@@ -1,12 +1,42 @@
 {
-  "acceptedCrosswalkCount": 16,
-  "activePointerRevision": 22,
+  "acceptedCrosswalkCount": 30,
+  "activePointerRevision": 23,
   "authority": "V8_HISTORICAL_BBS_SHADOW_ONLY",
   "automaticWagerAllowed": false,
   "blockers": [],
   "confirmedOrProjectionSafeTargetIdentityRequired": true,
-  "createdAtUtc": "2026-07-31T22:44:15.498904+00:00",
+  "createdAtUtc": "2026-07-31T23:43:25.293866+00:00",
   "crosswalkQuarantine": [
+    {
+      "candidateOfficialGamePks": [],
+      "providerIndex": 0,
+      "providerKickoffUtc": "2026-07-10T00:05:00+00:00",
+      "providerMatchId": "331b2426-2639-4cfe-8d1f-f1c37bda4367",
+      "providerRowFingerprint": "a3184ef756c984f795475b5eac01db664882cf3cccc65c836ed473c4c5dac2eb",
+      "reasons": [
+        "provider_official_game_crosswalk_not_unique"
+      ]
+    },
+    {
+      "candidateOfficialGamePks": [],
+      "providerIndex": 1,
+      "providerKickoffUtc": "2026-07-10T01:40:00+00:00",
+      "providerMatchId": "d0d9c944-7a1c-41c1-bf87-3757c9549df5",
+      "providerRowFingerprint": "8f241ca75c03879ebe87adc235dafaffe2c30f1f6dab367ecd5e65ac887782a2",
+      "reasons": [
+        "provider_official_game_crosswalk_not_unique"
+      ]
+    },
+    {
+      "candidateOfficialGamePks": [],
+      "providerIndex": 2,
+      "providerKickoffUtc": "2026-07-10T01:45:00+00:00",
+      "providerMatchId": "9db69b58-9ad1-4ea6-b0c4-50203230127b",
+      "providerRowFingerprint": "ddb8083bf14b1dc36957ce11d3126b7916fc51feaacdbbdba7b83b4877a89b02",
+      "reasons": [
+        "provider_official_game_crosswalk_not_unique"
+      ]
+    },
     {
       "candidateOfficialGamePks": [],
       "providerIndex": 0,
@@ -68,20 +98,20 @@
       ]
     }
   ],
-  "crosswalkQuarantineCount": 6,
+  "crosswalkQuarantineCount": 9,
   "diagnosticsContainProviderValues": false,
   "eligibilityErrorCounts": {},
-  "eligibleGameCount": 217,
+  "eligibleGameCount": 227,
   "featureFamily": "targetGame",
   "ineligibleGameCount": 3,
   "manifest": {
     "alreadyExisted": false,
     "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
-    "key": "mlb/v8/historical-context/manifests/59723c127a747e7743a7790dded1c5682728304e71617a3fa4a0b9d07d5de069.json",
-    "sha256": "2d313cd88ee989a93d4486d36e9acba1959b9be724a2431f21feabef72dbcd3f",
-    "versionId": "bau19X10Qpshn2beQB_QeEAtcS55PLDP"
+    "key": "mlb/v8/historical-context/manifests/18468af6416a91e7c6d55737e92ce475c65568562dd7281c46d1004591fb80c0.json",
+    "sha256": "77b33b59f050348d00414358725425dd630452d4f67d9fdb0fd363a857eb148f",
+    "versionId": "DOOrfDhf61AfB7MhdoSDFRo7D0iiNgy."
   },
-  "manifestDigest": "59723c127a747e7743a7790dded1c5682728304e71617a3fa4a0b9d07d5de069",
+  "manifestDigest": "18468af6416a91e7c6d55737e92ce475c65568562dd7281c46d1004591fb80c0",
   "manifestPointerPk": "MLB_V8_HISTORICAL_CONTEXT#V1",
   "manifestPointerSk": "ACTIVE",
   "newEligibleGameCount": 10,
@@ -89,12 +119,20 @@
   "officialContextRequestsMade": 0,
   "ok": true,
   "pointInTimeRequired": true,
-  "processedGameCount": 220,
+  "processedGameCount": 230,
   "productionAuthorityChanged": false,
   "proofType": "MLB_V8_HISTORICAL_CONTEXT_BACKFILL",
   "provider": "bigballsdata_stored_confirmation_plus_official_prior_context",
-  "providerCallsMade": 71,
+  "providerCallsMade": 72,
   "providerDiscovery": [
+    {
+      "acceptedCrosswalkCount": 14,
+      "canonicalGameCount": 14,
+      "providerRowCount": 11,
+      "quarantinedProviderRowCount": 3,
+      "slateDateEt": "2026-07-10",
+      "unmatchedCanonicalGameCount": 0
+    },
     {
       "acceptedCrosswalkCount": 16,
       "canonicalGameCount": 16,
@@ -104,9 +142,9 @@
       "unmatchedCanonicalGameCount": 0
     }
   ],
-  "providerDiscoveryDateCount": 1,
-  "providerRowsReturned": 20,
-  "remainingGameCount": 3826,
+  "providerDiscoveryDateCount": 2,
+  "providerRowsReturned": 31,
+  "remainingGameCount": 3816,
   "requiredDomains": [
     "pitchers",
     "bullpens",
@@ -244,16 +282,16 @@
     }
   },
   "resourceErrorCounts": {},
-  "runId": "30670838346",
+  "runId": "30673629262",
   "sameDayResultsExcluded": true,
   "selectedGameCount": 10,
   "selectionOrder": "newest_unprocessed_canonical_games_first",
   "selectionUsedOutcomes": false,
-  "sourceSha": "2c21b39dc2250f8626786b195b96ce69bea41177",
+  "sourceSha": "884a70653a0da3d076a84490475dbfa15b933f88",
   "storedDiscoveryErrorCount": 0,
   "syntheticOfficialIdentityCount": 0,
   "targetGameOutcomeUsed": false,
-  "trainingCoverage": 0.05363322,
+  "trainingCoverage": 0.05610479,
   "unmatchedCanonicalGameCount": 0,
   "version": "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v1-isolated-pointer",
   "weatherArchiveModel": "ecmwf_ifs"
