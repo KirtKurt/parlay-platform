@@ -45,6 +45,7 @@ env:
   HISTORICAL_STACK: parlay-platform-mlb-historical-optimizer
   FUNDAMENTALS_STACK: parlay-platform-mlb-v8-fundamentals-shadow
   TABLE_NAME: parlay_platform_snapshots
+  CONTEXT_POINTER_PK: MLB_V8_HISTORICAL_CONTEXT#V1
   CONTEXT_REPORT: runtime_reports/mlb_v8_historical_context_backfill_latest.json
   SETTLED_REPORT: runtime_reports/mlb_historical_settled_horizon_advance_latest.json
   BBS_API_DISABLED: 'true'
@@ -74,6 +75,14 @@ jobs:
             tests/unit/test_mlb_v8_historical_point_in_time_context_v1.py \
             tests/unit/test_run_mlb_v8_historical_context_backfill_entrypoint.py \
             tests/unit/test_mlb_v8_historical_context_workflow.py
+          python - <<'PY'
+          import mlb_supervised_selection_guard_v2_6 as guard
+          assert guard.MIN_OOF_ACCURACY_UPLIFT == 0.005
+          assert guard.MIN_OOF_NET_CORRECT == 3
+          assert guard.MAX_WORST_FOLD_ACCURACY_REGRESSION == 0.01
+          assert guard.MIN_POSITIVE_FOLD_RATIO == 2.0 / 3.0
+          assert guard.MIN_FUNDAMENTALS_COVERAGE == 0.50
+          PY
 
   backfill-and-advance:
     if: github.event_name != 'pull_request'
