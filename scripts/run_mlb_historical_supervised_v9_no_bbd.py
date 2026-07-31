@@ -44,26 +44,40 @@ def _argument(name: str) -> str | None:
     return sys.argv[index + 1] if index + 1 < len(sys.argv) else None
 
 
+def _handlers() -> list[Any]:
+    values = [runtime.base.optimizer_handler]
+    original_runtime = getattr(guarded_runner.original, "runtime", None)
+    if original_runtime is not None:
+        values.append(original_runtime.base.optimizer_handler)
+    unique = []
+    seen = set()
+    for handler in values:
+        if id(handler) not in seen:
+            unique.append(handler)
+            seen.add(id(handler))
+    return unique
+
+
 def _install_record_bridge() -> None:
-    handler = runtime.base.optimizer_handler
-    if getattr(handler, "_INQSI_NO_BBD_CONTEXT_LOADER_INSTALLED", False):
-        return
-    original = handler._load_training_records
+    for handler in _handlers():
+        if getattr(handler, "_INQSI_NO_BBD_CONTEXT_LOADER_INSTALLED", False):
+            continue
+        original = handler._load_training_records
 
-    def load(state: Mapping[str, Any]):
-        records = original(state)
-        enriched, overlay_proof = bridge.apply_stored_overlays(records)
-        enriched, context_proof = bridge.augment_v7_v9_records(enriched)
-        global _CONTEXT_PROOF
-        _CONTEXT_PROOF = {
-            **context_proof,
-            "overlayProof": overlay_proof,
-            "sourceRecordCount": len(records),
-        }
-        return enriched
+        def load(state: Mapping[str, Any], *, _original=original):
+            records = _original(state)
+            enriched, overlay_proof = bridge.apply_stored_overlays(records)
+            enriched, context_proof = bridge.augment_v7_v9_records(enriched)
+            global _CONTEXT_PROOF
+            _CONTEXT_PROOF = {
+                **context_proof,
+                "overlayProof": overlay_proof,
+                "sourceRecordCount": len(records),
+            }
+            return enriched
 
-    handler._load_training_records = load
-    handler._INQSI_NO_BBD_CONTEXT_LOADER_INSTALLED = True
+        handler._load_training_records = load
+        handler._INQSI_NO_BBD_CONTEXT_LOADER_INSTALLED = True
 
 
 def _feature_decision(
@@ -239,8 +253,17 @@ def _feature_anchor_fields(
 
 
 def _install_cadence() -> None:
-    cadence.decide_cadence = _feature_decision
-    cadence.report_anchor_fields = _feature_anchor_fields
+    modules = [cadence]
+    original_cadence = getattr(guarded_runner.original, "cadence_state", None)
+    if original_cadence is not None:
+        modules.append(original_cadence)
+    seen = set()
+    for module in modules:
+        if id(module) in seen:
+            continue
+        module.decide_cadence = _feature_decision
+        module.report_anchor_fields = _feature_anchor_fields
+        seen.add(id(module))
 
 
 def _postprocess(path: Path) -> None:
@@ -264,12 +287,12 @@ def _postprocess(path: Path) -> None:
 
 
 def main() -> int:
+    output = _argument("--output")
     os.environ["BBS_API_DISABLED"] = "true"
     os.environ["MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED"] = "false"
     _install_record_bridge()
     _install_cadence()
     code = guarded_runner.main()
-    output = _argument("--output")
     if output:
         _postprocess(Path(output))
     return code
