@@ -1,7 +1,7 @@
 """Compatibility entrypoint for the MLB AWS trainer.
 
 The canonical implementation remains in the sibling ``mlb_ml_aws_training_v1.py``
-module.  This package is preferred by Python's import resolver and installs one
+module. This package is preferred by Python's import resolver and installs one
 narrow compatibility patch before exposing the original module object:
 canonical-slate continuity gaps are persisted as a healthy, fail-closed wait
 instead of being converted into an unhandled Lambda function error.
@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+from collections.abc import Mapping
 from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, Mapping
+from typing import Any, Dict
 
 _COMPAT_VERSION = "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v1"
 _BASE_MODULE_NAME = "_inqsi_mlb_ml_aws_training_v1_base"
