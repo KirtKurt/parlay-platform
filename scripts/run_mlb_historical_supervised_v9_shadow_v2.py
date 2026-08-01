@@ -20,9 +20,9 @@ from typing import Any, Dict, Mapping
 import mlb_historical_v7_priority_repairs_v1 as repairs
 
 try:
-    from scripts import run_mlb_historical_supervised_v9_shadow as original
+    from scripts import run_mlb_historical_supervised_v9_shadow_feature_aware as original
 except ImportError:  # Direct execution from the scripts directory.
-    import run_mlb_historical_supervised_v9_shadow as original
+    import run_mlb_historical_supervised_v9_shadow_feature_aware as original
 
 VERSION = "MLB-V9-SHADOW-MODEL-ARTIFACT-v1"
 

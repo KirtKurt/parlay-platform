@@ -19,6 +19,11 @@ def test_rematerialization_quarantines_invalid_archived_slots():
     assert '"usableForFeatures": False' in source
 
 
+def test_rematerialization_can_reconcile_new_slate_while_waiting_for_horizon():
+    source = Path("hello_world/mlb_historical_feature_rematerialization_v1.py").read_text()
+    assert '"WAITING_FOR_SETTLED_HORIZON"' in source
+
+
 def test_supervised_dataset_patch_versions_event_ids_for_enrichment():
     source = Path("hello_world/mlb_supervised_v8_dataset_patch_v1.py").read_text()
     assert 'FEATURE_DATASET_VERSION = "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable"' in source
