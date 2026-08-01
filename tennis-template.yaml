@@ -1,6 +1,10 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: Isolated Inqis tennis online-learning service
+Parameters:
+  OddsApiKey:
+    Type: String
+    NoEcho: true
 Resources:
   TennisLearningTable:
     Type: AWS::DynamoDB::Table
@@ -54,6 +58,73 @@ Resources:
         TrainBatch:
           Type: Api
           Properties: {Path: /v1/tennis/learning/train/batch, Method: POST}
+  TennisLivePipelineFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: tennis_learning/
+      Handler: live_pipeline.lambda_handler
+      Runtime: python3.11
+      Timeout: 120
+      MemorySize: 1024
+      Environment:
+        Variables:
+          TENNIS_LEARNING_TABLE: !Ref TennisLearningTable
+          TENNIS_MIN_TRAINING_SAMPLES: '100'
+          TENNIS_LEARNING_RATE: '0.03'
+          TENNIS_L2: '0.0005'
+          ODDS_API_KEY: !Ref OddsApiKey
+          TENNIS_ODDS_SPORT_KEY: tennis
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TennisLearningTable
+      Events:
+        CollectEvery15Minutes:
+          Type: Schedule
+          Properties:
+            Schedule: rate(15 minutes)
+            Input: '{"action":"collect"}'
+        SettleEvery30Minutes:
+          Type: Schedule
+          Properties:
+            Schedule: rate(30 minutes)
+            Input: '{"action":"settle"}'
+        CollectApi:
+          Type: Api
+          Properties: {Path: /v1/tennis/pipeline/collect, Method: POST}
+        SettleApi:
+          Type: Api
+          Properties: {Path: /v1/tennis/pipeline/settle, Method: POST}
+  TennisHistoricalBackfillFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: tennis_learning/
+      Handler: bootstrap_handler.lambda_handler
+      Runtime: python3.11
+      Timeout: 900
+      MemorySize: 2048
+      Environment:
+        Variables:
+          TENNIS_LEARNING_TABLE: !Ref TennisLearningTable
+          TENNIS_MIN_TRAINING_SAMPLES: '100'
+          TENNIS_LEARNING_RATE: '0.03'
+          TENNIS_L2: '0.0005'
+          TENNIS_BACKFILL_BATCH_SIZE: '400'
+          TENNIS_BACKFILL_START_YEAR: '2000'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TennisLearningTable
+      Events:
+        BackfillEveryHour:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 hour)
+        BackfillApi:
+          Type: Api
+          Properties: {Path: /v1/tennis/learning/backfill, Method: POST}
 Outputs:
   TennisLearningApi:
     Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/tennis/learning/health'
+  TennisCollectApi:
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/tennis/pipeline/collect'
+  TennisBackfillApi:
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/tennis/learning/backfill'
