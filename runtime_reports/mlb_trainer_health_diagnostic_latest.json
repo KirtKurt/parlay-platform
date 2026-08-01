@@ -1,17 +1,60 @@
 {
-  "createdAtUtc": "2026-08-01T20:17:13.756192+00:00",
-  "proofType": "MLB_AWS_TRAINER_HEALTH_DIAGNOSTIC_V1",
-  "responses": {
-    "selection-capture": {
-      "missing": true
-    },
-    "status-after": {
-      "missing": true
-    },
-    "training": {
-      "missing": true
-    }
+  "cliExitCode": "0",
+  "createdAtUtc": "2026-08-01T20:20:01.490103+00:00",
+  "functionPayload": {
+    "errorMessage": "training returned an unhealthy status: CANONICAL_SLATE_CONTINUITY_BLOCKED",
+    "errorType": "TrainingContractError",
+    "requestId": "77c58a94-2b68-4085-89ca-d744f44c9421",
+    "stackTrace": [
+      "  File \"/var/task/mlb_ml_aws_training_v1.py\", line 2935, in lambda_handler\n    raise TrainingContractError(\n"
+    ]
   },
-  "runId": "30716610710",
-  "sourceSha": "8e53874eb8ad1245e6af48bde5411dee9eb07ff1"
+  "invokeMetadata": {
+    "ExecutedVersion": "$LATEST",
+    "FunctionError": "Unhandled",
+    "StatusCode": 200
+  },
+  "lambdaConfiguration": {
+    "codeSha256": "nUnbn9kWIBJzXFIAVzbXfJD7Ab2xhCTuArrQq2oK3Zk=",
+    "environmentKeys": [
+      "INQSI_DEPLOY_GIT_SHA",
+      "INQSI_DEPLOY_RUN_ID",
+      "INQSI_DEPLOY_TEMPLATE_SHA256",
+      "INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION",
+      "INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED",
+      "INQSI_MLB_ML_AUTO_PROMOTE",
+      "MLB_MIN_EV_FOR_PROMOTION",
+      "MLB_ML_ARTIFACTS_BUCKET",
+      "MLB_ML_EXECUTION_LEASE_SECONDS",
+      "MLB_ML_EXPERIMENT_ID",
+      "MLB_ML_FEATURE_VECTOR_VERSION",
+      "MLB_ML_RELEASE_CONTRACT_ID",
+      "MLB_ML_RELEASE_CUTOFF_UTC",
+      "MLB_PROMOTION_EDGE_THRESHOLD",
+      "MLB_PROMOTION_FALLBACK_EDGE_THRESHOLD",
+      "MLB_PULL_START_AT_ET",
+      "MLB_SCHED_INTERVAL_MINUTES",
+      "ODDS_API_KEY",
+      "ODDS_PRIMARY_BOOK",
+      "OUTCOMES_TABLE",
+      "PREDICTIONS_TABLE",
+      "SIGNALS_TABLE",
+      "SIGNAL_LEDGER_TABLE",
+      "SNAPSHOTS_TABLE"
+    ],
+    "functionName": "parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
+    "handler": "mlb_ml_aws_training_v1.lambda_handler",
+    "lastUpdateStatus": "Successful",
+    "lastUpdateStatusReason": null,
+    "memorySize": 2048,
+    "runtime": "python3.11",
+    "state": "Active",
+    "stateReason": null,
+    "timeout": 900,
+    "version": "$LATEST"
+  },
+  "proofType": "MLB_AWS_TRAINER_RAW_FUNCTION_ERROR_DIAGNOSTIC_V1",
+  "runId": "30716712564",
+  "sourceSha": "36c0b42dc8ae93eb7ed6488bf071f96d93a6e1dd",
+  "stderrTail": ""
 }
