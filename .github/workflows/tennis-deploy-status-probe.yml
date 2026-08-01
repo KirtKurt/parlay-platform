@@ -1,0 +1,153 @@
+name: Tennis Deployment Status Probe
+
+on:
+  push:
+    branches:
+      - agent/deploy-tennis-learning
+    paths:
+      - '.github/workflows/tennis-deploy-status-probe.yml'
+      - 'tennis_status_probe.trigger'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tennis-deployment-status-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout probe branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/deploy-tennis-learning
+          fetch-depth: 0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Probe CloudFormation and live health
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          SOURCE_COMMIT: 5da852d06c8192b83672fff0b7dc23ba556dcd6c
+        run: |
+          set +e
+          mkdir -p runtime_reports
+
+          aws cloudformation describe-stacks \
+            --stack-name parlay-platform-tennis-learning \
+            --region "$AWS_REGION_VALUE" \
+            --output json > /tmp/tennis-stack.json 2> /tmp/tennis-stack.err
+          stack_rc=$?
+
+          stack_status=""
+          health_url=""
+          if [ "$stack_rc" -eq 0 ]; then
+            stack_status=$(python - <<'PY'
+          import json
+          data = json.load(open('/tmp/tennis-stack.json'))
+          print(data['Stacks'][0].get('StackStatus', ''))
+          PY
+            )
+            health_url=$(python - <<'PY'
+          import json
+          data = json.load(open('/tmp/tennis-stack.json'))
+          outputs = {row.get('OutputKey'): row.get('OutputValue') for row in data['Stacks'][0].get('Outputs', [])}
+          print(outputs.get('TennisLearningApi', ''))
+          PY
+            )
+          fi
+
+          health_rc=1
+          if [ -n "$health_url" ]; then
+            curl --silent --show-error --fail \
+              --retry 5 --retry-all-errors --retry-delay 5 \
+              "$health_url" > /tmp/tennis-health.json 2> /tmp/tennis-health.err
+            health_rc=$?
+          fi
+
+          export STACK_RC="$stack_rc"
+          export STACK_STATUS="$stack_status"
+          export HEALTH_URL="$health_url"
+          export HEALTH_RC="$health_rc"
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def read_text(path):
+              p = Path(path)
+              return p.read_text(errors='replace').strip() if p.exists() else ''
+
+          stack_rc = int(os.environ['STACK_RC'])
+          health_rc = int(os.environ['HEALTH_RC'])
+          stack_status = os.environ.get('STACK_STATUS', '')
+          health_url = os.environ.get('HEALTH_URL', '')
+          health = None
+          health_text = read_text('/tmp/tennis-health.json')
+          if health_text:
+              try:
+                  health = json.loads(health_text)
+              except json.JSONDecodeError:
+                  health = {'raw': health_text[:2000]}
+
+          expected_health = (
+              isinstance(health, dict)
+              and health.get('service') == 'tennis-learning'
+              and health.get('persistence') == 'dynamodb'
+          )
+          complete_statuses = {'CREATE_COMPLETE', 'UPDATE_COMPLETE'}
+          if stack_rc != 0:
+              result = 'failed'
+              cause = 'cloudformation_stack_missing_or_unreadable'
+          elif stack_status.endswith('_IN_PROGRESS') or stack_status == 'REVIEW_IN_PROGRESS':
+              result = 'still_running'
+              cause = f'cloudformation_{stack_status.lower()}'
+          elif stack_status not in complete_statuses:
+              result = 'failed'
+              cause = f'cloudformation_{stack_status.lower() or "unknown"}'
+          elif health_rc != 0:
+              result = 'failed'
+              cause = 'live_health_request_failed'
+          elif not expected_health:
+              result = 'failed'
+              cause = 'live_health_contract_invalid'
+          else:
+              result = 'succeeded'
+              cause = None
+
+          report = {
+              'checkedAtUtc': datetime.now(timezone.utc).isoformat(),
+              'sourceCommit': os.environ['SOURCE_COMMIT'],
+              'stackName': 'parlay-platform-tennis-learning',
+              'stackReadSucceeded': stack_rc == 0,
+              'stackStatus': stack_status or None,
+              'healthUrl': health_url or None,
+              'healthRequestSucceeded': health_rc == 0,
+              'health': health,
+              'result': result,
+              'failureCause': cause,
+              'stackError': read_text('/tmp/tennis-stack.err')[:2000] or None,
+              'healthError': read_text('/tmp/tennis-health.err')[:2000] or None,
+          }
+          Path('runtime_reports/tennis_learning_deploy_probe.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+
+      - name: Publish probe report to branch
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime_reports/tennis_learning_deploy_probe.json
+          git commit -m "Publish tennis deployment status probe [skip ci]" || exit 0
+          git push origin HEAD:agent/deploy-tennis-learning
