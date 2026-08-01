@@ -19,41 +19,22 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Capture raw deployed trainer error and configuration
+      - name: Capture raw trainer failure and status
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
-          TRAINER_ARN=$(aws cloudformation describe-stacks \
-            --stack-name parlay-platform-dev \
-            --region "$AWS_REGION_VALUE" \
-            --query "Stacks[0].Outputs[?OutputKey=='MLBMLTrainingFunctionArn'].OutputValue" \
-            --output text)
+          TRAINER_ARN=$(aws cloudformation describe-stacks --stack-name parlay-platform-dev --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='MLBMLTrainingFunctionArn'].OutputValue" --output text)
           test -n "$TRAINER_ARN" && test "$TRAINER_ARN" != None
-          aws lambda get-function-configuration \
-            --function-name "$TRAINER_ARN" \
-            --region "$AWS_REGION_VALUE" \
-            > /tmp/mlb-trainer-config.json
-          set +e
-          aws lambda invoke \
-            --function-name "$TRAINER_ARN" \
-            --region "$AWS_REGION_VALUE" \
-            --cli-read-timeout 1200 \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{"sport":"mlb","mode":"scheduled","run":"aws_native_raw_trainer_diagnostic"}' \
-            /tmp/mlb-raw-training.json \
-            > /tmp/mlb-raw-training-meta.json 2>/tmp/mlb-raw-training-stderr.txt
-          echo $? > /tmp/mlb-raw-training-cli-exit.txt
-          set -e
-
-      - name: Publish sanitized raw diagnostic
+          aws lambda get-function-configuration --function-name "$TRAINER_ARN" --region "$AWS_REGION_VALUE" > /tmp/config.json
+          aws lambda invoke --function-name "$TRAINER_ARN" --region "$AWS_REGION_VALUE" --cli-read-timeout 1200 --cli-binary-format raw-in-base64-out --payload '{"sport":"mlb","mode":"scheduled","run":"raw_continuity_diagnostic"}' /tmp/training.json > /tmp/training-meta.json
+          aws lambda invoke --function-name "$TRAINER_ARN" --region "$AWS_REGION_VALUE" --cli-read-timeout 300 --cli-binary-format raw-in-base64-out --payload '{"sport":"mlb","mode":"status"}' /tmp/status.json > /tmp/status-meta.json
+      - name: Publish sanitized continuity diagnostic
         if: always()
         run: |
           set -euo pipefail
@@ -61,24 +42,17 @@ jobs:
           import json, os
           from datetime import datetime, timezone
           from pathlib import Path
-
           def load(path):
               p=Path(path)
-              if not p.exists() or not p.stat().st_size:
-                  return None
-              try:
-                  return json.loads(p.read_text())
-              except Exception:
-                  return {'rawText':p.read_text(errors='replace')[-16000:]}
-
-          config=load('/tmp/mlb-trainer-config.json') or {}
-          payload=load('/tmp/mlb-raw-training.json')
-          meta=load('/tmp/mlb-raw-training-meta.json')
-          cli_exit=Path('/tmp/mlb-raw-training-cli-exit.txt').read_text().strip() if Path('/tmp/mlb-raw-training-cli-exit.txt').exists() else None
-          stderr=Path('/tmp/mlb-raw-training-stderr.txt').read_text(errors='replace')[-12000:] if Path('/tmp/mlb-raw-training-stderr.txt').exists() else ''
-          env_keys=sorted((((config.get('Environment') or {}).get('Variables') or {}).keys()))
+              if not p.exists() or not p.stat().st_size: return None
+              try: return json.loads(p.read_text())
+              except Exception: return {'rawText':p.read_text(errors='replace')[-16000:]}
+          config=load('/tmp/config.json') or {}
+          training=load('/tmp/training.json') or {}
+          status=load('/tmp/status.json') or {}
+          latest=status.get('latestStatus') or {}
           report={
-              'proofType':'MLB_AWS_TRAINER_RAW_FUNCTION_ERROR_DIAGNOSTIC_V1',
+              'proofType':'MLB_AWS_TRAINER_CONTINUITY_DIAGNOSTIC_V2',
               'createdAtUtc':datetime.now(timezone.utc).isoformat(),
               'runId':os.environ.get('GITHUB_RUN_ID'),
               'sourceSha':os.environ.get('GITHUB_SHA'),
@@ -87,50 +61,52 @@ jobs:
                   'runtime':config.get('Runtime'),
                   'handler':config.get('Handler'),
                   'state':config.get('State'),
-                  'stateReason':config.get('StateReason'),
                   'lastUpdateStatus':config.get('LastUpdateStatus'),
-                  'lastUpdateStatusReason':config.get('LastUpdateStatusReason'),
                   'codeSha256':config.get('CodeSha256'),
-                  'version':config.get('Version'),
-                  'memorySize':config.get('MemorySize'),
-                  'timeout':config.get('Timeout'),
-                  'environmentKeys':env_keys,
               },
-              'invokeMetadata':meta,
-              'cliExitCode':cli_exit,
-              'functionPayload':payload,
-              'stderrTail':stderr,
+              'trainingFunctionError':training,
+              'statusOk':status.get('ok'),
+              'trainingHealth':status.get('trainingHealth'),
+              'selectionCaptureHealth':status.get('selectionCaptureHealth'),
+              'latestTrainingStatus':{
+                  'ok':latest.get('ok'),
+                  'status':latest.get('status'),
+                  'createdAtUtc':latest.get('createdAtUtc'),
+                  'acceptedRowCount':latest.get('acceptedRowCount'),
+                  'rejectedRowCount':latest.get('rejectedRowCount'),
+                  'canonicalSlateContinuity':latest.get('canonicalSlateContinuity'),
+                  'failure':latest.get('failure'),
+              },
           }
-          Path('/tmp/mlb-trainer-health-summary.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          Path('/tmp/summary.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
           print(json.dumps(report,indent=2,sort_keys=True))
           PY
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          cp /tmp/mlb-trainer-health-summary.json /tmp/mlb-trainer-health-summary-publish.json
+          cp /tmp/summary.json /tmp/publish.json
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             git checkout -B mlb-trainer-health-diagnostic-proof origin/main
             git reset --hard origin/main
             git clean -fd
             mkdir -p runtime_reports
-            cp /tmp/mlb-trainer-health-summary-publish.json runtime_reports/mlb_trainer_health_diagnostic_latest.json
+            cp /tmp/publish.json runtime_reports/mlb_trainer_health_diagnostic_latest.json
             git add runtime_reports/mlb_trainer_health_diagnostic_latest.json
             git diff --cached --quiet && exit 0
-            git commit -m 'Publish MLB raw trainer function-error diagnostic [skip ci]'
+            git commit -m 'Publish MLB trainer continuity diagnostic [skip ci]'
             git push origin HEAD:main && exit 0
             sleep $((attempt * 3))
           done
           exit 1
-
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: mlb-trainer-health-diagnostic-${{ github.run_id }}
           retention-days: 7
-          if-no-files-found: warn
           path: |
-            /tmp/mlb-trainer-config.json
-            /tmp/mlb-raw-training.json
-            /tmp/mlb-raw-training-meta.json
-            /tmp/mlb-raw-training-stderr.txt
-            /tmp/mlb-trainer-health-summary.json
+            /tmp/config.json
+            /tmp/training.json
+            /tmp/training-meta.json
+            /tmp/status.json
+            /tmp/status-meta.json
+            /tmp/summary.json
