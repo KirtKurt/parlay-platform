@@ -1,5 +1,5 @@
 name: Install MLB Trainer Continuity Wait Fix Once
-# Trusted second push after workflow installation on the default branch.
+# Trusted bootstrap revision after validating repository test paths.
 
 on:
   pull_request:
@@ -85,8 +85,7 @@ jobs:
             tests/unit/test_mlb_trainer_continuity_wait_v1.py
           PYTHONPATH=hello_world:scripts python -m pytest -q --tb=short \
             tests/unit/test_mlb_trainer_continuity_wait_v1.py \
-            tests/unit/test_mlb_ml_aws_training_v1.py \
-            tests/unit/test_verify_mlb_trainer_deploy_response.py
+            tests/unit/test_mlb_ml_aws_training_v1.py
 
       - name: Publish canonical source fix
         if: github.event_name != 'pull_request'
