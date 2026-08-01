@@ -4,7 +4,7 @@ name: Diagnose MLB AWS Trainer Health Once
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: mlb-trainer-health-diagnose-once
@@ -77,17 +77,24 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json
+          import json, os
+          from datetime import datetime, timezone
           from pathlib import Path
           names=['training','selection-capture','status-after']
-          summary={}
+          summary={
+              'proofType':'MLB_AWS_TRAINER_HEALTH_DIAGNOSTIC_V1',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'runId':os.environ.get('GITHUB_RUN_ID'),
+              'sourceSha':os.environ.get('GITHUB_SHA'),
+              'responses':{},
+          }
           for name in names:
               path=Path(f'/tmp/mlb-ml-v2-{name}.json')
               if not path.exists():
-                  summary[name]={'missing':True}
+                  summary['responses'][name]={'missing':True}
                   continue
               value=json.loads(path.read_text())
-              summary[name]={
+              summary['responses'][name]={
                   'ok':value.get('ok'),
                   'mode':value.get('mode'),
                   'version':value.get('version'),
@@ -122,3 +129,25 @@ jobs:
             /tmp/mlb-ml-v2-status-after.json
             /tmp/mlb-ml-v2-status-after-invoke.json
             /tmp/mlb-trainer-health-summary.json
+
+      - name: Publish sanitized trainer-health diagnostic
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          cp /tmp/mlb-trainer-health-summary.json /tmp/mlb-trainer-health-summary-publish.json
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-trainer-health-diagnostic-proof origin/main
+            git reset --hard origin/main
+            git clean -fd
+            mkdir -p runtime_reports
+            cp /tmp/mlb-trainer-health-summary-publish.json runtime_reports/mlb_trainer_health_diagnostic_latest.json
+            git add runtime_reports/mlb_trainer_health_diagnostic_latest.json
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB AWS trainer health diagnostic [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
