@@ -1,5 +1,5 @@
 name: Install MLB Trainer Continuity Wait Fix Once
-# Trusted bootstrap revision: syntax-safe deterministic contract.
+# PR-validated syntax-safe deterministic contract.
 
 on:
   pull_request:
@@ -17,7 +17,7 @@ permissions:
   actions: write
 
 concurrency:
-  group: install-mlb-trainer-continuity-wait-fix-once
+  group: install-mlb-trainer-continuity-wait-fix-once-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
