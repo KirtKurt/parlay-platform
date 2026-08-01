@@ -7,13 +7,13 @@ permissions:
   contents: write
 
 concurrency:
-  group: mlb-trainer-health-diagnose-once
+  group: mlb-trainer-health-status-once
   cancel-in-progress: false
 
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,7 +24,7 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Capture raw trainer failure and status
+      - name: Capture persisted trainer status
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
         run: |
@@ -32,27 +32,19 @@ jobs:
           TRAINER_ARN=$(aws cloudformation describe-stacks --stack-name parlay-platform-dev --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='MLBMLTrainingFunctionArn'].OutputValue" --output text)
           test -n "$TRAINER_ARN" && test "$TRAINER_ARN" != None
           aws lambda get-function-configuration --function-name "$TRAINER_ARN" --region "$AWS_REGION_VALUE" > /tmp/config.json
-          aws lambda invoke --function-name "$TRAINER_ARN" --region "$AWS_REGION_VALUE" --cli-read-timeout 1200 --cli-binary-format raw-in-base64-out --payload '{"sport":"mlb","mode":"scheduled","run":"raw_continuity_diagnostic"}' /tmp/training.json > /tmp/training-meta.json
           aws lambda invoke --function-name "$TRAINER_ARN" --region "$AWS_REGION_VALUE" --cli-read-timeout 300 --cli-binary-format raw-in-base64-out --payload '{"sport":"mlb","mode":"status"}' /tmp/status.json > /tmp/status-meta.json
-      - name: Publish sanitized continuity diagnostic
-        if: always()
+      - name: Publish sanitized continuity status
         run: |
           set -euo pipefail
           python - <<'PY'
           import json, os
           from datetime import datetime, timezone
           from pathlib import Path
-          def load(path):
-              p=Path(path)
-              if not p.exists() or not p.stat().st_size: return None
-              try: return json.loads(p.read_text())
-              except Exception: return {'rawText':p.read_text(errors='replace')[-16000:]}
-          config=load('/tmp/config.json') or {}
-          training=load('/tmp/training.json') or {}
-          status=load('/tmp/status.json') or {}
+          config=json.loads(Path('/tmp/config.json').read_text())
+          status=json.loads(Path('/tmp/status.json').read_text())
           latest=status.get('latestStatus') or {}
           report={
-              'proofType':'MLB_AWS_TRAINER_CONTINUITY_DIAGNOSTIC_V2',
+              'proofType':'MLB_AWS_TRAINER_CONTINUITY_STATUS_V3',
               'createdAtUtc':datetime.now(timezone.utc).isoformat(),
               'runId':os.environ.get('GITHUB_RUN_ID'),
               'sourceSha':os.environ.get('GITHUB_SHA'),
@@ -64,7 +56,6 @@ jobs:
                   'lastUpdateStatus':config.get('LastUpdateStatus'),
                   'codeSha256':config.get('CodeSha256'),
               },
-              'trainingFunctionError':training,
               'statusOk':status.get('ok'),
               'trainingHealth':status.get('trainingHealth'),
               'selectionCaptureHealth':status.get('selectionCaptureHealth'),
@@ -93,7 +84,7 @@ jobs:
             cp /tmp/publish.json runtime_reports/mlb_trainer_health_diagnostic_latest.json
             git add runtime_reports/mlb_trainer_health_diagnostic_latest.json
             git diff --cached --quiet && exit 0
-            git commit -m 'Publish MLB trainer continuity diagnostic [skip ci]'
+            git commit -m 'Publish MLB trainer continuity status [skip ci]'
             git push origin HEAD:main && exit 0
             sleep $((attempt * 3))
           done
@@ -101,12 +92,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mlb-trainer-health-diagnostic-${{ github.run_id }}
+          name: mlb-trainer-health-status-${{ github.run_id }}
           retention-days: 7
           path: |
             /tmp/config.json
-            /tmp/training.json
-            /tmp/training-meta.json
             /tmp/status.json
             /tmp/status-meta.json
             /tmp/summary.json
