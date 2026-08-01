@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Isolated Inqis tennis online-learning service
+Resources:
+  TennisLearningTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: inqis_tennis_learning
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+  TennisLearningFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: tennis_learning/
+      Handler: handler.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          TENNIS_LEARNING_TABLE: !Ref TennisLearningTable
+          TENNIS_MIN_TRAINING_SAMPLES: '100'
+          TENNIS_LEARNING_RATE: '0.03'
+          TENNIS_L2: '0.0005'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TennisLearningTable
+      Events:
+        Health:
+          Type: Api
+          Properties: {Path: /v1/tennis/learning/health, Method: GET}
+        ModelStatus:
+          Type: Api
+          Properties: {Path: /v1/tennis/learning/model/status, Method: GET}
+        Predict:
+          Type: Api
+          Properties: {Path: /v1/tennis/learning/predict, Method: POST}
+        Settle:
+          Type: Api
+          Properties: {Path: /v1/tennis/learning/settle, Method: POST}
+        TrainBatch:
+          Type: Api
+          Properties: {Path: /v1/tennis/learning/train/batch, Method: POST}
+Outputs:
+  TennisLearningApi:
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/tennis/learning/health'
