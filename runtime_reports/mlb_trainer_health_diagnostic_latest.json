@@ -1,60 +1,194 @@
 {
-  "cliExitCode": "0",
-  "createdAtUtc": "2026-08-01T20:20:01.490103+00:00",
-  "functionPayload": {
+  "createdAtUtc": "2026-08-01T20:22:56.687566+00:00",
+  "lambdaConfiguration": {
+    "codeSha256": "nUnbn9kWIBJzXFIAVzbXfJD7Ab2xhCTuArrQq2oK3Zk=",
+    "functionName": "parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
+    "handler": "mlb_ml_aws_training_v1.lambda_handler",
+    "lastUpdateStatus": "Successful",
+    "runtime": "python3.11",
+    "state": "Active"
+  },
+  "latestTrainingStatus": {
+    "acceptedRowCount": null,
+    "canonicalSlateContinuity": null,
+    "createdAtUtc": "2026-08-01T20:22:54.964391+00:00",
+    "failure": {
+      "code": "TRAINING_CONTRACT_ERROR",
+      "message": "MLB ML training contract validation failed",
+      "redacted": "true",
+      "type": "TrainingContractError"
+    },
+    "ok": false,
+    "rejectedRowCount": null,
+    "status": "TRAINING_INVOCATION_FAILED"
+  },
+  "proofType": "MLB_AWS_TRAINER_CONTINUITY_DIAGNOSTIC_V2",
+  "runId": "30716819573",
+  "selectionCaptureHealth": {
+    "ageSeconds": 232.304,
+    "deploymentIdentityMatches": false,
+    "errors": [
+      "latest_status_deployment_identity_mismatch"
+    ],
+    "executionMode": "selection_capture",
+    "latestRun": {
+      "automaticPromotionEnabled": false,
+      "championChanged": false,
+      "createdAtUtc": "2026-08-01T20:19:04.223240+00:00",
+      "deploymentIdentity": {
+        "gitSha": "1e9c1cf0a6ceaf05e70bf43748d0d18d39413da9",
+        "templateSha256": "118ea83bdfc3a2c0ce7db5cfec7cecae86265518500d141f30126071dbd9fff0"
+      },
+      "executionConcurrencyControl": {
+        "acquiredForRun": true,
+        "bidirectionalLegacyRuntimeFence": true,
+        "expiredLeaseReclaimEnabled": true,
+        "leaseKeys": {
+          "selection_capture": "EXECUTION_LEASE#SELECTION_CAPTURE",
+          "state_mutation": "EXECUTION_LEASE#STATE_MUTATION"
+        },
+        "leasePartitionKey": "MLB_ML_EXPERIMENT#V2#mlb-v2-2026-07-21-future-prospective-r2",
+        "leaseSeconds": 960,
+        "legacySharedLeaseSentinelExpiresWithLease": true,
+        "legacySharedLeaseSentinelKey": "EXECUTION_LEASE",
+        "legacySharedLeaseSentinelRenewedOnAcquire": true,
+        "legacySharedLeaseSentinelVersion": "MLB-ML-EXECUTION-SENTINEL-v2-renewable-expiring",
+        "migrationAnchorExperimentId": "mlb-v2-2026-07-21-future-prospective-r2",
+        "modeLeaseDomains": {
+          "manual_review": "state_mutation",
+          "selection_capture": "selection_capture",
+          "training": "state_mutation"
+        },
+        "ownerConditionalRelease": true,
+        "protectedExecutionModes": [
+          "manual_review",
+          "selection_capture",
+          "training"
+        ],
+        "reservedLambdaConcurrencyRequired": false,
+        "rollbackSelfRecoverySeconds": 960,
+        "scope": "global_across_experiments_with_isolated_mutation_domains",
+        "selectionWriteManifestConditionCheck": true,
+        "strategy": "dynamodb_mode_isolated_conditional_leases",
+        "trainingCannotBlockSelectionCapture": true,
+        "version": "MLB-ML-EXECUTION-LEASE-v2-mode-isolated-ddb-conditional"
+      },
+      "executionMode": "selection_capture",
+      "experimentId": "mlb-v2-2026-07-29-future-prospective-r5",
+      "historicalTrainingScanInvoked": false,
+      "liveInferenceAuthority": false,
+      "manifestDigest": "f5a65111e377fe4a0e34a902b492e354dcf033e4100aa30190efd0822f11287e",
+      "modelTrained": false,
+      "ok": true,
+      "releaseCutoffUtc": "2026-07-29T04:00:00+00:00",
+      "runId": "d2743283677e20524d07adaa",
+      "selectionCapture": {
+        "capturedCount": 0,
+        "errors": [],
+        "existingCount": 0,
+        "ok": true,
+        "selectedCount": 0,
+        "skippedCount": 0
+      },
+      "selectionCaptureReady": false,
+      "status": "WAITING_FOR_PERSISTED_CHALLENGER",
+      "statusFingerprint": "112cccecf9bb9dfa6147a0b895951be9e5773e54b4b141eae3003164d4663bf5",
+      "statusFingerprintVersion": "MLB-ML-AWS-TRAINING-STATUS-SHA256-v2-ddb-roundtrip-canonical",
+      "version": "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow"
+    },
+    "latestRunCreatedAtUtc": "2026-08-01T20:19:04.223240+00:00",
+    "maximumAgeSeconds": 2700,
+    "ok": false
+  },
+  "sourceSha": "33153027621f27b8f87219d2a296b11370fa683c",
+  "statusOk": false,
+  "trainingFunctionError": {
     "errorMessage": "training returned an unhealthy status: CANONICAL_SLATE_CONTINUITY_BLOCKED",
     "errorType": "TrainingContractError",
-    "requestId": "77c58a94-2b68-4085-89ca-d744f44c9421",
+    "requestId": "6ca0d6af-acce-4591-b16b-bfe900f494c3",
     "stackTrace": [
       "  File \"/var/task/mlb_ml_aws_training_v1.py\", line 2935, in lambda_handler\n    raise TrainingContractError(\n"
     ]
   },
-  "invokeMetadata": {
-    "ExecutedVersion": "$LATEST",
-    "FunctionError": "Unhandled",
-    "StatusCode": 200
-  },
-  "lambdaConfiguration": {
-    "codeSha256": "nUnbn9kWIBJzXFIAVzbXfJD7Ab2xhCTuArrQq2oK3Zk=",
-    "environmentKeys": [
-      "INQSI_DEPLOY_GIT_SHA",
-      "INQSI_DEPLOY_RUN_ID",
-      "INQSI_DEPLOY_TEMPLATE_SHA256",
-      "INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION",
-      "INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED",
-      "INQSI_MLB_ML_AUTO_PROMOTE",
-      "MLB_MIN_EV_FOR_PROMOTION",
-      "MLB_ML_ARTIFACTS_BUCKET",
-      "MLB_ML_EXECUTION_LEASE_SECONDS",
-      "MLB_ML_EXPERIMENT_ID",
-      "MLB_ML_FEATURE_VECTOR_VERSION",
-      "MLB_ML_RELEASE_CONTRACT_ID",
-      "MLB_ML_RELEASE_CUTOFF_UTC",
-      "MLB_PROMOTION_EDGE_THRESHOLD",
-      "MLB_PROMOTION_FALLBACK_EDGE_THRESHOLD",
-      "MLB_PULL_START_AT_ET",
-      "MLB_SCHED_INTERVAL_MINUTES",
-      "ODDS_API_KEY",
-      "ODDS_PRIMARY_BOOK",
-      "OUTCOMES_TABLE",
-      "PREDICTIONS_TABLE",
-      "SIGNALS_TABLE",
-      "SIGNAL_LEDGER_TABLE",
-      "SNAPSHOTS_TABLE"
+  "trainingHealth": {
+    "ageSeconds": 1.557,
+    "deploymentIdentityMatches": false,
+    "errors": [
+      "latest_status_not_ok",
+      "latest_status_deployment_identity_mismatch"
     ],
-    "functionName": "parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
-    "handler": "mlb_ml_aws_training_v1.lambda_handler",
-    "lastUpdateStatus": "Successful",
-    "lastUpdateStatusReason": null,
-    "memorySize": 2048,
-    "runtime": "python3.11",
-    "state": "Active",
-    "stateReason": null,
-    "timeout": 900,
-    "version": "$LATEST"
-  },
-  "proofType": "MLB_AWS_TRAINER_RAW_FUNCTION_ERROR_DIAGNOSTIC_V1",
-  "runId": "30716712564",
-  "sourceSha": "36c0b42dc8ae93eb7ed6488bf071f96d93a6e1dd",
-  "stderrTail": ""
+    "executionMode": "training",
+    "latestRun": {
+      "automaticPromotionEnabled": false,
+      "championChanged": false,
+      "createdAtUtc": "2026-08-01T20:22:54.964391+00:00",
+      "deploymentIdentity": {
+        "gitSha": "1e9c1cf0a6ceaf05e70bf43748d0d18d39413da9",
+        "templateSha256": "118ea83bdfc3a2c0ce7db5cfec7cecae86265518500d141f30126071dbd9fff0"
+      },
+      "executionConcurrencyControl": {
+        "acquiredForRun": true,
+        "bidirectionalLegacyRuntimeFence": true,
+        "expiredLeaseReclaimEnabled": true,
+        "leaseKeys": {
+          "selection_capture": "EXECUTION_LEASE#SELECTION_CAPTURE",
+          "state_mutation": "EXECUTION_LEASE#STATE_MUTATION"
+        },
+        "leasePartitionKey": "MLB_ML_EXPERIMENT#V2#mlb-v2-2026-07-21-future-prospective-r2",
+        "leaseSeconds": 960,
+        "legacySharedLeaseSentinelExpiresWithLease": true,
+        "legacySharedLeaseSentinelKey": "EXECUTION_LEASE",
+        "legacySharedLeaseSentinelRenewedOnAcquire": true,
+        "legacySharedLeaseSentinelVersion": "MLB-ML-EXECUTION-SENTINEL-v2-renewable-expiring",
+        "migrationAnchorExperimentId": "mlb-v2-2026-07-21-future-prospective-r2",
+        "modeLeaseDomains": {
+          "manual_review": "state_mutation",
+          "selection_capture": "selection_capture",
+          "training": "state_mutation"
+        },
+        "ownerConditionalRelease": true,
+        "protectedExecutionModes": [
+          "manual_review",
+          "selection_capture",
+          "training"
+        ],
+        "reservedLambdaConcurrencyRequired": false,
+        "rollbackSelfRecoverySeconds": 960,
+        "scope": "global_across_experiments_with_isolated_mutation_domains",
+        "selectionWriteManifestConditionCheck": true,
+        "strategy": "dynamodb_mode_isolated_conditional_leases",
+        "trainingCannotBlockSelectionCapture": true,
+        "version": "MLB-ML-EXECUTION-LEASE-v2-mode-isolated-ddb-conditional"
+      },
+      "executionMode": "training",
+      "experimentId": "mlb-v2-2026-07-29-future-prospective-r5",
+      "failure": {
+        "code": "TRAINING_CONTRACT_ERROR",
+        "message": "MLB ML training contract validation failed",
+        "redacted": "true",
+        "type": "TrainingContractError"
+      },
+      "liveInferenceAuthority": false,
+      "manifestDigest": "f5a65111e377fe4a0e34a902b492e354dcf033e4100aa30190efd0822f11287e",
+      "ok": false,
+      "releaseCutoffUtc": "2026-07-29T04:00:00+00:00",
+      "runId": "6ca0d6af-acce-4591-b16b-bfe900f494c3",
+      "selectionCaptureBeforeTraining": {
+        "collisionPolicy": "separate_global_lease_domain",
+        "healthEvaluatedByTraining": false,
+        "independentHeartbeatRequired": true,
+        "invokedByTraining": false,
+        "manifestConditionCheckRequired": true,
+        "selectionWritesIdempotent": true,
+        "status": "OWNED_BY_INDEPENDENT_SELECTION_CAPTURE_CADENCE"
+      },
+      "status": "TRAINING_INVOCATION_FAILED",
+      "statusFingerprint": "c9e2fea25021de2b73d21c447093b5509cefbc7c189d9ef4202ab892217bf079",
+      "statusFingerprintVersion": "MLB-ML-AWS-TRAINING-STATUS-SHA256-v2-ddb-roundtrip-canonical",
+      "version": "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow"
+    },
+    "latestRunCreatedAtUtc": "2026-08-01T20:22:54.964391+00:00",
+    "maximumAgeSeconds": 28800,
+    "ok": false
+  }
 }
