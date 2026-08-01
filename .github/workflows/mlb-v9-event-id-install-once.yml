@@ -35,25 +35,44 @@ jobs:
 
           old='MLB-HISTORICAL-FEATURE-DATASET-v8-supervised-trainable'
           new='MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable'
-          for name in (
-              '.github/workflows/mlb-supervised-shadow-v2.yml',
-              '.github/workflows/mlb-supervised-v2-immediate-eval-once.yml',
-          ):
-              path=Path(name)
-              text=path.read_text()
-              assert text.count(old) == 1, f'expected one dataset version anchor in {name}'
-              path.write_text(text.replace(old,new,1))
+
+          immediate=Path('.github/workflows/mlb-supervised-v2-immediate-eval-once.yml')
+          immediate_text=immediate.read_text()
+          if old in immediate_text:
+              assert immediate_text.count(old) == 1
+              immediate.write_text(immediate_text.replace(old,new,1))
+          else:
+              assert new in immediate_text
+
+          recurring_path=Path('.github/workflows/mlb-supervised-shadow-v2-recurring.yml')
+          recurring=recurring_path.read_text()
+          if '  cancel-in-progress: true\n' in recurring:
+              recurring=recurring.replace(
+                  '  cancel-in-progress: true\n',
+                  '  cancel-in-progress: false\n',
+                  1,
+              )
+          assert '  cancel-in-progress: false\n' in recurring
+          recurring_path.write_text(recurring)
 
           recovery_path=Path('.github/workflows/mlb-historical-v7-recovery.yml')
           recovery=recovery_path.read_text()
           trigger="      - 'hello_world/mlb_historical_derived_features_v1.py'\n"
           if "      - 'hello_world/mlb_supervised_v8_dataset_patch_v1.py'\n" not in recovery:
               assert recovery.count(trigger) == 1
-              recovery=recovery.replace(trigger,trigger+"      - 'hello_world/mlb_supervised_v8_dataset_patch_v1.py'\n",1)
+              recovery=recovery.replace(
+                  trigger,
+                  trigger+"      - 'hello_world/mlb_supervised_v8_dataset_patch_v1.py'\n",
+                  1,
+              )
           compile_line='            hello_world/mlb_historical_derived_features_v1.py \\\n'
           if '            hello_world/mlb_supervised_v8_dataset_patch_v1.py \\\n' not in recovery:
               assert recovery.count(compile_line) == 1
-              recovery=recovery.replace(compile_line,compile_line+'            hello_world/mlb_supervised_v8_dataset_patch_v1.py \\\n',1)
+              recovery=recovery.replace(
+                  compile_line,
+                  compile_line+'            hello_world/mlb_supervised_v8_dataset_patch_v1.py \\\n',
+                  1,
+              )
           test_line='            tests/unit/test_mlb_historical_competitive_schedule_filter.py\n'
           if '            tests/unit/test_mlb_historical_feature_rematerialization_v1.py \\\n' not in recovery:
               assert recovery.count(test_line) == 1
@@ -67,8 +86,11 @@ jobs:
           artifact='          test -f .aws-sam-historical-v7/HistoricalOptimizerFunction/mlb_odds_pattern_features_v1.py\n'
           if '          test -f .aws-sam-historical-v7/HistoricalOptimizerFunction/mlb_supervised_v8_dataset_patch_v1.py\n' not in recovery:
               assert recovery.count(artifact) == 1
-              recovery=recovery.replace(artifact,artifact+'          test -f .aws-sam-historical-v7/HistoricalOptimizerFunction/mlb_supervised_v8_dataset_patch_v1.py\n',1)
-          recovery=recovery.replace('  cancel-in-progress: false\n','  cancel-in-progress: true\n',1)
+              recovery=recovery.replace(
+                  artifact,
+                  artifact+'          test -f .aws-sam-historical-v7/HistoricalOptimizerFunction/mlb_supervised_v8_dataset_patch_v1.py\n',
+                  1,
+              )
           recovery_path.write_text(recovery)
 
           self_path=Path('.github/workflows/mlb-v9-event-id-install-once.yml')
@@ -83,7 +105,7 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add \
-            .github/workflows/mlb-supervised-shadow-v2.yml \
+            .github/workflows/mlb-supervised-shadow-v2-recurring.yml \
             .github/workflows/mlb-supervised-v2-immediate-eval-once.yml \
             .github/workflows/mlb-historical-v7-recovery.yml \
             .github/workflows/mlb-v9-event-id-install-once.yml
@@ -101,7 +123,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          for workflow in mlb-historical-v7-recovery.yml mlb-supervised-shadow-v2.yml; do
+          for workflow in mlb-historical-v7-recovery.yml mlb-supervised-shadow-v2-recurring.yml; do
             gh api --method POST \
               -H 'Accept: application/vnd.github+json' \
               -H 'X-GitHub-Api-Version: 2022-11-28' \
