@@ -1,5 +1,5 @@
 name: Install MLB Trainer Continuity Wait Fix Once
-# Trusted bootstrap revision: deterministic source contract before canonical CI/deploy.
+# Trusted bootstrap revision: cancel obsolete installer attempts.
 
 on:
   pull_request:
@@ -18,7 +18,7 @@ permissions:
 
 concurrency:
   group: install-mlb-trainer-continuity-wait-fix-once
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   validate-and-install:
