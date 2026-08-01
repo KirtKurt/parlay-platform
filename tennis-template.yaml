@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Isolated Inqis tennis online-learning service
+Description: Isolated autonomous Inqis tennis online-learning service
 Parameters:
   OddsApiKey:
     Type: String
@@ -25,6 +25,7 @@ Resources:
           KeyType: RANGE
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
+
   TennisLearningFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -58,6 +59,7 @@ Resources:
         TrainBatch:
           Type: Api
           Properties: {Path: /v1/tennis/learning/train/batch, Method: POST}
+
   TennisLivePipelineFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -94,6 +96,7 @@ Resources:
         SettleApi:
           Type: Api
           Properties: {Path: /v1/tennis/pipeline/settle, Method: POST}
+
   TennisHistoricalBackfillFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -121,6 +124,50 @@ Resources:
         BackfillApi:
           Type: Api
           Properties: {Path: /v1/tennis/learning/backfill, Method: POST}
+
+  TennisAutonomousControllerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: tennis_learning/
+      Handler: autonomous_controller.lambda_handler
+      Runtime: python3.11
+      Timeout: 900
+      MemorySize: 2048
+      Environment:
+        Variables:
+          TENNIS_LEARNING_TABLE: !Ref TennisLearningTable
+          TENNIS_LIVE_FUNCTION: !Ref TennisLivePipelineFunction
+          TENNIS_BACKFILL_FUNCTION: !Ref TennisHistoricalBackfillFunction
+          TENNIS_MIN_TRAINING_SAMPLES: '100'
+          TENNIS_MIN_LIVE_AUDIT: '30'
+          TENNIS_MIN_LIVE_ACCURACY: '0.55'
+          TENNIS_MAX_LIVE_BRIER: '0.25'
+          TENNIS_MAX_CONSECUTIVE_FAILURES: '3'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TennisLearningTable
+        - Statement:
+            - Effect: Allow
+              Action: lambda:InvokeFunction
+              Resource:
+                - !GetAtt TennisLivePipelineFunction.Arn
+                - !GetAtt TennisHistoricalBackfillFunction.Arn
+      Events:
+        AutonomousCycleEvery15Minutes:
+          Type: Schedule
+          Properties:
+            Schedule: rate(15 minutes)
+            Input: '{"action":"autonomous_cycle"}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 900
+              MaximumRetryAttempts: 1
+        AutonomousRunApi:
+          Type: Api
+          Properties: {Path: /v1/tennis/autonomy/run, Method: POST}
+        AutonomousStatusApi:
+          Type: Api
+          Properties: {Path: /v1/tennis/autonomy/status, Method: GET}
+
 Outputs:
   TennisLearningApi:
     Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/tennis/learning/health'
@@ -128,3 +175,7 @@ Outputs:
     Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/tennis/pipeline/collect'
   TennisBackfillApi:
     Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/tennis/learning/backfill'
+  TennisAutonomyStatusApi:
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/tennis/autonomy/status'
+  TennisAutonomyRunApi:
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/tennis/autonomy/run'
