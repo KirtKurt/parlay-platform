@@ -1,309 +1,72 @@
-name: Install Unique MLB Trainer Compatibility Handler
-# Trusted second push activates the one-time source repair.
+name: Apply Unique MLB Trainer Handler To Pull Request
 
 "on":
-  push:
+  pull_request:
     branches: [main]
     paths:
       - '.github/workflows/diagnose-mlb-trainer-function-error.yml'
-  workflow_dispatch:
 
 permissions:
   contents: write
-  actions: write
 
 concurrency:
-  group: install-unique-mlb-trainer-compat-handler
+  group: apply-unique-mlb-trainer-handler-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  install:
+  apply-and-validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Replace ambiguous package shim with unique handler
+      - name: Install unique trainer handler contract in PR branch
         run: |
           set -euo pipefail
+          git fetch origin main
           python - <<'PY'
           from pathlib import Path
 
-          compat = Path('hello_world/mlb_ml_aws_training_v1_compat.py')
-          compat.write_text('''"""Fail-closed compatibility handler for the canonical MLB AWS trainer.
-
-The canonical implementation remains in ``mlb_ml_aws_training_v1.py``. This
-uniquely named Lambda entrypoint loads that file directly, installs one narrow
-status-persistence normalization for unresolved canonical-slate continuity, and
-then delegates every mode to the original handler.
-
-No chronology, final-label, holdout, calibration, accuracy, promotion,
-champion, inference-authority, or production-authority rule is weakened.
-"""
-from __future__ import annotations
-
-import importlib.util
-import sys
-from collections.abc import Mapping
-from functools import wraps
-from pathlib import Path
-from typing import Any, Dict
-
-COMPAT_VERSION = "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v2-unique-handler"
-_BASE_MODULE_NAME = "_inqsi_mlb_ml_aws_training_v1_canonical"
-_BASE_PATH = Path(__file__).resolve().with_name("mlb_ml_aws_training_v1.py")
-
-
-def _load_canonical_module():
-    existing = sys.modules.get(_BASE_MODULE_NAME)
-    if existing is not None:
-        return existing
-    spec = importlib.util.spec_from_file_location(_BASE_MODULE_NAME, _BASE_PATH)
-    if spec is None or spec.loader is None:
-        raise ImportError("mlb_trainer_canonical_module_unavailable")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[_BASE_MODULE_NAME] = module
-    try:
-        spec.loader.exec_module(module)
-    except Exception:
-        sys.modules.pop(_BASE_MODULE_NAME, None)
-        raise
-    return module
-
-
-def normalize_canonical_continuity_wait(payload: Mapping[str, Any]) -> Dict[str, Any]:
-    value = dict(payload)
-    continuity = value.get("canonicalSlateContinuity")
-    milestones = value.get("milestones")
-    expected_wait = (
-        value.get("ok") is False
-        and value.get("status") == "CANONICAL_SLATE_CONTINUITY_BLOCKED"
-        and value.get("executionMode") == "training"
-        and value.get("modelTrained") is False
-        and value.get("championChanged") is False
-        and isinstance(continuity, Mapping)
-        and continuity.get("ok") is False
-        and (
-            not isinstance(milestones, Mapping)
-            or milestones.get("canonicalContinuityReady") is False
-        )
-    )
-    if not expected_wait:
-        return value
-    value.update(
-        {
-            "ok": True,
-            "status": "WAITING_FOR_CANONICAL_SLATE_CONTINUITY",
-            "trainingReady": False,
-            "waiting": True,
-            "waitReason": "canonical_slate_continuity",
-            "modelTrained": False,
-            "championChanged": False,
-            "liveInferenceAuthority": False,
-            "automaticPromotionEnabled": False,
-            "productionAuthorityChanged": False,
-            "continuityWaitCompatibilityVersion": COMPAT_VERSION,
-        }
-    )
-    return value
-
-
-canonical = _load_canonical_module()
-_original_save_run_status = canonical.TrainingService._save_run_status
-if not getattr(_original_save_run_status, "_mlb_unique_continuity_wait_patch", False):
-    @wraps(_original_save_run_status)
-    def _save_run_status_with_continuity_wait(self, payload):
-        return _original_save_run_status(
-            self, normalize_canonical_continuity_wait(payload)
-        )
-
-    _save_run_status_with_continuity_wait._mlb_unique_continuity_wait_patch = True
-    _save_run_status_with_continuity_wait._mlb_unique_continuity_wait_version = (
-        COMPAT_VERSION
-    )
-    canonical.TrainingService._save_run_status = _save_run_status_with_continuity_wait
-
-
-def lambda_handler(event, context):
-    return canonical.lambda_handler(event, context)
-''')
-
-          test = Path('tests/unit/test_mlb_trainer_continuity_compat_handler_v2.py')
-          test.write_text('''from __future__ import annotations
-
-import copy
-from datetime import datetime, timezone
-from types import SimpleNamespace
-
-import mlb_ml_aws_training_v1_compat as compat
-
-
-def _blocked():
-    return {
-        "ok": False,
-        "status": "CANONICAL_SLATE_CONTINUITY_BLOCKED",
-        "executionMode": "training",
-        "trainingReady": False,
-        "modelTrained": False,
-        "championChanged": False,
-        "liveInferenceAuthority": False,
-        "automaticPromotionEnabled": False,
-        "milestones": {"canonicalContinuityReady": False},
-        "canonicalSlateContinuity": {
-            "ok": False,
-            "blockedSlateDate": "2026-07-31",
-            "blocker": "canonical_label_finalization_incomplete",
-        },
-    }
-
-
-def test_exact_continuity_block_becomes_healthy_fail_closed_wait():
-    payload = _blocked()
-    original = copy.deepcopy(payload)
-    result = compat.normalize_canonical_continuity_wait(payload)
-    assert payload == original
-    assert result["ok"] is True
-    assert result["status"] == "WAITING_FOR_CANONICAL_SLATE_CONTINUITY"
-    assert result["trainingReady"] is False
-    assert result["waiting"] is True
-    assert result["modelTrained"] is False
-    assert result["championChanged"] is False
-    assert result["liveInferenceAuthority"] is False
-    assert result["automaticPromotionEnabled"] is False
-    assert result["productionAuthorityChanged"] is False
-    assert result["canonicalSlateContinuity"] == original["canonicalSlateContinuity"]
-
-
-def test_unexpected_failure_remains_unhealthy():
-    value = {
-        "ok": False,
-        "status": "TRAINING_CONTRACT_FAILED",
-        "executionMode": "training",
-        "modelTrained": False,
-        "championChanged": False,
-    }
-    assert compat.normalize_canonical_continuity_wait(value) == value
-    assert compat.normalize_canonical_continuity_wait(value)["ok"] is False
-
-
-class _Store:
-    def __init__(self):
-        self.saved = []
-        self.released = []
-
-    def load_manifest(self, _experiment_id):
-        return {"manifestDigest": "manifest-digest"}
-
-    def save_status(self, experiment_id, value):
-        self.saved.append((experiment_id, copy.deepcopy(value)))
-        return {"created": True}
-
-    def acquire_execution_lease(self, experiment_id, **kwargs):
-        return {"experimentId": experiment_id, **kwargs}
-
-    def release_execution_lease(self, experiment_id, **kwargs):
-        self.released.append({"experimentId": experiment_id, **kwargs})
-
-
-def _service():
-    trainer = compat.canonical
-    service = object.__new__(trainer.TrainingService)
-    service.config = SimpleNamespace(
-        experiment_id="continuity-wait-test",
-        release_cutoff_utc="2026-07-22T00:00:00+00:00",
-        deployment_git_sha="test-sha",
-        deployment_template_sha256="test-template-sha",
-        automatic_promotion_enabled=False,
-    )
-    service.store = _Store()
-    service.now = lambda: datetime(2026, 8, 1, 21, 30, tzinfo=timezone.utc)
-    service._selection_capture_before_training = None
-    service._execution_lease_acquired_for_run = False
-
-    def attest(_lease, **_kwargs):
-        service._execution_lease_acquired_for_run = True
-
-    service.attest_execution_lease_acquired = attest
-    service.run_scheduled = lambda: service._save_run_status(_blocked())
-    return service
-
-
-def test_normalization_occurs_before_immutable_persistence():
-    service = _service()
-    result = service.run_scheduled()
-    assert result["ok"] is True
-    assert result["status"] == "WAITING_FOR_CANONICAL_SLATE_CONTINUITY"
-    assert len(service.store.saved) == 1
-    saved = service.store.saved[0][1]
-    assert saved["ok"] is True
-    assert saved["status"] == "WAITING_FOR_CANONICAL_SLATE_CONTINUITY"
-    assert saved["statusFingerprint"]
-    assert saved["productionAuthorityChanged"] is False
-
-
-def test_unique_lambda_handler_returns_wait_without_function_error(monkeypatch):
-    service = _service()
-    trainer = compat.canonical
-    monkeypatch.setattr(trainer, "_service", lambda: service)
-    monkeypatch.setenv(
-        "MLB_ML_EXECUTION_LEASE_SECONDS", str(trainer.EXECUTION_LEASE_SECONDS)
-    )
-    context = SimpleNamespace(
-        aws_request_id="continuity-wait-request",
-        get_remaining_time_in_millis=lambda: 800_000,
-    )
-    result = compat.lambda_handler({"mode": "scheduled"}, context)
-    assert result["ok"] is True
-    assert result["status"] == "WAITING_FOR_CANONICAL_SLATE_CONTINUITY"
-    assert result["modelTrained"] is False
-    assert result["championChanged"] is False
-    assert result["productionAuthorityChanged"] is False
-    assert len(service.store.released) == 1
-''')
-
-          package = Path('hello_world/mlb_ml_aws_training_v1')
+          old = 'mlb_ml_aws_training_v1.lambda_handler'
+          new = 'mlb_ml_aws_training_v1_compat.lambda_handler'
+          changed=[]
+          for root in (Path('template.yaml'), Path('scripts'), Path('tests')):
+              paths=[root] if root.is_file() else list(root.rglob('*'))
+              for path in paths:
+                  if not path.is_file() or path.suffix not in {'.py','.yaml','.yml'}:
+                      continue
+                  text=path.read_text()
+                  if old in text:
+                      path.write_text(text.replace(old,new))
+                      changed.append(str(path))
+          assert 'template.yaml' in changed, changed
+          assert not any(
+              old in path.read_text()
+              for root in (Path('template.yaml'), Path('scripts'), Path('tests'))
+              for path in ([root] if root.is_file() else list(root.rglob('*')))
+              if path.is_file() and path.suffix in {'.py','.yaml','.yml'}
+          )
+          assert Path('hello_world/mlb_ml_aws_training_v1_compat.py').is_file()
+          package=Path('hello_world/mlb_ml_aws_training_v1')
           if package.exists():
               for child in sorted(package.rglob('*'), reverse=True):
-                  if child.is_file() or child.is_symlink():
-                      child.unlink()
-                  elif child.is_dir():
-                      child.rmdir()
+                  if child.is_file() or child.is_symlink(): child.unlink()
+                  elif child.is_dir(): child.rmdir()
               package.rmdir()
-          old_test = Path('tests/unit/test_mlb_trainer_continuity_package_shim_v1.py')
-          old_test.unlink(missing_ok=True)
-
-          old_handler = 'mlb_ml_aws_training_v1.lambda_handler'
-          new_handler = 'mlb_ml_aws_training_v1_compat.lambda_handler'
-          roots = [Path('template.yaml'), Path('scripts'), Path('tests')]
-          changed = []
-          remaining = []
-          for root in roots:
-              candidates = [root] if root.is_file() else list(root.rglob('*'))
-              for path in candidates:
-                  if not path.is_file() or path.suffix not in {'.py', '.yaml', '.yml'}:
-                      continue
-                  text = path.read_text()
-                  if old_handler in text:
-                      path.write_text(text.replace(old_handler, new_handler))
-                      changed.append(str(path))
-                  if old_handler in path.read_text():
-                      remaining.append(str(path))
-          assert 'template.yaml' in changed, changed
-          assert not remaining, remaining
-          Path('/tmp/changed-handler-files.txt').write_text('\n'.join(changed) + '\n')
+          Path('tests/unit/test_mlb_trainer_continuity_package_shim_v1.py').unlink(missing_ok=True)
           PY
-          git show 3b48b040f4623f18aa00304ba44744dbbf325acf:.github/workflows/diagnose-mlb-trainer-function-error.yml \
+          git show origin/main:.github/workflows/diagnose-mlb-trainer-function-error.yml \
             > .github/workflows/diagnose-mlb-trainer-function-error.yml
           git diff --check
-          cat /tmp/changed-handler-files.txt
 
-      - name: Validate unique handler and unchanged trainer contracts
+      - name: Validate unique handler and unchanged trainer safeguards
         run: |
           set -euo pipefail
           python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'requests>=2.31,<3' -r hello_world/requirements.txt
@@ -324,29 +87,13 @@ def test_unique_lambda_handler_returns_wait_without_function_error(monkeypatch):
           assert not Path('hello_world/mlb_ml_aws_training_v1').exists()
           PY
 
-      - name: Publish canonical source repair
+      - name: Commit source repair to PR branch
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
           git commit -m 'Use unique fail-closed MLB trainer compatibility handler'
-          for attempt in 1 2 3 4 5; do
-            git push origin HEAD:main && exit 0
-            git fetch origin main
-            git rebase origin/main
-            sleep $((attempt * 3))
-          done
-          exit 1
-
-      - name: Dispatch canonical deployment
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          gh api --method POST \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy.yml/dispatches" \
-            -f ref=main
+          git push origin HEAD:"$HEAD_BRANCH"
