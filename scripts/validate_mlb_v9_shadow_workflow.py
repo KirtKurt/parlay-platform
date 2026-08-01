@@ -17,10 +17,16 @@ SOURCES = (
     "hello_world/mlb_historical_supervised_v9_integrity_v2.py",
     "hello_world/mlb_historical_v7_learning_cadence_v1.py",
     "hello_world/mlb_historical_v7_priority_repairs_v1.py",
+    "hello_world/mlb_historical_v7_feature_bridge_v1.py",
     "hello_world/mlb_historical_v7_selective_objective_v1.py",
     "hello_world/mlb_historical_v7_selective_search_v2.py",
+    "hello_world/mlb_historical_feature_rematerialization_v1.py",
     "hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py",
+    "hello_world/mlb_v8_historical_bbs_overlay_v1.py",
+    "hello_world/mlb_v8_historical_context_overlay_v1.py",
     "scripts/run_mlb_historical_supervised_v9_shadow.py",
+    "scripts/run_mlb_historical_supervised_v9_shadow_cadence.py",
+    "scripts/run_mlb_historical_supervised_v9_shadow_feature_aware.py",
     "scripts/run_mlb_historical_supervised_v9_shadow_v2.py",
     "scripts/resolve_mlb_historical_artifacts_bucket.py",
     "scripts/validate_mlb_v9_shadow_workflow.py",
@@ -29,10 +35,14 @@ TESTS = (
     "tests/unit/test_mlb_historical_supervised_v9.py",
     "tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py",
     "tests/unit/test_run_mlb_historical_supervised_v9_shadow.py",
+    "tests/unit/test_run_mlb_historical_supervised_v9_shadow_cadence.py",
+    "tests/unit/test_run_mlb_historical_supervised_v9_shadow_feature_aware.py",
     "tests/unit/test_run_mlb_historical_supervised_v9_shadow_v2.py",
     "tests/unit/test_resolve_mlb_historical_artifacts_bucket.py",
     "tests/unit/test_mlb_historical_v7_learning_cadence_v1.py",
     "tests/unit/test_mlb_historical_v7_priority_repairs_v1.py",
+    "tests/unit/test_mlb_historical_v7_feature_bridge_v1.py",
+    "tests/unit/test_mlb_historical_feature_rematerialization_v1.py",
     "tests/unit/test_mlb_historical_v7_selective_objective_v1.py",
     "tests/unit/test_mlb_historical_v7_selective_search_v2.py",
     "tests/unit/test_mlb_v7_v9_workflow_recovery_contract.py",
@@ -48,7 +58,7 @@ def _expected_source_sha() -> str:
     """Return the commit actually checked out by the workflow.
 
     On pull_request events GitHub sets GITHUB_SHA to a synthetic merge commit,
-    while the workflow intentionally checks out pull_request.head.sha.  Reading
+    while the workflow intentionally checks out pull_request.head.sha. Reading
     the event payload keeps source identity strict without rejecting valid PRs.
     """
     override = str(os.environ.get("MLB_V9_EXPECTED_SOURCE_SHA") or "").strip()
