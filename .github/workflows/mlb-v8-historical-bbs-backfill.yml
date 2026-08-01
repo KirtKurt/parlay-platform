@@ -295,6 +295,8 @@ jobs:
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             git checkout -B mlb-v8-historical-bbd-prior-proof origin/main
+            git reset --hard origin/main
+            git clean -fd
             mkdir -p runtime_reports
             python scripts/publish_monotonic_json.py \
               --candidate /tmp/mlb-v8-historical-bbd-prior-game-report.json \
