@@ -32,7 +32,7 @@ def test_event_id_installer_updates_workflows_without_authority_change():
     assert "mlb-historical-v7-recovery.yml" in installer
     source = Path(".github/workflows/mlb-supervised-shadow-v2-recurring.yml").read_text()
     assert "productionAuthorityChanged') is False" in source
-    assert "automaticWagerAllowed') is False" in source
+    assert "'automaticWagerAllowed':False" in source
     assert "productionPromotionEligible') is False" in source
     assert "selectionUsedUntouchedAudit') is False" in source
     assert "cancel-in-progress: false" in source
