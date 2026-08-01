@@ -1,9 +1,10 @@
-"""Exact, leakage-safe, cached permutation controls for MLB V10.
+"""Cached permutation controls and the V10 development-frozen portfolio upgrade.
 
-The original control recomputed every atomic and interaction rule on every label
-permutation. Pregame rules are invariant to shuffled outcomes, so this implementation
-freezes those rules once, then permutes labels only. The resulting pick counts,
-correct counts, maxima, seeds, and percentile calculation are unchanged.
+Pregame rule applicability is invariant to shuffled outcomes, so the individual-rule
+control caches rule applications before permuting labels. ``install`` also upgrades the
+V10 research engine to the V3 portfolio gate: discovery remains development-only,
+walk-forward tests one frozen aggregate policy, the final holdout is audit-only, and an
+unpromoted policy may continue in prospective shadow without gaining production rights.
 """
 from __future__ import annotations
 
@@ -105,6 +106,9 @@ def permutation_control(
 
 
 def install(subject: Any) -> None:
+    """Install the cached rule control and the leakage-safe V3 portfolio wrapper."""
+    import mlb_v10_development_frozen_portfolio_v3 as portfolio_v3
+
     def installed(
         records: Sequence[Mapping[str, Any]],
         definitions: set[str],
@@ -124,3 +128,37 @@ def install(subject: Any) -> None:
 
     subject._permutation_control = installed
     subject.PERMUTATION_CONTROL_IMPLEMENTATION = VERSION
+
+    if not hasattr(subject, "_v2_discover_before_portfolio_upgrade"):
+        subject._v2_discover_before_portfolio_upgrade = subject.discover
+        subject._v2_evaluate_frozen_registry_before_portfolio_upgrade = subject.evaluate_frozen_registry
+
+    original_discover = subject._v2_discover_before_portfolio_upgrade
+
+    def discover(
+        records: Sequence[Mapping[str, Any]],
+        *,
+        previous_report: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        # The V2 report is retained for canonical checks, rule generation diagnostics,
+        # exact tests, and individual-rule null controls. Its holdout-based registry is
+        # discarded and rebuilt by V3 from the development partition only.
+        base_report = original_discover(records, previous_report=None)
+        return portfolio_v3.upgrade_report(
+            subject,
+            records,
+            base_report,
+            previous_report=previous_report,
+        )
+
+    def evaluate_frozen_registry(
+        records: Sequence[Mapping[str, Any]],
+        previous: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        return portfolio_v3.evaluate_frozen_registry(subject, records, previous)
+
+    subject.discover = discover
+    subject.evaluate_frozen_registry = evaluate_frozen_registry
+    subject.VERSION = portfolio_v3.VERSION
+    subject.PORTFOLIO_CONTROL_IMPLEMENTATION = portfolio_v3.CONTROL_VERSION
+    subject.DEVELOPMENT_FROZEN_PORTFOLIO_INSTALLED = True
