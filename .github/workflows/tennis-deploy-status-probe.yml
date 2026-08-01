@@ -9,6 +9,7 @@ on:
       - 'tennis_status_probe.trigger'
 
 permissions:
+  actions: read
   contents: write
 
 concurrency:
@@ -32,13 +33,22 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Probe CloudFormation and live health
+      - name: Probe GitHub workflow, CloudFormation, and live health
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          GH_TOKEN: ${{ github.token }}
           SOURCE_COMMIT: 5da852d06c8192b83672fff0b7dc23ba556dcd6c
         run: |
           set +e
           mkdir -p runtime_reports
+
+          curl --silent --show-error --fail \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs?event=push&head_sha=$SOURCE_COMMIT&per_page=100" \
+            > /tmp/github-runs.json 2> /tmp/github-runs.err
+          github_rc=$?
 
           aws cloudformation describe-stacks \
             --stack-name parlay-platform-tennis-learning \
@@ -72,6 +82,7 @@ jobs:
             health_rc=$?
           fi
 
+          export GITHUB_RC="$github_rc"
           export STACK_RC="$stack_rc"
           export STACK_STATUS="$stack_status"
           export HEALTH_URL="$health_url"
@@ -86,10 +97,33 @@ jobs:
               p = Path(path)
               return p.read_text(errors='replace').strip() if p.exists() else ''
 
+          github_rc = int(os.environ['GITHUB_RC'])
           stack_rc = int(os.environ['STACK_RC'])
           health_rc = int(os.environ['HEALTH_RC'])
           stack_status = os.environ.get('STACK_STATUS', '')
           health_url = os.environ.get('HEALTH_URL', '')
+
+          workflow = None
+          github_text = read_text('/tmp/github-runs.json')
+          if github_text:
+              try:
+                  runs = json.loads(github_text).get('workflow_runs', [])
+                  match = next((run for run in runs if run.get('name') == 'Deploy Tennis Learning'), None)
+                  if match:
+                      workflow = {
+                          'id': match.get('id'),
+                          'name': match.get('name'),
+                          'status': match.get('status'),
+                          'conclusion': match.get('conclusion'),
+                          'event': match.get('event'),
+                          'headSha': match.get('head_sha'),
+                          'createdAt': match.get('created_at'),
+                          'updatedAt': match.get('updated_at'),
+                          'url': match.get('html_url'),
+                      }
+              except json.JSONDecodeError:
+                  pass
+
           health = None
           health_text = read_text('/tmp/tennis-health.json')
           if health_text:
@@ -126,6 +160,9 @@ jobs:
           report = {
               'checkedAtUtc': datetime.now(timezone.utc).isoformat(),
               'sourceCommit': os.environ['SOURCE_COMMIT'],
+              'githubWorkflowReadSucceeded': github_rc == 0,
+              'githubWorkflow': workflow,
+              'githubWorkflowError': read_text('/tmp/github-runs.err')[:2000] or None,
               'stackName': 'parlay-platform-tennis-learning',
               'stackReadSucceeded': stack_rc == 0,
               'stackStatus': stack_status or None,
