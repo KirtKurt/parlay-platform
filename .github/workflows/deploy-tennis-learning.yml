@@ -8,6 +8,7 @@ on:
       - 'tennis-template.yaml'
       - 'tests/test_tennis_learning_handler.py'
       - 'tests/test_tennis_autonomy_contract.py'
+      - 'tests/test_tennis_backfill_contract.py'
       - '.github/workflows/deploy-tennis-learning.yml'
   workflow_dispatch:
 
@@ -41,7 +42,7 @@ jobs:
           test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
           python -m py_compile tennis_learning/handler.py tennis_learning/backfill.py tennis_learning/bootstrap_handler.py tennis_learning/live_pipeline.py tennis_learning/autonomous_controller.py
           python -m pip install --quiet pytest boto3
-          python -m pytest -q tests/test_tennis_learning_handler.py tests/test_tennis_autonomy_contract.py
+          python -m pytest -q tests/test_tennis_learning_handler.py tests/test_tennis_autonomy_contract.py tests/test_tennis_backfill_contract.py
           sam validate --template-file tennis-template.yaml
       - name: Build and deploy isolated tennis stack
         run: |
@@ -78,5 +79,7 @@ jobs:
           assert status['service']=='tennis-autonomy'
           assert status['authority'] in {'SHADOW','AUTHORITATIVE','DEGRADED'}
           assert status.get('automatic_prediction_allowed', False) == (status['authority']=='AUTHORITATIVE')
+          assert int(status.get('training_samples', 0)) > 0, {'cycle': cycle, 'status': status}
+          assert int(status.get('consecutive_failures', 0)) == 0, {'cycle': cycle, 'status': status}
           print({'health': health, 'cycle': cycle, 'autonomy': status})
           PY
