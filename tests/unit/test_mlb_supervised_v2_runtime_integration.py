@@ -36,3 +36,12 @@ def test_event_id_installer_updates_workflows_without_authority_change():
     assert "productionPromotionEligible') is False" in source
     assert "selectionUsedUntouchedAudit') is False" in source
     assert "cancel-in-progress: false" in source
+
+
+def test_recurring_trainer_never_publishes_cancelled_failure_as_latest():
+    source = Path(".github/workflows/mlb-supervised-shadow-v2-recurring.yml").read_text()
+    assert "workflow_run:" not in source
+    assert "if: steps.evaluation.outcome == 'success'" in source
+    assert "git reset --hard origin/main" in source
+    assert "git clean -fd" in source
+    assert "cancel-in-progress: false" in source
