@@ -1,0 +1,140 @@
+name: Publish Tennis Autonomy Status
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-tennis-autonomy-status.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-tennis-autonomy-status
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Query live autonomy state
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set +e
+          stack=parlay-platform-tennis-learning
+          region="$AWS_REGION_VALUE"
+          mkdir -p runtime
+
+          stack_status=$(aws cloudformation describe-stacks \
+            --stack-name "$stack" --region "$region" \
+            --query 'Stacks[0].StackStatus' --output text 2>/tmp/tennis-stack-error.txt)
+          stack_rc=$?
+
+          endpoint=$(aws cloudformation describe-stacks \
+            --stack-name "$stack" --region "$region" \
+            --query "Stacks[0].Outputs[?OutputKey=='TennisAutonomyStatusApi'].OutputValue" \
+            --output text 2>/tmp/tennis-endpoint-error.txt)
+          endpoint_rc=$?
+
+          query_error=''
+          if [ "$stack_rc" -ne 0 ]; then
+            query_error="$(cat /tmp/tennis-stack-error.txt)"
+          elif [ "$endpoint_rc" -ne 0 ] || [ -z "$endpoint" ] || [ "$endpoint" = "None" ]; then
+            query_error="$(cat /tmp/tennis-endpoint-error.txt)"
+            [ -n "$query_error" ] || query_error='TennisAutonomyStatusApi output is missing'
+          else
+            curl -fsS --retry 3 --retry-delay 5 --max-time 45 "$endpoint" \
+              -o /tmp/tennis-autonomy-live.json 2>/tmp/tennis-curl-error.txt
+            curl_rc=$?
+            if [ "$curl_rc" -ne 0 ]; then
+              query_error="$(cat /tmp/tennis-curl-error.txt)"
+            fi
+          fi
+
+          export STACK_STATUS="${stack_status:-UNKNOWN}"
+          export STATUS_ENDPOINT="${endpoint:-}"
+          export QUERY_ERROR="$query_error"
+          export SOURCE_SHA="$GITHUB_SHA"
+
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          live_path = Path('/tmp/tennis-autonomy-live.json')
+          error = os.environ.get('QUERY_ERROR', '').strip()
+          live = {}
+          if live_path.exists() and not error:
+              try:
+                  live = json.loads(live_path.read_text())
+              except Exception as exc:
+                  error = f'invalid autonomy status JSON: {exc}'
+
+          training = int(live.get('training_samples') or 0)
+          audited = int(live.get('live_audit_count') or 0)
+          accuracy = live.get('live_accuracy')
+          brier = live.get('live_brier')
+          failures = int(live.get('consecutive_failures') or 0)
+          authority = str(live.get('authority') or 'UNKNOWN')
+
+          accuracy_value = float(accuracy) if accuracy is not None else None
+          brier_value = float(brier) if brier is not None else None
+          gates = {
+              'training_samples_100': training >= 100,
+              'live_audits_30': audited >= 30,
+              'live_accuracy_55pct': accuracy_value is not None and accuracy_value >= 0.55,
+              'brier_at_most_0_25': brier_value is not None and brier_value <= 0.25,
+              'circuit_breaker_clear': failures < 3 and authority != 'DEGRADED',
+          }
+
+          snapshot = {
+              'checked_at': datetime.now(timezone.utc).isoformat(),
+              'source_commit': os.environ.get('SOURCE_SHA'),
+              'stack_status': os.environ.get('STACK_STATUS') or 'UNKNOWN',
+              'status_endpoint_available': bool(os.environ.get('STATUS_ENDPOINT')),
+              'query_succeeded': not bool(error),
+              'query_error': error or None,
+              'service': live.get('service'),
+              'authority': authority,
+              'reason': live.get('reason'),
+              'automatic_prediction_allowed': bool(live.get('automatic_prediction_allowed', False)),
+              'training_samples': training,
+              'live_audit_count': audited,
+              'live_accuracy': accuracy_value,
+              'live_brier': brier_value,
+              'consecutive_failures': failures,
+              'last_cycle_at': live.get('last_cycle_at'),
+              'model_version': live.get('model_version'),
+              'promotion_gates': gates,
+              'all_promotion_gates_pass': all(gates.values()),
+          }
+          Path('runtime/tennis_autonomy_status.json').write_text(
+              json.dumps(snapshot, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(snapshot, indent=2, sort_keys=True))
+          PY
+
+      - name: Commit runtime snapshot
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime/tennis_autonomy_status.json
+          if git diff --cached --quiet; then
+            echo 'No status change to publish'
+            exit 0
+          fi
+          git commit -m 'Publish tennis autonomy runtime status [skip ci]'
+          git push
