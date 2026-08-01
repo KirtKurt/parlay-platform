@@ -1,0 +1,68 @@
+name: Export Validated MLB Anti-Stall Repairs Once
+
+"on":
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-unstall-export-once
+  cancel-in-progress: false
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run installer patch and validation steps without publishing
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pyyaml>=6,<7'
+          python - <<'PY'
+          import subprocess
+          from pathlib import Path
+          import yaml
+
+          workflow = yaml.safe_load(
+              Path('.github/workflows/mlb-unstall-algorithms-install-once.yml').read_text()
+          )
+          steps = workflow['jobs']['install']['steps']
+          wanted = {
+              'Apply deterministic anti-stall repairs',
+              'Validate anti-stall contracts',
+          }
+          found = set()
+          for step in steps:
+              name = step.get('name')
+              if name in wanted:
+                  subprocess.run(['bash', '-lc', step['run']], check=True)
+                  found.add(name)
+          if found != wanted:
+              raise SystemExit(f'missing installer steps: {sorted(wanted - found)}')
+          PY
+
+      - name: Upload validated patched files
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-anti-stall-patched-files-${{ github.run_id }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            .github/workflows/mlb-supervised-shadow-v2-recurring.yml
+            .github/workflows/mlb-v8-historical-context-backfill.yml
+            .github/workflows/mlb-v8-historical-bbs-backfill.yml
+            .github/workflows/mlb-v8-shadow-realtime-72.yml
+            .github/workflows/mlb-historical-supervised-v9-shadow.yml
+            tests/unit/test_mlb_v8_historical_context_workflow.py
+            tests/unit/test_mlb_v8_bbd_post_backfill_workflow_contract.py
+            tests/unit/test_mlb_supervised_v2_runtime_integration.py
