@@ -1,0 +1,124 @@
+name: Diagnose MLB AWS Trainer Health Once
+
+"on":
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-trainer-health-diagnose-once
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Invoke deployed trainer modes and capture raw responses
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          AWS_MAX_ATTEMPTS: '1'
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          TRAINER_ARN=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --region "$AWS_REGION_VALUE" \
+            --query "Stacks[0].Outputs[?OutputKey=='MLBMLTrainingFunctionArn'].OutputValue" \
+            --output text)
+          test -n "$TRAINER_ARN" && test "$TRAINER_ARN" != None
+          echo "$TRAINER_ARN" > /tmp/mlb-trainer-arn.txt
+          RUN_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "$RUN_STARTED_AT" > /tmp/mlb-run-started-at.txt
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "$AWS_REGION_VALUE" \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"aws_native_fixed_prospective_shadow_training_diagnostic"}' \
+            --response /tmp/mlb-ml-v2-training.json \
+            --invocation /tmp/mlb-ml-v2-training-invoke.json \
+            --retry-execution-lease \
+            --deadline-seconds 1200 \
+            --retry-delay-seconds 20
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "$AWS_REGION_VALUE" \
+            --payload '{"sport":"mlb","mode":"selection_capture","run":"aws_native_prospective_selection_capture_diagnostic"}' \
+            --response /tmp/mlb-ml-v2-selection-capture.json \
+            --invocation /tmp/mlb-ml-v2-selection-capture-invoke.json \
+            --retry-execution-lease \
+            --deadline-seconds 1200 \
+            --retry-delay-seconds 20
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "$AWS_REGION_VALUE" \
+            --status-training-result /tmp/mlb-ml-v2-training.json \
+            --status-selection-capture-result /tmp/mlb-ml-v2-selection-capture.json \
+            --response /tmp/mlb-ml-v2-status-after.json \
+            --invocation /tmp/mlb-ml-v2-status-after-invoke.json
+
+      - name: Summarize raw trainer contracts
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          names=['training','selection-capture','status-after']
+          summary={}
+          for name in names:
+              path=Path(f'/tmp/mlb-ml-v2-{name}.json')
+              if not path.exists():
+                  summary[name]={'missing':True}
+                  continue
+              value=json.loads(path.read_text())
+              summary[name]={
+                  'ok':value.get('ok'),
+                  'mode':value.get('mode'),
+                  'version':value.get('version'),
+                  'experimentId':value.get('experimentId'),
+                  'status':value.get('status'),
+                  'reason':value.get('reason'),
+                  'blockers':value.get('blockers'),
+                  'deploymentIdentity':value.get('deploymentIdentity'),
+                  'trainingHealth':value.get('trainingHealth'),
+                  'selectionCaptureHealth':value.get('selectionCaptureHealth'),
+                  'activation':value.get('activation'),
+                  'champion':value.get('champion'),
+                  'keys':sorted(value),
+              }
+          Path('/tmp/mlb-trainer-health-summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(summary,indent=2,sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-trainer-health-diagnostic-${{ github.run_id }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            /tmp/mlb-trainer-arn.txt
+            /tmp/mlb-run-started-at.txt
+            /tmp/mlb-ml-v2-training.json
+            /tmp/mlb-ml-v2-training-invoke.json
+            /tmp/mlb-ml-v2-selection-capture.json
+            /tmp/mlb-ml-v2-selection-capture-invoke.json
+            /tmp/mlb-ml-v2-status-after.json
+            /tmp/mlb-ml-v2-status-after-invoke.json
+            /tmp/mlb-trainer-health-summary.json
