@@ -301,6 +301,8 @@ jobs:
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             git checkout -B mlb-supervised-v9-proof origin/main
+            git reset --hard origin/main
+            git clean -fd
             mkdir -p runtime_reports
             cp /tmp/mlb-supervised-v9-report.json "$REPORT_PATH"
             test ! -f /tmp/mlb-supervised-v9-handoff.json || cp /tmp/mlb-supervised-v9-handoff.json "$HANDOFF_PATH"
