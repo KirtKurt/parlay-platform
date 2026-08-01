@@ -1,4 +1,4 @@
-name: Dispatch MLB Post-Fix Production Deploy From PR
+name: Dispatch MLB AWS Trainer Health Diagnostic From PR
 
 "on":
   pull_request:
@@ -14,9 +14,9 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch fixed MLB production deploy
+      - name: Dispatch MLB trainer health diagnostic
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref main
+          gh workflow run mlb-trainer-health-diagnose-once.yml --repo "$GITHUB_REPOSITORY" --ref main
