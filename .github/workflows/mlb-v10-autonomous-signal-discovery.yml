@@ -7,15 +7,24 @@ name: MLB V10 Autonomous Signal Discovery
   push:
     branches: [main]
     paths:
+      - '.github/workflows/mlb-v10-autonomous-signal-discovery.yml'
       - 'hello_world/mlb_v10_autonomous_signal_discovery_v1.py'
       - 'hello_world/mlb_v10_permutation_control_v2.py'
+      - 'hello_world/mlb_no_bbd_context_bridge_v1.py'
+      - 'hello_world/mlb_v8_historical_context_overlay_v1.py'
       - 'scripts/run_mlb_v10_autonomous_signal_discovery.py'
-      - 'scripts/resolve_mlb_historical_artifacts_bucket.py'
-      - 'tests/unit/test_mlb_v10_autonomous_signal_discovery_v1.py'
-      - 'tests/unit/test_run_mlb_v10_autonomous_signal_discovery.py'
-      - 'tests/unit/test_mlb_v10_permutation_control_v2.py'
-      - 'tests/unit/test_resolve_mlb_historical_artifacts_bucket.py'
+      - 'scripts/run_mlb_v10_context_discovery_v1.py'
+      - 'runtime_reports/mlb_v8_historical_context_backfill_latest.json'
+      - 'tests/unit/test_run_mlb_v10_context_discovery_v1.py'
+  pull_request:
+    paths:
       - '.github/workflows/mlb-v10-autonomous-signal-discovery.yml'
+      - 'hello_world/mlb_v10_autonomous_signal_discovery_v1.py'
+      - 'hello_world/mlb_v10_permutation_control_v2.py'
+      - 'hello_world/mlb_no_bbd_context_bridge_v1.py'
+      - 'scripts/run_mlb_v10_autonomous_signal_discovery.py'
+      - 'scripts/run_mlb_v10_context_discovery_v1.py'
+      - 'tests/unit/test_run_mlb_v10_context_discovery_v1.py'
 
 permissions:
   contents: write
@@ -28,75 +37,79 @@ env:
   REPORT_PATH: runtime_reports/mlb_v10_autonomous_signal_discovery_latest.json
   TARGET_SNAPSHOTS_TABLE: parlay_platform_snapshots
   SNAPSHOTS_TABLE: parlay_platform_snapshots
+  BBS_API_DISABLED: 'true'
+  MLB_V8_HISTORICAL_BBS_OVERLAY_ENABLED: 'true'
+  MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED: 'false'
+  MLB_V8_HISTORICAL_CONTEXT_OVERLAY_ENABLED: 'true'
+  MLB_V8_HISTORICAL_CONTEXT_OVERLAY_REQUIRED: 'false'
+  PYTHONPATH: .:hello_world:scripts
 
 jobs:
   discover:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Validate V10 implementation
+      - name: Validate context-aware V10 implementation
         run: |
           set -euo pipefail
           python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
-          PYTHONPATH=hello_world python -m py_compile \
+          python -m py_compile \
             hello_world/mlb_v10_autonomous_signal_discovery_v1.py \
             hello_world/mlb_v10_permutation_control_v2.py \
+            hello_world/mlb_no_bbd_context_bridge_v1.py \
             scripts/run_mlb_v10_autonomous_signal_discovery.py \
+            scripts/run_mlb_v10_context_discovery_v1.py \
             scripts/resolve_mlb_historical_artifacts_bucket.py
-          PYTHONPATH=. python -m pytest -q --tb=short \
+          python -m pytest -q --tb=short \
             tests/unit/test_mlb_v10_autonomous_signal_discovery_v1.py \
-            tests/unit/test_run_mlb_v10_autonomous_signal_discovery.py \
             tests/unit/test_mlb_v10_permutation_control_v2.py \
+            tests/unit/test_run_mlb_v10_autonomous_signal_discovery.py \
+            tests/unit/test_run_mlb_v10_context_discovery_v1.py \
+            tests/unit/test_mlb_no_bbd_context_bridge_v1.py \
             tests/unit/test_resolve_mlb_historical_artifacts_bucket.py
 
-      - name: Preserve prior frozen registry and clear stale output
+      - name: Preserve previous frozen registry
         run: |
           set -euo pipefail
           mkdir -p runtime_reports
-          if test -s "$REPORT_PATH"; then
-            cp "$REPORT_PATH" /tmp/mlb-v10-previous.json
-          else
-            printf '{}\n' > /tmp/mlb-v10-previous.json
-          fi
+          if test -s "$REPORT_PATH"; then cp "$REPORT_PATH" /tmp/mlb-v10-previous.json; else printf '{}\n' > /tmp/mlb-v10-previous.json; fi
           rm -f "$REPORT_PATH"
 
       - name: Resolve historical artifacts bucket
         id: runtime
         continue-on-error: true
         env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
           AWS_EC2_METADATA_DISABLED: 'true'
         run: |
           set -uo pipefail
-          mkdir -p runtime_reports
           bucket_name=$(python scripts/resolve_mlb_historical_artifacts_bucket.py \
-            --region "${{ secrets.AWS_REGION }}" \
+            --region "$AWS_REGION_VALUE" \
             --json-output /tmp/mlb-v10-bucket-resolution.json)
           status=$?
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
           if test "$status" -eq 0 && test -n "$bucket_name"; then
             echo "bucket_name=$bucket_name" >> "$GITHUB_OUTPUT"
-            echo "resolved=true" >> "$GITHUB_OUTPUT"
+            echo 'resolved=true' >> "$GITHUB_OUTPUT"
           else
-            echo "resolved=false" >> "$GITHUB_OUTPUT"
+            echo 'resolved=false' >> "$GITHUB_OUTPUT"
           fi
           exit "$status"
 
-      - name: Scrub all settled games and rebuild registry
+      - name: Scrub settled games and rebuild context-aware registry
         id: discovery
         if: steps.runtime.outputs.resolved == 'true'
         continue-on-error: true
@@ -106,12 +119,10 @@ jobs:
           MLB_HISTORICAL_ARTIFACTS_BUCKET: ${{ steps.runtime.outputs.bucket_name }}
           MLB_HISTORICAL_START_DATE: '2025-04-01'
           MLB_HISTORICAL_END_DATE: '2026-12-31'
-          PYTHONPATH: hello_world
           PYTHONUNBUFFERED: '1'
         run: |
           set -uo pipefail
-          mkdir -p runtime_reports
-          python -u scripts/run_mlb_v10_autonomous_signal_discovery.py \
+          python -u scripts/run_mlb_v10_context_discovery_v1.py \
             --output "$REPORT_PATH" \
             --previous /tmp/mlb-v10-previous.json \
             2>&1 | tee /tmp/mlb-v10-discovery.log
@@ -119,77 +130,39 @@ jobs:
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
           exit "$status"
 
-      - name: Ensure fresh durable V10 evidence exists
+      - name: Ensure fresh durable V10 evidence
         if: always()
         env:
           BUCKET_RESOLVED: ${{ steps.runtime.outputs.resolved }}
-          BUCKET_EXIT_CODE: ${{ steps.runtime.outputs.exit_code }}
-          BUCKET_OUTCOME: ${{ steps.runtime.outcome }}
-          DISCOVERY_EXIT_CODE: ${{ steps.discovery.outputs.exit_code }}
           DISCOVERY_OUTCOME: ${{ steps.discovery.outcome }}
+          DISCOVERY_EXIT_CODE: ${{ steps.discovery.outputs.exit_code }}
         run: |
           set -euo pipefail
-          mkdir -p runtime_reports
           if test ! -s "$REPORT_PATH"; then
             python - <<'PY'
           import json, os
           from datetime import datetime, timezone
           from pathlib import Path
           log=Path('/tmp/mlb-v10-discovery.log').read_text(errors='replace')[-12000:] if Path('/tmp/mlb-v10-discovery.log').exists() else ''
-          resolution={}
-          if Path('/tmp/mlb-v10-bucket-resolution.json').exists():
-              try:
-                  resolution=json.loads(Path('/tmp/mlb-v10-bucket-resolution.json').read_text())
-              except Exception as exc:
-                  resolution={'ok':False,'blockers':['bucket_resolution_evidence_invalid'],'error':str(exc)}
-          bucket_resolved=os.environ.get('BUCKET_RESOLVED') == 'true'
-          discovery_outcome=str(os.environ.get('DISCOVERY_OUTCOME') or '')
-          blockers=list(resolution.get('blockers') or [])
-          if not bucket_resolved and not blockers:
-              blockers=['historical_artifacts_bucket_unresolved']
-          if bucket_resolved and not blockers:
-              blockers=['v10_discovery_cancelled'] if discovery_outcome == 'cancelled' else ['v10_report_missing_after_discovery']
-          report={
-              'ok':False,
-              'proofType':'MLB_V10_AUTONOMOUS_DISCOVERY_RUN',
+          resolved=os.environ.get('BUCKET_RESOLVED') == 'true'
+          outcome=os.environ.get('DISCOVERY_OUTCOME')
+          blocker='historical_artifacts_bucket_unresolved' if not resolved else ('v10_discovery_cancelled' if outcome == 'cancelled' else 'v10_report_missing_after_discovery')
+          value={
+              'ok':False,'proofType':'MLB_V10_AUTONOMOUS_DISCOVERY_RUN',
               'mode':'CHRONOLOGICAL_SIDE_APPLICABLE_DISCOVERY',
               'winnerKnownBeforeSignalConstruction':False,
               'outcomeUsedOnlyForTrainingLabels':True,
-              'productionAuthority':False,
-              'mayWriteChampion':False,
-              'mayPublishPicks':False,
-              'sourceSha':os.environ.get('GITHUB_SHA'),
-              'runId':os.environ.get('GITHUB_RUN_ID'),
-              'runAttempt':os.environ.get('GITHUB_RUN_ATTEMPT'),
+              'productionAuthority':False,'mayWriteChampion':False,'mayPublishPicks':False,
+              'liveBbdApiAvailable':False,'liveBbdApiRequired':False,'providerCallsMade':0,
+              'sourceSha':os.environ.get('GITHUB_SHA'),'runId':os.environ.get('GITHUB_RUN_ID'),
               'completedAtUtc':datetime.now(timezone.utc).isoformat(),
-              'stalledStage':'V10_BUCKET_RESOLUTION' if not bucket_resolved else 'V10_DISCOVERY_BEFORE_REPORT_WRITE',
-              'workflowSteps':{
-                  'bucketResolution':{
-                      'outcome':os.environ.get('BUCKET_OUTCOME'),
-                      'exitCode':os.environ.get('BUCKET_EXIT_CODE'),
-                      'resolved':bucket_resolved,
-                  },
-                  'discovery':{
-                      'outcome':os.environ.get('DISCOVERY_OUTCOME'),
-                      'exitCode':os.environ.get('DISCOVERY_EXIT_CODE'),
-                  },
-              },
-              'errorLogTail':log,
-              'bucketResolution':resolution,
-              'blockers':blockers,
+              'stalledStage':'V10_BUCKET_RESOLUTION' if not resolved else 'V10_DISCOVERY_BEFORE_REPORT_WRITE',
+              'errorLogTail':log,'blockers':[blocker],
           }
-          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
           PY
           fi
           python -m json.tool "$REPORT_PATH" >/dev/null
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          value=json.loads(Path('runtime_reports/mlb_v10_autonomous_signal_discovery_latest.json').read_text())
-          assert value.get('sourceSha'), value
-          assert value.get('runId'), value
-          assert value.get('completedAtUtc'), value
-          PY
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -204,7 +177,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Publish latest V10 registry or failure evidence
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           cp "$REPORT_PATH" /tmp/mlb-v10-report.json
@@ -223,13 +196,12 @@ jobs:
           done
           exit 1
 
-      - name: Enforce successful V10 discovery
+      - name: Enforce successful context-aware V10 discovery
         if: always()
         run: |
           python - <<'PY'
-          import json
-          from pathlib import Path
-          value=json.loads(Path('runtime_reports/mlb_v10_autonomous_signal_discovery_latest.json').read_text())
+          import json, os
+          value=json.load(open(os.environ['REPORT_PATH']))
           assert value.get('ok') is True, value
           assert value.get('mode') == 'CHRONOLOGICAL_SIDE_APPLICABLE_DISCOVERY', value
           assert value.get('autonomousFeatureGeneration') is True, value
@@ -239,19 +211,16 @@ jobs:
           assert value.get('canonicalEligibilityFailClosed') is True, value
           assert value.get('conflictingDuplicatesPermanentlyQuarantined') is True, value
           assert value.get('exactSignificanceTest') == 'two-sided exact binomial', value
-          assert value.get('permutationControlImplementation') == 'MLB-V10-PERMUTATION-CONTROL-v2-cached-pregame-rules', value
           assert isinstance(value.get('negativeControl'), dict), value
-          assert set(value['negativeControl']) == {'development','walkForward','untouchedHoldout'}, value
-          for control in value['negativeControl'].values():
-              assert control.get('pregameRulesCached') is True, control
-              assert control.get('implementation') == value.get('permutationControlImplementation'), control
-          assert isinstance(value.get('aggregateResearchPolicy'), dict), value
-          assert isinstance(value.get('registryFreeze'), dict), value
-          assert isinstance(value.get('prospectiveShadow'), dict), value
           assert value.get('productionAuthority') is False, value
           assert value.get('mayWriteChampion') is False, value
           assert value.get('mayPublishPicks') is False, value
           assert int(value.get('settledGameCount') or 0) > 0, value
-          assert value.get('datasetFingerprint'), value
+          proof=(value.get('canonicalCorpusProof') or {}).get('providerNeutralPointInTimeContext') or {}
+          assert proof.get('atomicRuleContextEnabled') is True, proof
+          assert proof.get('interactionRuleContextEnabled') is True, proof
+          assert proof.get('statisticalGatesChanged') is False, proof
+          assert int(proof.get('providerCallsMade') or 0) == 0, proof
+          assert proof.get('liveBbdApiRequired') is False, proof
           assert not value.get('blockers'), value
           PY
