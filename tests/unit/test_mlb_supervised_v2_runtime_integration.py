@@ -24,14 +24,25 @@ def test_historical_template_accelerates_no_cost_rematerialization_safely():
     assert "MaxValue: 36" in source
 
 
-def test_event_id_installer_updates_workflows_without_authority_change():
-    installer = Path(".github/workflows/mlb-v9-event-id-install-once.yml").read_text()
-    assert "MLB-HISTORICAL-FEATURE-DATASET-v8-supervised-trainable" in installer
-    assert "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable" in installer
-    assert "mlb-supervised-shadow-v2.yml" in installer
-    assert "mlb-historical-v7-recovery.yml" in installer
-    source = Path(".github/workflows/mlb-supervised-shadow-v2.yml").read_text()
+def test_current_supervised_workflow_retains_shadow_only_authority():
+    source = Path(
+        ".github/workflows/mlb-supervised-shadow-v2-recurring.yml"
+    ).read_text()
     assert "productionAuthorityChanged') is False" in source
-    assert "automaticWagerAllowed') is False" in source
+    assert "'automaticWagerAllowed':False" in source
     assert "productionPromotionEligible') is False" in source
     assert "selectionUsedUntouchedAudit') is False" in source
+    assert "cancel-in-progress: false" in source
+    assert "MLB V8 Historical BBD Prior-Game Backfill" in source
+    assert "MLB V8 Historical Point-In-Time Context Backfill" in source
+
+
+def test_recovery_workflow_deploys_current_event_id_dataset_contract():
+    source = Path(".github/workflows/mlb-historical-v7-recovery.yml").read_text()
+    entrypoint = Path(
+        "hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py"
+    ).read_text()
+    patch = Path("hello_world/mlb_supervised_v8_dataset_patch_v1.py").read_text()
+    assert "mlb_historical_optimizer_v7_recovery_entrypoint.py" in source
+    assert "mlb_supervised_v8_dataset_patch_v1" in entrypoint
+    assert "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable" in patch

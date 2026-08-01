@@ -5,6 +5,7 @@ name: MLB Supervised Shadow V2 Recurring
   workflow_run:
     workflows:
       - MLB V8 Historical BBD Prior-Game Backfill
+      - MLB V8 Historical Point-In-Time Context Backfill
     types:
       - completed
   push:
@@ -48,7 +49,7 @@ permissions:
 
 concurrency:
   group: mlb-supervised-shadow-v2-recurring
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   STACK_NAME: parlay-platform-mlb-historical-optimizer

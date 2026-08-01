@@ -174,3 +174,65 @@ def test_force_always_runs_full_and_lightweight_learning():
     assert decision["newEligibleGamesSinceLastShadowFit"] == 0
     assert decision["shouldRefit"] is True
     assert decision["shouldLightweight"] is True
+
+
+def test_feature_only_fingerprint_change_triggers_immediate_refit():
+    previous = {
+        "state": {"eligibleGameCount": 4036},
+        "datasetFingerprint": "fit-with-100-context-games",
+        "lastShadowFitEligibleGameCount": 4036,
+        "lastShadowFitDatasetFingerprint": "fit-with-100-context-games",
+        "lastLightweightEvaluationEligibleGameCount": 4036,
+        "lastLightweightEvaluationDatasetFingerprint": "fit-with-100-context-games",
+    }
+    decision = cadence.decide_cadence(
+        previous,
+        current_count=4036,
+        fingerprint="same-games-with-110-context-games",
+        full_increment=50,
+        lightweight_increment=25,
+    )
+    assert decision["newEligibleGamesSinceLastShadowFit"] == 0
+    assert decision["featureOnlyDatasetChangeSinceLastShadowFit"] is True
+    assert decision["featureOnlyDatasetChangeSinceLastLightweightEvaluation"] is True
+    assert decision["shouldRefit"] is True
+    assert decision["shouldLightweight"] is True
+
+    report = _report(
+        previous,
+        decision,
+        current_count=4036,
+        fingerprint="same-games-with-110-context-games",
+        refit=True,
+        lightweight=True,
+    )
+    next_decision = cadence.decide_cadence(
+        report,
+        current_count=4036,
+        fingerprint="same-games-with-110-context-games",
+        full_increment=50,
+        lightweight_increment=25,
+    )
+    assert next_decision["shouldRefit"] is False
+    assert next_decision["shouldLightweight"] is False
+
+
+def test_small_game_increment_still_uses_normal_thresholds():
+    previous = {
+        "state": {"eligibleGameCount": 4036},
+        "datasetFingerprint": "fit-4036",
+        "lastShadowFitEligibleGameCount": 4036,
+        "lastShadowFitDatasetFingerprint": "fit-4036",
+        "lastLightweightEvaluationEligibleGameCount": 4036,
+        "lastLightweightEvaluationDatasetFingerprint": "fit-4036",
+    }
+    decision = cadence.decide_cadence(
+        previous,
+        current_count=4037,
+        fingerprint="data-4037",
+        full_increment=50,
+        lightweight_increment=25,
+    )
+    assert decision["featureOnlyDatasetChangeSinceLastShadowFit"] is False
+    assert decision["shouldRefit"] is False
+    assert decision["shouldLightweight"] is False
