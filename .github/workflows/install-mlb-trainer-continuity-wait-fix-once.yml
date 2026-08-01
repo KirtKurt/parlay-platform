@@ -1,5 +1,5 @@
 name: Install MLB Trainer Continuity Wait Fix Once
-# Trusted bootstrap revision: cancel obsolete installer attempts.
+# Trusted bootstrap revision: syntax-safe deterministic contract.
 
 on:
   pull_request:
@@ -69,7 +69,7 @@ jobs:
           diagnostic_path.write_text(diagnostic.replace(old_diagnostic, new_diagnostic, 1))
 
           test_path = Path('tests/unit/test_mlb_trainer_continuity_wait_v1.py')
-          test_path.write_text('''from pathlib import Path\n\n\ndef test_continuity_wait_is_fail_closed_without_lambda_failure():\n    source = Path(\"hello_world/mlb_ml_aws_training_v1.py\").read_text()\n    assert '\"ok\": True,\\n                    \"status\": \"WAITING_FOR_CANONICAL_SLATE_CONTINUITY\"' in source\n    assert '\"trainingReady\": False' in source\n    assert '\"waiting\": True' in source\n    assert '\"waitReason\": \"canonical_slate_continuity\"' in source\n    assert '\"canonicalSlateContinuity\": slate_continuity' in source\n    assert '\"modelTrained\": False' in source\n    assert '\"championChanged\": False' in source\n    assert '\"status\": \"CANONICAL_SLATE_CONTINUITY_BLOCKED\"' not in source\n''')
+          test_path.write_text('''from pathlib import Path\n\n\ndef test_continuity_wait_is_fail_closed_without_lambda_failure():\n    source = Path(\"hello_world/mlb_ml_aws_training_v1.py\").read_text()\n    assert '\"ok\": True' in source\n    assert '\"status\": \"WAITING_FOR_CANONICAL_SLATE_CONTINUITY\"' in source\n    assert '\"trainingReady\": False' in source\n    assert '\"waiting\": True' in source\n    assert '\"waitReason\": \"canonical_slate_continuity\"' in source\n    assert '\"canonicalSlateContinuity\": slate_continuity' in source\n    assert '\"modelTrained\": False' in source\n    assert '\"championChanged\": False' in source\n    assert '\"status\": \"CANONICAL_SLATE_CONTINUITY_BLOCKED\"' not in source\n''')
           PY
           git diff --check
 
