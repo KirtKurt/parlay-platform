@@ -39,7 +39,7 @@ permissions:
 
 concurrency:
   group: mlb-v8-historical-context-backfill
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   PYTHONPATH: .:hello_world:scripts
@@ -246,6 +246,8 @@ jobs:
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             git checkout -B mlb-v8-historical-context-proof origin/main
+            git reset --hard origin/main
+            git clean -fd
             mkdir -p runtime_reports
             python scripts/publish_monotonic_json.py \
               --candidate /tmp/mlb-v8-historical-context-backfill.json \
@@ -262,16 +264,6 @@ jobs:
             sleep $((attempt * 3))
           done
           exit 1
-      - name: Dispatch fresh supervised shadow evaluation
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          eligible=$(python -c "import json; print(int(json.load(open('/tmp/mlb-v8-historical-context-backfill.json')).get('eligibleGameCount') or 0))")
-          if [ "$eligible" -gt 0 ]; then
-            gh workflow run mlb-supervised-shadow-v2-recurring.yml --ref main
-          fi
       - name: Enforce successful context materialization
         if: always()
         run: |
