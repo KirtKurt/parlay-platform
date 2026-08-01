@@ -1,5 +1,5 @@
 {
-  "createdAtUtc": "2026-08-01T20:22:56.687566+00:00",
+  "createdAtUtc": "2026-08-01T20:24:39.253924+00:00",
   "lambdaConfiguration": {
     "codeSha256": "nUnbn9kWIBJzXFIAVzbXfJD7Ab2xhCTuArrQq2oK3Zk=",
     "functionName": "parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
@@ -11,7 +11,7 @@
   "latestTrainingStatus": {
     "acceptedRowCount": null,
     "canonicalSlateContinuity": null,
-    "createdAtUtc": "2026-08-01T20:22:54.964391+00:00",
+    "createdAtUtc": "2026-08-01T20:23:32.176600+00:00",
     "failure": {
       "code": "TRAINING_CONTRACT_ERROR",
       "message": "MLB ML training contract validation failed",
@@ -22,10 +22,10 @@
     "rejectedRowCount": null,
     "status": "TRAINING_INVOCATION_FAILED"
   },
-  "proofType": "MLB_AWS_TRAINER_CONTINUITY_DIAGNOSTIC_V2",
-  "runId": "30716819573",
+  "proofType": "MLB_AWS_TRAINER_CONTINUITY_STATUS_V3",
+  "runId": "30716901294",
   "selectionCaptureHealth": {
-    "ageSeconds": 232.304,
+    "ageSeconds": 334.884,
     "deploymentIdentityMatches": false,
     "errors": [
       "latest_status_deployment_identity_mismatch"
@@ -100,30 +100,21 @@
     "maximumAgeSeconds": 2700,
     "ok": false
   },
-  "sourceSha": "33153027621f27b8f87219d2a296b11370fa683c",
+  "sourceSha": "56a40f6e4676b62dc4158a746b7f16a7bd4cfc33",
   "statusOk": false,
-  "trainingFunctionError": {
-    "errorMessage": "training returned an unhealthy status: CANONICAL_SLATE_CONTINUITY_BLOCKED",
-    "errorType": "TrainingContractError",
-    "requestId": "6ca0d6af-acce-4591-b16b-bfe900f494c3",
-    "stackTrace": [
-      "  File \"/var/task/mlb_ml_aws_training_v1.py\", line 2935, in lambda_handler\n    raise TrainingContractError(\n"
-    ]
-  },
   "trainingHealth": {
-    "ageSeconds": 1.557,
-    "deploymentIdentityMatches": false,
+    "ageSeconds": 66.926,
+    "deploymentIdentityMatches": true,
     "errors": [
-      "latest_status_not_ok",
-      "latest_status_deployment_identity_mismatch"
+      "latest_status_not_ok"
     ],
     "executionMode": "training",
     "latestRun": {
       "automaticPromotionEnabled": false,
       "championChanged": false,
-      "createdAtUtc": "2026-08-01T20:22:54.964391+00:00",
+      "createdAtUtc": "2026-08-01T20:23:32.176600+00:00",
       "deploymentIdentity": {
-        "gitSha": "1e9c1cf0a6ceaf05e70bf43748d0d18d39413da9",
+        "gitSha": "940a352fa5e90347f280648156a617e22090cc5b",
         "templateSha256": "118ea83bdfc3a2c0ce7db5cfec7cecae86265518500d141f30126071dbd9fff0"
       },
       "executionConcurrencyControl": {
@@ -172,7 +163,7 @@
       "manifestDigest": "f5a65111e377fe4a0e34a902b492e354dcf033e4100aa30190efd0822f11287e",
       "ok": false,
       "releaseCutoffUtc": "2026-07-29T04:00:00+00:00",
-      "runId": "6ca0d6af-acce-4591-b16b-bfe900f494c3",
+      "runId": "d9afa039-e708-4acc-b04b-b8c738fb03d1",
       "selectionCaptureBeforeTraining": {
         "collisionPolicy": "separate_global_lease_domain",
         "healthEvaluatedByTraining": false,
@@ -183,11 +174,11 @@
         "status": "OWNED_BY_INDEPENDENT_SELECTION_CAPTURE_CADENCE"
       },
       "status": "TRAINING_INVOCATION_FAILED",
-      "statusFingerprint": "c9e2fea25021de2b73d21c447093b5509cefbc7c189d9ef4202ab892217bf079",
+      "statusFingerprint": "b55653202c10944ba26151ad20ee3289735a7b48de551b9e9a176e372180c09b",
       "statusFingerprintVersion": "MLB-ML-AWS-TRAINING-STATUS-SHA256-v2-ddb-roundtrip-canonical",
       "version": "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow"
     },
-    "latestRunCreatedAtUtc": "2026-08-01T20:22:54.964391+00:00",
+    "latestRunCreatedAtUtc": "2026-08-01T20:23:32.176600+00:00",
     "maximumAgeSeconds": 28800,
     "ok": false
   }
