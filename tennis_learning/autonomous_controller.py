@@ -62,7 +62,7 @@ def _live_audit(limit: int = 200) -> Dict[str, Any]:
     predictions: Dict[str, Dict[str, Any]] = {}
     for item in _scan("PREDICTION#"):
         match_id = str(item["PK"]).split("#", 1)[1]
-        if match_id.startswith("hist-"):
+        if match_id.startswith(("hist-", "bootstrap:")):
             continue
         current = predictions.get(match_id)
         if current is None or str(item.get("SK", "")) > str(current.get("SK", "")):
@@ -71,7 +71,7 @@ def _live_audit(limit: int = 200) -> Dict[str, Any]:
     settlements: Dict[str, Dict[str, Any]] = {}
     for item in _scan("SETTLEMENT#"):
         match_id = str(item["PK"]).split("#", 1)[1]
-        if match_id.startswith("hist-"):
+        if match_id.startswith(("hist-", "bootstrap:")):
             continue
         settlements[match_id] = item
 
@@ -96,14 +96,20 @@ def _live_audit(limit: int = 200) -> Dict[str, Any]:
 
 
 def _model_state() -> Dict[str, Any]:
-    return table.get_item(Key={"PK": "MODEL", "SK": "STATE"}, ConsistentRead=True).get("Item", {})
+    return table.get_item(
+        Key={"PK": "MODEL", "SK": "STATE"}, ConsistentRead=True
+    ).get("Item", {})
 
 
 def _previous_state() -> Dict[str, Any]:
-    return table.get_item(Key={"PK": "AUTONOMY", "SK": "STATE"}, ConsistentRead=True).get("Item", {})
+    return table.get_item(
+        Key={"PK": "AUTONOMY", "SK": "STATE"}, ConsistentRead=True
+    ).get("Item", {})
 
 
-def _authority(model: Mapping[str, Any], audit: Mapping[str, Any], failures: int) -> tuple[str, str]:
+def _authority(
+    model: Mapping[str, Any], audit: Mapping[str, Any], failures: int
+) -> tuple[str, str]:
     samples = int(model.get("training_samples", 0))
     if failures >= MAX_CONSECUTIVE_FAILURES:
         return "DEGRADED", "pipeline_failure_circuit_breaker"
@@ -118,20 +124,30 @@ def _authority(model: Mapping[str, Any], audit: Mapping[str, Any], failures: int
     return "AUTHORITATIVE", "all_autonomous_promotion_gates_passed"
 
 
+def _run_action(
+    actions: Dict[str, Any], errors: list[str], name: str, function_name: str, payload: Mapping[str, Any]
+) -> None:
+    try:
+        actions[name] = _invoke(function_name, payload)
+    except Exception as exc:
+        detail = f"{name}: {exc}"
+        actions[name] = {"error": str(exc)}
+        errors.append(detail)
+
+
 def run_cycle() -> Dict[str, Any]:
     previous = _previous_state()
-    failures = 0
     actions: Dict[str, Any] = {}
-    try:
-        actions["collect"] = _invoke(LIVE_FUNCTION, {"action": "collect"})
-        actions["settle"] = _invoke(LIVE_FUNCTION, {"action": "settle"})
-        actions["backfill"] = _invoke(BACKFILL_FUNCTION, {"action": "backfill"})
-    except Exception as exc:
-        failures = int(previous.get("consecutive_failures", 0)) + 1
-        actions["error"] = str(exc)
-    else:
-        failures = 0
+    errors: list[str] = []
 
+    # Each stage is independent. A live-provider failure must never prevent the
+    # historical corpus from advancing, and a backfill failure must never stop
+    # live collection or settlement.
+    _run_action(actions, errors, "collect", LIVE_FUNCTION, {"action": "collect"})
+    _run_action(actions, errors, "settle", LIVE_FUNCTION, {"action": "settle"})
+    _run_action(actions, errors, "backfill", BACKFILL_FUNCTION, {"action": "backfill"})
+
+    failures = int(previous.get("consecutive_failures", 0)) + 1 if errors else 0
     model = _model_state()
     audit = _live_audit()
     authority, reason = _authority(model, audit, failures)
@@ -146,25 +162,64 @@ def run_cycle() -> Dict[str, Any]:
         "model_version": int(model.get("version", 0)),
         "training_samples": int(model.get("training_samples", 0)),
         "live_audit_count": int(audit.get("count") or 0),
-        "live_accuracy": _decimal(float(audit["accuracy"])) if audit.get("accuracy") is not None else None,
-        "live_brier": _decimal(float(audit["brier"])) if audit.get("brier") is not None else None,
+        "live_accuracy": _decimal(float(audit["accuracy"]))
+        if audit.get("accuracy") is not None
+        else None,
+        "live_brier": _decimal(float(audit["brier"]))
+        if audit.get("brier") is not None
+        else None,
         "last_cycle_at": now,
+        "last_error": " | ".join(errors)[:4000] if errors else None,
         "actions": json.dumps(actions, default=str)[:10000],
     }
-    table.put_item(Item={k: v for k, v in item.items() if v is not None})
-    table.put_item(Item={"PK": "AUTONOMY#RUN", "SK": now, **{k: v for k, v in item.items() if k not in {"PK", "SK"} and v is not None}})
-    return {**item, "actions": actions, "gates": {"min_training_samples": MIN_TRAINING_SAMPLES, "min_live_audit": MIN_LIVE_AUDIT, "min_live_accuracy": MIN_LIVE_ACCURACY, "max_live_brier": MAX_LIVE_BRIER}}
+    clean_item = {k: v for k, v in item.items() if v is not None}
+    table.put_item(Item=clean_item)
+    table.put_item(
+        Item={
+            "PK": "AUTONOMY#RUN",
+            "SK": now,
+            **{
+                k: v
+                for k, v in clean_item.items()
+                if k not in {"PK", "SK"}
+            },
+        }
+    )
+    return {
+        **item,
+        "actions": actions,
+        "gates": {
+            "min_training_samples": MIN_TRAINING_SAMPLES,
+            "min_live_audit": MIN_LIVE_AUDIT,
+            "min_live_accuracy": MIN_LIVE_ACCURACY,
+            "max_live_brier": MAX_LIVE_BRIER,
+        },
+    }
 
 
 def status() -> Dict[str, Any]:
     state = _previous_state()
     if not state:
-        return {"service": "tennis-autonomy", "authority": "SHADOW", "reason": "no_autonomous_cycle_completed"}
-    return {"service": "tennis-autonomy", **{k: v for k, v in state.items() if k not in {"PK", "SK", "actions"}}}
+        return {
+            "service": "tennis-autonomy",
+            "authority": "SHADOW",
+            "reason": "no_autonomous_cycle_completed",
+        }
+    return {
+        "service": "tennis-autonomy",
+        **{k: v for k, v in state.items() if k not in {"PK", "SK", "actions"}},
+    }
 
 
 def lambda_handler(event: Mapping[str, Any], context: Any) -> Dict[str, Any]:
     method = str(event.get("httpMethod", "")).upper()
     path = str(event.get("path", ""))
     result = status() if method == "GET" and path.endswith("/status") else run_cycle()
-    return {"statusCode": 200, "headers": {"content-type": "application/json", "access-control-allow-origin": "*"}, "body": json.dumps(result, default=str)}
+    return {
+        "statusCode": 200,
+        "headers": {
+            "content-type": "application/json",
+            "access-control-allow-origin": "*",
+        },
+        "body": json.dumps(result, default=str),
+    }
