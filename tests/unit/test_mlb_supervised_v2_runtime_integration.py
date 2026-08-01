@@ -28,10 +28,11 @@ def test_event_id_installer_updates_workflows_without_authority_change():
     installer = Path(".github/workflows/mlb-v9-event-id-install-once.yml").read_text()
     assert "MLB-HISTORICAL-FEATURE-DATASET-v8-supervised-trainable" in installer
     assert "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable" in installer
-    assert "mlb-supervised-shadow-v2.yml" in installer
+    assert "mlb-supervised-shadow-v2-recurring.yml" in installer
     assert "mlb-historical-v7-recovery.yml" in installer
-    source = Path(".github/workflows/mlb-supervised-shadow-v2.yml").read_text()
+    source = Path(".github/workflows/mlb-supervised-shadow-v2-recurring.yml").read_text()
     assert "productionAuthorityChanged') is False" in source
     assert "automaticWagerAllowed') is False" in source
     assert "productionPromotionEligible') is False" in source
     assert "selectionUsedUntouchedAudit') is False" in source
+    assert "cancel-in-progress: false" in source
