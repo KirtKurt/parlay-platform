@@ -1,4 +1,4 @@
-name: Dispatch MLB Trainer Continuity Diagnostic From PR
+name: Dispatch MLB Trainer Status Diagnostic From PR
 
 "on":
   pull_request:
@@ -14,7 +14,7 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch exact MLB trainer continuity diagnostic
+      - name: Dispatch MLB trainer persisted-status diagnostic
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
