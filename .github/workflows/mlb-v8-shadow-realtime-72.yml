@@ -10,7 +10,7 @@ name: MLB V8 Real-Time Shadow 72
       - 'runtime_reports/mlb_supervised_shadow_v2_latest.json'
       - '.github/workflows/mlb-v8-shadow-realtime-72.yml'
   schedule:
-    - cron: '7 * * * *'
+    - cron: '27 * * * *'
 
 permissions:
   contents: write
@@ -211,6 +211,8 @@ jobs:
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             git checkout -B mlb-v8-shadow-proof origin/main
+            git reset --hard origin/main
+            git clean -fd
             mkdir -p runtime_reports
             cp /tmp/mlb-v8-shadow-report.json "$REPORT_PATH"
             git add "$REPORT_PATH"
