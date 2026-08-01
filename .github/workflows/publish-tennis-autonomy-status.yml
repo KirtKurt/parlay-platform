@@ -4,6 +4,9 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '7 * * * *'
+  workflow_run:
+    workflows: ['Deploy Tennis Learning']
+    types: [completed]
   push:
     branches: [main]
     paths:
@@ -109,6 +112,7 @@ jobs:
               'service': live.get('service'),
               'authority': authority,
               'reason': live.get('reason'),
+              'last_error': live.get('last_error'),
               'automatic_prediction_allowed': bool(live.get('automatic_prediction_allowed', False)),
               'training_samples': training,
               'live_audit_count': audited,
