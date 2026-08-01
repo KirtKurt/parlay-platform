@@ -1,0 +1,63 @@
+name: Deploy Tennis Learning
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tennis_learning/**'
+      - 'tennis-template.yaml'
+      - 'tests/test_tennis_learning_handler.py'
+      - '.github/workflows/deploy-tennis-learning.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tennis-learning-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - uses: aws-actions/setup-sam@v2
+      - name: Validate code
+        run: |
+          python -m py_compile tennis_learning/handler.py
+          python -m pip install --quiet pytest boto3
+          python -m pytest -q tests/test_tennis_learning_handler.py
+          sam validate --template-file tennis-template.yaml
+      - name: Build and deploy isolated tennis stack
+        run: |
+          sam build --no-cached --template-file tennis-template.yaml
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name parlay-platform-tennis-learning \
+            --region "${{ secrets.AWS_REGION }}" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+      - name: Verify live health
+        run: |
+          url=$(aws cloudformation describe-stacks --stack-name parlay-platform-tennis-learning --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='TennisLearningApi'].OutputValue" --output text)
+          test -n "$url"
+          curl --fail --retry 5 --retry-all-errors --retry-delay 5 "$url" | tee /tmp/tennis-health.json
+          python - <<'PY'
+          import json
+          data=json.load(open('/tmp/tennis-health.json'))
+          assert data['service']=='tennis-learning'
+          assert data['persistence']=='dynamodb'
+          print(data)
+          PY
