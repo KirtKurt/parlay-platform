@@ -1,4 +1,4 @@
-name: Dispatch MLB Unstall Export From PR
+name: Dispatch MLB Anti-Stall Commit Builder From PR
 
 "on":
   pull_request:
@@ -14,9 +14,9 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch validated anti-stall export
+      - name: Dispatch validated anti-stall commit builder
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh workflow run mlb-unstall-export-once.yml --repo "$GITHUB_REPOSITORY" --ref main
+          gh workflow run mlb-unstall-publish-tree-once.yml --repo "$GITHUB_REPOSITORY" --ref main
