@@ -22,6 +22,16 @@ def test_workflow_runs_isolated_context_backfill_and_canonical_settled_tick():
     assert "productionAuthorityChanged') is False" in text
 
 
+def test_workflow_accelerates_with_bounded_serial_batch_and_provider_delay():
+    text = WORKFLOW.read_text()
+
+    assert "default: '25'" in text
+    assert "inputs.limit || '25'" in text
+    assert "BBS_HISTORICAL_REQUEST_DELAY_SECONDS: '1.0'" in text
+    assert "timeout-minutes: 90" in text
+    assert "cancel-in-progress: false" in text
+
+
 def test_workflow_revalidates_unchanged_selection_guard_thresholds():
     text = WORKFLOW.read_text()
 

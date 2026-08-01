@@ -31,7 +31,7 @@ name: MLB V8 Historical Point-In-Time Context Backfill
       limit:
         description: Canonical target games attempted in this bounded run
         required: false
-        default: '10'
+        default: '25'
 
 permissions:
   contents: write
@@ -77,12 +77,18 @@ jobs:
             tests/unit/test_mlb_supervised_selection_guard_v2_6.py
           python - <<'PY'
           import mlb_supervised_selection_guard_v2_3 as guard
+          from pathlib import Path
           assert guard.MIN_OOF_ACCURACY_UPLIFT == 0.005
           assert guard.MIN_OOF_NET_CORRECT == 3
           assert guard.MAX_WORST_FOLD_ACCURACY_REGRESSION == 0.01
           assert guard.MIN_POSITIVE_FOLD_RATIO == 2.0 / 3.0
           assert guard.MIN_FUNDAMENTALS_COVERAGE == 0.50
           assert guard.MIN_BBS_PRIOR_COVERAGE == 0.50
+          workflow=Path('.github/workflows/mlb-v8-historical-context-backfill.yml').read_text()
+          assert "default: '25'" in workflow
+          assert "inputs.limit || '25'" in workflow
+          assert "BBS_HISTORICAL_REQUEST_DELAY_SECONDS: '1.0'" in workflow
+          assert "cancel-in-progress: false" in workflow
           PY
 
   backfill-and-advance:
@@ -111,7 +117,7 @@ jobs:
         env:
           BBS_API_KEY: ${{ secrets.BBS_API_KEY }}
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
-          REQUESTED_LIMIT: ${{ inputs.limit || '10' }}
+          REQUESTED_LIMIT: ${{ inputs.limit || '25' }}
           BBS_HISTORICAL_REQUEST_DELAY_SECONDS: '1.0'
         run: |
           set +e
