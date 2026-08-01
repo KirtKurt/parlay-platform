@@ -1,4 +1,4 @@
-name: Dispatch MLB Anti-Stall Commit Builder From PR
+name: Dispatch MLB Post-Fix Verification From PR
 
 "on":
   pull_request:
@@ -14,9 +14,12 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch validated anti-stall commit builder
+      - name: Dispatch fixed MLB verification workflows
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh workflow run mlb-unstall-publish-tree-once.yml --repo "$GITHUB_REPOSITORY" --ref main
+          gh workflow run mlb-supervised-shadow-v2-recurring.yml --repo "$GITHUB_REPOSITORY" --ref main
+          gh workflow run mlb-historical-supervised-v9-shadow.yml --repo "$GITHUB_REPOSITORY" --ref main
+          gh workflow run mlb-v8-historical-context-backfill.yml --repo "$GITHUB_REPOSITORY" --ref main -f limit=10
+          gh workflow run mlb-v8-shadow-realtime-72.yml --repo "$GITHUB_REPOSITORY" --ref main
