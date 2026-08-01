@@ -15,7 +15,10 @@ def test_workflow_runs_isolated_context_backfill_and_canonical_settled_tick():
     assert "MLB_V8_HISTORICAL_CONTEXT#V1" in text
     assert '"mode":"orchestrate"' in text
     assert "manualCursorMutation':False" in text
-    assert "mlb-supervised-shadow-v2-recurring.yml" in text
+    assert "mlb-supervised-shadow-v2-recurring.yml" not in text
+    assert "cancel-in-progress: false" in text
+    assert "git reset --hard origin/main" in text
+    assert "git clean -fd" in text
     assert "productionAuthorityChanged') is False" in text
 
 
