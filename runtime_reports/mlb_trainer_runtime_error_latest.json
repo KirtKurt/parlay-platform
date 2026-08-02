@@ -1,20 +1,19 @@
 {
-  "createdAtUtc": "2026-08-02T02:35:39.029611+00:00",
+  "createdAtUtc": "2026-08-02T02:36:21.108961+00:00",
   "executedVersion": "$LATEST",
   "functionError": "Unhandled",
   "functionName": "arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
   "functionState": "Active",
   "handler": "mlb_ml_aws_training_v1_compat.lambda_handler",
   "lastUpdateStatus": "Successful",
-  "logTail": "START RequestId: a5d20f17-730c-42d2-8684-4004b26e6297 Version: $LATEST\n[ERROR] ExecutionLeaseUnavailable: another MLB ML trainer invocation holds the execution lease\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1_compat.py\", line 97, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0return canonical.lambda_handler(event, context)\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1.py\", line 2901, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0lease = service.store.acquire_execution_lease(\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1.py\", line 653, in acquire_execution_lease\n\u00a0\u00a0\u00a0\u00a0raise ExecutionLeaseUnavailable(\nEND RequestId: a5d20f17-730c-42d2-8684-4004b26e6297\nREPORT RequestId: a5d20f17-730c-42d2-8684-4004b26e6297\tDuration: 551.40 ms\tBilled Duration: 724 ms\tMemory Size: 2048 MB\tMax Memory Used: 100 MB\tInit Duration: 172.44 ms\t\n",
+  "logTail": "START RequestId: 5ec08b8f-480c-400a-9467-f9559218a3a4 Version: $LATEST\n[ERROR] TrainingContractError: training returned an unhealthy status: CANONICAL_SLATE_CONTINUITY_BLOCKED\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1_compat.py\", line 97, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0return canonical.lambda_handler(event, context)\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1.py\", line 2935, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise TrainingContractError(\nEND RequestId: 5ec08b8f-480c-400a-9467-f9559218a3a4\nREPORT RequestId: 5ec08b8f-480c-400a-9467-f9559218a3a4\tDuration: 27885.44 ms\tBilled Duration: 27886 ms\tMemory Size: 2048 MB\tMax Memory Used: 177 MB\t\n",
   "payload": {
-    "errorMessage": "another MLB ML trainer invocation holds the execution lease",
-    "errorType": "ExecutionLeaseUnavailable",
-    "requestId": "a5d20f17-730c-42d2-8684-4004b26e6297",
+    "errorMessage": "training returned an unhealthy status: CANONICAL_SLATE_CONTINUITY_BLOCKED",
+    "errorType": "TrainingContractError",
+    "requestId": "5ec08b8f-480c-400a-9467-f9559218a3a4",
     "stackTrace": [
       "  File \"/var/task/mlb_ml_aws_training_v1_compat.py\", line 97, in lambda_handler\n    return canonical.lambda_handler(event, context)\n",
-      "  File \"/var/task/mlb_ml_aws_training_v1.py\", line 2901, in lambda_handler\n    lease = service.store.acquire_execution_lease(\n",
-      "  File \"/var/task/mlb_ml_aws_training_v1.py\", line 653, in acquire_execution_lease\n    raise ExecutionLeaseUnavailable(\n"
+      "  File \"/var/task/mlb_ml_aws_training_v1.py\", line 2935, in lambda_handler\n    raise TrainingContractError(\n"
     ]
   },
   "proofType": "MLB_TRAINER_RUNTIME_ERROR_DIAGNOSTIC",
