@@ -1,4 +1,4 @@
-"""Fail-closed deployment contract for the August 2 MLB prospective reset."""
+"""Fail-closed deployment contract for the August 3 MLB prospective reset."""
 
 from pathlib import Path
 
@@ -20,9 +20,9 @@ def test_results_scheduler_has_full_slate_capacity():
 
 def test_r7_starts_after_permanently_incomplete_slates():
     text = Path("template.yaml").read_text()
-    assert "MLB_ML_EXPERIMENT_ID: 'mlb-v2-2026-08-02-future-prospective-r7'" in text
-    assert "MLB_ML_RELEASE_CONTRACT_ID: 'mlb-v2-2026-08-02-future-prospective-r7'" in text
-    assert "MLB_ML_RELEASE_CUTOFF_UTC: '2026-08-02T08:00:00+00:00'" in text
+    assert "MLB_ML_EXPERIMENT_ID: 'mlb-v2-2026-08-03-future-prospective-r7'" in text
+    assert "MLB_ML_RELEASE_CONTRACT_ID: 'mlb-v2-2026-08-03-future-prospective-r7'" in text
+    assert "MLB_ML_RELEASE_CUTOFF_UTC: '2026-08-03T04:00:00+00:00'" in text
     assert "INQSI_MLB_ML_AUTO_PROMOTE: 'false'" in text
     assert "mlb-v2-2026-07-29-future-prospective-r5" not in text
     assert "2026-07-29T04:00:00+00:00" not in text
