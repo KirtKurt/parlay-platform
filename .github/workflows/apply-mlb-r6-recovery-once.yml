@@ -1,0 +1,135 @@
+name: Apply MLB R6 Recovery Once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-mlb-r6-recovery-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-mlb-r6-recovery-once
+  cancel-in-progress: false
+
+jobs:
+  apply-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Apply clean prospective cohort and settlement capacity repair
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          old_id = 'mlb-v2-2026-07-29-future-prospective-r5'
+          new_id = 'mlb-v2-2026-08-02-future-prospective-r6'
+          old_cutoff = '2026-07-29T04:00:00+00:00'
+          new_cutoff = '2026-08-02T04:00:00+00:00'
+
+          files = subprocess.check_output(
+              ['git', 'ls-files', '*.py', 'template.yaml'], text=True
+          ).splitlines()
+          changed = []
+          for name in files:
+              path = Path(name)
+              text = path.read_text(encoding='utf-8')
+              updated = text.replace(old_id, new_id).replace(old_cutoff, new_cutoff)
+              if updated != text:
+                  path.write_text(updated, encoding='utf-8')
+                  changed.append(name)
+
+          template = Path('template.yaml')
+          text = template.read_text(encoding='utf-8')
+          marker = '  MLBResultsSchedulerFunction:\n'
+          start = text.index(marker)
+          next_start = text.find('\n  MLBMLTrainingFunction:\n', start)
+          if next_start < 0:
+              raise RuntimeError('MLBMLTrainingFunction marker missing after results scheduler')
+          block = text[start:next_start]
+          if '      Timeout:' in block:
+              import re
+              block = re.sub(r'(?m)^      Timeout:.*$', '      Timeout: 600', block)
+          else:
+              block = block.replace(
+                  '      Handler: mlb_results_scheduler.lambda_handler\n',
+                  '      Handler: mlb_results_scheduler.lambda_handler\n'
+                  '      # Canonical full-slate settlement performs strongly consistent\n'
+                  '      # lock reads and immutable label writes for every official game.\n'
+                  '      Timeout: 600\n',
+                  1,
+              )
+          if '      MemorySize:' in block:
+              import re
+              block = re.sub(r'(?m)^      MemorySize:.*$', '      MemorySize: 2048', block)
+          else:
+              block = block.replace('      Timeout: 600\n', '      Timeout: 600\n      MemorySize: 2048\n', 1)
+          text = text[:start] + block + text[next_start:]
+          template.write_text(text, encoding='utf-8')
+
+          test = Path('tests/unit/test_mlb_r6_recovery_contract.py')
+          test.write_text('''from pathlib import Path\n\n\ndef _resource(text: str, name: str, next_name: str) -> str:\n    start = text.index(f"  {name}:\\n")\n    end = text.index(f"\\n  {next_name}:\\n", start)\n    return text[start:end]\n\n\ndef test_results_scheduler_has_full_slate_capacity():\n    text = Path("template.yaml").read_text()\n    block = _resource(text, "MLBResultsSchedulerFunction", "MLBMLTrainingFunction")\n    assert "Handler: mlb_results_scheduler.lambda_handler" in block\n    assert "Timeout: 600" in block\n    assert "MemorySize: 2048" in block\n    assert "MaximumRetryAttempts: 0" in block\n\n\ndef test_r6_starts_after_permanently_incomplete_slates():\n    text = Path("template.yaml").read_text()\n    assert "MLB_ML_EXPERIMENT_ID: 'mlb-v2-2026-08-02-future-prospective-r6'" in text\n    assert "MLB_ML_RELEASE_CONTRACT_ID: 'mlb-v2-2026-08-02-future-prospective-r6'" in text\n    assert "MLB_ML_RELEASE_CUTOFF_UTC: '2026-08-02T04:00:00+00:00'" in text\n    assert "INQSI_MLB_ML_AUTO_PROMOTE: 'false'" in text\n    assert "mlb-v2-2026-07-29-future-prospective-r5" not in text\n    assert "2026-07-29T04:00:00+00:00" not in text\n\n\ndef test_existing_lock_and_promotion_safety_is_unchanged():\n    text = Path("template.yaml").read_text()\n    assert "Handler: mlb_daily_pick_lock_protected.lambda_handler" in text\n    assert "Schedule: rate(1 minute)" in text\n    assert "MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'" in text\n    assert "INQSI_MLB_ML_AUTO_PROMOTE: 'false'" in text\n''', encoding='utf-8')
+          print({'replacedFiles': changed, 'contractTest': str(test)})
+          PY
+
+      - name: Verify canonical source remains stable
+        run: |
+          set -euo pipefail
+          python scripts/patch_template_mlb_v1.py
+          python - <<'PY'
+          from pathlib import Path
+          text=Path('template.yaml').read_text()
+          assert "MLB_ML_EXPERIMENT_ID: 'mlb-v2-2026-08-02-future-prospective-r6'" in text
+          assert "MLB_ML_RELEASE_CUTOFF_UTC: '2026-08-02T04:00:00+00:00'" in text
+          start=text.index('  MLBResultsSchedulerFunction:\n')
+          end=text.index('\n  MLBMLTrainingFunction:\n', start)
+          block=text[start:end]
+          assert 'Timeout: 600' in block
+          assert 'MemorySize: 2048' in block
+          assert "INQSI_MLB_ML_AUTO_PROMOTE: 'false'" in text
+          PY
+          ! git grep -n 'mlb-v2-2026-07-29-future-prospective-r5' -- '*.py' template.yaml
+          ! git grep -n '2026-07-29T04:00:00+00:00' -- '*.py' template.yaml
+
+      - name: Run focused contracts and SAM validation
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet pytest boto3 pyyaml
+          python -m py_compile \
+            hello_world/mlb_results_scheduler.py \
+            hello_world/mlb_canonical_final_labels_v1.py \
+            hello_world/mlb_ml_experiment_v2.py \
+            hello_world/mlb_ml_aws_training_v1_compat.py \
+            scripts/stabilize_mlb_deploy_source.py \
+            scripts/verify_mlb_schedule_invariants.py
+          python -m pytest -q \
+            tests/unit/test_mlb_r6_recovery_contract.py \
+            tests/unit/test_mlb_ml_r5_clean_cutover.py \
+            tests/unit/test_mlb_canonical_final_labels_v1.py \
+            tests/unit/test_mlb_trainer_table_wiring.py
+          sam validate --template-file template.yaml
+          git diff --check
+
+      - name: Commit recovery patch
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add template.yaml hello_world scripts tests/unit/test_mlb_r6_recovery_contract.py tests/unit/test_mlb_ml_r5_clean_cutover.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'Start clean MLB r6 cohort and increase settlement capacity'
+          git push origin HEAD:"$HEAD_BRANCH"
