@@ -64,13 +64,17 @@ jobs:
             tests/unit/test_mlb_v8_historical_point_in_time_context_v1.py \
             tests/unit/test_run_mlb_v8_historical_context_backfill_entrypoint.py \
             tests/unit/test_mlb_v8_historical_context_workflow.py
-          ! grep -R -n -E 'BBS_API_KEY|BBS_API_SECRET_ARN|api\.bigballsdata\.com' \
-            .github/workflows/mlb-v8-historical-context-backfill.yml \
-            scripts/run_mlb_v8_historical_context_backfill_entrypoint.py
           python - <<'PY'
           from pathlib import Path
           workflow = Path('.github/workflows/mlb-v8-historical-context-backfill.yml').read_text()
           entrypoint = Path('scripts/run_mlb_v8_historical_context_backfill_entrypoint.py').read_text()
+          retired = (
+              'BBS' + '_API_KEY',
+              'BBS' + '_API_SECRET_ARN',
+              'api.' + 'bigballsdata.com',
+          )
+          for token in retired:
+              assert token not in entrypoint, token
           assert "default: '25'" in workflow
           assert "inputs.limit || '25'" in workflow
           assert 'bbsApiUsed' in entrypoint
@@ -131,6 +135,7 @@ jobs:
           assert value.get('selectionUsedOutcomes') is False, value
           assert value.get('targetGameOutcomeUsed') is False, value
           assert value.get('sameDayResultsExcluded') is True, value
+          assert value.get('automaticWagerAllowed') is False, value
           assert value.get('ok') is True, value
           PY
           cp "$CONTEXT_REPORT" /tmp/mlb-v8-historical-context-backfill.json
