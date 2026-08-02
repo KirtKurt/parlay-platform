@@ -38,39 +38,19 @@ jobs:
           old_cutoff='2026-08-02T04:00:00+00:00'
           new_cutoff='2026-08-03T04:00:00+00:00'
           changed=[]
-          for target in [Path('template.yaml'), *Path('hello_world').rglob('*.py'), *Path('scripts').rglob('*.py'), *Path('tests/unit').rglob('*.py')]:
+          targets=[Path('template.yaml'),*Path('hello_world').rglob('*.py'),*Path('scripts').rglob('*.py'),*Path('tests/unit').rglob('*.py')]
+          for target in targets:
               text=target.read_text(encoding='utf-8')
               updated=text.replace(old_id,new_id).replace(old_cutoff,new_cutoff)
               if updated != text:
                   target.write_text(updated,encoding='utf-8')
                   changed.append(str(target))
 
-          # Shift only r6/r7 prospective fixture dates; production logic stays driven by constants.
-          fixture_names=[
-              Path('tests/unit/test_mlb_ml_r5_clean_cutover.py'),
-              Path('tests/unit/test_mlb_ml_aws_training_v1.py'),
-              Path('tests/unit/test_run_mlb_ml_v3_audit_report.py'),
-          ]
-          for path in fixture_names:
-              if not path.exists():
-                  continue
-              text=path.read_text(encoding='utf-8')
-              text=text.replace('2026-08-04','2026-08-05')
-              text=text.replace('2026-08-03','2026-08-04')
-              text=text.replace('datetime(2026, 8, 4','datetime(2026, 8, 5')
-              text=text.replace('datetime(2026, 8, 3','datetime(2026, 8, 4')
-              # Activation/strictly-pre-cutoff fixtures must remain before Aug 3 04:00Z.
-              text=text.replace('activated_at_utc="2026-08-04T03:00:00+00:00"','activated_at_utc="2026-08-03T03:00:00+00:00"')
-              text=text.replace('now=datetime(2026, 8, 4, 3, 30','now=datetime(2026, 8, 3, 3, 30')
-              path.write_text(text,encoding='utf-8')
-              changed.append(str(path))
-
           old_contract=Path('tests/unit/test_mlb_r6_recovery_contract.py')
           new_contract=Path('tests/unit/test_mlb_r7_recovery_contract.py')
           if old_contract.exists():
               text=old_contract.read_text(encoding='utf-8')
               text=text.replace('r6','r7').replace('R6','R7').replace('August 2','August 3')
-              text=text.replace(old_id,new_id).replace(old_cutoff,new_cutoff)
               new_contract.write_text(text,encoding='utf-8')
               old_contract.unlink()
               changed.extend([str(old_contract),str(new_contract)])
@@ -79,10 +59,8 @@ jobs:
           if clean.exists():
               text=clean.read_text(encoding='utf-8')
               text=text.replace('test_r6_','test_r7_').replace('r6 ','r7 ').replace('pre-r6','pre-r7')
-              text=text.replace('"mlb-v2-2026-08-02-future-prospective-r6"','"retired-prospective-experiment"')
-              text=text.replace('activated_at_utc="2026-08-04T03:00:00+00:00"','activated_at_utc="2026-08-03T03:00:00+00:00"')
-              text=text.replace('now=datetime(2026, 8, 4, 3, 30','now=datetime(2026, 8, 3, 3, 30')
               clean.write_text(text,encoding='utf-8')
+              changed.append(str(clean))
 
           print({'changedFiles':sorted(set(changed))})
           PY
