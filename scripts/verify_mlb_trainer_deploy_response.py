@@ -13,8 +13,8 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 TRAINER_VERSION = "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow"
 EXPERIMENT_VERSION = "MLB-ML-EXPERIMENT-v2-fixed-slate-future-prospective-cutover"
-EXPERIMENT_ID = "mlb-v2-2026-08-02-future-prospective-r6"
-RELEASE_CUTOFF_UTC = "2026-08-02T04:00:00+00:00"
+EXPERIMENT_ID = "mlb-v2-2026-08-03-future-prospective-r7"
+RELEASE_CUTOFF_UTC = "2026-08-03T04:00:00+00:00"
 RELEASE_ACTIVATION_VERSION = "MLB-ML-RELEASE-ACTIVATION-v1"
 STATUS_FINGERPRINT_VERSION = (
     "MLB-ML-AWS-TRAINING-STATUS-SHA256-v2-ddb-roundtrip-canonical"
