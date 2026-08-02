@@ -17,7 +17,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Dict
 
-COMPAT_VERSION = "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v3-return-and-persist"
+COMPAT_VERSION = "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v4-sparse-safe"
 _BASE_MODULE_NAME = "_inqsi_mlb_ml_aws_training_v1_canonical"
 _BASE_PATH = Path(__file__).resolve().with_name("mlb_ml_aws_training_v1.py")
 
@@ -39,34 +39,70 @@ def _load_canonical_module():
     return module
 
 
-def normalize_canonical_continuity_wait(payload: Mapping[str, Any]) -> Dict[str, Any]:
-    value = dict(payload)
-    continuity = value.get("canonicalSlateContinuity")
-    milestones = value.get("milestones")
-    expected_wait = (
-        value.get("ok") is False
-        and value.get("status") == "CANONICAL_SLATE_CONTINUITY_BLOCKED"
-        and value.get("executionMode") == "training"
-        and value.get("modelTrained") is False
-        and value.get("championChanged") is False
-        and isinstance(continuity, Mapping)
-        and continuity.get("ok") is False
-        and (
-            not isinstance(milestones, Mapping)
-            or milestones.get("canonicalContinuityReady") is False
-        )
+def _authority_change_claimed(value: Mapping[str, Any]) -> bool:
+    """Return True when a payload claims any model or authority mutation."""
+    direct_flags = (
+        "modelTrained",
+        "championChanged",
+        "runtimeAuthorityChanged",
+        "runtimeAuthorityActivated",
+        "productionAuthorityChanged",
+        "liveInferenceAuthority",
+        "automaticPromotionEnabled",
+        "trainingReady",
     )
-    if not expected_wait:
+    if any(value.get(name) is True for name in direct_flags):
+        return True
+    promotion = value.get("promotion")
+    if isinstance(promotion, Mapping) and any(
+        promotion.get(name) is True
+        for name in (
+            "shadowChampionApproved",
+            "runtimeAuthorityActivated",
+            "productionAuthorityChanged",
+        )
+    ):
+        return True
+    return False
+
+
+def normalize_canonical_continuity_wait(payload: Mapping[str, Any]) -> Dict[str, Any]:
+    """Normalize only the exact, non-mutating continuity wait condition.
+
+    Production continuity payloads may be sparse because the trainer exits
+    before dataset/model construction. Requiring optional diagnostic fields
+    made the expected wait look like a Lambda failure. The exact status remains
+    the authority, while every model/champion/runtime mutation flag must remain
+    absent or false. Contradictory payloads stay unhealthy.
+    """
+    value = dict(payload)
+    if value.get("status") != "CANONICAL_SLATE_CONTINUITY_BLOCKED":
         return value
+    if _authority_change_claimed(value):
+        return value
+
+    continuity = value.get("canonicalSlateContinuity")
+    if isinstance(continuity, Mapping) and continuity.get("ok") is True:
+        return value
+    milestones = value.get("milestones")
+    if (
+        isinstance(milestones, Mapping)
+        and milestones.get("canonicalContinuityReady") is True
+    ):
+        return value
+
     value.update(
         {
             "ok": True,
             "status": "WAITING_FOR_CANONICAL_SLATE_CONTINUITY",
+            "executionMode": value.get("executionMode") or "training",
             "trainingReady": False,
             "waiting": True,
             "waitReason": "canonical_slate_continuity",
             "modelTrained": False,
             "championChanged": False,
+            "runtimeAuthorityChanged": False,
+            "runtimeAuthorityActivated": False,
             "liveInferenceAuthority": False,
             "automaticPromotionEnabled": False,
             "productionAuthorityChanged": False,
