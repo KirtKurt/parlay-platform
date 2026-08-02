@@ -3,7 +3,7 @@ name: Publish Tennis Autonomy Status
 on:
   workflow_dispatch:
   schedule:
-    - cron: '7,37 * * * *'
+    - cron: '7,22,37,52 * * * *'
   workflow_run:
     workflows: ['Deploy Tennis Learning']
     types: [completed]
@@ -237,7 +237,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-          for attempt in 1 2 3 4 5; do
+          for attempt in $(seq 1 20); do
             git fetch origin main
             git reset --hard origin/main
             mkdir -p runtime
@@ -252,8 +252,8 @@ jobs:
               exit 0
             fi
             echo "Concurrent main update blocked publish attempt ${attempt}; retrying"
-            sleep $((attempt * 2))
+            sleep 3
           done
 
-          echo 'Unable to publish tennis autonomy status after five attempts' >&2
+          echo 'Unable to publish tennis autonomy status after twenty attempts' >&2
           exit 1
