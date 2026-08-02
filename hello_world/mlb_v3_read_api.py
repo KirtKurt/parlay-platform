@@ -185,7 +185,7 @@ def _model_body() -> Dict[str, Any]:
         "automaticPromotionPolicy": (
             "automatic atomic fail-closed champion plus historical-only cutover after the immutable 1000/200/200 every-day gate passes"
             if historical_active
-            else "automatic promotion remains blocked until the immutable full evidence gate passes"
+            else "winner model fixed for release; precision/trade promotion remains disabled"
         ),
         "legacyV1AuthorityEnabled": False,
         "awsNativeTrainingInstalled": True,
@@ -195,10 +195,10 @@ def _model_body() -> Dict[str, Any]:
             if historical_active
             else "separate_mode_specific_status_contract"
         ),
-        "firstPromotionRequiresManualReview": False,
-        "manualReviewCreatesShadowApprovalOnly": False,
+        "firstPromotionRequiresManualReview": not historical_active,
+        "manualReviewCreatesShadowApprovalOnly": not historical_active,
         "v2InferenceConsumerInstalled": historical_active,
-        "runtimeAuthorityActivationAvailable": True,
+        "runtimeAuthorityActivationAvailable": historical_active,
         "parlaysEnabled": False,
         "readOnly": True,
         "sourcePolicy": (
