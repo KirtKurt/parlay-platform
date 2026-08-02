@@ -3,41 +3,60 @@ name: MLB Production Source Contract
 on:
   pull_request:
     branches: [main]
+    types: [opened, reopened, synchronize]
     paths:
       - '.github/workflows/mlb-production-source-contract.yml'
 
 permissions:
   contents: read
-  actions: write
+  actions: read
 
 jobs:
-  dispatch-fixed-shadow-deploy:
+  monitor-fixed-shadow-deploy:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/dispatch-fixed-shadow-deploy-after-fixture-20260802'
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Verify repaired verifier and fixture are on main
-        run: |
-          set -euo pipefail
-          python -m pip install --quiet 'pytest>=8,<9'
-          grep -q 'runtime_authority_activation_must_remain_unavailable_before_manual_approval' scripts/verify_mlb_trainer_deploy_response.py
-          python - <<'PY'
-          from pathlib import Path
-          text=Path('tests/unit/test_mlb_trainer_deploy_response.py').read_text()
-          assert '"runtimeAuthorityActivationAvailable": False' in text
-          assert '"runtimeAuthorityActivationAvailable": True' not in text.split('def _payloads():',1)[1].split('def _verify(',1)[0]
-          PY
-          python -m pytest -q \
-            tests/unit/test_mlb_shadow_authority_deploy_gate.py \
-            tests/unit/test_mlb_trainer_deploy_response.py
-      - name: Dispatch normal serialized SAM deployment
+      - name: Resolve latest dispatched deployment
+        id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh workflow run deploy.yml --ref main
+          for attempt in $(seq 1 30); do
+            row=$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow deploy.yml \
+              --event workflow_dispatch \
+              --limit 1 \
+              --json databaseId,status,conclusion,headSha,createdAt,url \
+              --jq '.[0] // empty')
+            if test -n "$row"; then
+              echo "$row" | python -m json.tool
+              run_id=$(echo "$row" | python -c 'import json,sys; print(json.load(sys.stdin)["databaseId"])')
+              echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'No workflow-dispatch deployment run was found.' >&2
+          exit 1
+      - name: Follow deployment to completion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.resolve.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          gh run watch "$RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status
+      - name: Publish final deployment summary
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.resolve.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          test -n "$RUN_ID"
+          gh run view "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json databaseId,status,conclusion,headSha,createdAt,updatedAt,url,jobs \
+            --jq '{databaseId,status,conclusion,headSha,createdAt,updatedAt,url,jobs:[.jobs[]|{name,status,conclusion,databaseId}]}'
