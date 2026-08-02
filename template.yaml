@@ -796,6 +796,8 @@ Resources:
     Properties:
       CodeUri: hello_world/
       Handler: mlb_results_scheduler.lambda_handler
+      Timeout: 300
+      MemorySize: 1536
       EventInvokeConfig:
         MaximumEventAgeInSeconds: 300
         MaximumRetryAttempts: 0
