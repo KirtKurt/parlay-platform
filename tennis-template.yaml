@@ -121,6 +121,7 @@ Resources:
           Type: Schedule
           Properties:
             Schedule: rate(1 hour)
+            Enabled: false
         BackfillApi:
           Type: Api
           Properties: {Path: /v1/tennis/learning/backfill, Method: POST}
@@ -138,6 +139,8 @@ Resources:
           TENNIS_LEARNING_TABLE: !Ref TennisLearningTable
           TENNIS_LIVE_FUNCTION: !Ref TennisLivePipelineFunction
           TENNIS_BACKFILL_FUNCTION: !Ref TennisHistoricalBackfillFunction
+          TENNIS_HISTORICAL_ENABLED: 'false'
+          TENNIS_HISTORICAL_REQUIRED: 'false'
           TENNIS_MIN_TRAINING_SAMPLES: '100'
           TENNIS_MIN_LIVE_AUDIT: '30'
           TENNIS_MIN_LIVE_ACCURACY: '0.55'
