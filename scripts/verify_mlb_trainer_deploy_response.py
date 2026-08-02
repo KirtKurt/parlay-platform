@@ -12,6 +12,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+# Keep deployment-identity literals visible in the executable verifier source.
+# The deployment stabilizer intentionally scans this file before importing it.
+TRAINER_VERSION = "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow"
+EXPERIMENT_ID = "mlb-v2-2026-08-03-future-prospective-r7"
+RELEASE_CUTOFF_UTC = "2026-08-03T04:00:00+00:00"
+
 try:
     from scripts import verify_mlb_trainer_deploy_response_legacy as _legacy
 except ImportError:  # Direct execution from the scripts directory.
