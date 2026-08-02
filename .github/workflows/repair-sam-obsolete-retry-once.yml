@@ -5,6 +5,11 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/repair-sam-obsolete-retry-once.yml'
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+    paths:
+      - '.github/workflows/repair-sam-obsolete-retry-once.yml'
 
 permissions:
   contents: write
@@ -15,6 +20,7 @@ concurrency:
 
 jobs:
   repair:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -161,5 +167,3 @@ jobs:
           done
           echo 'Failed to publish tested deployment retry repair.' >&2
           exit 1
-
-# trigger
