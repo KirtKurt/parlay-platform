@@ -1,4 +1,4 @@
-name: Diagnose MLB Canonical Slate Date
+name: Diagnose and Repair MLB Canonical Slate Date
 
 on:
   pull_request:
@@ -11,9 +11,9 @@ permissions:
   contents: write
 
 jobs:
-  diagnose:
+  diagnose-and-repair:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,7 +29,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
       - name: Install dependencies
-        run: python -m pip install --quiet 'boto3>=1.34,<2'
+        run: python -m pip install --quiet 'boto3>=1.34,<2' -r hello_world/requirements.txt
       - name: Fetch exact official slate state
         env:
           AWS_EC2_METADATA_DISABLED: 'true'
@@ -39,7 +39,63 @@ jobs:
           python scripts/diagnose_mlb_canonical_slate_date.py \
             --date 2026-07-29 \
             --output runtime_reports/mlb_canonical_slate_2026-07-29_diagnostic.json
-      - name: Recheck repaired production trainer against final slate
+      - name: Run authoritative write-once settlement and exact lock diagnostic
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          PYTHONPATH: hello_world:scripts
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+          import boto3
+
+          region=os.environ['AWS_REGION_VALUE']
+          cf=boto3.client('cloudformation', region_name=region)
+          lam=boto3.client('lambda', region_name=region)
+          stack=cf.describe_stacks(StackName='parlay-platform-dev')['Stacks'][0]
+          outputs={x['OutputKey']:x['OutputValue'] for x in stack.get('Outputs',[])}
+          trainer=outputs['MLBMLTrainingFunctionArn']
+          config=lam.get_function_configuration(FunctionName=trainer)
+          for key,value in ((config.get('Environment') or {}).get('Variables') or {}).items():
+              os.environ[str(key)]=str(value)
+          os.environ.setdefault('AWS_DEFAULT_REGION', region)
+          os.environ.setdefault('AWS_REGION', region)
+
+          import mlb_canonical_final_labels_v1 as labels
+
+          settlement=labels.settle_mlb_slate(
+              slate_date='2026-07-29',
+              fetch_scores=True,
+              store=True,
+          )
+          training=labels.load_canonical_training_rows(slate_date='2026-07-29')
+
+          def safe(value):
+              if isinstance(value, dict):
+                  return {
+                      str(k): ('[REDACTED]' if any(token in str(k).lower() for token in ('secret','password','credential','api_key','apikey','authorization')) else safe(v))
+                      for k,v in value.items()
+                  }
+              if isinstance(value, list):
+                  return [safe(v) for v in value]
+              return value
+
+          report={
+              'proofType':'MLB_CANONICAL_SLATE_SETTLEMENT_AND_LOCK_DIAGNOSTIC',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'slateDateEt':'2026-07-29',
+              'stackStatus':stack.get('StackStatus'),
+              'settlement':safe(settlement),
+              'trainingReadback':safe(training),
+              'secretExposed':False,
+          }
+          path=Path('runtime_reports/mlb_canonical_slate_2026-07-29_settlement_diagnostic.json')
+          path.write_text(json.dumps(report,indent=2,sort_keys=True,default=str)+'\n')
+          print(json.dumps(report,indent=2,sort_keys=True,default=str))
+          PY
+      - name: Recheck repaired production trainer after settlement
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
         run: |
@@ -58,23 +114,25 @@ jobs:
           fn=outputs['MLBMLTrainingFunctionArn']
           attempts=[]
           final=None
+          final_response=None
           for attempt in range(1,7):
-              response=lam.invoke(FunctionName=fn,InvocationType='RequestResponse',Payload=json.dumps({'sport':'mlb','mode':'scheduled','run':'post_final_slate_continuity_recheck'}).encode())
+              response=lam.invoke(FunctionName=fn,InvocationType='RequestResponse',Payload=json.dumps({'sport':'mlb','mode':'scheduled','run':'post_authoritative_settlement_continuity_recheck'}).encode())
               raw=response['Payload'].read().decode('utf-8','replace')
               try: body=json.loads(raw or '{}')
               except Exception: body={'rawPayload':raw[:4000]}
               attempts.append({'attempt':attempt,'at':datetime.now(timezone.utc).isoformat(),'functionError':response.get('FunctionError'),'status':body.get('status') if isinstance(body,dict) else None,'errorType':body.get('errorType') if isinstance(body,dict) else None,'errorMessage':body.get('errorMessage') if isinstance(body,dict) else None})
               final=body
+              final_response=response
               if response.get('FunctionError') is None:
                   break
               message=str(body.get('errorMessage') or '') if isinstance(body,dict) else ''
               if 'execution lease' not in message.lower():
                   break
               time.sleep(20)
-          report={'proofType':'MLB_CANONICAL_CONTINUITY_LIVE_RECHECK','createdAtUtc':datetime.now(timezone.utc).isoformat(),'stackStatus':stack.get('StackStatus'),'functionName':fn,'attempts':attempts,'result':final,'secretExposed':False}
-          Path('runtime_reports/mlb_canonical_continuity_live_recheck.json').write_text(json.dumps(report,indent=2,sort_keys=True,default=str)+'\n')
+          report={'proofType':'MLB_CANONICAL_CONTINUITY_POST_SETTLEMENT_RECHECK','createdAtUtc':datetime.now(timezone.utc).isoformat(),'stackStatus':stack.get('StackStatus'),'functionName':fn,'attempts':attempts,'result':final,'secretExposed':False}
+          Path('runtime_reports/mlb_canonical_continuity_post_settlement_recheck.json').write_text(json.dumps(report,indent=2,sort_keys=True,default=str)+'\n')
           print(json.dumps(report,indent=2,sort_keys=True,default=str))
-          if attempts[-1]['functionError'] is not None:
+          if final_response and final_response.get('FunctionError') is not None:
               raise SystemExit(1)
           PY
       - name: Commit diagnostic
@@ -85,7 +143,9 @@ jobs:
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add runtime_reports/mlb_canonical_slate_2026-07-29_diagnostic.json runtime_reports/mlb_canonical_continuity_live_recheck.json
+          git add runtime_reports/mlb_canonical_slate_2026-07-29_diagnostic.json \
+            runtime_reports/mlb_canonical_slate_2026-07-29_settlement_diagnostic.json \
+            runtime_reports/mlb_canonical_continuity_post_settlement_recheck.json
           git diff --cached --quiet && exit 0
-          git commit -m 'Publish MLB canonical continuity live recheck'
+          git commit -m 'Publish MLB canonical slate settlement diagnostic'
           git push origin HEAD:"$HEAD_BRANCH"
