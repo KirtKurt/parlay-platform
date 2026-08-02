@@ -9,12 +9,11 @@ from typing import Any, Mapping
 
 import boto3
 
-EXPECTED_COMPAT_VERSION = (
-    "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v3-return-and-persist"
-)
-LEASE_ERROR_MESSAGE = (
-    "MLB AWS trainer execution lease is unavailable for this experiment"
-)
+EXPECTED_COMPAT_VERSION = "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v4-null-safe"
+LEASE_ERROR_MESSAGES = {
+    "MLB AWS trainer execution lease is unavailable for this experiment",
+    "another MLB ML trainer invocation holds the execution lease",
+}
 
 
 def _payload(response: Mapping[str, Any]) -> Any:
@@ -33,7 +32,7 @@ def _is_retryable(response: Mapping[str, Any], body: Any) -> bool:
         return False
     error_type = str(body.get("errorType") or "")
     message = str(body.get("errorMessage") or "")
-    if message == LEASE_ERROR_MESSAGE and error_type in {
+    if message in LEASE_ERROR_MESSAGES and error_type in {
         "ExecutionLeaseUnavailable",
         "MLBMLExecutionLeaseUnavailable",
     }:
@@ -79,7 +78,7 @@ def main() -> int:
                 {
                     "sport": "mlb",
                     "mode": "scheduled",
-                    "run": "verify_continuity_wait_return_repair",
+                    "run": "verify_continuity_wait_return_repair_v4",
                 }
             ).encode("utf-8"),
         )
@@ -122,7 +121,7 @@ def main() -> int:
 
     report = {
         "proofType": "MLB_TRAINER_LIVE_REPAIR_VERIFICATION",
-        "version": "MLB-TRAINER-LIVE-REPAIR-VERIFICATION-v1",
+        "version": "MLB-TRAINER-LIVE-REPAIR-VERIFICATION-v2",
         "createdAtUtc": datetime.now(timezone.utc).isoformat(),
         "stackName": args.stack_name,
         "stackStatus": stack.get("StackStatus"),
