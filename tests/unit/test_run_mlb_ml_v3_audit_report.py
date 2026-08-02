@@ -24,7 +24,7 @@ DEPLOYMENT = {"gitSha": "a" * 40, "templateSha256": "b" * 64}
 MANIFEST = experiment.new_manifest(
     experiment_id=EXPERIMENT_ID,
     release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
-    release_cutoff_utc="2026-08-02T04:00:00+00:00",
+    release_cutoff_utc="2026-08-03T04:00:00+00:00",
     feature_vector_version="vector-v2",
     model_feature_schemas={
         "outcome": list(trainer.dual_model.OUTCOME_FEATURES),
@@ -34,7 +34,7 @@ MANIFEST = experiment.new_manifest(
     release_activation=experiment.release_activation(
         experiment_id=EXPERIMENT_ID,
         release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
-        release_cutoff_utc="2026-08-02T04:00:00+00:00",
+        release_cutoff_utc="2026-08-03T04:00:00+00:00",
         activated_at_utc="2026-07-21T01:00:00+00:00",
         deployment_git_sha=DEPLOYMENT["gitSha"],
         deployment_template_sha256=DEPLOYMENT["templateSha256"],
@@ -549,7 +549,7 @@ def _status(
 
 
 def test_generic_latest_never_overrides_mode_specific_authority(monkeypatch) -> None:
-    experiment_id = "mlb-v2-2026-08-02-future-prospective-r6"
+    experiment_id = "mlb-v2-2026-08-03-future-prospective-r7"
     pk = f"MLB_ML_EXPERIMENT#V2#{experiment_id}"
     generic = _status("selection_capture", 1, ok=False)
     generic["automaticPromotionEnabled"] = True
@@ -575,7 +575,7 @@ def test_generic_latest_never_overrides_mode_specific_authority(monkeypatch) -> 
 
 
 def test_fresh_capture_cannot_mask_stale_or_failed_training(monkeypatch) -> None:
-    experiment_id = "mlb-v2-2026-08-02-future-prospective-r6"
+    experiment_id = "mlb-v2-2026-08-03-future-prospective-r7"
     pk = f"MLB_ML_EXPERIMENT#V2#{experiment_id}"
     _install_table(
         monkeypatch,
@@ -610,7 +610,7 @@ def test_fresh_capture_cannot_mask_stale_or_failed_training(monkeypatch) -> None
 
 
 def test_matching_fresh_modes_require_same_deployment_identity(monkeypatch) -> None:
-    experiment_id = "mlb-v2-2026-08-02-future-prospective-r6"
+    experiment_id = "mlb-v2-2026-08-03-future-prospective-r7"
     pk = f"MLB_ML_EXPERIMENT#V2#{experiment_id}"
     _install_table(
         monkeypatch,
