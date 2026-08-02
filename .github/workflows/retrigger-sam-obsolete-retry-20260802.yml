@@ -1,7 +1,9 @@
-# Trigger registered repair after workflow is active on main: 2026-08-02T07:40Z
 name: Repair MLB fail-closed shadow authority verifier
 
 on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
   push:
     branches: [main]
     paths:
@@ -19,6 +21,7 @@ concurrency:
 
 jobs:
   repair:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
