@@ -1,0 +1,103 @@
+name: Fix MLB Shadow Verifier Source on Main Once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-mlb-shadow-verifier-source-main-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-mlb-shadow-verifier-source-main-once
+  cancel-in-progress: false
+
+jobs:
+  patch-test-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Patch verifier against exact current source
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          verifier = Path('scripts/verify_mlb_trainer_deploy_response.py')
+          text = verifier.read_text(encoding='utf-8')
+          old = '''    champion = status_after.get("champion")
+    champion_absent = champion in (None, {})
+    activation_available = status_after.get("runtimeAuthorityActivationAvailable")
+
+    shadow_manual_first = (
+        automatic_promotion_disabled
+        and manual_first_required
+        and inference_consumer_absent
+        and live_authority_absent
+        and champion_absent
+    )
+'''
+          new = '''    activation_available = status_after.get("runtimeAuthorityActivationAvailable")
+
+    # A persisted shadow challenger or champion artifact is not live runtime
+    # authority. Activation must remain unavailable until manual approval installs
+    # an inference consumer or otherwise enables live inference authority.
+    shadow_manual_first = (
+        automatic_promotion_disabled
+        and manual_first_required
+        and inference_consumer_absent
+        and live_authority_absent
+    )
+'''
+          if old not in text:
+              if new in text:
+                  raise SystemExit(0)
+              raise SystemExit('expected verifier block not found; refusing unsafe patch')
+          verifier.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          tests = Path('tests/unit/test_mlb_shadow_authority_deploy_gate.py').read_text(
+              encoding='utf-8'
+          )
+          for required in (
+              'test_persisted_shadow_champion_does_not_enable_runtime_activation',
+              'test_persisted_shadow_champion_rejects_premature_runtime_activation',
+              'test_authoritative_state_requires_runtime_activation_path',
+          ):
+              if required not in tests:
+                  raise SystemExit(f'missing required authority lifecycle test: {required}')
+          PY
+      - name: Run focused verifier tests
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9'
+          python -m py_compile scripts/verify_mlb_trainer_deploy_response.py
+          python -m pytest -q \
+            tests/unit/test_mlb_shadow_authority_deploy_gate.py \
+            tests/unit/test_mlb_trainer_deploy_response.py
+          git diff --check
+      - name: Publish patch and remove one-shot workflow
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          rm -f .github/workflows/fix-mlb-shadow-verifier-source-main-once.yml
+          git add scripts/verify_mlb_trainer_deploy_response.py \
+            .github/workflows/fix-mlb-shadow-verifier-source-main-once.yml
+          git commit -m 'Fix MLB shadow verifier source authority gate'
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 3))
+            git fetch origin main
+            git rebase origin/main || { git rebase --abort; exit 1; }
+          done
+          exit 1
