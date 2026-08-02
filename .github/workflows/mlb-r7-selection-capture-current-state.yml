@@ -1,0 +1,146 @@
+name: MLB R7 Selection Capture Current State
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-r7-selection-capture-current-state.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-r7-selection-capture-current-state
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-dev
+  REPORT_PATH: runtime_reports/mlb_r7_selection_capture_current_latest.json
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Invoke and verify current selection-capture state
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports /tmp/mlb-selection-current
+          ARN=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='MLBMLTrainingFunctionArn'].OutputValue" --output text)
+          test -n "$ARN"; test "$ARN" != None
+          aws lambda get-function-configuration --function-name "$ARN" --region "$AWS_REGION_VALUE" --output json > /tmp/mlb-selection-current/config.json
+          STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          aws lambda invoke --function-name "$ARN" --region "$AWS_REGION_VALUE" --cli-binary-format raw-in-base64-out --payload '{"sport":"mlb","mode":"selection_capture","run":"r7_selection_capture_current_state"}' /tmp/mlb-selection-current/selection.json --output json > /tmp/mlb-selection-current/selection-invocation.json
+          FRESH=false
+          for attempt in $(seq 1 10); do
+            aws lambda invoke --function-name "$ARN" --region "$AWS_REGION_VALUE" --cli-binary-format raw-in-base64-out --payload '{"sport":"mlb","mode":"status"}' /tmp/mlb-selection-current/status.json --output json > /tmp/mlb-selection-current/status-invocation.json
+            if STARTED_AT="$STARTED_AT" python - <<'PY'
+          import json, os
+          from pathlib import Path
+          status=json.loads(Path('/tmp/mlb-selection-current/status.json').read_text())
+          health=status.get('selectionCaptureHealth') if isinstance(status.get('selectionCaptureHealth'),dict) else {}
+          latest=health.get('latestRun') if isinstance(health.get('latestRun'),dict) else {}
+          identity=health.get('deploymentIdentityMatches')
+          if identity is None:
+              identity=latest.get('deploymentIdentityMatches')
+          healthy_statuses={'CAPTURED_SELECTIONS','WAITING_FOR_PERSISTED_CHALLENGER'}
+          ok=(identity is True and not latest.get('failure') and latest.get('status') in healthy_statuses and str(latest.get('createdAtUtc') or '') >= os.environ['STARTED_AT'])
+          raise SystemExit(0 if ok else 1)
+          PY
+            then FRESH=true; break; fi
+            sleep 12
+          done
+          STARTED_AT="$STARTED_AT" FRESH="$FRESH" python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          root=Path('/tmp/mlb-selection-current')
+          def load(name):
+              p=root/name
+              try:
+                  v=json.loads(p.read_text())
+                  return v if isinstance(v,dict) else {}
+              except Exception:
+                  return {}
+          config=load('config.json'); env=((config.get('Environment') or {}).get('Variables') or {})
+          selection=load('selection.json'); sinvoke=load('selection-invocation.json'); status=load('status.json'); stinvoke=load('status-invocation.json')
+          sh=status.get('selectionCaptureHealth') if isinstance(status.get('selectionCaptureHealth'),dict) else {}
+          sl=sh.get('latestRun') if isinstance(sh.get('latestRun'),dict) else {}
+          th=status.get('trainingHealth') if isinstance(status.get('trainingHealth'),dict) else {}
+          tl=th.get('latestRun') if isinstance(th.get('latestRun'),dict) else {}
+          identity=sh.get('deploymentIdentityMatches')
+          if identity is None: identity=sl.get('deploymentIdentityMatches')
+          healthy={'CAPTURED_SELECTIONS','WAITING_FOR_PERSISTED_CHALLENGER'}
+          blockers=[]
+          if sinvoke.get('FunctionError'): blockers.append('selection_capture_function_error')
+          if selection.get('ok') is not True or selection.get('status') not in healthy: blockers.append('selection_capture_unhealthy_response')
+          if os.environ['FRESH'].lower()!='true': blockers.append('persisted_selection_status_not_fresh')
+          if identity is not True: blockers.append('selection_capture_deployment_identity_mismatch')
+          if sl.get('failure'): blockers.append('selection_capture_persisted_failure')
+          if status.get('automaticPromotionEnabled') is not False: blockers.append('automatic_promotion_not_fail_closed')
+          report={
+            'ok':not blockers,
+            'proofType':'MLB_R7_SELECTION_CAPTURE_CURRENT_STATE',
+            'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+            'startedAtUtc':os.environ['STARTED_AT'],
+            'sourceSha':os.environ.get('GITHUB_SHA'),
+            'deployedGitSha':env.get('INQSI_DEPLOY_GIT_SHA'),
+            'deployedTemplateSha256':env.get('INQSI_DEPLOY_TEMPLATE_SHA256'),
+            'selectionInvocation':sinvoke,
+            'statusInvocation':stinvoke,
+            'selectionResponse':{k:selection.get(k) for k in ('ok','status','executionMode','runId','createdAtUtc','selectionCaptureReady','historicalTrainingScanInvoked','modelTrained','liveInferenceAuthority')},
+            'selectionHealth':{'ok':sh.get('ok'),'deploymentIdentityMatches':identity,'errors':sh.get('errors'),'latestRun':{k:sl.get(k) for k in ('ok','status','runId','createdAtUtc','failure','selectionCaptureReady','modelTrained','liveInferenceAuthority')}},
+            'trainingHealth':{'ok':th.get('ok'),'deploymentIdentityMatches':th.get('deploymentIdentityMatches'),'errors':th.get('errors'),'latestRun':{k:tl.get(k) for k in ('ok','status','runId','createdAtUtc','failure','acceptedRowCount','rejectedRowCount','partitionCounts','modelTrained','championChanged','liveInferenceAuthority','canonicalSlateContinuity','milestones')}},
+            'manifestPhase':(status.get('manifest') or {}).get('phase') if isinstance(status.get('manifest'),dict) else None,
+            'automaticPromotionEnabled':status.get('automaticPromotionEnabled'),
+            'firstPromotionRequiresManualReview':status.get('firstPromotionRequiresManualReview'),
+            'runtimeAuthorityActivationAvailable':status.get('runtimeAuthorityActivationAvailable'),
+            'statusFresh':os.environ['FRESH'].lower()=='true',
+            'blockers':blockers,
+            'secretExposed':False,
+          }
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(report,indent=2,sort_keys=True))
+          PY
+      - name: Publish current selection evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s "$REPORT_PATH"
+          cp "$REPORT_PATH" /tmp/mlb-selection-current-report.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-r7-selection-current-proof origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb-selection-current-report.json "$REPORT_PATH"
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB r7 current selection evidence [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
+      - name: Enforce fail-closed current state
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          report=json.loads(Path(os.environ['REPORT_PATH']).read_text())
+          assert report.get('ok') is True, report
+          assert report.get('automaticPromotionEnabled') is False, report
+          assert report.get('statusFresh') is True, report
+          PY
