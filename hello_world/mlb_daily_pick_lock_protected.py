@@ -82,6 +82,7 @@ import mlb_daily_pick_lock
 import mlb_daily_lock_coverage_patch
 import mlb_daily_lock_ml_vector_preservation_patch
 import mlb_daily_per_game_lock_patch
+import mlb_terminal_lifecycle_count_reconciliation as lifecycle_counts
 
 LOCK_RUNTIME_FIX_VERSION = "MLB-LOCK-RUNTIME-FIX-v5-official-schedule-lifecycle-vector-separation"
 LOCK_EXECUTION_LEASE_VERSION = "MLB-LOCK-EXECUTION-LEASE-v1"
@@ -616,7 +617,10 @@ def _attach_preservation_status(
         if concurrency is not None:
             payload["lockExecutionConcurrency"] = concurrency
         out["body"] = json.dumps(payload)
-    return out
+    return lifecycle_counts.reconcile_http_response(
+        out,
+        row_field="perGameStatus",
+    )
 
 
 def _response_failed(response: Any) -> bool:

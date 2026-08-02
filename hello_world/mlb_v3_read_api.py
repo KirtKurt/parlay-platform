@@ -7,6 +7,7 @@ from typing import Any, Dict
 from zoneinfo import ZoneInfo
 
 import mlb_ml_runtime_install_v3
+import mlb_terminal_lifecycle_count_reconciliation as lifecycle_counts
 
 RUNTIME_INSTALL = mlb_ml_runtime_install_v3.install()
 
@@ -237,6 +238,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     except Exception as exc:
         return _response(500, {**_model_body(), "ok": False, "date": date, "error": str(exc), "winner_predictions": [], "predictions": [], "count": 0})
     result = dict(result or {})
+    result = lifecycle_counts.reconcile_payload(
+        result,
+        row_field="predictions",
+    )
     result.update({
         "sport": "mlb",
         "date": date,
