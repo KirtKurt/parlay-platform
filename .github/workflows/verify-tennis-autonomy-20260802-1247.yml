@@ -1,0 +1,329 @@
+name: Verify Tennis Autonomy 2026-08-02 1247
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-tennis-autonomy-20260802-1247.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: verify-tennis-autonomy-20260802-1247
+  cancel-in-progress: true
+
+jobs:
+  test-query-repair-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run isolated tennis contract tests
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
+          python -m py_compile \
+            tennis_learning/handler.py \
+            tennis_learning/live_pipeline.py \
+            tennis_learning/autonomous_controller.py \
+            tennis_learning/backfill.py
+          python -m pytest -q \
+            tests/test_tennis_autonomy_contract.py \
+            tests/test_tennis_backfill_contract.py
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Query live state and repair only if stale
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-tennis-learning
+          region="$AWS_REGION_VALUE"
+          work=/tmp/tennis-autonomy-1247
+          mkdir -p "$work" runtime
+
+          stack_status=$(aws cloudformation describe-stacks \
+            --stack-name "$stack" --region "$region" \
+            --query 'Stacks[0].StackStatus' --output text)
+          status_endpoint=$(aws cloudformation describe-stacks \
+            --stack-name "$stack" --region "$region" \
+            --query "Stacks[0].Outputs[?OutputKey=='TennisAutonomyStatusApi'].OutputValue" \
+            --output text)
+          run_endpoint=$(aws cloudformation describe-stacks \
+            --stack-name "$stack" --region "$region" \
+            --query "Stacks[0].Outputs[?OutputKey=='TennisAutonomyRunApi'].OutputValue" \
+            --output text)
+
+          test "$stack_status" = UPDATE_COMPLETE
+          test -n "$status_endpoint"; test "$status_endpoint" != None
+          test -n "$run_endpoint"; test "$run_endpoint" != None
+
+          curl -fsS --retry 4 --retry-all-errors --retry-delay 5 --max-time 60 \
+            "$status_endpoint" -o "$work/status-before.json"
+
+          repair_needed=$(python - "$work/status-before.json" <<'PY'
+          import json, sys
+          from datetime import datetime, timezone
+          payload = json.load(open(sys.argv[1]))
+          if isinstance(payload, dict) and isinstance(payload.get('body'), str):
+              payload = json.loads(payload['body'])
+          raw = payload.get('last_cycle_at')
+          if not raw:
+              print('true')
+          else:
+              stamp = datetime.fromisoformat(str(raw).replace('Z', '+00:00')).astimezone(timezone.utc)
+              age = (datetime.now(timezone.utc) - stamp).total_seconds() / 60.0
+              print('true' if age > 20.0 else 'false')
+          PY
+          )
+
+          repair_attempted=false
+          repair_succeeded=false
+          repair_error=''
+          echo '{}' > "$work/run-response.json"
+
+          if [ "$repair_needed" = true ]; then
+            repair_attempted=true
+            set +e
+            curl -fsS --retry 2 --retry-all-errors --retry-delay 10 \
+              -X POST --max-time 900 "$run_endpoint" \
+              -o "$work/run-response.json" 2>"$work/run-error.txt"
+            rc=$?
+            set -e
+            if [ "$rc" -ne 0 ]; then
+              repair_error=$(cat "$work/run-error.txt")
+            else
+              repair_succeeded=true
+            fi
+          fi
+
+          sleep 5
+          curl -fsS --retry 4 --retry-all-errors --retry-delay 5 --max-time 60 \
+            "$status_endpoint" -o "$work/status-after.json"
+
+          export STACK_STATUS="$stack_status"
+          export SOURCE_SHA="$GITHUB_SHA"
+          export BEFORE_PATH="$work/status-before.json"
+          export AFTER_PATH="$work/status-after.json"
+          export RUN_PATH="$work/run-response.json"
+          export REPAIR_NEEDED="$repair_needed"
+          export REPAIR_ATTEMPTED="$repair_attempted"
+          export REPAIR_SUCCEEDED="$repair_succeeded"
+          export REPAIR_ERROR="$repair_error"
+
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def load(path):
+              value = json.loads(Path(path).read_text())
+              if isinstance(value, dict) and 'body' in value:
+                  body = value.get('body')
+                  if isinstance(body, str):
+                      try:
+                          value = json.loads(body)
+                      except json.JSONDecodeError:
+                          pass
+                  elif isinstance(body, dict):
+                      value = body
+              return value if isinstance(value, dict) else {'value': value}
+
+          now = datetime.now(timezone.utc)
+          before = load(os.environ['BEFORE_PATH'])
+          after = load(os.environ['AFTER_PATH'])
+          run = load(os.environ['RUN_PATH'])
+          actions = run.get('actions') if isinstance(run.get('actions'), dict) else {}
+          collect = actions.get('collect') if isinstance(actions.get('collect'), dict) else {}
+          settle = actions.get('settle') if isinstance(actions.get('settle'), dict) else {}
+
+          training_before = int(before.get('training_samples') or 0)
+          training = int(after.get('training_samples') or run.get('training_samples') or 0)
+          audits_before = int(before.get('live_audit_count') or 0)
+          audits = int(after.get('live_audit_count') or run.get('live_audit_count') or 0)
+          accuracy_raw = after.get('live_accuracy')
+          brier_raw = after.get('live_brier')
+          accuracy = float(accuracy_raw) if accuracy_raw is not None else None
+          brier = float(brier_raw) if brier_raw is not None else None
+          failures = int(after.get('consecutive_failures') or 0)
+          authority = str(after.get('authority') or 'UNKNOWN')
+          automatic = bool(after.get('automatic_prediction_allowed', False))
+          last_cycle = after.get('last_cycle_at')
+          age = None
+          if last_cycle:
+              stamp = datetime.fromisoformat(str(last_cycle).replace('Z', '+00:00')).astimezone(timezone.utc)
+              age = round(max(0.0, (now - stamp).total_seconds() / 60.0), 2)
+
+          collect_errors = collect.get('errors') if isinstance(collect.get('errors'), dict) else {}
+          settle_errors = settle.get('errors') if isinstance(settle.get('errors'), dict) else {}
+          trained = int(settle.get('trained') or 0)
+          duplicates = int(settle.get('duplicates') or 0)
+          missing = int(settle.get('missing_snapshots') or 0)
+          score_events = int(settle.get('score_events') or 0)
+
+          if collect_errors or settle_errors or collect.get('error') or settle.get('error'):
+              progress_reason = 'required_live_action_failed'
+          elif training > training_before or audits > audits_before or trained > 0:
+              progress_reason = 'new_live_settlement_added'
+          elif not actions:
+              progress_reason = 'recent_scheduled_cycle_required_no_manual_invocation'
+          elif score_events == 0:
+              progress_reason = 'provider_returned_no_recent_score_events'
+          elif duplicates > 0 and missing == 0:
+              progress_reason = 'all_eligible_recent_scores_already_settled'
+          elif missing > 0:
+              progress_reason = 'recent_scores_include_events_without_prior_live_snapshots'
+          else:
+              progress_reason = 'no_new_eligible_completed_match'
+
+          gates = {
+              'training_samples_100': training >= 100,
+              'live_audits_30': audits >= 30,
+              'live_accuracy_55pct': accuracy is not None and accuracy >= 0.55,
+              'brier_at_most_0_25': brier is not None and brier <= 0.25,
+              'circuit_breaker_clear': failures < 3 and authority != 'DEGRADED',
+          }
+          all_gates = all(gates.values())
+          authority_consistent = (
+              (authority == 'SHADOW' and automatic is False)
+              or (authority == 'AUTHORITATIVE' and automatic is True and all_gates)
+          )
+          repair_error = os.environ.get('REPAIR_ERROR', '').strip() or None
+          operational = (
+              os.environ['STACK_STATUS'] == 'UPDATE_COMPLETE'
+              and age is not None and age <= 45.0
+              and failures < 3
+              and authority_consistent
+              and after.get('last_error') in (None, '')
+              and not repair_error
+              and not collect_errors
+              and not settle_errors
+              and not collect.get('error')
+              and not settle.get('error')
+          )
+
+          status = {
+              'checked_at': now.isoformat(),
+              'source_commit': os.environ.get('SOURCE_SHA'),
+              'service': after.get('service'),
+              'stack_status': os.environ['STACK_STATUS'],
+              'status_endpoint_available': True,
+              'query_succeeded': True,
+              'query_error': None,
+              'authority': authority,
+              'authority_consistent': authority_consistent,
+              'reason': after.get('reason'),
+              'automatic_prediction_allowed': automatic,
+              'training_samples': training,
+              'live_audit_count': audits,
+              'live_accuracy': accuracy,
+              'live_brier': brier,
+              'consecutive_failures': failures,
+              'last_cycle_at': last_cycle,
+              'cycle_age_minutes': age,
+              'cycle_fresh': age is not None and age <= 45.0,
+              'schedule_advancing': age is not None and age <= 20.0,
+              'repair_needed': os.environ.get('REPAIR_NEEDED') == 'true',
+              'repair_attempted': os.environ.get('REPAIR_ATTEMPTED') == 'true',
+              'repair_succeeded': os.environ.get('REPAIR_SUCCEEDED') == 'true',
+              'repair_error': repair_error,
+              'last_error': after.get('last_error'),
+              'last_warning': after.get('last_warning'),
+              'historical_backfill_enabled': after.get('historical_backfill_enabled'),
+              'historical_backfill_required': after.get('historical_backfill_required'),
+              'model_version': after.get('model_version'),
+              'promotion_gates': gates,
+              'all_promotion_gates_pass': all_gates,
+              'progress_reason': progress_reason,
+              'latest_cycle_collection': collect or None,
+              'latest_cycle_settlement': settle or None,
+              'operationally_healthy': operational,
+          }
+          diagnostic = {
+              'checked_at': now.isoformat(),
+              'source_commit': os.environ.get('SOURCE_SHA'),
+              'stack_status': os.environ['STACK_STATUS'],
+              'status_before': before,
+              'status_after': after,
+              'cycle_response': run,
+              'collection': collect,
+              'settlement': settle,
+              'training_samples_before': training_before,
+              'training_samples_after': training,
+              'training_samples_delta': training - training_before,
+              'live_audits_before': audits_before,
+              'live_audits_after': audits,
+              'live_audits_delta': audits - audits_before,
+              'progress_reason': progress_reason,
+              'repair_needed': status['repair_needed'],
+              'repair_attempted': status['repair_attempted'],
+              'repair_succeeded': status['repair_succeeded'],
+              'repair_error': repair_error,
+              'operationally_healthy': operational,
+          }
+
+          Path('/tmp/tennis-autonomy-status-1247.json').write_text(
+              json.dumps(status, indent=2, sort_keys=True, default=str) + '\n'
+          )
+          Path('/tmp/tennis-autonomy-diagnostic-1247.json').write_text(
+              json.dumps(diagnostic, indent=2, sort_keys=True, default=str) + '\n'
+          )
+          print(json.dumps(status, indent=2, sort_keys=True, default=str))
+
+          assert status['stack_status'] == 'UPDATE_COMPLETE', status
+          assert status['cycle_fresh'] is True, status
+          assert status['authority_consistent'] is True, status
+          assert status['consecutive_failures'] < 3, status
+          assert status['last_error'] in (None, ''), status
+          assert status['repair_error'] is None, status
+          assert not collect_errors, diagnostic
+          assert not settle_errors, diagnostic
+          assert not collect.get('error'), diagnostic
+          assert not settle.get('error'), diagnostic
+          assert status['operationally_healthy'] is True, status
+          PY
+
+      - name: Publish verified evidence and self-remove
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          for attempt in $(seq 1 40); do
+            git fetch origin main
+            git checkout -B tennis-autonomy-1247-publish origin/main
+            mkdir -p runtime
+            cp /tmp/tennis-autonomy-status-1247.json runtime/tennis_autonomy_status.json
+            cp /tmp/tennis-autonomy-diagnostic-1247.json runtime/tennis_autonomy_diagnostic.json
+            rm -f .github/workflows/verify-tennis-autonomy-20260802-1247.yml
+            git add runtime/tennis_autonomy_status.json \
+              runtime/tennis_autonomy_diagnostic.json \
+              .github/workflows/verify-tennis-autonomy-20260802-1247.yml
+            if git diff --cached --quiet; then
+              exit 0
+            fi
+            git commit -m 'Publish fresh tennis autonomy verification [skip ci]'
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((3 + attempt % 7))
+          done
+
+          echo 'Unable to publish fresh tennis autonomy verification after forty attempts' >&2
+          exit 1
