@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Verify schedule-aware pull guard policy
         run: python tests/unit/test_mlb_pull_guard_status.py
@@ -39,6 +41,7 @@ jobs:
           SNAPSHOTS_TABLE: parlay_platform_snapshots
           AWS_REGION: us-east-1
         run: |
+          set -euo pipefail
           mkdir -p runtime_reports
           SLATE_DATE=$(TZ=America/New_York date +%F)
           PK="PULLS#mlb#${SLATE_DATE}"
@@ -52,17 +55,32 @@ jobs:
             --aws-error-file /tmp/mlb_pull_guard_error.txt \
             --output runtime_reports/mlb_hot_pull_visibility_latest.json \
             --output runtime_reports/mlb_pull_guard_status_latest.json
+
+          cp runtime_reports/mlb_hot_pull_visibility_latest.json /tmp/mlb_hot_pull_visibility_latest.json
+          cp runtime_reports/mlb_pull_guard_status_latest.json /tmp/mlb_pull_guard_status_latest.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add runtime_reports/mlb_hot_pull_visibility_latest.json runtime_reports/mlb_pull_guard_status_latest.json || true
-          if git diff --cached --quiet; then
-            echo "No proof change"
-          else
-            git commit -m "Update MLB pull guard read-only proof" || true
-            git pull --rebase --autostash origin main || true
-            git push || true
-          fi
-          true
+
+          published=false
+          for attempt in $(seq 1 20); do
+            git fetch origin main
+            git checkout -B mlb-pull-guard-publish origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb_hot_pull_visibility_latest.json runtime_reports/mlb_hot_pull_visibility_latest.json
+            cp /tmp/mlb_pull_guard_status_latest.json runtime_reports/mlb_pull_guard_status_latest.json
+            git add runtime_reports/mlb_hot_pull_visibility_latest.json runtime_reports/mlb_pull_guard_status_latest.json
+            if git diff --cached --quiet; then
+              published=true
+              break
+            fi
+            git commit -m "Update MLB pull guard read-only proof"
+            if git push origin HEAD:main; then
+              published=true
+              break
+            fi
+            sleep $((attempt * 2))
+          done
+          [ "$published" = true ] || { echo "::error::Unable to publish MLB pull guard proof after retries"; exit 1; }
 
       - name: Enforce MLB pull guard health
         run: |
