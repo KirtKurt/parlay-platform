@@ -1,6 +1,164 @@
 {
   "allFinal": true,
-  "createdAtUtc": "2026-08-02T03:16:01.332341+00:00",
+  "canonicalSettlement": {
+    "authoritativeSettlement": true,
+    "canonicalLockCount": 4,
+    "createdAtUtc": "2026-08-02T03:19:24.207647+00:00",
+    "identityRejectionCount": 0,
+    "identityRejections": [],
+    "immutablePregameReadbackErrors": [],
+    "immutablePregameRowsMutated": false,
+    "immutablePregameVectorPolicy": "Canonical FINAL labels are separate write-once records; LOCKED#GAME rows and frozen vectors are never updated.",
+    "labelConflictCount": 2,
+    "labelCreatedCount": 0,
+    "labelIdempotentCount": 2,
+    "labelWouldCreateCount": 0,
+    "labelWriteCount": 4,
+    "labelWrites": [
+      {
+        "existingSettlementFingerprint": "8dfbea2f38aee12fe6e39c33b56ec2a7a5f75b1cf81e460d0e25710081fa62ed",
+        "officialGamePk": "822702",
+        "ok": false,
+        "policy": "Write-once canonical labels never overwrite a differing official FINAL; correction conflicts require manual review.",
+        "proposedSettlementFingerprint": "863b12ea6a38114dd79ce074ebedc1cdab3a3a8de86050e6276ff2c3c8fdc7fb",
+        "status": "OFFICIAL_FINAL_CORRECTION_CONFLICT"
+      },
+      {
+        "officialGamePk": "823351",
+        "ok": true,
+        "pk": "MLB_CANONICAL_FINAL_LABEL#2026-07-29",
+        "settlementFingerprint": "31423cd8a9d1abb019680eff0247229d275cbe8723eee7dab542854649f320b7",
+        "sk": "GAME_PK#823351",
+        "status": "IDEMPOTENT_EXISTING"
+      },
+      {
+        "officialGamePk": "823837",
+        "ok": true,
+        "pk": "MLB_CANONICAL_FINAL_LABEL#2026-07-29",
+        "settlementFingerprint": "5a004e0db19107d2bd3c0762ec49774b9f1263719d0aaa021357b4d45e937ae9",
+        "sk": "GAME_PK#823837",
+        "status": "IDEMPOTENT_EXISTING"
+      },
+      {
+        "existingSettlementFingerprint": "17e0413df3a8b4f8dc1634f361ac0edd32664ed26fcc8adf47e2c9ccb5cb7be4",
+        "officialGamePk": "824242",
+        "ok": false,
+        "policy": "Write-once canonical labels never overwrite a differing official FINAL; correction conflicts require manual review.",
+        "proposedSettlementFingerprint": "18bd0b94ca41c49591c463b3a278182eecdbe58cefda455d9c36d218ab401fd2",
+        "status": "OFFICIAL_FINAL_CORRECTION_CONFLICT"
+      }
+    ],
+    "legacySettlementAuthority": false,
+    "lockTerminalConflictCount": 0,
+    "lockTerminalConflictOfficialGamePks": [],
+    "missingCanonicalLockCount": 12,
+    "missingCanonicalLocks": [
+      {
+        "officialGamePk": "822947",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "823022",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "823192",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "823273",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "823596",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "823598",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "823677",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "823924",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "824002",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "824487",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "824567",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      },
+      {
+        "officialGamePk": "824973",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+      }
+    ],
+    "officialFinalCount": 16,
+    "officialGameCount": 16,
+    "officialSchedule": {
+      "officialFinalCount": 16,
+      "officialGameCount": 16,
+      "ok": true,
+      "slateDateEt": "2026-07-29",
+      "source": "MLB Stats API exact-date official FINAL",
+      "sourceUrl": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-07-29&endDate=2026-07-29&hydrate=linescore"
+    },
+    "ok": false,
+    "overall_status": "FAILED_CLOSED",
+    "proofType": "MLB_CANONICAL_IMMUTABLE_LOCK_TO_OFFICIAL_FINAL_LABEL",
+    "rejectedCanonicalLockCount": 0,
+    "rejectedCanonicalLocks": [],
+    "rejectedTerminalOutcomes": [],
+    "settlement_version": "MLB-CANONICAL-FINAL-LABEL-v1-official-game-pk-write-once",
+    "skippedNotFinal": [],
+    "skippedNotFinalCount": 0,
+    "slateDateEt": "2026-07-29",
+    "slate_date_et": "2026-07-29",
+    "sport": "mlb",
+    "status": "FAILED_CLOSED",
+    "terminalNoPredictionCount": 0,
+    "terminalNoPredictionExcludedCount": 0,
+    "terminalNoPredictionExclusions": [],
+    "terminalNoPredictionPolicy": "LOCKED_NO_PREDICTION_DATA is a terminal lifecycle outcome excluded from accuracy and ML training.",
+    "version": "MLB-CANONICAL-SETTLEMENT-PROOF-v1"
+  },
+  "canonicalTrainingReadback": {
+    "finalizedSlateDates": [],
+    "ok": false,
+    "policy": "Only full official-FINAL slates joined by official gamePk to current immutable LOCKED#GAME authority may enter the prospective cohort.",
+    "requestedSlateDates": [
+      "2026-07-29"
+    ],
+    "rowCount": 0,
+    "rows": [],
+    "slates": [
+      {
+        "canonicalLockCount": 4,
+        "coverageComplete": false,
+        "invalidLabelCount": 0,
+        "labelsComplete": true,
+        "officialFinalCount": 16,
+        "officialGameCount": 16,
+        "rejectedCanonicalLockCount": 0,
+        "rejectedTerminalCount": 0,
+        "slateDateEt": "2026-07-29",
+        "slateFinalized": false,
+        "terminalNoPredictionCount": 0,
+        "validLabelCount": 4
+      }
+    ],
+    "version": "MLB-CANONICAL-FINAL-LABEL-v1-official-game-pk-write-once"
+  },
+  "createdAtUtc": "2026-08-02T03:20:25.837639+00:00",
   "games": [
     {
       "awayScore": 6,
@@ -259,11 +417,21 @@
       }
     }
   ],
+  "moduleInitialization": {
+    "historySnapshotsNamePresent": true,
+    "historyTableHandleReady": true,
+    "initialized": true,
+    "outcomesTableHandleReady": true,
+    "outcomesVariablePresent": true,
+    "snapshotsVariablePresent": true
+  },
   "officialFinalCount": 16,
   "officialGameCount": 16,
   "proofType": "MLB_CANONICAL_SLATE_DATE_DIAGNOSTIC",
   "secretExposed": false,
   "slateDateEt": "2026-07-29",
   "sourceUrl": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-07-29&endDate=2026-07-29&hydrate=linescore",
+  "trainerHandler": "mlb_ml_aws_training_v1_compat.lambda_handler",
+  "trainerLastModified": "2026-08-02T03:18:01.000+0000",
   "trainerTableWiringObserved": true
 }
