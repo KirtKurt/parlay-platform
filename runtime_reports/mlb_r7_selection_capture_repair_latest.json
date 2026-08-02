@@ -1,0 +1,152 @@
+{
+  "automaticPromotionEnabled": false,
+  "blockers": [
+    "selection_capture_deployment_identity_mismatch",
+    "selection_capture_response_not_ready",
+    "selection_capture_status_not_fresh"
+  ],
+  "createdAtUtc": "2026-08-02T05:13:02.963655+00:00",
+  "deployedGitSha": "f41aef741503f8d400cb9064afad0c78ec06fca4",
+  "deployedTemplateSha256": "8071545efb3c75fcbe82208f139148b9fe0966e5123f7927cae57f9395f172f4",
+  "firstPromotionRequiresManualReview": true,
+  "manifestPhase": "ACCUMULATING_TRAIN",
+  "ok": false,
+  "proofType": "MLB_R7_SELECTION_CAPTURE_REPAIR",
+  "runtimeAuthorityActivationAvailable": false,
+  "secretExposed": false,
+  "selectionHealth": {
+    "deploymentIdentityMatches": false,
+    "errors": [
+      "latest_status_deployment_identity_mismatch"
+    ],
+    "latestRun": {
+      "createdAtUtc": "2026-08-02T05:11:02.757021+00:00",
+      "executionMode": "selection_capture",
+      "failure": null,
+      "liveInferenceAuthority": false,
+      "modelTrained": false,
+      "ok": true,
+      "runId": "e02d57d0edbb18f1bb516d23",
+      "selectionCaptureReady": false,
+      "status": "WAITING_FOR_PERSISTED_CHALLENGER"
+    },
+    "ok": false
+  },
+  "selectionInvocationExitCode": 0,
+  "selectionInvocationFunctionError": null,
+  "selectionSummary": {
+    "createdAtUtc": "2026-08-02T05:09:52.908312+00:00",
+    "executionMode": "selection_capture",
+    "historicalTrainingScanInvoked": false,
+    "liveInferenceAuthority": false,
+    "modelTrained": false,
+    "ok": true,
+    "runId": "438a6748848f7622e9710212",
+    "selectionCaptureReady": false,
+    "status": "WAITING_FOR_PERSISTED_CHALLENGER"
+  },
+  "sourceSha": "cecf31c9855ecd6ec9ddc8f2a5b8999c7011be4f",
+  "startedAtUtc": "2026-08-02T05:09:52Z",
+  "statusFresh": false,
+  "statusInvocationExitCode": 0,
+  "trainingHealth": {
+    "deploymentIdentityMatches": false,
+    "errors": [
+      "latest_status_deployment_identity_mismatch"
+    ],
+    "latestRun": {
+      "acceptedRowCount": 0,
+      "automaticPromotionEnabled": false,
+      "canonicalSlateContinuity": {
+        "blockedSlateDate": null,
+        "blocker": null,
+        "finalizedGameSlateDates": [],
+        "finalizedSlateAuthorities": {},
+        "ok": true,
+        "policy": "Training stops at the first unresolved official slate; only an exact official zero-game schedule may be crossed as an off-day.",
+        "processedSlateDates": [],
+        "processedThroughSlateDate": null,
+        "provenZeroGameSlateDates": [],
+        "version": "MLB-ML-CANONICAL-SLATE-CONTINUITY-v2-exact-official-game-set"
+      },
+      "championChanged": false,
+      "createdAtUtc": "2026-08-02T05:09:21.043619+00:00",
+      "executionMode": "training",
+      "failure": null,
+      "liveInferenceAuthority": false,
+      "milestones": {
+        "aspirationalAccuracyAffectsPromotion": false,
+        "aspirationalAccuracyPct": 90,
+        "assumedCleanGamesPerFullSlate": 15,
+        "automaticPromotionEnabled": false,
+        "counts": {
+          "completedFinalizedSlates": 0,
+          "integrityClean": 0,
+          "prospectiveTest": 0,
+          "settledProspectiveSelectedRecommendations": 0,
+          "train": 0,
+          "validation": 0
+        },
+        "experimentId": "mlb-v2-2026-08-03-future-prospective-r7",
+        "firstFullCleanSlateProof": {
+          "achieved": false,
+          "authority": "one nonempty verified official FINAL gamePk set must exactly equal the same immutable slate's unique, current, post-cutoff clean eligible gamePk set",
+          "completedFinalizedSlateCount": 0,
+          "completedFinalizedSlateDates": [],
+          "currentCleanGames": 0,
+          "evaluatedSlateProofs": [],
+          "exactOfficialGameSetEqualityRequired": true,
+          "globalIntegrityCleanGames": 0,
+          "planningEstimateCleanGames": 15,
+          "qualifyingOfficialGameSetFingerprint": null,
+          "qualifyingSlateDate": null,
+          "remainingCleanGames": 15,
+          "state": "WAITING_FOR_FIRST_COMPLETE_FINALIZED_SLATE",
+          "targetCleanGames": 15
+        },
+        "firstPromotionRequiresManualReview": true,
+        "ok": true,
+        "projectedFullCleanSlatesRemaining": {
+          "firstFullCleanSlateProof": 1,
+          "mechanicalShadowTrainerProof": 10,
+          "prospectiveSelectedRecommendations": 7,
+          "prospectiveTest": 7,
+          "totalClean": 34,
+          "train": 20,
+          "validation": 7
+        },
+        "remainingRows": {
+          "firstFullCleanSlateProof": 15,
+          "mechanicalShadowTrainerProof": 140,
+          "prospectiveSelectedRecommendations": 100,
+          "prospectiveTest": 100,
+          "totalClean": 500,
+          "train": 300,
+          "validation": 100
+        },
+        "stage": "COLLECTING_TRAIN",
+        "targets": {
+          "firstFullCleanSlateProof": 15,
+          "mechanicalShadowTrainerProof": 140,
+          "prospectiveSelectedRecommendations": 100,
+          "prospectiveTest": 100,
+          "totalClean": 500,
+          "train": 300,
+          "validation": 100
+        },
+        "version": "MLB-ML-EXPERIMENT-v2-fixed-slate-future-prospective-cutover"
+      },
+      "modelTrained": false,
+      "ok": true,
+      "partitionCounts": {
+        "prospectiveTest": 0,
+        "train": 0,
+        "validation": 0
+      },
+      "rejectedRowCount": 0,
+      "runId": "ef82f3c9b6018699019ef110",
+      "status": "ACCUMULATING_TRAIN"
+    },
+    "ok": false
+  }
+}
