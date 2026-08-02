@@ -796,6 +796,10 @@ Resources:
     Properties:
       CodeUri: hello_world/
       Handler: mlb_results_scheduler.lambda_handler
+      # Canonical full-slate settlement performs strongly consistent
+      # lock reads and immutable label writes for every official game.
+      Timeout: 600
+      MemorySize: 2048
       EventInvokeConfig:
         MaximumEventAgeInSeconds: 300
         MaximumRetryAttempts: 0
@@ -861,9 +865,9 @@ Resources:
           MLB_ML_ARTIFACTS_BUCKET: !Ref MLBMLArtifactsBucket
           SNAPSHOTS_TABLE: !Ref SnapshotsTable
           OUTCOMES_TABLE: !Ref OutcomesTable
-          MLB_ML_EXPERIMENT_ID: 'mlb-v2-2026-07-29-future-prospective-r5'
-          MLB_ML_RELEASE_CONTRACT_ID: 'mlb-v2-2026-07-29-future-prospective-r5'
-          MLB_ML_RELEASE_CUTOFF_UTC: '2026-07-29T04:00:00+00:00'
+          MLB_ML_EXPERIMENT_ID: 'mlb-v2-2026-08-02-future-prospective-r6'
+          MLB_ML_RELEASE_CONTRACT_ID: 'mlb-v2-2026-08-02-future-prospective-r6'
+          MLB_ML_RELEASE_CUTOFF_UTC: '2026-08-02T04:00:00+00:00'
           MLB_ML_FEATURE_VECTOR_VERSION: 'MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness'
           MLB_ML_EXECUTION_LEASE_SECONDS: '960'
           INQSI_MLB_ML_AUTO_PROMOTE: 'false'
