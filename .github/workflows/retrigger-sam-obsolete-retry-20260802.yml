@@ -1,4 +1,4 @@
-name: Repair MLB fail-closed shadow authority verifier
+name: Export tested MLB shadow authority repair
 
 on:
   pull_request:
@@ -7,10 +7,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: repair-mlb-shadow-authority-verifier-${{ github.run_id }}
+  group: export-mlb-shadow-authority-repair-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -85,27 +85,12 @@ jobs:
             tests/unit/test_mlb_shadow_authority_deploy_gate.py
           git diff --check
 
-      - name: Publish tested verifier repair
-        run: |
-          set -euo pipefail
-          if git diff --quiet -- \
-            .github/workflows/deploy.yml \
-            scripts/verify_mlb_workflow_authority.py; then
-            echo 'Repair is already installed on main.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add \
-            .github/workflows/deploy.yml \
+      - name: Upload tested repair files
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-shadow-authority-repair-${{ github.run_id }}
+          path: |
+            .github/workflows/deploy.yml
             scripts/verify_mlb_workflow_authority.py
-          git commit -m 'fix(deploy): accept fail-closed MLB shadow authority'
-          for attempt in $(seq 1 20); do
-            if git pull --rebase origin main && git push origin HEAD:main; then
-              exit 0
-            fi
-            git rebase --abort >/dev/null 2>&1 || true
-            sleep 3
-          done
-          echo 'Failed to publish tested MLB verifier repair.' >&2
-          exit 1
+          if-no-files-found: error
+          retention-days: 1
