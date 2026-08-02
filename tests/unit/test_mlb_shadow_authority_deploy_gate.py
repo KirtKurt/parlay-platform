@@ -28,10 +28,32 @@ def test_manual_first_shadow_state_rejects_premature_activation_availability():
     ]
 
 
-def test_promoted_or_authoritative_state_requires_runtime_activation_path():
+def test_persisted_shadow_champion_does_not_enable_runtime_activation():
+    assert _runtime_authority_activation_errors(
+        _status(champion={"artifactDigest": "shadow-only-not-manually-approved"})
+    ) == []
+
+
+def test_persisted_shadow_champion_rejects_premature_runtime_activation():
     assert _runtime_authority_activation_errors(
         _status(
-            champion={"artifactDigest": "approved"},
-            runtimeAuthorityActivationAvailable=False,
+            champion={"artifactDigest": "shadow-only-not-manually-approved"},
+            runtimeAuthorityActivationAvailable=True,
         )
-    ) == ["runtime_authority_activation_not_available"]
+    ) == [
+        "runtime_authority_activation_must_remain_unavailable_before_manual_approval"
+    ]
+
+
+def test_authoritative_state_requires_runtime_activation_path():
+    status = _status(
+        liveInferenceAuthority=True,
+        v2InferenceConsumerInstalled=True,
+        runtimeAuthorityActivationAvailable=False,
+    )
+    assert _runtime_authority_activation_errors(status) == [
+        "runtime_authority_activation_not_available"
+    ]
+
+    status["runtimeAuthorityActivationAvailable"] = True
+    assert _runtime_authority_activation_errors(status) == []
