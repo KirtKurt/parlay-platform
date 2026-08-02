@@ -126,3 +126,5 @@ def test_read_api_fails_closed'''
             sleep 2
           done
           gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+# launch from current base
