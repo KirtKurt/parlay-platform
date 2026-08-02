@@ -289,6 +289,44 @@ def _status_fingerprint_errors(
     return errors
 
 
+def _runtime_authority_activation_errors(status_after: Dict[str, Any]) -> List[str]:
+    """Validate activation availability without weakening manual-first shadow safety."""
+    automatic_promotion_disabled = (
+        status_after.get("automaticPromotionEnabled") is False
+    )
+    manual_first_required = (
+        status_after.get("firstPromotionRequiresManualReview") is True
+    )
+    inference_consumer_absent = (
+        status_after.get("v2InferenceConsumerInstalled") is False
+    )
+    live_authority_absent = status_after.get("liveInferenceAuthority") is False
+    champion = status_after.get("champion")
+    champion_absent = champion in (None, {})
+    activation_available = status_after.get("runtimeAuthorityActivationAvailable")
+
+    shadow_manual_first = (
+        automatic_promotion_disabled
+        and manual_first_required
+        and inference_consumer_absent
+        and live_authority_absent
+        and champion_absent
+    )
+    if shadow_manual_first:
+        return (
+            []
+            if activation_available is False
+            else [
+                "runtime_authority_activation_must_remain_unavailable_before_manual_approval"
+            ]
+        )
+    return (
+        []
+        if activation_available is True
+        else ["runtime_authority_activation_not_available"]
+    )
+
+
 def verify(
     *,
     training: Dict[str, Any],
@@ -383,8 +421,7 @@ def verify(
         errors.append("manual_first_promotion_not_required")
     if status_after.get("v2InferenceConsumerInstalled") is not False:
         errors.append("v2_inference_consumer_must_remain_uninstalled")
-    if status_after.get("runtimeAuthorityActivationAvailable") is not True:
-        errors.append("runtime_authority_activation_not_available")
+    errors.extend(_runtime_authority_activation_errors(status_after))
     manifest = status_after.get("manifest")
     if not isinstance(manifest, dict) or not manifest:
         errors.append("fresh_manifest_missing")
