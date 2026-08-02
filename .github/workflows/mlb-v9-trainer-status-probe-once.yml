@@ -59,6 +59,14 @@ jobs:
           status=json.load(open('/tmp/mlb-v9-trainer-status.json'))
           invoke=json.load(open('/tmp/mlb-v9-trainer-status-invocation.json'))
           env=((config.get('Environment') or {}).get('Variables') or {})
+          safe_config={k:v for k,v in config.items() if k != 'Environment'}
+          safe_config['Environment']={
+              'VariableNames': sorted(env),
+              'ValuesRedacted': True,
+          }
+          Path('/tmp/mlb-v9-trainer-config-redacted.json').write_text(
+              json.dumps(safe_config,indent=2,sort_keys=True)+'\n', encoding='utf-8'
+          )
           def compact_health(value):
               value=value if isinstance(value,dict) else {}
               latest=value.get('latestRun') if isinstance(value.get('latestRun'),dict) else {}
@@ -91,6 +99,7 @@ jobs:
               'firstPromotionRequiresManualReview':status.get('firstPromotionRequiresManualReview'),
               'v2InferenceConsumerInstalled':status.get('v2InferenceConsumerInstalled'),
               'runtimeAuthorityActivationAvailable':status.get('runtimeAuthorityActivationAvailable'),
+              'secretExposed':False,
               'blockers':[],
           }
           if report['ok'] is not True:
@@ -104,7 +113,7 @@ jobs:
             runtime_reports/mlb_v9_trainer_status_probe_latest.json
             /tmp/mlb-v9-trainer-status.json
             /tmp/mlb-v9-trainer-status-invocation.json
-            /tmp/mlb-v9-trainer-config.json
+            /tmp/mlb-v9-trainer-config-redacted.json
           retention-days: 90
       - name: Publish status probe
         run: |
