@@ -83,6 +83,45 @@ def test_accepts_status_only_historical_evidence_when_prediction_store_is_empty(
     assert predictions["predictions"] == status_rows
     assert predictions["predictions"] is not status_rows
     assert all(row.get("predictedWinner") in (None, "") for row in predictions["predictions"])
+    assert predictions["lockedPredictionCount"] == 0
+    assert predictions["officialPredictionCount"] == 0
+    assert predictions["lockedStatusCount"] == 2
+    assert predictions["noPredictionDataCount"] == 2
+    assert predictions["lockStatusComplete"] is True
+    assert predictions["canonicalPredictionComplete"] is False
+    assert predictions["lockedStatusCount"] == (
+        predictions["lockedPredictionCount"] + predictions["noPredictionDataCount"]
+    )
+
+
+def test_status_only_projection_reconciles_stale_empty_endpoint_counters():
+    start = NOW - timedelta(hours=2)
+    status_rows = [
+        _row("g1", start, "MISSED_LOCK"),
+        _row("g2", start, "LOCK_DUE_CANONICAL_MISSING"),
+        _row("g3", start, "LOCKED_NO_PREDICTION_DATA"),
+    ]
+    predictions = _empty_predictions(
+        lockedStatusCount=0,
+        noPredictionDataCount=0,
+        lockStatusComplete=False,
+    )
+
+    assert historical_lifecycle_acceptance(
+        predictions,
+        status_rows,
+        3,
+        now=NOW,
+    ) is True
+    assert predictions["lockedPredictionCount"] == 0
+    assert predictions["officialPredictionCount"] == 0
+    assert predictions["lockedStatusCount"] == 3
+    assert predictions["noPredictionDataCount"] == 3
+    assert predictions["lockStatusComplete"] is True
+    assert predictions["canonicalPredictionComplete"] is False
+    assert predictions["lockedStatusCount"] == (
+        predictions["lockedPredictionCount"] + predictions["noPredictionDataCount"]
+    )
 
 
 def test_projection_is_a_deep_copy_of_public_status_rows():
@@ -207,8 +246,11 @@ def test_deploy_workflow_uses_cutoff_policy_and_policy_marks_projection():
     assert "all_tminus45_cutoffs_passed_without_valid_pregame_predictions" in workflow
     assert "No fresh persisted canonical probability-contract predictions or complete post-cutoff lifecycle appeared within 20 minutes" in workflow
     assert "if predictions.get('operationalDefect') is True and not historical_no_late_backfill:" in workflow
+    assert "prediction_statuses != prediction_locks + prediction_terminal" in workflow
 
     assert '"MISSED_NOT_BACKFILLED"' in policy
     assert '"statusOnlyHistoricalProjection": True' in policy
     assert '"statusOnlyHistoricalProjectionPersisted": False' in policy
-    assert '"predictions": copy.deepcopy(status)' in policy
+    assert "projected_rows = copy.deepcopy(status)" in policy
+    assert '"lockedStatusCount": terminal_status_count' in policy
+    assert '"noPredictionDataCount": terminal_status_count' in policy
