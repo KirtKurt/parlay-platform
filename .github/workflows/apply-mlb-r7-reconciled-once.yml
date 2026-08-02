@@ -39,6 +39,7 @@ jobs:
           old_cutoff = '2026-08-02T04:00:00+00:00'
           new_cutoff = '2026-08-03T04:00:00+00:00'
           changed = []
+
           for root in (Path('hello_world'), Path('scripts'), Path('tests/unit')):
               for path in root.rglob('*.py'):
                   text = path.read_text(encoding='utf-8')
@@ -47,14 +48,43 @@ jobs:
                       path.write_text(updated, encoding='utf-8')
                       changed.append(str(path))
 
+          template = Path('template.yaml')
+          text = template.read_text(encoding='utf-8')
+          updated = text.replace(old_id, new_id).replace(old_cutoff, new_cutoff)
+          if updated != text:
+              template.write_text(updated, encoding='utf-8')
+              changed.append(str(template))
+
           clean = Path('tests/unit/test_mlb_ml_r5_clean_cutover.py')
           if clean.exists():
               text = clean.read_text(encoding='utf-8')
               text = text.replace('2026-08-02T03:00:00+00:00', '2026-08-03T03:00:00+00:00')
               text = text.replace('datetime(2026, 8, 2, 3, 30', 'datetime(2026, 8, 3, 3, 30')
               text = text.replace('test_r6_', 'test_r7_').replace('r6_loader', 'r7_loader')
+              text = text.replace('pre-r6', 'pre-r7').replace('by_r6', 'by_r7')
               clean.write_text(text, encoding='utf-8')
               changed.append(str(clean))
+
+          training_test = Path('tests/unit/test_mlb_ml_aws_training_v1.py')
+          text = training_test.read_text(encoding='utf-8')
+          text = text.replace(
+              'datetime(2026, 8, 2, 4, 0, tzinfo=timezone.utc),\n'
+              '        datetime(2026, 8, 2, 4, 0, 0, 1, tzinfo=timezone.utc),',
+              'datetime(2026, 8, 3, 4, 0, tzinfo=timezone.utc),\n'
+              '        datetime(2026, 8, 3, 4, 0, 0, 1, tzinfo=timezone.utc),',
+          )
+          start = text.index('def test_partial_prior_et_slate_cannot_freeze_or_deadlock_manifest')
+          end = text.find('\ndef ', start + 4)
+          if end < 0:
+              end = len(text)
+          block = text[start:end]
+          block = block.replace(
+              'after_midnight_et = datetime(2026, 8, 3, 4, 30, tzinfo=timezone.utc)',
+              'after_midnight_et = datetime(2026, 8, 4, 4, 30, tzinfo=timezone.utc)',
+          ).replace('2026-08-02', '2026-08-03')
+          text = text[:start] + block + text[end:]
+          training_test.write_text(text, encoding='utf-8')
+          changed.append(str(training_test))
 
           r6 = Path('tests/unit/test_mlb_r6_recovery_contract.py')
           r7 = Path('tests/unit/test_mlb_r7_recovery_contract.py')
@@ -64,13 +94,16 @@ jobs:
               text = text.replace('test_r6_', 'test_r7_')
               text = text.replace('r6_starts', 'r7_starts')
               text = text.replace('2026-08-02', '2026-08-03')
+              text = text.replace('r6', 'r7')
               r7.write_text(text, encoding='utf-8')
               r6.unlink()
               changed.extend([str(r6), str(r7)])
 
-          # The cutoff must remain in the future at source publication time;
-          # deployment will create the immutable manifest using real current time.
-          print({'changedFiles': sorted(set(changed)), 'experimentId': new_id, 'releaseCutoffUtc': new_cutoff})
+          print({
+              'changedFiles': sorted(set(changed)),
+              'experimentId': new_id,
+              'releaseCutoffUtc': new_cutoff,
+          })
           PY
           git diff --check
 
