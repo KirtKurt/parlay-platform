@@ -16,55 +16,65 @@ TEMPLATE = ROOT / "template.yaml"
 DEPLOY = ROOT / ".github" / "workflows" / "deploy.yml"
 
 
-def _sub(text: str, pattern: str, replacement: str = "") -> tuple[str, int]:
-    return re.subn(pattern, replacement, text, flags=re.MULTILINE | re.DOTALL)
+def _line(text: str, pattern: str, replacement: str = "") -> tuple[str, int]:
+    return re.subn(pattern, replacement, text, flags=re.MULTILINE)
+
+
+def _block(text: str, start: str, end: str) -> tuple[str, int]:
+    pattern = rf"^{re.escape(start)}\n[\s\S]*?(?=^{re.escape(end)})"
+    return re.subn(pattern, "", text, flags=re.MULTILINE)
+
+
+def _exact(text: str, value: str) -> tuple[str, int]:
+    count = text.count(value)
+    return text.replace(value, ""), count
 
 
 def patch_template(text: str) -> str:
-    text, _ = _sub(
-        text,
-        r"^  BbsApiKey:\n(?:    .*\n)+?(?=  InqsiAdminApiToken:)",
-    )
-    text, _ = _sub(
-        text,
-        r"^  BbsApiSecret:\n.*?(?=^  InqsiMembersTable:)",
-    )
+    text, _ = _block(text, "  BbsApiKey:", "  InqsiAdminApiToken:")
+    text, _ = _block(text, "  BbsApiSecret:", "  InqsiMembersTable:")
     for pattern in (
-        r"^          BBS_API_SECRET_ARN:.*\n",
-        r"^          BBS_SHADOW_CAPTURE_ENABLED:.*\n",
-        r"^          BBS_SHADOW_S3_BUCKET:.*\n",
-        r"^          BBS_SHADOW_SCHEMA_VERSION:.*\n",
+        r"^          BBS_API_SECRET_ARN:[^\n]*\n",
+        r"^          BBS_SHADOW_CAPTURE_ENABLED:[^\n]*\n",
+        r"^          BBS_SHADOW_S3_BUCKET:[^\n]*\n",
+        r"^          BBS_SHADOW_SCHEMA_VERSION:[^\n]*\n",
     ):
-        text, _ = _sub(text, pattern)
-    text, _ = _sub(
+        text, _ = _line(text, pattern)
+    text, _ = _exact(
         text,
-        r"^            - Effect: Allow\n"
-        r"              Action:\n"
-        r"                - secretsmanager:GetSecretValue\n"
-        r"              Resource: !Ref BbsApiSecret\n",
+        "            - Effect: Allow\n"
+        "              Action:\n"
+        "                - secretsmanager:GetSecretValue\n"
+        "              Resource: !Ref BbsApiSecret\n",
     )
-    text, _ = _sub(
+    text, _ = _exact(
         text,
-        r"^            - Effect: Allow\n"
-        r"              Action:\n"
-        r"                - s3:GetObject\n"
-        r"                - s3:PutObject\n"
-        r"              Resource: !Sub '\$\{MLBMLArtifactsBucket\.Arn\}/mlb/providers/bbs/\*'\n",
+        "            - Effect: Allow\n"
+        "              Action:\n"
+        "                - s3:GetObject\n"
+        "                - s3:PutObject\n"
+        "              Resource: !Sub '${MLBMLArtifactsBucket.Arn}/mlb/providers/bbs/*'\n",
     )
     return text
 
 
 def patch_deploy(text: str) -> str:
-    text, _ = _sub(text, r"^          BBS_API_KEY_VALUE:.*\n")
-    text, _ = _sub(text, r"^          test -n \"\$\{BBS_API_KEY_VALUE:-\}\".*\n")
-    text, _ = _sub(
-        text,
-        r"^      - name: Verify Big Balls MLB shadow provider authentication and live schema\n"
-        r".*?(?=^      - name: Prove committed MLB source is canonical)",
+    text, _ = _line(text, r"^          BBS_API_KEY_VALUE:[^\n]*\n")
+    text, _ = _line(
+        text, r"^          test -n \"\$\{BBS_API_KEY_VALUE:-\}\"[^\n]*\n"
     )
-    text, _ = _sub(text, r"^          python scripts/verify_mlb_bbs_sam_wiring\.py\n")
-    text, _ = _sub(text, r"^            tests/unit/test_mlb_bbs_status\.py\n")
-    text, _ = _sub(text, r'^            "BbsApiKey=\$\{BBS_API_KEY_VALUE\}"\n')
+    text, _ = _block(
+        text,
+        "      - name: Verify Big Balls MLB shadow provider authentication and live schema",
+        "      - name: Prove committed MLB source is canonical",
+    )
+    text, _ = _line(
+        text, r"^          python scripts/verify_mlb_bbs_sam_wiring\.py\n"
+    )
+    text, _ = _line(text, r"^            tests/unit/test_mlb_bbs_status\.py\n")
+    text, _ = _line(
+        text, r'^            "BbsApiKey=\$\{BBS_API_KEY_VALUE\}"\n'
+    )
 
     marker = "          python scripts/verify_mlb_daily_pull_start_gate.py\n"
     verifier = "          python scripts/verify_mlb_no_bbd_runtime.py\n"
