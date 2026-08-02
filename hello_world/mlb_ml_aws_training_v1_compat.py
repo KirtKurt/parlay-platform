@@ -1,12 +1,18 @@
 """Fail-closed compatibility handler for the canonical MLB AWS trainer.
 
 The canonical implementation remains in ``mlb_ml_aws_training_v1.py``. This
-uniquely named Lambda entrypoint loads that file directly and installs one
-narrow normalization for unresolved canonical-slate continuity at both the
-immutable status-persistence boundary and the training-result return boundary.
+uniquely named Lambda entrypoint installs two narrow normalizations:
 
-No chronology, final-label, holdout, calibration, accuracy, promotion,
-champion, inference-authority, or production-authority rule is weakened.
+* unresolved canonical-slate continuity is represented as a healthy,
+  non-authoritative wait at both persistence and return boundaries; and
+* after a scheduled run is persisted, the Lambda returns the exact immutable
+  run record read back from the status store when available.
+
+The persisted read-back prevents harmless DynamoDB numeric round-trip changes
+from making deployment verification compare a pre-persistence object with a
+post-persistence object. No chronology, final-label, holdout, calibration,
+accuracy, promotion, champion, inference-authority, or production-authority
+rule is weakened.
 """
 from __future__ import annotations
 
@@ -17,7 +23,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Dict
 
-COMPAT_VERSION = "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v4-null-safe"
+COMPAT_VERSION = "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v5-persisted-return"
 _BASE_MODULE_NAME = "_inqsi_mlb_ml_aws_training_v1_canonical"
 _BASE_PATH = Path(__file__).resolve().with_name("mlb_ml_aws_training_v1.py")
 
@@ -78,6 +84,33 @@ def normalize_canonical_continuity_wait(payload: Mapping[str, Any]) -> Dict[str,
     return value
 
 
+def persisted_run_response(service: Any, payload: Mapping[str, Any]) -> Dict[str, Any]:
+    """Return the immutable stored run when it can be proven to be the same run.
+
+    The invocation payload is retained as the fail-closed fallback. A persisted
+    record is used only when the service exposes the canonical status store and
+    the read-back record carries the identical non-empty run ID.
+    """
+    normalized = normalize_canonical_continuity_wait(payload)
+    run_id = str(normalized.get("runId") or "").strip()
+    config = getattr(service, "config", None)
+    experiment_id = str(getattr(config, "experiment_id", "") or "").strip()
+    store = getattr(service, "store", None)
+    loader = getattr(store, "load_status_run", None)
+    if not run_id or not experiment_id or not callable(loader):
+        return normalized
+    try:
+        persisted = loader(experiment_id, run_id)
+    except Exception:
+        return normalized
+    if not isinstance(persisted, Mapping):
+        return normalized
+    persisted_value = normalize_canonical_continuity_wait(persisted)
+    if str(persisted_value.get("runId") or "").strip() != run_id:
+        return normalized
+    return dict(persisted_value)
+
+
 canonical = _load_canonical_module()
 
 _original_save_run_status = canonical.TrainingService._save_run_status
@@ -103,7 +136,7 @@ if not getattr(_original_run_scheduled, "_mlb_unique_continuity_return_patch", F
         result = _original_run_scheduled(self, *args, **kwargs)
         if not isinstance(result, Mapping):
             return result
-        return normalize_canonical_continuity_wait(result)
+        return persisted_run_response(self, result)
 
     _run_scheduled_with_continuity_wait._mlb_unique_continuity_return_patch = True
     _run_scheduled_with_continuity_wait._mlb_unique_continuity_return_version = (
