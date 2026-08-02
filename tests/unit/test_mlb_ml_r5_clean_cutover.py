@@ -23,15 +23,15 @@ def _config(**overrides):
     return training.TrainingConfig(**values)
 
 
-def test_r6_cutoff_is_clean_future_boundary_after_unrecoverable_prior_slates():
-    assert experiment.PRODUCTION_EXPERIMENT_ID == "mlb-v2-2026-08-02-future-prospective-r6"
+def test_r7_cutoff_is_clean_future_boundary_after_unrecoverable_prior_slates():
+    assert experiment.PRODUCTION_EXPERIMENT_ID == "mlb-v2-2026-08-03-future-prospective-r7"
     assert experiment.PRODUCTION_RELEASE_CONTRACT_ID == experiment.PRODUCTION_EXPERIMENT_ID
-    assert experiment.PRODUCTION_RELEASE_CUTOFF_UTC == "2026-08-02T04:00:00+00:00"
+    assert experiment.PRODUCTION_RELEASE_CUTOFF_UTC == "2026-08-03T04:00:00+00:00"
     activation = experiment.release_activation(
         experiment_id=experiment.PRODUCTION_EXPERIMENT_ID,
         release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
         release_cutoff_utc=experiment.PRODUCTION_RELEASE_CUTOFF_UTC,
-        activated_at_utc="2026-08-02T03:00:00+00:00",
+        activated_at_utc="2026-08-03T03:00:00+00:00",
         deployment_git_sha="a" * 40,
         deployment_template_sha256="b" * 64,
     )
@@ -39,19 +39,19 @@ def test_r6_cutoff_is_clean_future_boundary_after_unrecoverable_prior_slates():
     assert activation["activatedAtUtc"] < activation["releaseCutoffUtc"]
 
 
-def test_r6_loader_does_not_request_or_backfill_pre_cutover_slates(monkeypatch):
+def test_r7_loader_does_not_request_or_backfill_pre_cutover_slates(monkeypatch):
     monkeypatch.setenv("OUTCOMES_TABLE", "outcomes")
     monkeypatch.setenv("SNAPSHOTS_TABLE", "snapshots")
     calls = []
     def forbidden_schedule(date):
         calls.append(("schedule", date))
-        raise AssertionError("no pre-r6 slate may be requested")
+        raise AssertionError("no pre-r7 slate may be requested")
     def forbidden_finalization(date, official):
         calls.append(("finalization", date))
-        raise AssertionError("no pre-r6 slate may be finalized")
+        raise AssertionError("no pre-r7 slate may be finalized")
     rows = training.load_canonical_training_rows(
         _config(),
-        now=datetime(2026, 8, 2, 3, 30, tzinfo=timezone.utc),
+        now=datetime(2026, 8, 3, 3, 30, tzinfo=timezone.utc),
         official_schedule_loader=forbidden_schedule,
         slate_finalization_loader=forbidden_finalization,
     )
@@ -63,6 +63,6 @@ def test_r6_loader_does_not_request_or_backfill_pre_cutover_slates(monkeypatch):
     assert rows.continuity["finalizedGameSlateDates"] == []
 
 
-def test_prior_identity_is_rejected_by_r6_production_config():
+def test_prior_identity_is_rejected_by_r7_production_config():
     with pytest.raises(training.TrainingContractError, match="configured prospective experiment ID"):
         _config(experiment_id="mlb-v2-2026-07-29-future-prospective-r5")
