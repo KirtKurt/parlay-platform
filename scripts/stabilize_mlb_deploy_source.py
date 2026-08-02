@@ -128,8 +128,8 @@ def _validate_deploy_workflow() -> None:
         ROOT / "scripts" / "verify_mlb_trainer_deploy_response.py"
     ).read_text(encoding="utf-8")
     for token in [
-        "mlb-v2-2026-07-29-future-prospective-r5",
-        "2026-07-29T04:00:00+00:00",
+        "mlb-v2-2026-08-02-future-prospective-r6",
+        "2026-08-02T04:00:00+00:00",
         "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow",
     ]:
         if token not in verifier:

@@ -17,14 +17,14 @@ import mlb_rolling_24h_audit as rolling_audit
 
 
 NOW = datetime(2026, 7, 21, 20, 0, tzinfo=timezone.utc)
-SETTLEMENT_NOW = datetime(2026, 7, 30, 3, 0, tzinfo=timezone.utc)
+SETTLEMENT_NOW = datetime(2026, 8, 3, 3, 0, tzinfo=timezone.utc)
 EXPERIMENT_ID = experiment.PRODUCTION_EXPERIMENT_ID
 PK = f"MLB_ML_EXPERIMENT#V2#{EXPERIMENT_ID}"
 DEPLOYMENT = {"gitSha": "a" * 40, "templateSha256": "b" * 64}
 MANIFEST = experiment.new_manifest(
     experiment_id=EXPERIMENT_ID,
     release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
-    release_cutoff_utc="2026-07-29T04:00:00+00:00",
+    release_cutoff_utc="2026-08-02T04:00:00+00:00",
     feature_vector_version="vector-v2",
     model_feature_schemas={
         "outcome": list(trainer.dual_model.OUTCOME_FEATURES),
@@ -34,7 +34,7 @@ MANIFEST = experiment.new_manifest(
     release_activation=experiment.release_activation(
         experiment_id=EXPERIMENT_ID,
         release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
-        release_cutoff_utc="2026-07-29T04:00:00+00:00",
+        release_cutoff_utc="2026-08-02T04:00:00+00:00",
         activated_at_utc="2026-07-21T01:00:00+00:00",
         deployment_git_sha=DEPLOYMENT["gitSha"],
         deployment_template_sha256=DEPLOYMENT["templateSha256"],
@@ -45,15 +45,15 @@ MANIFEST = experiment.new_manifest(
 def _settlement_row(
     *,
     official_game_pk: str = "881001",
-    commence_time: str = "2026-07-29T06:00:00+00:00",
-    lock_at_utc: str = "2026-07-29T05:15:00+00:00",
+    commence_time: str = "2026-08-02T06:00:00+00:00",
+    lock_at_utc: str = "2026-08-02T05:15:00+00:00",
 ) -> dict[str, Any]:
     game_id = f"mlb_statsapi:{official_game_pk}"
     return {
         "id": game_id,
         "gameId": game_id,
         "officialGamePk": official_game_pk,
-        "slateDateEt": "2026-07-29",
+        "slateDateEt": "2026-08-02",
         "commenceTime": commence_time,
         "awayTeam": "Away Club",
         "homeTeam": "Home Club",
@@ -81,7 +81,7 @@ def _settlement_row(
             "officialAuditEligible": True,
             "exactLockVectorValidated": True,
             "legacyOrDailyCardFallbackUsed": False,
-            "sourcePk": "GAME_WINNERS#mlb#2026-07-29",
+            "sourcePk": "GAME_WINNERS#mlb#2026-08-02",
             "sourceSk": f"LOCKED#GAME#{commence_time}#{game_id}",
             "recordType": rolling_audit.CANONICAL_LOCK_RECORD_TYPE,
             "providerGameId": game_id,
@@ -115,7 +115,7 @@ def _report_with_canonical_slate(
 
     def loader(slate_date: str) -> dict[str, Any]:
         games = []
-        if slate_date == "2026-07-29":
+        if slate_date == "2026-08-02":
             for index, official_pk in enumerate(ids or []):
                 matching = next(
                     (
@@ -128,7 +128,7 @@ def _report_with_canonical_slate(
                 game_date = matching.get("commenceTime")
                 if audit_report._parse_dt(game_date) is None:
                     game_date = (
-                        datetime(2026, 7, 29, 6, 0, tzinfo=timezone.utc)
+                        datetime(2026, 8, 2, 6, 0, tzinfo=timezone.utc)
                         + timedelta(minutes=index)
                     ).isoformat()
                 game = {
@@ -174,7 +174,7 @@ def _report_with_canonical_slate(
 def test_post_cutoff_scope_quarantines_pre_r4_carryover_without_masking_it():
     legacy = {
         "id": "legacy-provider-id",
-        "commenceTime": "2026-07-29T03:30:00+00:00",
+        "commenceTime": "2026-08-02T03:30:00+00:00",
         "completed": True,
         "status": "MISSING_CANONICAL_LOCK",
     }
@@ -549,7 +549,7 @@ def _status(
 
 
 def test_generic_latest_never_overrides_mode_specific_authority(monkeypatch) -> None:
-    experiment_id = "mlb-v2-2026-07-29-future-prospective-r5"
+    experiment_id = "mlb-v2-2026-08-02-future-prospective-r6"
     pk = f"MLB_ML_EXPERIMENT#V2#{experiment_id}"
     generic = _status("selection_capture", 1, ok=False)
     generic["automaticPromotionEnabled"] = True
@@ -575,7 +575,7 @@ def test_generic_latest_never_overrides_mode_specific_authority(monkeypatch) -> 
 
 
 def test_fresh_capture_cannot_mask_stale_or_failed_training(monkeypatch) -> None:
-    experiment_id = "mlb-v2-2026-07-29-future-prospective-r5"
+    experiment_id = "mlb-v2-2026-08-02-future-prospective-r6"
     pk = f"MLB_ML_EXPERIMENT#V2#{experiment_id}"
     _install_table(
         monkeypatch,
@@ -610,7 +610,7 @@ def test_fresh_capture_cannot_mask_stale_or_failed_training(monkeypatch) -> None
 
 
 def test_matching_fresh_modes_require_same_deployment_identity(monkeypatch) -> None:
-    experiment_id = "mlb-v2-2026-07-29-future-prospective-r5"
+    experiment_id = "mlb-v2-2026-08-02-future-prospective-r6"
     pk = f"MLB_ML_EXPERIMENT#V2#{experiment_id}"
     _install_table(
         monkeypatch,
