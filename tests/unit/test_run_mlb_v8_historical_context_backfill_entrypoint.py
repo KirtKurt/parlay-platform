@@ -7,17 +7,85 @@ import mlb_v8_historical_context_overlay_v1 as overlay
 import run_mlb_v8_historical_context_backfill_entrypoint as entrypoint
 
 
-def test_weather_archive_contract_uses_single_runs_hres_model():
-    module = SimpleNamespace(WEATHER_MODEL="ecmwf_ifs025")
+def _official_game():
+    return {
+        "gamePk": 123,
+        "gameDate": "2026-07-01T23:05:00Z",
+        "teams": {
+            "away": {"team": {"name": "Away Club"}},
+            "home": {"team": {"name": "Home Club"}},
+        },
+    }
 
-    result = entrypoint.install_weather_archive_contract(module)
 
-    assert result is module
-    assert module.WEATHER_MODEL == "ecmwf_ifs"
-    assert entrypoint.ARCHIVED_WEATHER_MODEL == "ecmwf_ifs"
+def test_official_client_lists_direct_official_game_identity(monkeypatch):
+    client = entrypoint.OfficialContextClient()
+    monkeypatch.setattr(
+        client.source,
+        "schedule",
+        lambda _start, _end: {"dates": [{"games": [_official_game()]}]},
+    )
+
+    value = client.list_mlb_matches("2026-07-01")
+
+    assert value["error"] is None
+    assert value["meta"]["provider"] == "official_mlb"
+    assert value["data"] == [
+        {
+            "id": "123",
+            "match_id": "123",
+            "officialGamePk": "123",
+            "gamePk": "123",
+            "startTime": "2026-07-01T23:05:00Z",
+            "home": {"name": "Home Club"},
+            "away": {"name": "Away Club"},
+        }
+    ]
 
 
-def test_pointer_isolation_uses_distinct_target_context_partition():
+def test_official_client_returns_resource_bundle_without_bbd(monkeypatch):
+    client = entrypoint.OfficialContextClient()
+    client.games[("2026-07-01", "123")] = {
+        "id": "123",
+        "match_id": "123",
+        "officialGamePk": "123",
+        "gamePk": "123",
+        "startTime": "2026-07-01T23:05:00Z",
+        "home": {"name": "Home Club"},
+        "away": {"name": "Away Club"},
+    }
+    captured = {}
+
+    def build_bundle(canonical, _stored_pitchers, _stored_lineups):
+        captured.update(canonical)
+        return {
+            "pitchers": {
+                "data": {"away": {}, "home": {}},
+                "meta": {
+                    "source": "MLB Stats API strictly prior rotation projection",
+                    "complete": True,
+                    "pointInTimeProjectionVerified": True,
+                },
+                "error": None,
+            }
+        }
+
+    monkeypatch.setattr(client.source, "build_bundle", build_bundle)
+
+    value = client.get_mlb_match_resource(
+        "123",
+        "pitchers",
+        game_date="2026-07-01",
+        as_of="2026-07-01T22:20:00Z",
+    )
+
+    assert captured["officialGamePk"] == "123"
+    assert captured["predictionLockAtUtc"] == "2026-07-01T22:20:00Z"
+    assert value["meta"]["provider"] == "official_mlb"
+    assert value["error"] is None
+
+
+def test_pointer_isolation_uses_official_context_authority():
     calls = {}
 
     class Table:
@@ -34,12 +102,10 @@ def test_pointer_isolation_uses_distinct_target_context_partition():
             POINTER_PK="old",
             POINTER_SK="ACTIVE",
             VERSION="old-version",
-            AUTHORITY=overlay.AUTHORITY,
+            AUTHORITY="old-authority",
         ),
         VERSION="old",
         REPORT_TYPE="old",
-        _put_immutable=lambda _s3, _bucket, key, _body: {"key": key},
-        _activate=lambda *_args: 0,
     )
 
     entrypoint.install_pointer_isolation(module)
@@ -58,161 +124,73 @@ def test_pointer_isolation_uses_distinct_target_context_partition():
     )
 
     assert module.overlay.POINTER_PK == overlay.POINTER_PK
-    assert pointer["key"] == "mlb/v8/historical/context/manifests/a.json".replace(
-        "historical/context", "historical-context"
-    )
-    assert (
-        calls["s3"]["Metadata"]["record-type"]
-        == "mlb-v8-historical-context-manifest"
-    )
-    assert calls["Item"]["PK"] == overlay.POINTER_PK
+    assert module.overlay.AUTHORITY == entrypoint.AUTHORITY
+    assert pointer["key"] == "mlb/v8/historical-context/manifests/a.json"
+    assert calls["s3"]["Metadata"]["provider"] == "official-mlb"
     assert calls["Item"]["record_type"] == entrypoint.RECORD_TYPE
+    assert calls["Item"]["data"]["provider"] == "official_mlb_plus_internal_canonical"
     assert revision == 1
 
 
-def test_snapshot_contract_requires_weather_and_park_and_excludes_outcomes():
+def test_snapshot_contract_rewrites_provider_evidence_and_excludes_outcomes():
     def base_snapshot(*_args, **_kwargs):
         return {
-            "snapshotRole": "old",
-            "parkRunFactor": 1.02,
-            "weatherRunFactor": None,
-            "providerEvidence": {},
-            "pointInTimeVerified": True,
-            "postgameFieldsExcluded": True,
+            "authority": "old",
+            "providerEvidence": {"pitchers": {"source": "legacy"}},
             "selectionUsedOutcomes": False,
-            "trainingEligible": True,
-            "eligibilityErrors": [],
             "productionAuthorityChanged": False,
         }
 
     module = SimpleNamespace(
         build_training_snapshot=base_snapshot,
         REQUIRED_RESOURCES=("pitchers",),
-        OPTIONAL_RESOURCES=("weather", "park"),
-        point_in_time_errors=lambda _resources, _lock: [],
+        OPTIONAL_RESOURCES=("weather",),
         _effective_at=lambda envelope: datetime.fromisoformat(
             envelope["meta"]["asOfUtc"].replace("Z", "+00:00")
         ),
         _sha=lambda _value: "payload-sha",
-        overlay=SimpleNamespace(snapshot_fingerprint=lambda value: str(sorted(value))),
-    )
-    entrypoint.install_snapshot_contract(module)
-    resources = {
-        name: {
-            "data": {},
-            "meta": {"asOfUtc": "2026-07-01T22:00:00Z", "source": "test"},
-            "error": None,
-        }
-        for name in ("pitchers", "weather", "park")
-    }
-
-    value = module.build_training_snapshot(
-        {"predictionLockAtUtc": "2026-07-01T22:15:00Z"},
-        {},
-        {},
-        resources,
-        retrieved_at=datetime.now(timezone.utc),
-    )
-
-    assert value["trainingEligible"] is False
-    assert "weather_run_factor_missing" in value["eligibilityErrors"]
-    assert value["targetGameOutcomeUsed"] is False
-    assert value["sameDayResultsExcluded"] is True
-    assert value["productionAuthorityChanged"] is False
-    assert value["featureFamilies"][overlay.TARGET_FAMILY]["trainingEligible"] is False
-
-
-def test_snapshot_contract_accepts_strictly_prior_projection_without_claiming_confirmation():
-    def base_snapshot(*_args, **_kwargs):
-        return {
-            "snapshotRole": "old",
-            "parkRunFactor": 1.02,
-            "weatherRunFactor": 1.01,
-            "providerEvidence": {},
-            "pointInTimeVerified": True,
-            "postgameFieldsExcluded": True,
-            "selectionUsedOutcomes": False,
-            "trainingEligible": False,
-            "eligibilityErrors": [
-                "confirmed_lineups_missing",
-                "confirmed_starters_missing",
-            ],
-            "productionAuthorityChanged": False,
-        }
-
-    module = SimpleNamespace(
-        build_training_snapshot=base_snapshot,
-        REQUIRED_RESOURCES=("pitchers", "lineups"),
-        OPTIONAL_RESOURCES=("weather", "park"),
-        point_in_time_errors=lambda _resources, _lock: [],
-        _effective_at=lambda envelope: datetime.fromisoformat(
-            envelope["meta"]["asOfUtc"].replace("Z", "+00:00")
-        ),
-        _sha=lambda _value: "payload-sha",
-        overlay=SimpleNamespace(snapshot_fingerprint=lambda value: str(sorted(value))),
+        overlay=SimpleNamespace(snapshot_fingerprint=lambda _value: "snapshot-sha"),
     )
     entrypoint.install_snapshot_contract(module)
     resources = {
         name: {
             "data": {},
             "meta": {
-                "asOfUtc": "2026-07-01T03:59:59Z",
-                "source": "test",
-                "complete": True,
-                "pointInTimeProjectionVerified": name in {"pitchers", "lineups"},
+                "asOfUtc": "2026-07-01T22:00:00Z",
+                "source": "official_mlb_prior_context",
             },
             "error": None,
         }
-        for name in ("pitchers", "lineups", "weather", "park")
-    }
-    normalized = {
-        "coverage": {
-            "confirmedStarters": False,
-            "confirmedLineups": False,
-        }
+        for name in ("pitchers", "weather")
     }
 
-    value = module.build_training_snapshot(
-        {"predictionLockAtUtc": "2026-07-01T22:15:00Z"},
-        {},
-        normalized,
-        resources,
-        retrieved_at=datetime.now(timezone.utc),
-    )
+    value = module.build_training_snapshot({}, {}, {}, resources)
 
-    assert value["trainingEligible"] is True
-    assert value["targetIdentityMode"] == "STRICTLY_PRIOR_PROJECTION"
-    assert value["confirmedTargetStarters"] is False
-    assert value["confirmedTargetLineups"] is False
-    assert value["projectedTargetStarters"] is True
-    assert value["projectedTargetLineups"] is True
+    assert value["authority"] == entrypoint.AUTHORITY
+    assert value["providerEvidence"]["pitchers"]["provider"] == "official_mlb"
+    assert value["targetGameOutcomeUsed"] is False
+    assert value["sameDayResultsExcluded"] is True
+    assert value["productionAuthorityChanged"] is False
+    assert value["fingerprint"] == "snapshot-sha"
 
 
-def test_resource_shape_compatibility_uses_real_fundamentals_alias():
+def test_run_contract_forces_official_client_and_no_bbd_evidence(tmp_path):
     captured = {}
 
-    class Fundamentals:
-        @staticmethod
-        def normalize_match(match, captured_at, resources=None):
-            captured.update(resources or {})
-            return {"ok": True}
+    def base_run(*_args, **kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
 
-    module = SimpleNamespace(fundamentals=Fundamentals)
-    entrypoint.install_resource_shape_compatibility(module)
-    source = {
-        "pitchers": {
-            "data": {
-                "away": {"recentThreeStarts": {"fip": 3.1}},
-                "home": {"recentThreeStarts": {"fip": 3.5}},
-            }
-        }
-    }
+    module = SimpleNamespace(run=base_run)
+    entrypoint.install_run_contract(module)
+    output = tmp_path / "report.json"
 
-    value = module.fundamentals.normalize_match(
-        {}, datetime.now(timezone.utc), source
-    )
+    value = module.run(output=output)
 
-    assert value == {"ok": True}
-    assert captured["pitchers"]["data"]["away"]["recent"] == {"fip": 3.1}
-    assert captured["pitchers"]["data"]["home"]["recent"] == {"fip": 3.5}
-    assert "recent" not in source["pitchers"]["data"]["away"]
+    assert captured["client_factory"] is entrypoint.OfficialContextClient
+    assert value["provider"] == "official_mlb_plus_internal_canonical_context"
+    assert value["bbsApiUsed"] is False
+    assert value["bbsCredentialRead"] is False
+    assert value["productionAuthorityChanged"] is False
+    assert value["automaticWagerAllowed"] is False
+    assert output.exists()
