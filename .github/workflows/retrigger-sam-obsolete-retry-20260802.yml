@@ -4,19 +4,13 @@ on:
   pull_request:
     branches: [main]
     types: [opened, reopened, synchronize]
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/retrigger-sam-obsolete-retry-20260802.yml'
-  schedule:
-    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: repair-mlb-shadow-authority-verifier
+  group: repair-mlb-shadow-authority-verifier-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
