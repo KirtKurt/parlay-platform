@@ -1,0 +1,25 @@
+name: Trigger Tennis Status Repair 2026-08-02
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/tennis-status-repair-trigger-20260802'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: trigger-tennis-status-repair-20260802
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch registered tennis repair workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run repair-tennis-status-20260802-0640.yml --repo "$GITHUB_REPOSITORY" --ref main
