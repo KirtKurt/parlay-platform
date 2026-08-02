@@ -37,25 +37,33 @@ jobs:
       - name: Install validators
         run: python -m pip install --quiet 'PyYAML>=6,<7' 'pytest>=8,<9'
 
-      - name: Align live smoke verifier with manual-first fail-closed authority
+      - name: Align canonical deployment and source verifier with fail-closed authority
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
 
-          path = Path('.github/workflows/deploy.yml')
-          text = path.read_text(encoding='utf-8')
-          old = "              'runtimeAuthorityActivationAvailable': True,"
-          new = "              'runtimeAuthorityActivationAvailable': False,"
-          if text.count(new) == 1 and text.count(old) == 0:
-              print('Fail-closed shadow authority expectation is already installed.')
-          elif text.count(old) == 1 and text.count(new) == 0:
+          replacements = {
+              Path('.github/workflows/deploy.yml'): (
+                  "              'runtimeAuthorityActivationAvailable': True,",
+                  "              'runtimeAuthorityActivationAvailable': False,",
+              ),
+              Path('scripts/verify_mlb_workflow_authority.py'): (
+                  "            \"'runtimeAuthorityActivationAvailable': True\": (",
+                  "            \"'runtimeAuthorityActivationAvailable': False\": (",
+              ),
+          }
+          for path, (old, new) in replacements.items():
+              text = path.read_text(encoding='utf-8')
+              if text.count(new) == 1 and text.count(old) == 0:
+                  print(f'{path}: fail-closed shadow authority contract already installed')
+                  continue
+              if text.count(old) != 1 or text.count(new) != 0:
+                  raise SystemExit(
+                      f'{path} drifted: old matches={text.count(old)}, '
+                      f'new matches={text.count(new)}'
+                  )
               path.write_text(text.replace(old, new, 1), encoding='utf-8')
-          else:
-              raise SystemExit(
-                  f'Deploy verifier drifted: old matches={text.count(old)}, '
-                  f'new matches={text.count(new)}'
-              )
           PY
 
       - name: Validate repair without weakening MLB gates
@@ -65,15 +73,17 @@ jobs:
           from pathlib import Path
           import yaml
 
-          path = Path('.github/workflows/deploy.yml')
-          text = path.read_text(encoding='utf-8')
-          yaml.safe_load(text)
-          assert text.count("'runtimeAuthorityActivationAvailable': False,") == 1
-          assert text.count("'runtimeAuthorityActivationAvailable': True,") == 0
-          assert "'firstPromotionRequiresManualReview': True," in text
-          assert "'manualReviewCreatesShadowApprovalOnly': True," in text
-          assert "'v2InferenceConsumerInstalled': False," in text
-          assert "'automaticWagerAllowed': False," in text
+          deploy = Path('.github/workflows/deploy.yml').read_text(encoding='utf-8')
+          verifier = Path('scripts/verify_mlb_workflow_authority.py').read_text(encoding='utf-8')
+          yaml.safe_load(deploy)
+          assert deploy.count("'runtimeAuthorityActivationAvailable': False,") == 1
+          assert deploy.count("'runtimeAuthorityActivationAvailable': True,") == 0
+          assert verifier.count("\"'runtimeAuthorityActivationAvailable': False\": (") == 1
+          assert verifier.count("\"'runtimeAuthorityActivationAvailable': True\": (") == 0
+          assert "'firstPromotionRequiresManualReview': True," in deploy
+          assert "'manualReviewCreatesShadowApprovalOnly': True," in deploy
+          assert "'v2InferenceConsumerInstalled': False," in deploy
+          assert "'automaticWagerAllowed': False," in deploy
           PY
           python scripts/verify_mlb_workflow_authority.py
           python -m pytest -q \
@@ -86,13 +96,17 @@ jobs:
       - name: Publish tested verifier repair
         run: |
           set -euo pipefail
-          if git diff --quiet -- .github/workflows/deploy.yml; then
+          if git diff --quiet -- \
+            .github/workflows/deploy.yml \
+            scripts/verify_mlb_workflow_authority.py; then
             echo 'Repair is already installed on main.'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/workflows/deploy.yml
+          git add \
+            .github/workflows/deploy.yml \
+            scripts/verify_mlb_workflow_authority.py
           git commit -m 'fix(deploy): accept fail-closed MLB shadow authority'
           for attempt in $(seq 1 20); do
             if git pull --rebase origin main && git push origin HEAD:main; then
