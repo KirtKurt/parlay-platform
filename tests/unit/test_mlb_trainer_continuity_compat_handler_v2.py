@@ -43,6 +43,44 @@ def test_exact_continuity_block_becomes_healthy_fail_closed_wait():
     assert result["canonicalSlateContinuity"] == original["canonicalSlateContinuity"]
 
 
+def test_null_or_missing_continuity_flags_are_still_fail_closed_wait():
+    payload = _blocked()
+    payload["canonicalSlateContinuity"].pop("ok")
+    payload["milestones"].pop("canonicalContinuityReady")
+    payload.pop("liveInferenceAuthority")
+    payload["modelTrained"] = None
+    payload["championChanged"] = None
+    result = compat.normalize_canonical_continuity_wait(payload)
+    assert result["ok"] is True
+    assert result["status"] == "WAITING_FOR_CANONICAL_SLATE_CONTINUITY"
+    assert result["trainingReady"] is False
+    assert result["modelTrained"] is False
+    assert result["championChanged"] is False
+    assert result["liveInferenceAuthority"] is False
+    assert result["automaticPromotionEnabled"] is False
+    assert result["productionAuthorityChanged"] is False
+
+
+def test_continuity_ready_or_any_authority_true_is_never_normalized():
+    for field in (
+        "modelTrained",
+        "championChanged",
+        "liveInferenceAuthority",
+        "productionAuthorityChanged",
+    ):
+        payload = _blocked()
+        payload[field] = True
+        result = compat.normalize_canonical_continuity_wait(payload)
+        assert result["ok"] is False
+        assert result["status"] == "CANONICAL_SLATE_CONTINUITY_BLOCKED"
+    payload = _blocked()
+    payload["canonicalSlateContinuity"]["ok"] = True
+    assert compat.normalize_canonical_continuity_wait(payload)["ok"] is False
+    payload = _blocked()
+    payload["milestones"]["canonicalContinuityReady"] = True
+    assert compat.normalize_canonical_continuity_wait(payload)["ok"] is False
+
+
 def test_unexpected_failure_remains_unhealthy():
     value = {
         "ok": False,
