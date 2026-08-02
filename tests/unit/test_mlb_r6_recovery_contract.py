@@ -24,8 +24,8 @@ def test_r6_starts_after_permanently_incomplete_slates():
     assert "MLB_ML_RELEASE_CONTRACT_ID: 'mlb-v2-2026-08-02-future-prospective-r6'" in text
     assert "MLB_ML_RELEASE_CUTOFF_UTC: '2026-08-02T04:00:00+00:00'" in text
     assert "INQSI_MLB_ML_AUTO_PROMOTE: 'false'" in text
-    assert "mlb-v2-2026-08-02-future-prospective-r6" not in text
-    assert "2026-08-02T04:00:00+00:00" not in text
+    assert "mlb-v2-2026-07-29-future-prospective-r5" not in text
+    assert "2026-07-29T04:00:00+00:00" not in text
 
 
 def test_existing_lock_and_promotion_safety_is_unchanged():
