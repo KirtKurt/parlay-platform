@@ -3,7 +3,8 @@ name: Publish Tennis Autonomy Status
 on:
   workflow_dispatch:
   schedule:
-    - cron: '7,22,37,52 * * * *'
+    # Keep cadence above the 20-minute timeout to avoid self-cancel starvation.
+    - cron: '7,37 * * * *'
   workflow_run:
     workflows: ['Deploy Tennis Learning']
     types: [completed]
