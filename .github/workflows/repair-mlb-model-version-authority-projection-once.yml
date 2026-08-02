@@ -5,6 +5,11 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/repair-mlb-model-version-authority-projection-once.yml'
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+    paths:
+      - '.github/workflows/repair-mlb-model-version-authority-projection-once.yml'
 
 permissions:
   contents: write
@@ -16,6 +21,7 @@ concurrency:
 
 jobs:
   repair:
+    if: github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/execute-mlb-authority-projection-repair')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -120,5 +126,3 @@ def test_read_api_fails_closed'''
             sleep 2
           done
           gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref main
-
-# retry trigger
