@@ -1,0 +1,44 @@
+name: One-shot patch MLB terminal lifecycle APIs
+
+on:
+  push:
+    branches:
+      - codex/fix-mlb-terminal-lifecycle-api-counts
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Apply exact endpoint edits and focused tests
+        run: |
+          set -euo pipefail
+          python scripts/codex_patch_mlb_terminal_lifecycle.py
+          python -m pip install --quiet 'pytest>=8,<9'
+          python -m py_compile hello_world/mlb_terminal_lifecycle_count_reconciliation.py
+          python -m py_compile hello_world/mlb_v3_read_api.py
+          python -m py_compile hello_world/mlb_daily_pick_lock_protected.py
+          python -m pytest -q tests/unit/test_mlb_terminal_status_lifecycle_counts.py
+
+      - name: Commit patched source and remove one-shot machinery
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --exit-code && { echo 'No patch changes produced'; exit 1; } || true
+          git commit -m 'Reconcile terminal lifecycle counts at MLB API boundaries'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
