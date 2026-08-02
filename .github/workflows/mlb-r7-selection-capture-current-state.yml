@@ -17,6 +17,7 @@ concurrency:
 env:
   STACK_NAME: parlay-platform-dev
   REPORT_PATH: runtime_reports/mlb_r7_selection_capture_current_latest.json
+  VERIFY_REVISION: r7-current-2
 
 jobs:
   verify:
@@ -61,7 +62,7 @@ jobs:
             then FRESH=true; break; fi
             sleep 12
           done
-          STARTED_AT="$STARTED_AT" FRESH="$FRESH" python - <<'PY'
+          STARTED_AT="$STARTED_AT" FRESH="$FRESH" VERIFY_REVISION="$VERIFY_REVISION" python - <<'PY'
           import json, os
           from datetime import datetime, timezone
           from pathlib import Path
@@ -92,6 +93,7 @@ jobs:
           report={
             'ok':not blockers,
             'proofType':'MLB_R7_SELECTION_CAPTURE_CURRENT_STATE',
+            'verifyRevision':os.environ.get('VERIFY_REVISION'),
             'createdAtUtc':datetime.now(timezone.utc).isoformat(),
             'startedAtUtc':os.environ['STARTED_AT'],
             'sourceSha':os.environ.get('GITHUB_SHA'),
