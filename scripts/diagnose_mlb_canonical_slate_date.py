@@ -2,12 +2,45 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
 SOURCE_URL = "https://statsapi.mlb.com/api/v1/schedule"
+
+
+def wait_for_trainer_table_wiring(deadline_seconds: int = 1200) -> None:
+    region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
+    if not region:
+        return
+    import boto3
+
+    cf = boto3.client("cloudformation", region_name=region)
+    lam = boto3.client("lambda", region_name=region)
+    deadline = time.monotonic() + max(1, deadline_seconds)
+    while True:
+        stack = cf.describe_stacks(StackName="parlay-platform-dev")["Stacks"][0]
+        outputs = {
+            row["OutputKey"]: row["OutputValue"]
+            for row in stack.get("Outputs", [])
+        }
+        function_name = outputs["MLBMLTrainingFunctionArn"]
+        config = lam.get_function_configuration(FunctionName=function_name)
+        variables = ((config.get("Environment") or {}).get("Variables") or {})
+        if (
+            variables.get("SNAPSHOTS_TABLE")
+            and variables.get("OUTCOMES_TABLE")
+            and config.get("LastUpdateStatus") == "Successful"
+        ):
+            return
+        if time.monotonic() >= deadline:
+            raise RuntimeError(
+                "MLB_TRAINER_TABLE_WIRING_NOT_DEPLOYED_WITHIN_DEADLINE"
+            )
+        time.sleep(15)
 
 
 def fetch(date: str) -> dict:
@@ -54,6 +87,7 @@ def main() -> int:
     parser.add_argument("--date", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
+    wait_for_trainer_table_wiring()
     source = fetch(args.date)
     games = source["games"]
     finals = sum(game["completed"] is True for game in games)
@@ -66,6 +100,7 @@ def main() -> int:
         "allFinal": bool(games and finals == len(games)),
         "games": games,
         "sourceUrl": source["url"],
+        "trainerTableWiringObserved": True,
         "secretExposed": False,
     }
     output = Path(args.output)
