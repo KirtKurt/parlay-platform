@@ -17,7 +17,7 @@ permissions:
 
 concurrency:
   group: publish-tennis-autonomy-status
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -129,16 +129,31 @@ jobs:
           )
           print(json.dumps(snapshot, indent=2, sort_keys=True))
           PY
+          cp runtime/tennis_autonomy_status.json /tmp/tennis-autonomy-status-publish.json
 
       - name: Commit runtime snapshot
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add runtime/tennis_autonomy_status.json
-          if git diff --cached --quiet; then
-            echo 'No status change to publish'
-            exit 0
-          fi
-          git commit -m 'Publish tennis autonomy runtime status [skip ci]'
-          git push
+
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main
+            mkdir -p runtime
+            cp /tmp/tennis-autonomy-status-publish.json runtime/tennis_autonomy_status.json
+            git add runtime/tennis_autonomy_status.json
+            if git diff --cached --quiet; then
+              echo 'No status change to publish'
+              exit 0
+            fi
+            git commit -m 'Publish tennis autonomy runtime status [skip ci]'
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "Concurrent main update blocked publish attempt ${attempt}; retrying"
+            sleep $((attempt * 2))
+          done
+
+          echo 'Unable to publish tennis autonomy status after five attempts' >&2
+          exit 1
