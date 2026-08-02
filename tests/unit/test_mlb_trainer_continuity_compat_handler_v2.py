@@ -26,6 +26,17 @@ def _blocked():
     }
 
 
+def _sparse_blocked():
+    # This is the production shape that reaches the compatibility boundary
+    # before optional continuity diagnostics have been assembled.
+    return {
+        "ok": False,
+        "status": "CANONICAL_SLATE_CONTINUITY_BLOCKED",
+        "modelTrained": False,
+        "championChanged": False,
+    }
+
+
 def test_exact_continuity_block_becomes_healthy_fail_closed_wait():
     payload = _blocked()
     original = copy.deepcopy(payload)
@@ -41,6 +52,28 @@ def test_exact_continuity_block_becomes_healthy_fail_closed_wait():
     assert result["automaticPromotionEnabled"] is False
     assert result["productionAuthorityChanged"] is False
     assert result["canonicalSlateContinuity"] == original["canonicalSlateContinuity"]
+
+
+def test_sparse_production_continuity_block_becomes_fail_closed_wait():
+    result = compat.normalize_canonical_continuity_wait(_sparse_blocked())
+    assert result["ok"] is True
+    assert result["status"] == "WAITING_FOR_CANONICAL_SLATE_CONTINUITY"
+    assert result["executionMode"] == "training"
+    assert result["waiting"] is True
+    assert result["trainingReady"] is False
+    assert result["modelTrained"] is False
+    assert result["championChanged"] is False
+    assert result["runtimeAuthorityChanged"] is False
+    assert result["runtimeAuthorityActivated"] is False
+    assert result["productionAuthorityChanged"] is False
+
+
+def test_contradictory_continuity_payload_stays_unhealthy():
+    value = _sparse_blocked()
+    value["modelTrained"] = True
+    result = compat.normalize_canonical_continuity_wait(value)
+    assert result == value
+    assert result["ok"] is False
 
 
 def test_unexpected_failure_remains_unhealthy():
@@ -66,6 +99,19 @@ def test_training_return_boundary_normalizes_exact_wait(monkeypatch):
     assert result["modelTrained"] is False
     assert result["championChanged"] is False
     assert result["liveInferenceAuthority"] is False
+    assert result["productionAuthorityChanged"] is False
+
+
+def test_training_return_boundary_normalizes_sparse_wait(monkeypatch):
+    trainer = compat.canonical
+    service = object.__new__(trainer.TrainingService)
+    monkeypatch.setattr(
+        compat, "_original_run_scheduled", lambda _self: _sparse_blocked()
+    )
+    result = trainer.TrainingService.run_scheduled(service)
+    assert result["ok"] is True
+    assert result["status"] == "WAITING_FOR_CANONICAL_SLATE_CONTINUITY"
+    assert result["trainingReady"] is False
     assert result["productionAuthorityChanged"] is False
 
 
@@ -104,7 +150,7 @@ class _Store:
         self.released.append({"experimentId": experiment_id, **kwargs})
 
 
-def _service():
+def _service(*, sparse: bool = False):
     trainer = compat.canonical
     service = object.__new__(trainer.TrainingService)
     service.config = SimpleNamespace(
@@ -123,7 +169,8 @@ def _service():
         service._execution_lease_acquired_for_run = True
 
     service.attest_execution_lease_acquired = attest
-    service.run_scheduled = lambda: service._save_run_status(_blocked())
+    payload_factory = _sparse_blocked if sparse else _blocked
+    service.run_scheduled = lambda: service._save_run_status(payload_factory())
     return service
 
 
@@ -156,5 +203,25 @@ def test_unique_lambda_handler_returns_wait_without_function_error(monkeypatch):
     assert result["status"] == "WAITING_FOR_CANONICAL_SLATE_CONTINUITY"
     assert result["modelTrained"] is False
     assert result["championChanged"] is False
+    assert result["productionAuthorityChanged"] is False
+    assert len(service.store.released) == 1
+
+
+def test_unique_lambda_handler_accepts_sparse_production_wait(monkeypatch):
+    service = _service(sparse=True)
+    trainer = compat.canonical
+    monkeypatch.setattr(trainer, "_service", lambda: service)
+    monkeypatch.setenv(
+        "MLB_ML_EXECUTION_LEASE_SECONDS", str(trainer.EXECUTION_LEASE_SECONDS)
+    )
+    context = SimpleNamespace(
+        aws_request_id="sparse-continuity-wait-request",
+        get_remaining_time_in_millis=lambda: 800_000,
+    )
+    result = compat.lambda_handler({"mode": "scheduled"}, context)
+    assert result["ok"] is True
+    assert result["status"] == "WAITING_FOR_CANONICAL_SLATE_CONTINUITY"
+    assert result["trainingReady"] is False
+    assert result["modelTrained"] is False
     assert result["productionAuthorityChanged"] is False
     assert len(service.store.released) == 1
