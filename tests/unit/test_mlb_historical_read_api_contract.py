@@ -98,6 +98,9 @@ def test_read_api_reports_historical_model_and_no_fallback_after_cutover():
     assert model["automaticWagerAllowed"] is False
     assert model["predictionOnlyWagerSafetyInstalled"] is True
     assert model["rowLevelAutomaticWagerAllowed"] is False
+    assert model["firstPromotionRequiresManualReview"] is False
+    assert model["manualReviewCreatesShadowApprovalOnly"] is False
+    assert model["runtimeAuthorityActivationAvailable"] is True
 
     response = api.lambda_handler(
         {"path": "/v1/mlb/predictions", "queryStringParameters": {"date": "2026-07-24"}},
@@ -125,6 +128,10 @@ def test_read_api_keeps_incumbent_only_in_coherent_pre_cutover_state():
     assert model["apiRuntimeVersion"] == "MLB-V3-READ-API-v6-ranked-winner-v15.10"
     assert model["productionAuthoritySource"] == "mlb_ranked_winner_v15_10_active_ensemble"
     assert model["historicalApiExtensionVersion"] == api.HISTORICAL_API_EXTENSION_VERSION
+    assert model["automaticPromotionPolicy"] == "winner model fixed for release; precision/trade promotion remains disabled"
+    assert model["firstPromotionRequiresManualReview"] is True
+    assert model["manualReviewCreatesShadowApprovalOnly"] is True
+    assert model["runtimeAuthorityActivationAvailable"] is False
 
 
 def test_read_api_fails_closed_when_historical_authority_state_is_incoherent():
