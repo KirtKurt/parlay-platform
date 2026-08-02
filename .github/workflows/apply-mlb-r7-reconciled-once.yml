@@ -1,0 +1,140 @@
+name: Apply Reconciled MLB R7 Repair Once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-mlb-r7-reconciled-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-reconciled-mlb-r7-repair-once
+  cancel-in-progress: false
+
+jobs:
+  repair-and-prove:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Move expired r6 boundary to future r7 boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          old_id = 'mlb-v2-2026-08-02-future-prospective-r6'
+          new_id = 'mlb-v2-2026-08-03-future-prospective-r7'
+          old_cutoff = '2026-08-02T04:00:00+00:00'
+          new_cutoff = '2026-08-03T04:00:00+00:00'
+          changed = []
+
+          for root in (Path('hello_world'), Path('scripts'), Path('tests/unit')):
+              for path in root.rglob('*.py'):
+                  text = path.read_text(encoding='utf-8')
+                  updated = text.replace(old_id, new_id).replace(old_cutoff, new_cutoff)
+                  if updated != text:
+                      path.write_text(updated, encoding='utf-8')
+                      changed.append(str(path))
+
+          template = Path('template.yaml')
+          text = template.read_text(encoding='utf-8')
+          updated = text.replace(old_id, new_id).replace(old_cutoff, new_cutoff)
+          if updated != text:
+              template.write_text(updated, encoding='utf-8')
+              changed.append(str(template))
+
+          clean = Path('tests/unit/test_mlb_ml_r5_clean_cutover.py')
+          if clean.exists():
+              text = clean.read_text(encoding='utf-8')
+              text = text.replace('2026-08-02T03:00:00+00:00', '2026-08-03T03:00:00+00:00')
+              text = text.replace('datetime(2026, 8, 2, 3, 30', 'datetime(2026, 8, 3, 3, 30')
+              text = text.replace('test_r6_', 'test_r7_').replace('r6_loader', 'r7_loader')
+              text = text.replace('pre-r6', 'pre-r7').replace('by_r6', 'by_r7')
+              clean.write_text(text, encoding='utf-8')
+              changed.append(str(clean))
+
+          training_test = Path('tests/unit/test_mlb_ml_aws_training_v1.py')
+          text = training_test.read_text(encoding='utf-8')
+          text = text.replace(
+              'datetime(2026, 8, 2, 4, 0, tzinfo=timezone.utc),\n'
+              '        datetime(2026, 8, 2, 4, 0, 0, 1, tzinfo=timezone.utc),',
+              'datetime(2026, 8, 3, 4, 0, tzinfo=timezone.utc),\n'
+              '        datetime(2026, 8, 3, 4, 0, 0, 1, tzinfo=timezone.utc),',
+          )
+          start = text.index('def test_partial_prior_et_slate_cannot_freeze_or_deadlock_manifest')
+          end = text.find('\ndef ', start + 4)
+          if end < 0:
+              end = len(text)
+          block = text[start:end]
+          block = block.replace(
+              'after_midnight_et = datetime(2026, 8, 3, 4, 30, tzinfo=timezone.utc)',
+              'after_midnight_et = datetime(2026, 8, 4, 4, 30, tzinfo=timezone.utc)',
+          ).replace('2026-08-02', '2026-08-03')
+          text = text[:start] + block + text[end:]
+          training_test.write_text(text, encoding='utf-8')
+          changed.append(str(training_test))
+
+          r6 = Path('tests/unit/test_mlb_r6_recovery_contract.py')
+          r7 = Path('tests/unit/test_mlb_r7_recovery_contract.py')
+          if r6.exists():
+              text = r6.read_text(encoding='utf-8')
+              text = text.replace('August 2', 'August 3')
+              text = text.replace('test_r6_', 'test_r7_')
+              text = text.replace('r6_starts', 'r7_starts')
+              text = text.replace('2026-08-02', '2026-08-03')
+              text = text.replace('r6', 'r7')
+              r7.write_text(text, encoding='utf-8')
+              r6.unlink()
+              changed.extend([str(r6), str(r7)])
+
+          print({
+              'changedFiles': sorted(set(changed)),
+              'experimentId': new_id,
+              'releaseCutoffUtc': new_cutoff,
+          })
+          PY
+          git diff --check
+
+      - name: Verify complete MLB source contracts
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'requests>=2.31,<3' 'PyYAML>=6,<7' -r hello_world/requirements.txt
+          python -m compileall -q hello_world scripts
+          python scripts/stabilize_mlb_deploy_source.py
+          python scripts/patch_template_mlb_v1.py
+          python scripts/patch_template_mlb_security.py
+          python scripts/patch_template_mlb_results_routes.py
+          git diff --check
+          sam validate --template-file template.yaml
+          mapfile -t tests < <(find tests/unit -maxdepth 1 -type f -name 'test_mlb_*.py' -print | sort)
+          test ${#tests[@]} -gt 0
+          python -m pytest -q --tb=short "${tests[@]}"
+          sam build --template-file template.yaml --cached
+          python scripts/verify_mlb_schedule_invariants.py --template .aws-sam/build/template.yaml
+
+      - name: Commit future-safe r7 source
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add hello_world scripts template.yaml tests/unit
+          git diff --cached --quiet && exit 0
+          git commit -m 'Move MLB prospective reset to future r7 boundary'
+          git push origin HEAD:"$HEAD_BRANCH"
