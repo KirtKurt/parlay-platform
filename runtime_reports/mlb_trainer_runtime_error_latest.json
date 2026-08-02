@@ -1,16 +1,16 @@
 {
-  "createdAtUtc": "2026-08-02T02:36:21.108961+00:00",
+  "createdAtUtc": "2026-08-02T02:40:33.086448+00:00",
   "executedVersion": "$LATEST",
   "functionError": "Unhandled",
   "functionName": "arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
   "functionState": "Active",
   "handler": "mlb_ml_aws_training_v1_compat.lambda_handler",
   "lastUpdateStatus": "Successful",
-  "logTail": "START RequestId: 5ec08b8f-480c-400a-9467-f9559218a3a4 Version: $LATEST\n[ERROR] TrainingContractError: training returned an unhealthy status: CANONICAL_SLATE_CONTINUITY_BLOCKED\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1_compat.py\", line 97, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0return canonical.lambda_handler(event, context)\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1.py\", line 2935, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise TrainingContractError(\nEND RequestId: 5ec08b8f-480c-400a-9467-f9559218a3a4\nREPORT RequestId: 5ec08b8f-480c-400a-9467-f9559218a3a4\tDuration: 27885.44 ms\tBilled Duration: 27886 ms\tMemory Size: 2048 MB\tMax Memory Used: 177 MB\t\n",
+  "logTail": "START RequestId: 42b7d4eb-558e-4336-91cb-8573bd4aeda5 Version: $LATEST\n[ERROR] TrainingContractError: training returned an unhealthy status: CANONICAL_SLATE_CONTINUITY_BLOCKED\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1_compat.py\", line 97, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0return canonical.lambda_handler(event, context)\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1.py\", line 2935, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise TrainingContractError(\nEND RequestId: 42b7d4eb-558e-4336-91cb-8573bd4aeda5\nREPORT RequestId: 42b7d4eb-558e-4336-91cb-8573bd4aeda5\tDuration: 27925.90 ms\tBilled Duration: 27926 ms\tMemory Size: 2048 MB\tMax Memory Used: 177 MB\t\n",
   "payload": {
     "errorMessage": "training returned an unhealthy status: CANONICAL_SLATE_CONTINUITY_BLOCKED",
     "errorType": "TrainingContractError",
-    "requestId": "5ec08b8f-480c-400a-9467-f9559218a3a4",
+    "requestId": "42b7d4eb-558e-4336-91cb-8573bd4aeda5",
     "stackTrace": [
       "  File \"/var/task/mlb_ml_aws_training_v1_compat.py\", line 97, in lambda_handler\n    return canonical.lambda_handler(event, context)\n",
       "  File \"/var/task/mlb_ml_aws_training_v1.py\", line 2935, in lambda_handler\n    raise TrainingContractError(\n"
