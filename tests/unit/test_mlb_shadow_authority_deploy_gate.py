@@ -47,6 +47,14 @@ def test_persisted_status_shape_accepts_two_independent_shadow_proofs():
     )
 
 
+def test_missing_top_level_authority_without_health_proofs_fails_closed():
+    status = _status()
+    status.pop("liveInferenceAuthority")
+    assert _runtime_authority_activation_errors(status) == [
+        "runtime_authority_activation_not_available"
+    ]
+
+
 def test_persisted_status_shape_fails_closed_when_one_shadow_proof_is_unsafe():
     status = _persisted_status_without_top_level_authority()
     status["selectionCaptureHealth"]["latestRun"]["liveInferenceAuthority"] = True
