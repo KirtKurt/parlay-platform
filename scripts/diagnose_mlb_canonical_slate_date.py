@@ -2,10 +2,51 @@ from __future__ import annotations
 
 import argparse
 import json
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-import mlb_canonical_final_labels_v1 as labels
+SOURCE_URL = "https://statsapi.mlb.com/api/v1/schedule"
+
+
+def fetch(date: str) -> dict:
+    query = urllib.parse.urlencode(
+        {"sportId": "1", "startDate": date, "endDate": date, "hydrate": "linescore"}
+    )
+    url = f"{SOURCE_URL}?{query}"
+    request = urllib.request.Request(
+        url,
+        headers={"accept": "application/json", "user-agent": "inqsi-mlb-slate-diagnostic/1.0"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    games = []
+    for date_row in payload.get("dates") or []:
+        for raw in date_row.get("games") or []:
+            teams = raw.get("teams") or {}
+            away = teams.get("away") or {}
+            home = teams.get("home") or {}
+            status = raw.get("status") or {}
+            games.append(
+                {
+                    "officialGamePk": str(raw.get("gamePk") or ""),
+                    "gameDate": raw.get("gameDate"),
+                    "awayTeam": ((away.get("team") or {}).get("name")),
+                    "homeTeam": ((home.get("team") or {}).get("name")),
+                    "awayScore": away.get("score"),
+                    "homeScore": home.get("score"),
+                    "completed": str(status.get("abstractGameState") or "").upper() == "FINAL",
+                    "officialStatus": {
+                        "abstractGameState": status.get("abstractGameState"),
+                        "codedGameState": status.get("codedGameState"),
+                        "statusCode": status.get("statusCode"),
+                        "detailedState": status.get("detailedState"),
+                        "reason": status.get("reason"),
+                    },
+                }
+            )
+    return {"url": url, "totalGames": payload.get("totalGames"), "games": games}
 
 
 def main() -> int:
@@ -13,28 +54,18 @@ def main() -> int:
     parser.add_argument("--date", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
-    schedule = labels.fetch_official_schedule(args.date, timeout=30)
+    source = fetch(args.date)
+    games = source["games"]
+    finals = sum(game["completed"] is True for game in games)
     report = {
         "proofType": "MLB_CANONICAL_SLATE_DATE_DIAGNOSTIC",
         "createdAtUtc": datetime.now(timezone.utc).isoformat(),
         "slateDateEt": args.date,
-        "officialGameCount": schedule.get("officialGameCount"),
-        "officialFinalCount": schedule.get("officialFinalCount"),
-        "allFinal": bool(schedule.get("officialGameCount") and schedule.get("officialGameCount") == schedule.get("officialFinalCount")),
-        "games": [
-            {
-                "officialGamePk": game.get("officialGamePk"),
-                "gameDate": game.get("gameDate"),
-                "awayTeam": game.get("awayTeam"),
-                "homeTeam": game.get("homeTeam"),
-                "awayScore": game.get("awayScore"),
-                "homeScore": game.get("homeScore"),
-                "completed": game.get("completed"),
-                "officialStatus": game.get("officialStatus"),
-            }
-            for game in schedule.get("games") or []
-        ],
-        "sourceUrl": schedule.get("sourceUrl"),
+        "officialGameCount": len(games),
+        "officialFinalCount": finals,
+        "allFinal": bool(games and finals == len(games)),
+        "games": games,
+        "sourceUrl": source["url"],
         "secretExposed": False,
     }
     output = Path(args.output)
