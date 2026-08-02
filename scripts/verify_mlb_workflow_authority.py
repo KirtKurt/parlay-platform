@@ -638,7 +638,7 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             "'v2InferenceConsumerInstalled': False": (
                 "canonical_deploy_allows_unreviewed_v2_inference"
             ),
-            "'runtimeAuthorityActivationAvailable': True": (
+            "'runtimeAuthorityActivationAvailable': False": (
                 "canonical_deploy_does_not_require_ranked_runtime_activation"
             ),
             "'primaryAlgorithm': 'INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble'": (
