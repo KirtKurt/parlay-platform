@@ -25,6 +25,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install AWS SDK
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -42,25 +44,29 @@ jobs:
           from datetime import datetime, timezone
           from pathlib import Path
           import boto3
+          from botocore.config import Config
 
           region=os.environ['AWS_REGION_VALUE']
           cf=boto3.client('cloudformation', region_name=region)
-          lam=boto3.client('lambda', region_name=region)
+          lam=boto3.client('lambda', region_name=region, config=Config(read_timeout=360, connect_timeout=20, retries={'max_attempts':1}))
           stack='parlay-platform-dev'
           detail=cf.describe_stack_resource(StackName=stack,LogicalResourceId='MLBDailyPickLockFunction')['StackResourceDetail']
           fn=detail['PhysicalResourceId']
           config=lam.get_function_configuration(FunctionName=fn)
 
           def invoke(payload):
-              response=lam.invoke(FunctionName=fn,InvocationType='RequestResponse',Payload=json.dumps(payload).encode())
-              raw=response['Payload'].read().decode('utf-8','replace')
-              try: body=json.loads(raw or '{}')
-              except Exception: body={'rawPayload':raw[:12000]}
-              if isinstance(body,dict) and isinstance(body.get('body'),str):
-                  try: decoded=json.loads(body['body'])
-                  except Exception: decoded=body['body'][:12000]
-              else: decoded=body
-              return {'functionError':response.get('FunctionError'),'statusCode':response.get('StatusCode'),'result':decoded}
+              try:
+                  response=lam.invoke(FunctionName=fn,InvocationType='RequestResponse',Payload=json.dumps(payload).encode())
+                  raw=response['Payload'].read().decode('utf-8','replace')
+                  try: body=json.loads(raw or '{}')
+                  except Exception: body={'rawPayload':raw[:12000]}
+                  if isinstance(body,dict) and isinstance(body.get('body'),str):
+                      try: decoded=json.loads(body['body'])
+                      except Exception: decoded=body['body'][:12000]
+                  else: decoded=body
+                  return {'functionError':response.get('FunctionError'),'statusCode':response.get('StatusCode'),'result':decoded}
+              except Exception as exc:
+                  return {'clientError':f'{type(exc).__name__}:{exc}'}
 
           status=invoke({'httpMethod':'GET','path':'/v1/mlb/locks/status','queryStringParameters':{}})
           today=invoke({'httpMethod':'GET','path':'/v1/mlb/locks/today','queryStringParameters':{}})
