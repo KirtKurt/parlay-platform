@@ -2,7 +2,7 @@
   "all_promotion_gates_pass": false,
   "authority": "DEGRADED",
   "automatic_prediction_allowed": false,
-  "checked_at": "2026-08-02T01:45:40.859961+00:00",
+  "checked_at": "2026-08-02T01:48:03.712314+00:00",
   "consecutive_failures": 34,
   "last_cycle_at": "2026-08-02T01:45:35.801197+00:00",
   "last_error": "backfill: parlay-platform-tennis-le-TennisHistoricalBackfill-4nRZ07g201dv failed: {'errorMessage': 'no historical yearly CSV source was reachable; atp 2007 direct CSV download failed: https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master/atp_matches_2007.csv attempt 1: HTTP 404 | https://github.com/JeffSackmann/tennis_atp/raw/refs/heads/master/atp_matches_2007.csv attempt 1: HTTP 404 | https://cdn.jsdelivr.net/gh/JeffSackmann/tennis_atp@master/atp_matches_2007.csv attempt 1: HTTP 404 | wta 2007 direct CSV download failed: https://raw.githubusercontent.com/JeffSackmann/tennis_wta/master/wta_matches_2007.csv attempt 1: HTTP 404 | https://github.com/JeffSackmann/tennis_wta/raw/refs/heads/master/wta_matches_2007.csv attempt 1: HTTP 404 | https://cdn.jsdelivr.net/gh/JeffSackmann/tennis_wta@master/wta_matches_2007.csv attempt 1: HTTP 404 | atp 2008 direct CSV download failed: https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master/atp_matches_2008.csv attempt 1: HTTP 404 | https://github.com/JeffSackmann/tennis_atp/raw/refs/heads/master/atp_matches_2008.csv attempt 1: HTTP 404 | https://cdn.jsdelivr.net/gh/JeffSackmann/tennis_atp@master/atp_matches_2008.csv attempt 1: HTTP 404 | wta 2008 direct CSV download failed: https://raw.githubusercontent.com/JeffSackmann/tennis_wta/master/wta_matches_2008.csv attempt 1: HTTP 404 | https://github.com/JeffSackmann/tennis_wta/raw/refs/heads/master/wta_matches_2008.csv attempt 1: HTTP 404 | https://cdn.jsdelivr.net/gh/JeffSackmann/tennis_wta@master/wta_matches_2008.csv attempt 1: HTTP 404 | atp 2009 direct CSV download failed: https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master/atp_matches_2009.csv attempt 1: HTTP 404 | https://github.com/JeffSackmann/tennis_atp/raw/refs/heads/master/atp_matches_2009.csv attempt 1: HTTP 404 | https://cdn.jsdelivr.net/gh/JeffSackmann/tennis_atp@master/atp_matches_2009.csv attempt 1: HTTP 404 | wta 2009 direct CSV download failed: https://raw.githubusercontent.com/JeffSackmann/tennis_wta/master/wta_matches_2009.csv attempt 1: HTTP 404 | https://github.com/JeffSackmann/tennis_wta/raw/refs/heads/master/wta_matches_2009.csv attempt 1: HTTP 404 | https://cdn.jsdelivr.net/gh/JeffSackmann/tennis_wta@master/wta_matches_2009.csv attempt 1: HTTP 404', 'errorType': 'RuntimeError', 'requestId': '5e6cefc9-fbf0-4cad-b9ca-4fe895ddc5fa', 'stackTrace': ['  File \"/var/task/bootstrap_handler.py\", line 9, in lambda_handler\\n    return backfill.lambda_handler(event, context)\\n', '  File \"/var/task/backfill.py\", line 328, in lambda_handler\\n    result = run_backfill()\\n', '  File \"/var/task/backfill.py\", line 263, in run_backfill\\n    for tour, row in _rows(diagnostics):\\n', '  File \"/var/task/backfill.py\", line 122, in _rows\\n    raise RuntimeError(\\n']}",
@@ -21,7 +21,7 @@
   "query_succeeded": true,
   "reason": "pipeline_failure_circuit_breaker",
   "service": "tennis-autonomy",
-  "source_commit": "de988f509fc8d96ec66c11a0df3e64e4d92ea55f",
+  "source_commit": "995feb2f790563b5e1f6637e8c28f2b4c82f6811",
   "stack_status": "UPDATE_COMPLETE",
   "status_endpoint_available": true,
   "training_samples": 1
