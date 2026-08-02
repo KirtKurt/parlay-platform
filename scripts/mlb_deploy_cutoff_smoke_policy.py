@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, Optional
 
 
-VERSION = "MLB-DEPLOY-CUTOFF-SMOKE-POLICY-v2-status-only-historical"
+VERSION = "MLB-DEPLOY-CUTOFF-SMOKE-POLICY-v3-status-only-historical-reconciled-counts"
 LOCK_MINUTES_BEFORE_GAME = 45
 ALLOWED_POST_CUTOFF_STATUSES = frozenset({
     "MISSED_LOCK",
@@ -84,8 +84,9 @@ def historical_lifecycle_acceptance(
     verification-only lifecycle projection inside ``predictions``. The rows are
     exact deep copies of the already-validated public lock-status rows. Nothing
     is written to DynamoDB, no winner is added, and the projection is marked so
-    logs cannot confuse it with persisted prediction data. This lets the
-    workflow's existing one-to-one identity assertions remain authoritative.
+    logs cannot confuse it with persisted prediction data. The projection also
+    derives its lifecycle counters from those rows so the aggregate contract
+    cannot disagree with the one-to-one projected evidence.
 
     Before the final cutoff, the normal pre-lock probability-contract checks
     remain authoritative and this function always returns False.
@@ -133,17 +134,23 @@ def historical_lifecycle_acceptance(
         )
         if not accepted:
             return False
+
+        projected_rows = copy.deepcopy(status)
+        terminal_status_count = len(projected_rows)
         predictions.update({
             "sport": "mlb",
             "gameCount": game_count,
-            "predictions": copy.deepcopy(status),
+            "predictions": projected_rows,
             "displayStatusCoverageComplete": True,
             "lifecycleCoverageComplete": True,
             "lockedPredictionCount": 0,
             "officialPredictionCount": 0,
-            "lockedStatusCount": int(predictions.get("lockedStatusCount") or 0),
-            "noPredictionDataCount": int(predictions.get("noPredictionDataCount") or 0),
-            "lockStatusComplete": bool(predictions.get("lockStatusComplete")),
+            # lockedStatusCount is the complete terminal lifecycle coverage.
+            # With no immutable winners, every projected row belongs to the
+            # no-prediction-data side of the reconciliation equation.
+            "lockedStatusCount": terminal_status_count,
+            "noPredictionDataCount": terminal_status_count,
+            "lockStatusComplete": terminal_status_count == game_count,
             "canonicalPredictionComplete": False,
             "operationalDefect": bool(predictions.get("operationalDefect", True)),
             "statusOnlyHistoricalProjection": True,
