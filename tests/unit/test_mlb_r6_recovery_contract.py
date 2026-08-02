@@ -1,3 +1,5 @@
+"""Fail-closed deployment contract for the August 2 MLB prospective reset."""
+
 from pathlib import Path
 
 
