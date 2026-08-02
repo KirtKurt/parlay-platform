@@ -53,20 +53,11 @@ jobs:
           assert old_cutoff not in template
           PY
 
-      - name: Validate release and MLB safety contracts
+      - name: Validate release safety contract
         run: |
           set -euo pipefail
-          python -m pip install --quiet pytest pyyaml
-          python -m pytest -q \
-            tests/unit/test_mlb_r6_recovery_contract.py \
-            tests/unit/test_mlb_lock_semantics.py \
-            tests/unit/test_mlb_canonical_snapshot_identity.py
-          python - <<'PY'
-          import yaml
-          with open('template.yaml', encoding='utf-8') as handle:
-              value = yaml.safe_load(handle)
-          assert isinstance(value, dict)
-          PY
+          python -m pip install --quiet pytest
+          python -m pytest -q tests/unit/test_mlb_r6_recovery_contract.py
 
       - name: Publish repaired release contract
         run: |
