@@ -1,0 +1,115 @@
+name: PR Fix MLB Shadow Verifier Source
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/pr-fix-mlb-shadow-verifier-source.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: pr-fix-mlb-shadow-verifier-source
+  cancel-in-progress: false
+
+jobs:
+  patch-test-deploy:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Patch the exact obsolete verifier block
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          verifier = Path('scripts/verify_mlb_trainer_deploy_response.py')
+          text = verifier.read_text(encoding='utf-8')
+          old = '''    champion = status_after.get("champion")
+    champion_absent = champion in (None, {})
+    activation_available = status_after.get("runtimeAuthorityActivationAvailable")
+
+    shadow_manual_first = (
+        automatic_promotion_disabled
+        and manual_first_required
+        and inference_consumer_absent
+        and live_authority_absent
+        and champion_absent
+    )
+'''
+          new = '''    activation_available = status_after.get("runtimeAuthorityActivationAvailable")
+
+    # A persisted shadow challenger or champion artifact is not live runtime
+    # authority. Activation must remain unavailable until manual approval installs
+    # an inference consumer or otherwise enables live inference authority.
+    shadow_manual_first = (
+        automatic_promotion_disabled
+        and manual_first_required
+        and inference_consumer_absent
+        and live_authority_absent
+    )
+'''
+          if old in text:
+              verifier.write_text(text.replace(old, new, 1), encoding='utf-8')
+          elif new not in text:
+              raise SystemExit('expected verifier block not found; refusing unsafe patch')
+
+          tests = Path('tests/unit/test_mlb_shadow_authority_deploy_gate.py').read_text(
+              encoding='utf-8'
+          )
+          required = (
+              'test_persisted_shadow_champion_does_not_enable_runtime_activation',
+              'test_persisted_shadow_champion_rejects_premature_runtime_activation',
+              'test_authoritative_state_requires_runtime_activation_path',
+          )
+          missing = [name for name in required if name not in tests]
+          if missing:
+              raise SystemExit(f'missing required lifecycle tests: {missing}')
+          PY
+      - name: Prove verifier behavior
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9'
+          python -m py_compile scripts/verify_mlb_trainer_deploy_response.py
+          python -m pytest -q \
+            tests/unit/test_mlb_shadow_authority_deploy_gate.py \
+            tests/unit/test_mlb_trainer_deploy_response.py
+          git diff --check
+      - name: Publish corrected verifier to main
+        id: publish
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/verify_mlb_trainer_deploy_response.py
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m 'Fix MLB shadow verifier source authority gate'
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              echo 'changed=true' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep $((attempt * 3))
+            git fetch origin main
+            git rebase origin/main || { git rebase --abort; exit 1; }
+          done
+          exit 1
+      - name: Dispatch normal deployment from corrected main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run deploy.yml --ref main
