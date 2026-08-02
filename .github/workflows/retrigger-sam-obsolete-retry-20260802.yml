@@ -70,15 +70,17 @@ jobs:
           yaml.safe_load(text)
           assert text.count("'runtimeAuthorityActivationAvailable': False,") == 1
           assert text.count("'runtimeAuthorityActivationAvailable': True,") == 0
-          assert 'MLB_V2_FIRST_PROMOTION_REQUIRES_MANUAL_REVIEW' in text
-          assert 'MLB_V2_AUTOMATIC_PROMOTION_ENABLED' in text
+          assert "'firstPromotionRequiresManualReview': True," in text
+          assert "'manualReviewCreatesShadowApprovalOnly': True," in text
+          assert "'v2InferenceConsumerInstalled': False," in text
+          assert "'automaticWagerAllowed': False," in text
           PY
-          python scripts/stabilize_mlb_deploy_source.py
           python scripts/verify_mlb_workflow_authority.py
           python -m pytest -q \
             tests/unit/test_mlb_workflow_authority.py \
             tests/unit/test_mlb_model_version_authority.py \
-            tests/unit/test_mlb_ml_runtime_install_explicit.py
+            tests/unit/test_mlb_ml_runtime_install_explicit.py \
+            tests/unit/test_mlb_shadow_authority_deploy_gate.py
           git diff --check
 
       - name: Publish tested verifier repair
