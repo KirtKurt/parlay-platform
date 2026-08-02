@@ -125,7 +125,7 @@ SCHEDULE_EXPECTED_INVOCATIONS = {
     ),
 }
 
-TRAINER_HANDLER = "mlb_ml_aws_training_v1.lambda_handler"
+TRAINER_HANDLER = "mlb_ml_aws_training_v1_compat.lambda_handler"
 TRAINER_TIMEOUT_SECONDS = 900
 TRAINER_EXECUTION_CONCURRENCY_STRATEGY = "dynamodb_conditional_lease"
 TRAINER_EXECUTION_LEASE_SECONDS = "960"

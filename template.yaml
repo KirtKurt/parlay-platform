@@ -850,7 +850,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: hello_world/
-      Handler: mlb_ml_aws_training_v1.lambda_handler
+      Handler: mlb_ml_aws_training_v1_compat.lambda_handler
       Timeout: 900
       MemorySize: 2048
       EventInvokeConfig:

@@ -1345,7 +1345,7 @@ def test_historical_optimizer_is_not_classified_as_live_writer() -> None:
     ) is False
     assert deploy_identity._is_mlb_pull_or_training_writer(
         "parlay-platform-dev-MLBMLTrainingFunction",
-        "mlb_ml_aws_training_v1.lambda_handler",
+        "mlb_ml_aws_training_v1_compat.lambda_handler",
     ) is True
     assert deploy_identity._is_mlb_pull_or_training_writer(
         "MLBBasePullLegacyRule",
