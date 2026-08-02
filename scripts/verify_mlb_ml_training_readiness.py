@@ -17,8 +17,8 @@ import mlb_ml_experiment_v2 as experiment_v2
 import mlb_ml_promotion_policy_v2 as promotion_v2
 
 
-R4_EXPERIMENT_ID = "mlb-v2-2026-07-29-future-prospective-r5"
-R4_RELEASE_CUTOFF_UTC = "2026-07-29T04:00:00+00:00"
+R4_EXPERIMENT_ID = "mlb-v2-2026-08-02-future-prospective-r6"
+R4_RELEASE_CUTOFF_UTC = "2026-08-02T04:00:00+00:00"
 
 
 class _Key:

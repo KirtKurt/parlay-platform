@@ -25,7 +25,7 @@ def _config(**overrides):
 
 def test_r4_cutoff_is_clean_future_boundary_after_unrecoverable_r3_slate():
     assert experiment.PRODUCTION_EXPERIMENT_ID == (
-        "mlb-v2-2026-07-29-future-prospective-r5"
+        "mlb-v2-2026-08-02-future-prospective-r6"
     )
     assert (
         experiment.PRODUCTION_RELEASE_CONTRACT_ID
@@ -33,7 +33,7 @@ def test_r4_cutoff_is_clean_future_boundary_after_unrecoverable_r3_slate():
     )
     assert (
         experiment.PRODUCTION_RELEASE_CUTOFF_UTC
-        == "2026-07-29T04:00:00+00:00"
+        == "2026-08-02T04:00:00+00:00"
     )
 
     activation = experiment.release_activation(
