@@ -1,0 +1,122 @@
+name: Repair MLB model-version authority projection once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-model-version-authority-projection-once.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: repair-mlb-model-version-authority-projection-once
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Repair the fail-closed authority projection and tests
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('hello_world/mlb_v3_read_api.py')
+          source = source_path.read_text()
+          replacements = {
+              '''        "automaticPromotionPolicy": (
+                      "automatic atomic fail-closed champion plus historical-only cutover after the immutable 1000/200/200 every-day gate passes"
+                      if historical_active
+                      else "automatic promotion remains blocked until the immutable full evidence gate passes"
+                  ),''': '''        "automaticPromotionPolicy": (
+                      "automatic atomic fail-closed champion plus historical-only cutover after the immutable 1000/200/200 every-day gate passes"
+                      if historical_active
+                      else "winner model fixed for release; precision/trade promotion remains disabled"
+                  ),''',
+              '        "firstPromotionRequiresManualReview": False,': '        "firstPromotionRequiresManualReview": not historical_active,',
+              '        "manualReviewCreatesShadowApprovalOnly": False,': '        "manualReviewCreatesShadowApprovalOnly": not historical_active,',
+              '        "runtimeAuthorityActivationAvailable": True,': '        "runtimeAuthorityActivationAvailable": historical_active,',
+          }
+          for old, new in replacements.items():
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one source match, found {count}: {old!r}')
+              source = source.replace(old, new, 1)
+          source_path.write_text(source)
+
+          test_path = Path('tests/unit/test_mlb_historical_read_api_contract.py')
+          tests = test_path.read_text()
+          active_anchor = '''    assert model["rowLevelAutomaticWagerAllowed"] is False
+
+    response = api.lambda_handler('''
+          active_replacement = '''    assert model["rowLevelAutomaticWagerAllowed"] is False
+    assert model["firstPromotionRequiresManualReview"] is False
+    assert model["manualReviewCreatesShadowApprovalOnly"] is False
+    assert model["runtimeAuthorityActivationAvailable"] is True
+
+    response = api.lambda_handler('''
+          if tests.count(active_anchor) != 1:
+              raise SystemExit('active authority test anchor drifted')
+          tests = tests.replace(active_anchor, active_replacement, 1)
+
+          shadow_anchor = '''    assert model["historicalApiExtensionVersion"] == api.HISTORICAL_API_EXTENSION_VERSION
+
+
+def test_read_api_fails_closed'''
+          shadow_replacement = '''    assert model["historicalApiExtensionVersion"] == api.HISTORICAL_API_EXTENSION_VERSION
+    assert model["automaticPromotionPolicy"] == "winner model fixed for release; precision/trade promotion remains disabled"
+    assert model["firstPromotionRequiresManualReview"] is True
+    assert model["manualReviewCreatesShadowApprovalOnly"] is True
+    assert model["runtimeAuthorityActivationAvailable"] is False
+
+
+def test_read_api_fails_closed'''
+          if tests.count(shadow_anchor) != 1:
+              raise SystemExit('shadow authority test anchor drifted')
+          test_path.write_text(tests.replace(shadow_anchor, shadow_replacement, 1))
+          PY
+
+      - name: Run focused authority and deployment tests
+        run: |
+          set -euo pipefail
+          python -m py_compile hello_world/mlb_v3_read_api.py
+          python -m pytest -q \
+            tests/unit/test_mlb_historical_read_api_contract.py \
+            tests/unit/test_mlb_trainer_deploy_response.py \
+            tests/unit/test_mlb_shadow_authority_deploy_gate.py
+
+      - name: Commit the tested repair and remove this one-shot workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/repair-mlb-model-version-authority-projection-once.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add hello_world/mlb_v3_read_api.py tests/unit/test_mlb_historical_read_api_contract.py .github/workflows/repair-mlb-model-version-authority-projection-once.yml
+          git commit -m 'fix(mlb): align model-version authority projection'
+          for attempt in $(seq 1 20); do
+            if git pull --rebase origin main && git push origin HEAD:main; then
+              break
+            fi
+            if test "$attempt" -eq 20; then
+              echo 'Failed to publish tested MLB authority projection repair.' >&2
+              exit 1
+            fi
+            git rebase --abort >/dev/null 2>&1 || true
+            sleep 2
+          done
+          gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref main
