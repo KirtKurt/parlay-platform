@@ -1,10 +1,10 @@
 {
-  "checked_at": "2026-08-02T19:45:34.580001+00:00",
+  "checked_at": "2026-08-02T20:45:15.936328+00:00",
   "collection": {
     "discovered_sport_keys": 4,
     "errors": {},
     "eventful_sport_keys": 4,
-    "events": 65,
+    "events": 62,
     "malformed": 0,
     "model": {
       "eligible": false,
@@ -20,16 +20,16 @@
         "best_of_five"
       ],
       "minimum_training_samples": 100,
-      "model_version": 4,
+      "model_version": 7,
       "persistence": "dynamodb",
       "service": "tennis-learning",
       "status": "learning",
-      "training_samples": 3,
-      "updated_at": "2026-08-02T16:45:22.160363+00:00"
+      "training_samples": 6,
+      "updated_at": "2026-08-02T20:30:20.944259+00:00"
     },
-    "predicted": 65,
+    "predicted": 62,
     "skipped": 0,
-    "stored": 65,
+    "stored": 62,
     "successful_sport_keys": 4
   },
   "cycle_response": {
@@ -45,7 +45,7 @@
         "discovered_sport_keys": 4,
         "errors": {},
         "eventful_sport_keys": 4,
-        "events": 65,
+        "events": 62,
         "malformed": 0,
         "model": {
           "eligible": false,
@@ -61,20 +61,20 @@
             "best_of_five"
           ],
           "minimum_training_samples": 100,
-          "model_version": 4,
+          "model_version": 7,
           "persistence": "dynamodb",
           "service": "tennis-learning",
           "status": "learning",
-          "training_samples": 3,
-          "updated_at": "2026-08-02T16:45:22.160363+00:00"
+          "training_samples": 6,
+          "updated_at": "2026-08-02T20:30:20.944259+00:00"
         },
-        "predicted": 65,
+        "predicted": 62,
         "skipped": 0,
-        "stored": 65,
+        "stored": 62,
         "successful_sport_keys": 4
       },
       "settle": {
-        "duplicates": 3,
+        "duplicates": 6,
         "errors": {},
         "malformed": 0,
         "missing_snapshots": 14,
@@ -92,12 +92,12 @@
             "best_of_five"
           ],
           "minimum_training_samples": 100,
-          "model_version": 4,
+          "model_version": 7,
           "persistence": "dynamodb",
           "service": "tennis-learning",
           "status": "learning",
-          "training_samples": 3,
-          "updated_at": "2026-08-02T16:45:22.160363+00:00"
+          "training_samples": 6,
+          "updated_at": "2026-08-02T20:30:20.944259+00:00"
         },
         "score_events": 82,
         "sport_keys": 4,
@@ -116,23 +116,23 @@
     },
     "historical_backfill_enabled": false,
     "historical_backfill_required": false,
-    "last_cycle_at": "2026-08-02T19:45:29.394726+00:00",
+    "last_cycle_at": "2026-08-02T20:45:10.806635+00:00",
     "last_error": null,
     "last_warning": null,
     "live_accuracy": "1.0",
-    "live_audit_count": 3,
-    "live_brier": "0.07648519",
-    "model_version": 4,
+    "live_audit_count": 6,
+    "live_brier": "0.07513923",
+    "model_version": 7,
     "reason": "insufficient_total_training_samples",
-    "training_samples": 3
+    "training_samples": 6
   },
-  "live_audits_after": 3,
-  "live_audits_before": 3,
+  "live_audits_after": 6,
+  "live_audits_before": 6,
   "live_audits_delta": 0,
   "operationally_healthy": true,
   "progress_reason": "recent_scores_include_events_without_prior_live_snapshots",
   "settlement": {
-    "duplicates": 3,
+    "duplicates": 6,
     "errors": {},
     "malformed": 0,
     "missing_snapshots": 14,
@@ -150,19 +150,19 @@
         "best_of_five"
       ],
       "minimum_training_samples": 100,
-      "model_version": 4,
+      "model_version": 7,
       "persistence": "dynamodb",
       "service": "tennis-learning",
       "status": "learning",
-      "training_samples": 3,
-      "updated_at": "2026-08-02T16:45:22.160363+00:00"
+      "training_samples": 6,
+      "updated_at": "2026-08-02T20:30:20.944259+00:00"
     },
     "score_events": 82,
     "sport_keys": 4,
     "successful_sport_keys": 4,
     "trained": 0
   },
-  "source_commit": "32ca90f1f1fc77ebfc259ad2eab09ed309e6a480",
+  "source_commit": "09f4086edb3f1716b1dc97adee9fc919e068cb90",
   "stack_status": "UPDATE_COMPLETE",
   "status_after": {
     "authority": "SHADOW",
@@ -170,14 +170,14 @@
     "consecutive_failures": "0",
     "historical_backfill_enabled": false,
     "historical_backfill_required": false,
-    "last_cycle_at": "2026-08-02T19:45:29.394726+00:00",
+    "last_cycle_at": "2026-08-02T20:45:10.806635+00:00",
     "live_accuracy": "1",
-    "live_audit_count": "3",
-    "live_brier": "0.07648519",
-    "model_version": "4",
+    "live_audit_count": "6",
+    "live_brier": "0.07513923",
+    "model_version": "7",
     "reason": "insufficient_total_training_samples",
     "service": "tennis-autonomy",
-    "training_samples": "3"
+    "training_samples": "6"
   },
   "status_before": {
     "authority": "SHADOW",
@@ -185,16 +185,16 @@
     "consecutive_failures": "0",
     "historical_backfill_enabled": false,
     "historical_backfill_required": false,
-    "last_cycle_at": "2026-08-02T19:45:21.688518+00:00",
+    "last_cycle_at": "2026-08-02T20:30:22.702444+00:00",
     "live_accuracy": "1",
-    "live_audit_count": "3",
-    "live_brier": "0.07648519",
-    "model_version": "4",
+    "live_audit_count": "6",
+    "live_brier": "0.0754194",
+    "model_version": "7",
     "reason": "insufficient_total_training_samples",
     "service": "tennis-autonomy",
-    "training_samples": "3"
+    "training_samples": "6"
   },
-  "training_samples_after": 3,
-  "training_samples_before": 3,
+  "training_samples_after": 6,
+  "training_samples_before": 6,
   "training_samples_delta": 0
 }
