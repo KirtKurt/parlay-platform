@@ -1,6 +1,10 @@
 name: Repair MLB fail-closed shadow authority verifier
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/retrigger-sam-obsolete-retry-20260802.yml'
   pull_request:
     branches: [main]
     types: [opened, reopened, synchronize]
@@ -16,7 +20,7 @@ concurrency:
 
 jobs:
   repair:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -40,8 +44,8 @@ jobs:
 
           path = Path('.github/workflows/deploy.yml')
           text = path.read_text(encoding='utf-8')
-          old = "                    'runtimeAuthorityActivationAvailable': True,"
-          new = "                    'runtimeAuthorityActivationAvailable': False,"
+          old = "              'runtimeAuthorityActivationAvailable': True,"
+          new = "              'runtimeAuthorityActivationAvailable': False,"
           if text.count(new) == 1 and text.count(old) == 0:
               print('Fail-closed shadow authority expectation is already installed.')
           elif text.count(old) == 1 and text.count(new) == 0:
