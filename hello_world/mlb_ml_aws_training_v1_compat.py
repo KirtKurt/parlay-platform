@@ -17,7 +17,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Dict
 
-COMPAT_VERSION = "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v3-return-and-persist"
+COMPAT_VERSION = "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v4-null-safe"
 _BASE_MODULE_NAME = "_inqsi_mlb_ml_aws_training_v1_canonical"
 _BASE_PATH = Path(__file__).resolve().with_name("mlb_ml_aws_training_v1.py")
 
@@ -47,13 +47,15 @@ def normalize_canonical_continuity_wait(payload: Mapping[str, Any]) -> Dict[str,
         value.get("ok") is False
         and value.get("status") == "CANONICAL_SLATE_CONTINUITY_BLOCKED"
         and value.get("executionMode") == "training"
-        and value.get("modelTrained") is False
-        and value.get("championChanged") is False
+        and value.get("modelTrained") is not True
+        and value.get("championChanged") is not True
+        and value.get("liveInferenceAuthority") is not True
+        and value.get("productionAuthorityChanged") is not True
         and isinstance(continuity, Mapping)
-        and continuity.get("ok") is False
+        and continuity.get("ok") is not True
         and (
             not isinstance(milestones, Mapping)
-            or milestones.get("canonicalContinuityReady") is False
+            or milestones.get("canonicalContinuityReady") is not True
         )
     )
     if not expected_wait:
