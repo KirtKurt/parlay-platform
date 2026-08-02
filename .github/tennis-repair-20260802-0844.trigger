@@ -1,0 +1,2 @@
+triggered_at=2026-08-02T12:59:30Z
+purpose=dispatch_registered_tennis_autonomy_repair
