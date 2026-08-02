@@ -1,0 +1,154 @@
+name: MLB Trainer Function Error Diagnostic
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-trainer-function-error-diagnostic.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-trainer-function-error-diagnostic
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-dev
+  REPORT_PATH: runtime_reports/mlb_trainer_function_error_latest.json
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Invoke deployed trainer and publish sanitized function error
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports /tmp/mlb-trainer-function-error
+          trainer_arn=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION_VALUE" \
+            --query "Stacks[0].Outputs[?OutputKey=='MLBMLTrainingFunctionArn'].OutputValue" \
+            --output text)
+          test -n "$trainer_arn"; test "$trainer_arn" != None
+          aws lambda get-function-configuration \
+            --function-name "$trainer_arn" \
+            --region "$AWS_REGION_VALUE" \
+            --output json > /tmp/mlb-trainer-function-error/config.json
+          set +e
+          aws lambda invoke \
+            --function-name "$trainer_arn" \
+            --region "$AWS_REGION_VALUE" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"function_error_diagnostic"}' \
+            --log-type Tail \
+            /tmp/mlb-trainer-function-error/payload.json \
+            --output json > /tmp/mlb-trainer-function-error/invocation.json 2> /tmp/mlb-trainer-function-error/aws-cli.err
+          invoke_exit=$?
+          set -e
+          INVOKE_EXIT="$invoke_exit" python - <<'PY'
+          import base64
+          import json
+          import os
+          import re
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          root = Path('/tmp/mlb-trainer-function-error')
+          def load_json(name):
+              path = root / name
+              if not path.exists() or not path.stat().st_size:
+                  return {}
+              try:
+                  value = json.loads(path.read_text(errors='replace'))
+                  return value if isinstance(value, dict) else {'nonObjectType': type(value).__name__}
+              except Exception as exc:
+                  return {'parseError': f'{type(exc).__name__}:{exc}'}
+
+          config = load_json('config.json')
+          invocation = load_json('invocation.json')
+          payload = load_json('payload.json')
+          env = ((config.get('Environment') or {}).get('Variables') or {})
+          log_text = ''
+          encoded = invocation.get('LogResult')
+          if isinstance(encoded, str) and encoded:
+              try:
+                  log_text = base64.b64decode(encoded).decode('utf-8', errors='replace')
+              except Exception as exc:
+                  log_text = f'log_decode_error:{type(exc).__name__}'
+          account_pattern = re.compile(r'arn:aws:[^:]+:[^:]*:\d{12}:')
+          request_pattern = re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b', re.I)
+          safe_lines = []
+          for raw in log_text.splitlines():
+              line = raw.strip()
+              if not line:
+                  continue
+              if any(token in line for token in ('ERROR', 'Traceback', 'Task timed out', 'Exception', 'Error')) or line.startswith(('  File ', 'Runtime.')):
+                  line = account_pattern.sub('arn:aws:REDACTED:', line)
+                  line = request_pattern.sub('REDACTED-REQUEST-ID', line)
+                  safe_lines.append(line[:1000])
+          error_type = str(payload.get('errorType') or '')[:200]
+          error_message = str(payload.get('errorMessage') or '')[:2000]
+          stack = payload.get('stackTrace')
+          safe_stack = []
+          if isinstance(stack, list):
+              for item in stack[-20:]:
+                  line = account_pattern.sub('arn:aws:REDACTED:', str(item))
+                  line = request_pattern.sub('REDACTED-REQUEST-ID', line)
+                  safe_stack.append(line[:1000])
+          report = {
+              'ok': invocation.get('StatusCode') == 200 and not invocation.get('FunctionError') and payload.get('ok') is True,
+              'proofType': 'MLB_TRAINER_FUNCTION_ERROR_DIAGNOSTIC',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'sourceSha': os.environ.get('GITHUB_SHA'),
+              'deployedGitSha': str(env.get('INQSI_DEPLOY_GIT_SHA') or ''),
+              'deployedTemplateSha256': str(env.get('INQSI_DEPLOY_TEMPLATE_SHA256') or ''),
+              'invokeExitCode': int(os.environ['INVOKE_EXIT']),
+              'statusCode': invocation.get('StatusCode'),
+              'functionError': invocation.get('FunctionError'),
+              'executedVersion': invocation.get('ExecutedVersion'),
+              'errorType': error_type,
+              'errorMessage': error_message,
+              'stackTrace': safe_stack,
+              'sanitizedLogLines': safe_lines[-80:],
+              'responseSummary': {k: payload.get(k) for k in ('ok','status','executionMode','runId','modelTrained','liveInferenceAuthority')},
+              'awsCliError': (root/'aws-cli.err').read_text(errors='replace')[:2000] if (root/'aws-cli.err').exists() else '',
+          }
+          out = Path(os.environ['REPORT_PATH'])
+          out.write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+
+      - name: Publish diagnostic evidence
+        run: |
+          set -euo pipefail
+          test -s "$REPORT_PATH"
+          cp "$REPORT_PATH" /tmp/mlb-trainer-function-error-report.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-trainer-function-error-proof origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb-trainer-function-error-report.json "$REPORT_PATH"
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB trainer function error diagnostic [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
