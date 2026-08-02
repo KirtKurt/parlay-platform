@@ -1,9 +1,9 @@
 """Fail-closed compatibility handler for the canonical MLB AWS trainer.
 
 The canonical implementation remains in ``mlb_ml_aws_training_v1.py``. This
-uniquely named Lambda entrypoint loads that file directly, installs one narrow
-status-persistence normalization for unresolved canonical-slate continuity, and
-then delegates every mode to the original handler.
+uniquely named Lambda entrypoint loads that file directly and installs one
+narrow normalization for unresolved canonical-slate continuity at both the
+immutable status-persistence boundary and the training-result return boundary.
 
 No chronology, final-label, holdout, calibration, accuracy, promotion,
 champion, inference-authority, or production-authority rule is weakened.
@@ -17,7 +17,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Dict
 
-COMPAT_VERSION = "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v2-unique-handler"
+COMPAT_VERSION = "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v3-return-and-persist"
 _BASE_MODULE_NAME = "_inqsi_mlb_ml_aws_training_v1_canonical"
 _BASE_PATH = Path(__file__).resolve().with_name("mlb_ml_aws_training_v1.py")
 
@@ -77,6 +77,7 @@ def normalize_canonical_continuity_wait(payload: Mapping[str, Any]) -> Dict[str,
 
 
 canonical = _load_canonical_module()
+
 _original_save_run_status = canonical.TrainingService._save_run_status
 if not getattr(_original_save_run_status, "_mlb_unique_continuity_wait_patch", False):
 
@@ -91,6 +92,22 @@ if not getattr(_original_save_run_status, "_mlb_unique_continuity_wait_patch", F
         COMPAT_VERSION
     )
     canonical.TrainingService._save_run_status = _save_run_status_with_continuity_wait
+
+_original_run_scheduled = canonical.TrainingService.run_scheduled
+if not getattr(_original_run_scheduled, "_mlb_unique_continuity_return_patch", False):
+
+    @wraps(_original_run_scheduled)
+    def _run_scheduled_with_continuity_wait(self, *args, **kwargs):
+        result = _original_run_scheduled(self, *args, **kwargs)
+        if not isinstance(result, Mapping):
+            return result
+        return normalize_canonical_continuity_wait(result)
+
+    _run_scheduled_with_continuity_wait._mlb_unique_continuity_return_patch = True
+    _run_scheduled_with_continuity_wait._mlb_unique_continuity_return_version = (
+        COMPAT_VERSION
+    )
+    canonical.TrainingService.run_scheduled = _run_scheduled_with_continuity_wait
 
 
 def lambda_handler(event, context):

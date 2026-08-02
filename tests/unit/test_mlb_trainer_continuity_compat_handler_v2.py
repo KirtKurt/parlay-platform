@@ -55,6 +55,36 @@ def test_unexpected_failure_remains_unhealthy():
     assert compat.normalize_canonical_continuity_wait(value)["ok"] is False
 
 
+def test_training_return_boundary_normalizes_exact_wait(monkeypatch):
+    trainer = compat.canonical
+    service = object.__new__(trainer.TrainingService)
+    monkeypatch.setattr(compat, "_original_run_scheduled", lambda _self: _blocked())
+    result = trainer.TrainingService.run_scheduled(service)
+    assert result["ok"] is True
+    assert result["status"] == "WAITING_FOR_CANONICAL_SLATE_CONTINUITY"
+    assert result["trainingReady"] is False
+    assert result["modelTrained"] is False
+    assert result["championChanged"] is False
+    assert result["liveInferenceAuthority"] is False
+    assert result["productionAuthorityChanged"] is False
+
+
+def test_training_return_boundary_preserves_unexpected_failure(monkeypatch):
+    trainer = compat.canonical
+    service = object.__new__(trainer.TrainingService)
+    unhealthy = {
+        "ok": False,
+        "status": "TRAINING_CONTRACT_FAILED",
+        "executionMode": "training",
+        "modelTrained": False,
+        "championChanged": False,
+    }
+    monkeypatch.setattr(compat, "_original_run_scheduled", lambda _self: unhealthy)
+    result = trainer.TrainingService.run_scheduled(service)
+    assert result == unhealthy
+    assert result["ok"] is False
+
+
 class _Store:
     def __init__(self):
         self.saved = []
