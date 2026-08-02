@@ -18,6 +18,17 @@ MIN_LIVE_ACCURACY = float(os.getenv("TENNIS_MIN_LIVE_ACCURACY", "0.55"))
 MAX_LIVE_BRIER = float(os.getenv("TENNIS_MAX_LIVE_BRIER", "0.25"))
 MAX_CONSECUTIVE_FAILURES = int(os.getenv("TENNIS_MAX_CONSECUTIVE_FAILURES", "3"))
 
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+HISTORICAL_ENABLED = _env_bool("TENNIS_HISTORICAL_ENABLED", False)
+HISTORICAL_REQUIRED = _env_bool("TENNIS_HISTORICAL_REQUIRED", False)
+
 table = boto3.resource("dynamodb").Table(TABLE_NAME)
 lambda_client = boto3.client("lambda")
 
@@ -125,32 +136,74 @@ def _authority(
 
 
 def _run_action(
-    actions: Dict[str, Any], errors: list[str], name: str, function_name: str, payload: Mapping[str, Any]
+    actions: Dict[str, Any],
+    failures: list[str],
+    warnings: list[str],
+    name: str,
+    function_name: str,
+    payload: Mapping[str, Any],
+    *,
+    required: bool = True,
 ) -> None:
     try:
         actions[name] = _invoke(function_name, payload)
     except Exception as exc:
         detail = f"{name}: {exc}"
-        actions[name] = {"error": str(exc)}
-        errors.append(detail)
+        actions[name] = {"error": str(exc), "required": required}
+        (failures if required else warnings).append(detail)
 
 
 def run_cycle() -> Dict[str, Any]:
     previous = _previous_state()
     actions: Dict[str, Any] = {}
-    errors: list[str] = []
+    failures: list[str] = []
+    warnings: list[str] = []
 
-    # Each stage is independent. A live-provider failure must never prevent the
-    # historical corpus from advancing, and a backfill failure must never stop
-    # live collection or settlement.
-    _run_action(actions, errors, "collect", LIVE_FUNCTION, {"action": "collect"})
-    _run_action(actions, errors, "settle", LIVE_FUNCTION, {"action": "settle"})
-    _run_action(actions, errors, "backfill", BACKFILL_FUNCTION, {"action": "backfill"})
+    # Live collection and live settlement are promotion-critical. Historical
+    # bootstrap is optional unless explicitly enabled and required. A missing
+    # third-party historical source must never disable genuine live learning.
+    _run_action(
+        actions,
+        failures,
+        warnings,
+        "collect",
+        LIVE_FUNCTION,
+        {"action": "collect"},
+    )
+    _run_action(
+        actions,
+        failures,
+        warnings,
+        "settle",
+        LIVE_FUNCTION,
+        {"action": "settle"},
+    )
 
-    failures = int(previous.get("consecutive_failures", 0)) + 1 if errors else 0
+    if HISTORICAL_ENABLED:
+        _run_action(
+            actions,
+            failures,
+            warnings,
+            "backfill",
+            BACKFILL_FUNCTION,
+            {"action": "backfill"},
+            required=HISTORICAL_REQUIRED,
+        )
+    else:
+        actions["backfill"] = {
+            "skipped": True,
+            "reason": "historical_backfill_disabled",
+            "required": HISTORICAL_REQUIRED,
+        }
+        if HISTORICAL_REQUIRED:
+            failures.append("backfill: historical backfill is required but disabled")
+
+    consecutive_failures = (
+        int(previous.get("consecutive_failures", 0)) + 1 if failures else 0
+    )
     model = _model_state()
     audit = _live_audit()
-    authority, reason = _authority(model, audit, failures)
+    authority, reason = _authority(model, audit, consecutive_failures)
     now = _now()
     item = {
         "PK": "AUTONOMY",
@@ -158,7 +211,7 @@ def run_cycle() -> Dict[str, Any]:
         "authority": authority,
         "reason": reason,
         "automatic_prediction_allowed": authority == "AUTHORITATIVE",
-        "consecutive_failures": failures,
+        "consecutive_failures": consecutive_failures,
         "model_version": int(model.get("version", 0)),
         "training_samples": int(model.get("training_samples", 0)),
         "live_audit_count": int(audit.get("count") or 0),
@@ -168,8 +221,11 @@ def run_cycle() -> Dict[str, Any]:
         "live_brier": _decimal(float(audit["brier"]))
         if audit.get("brier") is not None
         else None,
+        "historical_backfill_enabled": HISTORICAL_ENABLED,
+        "historical_backfill_required": HISTORICAL_REQUIRED,
         "last_cycle_at": now,
-        "last_error": " | ".join(errors)[:4000] if errors else None,
+        "last_error": " | ".join(failures)[:4000] if failures else None,
+        "last_warning": " | ".join(warnings)[:4000] if warnings else None,
         "actions": json.dumps(actions, default=str)[:10000],
     }
     clean_item = {k: v for k, v in item.items() if v is not None}
