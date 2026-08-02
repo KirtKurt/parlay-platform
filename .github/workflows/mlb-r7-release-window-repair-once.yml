@@ -1,0 +1,89 @@
+name: MLB R7 Release Window Repair Once
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-r7-release-window-repair-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-r7-release-window-repair-once
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Move the unopened MLB release to a valid future cutoff
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          old_id = 'mlb-v2-2026-08-02-future-prospective-r6'
+          new_id = 'mlb-v2-2026-08-02-future-prospective-r7'
+          old_cutoff = '2026-08-02T04:00:00+00:00'
+          new_cutoff = '2026-08-02T08:00:00+00:00'
+          paths = [Path('template.yaml'), Path('tests/unit/test_mlb_r6_recovery_contract.py')]
+          for path in paths:
+              text = path.read_text()
+              if old_id not in text or old_cutoff not in text:
+                  raise SystemExit(f'expected unopened r6 release contract not found in {path}')
+              text = text.replace(old_id, new_id).replace(old_cutoff, new_cutoff)
+              if path.name == 'test_mlb_r6_recovery_contract.py':
+                  text = text.replace('test_r6_starts_after_permanently_incomplete_slates', 'test_r7_starts_after_permanently_incomplete_slates')
+              path.write_text(text)
+          template = Path('template.yaml').read_text()
+          assert new_id in template
+          assert new_cutoff in template
+          assert old_id not in template
+          assert old_cutoff not in template
+          PY
+
+      - name: Validate release and MLB safety contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet pytest pyyaml
+          python -m pytest -q \
+            tests/unit/test_mlb_r6_recovery_contract.py \
+            tests/unit/test_mlb_lock_semantics.py \
+            tests/unit/test_mlb_canonical_snapshot_identity.py
+          python - <<'PY'
+          import yaml
+          with open('template.yaml', encoding='utf-8') as handle:
+              value = yaml.safe_load(handle)
+          assert isinstance(value, dict)
+          PY
+
+      - name: Publish repaired release contract
+        run: |
+          set -euo pipefail
+          cp template.yaml /tmp/template.yaml
+          cp tests/unit/test_mlb_r6_recovery_contract.py /tmp/test_mlb_r6_recovery_contract.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-r7-release-window-repair origin/main
+            cp /tmp/template.yaml template.yaml
+            cp /tmp/test_mlb_r6_recovery_contract.py tests/unit/test_mlb_r6_recovery_contract.py
+            git add template.yaml tests/unit/test_mlb_r6_recovery_contract.py
+            git diff --cached --quiet && exit 0
+            git commit -m 'Start valid future MLB r7 release window'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
