@@ -1,0 +1,59 @@
+name: MLB Remove Retired BBD Runtime Once
+
+"on":
+  push:
+    branches:
+      - agent/mlb-remove-bbd-and-fix-blockers-20260802
+    paths:
+      - '.github/workflows/mlb-remove-bbd-active-runtime-once.yml'
+      - 'scripts/remove_mlb_bbd_active_runtime.py'
+      - 'scripts/verify_mlb_no_bbd_runtime.py'
+      - 'tests/unit/test_verify_mlb_no_bbd_runtime.py'
+      - 'template.yaml'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-remove-retired-bbd-runtime-once
+  cancel-in-progress: false
+
+jobs:
+  remove-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/mlb-remove-bbd-and-fix-blockers-20260802
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Remove BBD from active SAM and deployment paths
+        run: python scripts/remove_mlb_bbd_active_runtime.py
+      - name: Verify active no-BBD runtime contract
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'PyYAML>=6,<7'
+          python scripts/verify_mlb_no_bbd_runtime.py
+          PYTHONPATH=scripts python -m pytest -q tests/unit/test_verify_mlb_no_bbd_runtime.py
+          python -m py_compile \
+            scripts/remove_mlb_bbd_active_runtime.py \
+            scripts/verify_mlb_no_bbd_runtime.py \
+            scripts/run_mlb_v8_historical_context_backfill_entrypoint.py
+          python scripts/remove_mlb_bbd_active_runtime.py --check
+      - name: Commit migrated active files
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- template.yaml .github/workflows/deploy.yml; then
+            echo 'Active files already BBD-free.'
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add template.yaml .github/workflows/deploy.yml
+          git commit -m 'Remove BBD from active MLB SAM and deploy paths'
+          git push origin HEAD:agent/mlb-remove-bbd-and-fix-blockers-20260802
