@@ -88,7 +88,10 @@ assert body.get("automaticWagerAllowed") is False, body
 assert body.get("legacyRecommendationAuthority") is False, body
 assert body.get("legacyFallbackAllowed") is False, body
 assert body.get("precisionHitRateEvidencePassed") is False, body
-assert body.get("runtimeAuthorityActivationAvailable") is True, body
+assert body.get("automaticPromotionPolicy") == "winner model fixed for release; precision/trade promotion remains disabled", body
+assert body.get("firstPromotionRequiresManualReview") is True, body
+assert body.get("manualReviewCreatesShadowApprovalOnly") is True, body
+assert body.get("runtimeAuthorityActivationAvailable") is False, body
 assert body.get("requiredWinnerPickPolicy") == "one active-model ranked winner PICK for every valid MLB game", body
 assert body.get("readOnly") is True, body
 
