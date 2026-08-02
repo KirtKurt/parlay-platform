@@ -1,0 +1,30 @@
+name: Dispatch Tennis Autonomy Verifier 2026-08-02 0943
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/tennis-autonomy-20260802-0943.trigger'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: dispatch-tennis-autonomy-20260802-0943
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch registered one-shot verifier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run verify-tennis-autonomy-20260802-0943.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
