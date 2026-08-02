@@ -1,4 +1,9 @@
-"""Fail-closed deployment contract for the August 2 MLB prospective reset."""
+"""Fail-closed deployment contract for the August 2 MLB prospective reset.
+
+This source-owned test update intentionally triggers the normal deployment
+workflow after the bot-authored r7 template repair, because GitHub suppresses
+recursive workflow triggers from commits created by GitHub Actions.
+"""
 
 from pathlib import Path
 
