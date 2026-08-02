@@ -1,0 +1,36 @@
+{
+  "awsCliError": "",
+  "createdAtUtc": "2026-08-02T04:23:57.639008+00:00",
+  "deployedGitSha": "9524d81ca43c61979e7e2e9eeef4139cc675b124",
+  "deployedTemplateSha256": "00ab8d69faa5bb1d151e2ff238e3dc9bbc53a321dac43fe6fc5e806cbac9844d",
+  "errorMessage": "r3 experiment release activation failed: release activation must occur strictly before the release cutoff",
+  "errorType": "TrainingContractError",
+  "executedVersion": "$LATEST",
+  "functionError": "Unhandled",
+  "invokeExitCode": 0,
+  "ok": false,
+  "proofType": "MLB_TRAINER_FUNCTION_ERROR_DIAGNOSTIC",
+  "responseSummary": {
+    "executionMode": null,
+    "liveInferenceAuthority": null,
+    "modelTrained": null,
+    "ok": null,
+    "runId": null,
+    "status": null
+  },
+  "sanitizedLogLines": [
+    "[ERROR] TrainingContractError: r3 experiment release activation failed: release activation must occur strictly before the release cutoff",
+    "Traceback (most recent call last):",
+    "raise TrainingContractError("
+  ],
+  "sourceSha": "a76e1b2a81a3025853326d152641e44c4a1a48ad",
+  "stackTrace": [
+    "  File \"/var/task/mlb_ml_aws_training_v1_compat.py\", line 149, in lambda_handler\n    return canonical.lambda_handler(event, context)\n",
+    "  File \"/var/task/mlb_ml_aws_training_v1.py\", line 2915, in lambda_handler\n    result = service.run_scheduled()\n",
+    "  File \"/var/task/mlb_ml_aws_training_v1_compat.py\", line 136, in _run_scheduled_with_continuity_wait\n    result = _original_run_scheduled(self, *args, **kwargs)\n",
+    "  File \"/var/task/mlb_ml_aws_training_v1.py\", line 2431, in run_scheduled\n    self._load_or_create_manifest()\n",
+    "  File \"/var/task/mlb_ml_aws_training_v1.py\", line 1965, in _load_or_create_manifest\n    created = self._new_manifest()\n",
+    "  File \"/var/task/mlb_ml_aws_training_v1.py\", line 1741, in _new_manifest\n    raise TrainingContractError(\n"
+  ],
+  "statusCode": 200
+}
