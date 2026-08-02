@@ -1,31 +1,30 @@
 {
   "automaticPromotionEnabled": false,
   "blockers": [],
-  "createdAtUtc": "2026-07-28T13:59:40.057753+00:00",
-  "deployedGitSha": "94bf61b7d53221123d6475168e04c55de755744c",
-  "deployedTemplateSha256": "5e1101a22cc071a91cdb0040e53f17ded673f1d6554da56f7e2fa142b150e64c",
+  "createdAtUtc": "2026-08-02T02:55:26.278458+00:00",
+  "deployedGitSha": "7cafc86a37ef34fe94ca936e5f1ad1901785bfcc",
+  "deployedTemplateSha256": "e2325b3656f791bf1fae20ee9df5126784ba7bdd1081ab5209c1afe0f960f231",
   "firstPromotionRequiresManualReview": true,
   "invocation": {
     "ExecutedVersion": "$LATEST",
     "StatusCode": 200
   },
-  "manifestPhase": null,
+  "manifestPhase": "ACCUMULATING_TRAIN",
   "ok": true,
   "proofType": "MLB_V9_TRAINER_PERSISTED_STATUS_PROBE",
-  "runId": "30366121912",
+  "runId": "30729695493",
   "runtimeAuthorityActivationAvailable": false,
+  "secretExposed": false,
   "selectionCaptureHealth": {
-    "deploymentIdentityMatches": false,
-    "errors": [
-      "latest_status_deployment_identity_mismatch"
-    ],
+    "deploymentIdentityMatches": true,
+    "errors": [],
     "executionMode": "selection_capture",
     "latestRun": {
       "acceptedRowCount": null,
       "automaticPromotionEnabled": false,
       "canonicalSlateContinuity": null,
       "championChanged": false,
-      "createdAtUtc": "2026-07-28T13:49:04.327966+00:00",
+      "createdAtUtc": "2026-08-02T02:55:24.154910+00:00",
       "executionMode": "selection_capture",
       "failure": null,
       "liveInferenceAuthority": false,
@@ -34,42 +33,111 @@
       "ok": true,
       "partitionCounts": null,
       "rejectedRowCount": null,
-      "runId": "35a42de013dd6cfc1504a79b",
-      "status": "WAITING_FOR_EXPERIMENT_MANIFEST"
+      "runId": "339f41b5a9e2e6eb691ac8c1",
+      "status": "WAITING_FOR_PERSISTED_CHALLENGER"
     },
-    "ok": false
+    "ok": true
   },
-  "sourceSha": "f6f5105997f9d70e431fe2b83aa9cb9d08a0a9ac",
-  "statusOk": false,
+  "sourceSha": "11362a91a120377374acf42fa388f721343f4ae1",
+  "statusOk": true,
   "trainingHealth": {
     "deploymentIdentityMatches": true,
-    "errors": [
-      "latest_status_not_ok"
-    ],
+    "errors": [],
     "executionMode": "training",
     "latestRun": {
-      "acceptedRowCount": null,
+      "acceptedRowCount": 0,
       "automaticPromotionEnabled": false,
-      "canonicalSlateContinuity": null,
-      "championChanged": false,
-      "createdAtUtc": "2026-07-28T13:57:13.028588+00:00",
-      "executionMode": "training",
-      "failure": {
-        "code": "TRAINING_CONTRACT_ERROR",
-        "message": "MLB ML training contract validation failed",
-        "redacted": "true",
-        "type": "TrainingContractError"
+      "canonicalSlateContinuity": {
+        "blockedSlateDate": "2026-07-29",
+        "blocker": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+        "finalizedGameSlateDates": [],
+        "finalizedSlateAuthorities": {},
+        "ok": false,
+        "policy": "Training stops at the first unresolved official slate; only an exact official zero-game schedule may be crossed as an off-day.",
+        "processedSlateDates": [],
+        "processedThroughSlateDate": null,
+        "provenZeroGameSlateDates": [],
+        "version": "MLB-ML-CANONICAL-SLATE-CONTINUITY-v2-exact-official-game-set"
       },
+      "championChanged": false,
+      "createdAtUtc": "2026-08-02T02:55:23.446573+00:00",
+      "executionMode": "training",
+      "failure": null,
       "liveInferenceAuthority": false,
-      "milestones": null,
-      "modelTrained": null,
-      "ok": false,
-      "partitionCounts": null,
-      "rejectedRowCount": null,
-      "runId": "ead30bfa-df19-4ab7-91b5-9af9ead68ded",
-      "status": "TRAINING_INVOCATION_FAILED"
+      "milestones": {
+        "aspirationalAccuracyAffectsPromotion": false,
+        "aspirationalAccuracyPct": 90,
+        "assumedCleanGamesPerFullSlate": 15,
+        "automaticPromotionEnabled": false,
+        "counts": {
+          "completedFinalizedSlates": 0,
+          "integrityClean": 0,
+          "prospectiveTest": 0,
+          "settledProspectiveSelectedRecommendations": 0,
+          "train": 0,
+          "validation": 0
+        },
+        "experimentId": "mlb-v2-2026-07-29-future-prospective-r5",
+        "firstFullCleanSlateProof": {
+          "achieved": false,
+          "authority": "one nonempty verified official FINAL gamePk set must exactly equal the same immutable slate's unique, current, post-cutoff clean eligible gamePk set",
+          "completedFinalizedSlateCount": 0,
+          "completedFinalizedSlateDates": [],
+          "currentCleanGames": 0,
+          "evaluatedSlateProofs": [],
+          "exactOfficialGameSetEqualityRequired": true,
+          "globalIntegrityCleanGames": 0,
+          "planningEstimateCleanGames": 15,
+          "qualifyingOfficialGameSetFingerprint": null,
+          "qualifyingSlateDate": null,
+          "remainingCleanGames": 15,
+          "state": "WAITING_FOR_FIRST_COMPLETE_FINALIZED_SLATE",
+          "targetCleanGames": 15
+        },
+        "firstPromotionRequiresManualReview": true,
+        "ok": true,
+        "projectedFullCleanSlatesRemaining": {
+          "firstFullCleanSlateProof": 1,
+          "mechanicalShadowTrainerProof": 10,
+          "prospectiveSelectedRecommendations": 7,
+          "prospectiveTest": 7,
+          "totalClean": 34,
+          "train": 20,
+          "validation": 7
+        },
+        "remainingRows": {
+          "firstFullCleanSlateProof": 15,
+          "mechanicalShadowTrainerProof": 140,
+          "prospectiveSelectedRecommendations": 100,
+          "prospectiveTest": 100,
+          "totalClean": 500,
+          "train": 300,
+          "validation": 100
+        },
+        "stage": "COLLECTING_TRAIN",
+        "targets": {
+          "firstFullCleanSlateProof": 15,
+          "mechanicalShadowTrainerProof": 140,
+          "prospectiveSelectedRecommendations": 100,
+          "prospectiveTest": 100,
+          "totalClean": 500,
+          "train": 300,
+          "validation": 100
+        },
+        "version": "MLB-ML-EXPERIMENT-v2-fixed-slate-future-prospective-cutover"
+      },
+      "modelTrained": false,
+      "ok": true,
+      "partitionCounts": {
+        "prospectiveTest": 0,
+        "train": 0,
+        "validation": 0
+      },
+      "rejectedRowCount": 0,
+      "runId": "3f55ca9fc592b379e145e0f7",
+      "status": "WAITING_FOR_CANONICAL_SLATE_CONTINUITY"
     },
-    "ok": false
+    "ok": true
   },
   "v2InferenceConsumerInstalled": false
 }
