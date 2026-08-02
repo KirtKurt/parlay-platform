@@ -1,0 +1,219 @@
+name: Repair Tennis Runtime Evidence Once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-tennis-runtime-evidence-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-tennis-runtime-evidence-once
+  cancel-in-progress: false
+
+jobs:
+  repair-query-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Query live state and self-heal only when stale
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-tennis-learning
+          region="$AWS_REGION_VALUE"
+          mkdir -p runtime /tmp/tennis-runtime-repair
+
+          stack_status=$(aws cloudformation describe-stacks \
+            --stack-name "$stack" --region "$region" \
+            --query 'Stacks[0].StackStatus' --output text)
+          status_endpoint=$(aws cloudformation describe-stacks \
+            --stack-name "$stack" --region "$region" \
+            --query "Stacks[0].Outputs[?OutputKey=='TennisAutonomyStatusApi'].OutputValue" \
+            --output text)
+          run_endpoint=$(aws cloudformation describe-stacks \
+            --stack-name "$stack" --region "$region" \
+            --query "Stacks[0].Outputs[?OutputKey=='TennisAutonomyRunApi'].OutputValue" \
+            --output text)
+
+          test -n "$status_endpoint"; test "$status_endpoint" != None
+          test -n "$run_endpoint"; test "$run_endpoint" != None
+
+          curl -fsS --retry 3 --retry-all-errors --retry-delay 5 --max-time 60 \
+            "$status_endpoint" -o /tmp/tennis-runtime-repair/status-before.json
+
+          stale=$(python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          payload = json.loads(Path('/tmp/tennis-runtime-repair/status-before.json').read_text())
+          raw = payload.get('last_cycle_at')
+          if not raw:
+              print('true')
+          else:
+              stamp = datetime.fromisoformat(str(raw).replace('Z', '+00:00'))
+              age = (datetime.now(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds()
+              print('true' if age > 2700 else 'false')
+          PY
+          )
+
+          self_heal_attempted=false
+          self_heal_succeeded=false
+          self_heal_error=''
+          if [ "$stale" = true ]; then
+            self_heal_attempted=true
+            set +e
+            curl -fsS --retry 2 --retry-all-errors --retry-delay 10 \
+              -X POST --max-time 900 "$run_endpoint" \
+              -o /tmp/tennis-runtime-repair/repair-response.json \
+              2>/tmp/tennis-runtime-repair/repair-error.txt
+            repair_rc=$?
+            set -e
+            if [ "$repair_rc" -eq 0 ]; then
+              sleep 5
+              curl -fsS --retry 3 --retry-all-errors --retry-delay 5 --max-time 60 \
+                "$status_endpoint" -o /tmp/tennis-runtime-repair/status-after.json
+              self_heal_succeeded=true
+            else
+              self_heal_error=$(cat /tmp/tennis-runtime-repair/repair-error.txt)
+              cp /tmp/tennis-runtime-repair/status-before.json /tmp/tennis-runtime-repair/status-after.json
+            fi
+          else
+            cp /tmp/tennis-runtime-repair/status-before.json /tmp/tennis-runtime-repair/status-after.json
+          fi
+
+          export STACK_STATUS="$stack_status"
+          export STALE_BEFORE="$stale"
+          export SELF_HEAL_ATTEMPTED="$self_heal_attempted"
+          export SELF_HEAL_SUCCEEDED="$self_heal_succeeded"
+          export SELF_HEAL_ERROR="$self_heal_error"
+          export SOURCE_SHA="$GITHUB_SHA"
+
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          now = datetime.now(timezone.utc)
+          live = json.loads(Path('/tmp/tennis-runtime-repair/status-after.json').read_text())
+          training = int(live.get('training_samples') or 0)
+          audited = int(live.get('live_audit_count') or 0)
+          accuracy = live.get('live_accuracy')
+          brier = live.get('live_brier')
+          failures = int(live.get('consecutive_failures') or 0)
+          authority = str(live.get('authority') or 'UNKNOWN')
+          accuracy_value = float(accuracy) if accuracy is not None else None
+          brier_value = float(brier) if brier is not None else None
+
+          last_cycle = live.get('last_cycle_at')
+          cycle_age_minutes = None
+          cycle_fresh = False
+          if last_cycle:
+              stamp = datetime.fromisoformat(str(last_cycle).replace('Z', '+00:00'))
+              cycle_age_minutes = round(
+                  max(0.0, (now - stamp.astimezone(timezone.utc)).total_seconds() / 60.0),
+                  2,
+              )
+              cycle_fresh = cycle_age_minutes <= 45.0
+
+          gates = {
+              'training_samples_100': training >= 100,
+              'live_audits_30': audited >= 30,
+              'live_accuracy_55pct': accuracy_value is not None and accuracy_value >= 0.55,
+              'brier_at_most_0_25': brier_value is not None and brier_value <= 0.25,
+              'circuit_breaker_clear': failures < 3 and authority != 'DEGRADED',
+          }
+          self_heal_error = os.environ.get('SELF_HEAL_ERROR', '').strip() or None
+          snapshot = {
+              'checked_at': now.isoformat(),
+              'source_commit': os.environ.get('SOURCE_SHA'),
+              'stack_status': os.environ.get('STACK_STATUS'),
+              'status_endpoint_available': True,
+              'query_succeeded': True,
+              'query_error': None,
+              'service': live.get('service'),
+              'authority': authority,
+              'reason': live.get('reason'),
+              'last_error': live.get('last_error'),
+              'last_warning': live.get('last_warning'),
+              'historical_backfill_enabled': live.get('historical_backfill_enabled'),
+              'historical_backfill_required': live.get('historical_backfill_required'),
+              'automatic_prediction_allowed': bool(live.get('automatic_prediction_allowed', False)),
+              'training_samples': training,
+              'live_audit_count': audited,
+              'live_accuracy': accuracy_value,
+              'live_brier': brier_value,
+              'consecutive_failures': failures,
+              'last_cycle_at': last_cycle,
+              'cycle_age_minutes': cycle_age_minutes,
+              'cycle_fresh': cycle_fresh,
+              'cycle_stale_before_repair': os.environ.get('STALE_BEFORE') == 'true',
+              'self_heal_attempted': os.environ.get('SELF_HEAL_ATTEMPTED') == 'true',
+              'self_heal_succeeded': os.environ.get('SELF_HEAL_SUCCEEDED') == 'true',
+              'self_heal_error': self_heal_error,
+              'model_version': live.get('model_version'),
+              'promotion_gates': gates,
+              'all_promotion_gates_pass': all(gates.values()),
+              'operationally_healthy': (
+                  os.environ.get('STACK_STATUS') == 'UPDATE_COMPLETE'
+                  and cycle_fresh
+                  and failures < 3
+                  and authority != 'DEGRADED'
+                  and not self_heal_error
+              ),
+          }
+          Path('/tmp/tennis-runtime-repair/snapshot.json').write_text(
+              json.dumps(snapshot, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(snapshot, indent=2, sort_keys=True))
+
+          assert snapshot['stack_status'] == 'UPDATE_COMPLETE', snapshot
+          assert snapshot['cycle_fresh'] is True, snapshot
+          assert snapshot['consecutive_failures'] < 3, snapshot
+          assert snapshot['authority'] != 'DEGRADED', snapshot
+          assert snapshot['automatic_prediction_allowed'] is False, snapshot
+          assert snapshot['operationally_healthy'] is True, snapshot
+          PY
+
+      - name: Publish verified snapshot and remove one-shot workflow
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+
+          for attempt in $(seq 1 20); do
+            git fetch origin main
+            git checkout -B tennis-runtime-repair-publish origin/main
+            mkdir -p runtime
+            cp /tmp/tennis-runtime-repair/snapshot.json runtime/tennis_autonomy_status.json
+            rm -f .github/workflows/repair-tennis-runtime-evidence-once.yml
+            git add runtime/tennis_autonomy_status.json \
+              .github/workflows/repair-tennis-runtime-evidence-once.yml
+            if git diff --cached --quiet; then
+              exit 0
+            fi
+            git commit -m 'Repair and verify tennis autonomy runtime evidence [skip ci]'
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep 3
+          done
+
+          echo 'Unable to publish verified tennis runtime evidence' >&2
+          exit 1
