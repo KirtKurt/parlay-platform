@@ -247,7 +247,7 @@ required_template_strings = {
     '/v1/mlb/locks/today': 'lock today route missing',
     'MLBMLArtifactsBucket': 'versioned MLB ML artifact bucket missing',
     'MLBMLTrainingFunction': 'AWS-native MLB ML trainer missing',
-    'Handler: mlb_ml_aws_training_v1.lambda_handler': 'AWS-native MLB ML trainer handler missing',
+    'Handler: mlb_ml_aws_training_v1_compat.lambda_handler': 'AWS-native MLB ML trainer handler missing',
     'MLBMLTrainingEvery6Hours': 'AWS-native MLB ML full training schedule missing',
     'Schedule: cron(11 1/6 * * ? *)': 'AWS-native MLB ML full training is not staggered every 6 hours',
     'MLBMLSelectionCaptureEvery15Minutes': 'AWS-native MLB ML selection capture schedule missing',
