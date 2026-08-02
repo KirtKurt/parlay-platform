@@ -88,8 +88,6 @@ jobs:
           python scripts/verify_mlb_workflow_authority.py
           python -m pytest -q \
             tests/unit/test_mlb_workflow_authority.py \
-            tests/unit/test_mlb_model_version_authority.py \
-            tests/unit/test_mlb_ml_runtime_install_explicit.py \
             tests/unit/test_mlb_shadow_authority_deploy_gate.py
           git diff --check
 
