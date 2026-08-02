@@ -87,6 +87,35 @@ jobs:
           ).replace('2026-08-02', '2026-08-03')
           training_test.write_text(text[:start] + block + text[end:], encoding='utf-8')
 
+          audit_test = Path('tests/unit/test_run_mlb_ml_v3_audit_report.py')
+          text = audit_test.read_text(encoding='utf-8')
+          text = text.replace(
+              'SETTLEMENT_NOW = datetime(2026, 8, 3, 3, 0, tzinfo=timezone.utc)',
+              'SETTLEMENT_NOW = datetime(2026, 8, 4, 3, 0, tzinfo=timezone.utc)',
+          )
+          text = text.replace(
+              'commence_time: str = "2026-08-02T06:00:00+00:00"',
+              'commence_time: str = "2026-08-03T06:00:00+00:00"',
+          )
+          text = text.replace(
+              'lock_at_utc: str = "2026-08-02T05:15:00+00:00"',
+              'lock_at_utc: str = "2026-08-03T05:15:00+00:00"',
+          )
+          text = text.replace('"slateDateEt": "2026-08-02"', '"slateDateEt": "2026-08-03"')
+          text = text.replace(
+              '"sourcePk": "GAME_WINNERS#mlb#2026-08-02"',
+              '"sourcePk": "GAME_WINNERS#mlb#2026-08-03"',
+          )
+          text = text.replace(
+              'if slate_date == "2026-08-02":',
+              'if slate_date == "2026-08-03":',
+          )
+          text = text.replace(
+              'datetime(2026, 8, 2, 6, 0, tzinfo=timezone.utc)',
+              'datetime(2026, 8, 3, 6, 0, tzinfo=timezone.utc)',
+          )
+          audit_test.write_text(text, encoding='utf-8')
+
           r6 = Path('tests/unit/test_mlb_r6_recovery_contract.py')
           r7 = Path('tests/unit/test_mlb_r7_recovery_contract.py')
           if r6.exists():
