@@ -29,10 +29,28 @@ for _name in dir(_legacy):
         globals()[_name] = getattr(_legacy, _name)
 
 
+def _health_latest_live_authority(status_after: Dict[str, Any], key: str) -> Any:
+    """Return the persisted latest-run authority marker for one health domain."""
+    health = status_after.get(key)
+    if not isinstance(health, dict) or health.get("ok") is not True:
+        return None
+    latest = health.get("latestRun")
+    if not isinstance(latest, dict) or latest.get("ok") is not True:
+        return None
+    return latest.get("liveInferenceAuthority")
+
+
 def _runtime_authority_activation_errors(
     status_after: Dict[str, Any],
 ) -> List[str]:
-    """Validate activation availability while preserving manual-first safety."""
+    """Validate activation availability while preserving manual-first safety.
+
+    The deployed persisted-status response does not always repeat
+    ``liveInferenceAuthority`` at the top level. In that exact schema, require
+    both independently persisted training and selection-capture health records
+    to prove shadow-only authority. Missing or unhealthy evidence remains
+    fail-closed.
+    """
     automatic_promotion_disabled = (
         status_after.get("automaticPromotionEnabled") is False
     )
@@ -42,9 +60,22 @@ def _runtime_authority_activation_errors(
     inference_consumer_absent = (
         status_after.get("v2InferenceConsumerInstalled") is False
     )
-    live_authority_absent = status_after.get("liveInferenceAuthority") is False
-    activation_available = status_after.get("runtimeAuthorityActivationAvailable")
 
+    top_level_live_authority = status_after.get("liveInferenceAuthority")
+    if top_level_live_authority is False:
+        live_authority_absent = True
+    elif "liveInferenceAuthority" not in status_after:
+        live_authority_absent = (
+            _health_latest_live_authority(status_after, "trainingHealth") is False
+            and _health_latest_live_authority(
+                status_after, "selectionCaptureHealth"
+            )
+            is False
+        )
+    else:
+        live_authority_absent = False
+
+    activation_available = status_after.get("runtimeAuthorityActivationAvailable")
     shadow_manual_first = (
         automatic_promotion_disabled
         and manual_first_required
