@@ -1,0 +1,167 @@
+name: Retrigger bounded SAM obsolete retry repair
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+    paths:
+      - '.github/workflows/retrigger-sam-obsolete-retry-20260802.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: retrigger-sam-obsolete-retry-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install validators
+        run: python -m pip install --quiet 'PyYAML>=6,<7' 'pytest>=8,<9'
+
+      - name: Install bounded retry for exact OBSOLETE change-set races
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/deploy.yml')
+          text = path.read_text(encoding='utf-8')
+          old = '''          sam deploy \\
+            --template-file .aws-sam/build/template.yaml \\
+            --stack-name parlay-platform-dev \\
+            --region "${{ secrets.AWS_REGION }}" \\
+            --capabilities CAPABILITY_IAM \\
+            --resolve-s3 \\
+            --force-upload \\
+            --no-confirm-changeset \\
+            --no-fail-on-empty-changeset \\
+            --parameter-overrides "${parameter_overrides[@]}"
+'''
+          new = '''          deploy_succeeded=false
+          for deploy_attempt in 1 2 3 4; do
+            deploy_log=$(mktemp)
+            set +e
+            sam deploy \\
+              --template-file .aws-sam/build/template.yaml \\
+              --stack-name parlay-platform-dev \\
+              --region "${{ secrets.AWS_REGION }}" \\
+              --capabilities CAPABILITY_IAM \\
+              --resolve-s3 \\
+              --force-upload \\
+              --no-confirm-changeset \\
+              --no-fail-on-empty-changeset \\
+              --parameter-overrides "${parameter_overrides[@]}" \\
+              2>&1 | tee "$deploy_log"
+            deploy_status=${PIPESTATUS[0]}
+            set -e
+            if [ "$deploy_status" -eq 0 ]; then
+              deploy_succeeded=true
+              rm -f "$deploy_log"
+              break
+            fi
+            if ! grep -Eq 'InvalidChangeSetStatus.*OBSOLETE|current execution status \\[OBSOLETE\\]' "$deploy_log"; then
+              rm -f "$deploy_log"
+              exit "$deploy_status"
+            fi
+            rm -f "$deploy_log"
+            if [ "$deploy_attempt" -eq 4 ]; then
+              echo "::error::CloudFormation change set remained OBSOLETE after four bounded retries"
+              exit "$deploy_status"
+            fi
+            echo "::warning::Concurrent CloudFormation activity obsoleted the SAM change set; waiting for stack updateability before retry $((deploy_attempt + 1))/4"
+            for status_attempt in $(seq 1 60); do
+              STATUS=$(aws cloudformation describe-stacks \\
+                --stack-name parlay-platform-dev \\
+                --region "${{ secrets.AWS_REGION }}" \\
+                --query 'Stacks[0].StackStatus' \\
+                --output text 2>/dev/null || echo STACK_MISSING)
+              case "$STATUS" in
+                CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE|STACK_MISSING)
+                  break
+                  ;;
+                *_IN_PROGRESS)
+                  sleep 15
+                  ;;
+                *)
+                  echo "::error::Stack is not updateable after OBSOLETE change set: $STATUS"
+                  exit 1
+                  ;;
+              esac
+              if [ "$status_attempt" -eq 60 ]; then
+                echo "::error::Timed out waiting for CloudFormation after OBSOLETE change set"
+                exit 1
+              fi
+            done
+            sleep $((deploy_attempt * 10))
+          done
+          [ "$deploy_succeeded" = true ]
+'''
+          if new in text:
+              print('Bounded retry already installed; no source update required.')
+          elif text.count(old) == 1:
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          else:
+              raise SystemExit(f'Deploy block drifted; exact old matches={text.count(old)}')
+          PY
+
+      - name: Validate repair
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import yaml
+
+          path = Path('.github/workflows/deploy.yml')
+          text = path.read_text(encoding='utf-8')
+          workflow = yaml.safe_load(text)
+          assert workflow['concurrency']['cancel-in-progress'] is False
+          assert text.count('for deploy_attempt in 1 2 3 4') == 1
+          assert text.count('InvalidChangeSetStatus.*OBSOLETE') == 1
+          step = next(
+              item for item in workflow['jobs']['deploy']['steps']
+              if item.get('name') == 'Deploy exact canonical source'
+          )
+          shell = step['run'].replace('${{ secrets.AWS_REGION }}', 'us-east-1')
+          Path('/tmp/deploy-step.sh').write_text(shell, encoding='utf-8')
+          subprocess.run(['bash', '-n', '/tmp/deploy-step.sh'], check=True)
+          PY
+          python scripts/stabilize_mlb_deploy_source.py
+          python scripts/verify_mlb_workflow_authority.py
+          python -m pytest -q tests/unit/test_mlb_workflow_authority.py
+          git diff --check
+
+      - name: Publish tested deploy transport repair
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- .github/workflows/deploy.yml; then
+            echo 'Repair is already installed on main.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/deploy.yml
+          git commit -m 'fix(deploy): retry transient obsolete SAM change sets'
+          for attempt in $(seq 1 20); do
+            if git pull --rebase origin main && git push origin HEAD:main; then
+              exit 0
+            fi
+            git rebase --abort >/dev/null 2>&1 || true
+            sleep 3
+          done
+          echo 'Failed to publish tested deployment retry repair.' >&2
+          exit 1
