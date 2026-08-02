@@ -61,16 +61,25 @@ jobs:
               'MLB ML release cutoff must match the configured prospective slate boundary',
           )
           training.write_text(text, encoding='utf-8')
-          if str(training) not in changed:
-              changed.append(str(training))
+          changed.append(str(training))
+
+          training_test = Path('tests/unit/test_mlb_ml_aws_training_v1.py')
+          text = training_test.read_text(encoding='utf-8')
+          text = text.replace('2026-07-30', '2026-08-03')
+          text = text.replace('2026-07-29', '2026-08-02')
+          text = text.replace('datetime(2026, 7, 30', 'datetime(2026, 8, 3')
+          text = text.replace('datetime(2026, 7, 29', 'datetime(2026, 8, 2')
+          training_test.write_text(text, encoding='utf-8')
+          changed.append(str(training_test))
 
           audit_test = Path('tests/unit/test_run_mlb_ml_v3_audit_report.py')
           text = audit_test.read_text(encoding='utf-8')
           text = text.replace('2026-07-30', '2026-08-03')
           text = text.replace('2026-07-29', '2026-08-02')
+          text = text.replace('datetime(2026, 7, 30', 'datetime(2026, 8, 3')
+          text = text.replace('datetime(2026, 7, 29', 'datetime(2026, 8, 2')
           audit_test.write_text(text, encoding='utf-8')
-          if str(audit_test) not in changed:
-              changed.append(str(audit_test))
+          changed.append(str(audit_test))
 
           print({'changedFiles': sorted(set(changed))})
           PY
@@ -88,6 +97,7 @@ jobs:
           python scripts/patch_template_mlb_security.py
           python scripts/patch_template_mlb_results_routes.py
           git diff --check
+          set +e
           python -m pytest -q \
             tests/unit/test_mlb_pull_guard_status.py \
             tests/unit/test_mlb_probability_actionability_guard.py \
@@ -117,6 +127,24 @@ jobs:
             tests/unit/test_mlb_trainer_deploy_response.py \
             tests/unit/test_mlb_workflow_authority.py \
             tests/unit/test_run_mlb_ml_v3_audit_report.py
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            python - <<'PY'
+          import importlib.util
+          import json
+          from pathlib import Path
+          path=Path('tests/unit/test_run_mlb_ml_v3_audit_report.py')
+          spec=importlib.util.spec_from_file_location('audit_fixture_debug', path)
+          module=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          report=module._report_with_canonical_slate([module._settlement_row()])
+          scope=module.audit_report._post_cutoff_production_acceptance_scope(report)
+          print('AUDIT_FIXTURE_EVIDENCE='+json.dumps(report.get('canonicalFinalizedSlateEvidence'), sort_keys=True, default=str))
+          print('AUDIT_FIXTURE_SCOPE='+json.dumps(scope, sort_keys=True, default=str))
+          PY
+            exit "$status"
+          fi
 
       - name: Commit fixture repair
         env:
