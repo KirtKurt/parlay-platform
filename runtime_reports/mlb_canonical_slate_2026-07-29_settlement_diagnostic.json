@@ -1,0 +1,40 @@
+{
+  "createdAtUtc": "2026-08-02T03:09:55.024305+00:00",
+  "proofType": "MLB_CANONICAL_SLATE_SETTLEMENT_AND_LOCK_DIAGNOSTIC",
+  "secretExposed": false,
+  "settlement": {
+    "authoritativeSettlement": true,
+    "createdAtUtc": "2026-08-02T03:09:55.024269+00:00",
+    "error": "RuntimeError:SNAPSHOTS_TABLE_NOT_CONFIGURED",
+    "immutablePregameRowsMutated": false,
+    "legacySettlementAuthority": false,
+    "ok": false,
+    "proofType": "MLB_CANONICAL_IMMUTABLE_LOCK_TO_OFFICIAL_FINAL_LABEL",
+    "settlement_version": "MLB-CANONICAL-FINAL-LABEL-v1-official-game-pk-write-once",
+    "slateDateEt": "2026-07-29",
+    "slate_date_et": "2026-07-29",
+    "sport": "mlb",
+    "status": "FAILED_CLOSED",
+    "version": "MLB-CANONICAL-SETTLEMENT-PROOF-v1"
+  },
+  "slateDateEt": "2026-07-29",
+  "stackStatus": "UPDATE_COMPLETE",
+  "trainingReadback": {
+    "finalizedSlateDates": [],
+    "ok": false,
+    "policy": "Only full official-FINAL slates joined by official gamePk to current immutable LOCKED#GAME authority may enter the prospective cohort.",
+    "requestedSlateDates": [
+      "2026-07-29"
+    ],
+    "rowCount": 0,
+    "rows": [],
+    "slates": [
+      {
+        "error": "RuntimeError:SNAPSHOTS_TABLE_NOT_CONFIGURED",
+        "slateDateEt": "2026-07-29",
+        "slateFinalized": false
+      }
+    ],
+    "version": "MLB-CANONICAL-FINAL-LABEL-v1-official-game-pk-write-once"
+  }
+}
