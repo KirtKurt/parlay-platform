@@ -21,7 +21,8 @@ jobs:
       - name: Verify corrected source is on main
         run: |
           set -euo pipefail
-          grep -q 'persisted shadow challenger or champion artifact is not live runtime' scripts/verify_mlb_trainer_deploy_response.py
+          grep -q 'verify_mlb_trainer_deploy_response_legacy' scripts/verify_mlb_trainer_deploy_response.py
+          grep -q 'runtime_authority_activation_must_remain_unavailable_before_manual_approval' scripts/verify_mlb_trainer_deploy_response.py
           test -s scripts/verify_mlb_trainer_deploy_response_legacy.py
       - name: Dispatch normal serialized SAM deployment
         env:
