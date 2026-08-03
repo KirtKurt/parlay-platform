@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import random
+import time
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, Iterable, Mapping
 
 import boto3
 from boto3.dynamodb.conditions import Attr
+from botocore.config import Config
+from botocore.exceptions import ClientError
 
 TABLE_NAME = os.environ["TENNIS_LEARNING_TABLE"]
 LIVE_FUNCTION = os.environ["TENNIS_LIVE_FUNCTION"]
@@ -17,6 +21,14 @@ MIN_LIVE_AUDIT = int(os.getenv("TENNIS_MIN_LIVE_AUDIT", "30"))
 MIN_LIVE_ACCURACY = float(os.getenv("TENNIS_MIN_LIVE_ACCURACY", "0.55"))
 MAX_LIVE_BRIER = float(os.getenv("TENNIS_MAX_LIVE_BRIER", "0.25"))
 MAX_CONSECUTIVE_FAILURES = int(os.getenv("TENNIS_MAX_CONSECUTIVE_FAILURES", "3"))
+INVOKE_MAX_ATTEMPTS = max(1, int(os.getenv("TENNIS_INVOKE_MAX_ATTEMPTS", "4")))
+INVOKE_BASE_DELAY_SECONDS = max(
+    0.1, float(os.getenv("TENNIS_INVOKE_BASE_DELAY_SECONDS", "2"))
+)
+INVOKE_MAX_DELAY_SECONDS = max(
+    INVOKE_BASE_DELAY_SECONDS,
+    float(os.getenv("TENNIS_INVOKE_MAX_DELAY_SECONDS", "20")),
+)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -30,7 +42,10 @@ HISTORICAL_ENABLED = _env_bool("TENNIS_HISTORICAL_ENABLED", False)
 HISTORICAL_REQUIRED = _env_bool("TENNIS_HISTORICAL_REQUIRED", False)
 
 table = boto3.resource("dynamodb").Table(TABLE_NAME)
-lambda_client = boto3.client("lambda")
+lambda_client = boto3.client(
+    "lambda",
+    config=Config(retries={"mode": "adaptive", "max_attempts": 3}),
+)
 
 
 def _now() -> str:
@@ -41,21 +56,52 @@ def _decimal(value: float) -> Decimal:
     return Decimal(str(round(value, 8)))
 
 
+def _retryable_invoke_error(exc: ClientError) -> bool:
+    response = getattr(exc, "response", {}) or {}
+    error = response.get("Error") or {}
+    metadata = response.get("ResponseMetadata") or {}
+    code = str(error.get("Code") or "")
+    status = int(metadata.get("HTTPStatusCode") or 0)
+    return code in {
+        "TooManyRequestsException",
+        "ServiceException",
+        "EC2ThrottledException",
+        "RequestLimitExceeded",
+        "Throttling",
+        "ThrottlingException",
+    } or status in {429, 500, 502, 503, 504}
+
+
 def _invoke(function_name: str, payload: Mapping[str, Any]) -> Dict[str, Any]:
-    response = lambda_client.invoke(
-        FunctionName=function_name,
-        InvocationType="RequestResponse",
-        Payload=json.dumps(dict(payload)).encode("utf-8"),
-    )
-    body = json.loads(response["Payload"].read().decode("utf-8") or "{}")
-    if response.get("FunctionError"):
-        raise RuntimeError(f"{function_name} failed: {body}")
-    if isinstance(body, dict) and "body" in body:
+    for attempt in range(1, INVOKE_MAX_ATTEMPTS + 1):
         try:
-            return json.loads(body["body"])
-        except (TypeError, json.JSONDecodeError):
-            return body
-    return body if isinstance(body, dict) else {"result": body}
+            response = lambda_client.invoke(
+                FunctionName=function_name,
+                InvocationType="RequestResponse",
+                Payload=json.dumps(dict(payload)).encode("utf-8"),
+            )
+        except ClientError as exc:
+            if attempt >= INVOKE_MAX_ATTEMPTS or not _retryable_invoke_error(exc):
+                raise
+            base_delay = min(
+                INVOKE_MAX_DELAY_SECONDS,
+                INVOKE_BASE_DELAY_SECONDS * (2 ** (attempt - 1)),
+            )
+            jittered_delay = base_delay * (0.75 + random.random() * 0.5)
+            time.sleep(jittered_delay)
+            continue
+
+        body = json.loads(response["Payload"].read().decode("utf-8") or "{}")
+        if response.get("FunctionError"):
+            raise RuntimeError(f"{function_name} failed: {body}")
+        if isinstance(body, dict) and "body" in body:
+            try:
+                return json.loads(body["body"])
+            except (TypeError, json.JSONDecodeError):
+                return body
+        return body if isinstance(body, dict) else {"result": body}
+
+    raise RuntimeError(f"{function_name} invoke retry loop exited unexpectedly")
 
 
 def _scan(prefix: str) -> Iterable[Dict[str, Any]]:
