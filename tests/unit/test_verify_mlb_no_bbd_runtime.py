@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import remove_mlb_bbd_active_runtime as migration
 import verify_mlb_no_bbd_runtime as verifier
 
 
@@ -67,10 +68,10 @@ def test_migration_workflow_name_is_accepted_but_contents_are_still_scanned(
 ):
     monkeypatch.setattr(verifier, "ROOT", tmp_path)
     _write_required_provider_neutral_files(tmp_path)
-    migration = (
+    migration_workflow = (
         tmp_path / ".github/workflows/mlb-remove-bbd-active-runtime-once.yml"
     )
-    migration.write_text(
+    migration_workflow.write_text(
         'name: Retired provider migration\n"on":\n  workflow_dispatch:\n',
         encoding="utf-8",
     )
@@ -78,7 +79,7 @@ def test_migration_workflow_name_is_accepted_but_contents_are_still_scanned(
     assert verifier.verify_files() == []
 
     forbidden = verifier.FORBIDDEN[0]
-    migration.write_text(
+    migration_workflow.write_text(
         'name: Retired provider migration\n"on":\n  workflow_dispatch:\n'
         f"env:\n  RETIRED_SECRET: ${{{{ secrets.{forbidden} }}}}\n",
         encoding="utf-8",
@@ -126,3 +127,11 @@ def test_workflow_authority_requires_no_bbd_and_forbids_retired_credentials():
         "canonical_deploy_does_not_pass_bbs_noecho_parameter",
     ):
         assert obsolete not in source
+
+
+def test_workflow_authority_migration_is_idempotent():
+    source = (ROOT / "scripts/verify_mlb_workflow_authority.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert migration.patch_workflow_authority(source) == source
