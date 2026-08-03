@@ -310,3 +310,12 @@ try:
     _inqsi_mlb_ml_runtime_install_v3.install()
 except Exception:
     pass
+
+try:
+    import mlb_daily_pick_lock as _inqsi_mlb_daily_pick_lock_for_status
+    import mlb_daily_lock_status_route_patch as _inqsi_mlb_daily_lock_status_route_patch
+    _inqsi_mlb_daily_lock_status_route_patch.apply(
+        _inqsi_mlb_daily_pick_lock_for_status
+    )
+except Exception:
+    pass

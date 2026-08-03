@@ -189,7 +189,7 @@ def test_expired_shared_deadline_makes_no_request() -> None:
 
 
 @pytest.mark.parametrize("failure", ("timeout", "http_504", "truncated"))
-def test_single_attempt_heavy_probe_never_retries_failed_delivery(
+def test_single_attempt_standalone_probe_never_retries_failed_delivery(
     failure: str,
 ) -> None:
     clock = Clock()
@@ -231,6 +231,44 @@ def test_single_attempt_heavy_probe_never_retries_failed_delivery(
         )
     assert calls == 1
     assert clock.sleeps == []
+
+
+def test_shared_deadline_retries_504_despite_single_delivery_cap() -> None:
+    clock = Clock()
+    outcomes = [
+        urllib.error.HTTPError(
+            "https://example.test",
+            504,
+            "gateway timeout",
+            {},
+            io.BytesIO(),
+        ),
+        Response(200, {"ok": True, "officialScheduleBacked": True}),
+    ]
+    calls = 0
+
+    def opener(_request, *, timeout):
+        nonlocal calls
+        calls += 1
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    result = probe.fetch_json_object(
+        "https://example.test/status",
+        deadline_monotonic=clock.monotonic() + 30,
+        request_timeout_seconds=10,
+        retry_delay_seconds=4,
+        max_attempts=1,
+        opener=opener,
+        monotonic=clock.monotonic,
+        sleep=clock.sleep,
+    )
+
+    assert result["ok"] is True
+    assert calls == 2
+    assert clock.sleeps == [4]
 
 
 def test_single_attempt_heavy_probe_accepts_valid_json_object() -> None:
