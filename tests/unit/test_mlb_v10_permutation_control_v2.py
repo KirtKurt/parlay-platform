@@ -5,6 +5,7 @@ import random
 
 from hello_world import mlb_v10_autonomous_signal_discovery_v1 as v10
 from hello_world import mlb_v10_permutation_control_v2 as cached
+from hello_world import mlb_v10_prospective_shadow_history_v1 as prospective_history
 
 
 def _record(index: int, home_won: int) -> dict:
@@ -127,6 +128,45 @@ def _snapshot(subject):
     return value
 
 
+def _prospective_snapshot(*, future_games: int = 15, correct: int = 11) -> dict:
+    predictions = [
+        {
+            "slateDateEt": "2026-08-01",
+            "gameId": f"game-{index}",
+            "selectedSide": "home" if index % 2 else "away",
+            "correct": index < correct,
+        }
+        for index in range(future_games)
+    ]
+    return {
+        "status": "EVALUATED",
+        "registryVersion": "test-registry",
+        "registryFingerprint": "registry-fingerprint",
+        "frozenThroughDate": "2026-07-31",
+        "futureCanonicalGameCount": future_games,
+        "futureSlateCount": 1 if future_games else 0,
+        "policyChangedDuringEvaluation": False,
+        "selectionUsesFutureLabels": False,
+        "productionAuthority": False,
+        "shadowOnly": True,
+        "portfolio": {
+            "pickCount": future_games,
+            "correct": correct,
+            "losses": future_games - correct,
+            "accuracy": correct / future_games if future_games else None,
+            "daily": [
+                {
+                    "slateDateEt": "2026-08-01",
+                    "pickCount": future_games,
+                    "correct": correct,
+                    "accuracy": correct / future_games if future_games else None,
+                }
+            ] if future_games else [],
+            "predictions": predictions,
+        },
+    }
+
+
 def test_cached_control_matches_original_label_permutation_semantics():
     records = [_record(index, int(index % 2 == 0)) for index in range(36)]
     definitions = {
@@ -177,7 +217,8 @@ def test_install_preserves_expected_control_signature_and_metadata():
         _restore(v10, snapshot)
 
 
-def test_install_replaces_empty_individual_registry_with_development_frozen_shadow_portfolio():
+def test_install_replaces_empty_individual_registry_with_development_frozen_shadow_portfolio(monkeypatch):
+    monkeypatch.setattr(prospective_history, "load_repository_reports", lambda: [])
     snapshot = _snapshot(v10)
     try:
         cached.install(v10)
@@ -192,8 +233,81 @@ def test_install_replaces_empty_individual_registry_with_development_frozen_shad
         assert report["registryFreeze"]["selectionUsedUntouchedHoldoutLabels"] is False
         assert report["portfolioValidation"]["untouchedHoldoutUsedForSelection"] is False
         assert report["aggregateResearchPolicy"]["walkForward"]["pickCount"] > 0
+        assert report["prospectiveShadow"]["historyAppendOnly"] is True
+        assert report["prospectiveShadow"]["historyDeduplicated"] is True
+        assert report["prospectiveShadow"]["cumulativeObservedShadow"]["productionAuthority"] is False
+        assert report["prospectiveShadowHistoryPreserved"] is True
         assert report["productionAuthority"] is False
         assert report["mayWriteChampion"] is False
         assert report["mayPublishPicks"] is False
     finally:
         _restore(v10, snapshot)
+
+
+def test_prospective_history_survives_active_freeze_rollover_without_double_counting():
+    observed = _prospective_snapshot()
+    previous = {"prospectiveShadow": observed}
+    current = _prospective_snapshot(future_games=0, correct=0)
+    current.update({
+        "status": "AWAITING_FUTURE_GAMES",
+        "frozenThroughDate": "2026-08-01",
+        "portfolio": {
+            "pickCount": 0,
+            "correct": 0,
+            "losses": 0,
+            "accuracy": None,
+            "daily": [],
+            "predictions": [],
+        },
+    })
+
+    first = prospective_history.enrich_snapshot(
+        current,
+        previous,
+        historical_reports=[],
+    )
+    repeated = prospective_history.enrich_snapshot(
+        current,
+        {"prospectiveShadow": first},
+        historical_reports=[],
+    )
+
+    assert first["status"] == "AWAITING_FUTURE_GAMES"
+    assert len(first["history"]) == 1
+    assert len(repeated["history"]) == 1
+    cumulative = repeated["cumulativeObservedShadow"]
+    assert cumulative["snapshotCount"] == 1
+    assert cumulative["uniqueObservedPickCount"] == 15
+    assert cumulative["correct"] == 11
+    assert cumulative["losses"] == 4
+    assert cumulative["observedAccuracy"] == 11 / 15
+    assert "not a validated predictive probability" in cumulative["observedAccuracySemantics"]
+    assert cumulative["productionAuthority"] is False
+    assert cumulative["mayWriteChampion"] is False
+    assert cumulative["mayPublishPicks"] is False
+
+
+def test_repository_history_can_restore_evidence_missing_from_current_report():
+    historical = {"prospectiveShadow": _prospective_snapshot()}
+    current_previous = {
+        "prospectiveShadow": {
+            "status": "AWAITING_FUTURE_GAMES",
+            "futureCanonicalGameCount": 0,
+            "futureSlateCount": 0,
+            "portfolio": {
+                "pickCount": 0,
+                "correct": 0,
+                "losses": 0,
+                "accuracy": None,
+                "predictions": [],
+            },
+        }
+    }
+    enriched = prospective_history.enrich_snapshot(
+        current_previous["prospectiveShadow"],
+        current_previous,
+        historical_reports=[historical, historical],
+    )
+    assert len(enriched["history"]) == 1
+    assert enriched["cumulativeObservedShadow"]["uniqueObservedPickCount"] == 15
+    assert enriched["cumulativeObservedShadow"]["correct"] == 11
