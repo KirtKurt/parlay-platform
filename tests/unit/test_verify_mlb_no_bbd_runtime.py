@@ -135,3 +135,15 @@ def test_workflow_authority_migration_is_idempotent():
     )
 
     assert migration.patch_workflow_authority(source) == source
+
+
+def test_template_migration_removes_orphaned_empty_inline_policy():
+    orphan = "        - Statement:\n      Events:\n"
+    cleaned = "      Events:\n"
+    synthetic = "Policies:\n" + orphan
+
+    migrated = migration.patch_template(synthetic)
+
+    assert migrated == "Policies:\n" + cleaned
+    assert migration.patch_template(migrated) == migrated
+    assert orphan not in (ROOT / "template.yaml").read_text(encoding="utf-8")
