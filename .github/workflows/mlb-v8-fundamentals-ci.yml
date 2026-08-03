@@ -2,24 +2,30 @@ name: MLB V8 Fundamentals CI
 
 "on":
   push:
-    branches: [main, agent/v8-fundamentals-ingestion, agent/v8-fundamentals-hardening]
+    branches:
+      - main
+      - agent/mlb-remove-bbd-and-fix-blockers-20260802
     paths:
-      - 'hello_world/mlb_v8_fundamentals_collector.py'
-      - 'hello_world/bigballsdata_client.py'
-      - 'mlb_v8_fundamentals/template.yaml'
-      - 'tests/unit/test_mlb_v8_fundamentals_collector.py'
-      - 'tests/unit/test_bigballsdata_client.py'
+      - 'scripts/run_mlb_v8_historical_context_backfill_entrypoint.py'
+      - 'scripts/remove_mlb_bbd_active_runtime.py'
+      - 'scripts/verify_mlb_no_bbd_runtime.py'
+      - 'tests/unit/test_run_mlb_v8_historical_context_backfill_entrypoint.py'
+      - 'tests/unit/test_mlb_v8_historical_context_workflow.py'
+      - 'tests/unit/test_verify_mlb_no_bbd_runtime.py'
       - '.github/workflows/mlb-v8-fundamentals-ci.yml'
       - '.github/workflows/mlb-v8-fundamentals-deploy.yml'
+      - '.github/workflows/mlb-v8-historical-context-backfill.yml'
   pull_request:
     paths:
-      - 'hello_world/mlb_v8_fundamentals_collector.py'
-      - 'hello_world/bigballsdata_client.py'
-      - 'mlb_v8_fundamentals/template.yaml'
-      - 'tests/unit/test_mlb_v8_fundamentals_collector.py'
-      - 'tests/unit/test_bigballsdata_client.py'
+      - 'scripts/run_mlb_v8_historical_context_backfill_entrypoint.py'
+      - 'scripts/remove_mlb_bbd_active_runtime.py'
+      - 'scripts/verify_mlb_no_bbd_runtime.py'
+      - 'tests/unit/test_run_mlb_v8_historical_context_backfill_entrypoint.py'
+      - 'tests/unit/test_mlb_v8_historical_context_workflow.py'
+      - 'tests/unit/test_verify_mlb_no_bbd_runtime.py'
       - '.github/workflows/mlb-v8-fundamentals-ci.yml'
       - '.github/workflows/mlb-v8-fundamentals-deploy.yml'
+      - '.github/workflows/mlb-v8-historical-context-backfill.yml'
   workflow_dispatch:
 
 permissions:
@@ -28,42 +34,60 @@ permissions:
 jobs:
   validate-v8-fundamentals:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - uses: aws-actions/setup-sam@v2
-      - name: Compile and test fundamentals collector
+
+      - name: Compile and test provider-neutral historical context
         run: |
           set -euo pipefail
-          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
-          python -m py_compile hello_world/bigballsdata_client.py hello_world/mlb_v8_fundamentals_collector.py
-          python -m pytest -q tests/unit/test_mlb_v8_fundamentals_collector.py tests/unit/test_bigballsdata_client.py
-      - name: Validate and build isolated SAM template
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
+          python -m py_compile \
+            scripts/run_mlb_v8_historical_context_backfill_entrypoint.py \
+            scripts/remove_mlb_bbd_active_runtime.py \
+            scripts/verify_mlb_no_bbd_runtime.py
+          PYTHONPATH=scripts python -m pytest -q \
+            tests/unit/test_run_mlb_v8_historical_context_backfill_entrypoint.py \
+            tests/unit/test_mlb_v8_historical_context_workflow.py \
+            tests/unit/test_verify_mlb_no_bbd_runtime.py
+
+      - name: Prove active MLB workflows are provider-neutral
         run: |
           set -euo pipefail
-          sam validate --lint --template-file mlb_v8_fundamentals/template.yaml
-          rm -rf .aws-sam-v8-fundamentals
-          sam build --no-cached --build-dir .aws-sam-v8-fundamentals --template-file mlb_v8_fundamentals/template.yaml
-          test -f .aws-sam-v8-fundamentals/FundamentalsCollectorFunction/mlb_v8_fundamentals_collector.py
-          test -f .aws-sam-v8-fundamentals/FundamentalsCollectorFunction/bigballsdata_client.py
-      - name: Prove V7 isolation and fail-closed training contract
+          python scripts/remove_mlb_bbd_active_runtime.py --check
+          python scripts/verify_mlb_no_bbd_runtime.py
+
+      - name: Prove legacy fundamentals deploy is a compatibility dispatcher only
         run: |
           set -euo pipefail
-          PYTHONPATH=hello_world python - <<'PY'
-          from datetime import datetime, timezone
-          from mlb_v8_fundamentals_collector import build_snapshot
-          report = build_snapshot([], '2026-07-29', datetime.now(timezone.utc), 'ci')
-          assert report['authority'] == 'V8_FUNDAMENTALS_SHADOW_ONLY'
-          assert report['productionV7Unchanged'] is True
-          assert report['automaticWagerAllowed'] is False
-          assert report['trainingEligibleGameCount'] == 0
-          print(report['fingerprint'])
+          workflow=.github/workflows/mlb-v8-fundamentals-deploy.yml
+          grep -Fq 'MLB V8 Fundamentals Compatibility Dispatcher' "$workflow"
+          grep -Fq 'mlb-v8-historical-context-backfill.yml' "$workflow"
+          grep -Fq 'provider-neutral V8 context workflow' "$workflow"
+          if grep -Eq 'sam deploy|mlb_v8_fundamentals/template.yaml|api\.bigballsdata\.com|BBS_API_KEY|BbsApiKey' "$workflow"; then
+            echo 'Legacy V8 fundamentals deployment path is still active.' >&2
+            exit 1
+          fi
+
+      - name: Prove context evidence remains shadow-only and leakage-safe
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python - <<'PY'
+          from run_mlb_v8_historical_context_backfill_entrypoint import build_failure_report
+
+          report = build_failure_report(
+              source_sha='ci',
+              run_id='ci',
+              stage='CI_CONTRACT',
+              blockers=['synthetic_ci_failure'],
+          )
+          assert report['productionAuthorityChanged'] is False
+          assert report['bbsApiUsed'] is False
+          assert report['bbsCredentialRead'] is False
+          assert report['outcomeUsedForFeatureConstruction'] is False
+          assert report['sameGameOutcomeReadBeforeLock'] is False
+          print(report['proofType'])
           PY
-      - name: Prove deployment remains schedule-disabled without explicit manual authorization
-        run: |
-          set -euo pipefail
-          grep -Fq "default: 'false'" .github/workflows/mlb-v8-fundamentals-deploy.yml
-          grep -Fq "github.event_name == 'workflow_dispatch' && inputs.enable_schedule_after_canary == 'true'" .github/workflows/mlb-v8-fundamentals-deploy.yml
-          grep -Fq "fullyAvailableGameCount" .github/workflows/mlb-v8-fundamentals-deploy.yml
