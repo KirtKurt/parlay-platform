@@ -84,6 +84,13 @@ def patch_template(text: str) -> str:
         "                - s3:PutObject\n"
         "              Resource: !Sub '${MLBMLArtifactsBucket.Arn}/mlb/providers/bbs/*'\n",
     )
+    # Retiring the only statements in the audited-pull inline policy must also
+    # remove the now-empty SAM policy document. Leaving ``- Statement:`` with a
+    # null value passes YAML parsing but fails cfn-lint E3510.
+    text = text.replace(
+        "        - Statement:\n      Events:\n",
+        "      Events:\n",
+    )
     return text
 
 
@@ -255,6 +262,8 @@ def verify(
         for token in tokens:
             if token in body:
                 errors.append(f"retired_provider_reference:{name}:{token}")
+    if "        - Statement:\n      Events:\n" in template:
+        errors.append("orphaned_empty_inline_policy")
     deploy = workflows[Path(".github/workflows/deploy.yml")]
     if "python scripts/verify_mlb_no_bbd_runtime.py" not in deploy:
         errors.append("no_bbd_verifier_missing_from_deploy")
