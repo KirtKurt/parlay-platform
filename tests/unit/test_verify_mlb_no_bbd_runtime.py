@@ -3,6 +3,9 @@ from pathlib import Path
 import verify_mlb_no_bbd_runtime as verifier
 
 
+ROOT = Path(__file__).resolve().parents[2]
+
+
 def _write_required_provider_neutral_files(tmp_path: Path) -> None:
     files = {
         "template.yaml": "Parameters:\n  OddsApiKey:\n    Type: String\n",
@@ -101,3 +104,25 @@ def test_other_scheduled_workflow_names_with_retired_provider_are_rejected(
 
     errors = verifier.verify_files()
     assert any("active_bbd_workflow_name" in error for error in errors)
+
+
+def test_workflow_authority_requires_no_bbd_and_forbids_retired_credentials():
+    source = (ROOT / "scripts/verify_mlb_workflow_authority.py").read_text(
+        encoding="utf-8"
+    )
+    for marker in (
+        "production_source_contract_does_not_verify_no_bbd_runtime",
+        "production_source_contract_does_not_test_no_bbd_runtime",
+        "canonical_deploy_does_not_verify_no_bbd_runtime",
+        "canonical_deploy_does_not_test_no_bbd_runtime",
+        "canonical_deploy_retains_retired_provider_secret",
+        "canonical_deploy_retains_retired_provider_parameter",
+    ):
+        assert marker in source
+    for obsolete in (
+        "production_source_contract_does_not_verify_bbs_wiring",
+        "canonical_deploy_does_not_verify_bbs_wiring",
+        "canonical_deploy_does_not_consume_exact_bbs_secret",
+        "canonical_deploy_does_not_pass_bbs_noecho_parameter",
+    ):
+        assert obsolete not in source
