@@ -20,7 +20,7 @@ def test_autonomous_controller_contracts_present():
 def test_template_wires_closed_loop_and_status_endpoint():
     template = Path('tennis-template.yaml').read_text()
     assert 'TennisAutonomousControllerFunction' in template
-    assert 'rate(15 minutes)' in template
+    assert "cron(11,26,41,56 * * * ? *)" in template
     assert '/v1/tennis/autonomy/status' in template
     assert 'lambda:InvokeFunction' in template
     assert 'TENNIS_LIVE_FUNCTION' in template
@@ -60,3 +60,29 @@ def test_live_collection_and_settlement_remain_required():
     settle_block = source.split('"settle",', 1)[1].split(')', 1)[0]
     assert 'required=False' not in collect_block
     assert 'required=False' not in settle_block
+
+
+def test_required_live_schedules_are_staggered_to_avoid_invoke_collisions():
+    template = Path('tennis-template.yaml').read_text()
+    assert "cron(1,16,31,46 * * * ? *)" in template
+    assert "cron(6,36 * * * ? *)" in template
+    assert "cron(11,26,41,56 * * * ? *)" in template
+    assert template.index("cron(1,16,31,46 * * * ? *)") < template.index(
+        "cron(6,36 * * * ? *)"
+    )
+    assert template.index("cron(6,36 * * * ? *)") < template.index(
+        "cron(11,26,41,56 * * * ? *)"
+    )
+
+
+def test_lambda_invoke_throttling_has_bounded_adaptive_retry():
+    source = Path('tennis_learning/autonomous_controller.py').read_text()
+    required = [
+        'Config(retries={"mode": "adaptive", "max_attempts": 3})',
+        'TENNIS_INVOKE_MAX_ATTEMPTS',
+        'TooManyRequestsException',
+        '_retryable_invoke_error',
+        'time.sleep(jittered_delay)',
+    ]
+    for token in required:
+        assert token in source

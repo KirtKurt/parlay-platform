@@ -80,15 +80,17 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref TennisLearningTable
       Events:
+        # Stagger direct live work away from the autonomous controller so the
+        # same Lambda is not invoked simultaneously by multiple EventBridge rules.
         CollectEvery15Minutes:
           Type: Schedule
           Properties:
-            Schedule: rate(15 minutes)
+            Schedule: 'cron(1,16,31,46 * * * ? *)'
             Input: '{"action":"collect"}'
         SettleEvery30Minutes:
           Type: Schedule
           Properties:
-            Schedule: rate(30 minutes)
+            Schedule: 'cron(6,36 * * * ? *)'
             Input: '{"action":"settle"}'
         CollectApi:
           Type: Api
@@ -146,6 +148,9 @@ Resources:
           TENNIS_MIN_LIVE_ACCURACY: '0.55'
           TENNIS_MAX_LIVE_BRIER: '0.25'
           TENNIS_MAX_CONSECUTIVE_FAILURES: '3'
+          TENNIS_INVOKE_MAX_ATTEMPTS: '4'
+          TENNIS_INVOKE_BASE_DELAY_SECONDS: '2'
+          TENNIS_INVOKE_MAX_DELAY_SECONDS: '20'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref TennisLearningTable
@@ -159,7 +164,7 @@ Resources:
         AutonomousCycleEvery15Minutes:
           Type: Schedule
           Properties:
-            Schedule: rate(15 minutes)
+            Schedule: 'cron(11,26,41,56 * * * ? *)'
             Input: '{"action":"autonomous_cycle"}'
             RetryPolicy:
               MaximumEventAgeInSeconds: 900
