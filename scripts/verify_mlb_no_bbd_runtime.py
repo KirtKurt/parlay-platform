@@ -2,8 +2,8 @@
 """Fail closed if an active MLB deployment path can read or call BBD/BBS.
 
 Legacy source files may remain temporarily for historical artifact compatibility, but
-no active SAM template, GitHub workflow, scheduled collector, or provider-neutral
-context entrypoint may require a BBD credential or endpoint.
+no active SAM template, GitHub workflow, scheduled collector, deployment stabilizer,
+or provider-neutral context entrypoint may require a BBD credential or endpoint.
 """
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ ACTIVE_FILES = (
     Path("template.yaml"),
     Path(".github/workflows/deploy.yml"),
     Path(".github/workflows/mlb-v8-historical-context-backfill.yml"),
+    Path("scripts/stabilize_mlb_deploy_source.py"),
     Path("scripts/run_mlb_v8_historical_context_backfill_entrypoint.py"),
 )
 
