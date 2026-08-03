@@ -103,8 +103,10 @@ def test_complete_doubleheader_slate_passes():
     assert report["guardPassed"] is True
     assert report["summary"]["officialGameCount"] == 2
     assert report["summary"]["persistedPredictionGameCount"] == 2
+    assert report["summary"]["invalidPredictionTeamCount"] == 0
     assert report["summary"]["movementFeatureGameCount"] == 2
     assert report["summary"]["fundamentalsAppliedCount"] == 1
+    assert all(row["predictedWinnerInMatchup"] for row in report["games"])
     assert len({row["gameIdentity"] for row in report["games"]}) == 2
 
 
@@ -114,6 +116,17 @@ def test_missing_prediction_fails_closed():
     assert report["guardPassed"] is False
     assert report["summary"]["missingPredictionCount"] == 1
     assert "PERSISTED_WINNER_PREDICTION_COVERAGE_INCOMPLETE" in report["blockers"]
+
+
+def test_prediction_for_team_outside_matchup_fails_closed():
+    _, predictions, _ = fixture()
+    predictions[0] = prediction("1001", "Unrelated Club", 61.2, True)
+    report = evaluate(predictions=predictions)
+    assert report["guardPassed"] is False
+    assert report["summary"]["invalidPredictionTeamCount"] == 1
+    assert report["invalidPredictionTeamGameIdentities"] == ["official:1001"]
+    assert report["games"][0]["predictedWinnerInMatchup"] is False
+    assert "PREDICTED_WINNER_NOT_IN_MATCHUP" in report["blockers"]
 
 
 def test_missing_movement_feature_fails_closed():
