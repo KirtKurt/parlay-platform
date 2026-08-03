@@ -1,0 +1,34 @@
+name: MLB Historical Context Backfill Compatibility Dispatcher
+
+"on":
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: Canonical target games attempted by the active V8 workflow
+        required: false
+        default: '25'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: mlb-historical-context-backfill-compatibility
+  cancel-in-progress: false
+
+jobs:
+  dispatch-active-v8-workflow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch official/internal V8 context workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LIMIT: ${{ inputs.limit || '25' }}
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-v8-historical-context-backfill.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            --field limit="$LIMIT"
+          echo "Dispatched mlb-v8-historical-context-backfill.yml with limit=$LIMIT"
