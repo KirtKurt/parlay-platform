@@ -1,0 +1,115 @@
+name: MLB Remove Retired BBD Runtime Once
+
+"on":
+  push:
+    branches:
+      - agent/mlb-remove-bbd-and-fix-blockers-20260802
+    paths:
+      - '.github/workflows/mlb-remove-bbd-active-runtime-once.yml'
+      - 'scripts/remove_mlb_bbd_active_runtime.py'
+      - 'scripts/verify_mlb_no_bbd_runtime.py'
+      - 'scripts/verify_mlb_workflow_authority.py'
+      - 'tests/unit/test_verify_mlb_no_bbd_runtime.py'
+      - 'template.yaml'
+      - '.github/workflows/deploy.yml'
+      - '.github/workflows/deploy-mlb-ranked-v15-10.yml'
+      - '.github/workflows/mlb-backend-full-recovery.yml'
+      - '.github/workflows/mlb-historical-optimizer.yml'
+      - '.github/workflows/mlb-odds-pattern-v7-deploy.yml'
+      - '.github/workflows/mlb-v8-fundamentals-deploy.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-remove-bbd-active-runtime-once.yml'
+      - 'scripts/remove_mlb_bbd_active_runtime.py'
+      - 'scripts/verify_mlb_no_bbd_runtime.py'
+      - 'scripts/verify_mlb_workflow_authority.py'
+      - 'tests/unit/test_verify_mlb_no_bbd_runtime.py'
+      - 'template.yaml'
+      - '.github/workflows/deploy.yml'
+      - '.github/workflows/deploy-mlb-ranked-v15-10.yml'
+      - '.github/workflows/mlb-backend-full-recovery.yml'
+      - '.github/workflows/mlb-historical-optimizer.yml'
+      - '.github/workflows/mlb-odds-pattern-v7-deploy.yml'
+      - '.github/workflows/mlb-v8-fundamentals-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-remove-retired-bbd-runtime-once-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  remove-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/mlb-remove-bbd-and-fix-blockers-20260802
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Remove BBD from every active MLB authority surface
+        run: python scripts/remove_mlb_bbd_active_runtime.py
+      - name: Verify active no-BBD runtime contract
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'PyYAML>=6,<7'
+          python scripts/verify_mlb_no_bbd_runtime.py
+          PYTHONPATH=scripts python -m pytest -q tests/unit/test_verify_mlb_no_bbd_runtime.py
+          python -m py_compile \
+            scripts/remove_mlb_bbd_active_runtime.py \
+            scripts/verify_mlb_no_bbd_runtime.py \
+            scripts/verify_mlb_workflow_authority.py \
+            scripts/run_mlb_v8_historical_context_backfill_entrypoint.py
+          python scripts/remove_mlb_bbd_active_runtime.py --check
+          python scripts/verify_mlb_workflow_authority.py
+      - name: Build verified migration commit
+        id: migration
+        run: |
+          set -euo pipefail
+          active_files=(
+            template.yaml
+            .github/workflows/deploy.yml
+            .github/workflows/deploy-mlb-ranked-v15-10.yml
+            .github/workflows/mlb-backend-full-recovery.yml
+            .github/workflows/mlb-historical-optimizer.yml
+            .github/workflows/mlb-odds-pattern-v7-deploy.yml
+            .github/workflows/mlb-v8-fundamentals-deploy.yml
+            scripts/verify_mlb_workflow_authority.py
+          )
+          if git diff --quiet -- "${active_files[@]}"; then
+            echo 'All active MLB authority surfaces are already BBD-free.'
+            echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add "${active_files[@]}"
+          git commit -m 'Remove BBD from all active MLB authority surfaces'
+          commit_sha=$(git rev-parse HEAD)
+          echo "Verified migration commit: $commit_sha"
+          echo "$commit_sha" > /tmp/no-bbd-migration-commit.txt
+          git format-patch -1 --stdout > /tmp/no-bbd-migration.patch
+          echo "commit_sha=$commit_sha" >> "$GITHUB_OUTPUT"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          if git push origin HEAD:agent/mlb-remove-bbd-and-fix-blockers-20260802; then
+            echo 'Migration commit pushed directly.'
+          else
+            echo '::warning::Actions token cannot update workflow files; use the connected GitHub app to move the branch ref to the verified commit SHA.'
+          fi
+      - name: Upload verified migration commit and patch
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-no-bbd-migration-${{ github.run_id }}
+          path: |
+            /tmp/no-bbd-migration-commit.txt
+            /tmp/no-bbd-migration.patch
+          retention-days: 30
+          if-no-files-found: warn

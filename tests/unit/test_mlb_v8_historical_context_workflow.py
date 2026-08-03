@@ -8,38 +8,42 @@ import mlb_v8_historical_point_in_time_context_v1 as context
 WORKFLOW = Path(".github/workflows/mlb-v8-historical-context-backfill.yml")
 
 
-def test_workflow_runs_isolated_context_backfill_and_canonical_settled_tick():
+def test_workflow_runs_isolated_official_context_backfill():
     text = WORKFLOW.read_text()
 
     assert "run_mlb_v8_historical_context_backfill_entrypoint.py" in text
-    assert "MLB_V8_HISTORICAL_CONTEXT#V1" in text
-    assert '"mode":"orchestrate"' in text
-    assert "manualCursorMutation':False" in text
+    assert "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY" in text
+    assert "official_mlb_plus_internal_canonical_context" in text
     assert "mlb-supervised-shadow-v2-recurring.yml" not in text
     assert "cancel-in-progress: false" in text
     assert "git reset --hard origin/main" in text
     assert "git clean -fd" in text
     assert "productionAuthorityChanged') is False" in text
+    assert "sameDayResultsExcluded') is True" in text
+    assert "selectionUsedOutcomes') is False" in text
 
 
-def test_workflow_accelerates_with_bounded_serial_batch_and_provider_delay():
+def test_workflow_uses_bounded_batch_without_retired_provider_credentials():
     text = WORKFLOW.read_text()
 
     assert "default: '25'" in text
     assert "inputs.limit || '25'" in text
-    assert "BBS_HISTORICAL_REQUEST_DELAY_SECONDS: '1.0'" in text
-    assert "timeout-minutes: 90" in text
+    assert "timeout-minutes: 120" in text
     assert "cancel-in-progress: false" in text
+    assert "BBS_API_KEY" not in text
+    assert "BBS_API_SECRET_ARN" not in text
+    assert "api.bigballsdata.com" not in text
 
 
-def test_workflow_revalidates_unchanged_selection_guard_thresholds():
+def test_workflow_enforces_no_bbd_and_leakage_safe_evidence_contract():
     text = WORKFLOW.read_text()
 
-    assert "guard.MIN_OOF_ACCURACY_UPLIFT == 0.005" in text
-    assert "guard.MIN_OOF_NET_CORRECT == 3" in text
-    assert "guard.MAX_WORST_FOLD_ACCURACY_REGRESSION == 0.01" in text
-    assert "guard.MIN_POSITIVE_FOLD_RATIO == 2.0 / 3.0" in text
-    assert "guard.MIN_FUNDAMENTALS_COVERAGE == 0.50" in text
+    assert "bbsApiUsed') is False" in text
+    assert "bbsCredentialRead') is False" in text
+    assert "targetGameOutcomeUsed') is False" in text
+    assert "sameDayResultsExcluded') is True" in text
+    assert "automaticWagerAllowed') is False" in text
+    assert "authority') == 'V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY'" in text
 
 
 def _canonical():

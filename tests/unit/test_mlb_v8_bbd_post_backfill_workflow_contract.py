@@ -15,10 +15,12 @@ def test_supervised_workflow_runs_once_per_hour_after_backfills():
 
 
 def test_mlb_publishers_refresh_clean_main_before_monotonic_compare():
+    retired = Path('.github/workflows/mlb-v8-historical-bbs-backfill.yml')
+    assert not retired.exists()
+
     paths = [
         '.github/workflows/mlb-supervised-shadow-v2-recurring.yml',
         '.github/workflows/mlb-v8-historical-context-backfill.yml',
-        '.github/workflows/mlb-v8-historical-bbs-backfill.yml',
         '.github/workflows/mlb-v8-shadow-realtime-72.yml',
         '.github/workflows/mlb-historical-supervised-v9-shadow.yml',
     ]

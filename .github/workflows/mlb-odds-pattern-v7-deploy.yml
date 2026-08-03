@@ -74,13 +74,11 @@ jobs:
       - name: Build and deploy production runtime
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
-          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
           INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
         run: |
           set -euo pipefail
           aws sts get-caller-identity
           test -n "${ODDS_API_KEY_VALUE:-}"
-          test -n "${BBS_API_KEY_VALUE:-}"
           test -n "${INQSI_ADMIN_API_TOKEN_VALUE:-}"
           sam build --no-cached --build-dir .aws-sam-runtime --template-file template.yaml
           TEMPLATE_SHA256=$(sha256sum template.yaml | awk '{print $1}')
@@ -92,7 +90,6 @@ jobs:
             --resolve-s3 --force-upload --no-confirm-changeset --no-fail-on-empty-changeset \
             --parameter-overrides \
               "OddsApiKey=${ODDS_API_KEY_VALUE}" \
-              "BbsApiKey=${BBS_API_KEY_VALUE}" \
               "InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}" \
               "DeployGitSha=${GITHUB_SHA}" \
               "DeployTemplateSha256=${TEMPLATE_SHA256}" \
