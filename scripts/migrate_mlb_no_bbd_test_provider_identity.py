@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Add the deploy-identity verifier to isolated no-BBD test fixtures."""
+"""Add the deploy-identity verifier to isolated no-BBD test fixtures.
+
+The synthetic verifier is deliberately credential-free; tests should fail if
+active deploy identity source reintroduces a retired provider token.
+"""
 from __future__ import annotations
 
 import argparse
