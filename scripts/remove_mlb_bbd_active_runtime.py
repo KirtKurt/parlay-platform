@@ -14,6 +14,25 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "template.yaml"
 DEPLOY = ROOT / ".github" / "workflows" / "deploy.yml"
+ACTIVE_WORKFLOW_PATHS = (
+    Path(".github/workflows/deploy.yml"),
+    Path(".github/workflows/deploy-mlb-ranked-v15-10.yml"),
+    Path(".github/workflows/mlb-backend-full-recovery.yml"),
+    Path(".github/workflows/mlb-historical-optimizer.yml"),
+    Path(".github/workflows/mlb-odds-pattern-v7-deploy.yml"),
+    Path(".github/workflows/mlb-v8-fundamentals-deploy.yml"),
+)
+RETIRED_FUNDAMENTALS_WORKFLOW = Path(
+    ".github/workflows/mlb-v8-fundamentals-deploy.yml"
+)
+RETIRED_WORKFLOW_TOKENS = (
+    "BBS" + "_API_KEY",
+    "BBS" + "_API_SECRET_ARN",
+    "Bbs" + "ApiKey",
+    "Bbs" + "ApiSecret",
+    "verify_mlb_" + "bbs_sam_wiring.py",
+    "test_mlb_" + "bbs_status.py",
+)
 
 
 def _line(text: str, pattern: str, replacement: str = "") -> tuple[str, int]:
@@ -76,21 +95,11 @@ def _insert_no_bbd_test(text: str) -> str:
 
 
 def patch_deploy(text: str) -> str:
-    text, _ = _line(text, r"^          BBS_API_KEY_VALUE:[^\n]*\n")
-    text, _ = _line(
-        text, r"^          test -n \"\$\{BBS_API_KEY_VALUE:-\}\"[^\n]*\n"
-    )
+    text = patch_generic_workflow(text)
     text, _ = _block(
         text,
         "      - name: Verify Big Balls MLB shadow provider authentication and live schema",
         "      - name: Prove committed MLB source is canonical",
-    )
-    text, _ = _line(
-        text, r"^          python scripts/verify_mlb_bbs_sam_wiring\.py\n"
-    )
-    text, _ = _line(text, r"^            tests/unit/test_mlb_bbs_status\.py\n")
-    text, _ = _line(
-        text, r'^            "BbsApiKey=\$\{BBS_API_KEY_VALUE\}"\n'
     )
 
     marker = "          python scripts/verify_mlb_daily_pull_start_gate.py\n"
@@ -103,7 +112,63 @@ def patch_deploy(text: str) -> str:
     return _insert_no_bbd_test(text)
 
 
-def verify(template: str, deploy: str) -> list[str]:
+def patch_generic_workflow(text: str) -> str:
+    """Remove credential reads, assertions, tests and parameter overrides."""
+    kept: list[str] = []
+    for line in text.splitlines(keepends=True):
+        if any(token in line for token in RETIRED_WORKFLOW_TOKENS):
+            continue
+        kept.append(line)
+    return "".join(kept)
+
+
+def retired_fundamentals_dispatcher() -> str:
+    return """name: MLB V8 Fundamentals Compatibility Dispatcher
+
+\"on\":
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: Official/internal historical context games attempted
+        required: false
+        default: '25'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: mlb-v8-fundamentals-compatibility-dispatcher
+  cancel-in-progress: false
+
+jobs:
+  dispatch-official-context:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch active provider-neutral V8 context workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LIMIT: ${{ inputs.limit || '25' }}
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-v8-historical-context-backfill.yml \\
+            --repo \"$GITHUB_REPOSITORY\" \\
+            --ref main \\
+            --field limit=\"$LIMIT\"
+          echo \"Dispatched provider-neutral V8 context workflow with limit=$LIMIT\"
+"""
+
+
+def patch_workflow(path: Path, text: str) -> str:
+    if path == Path(".github/workflows/deploy.yml"):
+        return patch_deploy(text)
+    if path == RETIRED_FUNDAMENTALS_WORKFLOW:
+        return retired_fundamentals_dispatcher()
+    return patch_generic_workflow(text)
+
+
+def verify(template: str, workflows: dict[Path, str]) -> list[str]:
     tokens = (
         "BbsApiKey",
         "BbsApiSecret",
@@ -119,10 +184,11 @@ def verify(template: str, deploy: str) -> list[str]:
         "mlb/providers/bbs/",
     )
     errors = []
-    for name, body in (("template.yaml", template), ("deploy.yml", deploy)):
+    for name, body in (("template.yaml", template), *workflows.items()):
         for token in tokens:
             if token in body:
                 errors.append(f"retired_provider_reference:{name}:{token}")
+    deploy = workflows[Path(".github/workflows/deploy.yml")]
     if "python scripts/verify_mlb_no_bbd_runtime.py" not in deploy:
         errors.append("no_bbd_verifier_missing_from_deploy")
     if "tests/unit/test_verify_mlb_no_bbd_runtime.py" not in deploy:
@@ -136,24 +202,43 @@ def main() -> int:
     args = parser.parse_args()
 
     template_before = TEMPLATE.read_text(encoding="utf-8")
-    deploy_before = DEPLOY.read_text(encoding="utf-8")
     template_after = patch_template(template_before)
-    deploy_after = patch_deploy(deploy_before)
-    errors = verify(template_after, deploy_after)
+    workflow_before = {
+        path: (ROOT / path).read_text(encoding="utf-8") for path in ACTIVE_WORKFLOW_PATHS
+    }
+    workflow_after = {
+        path: patch_workflow(path, text) for path, text in workflow_before.items()
+    }
+    errors = verify(template_after, workflow_after)
     if errors:
         for error in errors:
             print(error)
         return 1
-    changed = template_after != template_before or deploy_after != deploy_before
+
+    changed_paths = []
+    if template_after != template_before:
+        changed_paths.append(Path("template.yaml"))
+    changed_paths.extend(
+        path for path in ACTIVE_WORKFLOW_PATHS if workflow_after[path] != workflow_before[path]
+    )
     if args.check:
-        if changed:
+        if changed_paths:
             print("active MLB runtime still requires the no-BBD migration")
+            for path in changed_paths:
+                print(f"pending_migration:{path}")
             return 1
         print("active MLB runtime is already BBD-free")
         return 0
+
     TEMPLATE.write_text(template_after, encoding="utf-8")
-    DEPLOY.write_text(deploy_after, encoding="utf-8")
-    print(f"removed BBD from active MLB runtime; changed={str(changed).lower()}")
+    for path, text in workflow_after.items():
+        (ROOT / path).write_text(text, encoding="utf-8")
+    print(
+        "removed BBD from active MLB runtime; changed="
+        + str(bool(changed_paths)).lower()
+    )
+    for path in changed_paths:
+        print(f"migrated:{path}")
     return 0
 
 
