@@ -117,13 +117,11 @@ jobs:
       - name: Verify required production secrets
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
-          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
           INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
         run: |
           set -euo pipefail
           aws sts get-caller-identity
           test -n "${ODDS_API_KEY_VALUE:-}"
-          test -n "${BBS_API_KEY_VALUE:-}"
           test -n "${INQSI_ADMIN_API_TOKEN_VALUE:-}"
       - name: Install production verification dependencies
         run: |
@@ -154,7 +152,6 @@ jobs:
         id: deploy
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
-          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
           INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
         run: |
           set -euo pipefail
@@ -171,7 +168,6 @@ jobs:
             --no-fail-on-empty-changeset \
             --parameter-overrides \
               "OddsApiKey=${ODDS_API_KEY_VALUE}" \
-              "BbsApiKey=${BBS_API_KEY_VALUE}" \
               "InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}" \
               "DeployGitSha=${GITHUB_SHA}" \
               "DeployTemplateSha256=${template_sha}" \

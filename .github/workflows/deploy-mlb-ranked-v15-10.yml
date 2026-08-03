@@ -71,13 +71,11 @@ jobs:
       - name: Verify AWS and required deployment secrets
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
-          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
           INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
         run: |
           set -euo pipefail
           aws sts get-caller-identity
           test -n "${ODDS_API_KEY_VALUE:-}" || { echo "::error::Missing ODDS_API_KEY"; exit 1; }
-          test -n "${BBS_API_KEY_VALUE:-}" || { echo "::error::Missing BBS_API_KEY"; exit 1; }
           test -n "${INQSI_ADMIN_API_TOKEN_VALUE:-}" || { echo "::error::Missing INQSI_ADMIN_API_TOKEN"; exit 1; }
 
       - name: Install verification runtime
@@ -190,7 +188,6 @@ jobs:
         id: deploy
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
-          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
           INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
           TEMPLATE_SHA: ${{ steps.identity.outputs.template_sha }}
         run: |
@@ -208,7 +205,6 @@ jobs:
             --no-fail-on-empty-changeset \
             --parameter-overrides \
               "OddsApiKey=${ODDS_API_KEY_VALUE}" \
-              "BbsApiKey=${BBS_API_KEY_VALUE}" \
               "InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}" \
               "DeployGitSha=${GITHUB_SHA}" \
               "DeployTemplateSha256=${TEMPLATE_SHA}" \

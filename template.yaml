@@ -7,10 +7,6 @@ Parameters:
     Type: String
     NoEcho: true
     Description: External odds feed key
-  BbsApiKey:
-    Type: String
-    NoEcho: true
-    Description: Big Balls Sports Data key used only by the MLB shadow-capture Lambda
   InqsiAdminApiToken:
     Type: String
     NoEcho: true
@@ -157,14 +153,6 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
-
-  BbsApiSecret:
-    Type: AWS::SecretsManager::Secret
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      Description: Big Balls Sports Data credential for source-honest MLB shadow capture
-      SecretString: !Ref BbsApiKey
 
   InqsiMembersTable:
     Type: AWS::DynamoDB::Table
@@ -622,10 +610,6 @@ Resources:
       Environment:
         Variables:
           INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken
-          BBS_API_SECRET_ARN: !Ref BbsApiSecret
-          BBS_SHADOW_CAPTURE_ENABLED: 'true'
-          BBS_SHADOW_S3_BUCKET: !Ref MLBMLArtifactsBucket
-          BBS_SHADOW_SCHEMA_VERSION: 'MLB-BBS-SHADOW-v2-canonical-bound-raw-only'
       CodeUri: hello_world/
       Handler: mlb_manual_pull_protected.lambda_handler
       Policies:
@@ -636,15 +620,6 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref PredictionsTable
         - Statement:
-            - Effect: Allow
-              Action:
-                - secretsmanager:GetSecretValue
-              Resource: !Ref BbsApiSecret
-            - Effect: Allow
-              Action:
-                - s3:GetObject
-                - s3:PutObject
-              Resource: !Sub '${MLBMLArtifactsBucket.Arn}/mlb/providers/bbs/*'
       Events:
         MLBManualPull:
           Type: Api
