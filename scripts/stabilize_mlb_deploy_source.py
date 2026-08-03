@@ -66,11 +66,10 @@ def _validate_deploy_workflow() -> None:
         "Calculate canonical deployment identity",
         "Enforce durable MLB r3 release activation before SAM deploy",
         "Deploy exact canonical source",
-        "BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}",
-        "Missing BBS_API_KEY",
+        "python scripts/verify_mlb_no_bbd_runtime.py",
+        "tests/unit/test_verify_mlb_no_bbd_runtime.py",
         'parameter_overrides=(',
         '"OddsApiKey=${ODDS_API_KEY_VALUE}"',
-        '"BbsApiKey=${BBS_API_KEY_VALUE}"',
         '"InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}"',
         '"DeployGitSha=${GITHUB_SHA}"',
         '"DeployTemplateSha256=${DEPLOY_TEMPLATE_SHA256}"',
@@ -134,6 +133,17 @@ def _validate_deploy_workflow() -> None:
     ]:
         if token not in verifier:
             missing.append(f"trainer verifier identity: {token}")
+    retired_provider_tokens = [
+        "BBS" + "_API_KEY_VALUE",
+        "Missing " + "BBS_API_KEY",
+        "Bbs" + "ApiKey",
+        "secrets." + "BBS_API_KEY",
+        "BBS" + "_API_SECRET_ARN",
+        "api." + "bigballsdata.com",
+        "verify_mlb_" + "bbs_sam_wiring.py",
+        "test_mlb_" + "bbs_status.py",
+        "mlb/providers/" + "bbs/",
+    ]
     forbidden = [
         token
         for token in [
@@ -146,6 +156,7 @@ def _validate_deploy_workflow() -> None:
             "SportsDataIoApiKey",
             "secrets.BS_API_KEY",
             "UPDATE_ROLLBACK_COMPLETE|ROLLBACK_COMPLETE",
+            *retired_provider_tokens,
         ]
         if token in text
     ]
@@ -162,7 +173,7 @@ def main() -> None:
     _patch_manual_pull()
     _patch_invariants()
     _validate_deploy_workflow()
-    print("MLB deployment source is canonical, identity-bound, and non-polluting.")
+    print("MLB deployment source is canonical, identity-bound, provider-neutral, and non-polluting.")
 
 
 if __name__ == "__main__":
