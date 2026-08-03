@@ -29,6 +29,7 @@ SOURCES = (
     "scripts/run_mlb_historical_supervised_v9_shadow_feature_aware.py",
     "scripts/run_mlb_historical_supervised_v9_shadow_v2.py",
     "scripts/resolve_mlb_historical_artifacts_bucket.py",
+    "scripts/publish_monotonic_json.py",
     "scripts/validate_mlb_v9_shadow_workflow.py",
 )
 TESTS = (
@@ -46,6 +47,8 @@ TESTS = (
     "tests/unit/test_mlb_historical_v7_selective_objective_v1.py",
     "tests/unit/test_mlb_historical_v7_selective_search_v2.py",
     "tests/unit/test_mlb_v7_v9_workflow_recovery_contract.py",
+    "tests/unit/test_mlb_pipeline_integrity_workflows.py",
+    "tests/unit/test_publish_monotonic_json.py",
     "tests/unit/test_validate_mlb_v9_shadow_workflow_identity.py",
 )
 
