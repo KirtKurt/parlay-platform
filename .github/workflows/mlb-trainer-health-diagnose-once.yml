@@ -1,13 +1,15 @@
-name: Diagnose MLB AWS Trainer Health Once
+name: Publish MLB AWS Trainer Health
 
 "on":
   workflow_dispatch:
+  schedule:
+    - cron: "23 * * * *"
 
 permissions:
   contents: write
 
 concurrency:
-  group: mlb-trainer-health-status-once
+  group: mlb-trainer-health-status
   cancel-in-progress: false
 
 jobs:
@@ -33,6 +35,16 @@ jobs:
           test -n "$TRAINER_ARN" && test "$TRAINER_ARN" != None
           aws lambda get-function-configuration --function-name "$TRAINER_ARN" --region "$AWS_REGION_VALUE" > /tmp/config.json
           aws lambda invoke --function-name "$TRAINER_ARN" --region "$AWS_REGION_VALUE" --cli-read-timeout 300 --cli-binary-format raw-in-base64-out --payload '{"sport":"mlb","mode":"status"}' /tmp/status.json > /tmp/status-meta.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          meta = json.loads(Path('/tmp/status-meta.json').read_text())
+          if meta.get('FunctionError'):
+              raise SystemExit(f"trainer status invocation failed: {meta['FunctionError']}")
+          status = json.loads(Path('/tmp/status.json').read_text())
+          if not isinstance(status, dict):
+              raise SystemExit('trainer status response must be an object')
+          PY
       - name: Publish sanitized continuity status
         run: |
           set -euo pipefail
@@ -44,7 +56,7 @@ jobs:
           status=json.loads(Path('/tmp/status.json').read_text())
           latest=status.get('latestStatus') or {}
           report={
-              'proofType':'MLB_AWS_TRAINER_CONTINUITY_STATUS_V3',
+              'proofType':'MLB_AWS_TRAINER_CONTINUITY_STATUS_V4',
               'createdAtUtc':datetime.now(timezone.utc).isoformat(),
               'runId':os.environ.get('GITHUB_RUN_ID'),
               'sourceSha':os.environ.get('GITHUB_SHA'),
@@ -63,9 +75,16 @@ jobs:
                   'ok':latest.get('ok'),
                   'status':latest.get('status'),
                   'createdAtUtc':latest.get('createdAtUtc'),
+                  'runId':latest.get('runId'),
                   'acceptedRowCount':latest.get('acceptedRowCount'),
                   'rejectedRowCount':latest.get('rejectedRowCount'),
+                  'trainingRowCount':latest.get('trainingRowCount'),
+                  'validationSampleCount':latest.get('validationSampleCount'),
+                  'walkForwardSampleCount':latest.get('walkForwardSampleCount'),
                   'canonicalSlateContinuity':latest.get('canonicalSlateContinuity'),
+                  'modelTrained':latest.get('modelTrained'),
+                  'candidateArtifact':latest.get('candidateArtifact'),
+                  'promotionDecision':latest.get('promotionDecision'),
                   'failure':latest.get('failure'),
               },
           }
