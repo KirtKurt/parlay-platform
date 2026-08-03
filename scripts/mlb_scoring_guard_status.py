@@ -22,7 +22,7 @@ import boto3
 from boto3.dynamodb.conditions import Key
 
 PROOF_TYPE = "MLB_SCORING_GUARD_READ_ONLY_PROOF"
-PROOF_VERSION = "MLB-SCORING-GUARD-v1-output-side-coverage"
+PROOF_VERSION = "MLB-SCORING-GUARD-v2-prediction-team-integrity"
 SLATE_TZ = ZoneInfo("America/New_York")
 PULL_RECORD_TYPE = "pull_run"
 PREDICTION_RECORD_TYPE = "mlb_single_game_moneyline_prediction"
@@ -267,6 +267,21 @@ def _fundamentals_state(prediction: Optional[Dict[str, Any]]) -> str:
     return "NOT_APPLIED"
 
 
+def _predicted_winner(prediction: Optional[Dict[str, Any]]) -> Any:
+    if not prediction:
+        return None
+    data = prediction.get("data") if isinstance(prediction.get("data"), dict) else prediction
+    return data.get("predictedWinner") or prediction.get("predicted_winner")
+
+
+def _prediction_team_is_valid(game: Dict[str, Any], prediction: Optional[Dict[str, Any]]) -> bool:
+    """Fail closed unless the selected winner is one of the scheduled teams."""
+    winner = _norm(_predicted_winner(prediction))
+    away = _norm(game.get("away_team") or game.get("awayTeam"))
+    home = _norm(game.get("home_team") or game.get("homeTeam"))
+    return bool(winner and away and home and winner in {away, home})
+
+
 def evaluate_slate(
     *,
     slate_date: str,
@@ -292,6 +307,7 @@ def evaluate_slate(
     games: List[Dict[str, Any]] = []
     missing_predictions: List[str] = []
     missing_movement: List[str] = []
+    invalid_prediction_teams: List[str] = []
     prediction_matches: Set[str] = set()
     movement_matches: Set[str] = set()
     fundamentals_applied = 0
@@ -302,8 +318,11 @@ def evaluate_slate(
         prediction = _matching_row(tokens, predictions)
         feature = _matching_feature(tokens, movement)
         scoreable = any(tokens & candidate for candidate in scoreable_sets)
+        prediction_team_valid = _prediction_team_is_valid(game, prediction)
         if prediction:
             prediction_matches.add(identity)
+            if not prediction_team_valid:
+                invalid_prediction_teams.append(identity)
         else:
             missing_predictions.append(identity)
         if feature:
@@ -327,7 +346,8 @@ def evaluate_slate(
             "hotDelta": (feature or {}).get("hot_delta"),
             "movementStrength": (feature or {}).get("movement_strength"),
             "predictionPresent": prediction is not None,
-            "predictedWinner": data.get("predictedWinner") or (prediction or {}).get("predicted_winner"),
+            "predictedWinner": _predicted_winner(prediction),
+            "predictedWinnerInMatchup": prediction_team_valid,
             "predictionScore": data.get("score") or (prediction or {}).get("score"),
             "confidenceTier": data.get("confidenceTier") or (prediction or {}).get("confidence_tier"),
             "fundamentalsState": state,
@@ -342,6 +362,8 @@ def evaluate_slate(
         blockers.append("INSUFFICIENT_CANONICAL_PULL_HISTORY")
     if missing_predictions:
         blockers.append("PERSISTED_WINNER_PREDICTION_COVERAGE_INCOMPLETE")
+    if invalid_prediction_teams:
+        blockers.append("PREDICTED_WINNER_NOT_IN_MATCHUP")
     if missing_movement:
         blockers.append("MOVEMENT_FEATURE_COVERAGE_INCOMPLETE")
 
@@ -368,6 +390,7 @@ def evaluate_slate(
             "scoreableGameCount": scoreable_count,
             "movementFeatureGameCount": len(movement_matches),
             "persistedPredictionGameCount": len(prediction_matches),
+            "invalidPredictionTeamCount": len(invalid_prediction_teams),
             "fundamentalsAppliedCount": fundamentals_applied,
             "fundamentalsNotAppliedOrMissingCount": max(official_count - fundamentals_applied, 0),
             "missingMovementCount": len(missing_movement),
@@ -375,6 +398,7 @@ def evaluate_slate(
         },
         "missingMovementGameIdentities": missing_movement,
         "missingPredictionGameIdentities": missing_predictions,
+        "invalidPredictionTeamGameIdentities": invalid_prediction_teams,
         "blockers": blockers,
         "games": games,
         "secretExposed": False,
