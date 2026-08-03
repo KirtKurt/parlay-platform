@@ -227,8 +227,10 @@ def verify_repository(root: Path = ROOT) -> List[str]:
                 )
         if "python scripts/verify_mlb_workflow_authority.py" not in contract:
             errors.append("production_source_contract_does_not_run_workflow_authority_verifier")
-        if "python scripts/verify_mlb_bbs_sam_wiring.py" not in contract:
-            errors.append("production_source_contract_does_not_verify_bbs_wiring")
+        if "python scripts/verify_mlb_no_bbd_runtime.py" not in contract:
+            errors.append("production_source_contract_does_not_verify_no_bbd_runtime")
+        if "tests/unit/test_verify_mlb_no_bbd_runtime.py" not in contract:
+            errors.append("production_source_contract_does_not_test_no_bbd_runtime")
         if "uses: aws-actions/setup-sam@v2" not in contract:
             errors.append("production_source_contract_does_not_install_sam_cli")
         if "sam validate --template-file template.yaml" not in contract:
@@ -572,8 +574,10 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             errors.append("canonical_deploy_retains_unsafe_inline_trainer_invoke")
         if "python scripts/verify_mlb_workflow_authority.py" not in deploy:
             errors.append("canonical_deploy_does_not_verify_retired_workflows")
-        if "python scripts/verify_mlb_bbs_sam_wiring.py" not in deploy:
-            errors.append("canonical_deploy_does_not_verify_bbs_wiring")
+        if "python scripts/verify_mlb_no_bbd_runtime.py" not in deploy:
+            errors.append("canonical_deploy_does_not_verify_no_bbd_runtime")
+        if "tests/unit/test_verify_mlb_no_bbd_runtime.py" not in deploy:
+            errors.append("canonical_deploy_does_not_test_no_bbd_runtime")
         if (
             "--expected-deploy-run-id" not in deploy
             or "steps.deploy.outputs.run_id" not in deploy
@@ -607,10 +611,12 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             or "UPDATE_ROLLBACK_COMPLETE|ROLLBACK_COMPLETE" in deploy
         ):
             errors.append("canonical_deploy_treats_terminal_rollback_as_updateable")
-        if '${{ secrets.BBS_API_KEY }}' not in deploy:
-            errors.append("canonical_deploy_does_not_consume_exact_bbs_secret")
-        if '"BbsApiKey=${BBS_API_KEY_VALUE}"' not in deploy:
-            errors.append("canonical_deploy_does_not_pass_bbs_noecho_parameter")
+        retired_secret = "${{ secrets." + "BBS" + "_API_KEY }}"
+        retired_override = "\"Bbs" + "ApiKey=${" + "BBS" + "_API_KEY_VALUE}\""
+        if retired_secret in deploy:
+            errors.append("canonical_deploy_retains_retired_provider_secret")
+        if retired_override in deploy:
+            errors.append("canonical_deploy_retains_retired_provider_parameter")
         for token in (
             "SPORTSDATAIO_API_KEY",
             "SportsDataIoApiKey",
