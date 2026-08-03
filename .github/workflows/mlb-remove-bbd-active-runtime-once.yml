@@ -8,6 +8,7 @@ name: MLB Remove Retired BBD Runtime Once
       - '.github/workflows/mlb-remove-bbd-active-runtime-once.yml'
       - 'scripts/remove_mlb_bbd_active_runtime.py'
       - 'scripts/verify_mlb_no_bbd_runtime.py'
+      - 'scripts/verify_mlb_workflow_authority.py'
       - 'tests/unit/test_verify_mlb_no_bbd_runtime.py'
       - 'template.yaml'
       - '.github/workflows/deploy.yml'
@@ -22,6 +23,7 @@ name: MLB Remove Retired BBD Runtime Once
       - '.github/workflows/mlb-remove-bbd-active-runtime-once.yml'
       - 'scripts/remove_mlb_bbd_active_runtime.py'
       - 'scripts/verify_mlb_no_bbd_runtime.py'
+      - 'scripts/verify_mlb_workflow_authority.py'
       - 'tests/unit/test_verify_mlb_no_bbd_runtime.py'
       - 'template.yaml'
       - '.github/workflows/deploy.yml'
@@ -51,7 +53,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Remove BBD from every active MLB workflow
+      - name: Remove BBD from every active MLB authority surface
         run: python scripts/remove_mlb_bbd_active_runtime.py
       - name: Verify active no-BBD runtime contract
         run: |
@@ -62,8 +64,10 @@ jobs:
           python -m py_compile \
             scripts/remove_mlb_bbd_active_runtime.py \
             scripts/verify_mlb_no_bbd_runtime.py \
+            scripts/verify_mlb_workflow_authority.py \
             scripts/run_mlb_v8_historical_context_backfill_entrypoint.py
           python scripts/remove_mlb_bbd_active_runtime.py --check
+          python scripts/verify_mlb_workflow_authority.py
       - name: Build verified migration commit
         id: migration
         run: |
@@ -76,9 +80,10 @@ jobs:
             .github/workflows/mlb-historical-optimizer.yml
             .github/workflows/mlb-odds-pattern-v7-deploy.yml
             .github/workflows/mlb-v8-fundamentals-deploy.yml
+            scripts/verify_mlb_workflow_authority.py
           )
           if git diff --quiet -- "${active_files[@]}"; then
-            echo 'All active MLB workflows are already BBD-free.'
+            echo 'All active MLB authority surfaces are already BBD-free.'
             echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
@@ -86,7 +91,7 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add "${active_files[@]}"
-          git commit -m 'Remove BBD from all active MLB workflows'
+          git commit -m 'Remove BBD from all active MLB authority surfaces'
           commit_sha=$(git rev-parse HEAD)
           echo "Verified migration commit: $commit_sha"
           echo "$commit_sha" > /tmp/no-bbd-migration-commit.txt
