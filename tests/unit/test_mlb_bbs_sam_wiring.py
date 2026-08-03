@@ -1,54 +1,40 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
-import pytest
-
-from scripts import verify_mlb_bbs_sam_wiring as wiring
+from scripts import verify_mlb_no_bbd_runtime as no_bbd
 
 
-def test_checked_in_bbs_wiring_is_shadow_only_and_least_privilege() -> None:
-    proof = wiring.verify()
-
-    assert proof["ok"] is True
-    assert proof["secretName"] == "BBS_API_KEY"
-    assert proof["credentialConsumer"] == "MLBAuditedPullFunction"
-    assert proof["shadowOnly"] is True
+ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_rejects_bbs_secret_on_public_read_lambda(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    template = wiring.TEMPLATE.read_text(encoding="utf-8")
-    public_marker = "  MLBV3ReadFunction:\n"
-    poisoned = template.replace(
-        public_marker,
-        public_marker
-        + "    Metadata:\n"
-        + "      BBS_API_SECRET_ARN: forbidden\n",
-        1,
-    )
-    candidate = tmp_path / "template.yaml"
-    candidate.write_text(poisoned, encoding="utf-8")
-    monkeypatch.setattr(wiring, "TEMPLATE", candidate)
-
-    with pytest.raises(wiring.ContractError, match="escaped|leaked"):
-        wiring.verify()
+def test_checked_in_mlb_runtime_is_provider_neutral() -> None:
+    assert no_bbd.verify_files() == []
 
 
-def test_rejects_retired_activation_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    root = tmp_path / "repo"
-    (root / ".github" / "workflows").mkdir(parents=True)
-    (root / "template.yaml").write_text(wiring.TEMPLATE.read_text(encoding="utf-8"), encoding="utf-8")
-    shutil.copy2(wiring.DEPLOY_WORKFLOW, root / ".github" / "workflows" / "deploy.yml")
-    retired = root / wiring.RETIRED_ACTIVATION_PATHS[0]
-    retired.write_text("name: forbidden\n", encoding="utf-8")
-    monkeypatch.setattr(wiring, "ROOT", root)
-    monkeypatch.setattr(wiring, "TEMPLATE", root / "template.yaml")
-    monkeypatch.setattr(wiring, "DEPLOY_WORKFLOW", root / ".github" / "workflows" / "deploy.yml")
+def test_canonical_template_has_no_retired_bbs_surface() -> None:
+    template = (ROOT / "template.yaml").read_text(encoding="utf-8")
 
-    with pytest.raises(wiring.ContractError, match="retired provider activation"):
-        wiring.verify()
+    for token in (
+        "BbsApiKey",
+        "BbsApiSecret",
+        "BBS_API_KEY",
+        "BBS_API_SECRET_ARN",
+        "BBS_SHADOW_CAPTURE_ENABLED",
+        "api.bigballsdata.com",
+        "mlb/providers/bbs/",
+    ):
+        assert token not in template
+
+
+def test_active_deploy_uses_no_bbd_verifier_not_legacy_wiring() -> None:
+    deploy = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
+    source_contract = (
+        ROOT / ".github/workflows/mlb-production-source-contract.yml"
+    ).read_text(encoding="utf-8")
+
+    for workflow in (deploy, source_contract):
+        assert "verify_mlb_no_bbd_runtime.py" in workflow
+        assert "verify_mlb_bbs_sam_wiring.py" not in workflow
+        assert "BbsApiKey" not in workflow
+        assert "BBS_API_KEY" not in workflow

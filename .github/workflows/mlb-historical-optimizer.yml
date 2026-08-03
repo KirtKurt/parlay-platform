@@ -153,13 +153,11 @@ jobs:
       - name: Verify production deployment inputs
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
-          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
           INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
         run: |
           set -euo pipefail
           aws sts get-caller-identity
           test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
-          test -n "${BBS_API_KEY_VALUE:-}" || { echo '::error::Missing BBS_API_KEY'; exit 1; }
           test -n "${INQSI_ADMIN_API_TOKEN_VALUE:-}" || { echo '::error::Missing INQSI_ADMIN_API_TOKEN'; exit 1; }
       - name: Re-run authority regressions and build the complete production stack
         run: |
@@ -210,7 +208,6 @@ jobs:
         id: deploy
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
-          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
           INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
         run: |
           set -euo pipefail
@@ -229,7 +226,6 @@ jobs:
             --no-fail-on-empty-changeset \
             --parameter-overrides \
               "OddsApiKey=${ODDS_API_KEY_VALUE}" \
-              "BbsApiKey=${BBS_API_KEY_VALUE}" \
               "InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}" \
               "DeployGitSha=${GITHUB_SHA}" \
               "DeployTemplateSha256=${TEMPLATE_SHA256}" \
