@@ -19,6 +19,7 @@ from typing import Any, Mapping
 
 TIMESTAMP_FIELDS = (
     "createdAtUtc",
+    "completedAtUtc",
     "checkedAt",
     "generatedAtUtc",
     "stateUpdatedAtUtc",
@@ -32,7 +33,7 @@ CONTEXT_FIELDS = (
     "historicalContext",
     "historicalFundamentals",
     # Backward-compatible read support for evidence produced before the
-    # official/internal provider migration.  No provider call is made here.
+    # official/internal provider migration. No provider call is made here.
     "historicalBbsFundamentals",
 )
 APPLIED = "APPLIED"
