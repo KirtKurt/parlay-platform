@@ -44,10 +44,12 @@ def fetch_json_object(
     """Fetch one JSON object, retrying only capacity/network-class failures.
 
     Calls are strictly sequential. HTTP 429, HTTP 5xx, transport errors, and
-    truncated/invalid JSON are retried only until the supplied monotonic
-    deadline or optional attempt limit. Other HTTP statuses and valid
-    non-object payloads fail immediately because they indicate a deployment
-    contract error.
+    truncated/invalid JSON are retried until a bounded deadline. ``max_attempts``
+    applies to standalone probes; when the caller supplies an explicit shared
+    deadline, that deadline is authoritative so a transient API Gateway 504
+    cannot abort the surrounding bounded lifecycle poll after one delivery.
+    Other HTTP statuses and valid non-object payloads fail immediately because
+    they indicate a deployment contract error.
     """
 
     if not url:
@@ -61,14 +63,15 @@ def fetch_json_object(
             "probe timeout/max attempts must be positive and retry delay "
             "must be non-negative"
         )
+    shared_deadline = deadline_monotonic is not None
     deadline = (
         float(deadline_monotonic)
-        if deadline_monotonic is not None
+        if shared_deadline
         else monotonic() + max(0.0, float(max_wait_seconds))
     )
     request_headers = {
         "accept": "application/json",
-        "user-agent": "inqsi-capacity-safe-deploy-probe/1.0",
+        "user-agent": "inqsi-capacity-safe-deploy-probe/1.1",
         **dict(headers or {}),
     }
     last_transient = "transient delivery failure"
@@ -133,7 +136,14 @@ def fetch_json_object(
                 )
             return payload
 
-        if max_attempts is not None and attempt >= max_attempts:
+        # A caller-owned shared deadline bounds the whole lifecycle poll. Keep
+        # transient deliveries sequentially retrying within that same deadline;
+        # standalone probes retain their explicit attempt cap.
+        if (
+            not shared_deadline
+            and max_attempts is not None
+            and attempt >= max_attempts
+        ):
             raise TransientHttpProbeExhausted(
                 f"JSON probe attempt limit exhausted after {attempt} attempts: "
                 f"{last_transient}"
