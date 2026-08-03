@@ -5,6 +5,9 @@ control caches rule applications before permuting labels. ``install`` also upgra
 V10 research engine to the V3 portfolio gate: discovery remains development-only,
 walk-forward tests one frozen aggregate policy, the final holdout is audit-only, and an
 unpromoted policy may continue in prospective shadow without gaining production rights.
+
+Prospective shadow evidence is preserved in an append-only, deduplicated history so an
+advancing freeze boundary cannot erase earlier observed outcomes.
 """
 from __future__ import annotations
 
@@ -106,8 +109,9 @@ def permutation_control(
 
 
 def install(subject: Any) -> None:
-    """Install the cached rule control and the leakage-safe V3 portfolio wrapper."""
+    """Install cached controls, the V3 portfolio, and durable shadow history."""
     import mlb_v10_development_frozen_portfolio_v3 as portfolio_v3
+    import mlb_v10_prospective_shadow_history_v1 as prospective_history
 
     def installed(
         records: Sequence[Mapping[str, Any]],
@@ -144,18 +148,26 @@ def install(subject: Any) -> None:
         # exact tests, and individual-rule null controls. Its holdout-based registry is
         # discarded and rebuilt by V3 from the development partition only.
         base_report = original_discover(records, previous_report=None)
-        return portfolio_v3.upgrade_report(
+        report = portfolio_v3.upgrade_report(
             subject,
             records,
             base_report,
             previous_report=previous_report,
         )
+        report["prospectiveShadow"] = prospective_history.enrich_snapshot(
+            report.get("prospectiveShadow") or {},
+            previous_report,
+        )
+        report["prospectiveShadowHistoryPreserved"] = True
+        report["prospectiveShadowHistoryVersion"] = prospective_history.VERSION
+        return report
 
     def evaluate_frozen_registry(
         records: Sequence[Mapping[str, Any]],
         previous: Mapping[str, Any],
     ) -> dict[str, Any]:
-        return portfolio_v3.evaluate_frozen_registry(subject, records, previous)
+        current = portfolio_v3.evaluate_frozen_registry(subject, records, previous)
+        return prospective_history.enrich_snapshot(current, previous)
 
     subject.discover = discover
     subject.evaluate_frozen_registry = evaluate_frozen_registry
