@@ -13,6 +13,10 @@ concurrency:
   group: mlb-post-deploy-fix-verification
   cancel-in-progress: true
 
+env:
+  REPORT_PATH: runtime_reports/mlb_scoring_fix_post_deploy_latest.json
+  CANDIDATE_PATH: /tmp/mlb-scoring-fix-post-deploy-candidate.json
+
 jobs:
   verify:
     if: >-
@@ -42,6 +46,8 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Verify deployed Lambda capacity and observe one fresh scheduled pull
+        id: observe
+        continue-on-error: true
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
           TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -52,6 +58,7 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/hello_world
         run: |
           set -euo pipefail
+          rm -f "$CANDIDATE_PATH" /tmp/mlb-post-deploy-invocation.json
           python scripts/verify_mlb_postdeploy_scheduled_pull.py \
             --target-deploy-sha "$TARGET_DEPLOY_SHA" \
             --region "$AWS_REGION" \
@@ -60,6 +67,8 @@ jobs:
             --output /tmp/mlb-post-deploy-invocation.json
 
       - name: Build current full-slate scoring coverage proof
+        id: scoring
+        continue-on-error: true
         env:
           SNAPSHOTS_TABLE: parlay_platform_snapshots
           SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
@@ -73,6 +82,8 @@ jobs:
             --output runtime_reports/mlb_scoring_guard_status_latest.json
 
       - name: Check post-deploy Lambda runtime health
+        id: runtime
+        continue-on-error: true
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
@@ -82,6 +93,8 @@ jobs:
             --output runtime_reports/mlb_pull_lambda_runtime_diagnostic_latest.json
 
       - name: Build immutable cutoff-aware post-deploy acceptance proof
+        id: acceptance
+        continue-on-error: true
         env:
           TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
@@ -151,28 +164,44 @@ jobs:
               and lifecycle_disposition_complete
           )
 
-          blockers = []
+          deployment_blockers = []
+          readiness_blockers = []
           if scoring.get('guardPassed') is not True and not historical_slate_cutoff_exception:
-              blockers.append('scoring_guard_failed')
+              readiness_blockers.append('scoring_guard_not_ready')
           if invocation.get('timeoutSeconds', 0) < 600:
-              blockers.append('timeout_not_600')
+              deployment_blockers.append('timeout_not_600')
           if invocation.get('memorySizeMb', 0) < 2048:
-              blockers.append('memory_not_2048')
+              deployment_blockers.append('memory_not_2048')
           if invocation.get('deployedGitSha') != os.environ['TARGET_DEPLOY_SHA']:
-              blockers.append('deploy_sha_mismatch')
+              deployment_blockers.append('deploy_sha_mismatch')
           if not lifecycle_disposition_complete:
-              blockers.append('lifecycle_storage_disposition_incomplete')
+              deployment_blockers.append('lifecycle_storage_disposition_incomplete')
           if post_deploy_timeouts:
-              blockers.append('new_timeout_after_deploy')
+              deployment_blockers.append('new_timeout_after_deploy')
           if post_deploy_scheduled_failures:
-              blockers.append('new_scheduled_scoring_failure_after_deploy')
+              deployment_blockers.append('new_scheduled_scoring_failure_after_deploy')
+
+          deployment_healthy = not deployment_blockers
+          promotion_ready = deployment_healthy and not readiness_blockers
+          if not deployment_healthy:
+              status = 'DEPLOYMENT_UNHEALTHY'
+          elif promotion_ready:
+              status = 'DEPLOYMENT_HEALTHY_READINESS_PASSED'
+          else:
+              status = 'DEPLOYMENT_HEALTHY_READINESS_GATED'
 
           report = {
-              'ok': not blockers,
+              'ok': deployment_healthy,
               'proofType': 'MLB_SCORING_FIX_POST_DEPLOY_ACCEPTANCE',
-              'version': 'MLB-SCORING-FIX-POST-DEPLOY-v2-cutoff-aware',
+              'version': 'MLB-SCORING-FIX-POST-DEPLOY-v3-health-readiness-separated',
               'createdAtUtc': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+              'runId': os.environ.get('GITHUB_RUN_ID'),
+              'sourceSha': os.environ.get('GITHUB_SHA'),
               'deployedCommit': os.environ['TARGET_DEPLOY_SHA'],
+              'status': status,
+              'deploymentHealthy': deployment_healthy,
+              'promotionReady': promotion_ready,
+              'productionAuthorityChanged': False,
               'lambdaConfiguration': invocation,
               'scoringGuardPassed': scoring.get('guardPassed') is True,
               'scoringSummary': scoring.get('summary'),
@@ -186,14 +215,63 @@ jobs:
               'postDeployTimeouts': post_deploy_timeouts,
               'postDeployScheduledFailureCount': len(post_deploy_scheduled_failures),
               'postDeployScheduledFailures': post_deploy_scheduled_failures,
-              'blockers': blockers,
+              'deploymentBlockers': deployment_blockers,
+              'readinessBlockers': readiness_blockers,
+              'blockers': deployment_blockers + readiness_blockers,
               'secretExposed': False,
           }
-          path = Path('runtime_reports/mlb_scoring_fix_post_deploy_latest.json')
-          path.write_text(json.dumps(report, indent=2, sort_keys=True, default=str) + '\n', encoding='utf-8')
-          if blockers:
-              raise SystemExit('MLB post-deploy acceptance failed: ' + json.dumps(blockers))
+          Path(os.environ['CANDIDATE_PATH']).write_text(
+              json.dumps(report, indent=2, sort_keys=True, default=str) + '\n',
+              encoding='utf-8',
+          )
+          if deployment_blockers:
+              raise SystemExit('MLB deployment health verification failed: ' + json.dumps(deployment_blockers))
           PY
+
+      - name: Ensure durable post-deploy evidence
+        if: always()
+        env:
+          TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          OBSERVE_OUTCOME: ${{ steps.observe.outcome }}
+          SCORING_OUTCOME: ${{ steps.scoring.outcome }}
+          RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}
+          ACCEPTANCE_OUTCOME: ${{ steps.acceptance.outcome }}
+        run: |
+          set -euo pipefail
+          if test ! -s "$CANDIDATE_PATH"; then
+            python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          outcomes={
+              'scheduledPullObservation':os.environ.get('OBSERVE_OUTCOME'),
+              'scoringStatus':os.environ.get('SCORING_OUTCOME'),
+              'runtimeDiagnostic':os.environ.get('RUNTIME_OUTCOME'),
+              'acceptanceBuild':os.environ.get('ACCEPTANCE_OUTCOME'),
+          }
+          report={
+              'ok':False,
+              'proofType':'MLB_SCORING_FIX_POST_DEPLOY_ACCEPTANCE',
+              'version':'MLB-SCORING-FIX-POST-DEPLOY-v3-health-readiness-separated',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat().replace('+00:00','Z'),
+              'runId':os.environ.get('GITHUB_RUN_ID'),
+              'sourceSha':os.environ.get('GITHUB_SHA'),
+              'deployedCommit':os.environ.get('TARGET_DEPLOY_SHA'),
+              'status':'DEPLOYMENT_HEALTH_UNVERIFIED',
+              'deploymentHealthy':False,
+              'promotionReady':False,
+              'productionAuthorityChanged':False,
+              'deploymentBlockers':['post_deploy_verification_incomplete'],
+              'readinessBlockers':[],
+              'blockers':['post_deploy_verification_incomplete'],
+              'workflowSteps':outcomes,
+              'secretExposed':False,
+          }
+          Path(os.environ['CANDIDATE_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          PY
+          fi
+          test -s "$CANDIDATE_PATH"
+          python -m json.tool "$CANDIDATE_PATH" >/dev/null
 
       - name: Upload post-deploy proof
         if: always()
@@ -201,25 +279,49 @@ jobs:
         with:
           name: mlb-scoring-fix-post-deploy-${{ github.run_id }}
           path: |
-            runtime_reports/mlb_scoring_fix_post_deploy_latest.json
+            /tmp/mlb-scoring-fix-post-deploy-candidate.json
+            /tmp/mlb-post-deploy-invocation.json
             runtime_reports/mlb_scoring_guard_status_latest.json
             runtime_reports/mlb_pull_lambda_runtime_diagnostic_latest.json
           if-no-files-found: warn
 
-      - name: Publish verified production proof
-        if: success()
+      - name: Publish post-deploy evidence atomically
+        if: always()
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add \
-            runtime_reports/mlb_scoring_fix_post_deploy_latest.json \
-            runtime_reports/mlb_scoring_guard_status_latest.json \
-            runtime_reports/mlb_pull_lambda_runtime_diagnostic_latest.json
-          if git diff --cached --quiet; then
-            echo 'No post-deploy proof change'
-          else
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-post-deploy-proof origin/main
+            git reset --hard origin/main
+            git clean -fd
+            mkdir -p runtime_reports
+            python scripts/publish_monotonic_json.py \
+              --candidate "$CANDIDATE_PATH" \
+              --existing "$REPORT_PATH" \
+              --output "$REPORT_PATH"
+            test -s "$REPORT_PATH"
+            python -m json.tool "$REPORT_PATH" >/dev/null
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
             git commit -m 'Publish MLB scoring fix post-deploy proof'
-            git pull --rebase --autostash origin main
-            git push origin HEAD:main
-          fi
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
+
+      - name: Enforce deployment health without forcing promotion readiness
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          value=json.loads(Path(os.environ['CANDIDATE_PATH']).read_text())
+          assert value.get('deploymentHealthy') is True, value
+          assert not value.get('deploymentBlockers'), value
+          assert value.get('productionAuthorityChanged') is False, value
+          if value.get('promotionReady') is not True:
+              assert value.get('status') == 'DEPLOYMENT_HEALTHY_READINESS_GATED', value
+              assert value.get('readinessBlockers'), value
+          PY
