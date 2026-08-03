@@ -48,7 +48,6 @@ def _build_module():
         game_identity=lambda game: game["game_id"],
         _diagnostic_history=full_diagnostics,
     )
-    route_patch._install_diagnostic_wrapper(fake_diagnostic_module)
 
     module = SimpleNamespace()
     module.MODEL_VERSION = "test-lock-model"
@@ -81,7 +80,16 @@ def _build_module():
 
     module._status_payload = status_payload
     module.handle = delegated_handle
-    route_patch.apply(module)
+
+    # Keep this unit test hermetic. Importing and wrapping the production
+    # per-game module here would leak a captured function across the full
+    # pytest process and bypass later test-local module construction.
+    original_import_module = route_patch.import_module
+    route_patch.import_module = lambda _name: fake_diagnostic_module
+    try:
+        route_patch.apply(module)
+    finally:
+        route_patch.import_module = original_import_module
     return module, calls
 
 
