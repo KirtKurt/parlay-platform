@@ -75,7 +75,7 @@ jobs:
       - name: Prove context evidence remains shadow-only and leakage-safe
         run: |
           set -euo pipefail
-          PYTHONPATH=scripts python - <<'PY'
+          PYTHONPATH=scripts:hello_world python - <<'PY'
           from run_mlb_v8_historical_context_backfill_entrypoint import build_failure_report
 
           report = build_failure_report(
