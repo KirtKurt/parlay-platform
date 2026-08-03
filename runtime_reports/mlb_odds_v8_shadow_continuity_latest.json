@@ -2,7 +2,7 @@
   "advancing": true,
   "authority": "SHADOW_ONLY",
   "blockers": [],
-  "createdAtUtc": "2026-08-03T07:48:48.033315+00:00",
+  "createdAtUtc": "2026-08-03T11:45:56.841237+00:00",
   "deploymentSourceSha": "957aa96aead8f90bbd83c3247e65a554c3bd9cfa",
   "identityChecks": {
     "fifteenMinuteRate": true,
@@ -15,8 +15,47 @@
     "stackScheduleEnabled": true,
     "v8Enabled": true
   },
-  "latestArtifactAgeSeconds": 797,
+  "latestArtifactAgeSeconds": 626,
   "latestScheduledArtifact": {
+    "collectedAtUtc": "2026-08-03T11:35:30.030649+00:00",
+    "contract": {
+      "alternatesEnabled": true,
+      "authority": "SHADOW_ONLY",
+      "enabled": true,
+      "eventRegions": [
+        "us",
+        "us2"
+      ],
+      "featuredMarkets": [
+        "h2h",
+        "spreads",
+        "totals"
+      ],
+      "featuredRegions": [
+        "us"
+      ],
+      "firstFiveEnabled": true,
+      "playerPropsEnabled": false,
+      "playerPropsRequireAuthoritativeTeamAttribution": true,
+      "productionV7Unchanged": true,
+      "promotionRequiresUntouchedAudit80Pct": true,
+      "teamPropsEnabled": true,
+      "version": "MLB-ODDS-MARKET-EXPANSION-v8.2-shadow-corrected"
+    },
+    "estimatedCredits": 29,
+    "eventEnrichmentErrorCount": 0,
+    "key": "mlb/odds-v8-shadow/20260803T1135300307210000/67861dde896c17d02f110ecf66705a48d4d5e1e3476d951986e087fbdd4dcac2.json",
+    "lastModifiedUtc": "2026-08-03T11:35:31+00:00",
+    "maximumCredits": 100,
+    "selectedEventCount": 2,
+    "selectedMarketRequestCount": 12,
+    "sha256": "67861dde896c17d02f110ecf66705a48d4d5e1e3476d951986e087fbdd4dcac2",
+    "withinBudget": true
+  },
+  "newArtifactCountSincePreviousProof": 16,
+  "objectCount": 786,
+  "ok": true,
+  "previousScheduledArtifact": {
     "collectedAtUtc": "2026-08-03T07:35:30.329895+00:00",
     "contract": {
       "alternatesEnabled": true,
@@ -52,51 +91,12 @@
     "sha256": "7d00d1a2d6a93d9a56523e703aed15c78dfc8e56aea5ccc0055f7ab3892a0bff",
     "withinBudget": true
   },
-  "newArtifactCountSincePreviousProof": 15,
-  "objectCount": 770,
-  "ok": true,
-  "previousScheduledArtifact": {
-    "collectedAtUtc": "2026-08-03T03:50:29.951610+00:00",
-    "contract": {
-      "alternatesEnabled": true,
-      "authority": "SHADOW_ONLY",
-      "enabled": true,
-      "eventRegions": [
-        "us",
-        "us2"
-      ],
-      "featuredMarkets": [
-        "h2h",
-        "spreads",
-        "totals"
-      ],
-      "featuredRegions": [
-        "us"
-      ],
-      "firstFiveEnabled": true,
-      "playerPropsEnabled": false,
-      "playerPropsRequireAuthoritativeTeamAttribution": true,
-      "productionV7Unchanged": true,
-      "promotionRequiresUntouchedAudit80Pct": true,
-      "teamPropsEnabled": true,
-      "version": "MLB-ODDS-MARKET-EXPANSION-v8.2-shadow-corrected"
-    },
-    "estimatedCredits": 29,
-    "eventEnrichmentErrorCount": 0,
-    "key": "mlb/odds-v8-shadow/20260803T0350299516590000/fd76bf1623857ec724037c270a4e91b8e059943b3c1587c4263ec139c4275de0.json",
-    "lastModifiedUtc": "2026-08-03T03:50:30+00:00",
-    "maximumCredits": 100,
-    "selectedEventCount": 2,
-    "selectedMarketRequestCount": 9,
-    "sha256": "fd76bf1623857ec724037c270a4e91b8e059943b3c1587c4263ec139c4275de0",
-    "withinBudget": true
-  },
   "productionAuthorityChanged": false,
   "proofType": "MLB_ODDS_V8_SHADOW_CONTINUITY",
   "ruleName": "parlay-platform-mlb-odds--ShadowCollectorFunctionSh-HRpP1fiDGc6b",
   "ruleState": "ENABLED",
-  "runId": "30794971067",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30794971067",
+  "runId": "30810795868",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30810795868",
   "runtimeChecks": {
     "authorityUnchanged": true,
     "collectedAfterPrevious": true,
@@ -111,5 +111,5 @@
   },
   "scheduleExpression": "rate(15 minutes)",
   "scheduleStatus": "ENABLED_EVERY_15_MINUTES",
-  "scheduledCollectionCount": 766
+  "scheduledCollectionCount": 782
 }
