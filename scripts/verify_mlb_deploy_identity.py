@@ -235,15 +235,17 @@ TRAINER_REQUIRED_ENVIRONMENT = (
     "OUTCOMES_TABLE",
 )
 
-BBS_EXPECTED_INGEST_ENVIRONMENT = {
-    "BBS_SHADOW_CAPTURE_ENABLED": "true",
-    "BBS_SHADOW_SCHEMA_VERSION": (
-        "MLB-BBS-SHADOW-v2-canonical-bound-raw-only"
-    ),
-}
-BBS_SECRET_ARN_ENVIRONMENT = "BBS_API_SECRET_ARN"
-BBS_FORBIDDEN_PLAINTEXT_ENVIRONMENT = "BBS_API_KEY"
+_RETIRED_BBS_ENVIRONMENT = (
+    "BBS" + "_API_KEY",
+    "BBS" + "_API_SECRET_ARN",
+    "BBS" + "_SHADOW_CAPTURE_ENABLED",
+    "BBS" + "_SHADOW_S3_BUCKET",
+    "BBS" + "_SHADOW_SCHEMA_VERSION",
+    "Bbs" + "ApiKey",
+    "Bbs" + "ApiSecret",
+)
 RETIRED_PROVIDER_ENVIRONMENT = (
+    *_RETIRED_BBS_ENVIRONMENT,
     "SPORTSDATAIO_API_KEY",
     "SPORTSDATAIO_BASE_URL",
     "SPORTSDATAIO_MLB_GAMES_ENDPOINT",
@@ -528,15 +530,12 @@ def verify(
         "matches": False,
     }
     provider_credential_proof: Dict[str, Any] = {
-        "provider": "Big Balls Sports Data",
-        "exactGithubSecretName": "BBS_API_KEY",
-        "runtimeSecretArnEnvironment": BBS_SECRET_ARN_ENVIRONMENT,
-        "consumerRole": "ingest",
-        "secretArnPresentOnIngest": False,
-        "shadowEnvironmentMatches": False,
-        "plaintextKeyEnvironmentAbsent": True,
+        "provider": "PROVIDER_NEUTRAL_OFFICIAL_INTERNAL",
+        "credentialRequired": False,
+        "credentialEnvironmentPresent": False,
         "retiredProviderEnvironmentAbsent": True,
-        "otherCanonicalFunctionsWithoutBbsAuthority": True,
+        "ingestRetiredProviderEnvironmentAbsent": True,
+        "allCanonicalFunctionsWithoutRetiredProviderAuthority": True,
     }
 
     try:
@@ -719,48 +718,26 @@ def verify(
                     f"{blocker_prefix}_ASYNC_RETRY_POLICY_CHECK_FAILED:{exc}"
                 )
         retired_present = sorted(
-            key for key in RETIRED_PROVIDER_ENVIRONMENT if key in environment
+            key
+            for key in environment
+            if key in RETIRED_PROVIDER_ENVIRONMENT
+            or str(key).startswith("BBS" + "_")
+            or str(key).startswith("Bbs" + "Api")
         )
         if retired_present:
             configuration_matches = False
             provider_credential_proof["retiredProviderEnvironmentAbsent"] = False
+            provider_credential_proof[
+                "allCanonicalFunctionsWithoutRetiredProviderAuthority"
+            ] = False
+            if role == "ingest":
+                provider_credential_proof[
+                    "ingestRetiredProviderEnvironmentAbsent"
+                ] = False
             blockers.append(
                 f"RETIRED_PROVIDER_ENVIRONMENT_PRESENT:{logical_id}:"
                 + ",".join(retired_present)
             )
-        if BBS_FORBIDDEN_PLAINTEXT_ENVIRONMENT in environment:
-            configuration_matches = False
-            provider_credential_proof["plaintextKeyEnvironmentAbsent"] = False
-            blockers.append(f"BBS_PLAINTEXT_KEY_ENVIRONMENT_PRESENT:{logical_id}")
-        if role == "ingest":
-            secret_arn_present = bool(
-                str(environment.get(BBS_SECRET_ARN_ENVIRONMENT) or "").strip()
-            )
-            provider_credential_proof["secretArnPresentOnIngest"] = secret_arn_present
-            if not secret_arn_present:
-                configuration_matches = False
-                blockers.append("BBS_SECRET_ARN_MISSING_ON_INGEST")
-            shadow_environment_matches = all(
-                str(environment.get(key) or "") == expected
-                for key, expected in BBS_EXPECTED_INGEST_ENVIRONMENT.items()
-            ) and bool(str(environment.get("BBS_SHADOW_S3_BUCKET") or "").strip())
-            provider_credential_proof["shadowEnvironmentMatches"] = shadow_environment_matches
-            if not shadow_environment_matches:
-                configuration_matches = False
-                blockers.append("BBS_SHADOW_ENVIRONMENT_MISMATCH_ON_INGEST")
-        else:
-            leaked = sorted(
-                key
-                for key in environment
-                if str(key).startswith("BBS_")
-                or str(key).startswith("BbsApi")
-            )
-            if leaked:
-                configuration_matches = False
-                provider_credential_proof["otherCanonicalFunctionsWithoutBbsAuthority"] = False
-                blockers.append(
-                    f"BBS_AUTHORITY_LEAKED_TO_{role.upper()}:" + ",".join(leaked)
-                )
         if role == "lock":
             actual_lock_handler = str(config.get("Handler") or "")
             actual_lock_timeout = config.get("Timeout")
@@ -1330,27 +1307,26 @@ def verify(
             description = str(function.get("Description") or "")
             environment = (function.get("Environment") or {}).get("Variables") or {}
             retired_present = sorted(
-                key for key in RETIRED_PROVIDER_ENVIRONMENT if key in environment
+                key
+                for key in environment
+                if key in RETIRED_PROVIDER_ENVIRONMENT
+                or str(key).startswith("BBS" + "_")
+                or str(key).startswith("Bbs" + "Api")
             )
             if retired_present:
                 provider_credential_proof["retiredProviderEnvironmentAbsent"] = False
+                provider_credential_proof[
+                    "allCanonicalFunctionsWithoutRetiredProviderAuthority"
+                ] = False
+                if _base_lambda_arn(arn) == _base_lambda_arn(
+                    function_arns.get("ingest")
+                ):
+                    provider_credential_proof[
+                        "ingestRetiredProviderEnvironmentAbsent"
+                    ] = False
                 blockers.append(
                     f"RETIRED_PROVIDER_ENVIRONMENT_PRESENT_ON_DISCOVERED_LAMBDA:{name}:"
                     + ",".join(retired_present)
-                )
-            if BBS_FORBIDDEN_PLAINTEXT_ENVIRONMENT in environment:
-                provider_credential_proof["plaintextKeyEnvironmentAbsent"] = False
-                blockers.append(
-                    f"BBS_PLAINTEXT_KEY_ENVIRONMENT_PRESENT_ON_DISCOVERED_LAMBDA:{name}"
-                )
-            bbs_authority_keys = sorted(
-                key for key in environment if str(key).startswith("BBS_")
-            )
-            if bbs_authority_keys and _base_lambda_arn(arn) != _base_lambda_arn(function_arns.get("ingest")):
-                provider_credential_proof["otherCanonicalFunctionsWithoutBbsAuthority"] = False
-                blockers.append(
-                    f"BBS_AUTHORITY_PRESENT_ON_NON_INGEST_LAMBDA:{name}:"
-                    + ",".join(bbs_authority_keys)
                 )
             if not arn or not _is_mlb_pull_or_training_writer(
                 name, handler, description

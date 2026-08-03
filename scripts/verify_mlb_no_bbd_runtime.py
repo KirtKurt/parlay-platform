@@ -30,6 +30,7 @@ ACTIVE_FILES = (
     Path(".github/workflows/deploy.yml"),
     Path(".github/workflows/mlb-v8-historical-context-backfill.yml"),
     Path("scripts/stabilize_mlb_deploy_source.py"),
+    Path("scripts/verify_mlb_deploy_identity.py"),
     Path("scripts/run_mlb_v8_historical_context_backfill_entrypoint.py"),
 )
 
