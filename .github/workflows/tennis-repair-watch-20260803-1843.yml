@@ -1,0 +1,123 @@
+name: Tennis Repair Watch 2026-08-03 1843
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/tennis-repair-watch-20260803-1843.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: tennis-repair-watch-20260803-1843
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Run isolated tennis tests
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
+          python -m py_compile \
+            tennis_learning/handler.py \
+            tennis_learning/live_pipeline.py \
+            tennis_learning/autonomous_controller.py \
+            tennis_learning/backfill.py \
+            tennis_learning/bootstrap_handler.py
+          python -m pytest -q \
+            tests/test_tennis_learning_handler.py \
+            tests/test_tennis_autonomy_contract.py \
+            tests/test_tennis_backfill_contract.py
+          sam validate --template-file tennis-template.yaml
+          git diff --check
+
+      - name: Dispatch permanent live status verifier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run publish-tennis-autonomy-status.yml --ref main
+          sleep 10
+          run_id=$(gh run list \
+            --workflow publish-tennis-autonomy-status.yml \
+            --event workflow_dispatch \
+            --branch main \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId')
+          test -n "$run_id"
+          gh run watch "$run_id" --exit-status
+
+      - name: Verify freshly published fail-closed evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            gh api repos/${GITHUB_REPOSITORY}/contents/runtime/tennis_autonomy_status.json \
+              -H 'Accept: application/vnd.github.raw+json' > /tmp/tennis-status.json
+            if CHECKED_AFTER="$GITHUB_RUN_STARTED_AT" python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          payload = json.loads(Path('/tmp/tennis-status.json').read_text())
+          checked = datetime.fromisoformat(str(payload['checked_at']).replace('Z', '+00:00')).astimezone(timezone.utc)
+          started = datetime.fromisoformat(os.environ['CHECKED_AFTER'].replace('Z', '+00:00')).astimezone(timezone.utc)
+          assert checked >= started, (checked, started)
+          assert payload.get('query_succeeded') is True, payload
+          assert payload.get('stack_status') == 'UPDATE_COMPLETE', payload
+          assert payload.get('cycle_fresh') is True, payload
+          assert payload.get('operationally_healthy') is True, payload
+          assert int(payload.get('consecutive_failures') or 0) < 3, payload
+          assert payload.get('authority') != 'DEGRADED', payload
+          assert payload.get('last_error') in (None, ''), payload
+          assert payload.get('last_warning') in (None, ''), payload
+          assert payload.get('historical_backfill_enabled') is False, payload
+          gates = payload.get('promotion_gates') or {}
+          assert gates.get('circuit_breaker_clear') is True, payload
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          PY
+            then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'Fresh tennis runtime evidence was not published' >&2
+          exit 1
+
+      - name: Record success and self-remove
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in $(seq 1 20); do
+            git fetch origin main
+            git checkout -B tennis-repair-watch-1843-publish origin/main
+            rm -f .github/workflows/tennis-repair-watch-20260803-1843.yml
+            git add .github/workflows/tennis-repair-watch-20260803-1843.yml
+            if git diff --cached --quiet; then exit 0; fi
+            git commit -m 'Record successful tennis repair verification [skip ci]'
+            if git push origin HEAD:main; then exit 0; fi
+            sleep 3
+          done
+          echo 'Unable to publish tennis verification result' >&2
+          exit 1
