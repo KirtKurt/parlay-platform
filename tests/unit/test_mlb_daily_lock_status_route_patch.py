@@ -85,7 +85,37 @@ def _build_module():
     return module, calls
 
 
-def test_post_lock_status_is_read_only_and_omits_expensive_attempt_history():
+def _assert_summary_status(response, calls):
+    body = json.loads(response["body"])
+    assert response["statusCode"] == 200
+    assert calls["delegated"] == []
+    assert calls["status"] == [SLATE]
+    assert calls["diagnostics"] == 0
+    assert body["readOnly"] is True
+    assert body["statusDetail"] == "SUMMARY"
+    assert body["attemptDiagnosticsIncluded"] is False
+    diagnostics = body["perGameStatus"][0]["attemptDiagnostics"]
+    assert diagnostics["omitted"] is True
+    assert diagnostics["omissionReason"] == "READ_ONLY_STATUS_SUMMARY"
+    assert diagnostics["attemptCount"] is None
+
+
+def test_deployed_plural_lock_status_is_read_only_and_bounded():
+    module, calls = _build_module()
+
+    response = module.handle(
+        {
+            "httpMethod": "GET",
+            "path": "/v1/mlb/locks/status",
+            "queryStringParameters": None,
+        },
+        None,
+    )
+
+    _assert_summary_status(response, calls)
+
+
+def test_legacy_post_lock_status_is_read_only_and_normalizes_current_date():
     module, calls = _build_module()
 
     response = module.handle(
@@ -102,19 +132,8 @@ def test_post_lock_status_is_read_only_and_omits_expensive_attempt_history():
         },
         None,
     )
-    body = json.loads(response["body"])
 
-    assert response["statusCode"] == 200
-    assert calls["delegated"] == []
-    assert calls["status"] == [SLATE]
-    assert calls["diagnostics"] == 0
-    assert body["readOnly"] is True
-    assert body["statusDetail"] == "SUMMARY"
-    assert body["attemptDiagnosticsIncluded"] is False
-    diagnostics = body["perGameStatus"][0]["attemptDiagnostics"]
-    assert diagnostics["omitted"] is True
-    assert diagnostics["omissionReason"] == "READ_ONLY_STATUS_SUMMARY"
-    assert diagnostics["attemptCount"] is None
+    _assert_summary_status(response, calls)
 
 
 def test_lock_status_can_explicitly_request_full_attempt_diagnostics():
@@ -123,7 +142,7 @@ def test_lock_status_can_explicitly_request_full_attempt_diagnostics():
     response = module.handle(
         {
             "httpMethod": "GET",
-            "path": "/api/mlb/lock-status",
+            "path": "/v1/mlb/locks/status",
             "queryStringParameters": {
                 "date": SLATE,
                 "includeAttemptDiagnostics": "true",
