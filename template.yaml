@@ -619,7 +619,6 @@ Resources:
             TableName: !Ref SignalLedgerTable
         - DynamoDBCrudPolicy:
             TableName: !Ref PredictionsTable
-        - Statement:
       Events:
         MLBManualPull:
           Type: Api
