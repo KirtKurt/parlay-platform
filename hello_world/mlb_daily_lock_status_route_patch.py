@@ -11,6 +11,12 @@ _INCLUDE_ATTEMPT_DIAGNOSTICS: ContextVar[bool] = ContextVar(
     default=True,
 )
 _DATE_ALIASES = {"", "current", "today", "now", "live"}
+_LOCK_STATUS_SUFFIXES = (
+    "/lock-status",
+    "/lock/status",
+    "/locks/status",
+    "/locks/today",
+)
 
 
 def _normalized_slate_date(value: Any) -> Optional[str]:
@@ -37,7 +43,7 @@ def _explicit_bool(value: Any, *, default: bool) -> bool:
 
 def _lock_status_path(path: Any) -> bool:
     normalized = "/" + str(path or "").strip().strip("/")
-    return normalized.endswith("/lock-status") or normalized.endswith("/lock/status")
+    return any(normalized.endswith(suffix) for suffix in _LOCK_STATUS_SUFFIXES)
 
 
 def _game_identity(patch_module: Any, game: Any) -> Optional[str]:
