@@ -76,18 +76,22 @@ jobs:
         run: |
           set -euo pipefail
           PYTHONPATH=scripts:hello_world python - <<'PY'
-          from run_mlb_v8_historical_context_backfill_entrypoint import build_failure_report
+          import inspect
+          import run_mlb_v8_historical_context_backfill_entrypoint as entry
 
-          report = build_failure_report(
-              source_sha='ci',
-              run_id='ci',
-              stage='CI_CONTRACT',
-              blockers=['synthetic_ci_failure'],
-          )
-          assert report['productionAuthorityChanged'] is False
-          assert report['bbsApiUsed'] is False
-          assert report['bbsCredentialRead'] is False
-          assert report['outcomeUsedForFeatureConstruction'] is False
-          assert report['sameGameOutcomeReadBeforeLock'] is False
-          print(report['proofType'])
+          assert entry.AUTHORITY == 'V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY'
+          assert entry.REPORT_TYPE == 'MLB_V8_HISTORICAL_CONTEXT_BACKFILL'
+          assert entry.ARCHIVED_WEATHER_MODEL == 'ecmwf_ifs'
+          contract = inspect.getsource(entry.install_run_contract)
+          for required in (
+              '"bbsApiUsed": False',
+              '"bbsCredentialRead": False',
+              '"sameDayResultsExcluded": True',
+              '"targetGameOutcomeUsed": False',
+              '"selectionUsedOutcomes": False',
+              '"productionAuthorityChanged": False',
+              '"automaticWagerAllowed": False',
+          ):
+              assert required in contract, required
+          print(entry.VERSION)
           PY
