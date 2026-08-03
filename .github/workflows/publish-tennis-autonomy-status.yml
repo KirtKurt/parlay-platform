@@ -39,6 +39,7 @@ jobs:
           set +e
           stack=parlay-platform-tennis-learning
           region="$AWS_REGION_VALUE"
+          stale_after_seconds=1500
           mkdir -p runtime
 
           stack_status=$(aws cloudformation describe-stacks \
@@ -79,20 +80,22 @@ jobs:
           fi
 
           if [ -z "$query_error" ] && [ -s /tmp/tennis-autonomy-live.json ]; then
-            stale=$(python - <<'PY'
+            stale=$(STALE_AFTER_SECONDS="$stale_after_seconds" python - <<'PY'
           import json
+          import os
           from datetime import datetime, timezone
           from pathlib import Path
 
           try:
               payload = json.loads(Path('/tmp/tennis-autonomy-live.json').read_text())
               raw = payload.get('last_cycle_at')
+              threshold = int(os.environ['STALE_AFTER_SECONDS'])
               if not raw:
                   print('true')
               else:
                   stamp = datetime.fromisoformat(str(raw).replace('Z', '+00:00'))
                   age = (datetime.now(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds()
-                  print('true' if age > 2700 else 'false')
+                  print('true' if age > threshold else 'false')
           except Exception:
               print('true')
           PY
@@ -134,6 +137,7 @@ jobs:
           export SELF_HEAL_SUCCEEDED="$self_heal_succeeded"
           export SELF_HEAL_ERROR="$self_heal_error"
           export CYCLE_STALE_BEFORE_REPAIR="$cycle_stale_before_repair"
+          export STALE_AFTER_SECONDS="$stale_after_seconds"
 
           python - <<'PY'
           import json
@@ -157,6 +161,8 @@ jobs:
           brier = live.get('live_brier')
           failures = int(live.get('consecutive_failures') or 0)
           authority = str(live.get('authority') or 'UNKNOWN')
+          stale_after_seconds = int(os.environ.get('STALE_AFTER_SECONDS') or 1500)
+          stale_after_minutes = stale_after_seconds / 60.0
 
           accuracy_value = float(accuracy) if accuracy is not None else None
           brier_value = float(brier) if brier is not None else None
@@ -178,7 +184,7 @@ jobs:
                       max(0.0, (now - stamp.astimezone(timezone.utc)).total_seconds() / 60.0),
                       2,
                   )
-                  cycle_fresh = cycle_age_minutes <= 45.0
+                  cycle_fresh = cycle_age_minutes <= stale_after_minutes
               except Exception:
                   pass
 
@@ -207,6 +213,8 @@ jobs:
               'live_brier': brier_value,
               'consecutive_failures': failures,
               'last_cycle_at': last_cycle,
+              'expected_cycle_cadence_minutes': 15,
+              'stale_after_minutes': stale_after_minutes,
               'cycle_age_minutes': cycle_age_minutes,
               'cycle_fresh': cycle_fresh,
               'cycle_stale_before_repair': os.environ.get('CYCLE_STALE_BEFORE_REPAIR') == 'true',
