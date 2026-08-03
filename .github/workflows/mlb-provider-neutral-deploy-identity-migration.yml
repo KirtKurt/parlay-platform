@@ -6,14 +6,17 @@ name: MLB Provider-Neutral Deploy Identity Migration
       - agent/fix-mlb-provider-neutral-deploy-identity
     paths:
       - 'scripts/migrate_mlb_deploy_identity_provider_neutral.py'
+      - 'scripts/migrate_mlb_no_bbd_test_provider_identity.py'
       - '.github/workflows/mlb-provider-neutral-deploy-identity-migration.yml'
   pull_request:
     paths:
       - 'scripts/migrate_mlb_deploy_identity_provider_neutral.py'
+      - 'scripts/migrate_mlb_no_bbd_test_provider_identity.py'
       - '.github/workflows/mlb-provider-neutral-deploy-identity-migration.yml'
       - 'scripts/verify_mlb_deploy_identity.py'
       - 'scripts/verify_mlb_no_bbd_runtime.py'
       - 'tests/unit/test_mlb_deploy_identity.py'
+      - 'tests/unit/test_verify_mlb_no_bbd_runtime.py'
   workflow_dispatch:
 
 permissions:
@@ -40,8 +43,10 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/migrate_mlb_deploy_identity_provider_neutral.py
+          python scripts/migrate_mlb_no_bbd_test_provider_identity.py
           python -m py_compile \
             scripts/migrate_mlb_deploy_identity_provider_neutral.py \
+            scripts/migrate_mlb_no_bbd_test_provider_identity.py \
             scripts/verify_mlb_deploy_identity.py \
             scripts/verify_mlb_no_bbd_runtime.py
 
@@ -53,6 +58,7 @@ jobs:
             tests/unit/test_mlb_deploy_identity.py \
             tests/unit/test_verify_mlb_no_bbd_runtime.py
           python scripts/migrate_mlb_deploy_identity_provider_neutral.py --check
+          python scripts/migrate_mlb_no_bbd_test_provider_identity.py --check
           python scripts/verify_mlb_no_bbd_runtime.py
           git diff --check
 
@@ -64,7 +70,8 @@ jobs:
           if git diff --quiet -- \
             scripts/verify_mlb_deploy_identity.py \
             scripts/verify_mlb_no_bbd_runtime.py \
-            tests/unit/test_mlb_deploy_identity.py; then
+            tests/unit/test_mlb_deploy_identity.py \
+            tests/unit/test_verify_mlb_no_bbd_runtime.py; then
             echo 'Provider-neutral deploy identity source is already committed.'
             exit 0
           fi
@@ -73,6 +80,7 @@ jobs:
           git add \
             scripts/verify_mlb_deploy_identity.py \
             scripts/verify_mlb_no_bbd_runtime.py \
-            tests/unit/test_mlb_deploy_identity.py
+            tests/unit/test_mlb_deploy_identity.py \
+            tests/unit/test_verify_mlb_no_bbd_runtime.py
           git commit -m 'Migrate MLB deploy identity to provider-neutral runtime'
           git push origin "HEAD:${BRANCH}"
