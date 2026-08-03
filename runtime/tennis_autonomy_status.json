@@ -1,132 +1,22 @@
 {
   "all_promotion_gates_pass": false,
   "authority": "SHADOW",
-  "authority_consistent": true,
   "automatic_prediction_allowed": false,
-  "checked_at": "2026-08-03T19:48:19.668393+00:00",
+  "checked_at": "2026-08-03T20:14:00.568922+00:00",
   "consecutive_failures": 0,
-  "cycle_age_before_verification_minutes": 2.89,
-  "cycle_age_minutes": 0.09,
+  "cycle_age_minutes": 13.58,
   "cycle_fresh": true,
-  "eventbridge_rules_after": [
-    {
-      "logical_id": "TennisAutonomousControllerFunctionAutonomousCycleEvery15Minutes",
-      "name": "parlay-platform-tennis-le-TennisAutonomousControlle-9H683nSFfzNn",
-      "state": "ENABLED"
-    },
-    {
-      "logical_id": "TennisHistoricalBackfillFunctionBackfillEveryHour",
-      "name": "parlay-platform-tennis-le-TennisHistoricalBackfillF-dOrardqducuL",
-      "state": "DISABLED"
-    },
-    {
-      "logical_id": "TennisLivePipelineFunctionCollectEvery15Minutes",
-      "name": "parlay-platform-tennis-le-TennisLivePipelineFunctio-Kq6L01BLSV0q",
-      "state": "ENABLED"
-    },
-    {
-      "logical_id": "TennisLivePipelineFunctionSettleEvery30Minutes",
-      "name": "parlay-platform-tennis-le-TennisLivePipelineFunctio-WhpfRnHz7nAf",
-      "state": "ENABLED"
-    }
-  ],
-  "eventbridge_rules_before": [
-    {
-      "logical_id": "TennisAutonomousControllerFunctionAutonomousCycleEvery15Minutes",
-      "name": "parlay-platform-tennis-le-TennisAutonomousControlle-9H683nSFfzNn",
-      "state": "ENABLED"
-    },
-    {
-      "logical_id": "TennisHistoricalBackfillFunctionBackfillEveryHour",
-      "name": "parlay-platform-tennis-le-TennisHistoricalBackfillF-dOrardqducuL",
-      "state": "DISABLED"
-    },
-    {
-      "logical_id": "TennisLivePipelineFunctionCollectEvery15Minutes",
-      "name": "parlay-platform-tennis-le-TennisLivePipelineFunctio-Kq6L01BLSV0q",
-      "state": "ENABLED"
-    },
-    {
-      "logical_id": "TennisLivePipelineFunctionSettleEvery30Minutes",
-      "name": "parlay-platform-tennis-le-TennisLivePipelineFunctio-WhpfRnHz7nAf",
-      "state": "ENABLED"
-    }
-  ],
+  "cycle_stale_before_repair": false,
   "historical_backfill_enabled": false,
   "historical_backfill_required": false,
-  "historical_backfill_rule_fail_closed": true,
-  "last_cycle_at": "2026-08-03T19:48:14.499388+00:00",
+  "last_cycle_at": "2026-08-03T20:00:25.832419+00:00",
   "last_error": null,
   "last_warning": null,
-  "latest_cycle_collection": {
-    "discovered_sport_keys": 3,
-    "errors": {},
-    "eventful_sport_keys": 3,
-    "events": 56,
-    "malformed": 0,
-    "model": {
-      "eligible": false,
-      "features": [
-        "market_fair_prob",
-        "elo_diff_scaled",
-        "surface_elo_diff_scaled",
-        "recent_win_rate_diff",
-        "serve_points_won_diff",
-        "return_points_won_diff",
-        "break_points_saved_diff",
-        "rest_advantage_scaled",
-        "best_of_five"
-      ],
-      "minimum_training_samples": 100,
-      "model_version": 24,
-      "persistence": "dynamodb",
-      "service": "tennis-learning",
-      "status": "learning",
-      "training_samples": 23,
-      "updated_at": "2026-08-03T19:45:21.946659+00:00"
-    },
-    "predicted": 56,
-    "skipped": 0,
-    "stored": 56,
-    "successful_sport_keys": 3
-  },
-  "latest_cycle_settlement": {
-    "duplicates": 23,
-    "errors": {},
-    "malformed": 0,
-    "missing_snapshots": 7,
-    "model": {
-      "eligible": false,
-      "features": [
-        "market_fair_prob",
-        "elo_diff_scaled",
-        "surface_elo_diff_scaled",
-        "recent_win_rate_diff",
-        "serve_points_won_diff",
-        "return_points_won_diff",
-        "break_points_saved_diff",
-        "rest_advantage_scaled",
-        "best_of_five"
-      ],
-      "minimum_training_samples": 100,
-      "model_version": 24,
-      "persistence": "dynamodb",
-      "service": "tennis-learning",
-      "status": "learning",
-      "training_samples": 23,
-      "updated_at": "2026-08-03T19:45:21.946659+00:00"
-    },
-    "score_events": 89,
-    "sport_keys": 4,
-    "successful_sport_keys": 4,
-    "trained": 0
-  },
-  "live_accuracy": 0.95652174,
-  "live_audit_count": 23,
-  "live_brier": 0.09450607,
-  "model_version": "24",
+  "live_accuracy": 0.95833333,
+  "live_audit_count": 24,
+  "live_brier": 0.09934074,
+  "model_version": "25",
   "operationally_healthy": true,
-  "progress_reason": "recent_scores_include_events_without_prior_live_snapshots",
   "promotion_gates": {
     "brier_at_most_0_25": true,
     "circuit_breaker_clear": true,
@@ -137,16 +27,12 @@
   "query_error": null,
   "query_succeeded": true,
   "reason": "insufficient_total_training_samples",
-  "repair_attempted": false,
-  "repair_error": null,
-  "repair_succeeded": true,
-  "required_eventbridge_rules_enabled": true,
-  "runtime_repairs": [],
-  "schedule_advancing_before_verification": true,
+  "self_heal_attempted": false,
+  "self_heal_error": null,
+  "self_heal_succeeded": false,
   "service": "tennis-autonomy",
-  "source_commit": "8f0619e3e06381d1f32851cecd51959463a261ba",
+  "source_commit": "affa601a536f8f341ba73d4898c4546bd9e846f0",
   "stack_status": "UPDATE_COMPLETE",
   "status_endpoint_available": true,
-  "training_samples": 23,
-  "verification_reason": "stale_repository_evidence_triggered_live_repair_verification"
+  "training_samples": 24
 }
