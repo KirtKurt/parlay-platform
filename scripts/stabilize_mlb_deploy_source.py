@@ -135,9 +135,9 @@ def _validate_deploy_workflow() -> None:
             missing.append(f"trainer verifier identity: {token}")
     retired_provider_tokens = [
         "BBS" + "_API_KEY_VALUE",
-        "Missing " + "BBS_API_KEY",
+        "Missing " + "BBS" + "_API_KEY",
         "Bbs" + "ApiKey",
-        "secrets." + "BBS_API_KEY",
+        "secrets." + "BBS" + "_API_KEY",
         "BBS" + "_API_SECRET_ARN",
         "api." + "bigballsdata.com",
         "verify_mlb_" + "bbs_sam_wiring.py",
