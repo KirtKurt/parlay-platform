@@ -12,10 +12,13 @@ name: MLB V10 Autonomous Signal Discovery
       - 'hello_world/mlb_v10_permutation_control_v2.py'
       - 'scripts/run_mlb_v10_autonomous_signal_discovery.py'
       - 'scripts/resolve_mlb_historical_artifacts_bucket.py'
+      - 'scripts/publish_monotonic_json.py'
+      - 'runtime_reports/mlb_v8_historical_context_backfill_latest.json'
       - 'tests/unit/test_mlb_v10_autonomous_signal_discovery_v1.py'
       - 'tests/unit/test_run_mlb_v10_autonomous_signal_discovery.py'
       - 'tests/unit/test_mlb_v10_permutation_control_v2.py'
       - 'tests/unit/test_resolve_mlb_historical_artifacts_bucket.py'
+      - 'tests/unit/test_publish_monotonic_json.py'
       - '.github/workflows/mlb-v10-autonomous-signal-discovery.yml'
 
 permissions:
@@ -27,6 +30,7 @@ concurrency:
 
 env:
   REPORT_PATH: runtime_reports/mlb_v10_autonomous_signal_discovery_latest.json
+  CANDIDATE_PATH: /tmp/mlb-v10-autonomous-signal-discovery-candidate.json
   TARGET_SNAPSHOTS_TABLE: parlay_platform_snapshots
   SNAPSHOTS_TABLE: parlay_platform_snapshots
 
@@ -50,7 +54,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Validate V10 implementation
+      - name: Validate V10 implementation and atomic publisher
         run: |
           set -euo pipefail
           python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
@@ -59,23 +63,26 @@ jobs:
             hello_world/mlb_v10_development_frozen_portfolio_v3.py \
             hello_world/mlb_v10_permutation_control_v2.py \
             scripts/run_mlb_v10_autonomous_signal_discovery.py \
-            scripts/resolve_mlb_historical_artifacts_bucket.py
+            scripts/resolve_mlb_historical_artifacts_bucket.py \
+            scripts/publish_monotonic_json.py
           PYTHONPATH=. python -m pytest -q --tb=short \
             tests/unit/test_mlb_v10_autonomous_signal_discovery_v1.py \
             tests/unit/test_run_mlb_v10_autonomous_signal_discovery.py \
             tests/unit/test_mlb_v10_permutation_control_v2.py \
-            tests/unit/test_resolve_mlb_historical_artifacts_bucket.py
+            tests/unit/test_resolve_mlb_historical_artifacts_bucket.py \
+            tests/unit/test_publish_monotonic_json.py
 
-      - name: Preserve prior frozen registry and clear stale output
+      - name: Preserve prior frozen registry without touching latest
         run: |
           set -euo pipefail
           mkdir -p runtime_reports
+          rm -f "$CANDIDATE_PATH"
           if test -s "$REPORT_PATH"; then
+            python -m json.tool "$REPORT_PATH" >/dev/null
             cp "$REPORT_PATH" /tmp/mlb-v10-previous.json
           else
             printf '{}\n' > /tmp/mlb-v10-previous.json
           fi
-          rm -f "$REPORT_PATH"
 
       - name: Resolve historical artifacts bucket
         id: runtime
@@ -84,7 +91,6 @@ jobs:
           AWS_EC2_METADATA_DISABLED: 'true'
         run: |
           set -uo pipefail
-          mkdir -p runtime_reports
           bucket_name=$(python scripts/resolve_mlb_historical_artifacts_bucket.py \
             --region "${{ secrets.AWS_REGION }}" \
             --json-output /tmp/mlb-v10-bucket-resolution.json)
@@ -98,7 +104,7 @@ jobs:
           fi
           exit "$status"
 
-      - name: Scrub all settled games and rebuild registry
+      - name: Scrub all settled games and rebuild candidate registry
         id: discovery
         if: steps.runtime.outputs.resolved == 'true'
         continue-on-error: true
@@ -112,16 +118,15 @@ jobs:
           PYTHONUNBUFFERED: '1'
         run: |
           set -uo pipefail
-          mkdir -p runtime_reports
           python -u scripts/run_mlb_v10_autonomous_signal_discovery.py \
-            --output "$REPORT_PATH" \
+            --output "$CANDIDATE_PATH" \
             --previous /tmp/mlb-v10-previous.json \
             2>&1 | tee /tmp/mlb-v10-discovery.log
           status=${PIPESTATUS[0]}
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
           exit "$status"
 
-      - name: Ensure fresh durable V10 evidence exists
+      - name: Ensure durable candidate or failure evidence
         if: always()
         env:
           BUCKET_RESOLVED: ${{ steps.runtime.outputs.resolved }}
@@ -131,8 +136,7 @@ jobs:
           DISCOVERY_OUTCOME: ${{ steps.discovery.outcome }}
         run: |
           set -euo pipefail
-          mkdir -p runtime_reports
-          if test ! -s "$REPORT_PATH"; then
+          if test ! -s "$CANDIDATE_PATH"; then
             python - <<'PY'
           import json, os
           from datetime import datetime, timezone
@@ -180,17 +184,21 @@ jobs:
               'bucketResolution':resolution,
               'blockers':blockers,
           }
-          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          Path(os.environ['CANDIDATE_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
           PY
           fi
-          python -m json.tool "$REPORT_PATH" >/dev/null
+          test -s "$CANDIDATE_PATH"
+          python -m json.tool "$CANDIDATE_PATH" >/dev/null
           python - <<'PY'
-          import json
+          import json, os
           from pathlib import Path
-          value=json.loads(Path('runtime_reports/mlb_v10_autonomous_signal_discovery_latest.json').read_text())
+          value=json.loads(Path(os.environ['CANDIDATE_PATH']).read_text())
           assert value.get('sourceSha'), value
           assert value.get('runId'), value
-          assert value.get('completedAtUtc'), value
+          assert value.get('completedAtUtc') or value.get('createdAtUtc') or value.get('generatedAtUtc'), value
+          assert value.get('productionAuthority') is False, value
+          assert value.get('mayWriteChampion') is False, value
+          assert value.get('mayPublishPicks') is False, value
           PY
 
       - uses: actions/upload-artifact@v4
@@ -198,25 +206,31 @@ jobs:
         with:
           name: mlb-v10-autonomous-discovery-${{ github.run_id }}
           path: |
-            runtime_reports/mlb_v10_autonomous_signal_discovery_latest.json
+            /tmp/mlb-v10-autonomous-signal-discovery-candidate.json
             /tmp/mlb-v10-previous.json
             /tmp/mlb-v10-discovery.log
             /tmp/mlb-v10-bucket-resolution.json
           retention-days: 90
           if-no-files-found: warn
 
-      - name: Publish latest V10 registry or failure evidence
+      - name: Publish latest V10 evidence atomically and monotonically
         if: always()
         run: |
           set -euo pipefail
-          cp "$REPORT_PATH" /tmp/mlb-v10-report.json
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             git checkout -B mlb-v10-discovery-proof origin/main
+            git reset --hard origin/main
+            git clean -fd
             mkdir -p runtime_reports
-            cp /tmp/mlb-v10-report.json "$REPORT_PATH"
+            python scripts/publish_monotonic_json.py \
+              --candidate "$CANDIDATE_PATH" \
+              --existing "$REPORT_PATH" \
+              --output "$REPORT_PATH"
+            test -s "$REPORT_PATH"
+            python -m json.tool "$REPORT_PATH" >/dev/null
             git add "$REPORT_PATH"
             git diff --cached --quiet && exit 0
             git commit -m 'Publish MLB V10 autonomous discovery evidence'
@@ -229,9 +243,9 @@ jobs:
         if: always()
         run: |
           python - <<'PY'
-          import json
+          import json, os
           from pathlib import Path
-          value=json.loads(Path('runtime_reports/mlb_v10_autonomous_signal_discovery_latest.json').read_text())
+          value=json.loads(Path(os.environ['CANDIDATE_PATH']).read_text())
           assert value.get('ok') is True, value
           assert value.get('mode') == 'CHRONOLOGICAL_SIDE_APPLICABLE_DISCOVERY', value
           assert value.get('version') == 'MLB-V10-AUTONOMOUS-SIGNAL-DISCOVERY-v3.0-development-frozen-portfolio', value
