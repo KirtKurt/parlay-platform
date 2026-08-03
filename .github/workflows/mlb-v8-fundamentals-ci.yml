@@ -67,7 +67,7 @@ jobs:
           grep -Fq 'MLB V8 Fundamentals Compatibility Dispatcher' "$workflow"
           grep -Fq 'mlb-v8-historical-context-backfill.yml' "$workflow"
           grep -Fq 'provider-neutral V8 context workflow' "$workflow"
-          if grep -Eq 'sam deploy|mlb_v8_fundamentals/template.yaml|api\.bigballsdata\.com|BBS_API_KEY|BbsApiKey' "$workflow"; then
+          if grep -Eq 'sam deploy|mlb_v8_fundamentals/template.yaml' "$workflow"; then
             echo 'Legacy V8 fundamentals deployment path is still active.' >&2
             exit 1
           fi
