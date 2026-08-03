@@ -2,8 +2,9 @@
 """Remove all BBD/BBS dependencies from active MLB deploy/runtime files.
 
 The migration is intentionally narrow and idempotent. Legacy provider modules may
-remain for historical artifact decoding, but no SAM resource or active GitHub
-workflow may provision, read, validate, or call the retired provider.
+remain for historical artifact decoding, but no SAM resource, active GitHub
+workflow, or production authority verifier may provision, require, validate, or
+call the retired provider.
 """
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "template.yaml"
 DEPLOY = ROOT / ".github" / "workflows" / "deploy.yml"
+WORKFLOW_AUTHORITY = ROOT / "scripts" / "verify_mlb_workflow_authority.py"
 ACTIVE_WORKFLOW_PATHS = (
     Path(".github/workflows/deploy.yml"),
     Path(".github/workflows/deploy-mlb-ranked-v15-10.yml"),
@@ -47,6 +49,14 @@ def _block(text: str, start: str, end: str) -> tuple[str, int]:
 def _exact(text: str, value: str) -> tuple[str, int]:
     count = text.count(value)
     return text.replace(value, ""), count
+
+
+def _replace_once(text: str, old: str, new: str, label: str) -> str:
+    if old in text:
+        return text.replace(old, new, 1)
+    if new in text:
+        return text
+    raise RuntimeError(f"authority_migration_marker_missing:{label}")
 
 
 def patch_template(text: str) -> str:
@@ -122,6 +132,59 @@ def patch_generic_workflow(text: str) -> str:
     return "".join(kept)
 
 
+def patch_workflow_authority(text: str) -> str:
+    """Replace stale retired-provider requirements with no-BBD authority checks."""
+    old_contract = (
+        '        if "python scripts/verify_mlb_bbs_sam_wiring.py" not in contract:\n'
+        '            errors.append("production_source_contract_does_not_verify_bbs_wiring")\n'
+    )
+    new_contract = (
+        '        if "python scripts/verify_mlb_no_bbd_runtime.py" not in contract:\n'
+        '            errors.append("production_source_contract_does_not_verify_no_bbd_runtime")\n'
+        '        if "tests/unit/test_verify_mlb_no_bbd_runtime.py" not in contract:\n'
+        '            errors.append("production_source_contract_does_not_test_no_bbd_runtime")\n'
+    )
+    text = _replace_once(text, old_contract, new_contract, "production_source_contract")
+
+    old_deploy_verifier = (
+        '        if "python scripts/verify_mlb_bbs_sam_wiring.py" not in deploy:\n'
+        '            errors.append("canonical_deploy_does_not_verify_bbs_wiring")\n'
+    )
+    new_deploy_verifier = (
+        '        if "python scripts/verify_mlb_no_bbd_runtime.py" not in deploy:\n'
+        '            errors.append("canonical_deploy_does_not_verify_no_bbd_runtime")\n'
+        '        if "tests/unit/test_verify_mlb_no_bbd_runtime.py" not in deploy:\n'
+        '            errors.append("canonical_deploy_does_not_test_no_bbd_runtime")\n'
+    )
+    text = _replace_once(
+        text,
+        old_deploy_verifier,
+        new_deploy_verifier,
+        "canonical_deploy_verifier",
+    )
+
+    old_secret_requirements = (
+        "        if '${{ secrets.BBS_API_KEY }}' not in deploy:\n"
+        '            errors.append("canonical_deploy_does_not_consume_exact_bbs_secret")\n'
+        "        if '\"BbsApiKey=${BBS_API_KEY_VALUE}\"' not in deploy:\n"
+        '            errors.append("canonical_deploy_does_not_pass_bbs_noecho_parameter")\n'
+    )
+    new_secret_requirements = (
+        '        retired_secret = "${{ secrets." + "BBS" + "_API_KEY }}"\n'
+        '        retired_override = "\\\"Bbs" + "ApiKey=${" + "BBS" + "_API_KEY_VALUE}\\\""\n'
+        '        if retired_secret in deploy:\n'
+        '            errors.append("canonical_deploy_retains_retired_provider_secret")\n'
+        '        if retired_override in deploy:\n'
+        '            errors.append("canonical_deploy_retains_retired_provider_parameter")\n'
+    )
+    return _replace_once(
+        text,
+        old_secret_requirements,
+        new_secret_requirements,
+        "canonical_deploy_secret_contract",
+    )
+
+
 def retired_fundamentals_dispatcher() -> str:
     return """name: MLB V8 Fundamentals Compatibility Dispatcher
 
@@ -168,7 +231,11 @@ def patch_workflow(path: Path, text: str) -> str:
     return patch_generic_workflow(text)
 
 
-def verify(template: str, workflows: dict[Path, str]) -> list[str]:
+def verify(
+    template: str,
+    workflows: dict[Path, str],
+    workflow_authority: str,
+) -> list[str]:
     tokens = (
         "BbsApiKey",
         "BbsApiSecret",
@@ -193,6 +260,24 @@ def verify(template: str, workflows: dict[Path, str]) -> list[str]:
         errors.append("no_bbd_verifier_missing_from_deploy")
     if "tests/unit/test_verify_mlb_no_bbd_runtime.py" not in deploy:
         errors.append("no_bbd_regression_test_missing_from_deploy")
+    for marker in (
+        "production_source_contract_does_not_verify_no_bbd_runtime",
+        "production_source_contract_does_not_test_no_bbd_runtime",
+        "canonical_deploy_does_not_verify_no_bbd_runtime",
+        "canonical_deploy_does_not_test_no_bbd_runtime",
+        "canonical_deploy_retains_retired_provider_secret",
+        "canonical_deploy_retains_retired_provider_parameter",
+    ):
+        if marker not in workflow_authority:
+            errors.append(f"provider_neutral_authority_marker_missing:{marker}")
+    for obsolete in (
+        "production_source_contract_does_not_verify_bbs_wiring",
+        "canonical_deploy_does_not_verify_bbs_wiring",
+        "canonical_deploy_does_not_consume_exact_bbs_secret",
+        "canonical_deploy_does_not_pass_bbs_noecho_parameter",
+    ):
+        if obsolete in workflow_authority:
+            errors.append(f"obsolete_provider_authority_requirement_present:{obsolete}")
     return errors
 
 
@@ -209,7 +294,9 @@ def main() -> int:
     workflow_after = {
         path: patch_workflow(path, text) for path, text in workflow_before.items()
     }
-    errors = verify(template_after, workflow_after)
+    authority_before = WORKFLOW_AUTHORITY.read_text(encoding="utf-8")
+    authority_after = patch_workflow_authority(authority_before)
+    errors = verify(template_after, workflow_after, authority_after)
     if errors:
         for error in errors:
             print(error)
@@ -221,6 +308,8 @@ def main() -> int:
     changed_paths.extend(
         path for path in ACTIVE_WORKFLOW_PATHS if workflow_after[path] != workflow_before[path]
     )
+    if authority_after != authority_before:
+        changed_paths.append(Path("scripts/verify_mlb_workflow_authority.py"))
     if args.check:
         if changed_paths:
             print("active MLB runtime still requires the no-BBD migration")
@@ -233,6 +322,7 @@ def main() -> int:
     TEMPLATE.write_text(template_after, encoding="utf-8")
     for path, text in workflow_after.items():
         (ROOT / path).write_text(text, encoding="utf-8")
+    WORKFLOW_AUTHORITY.write_text(authority_after, encoding="utf-8")
     print(
         "removed BBD from active MLB runtime; changed="
         + str(bool(changed_paths)).lower()
