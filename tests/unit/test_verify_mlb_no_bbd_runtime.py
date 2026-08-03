@@ -15,6 +15,7 @@ def _write_required_provider_neutral_files(tmp_path: Path) -> None:
             "on:\n  schedule:\n    - cron: '47 * * * *'\n"
         ),
         "scripts/stabilize_mlb_deploy_source.py": "PROVIDER_NEUTRAL = True\n",
+        "scripts/verify_mlb_deploy_identity.py": "PROVIDER_NEUTRAL = True\n",
         "scripts/run_mlb_v8_historical_context_backfill_entrypoint.py": (
             "class OfficialContextClient: pass\n"
             "PROVIDER = \"official_mlb\"\n"
