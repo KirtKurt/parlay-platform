@@ -58,6 +58,23 @@ def patch_template(text: str) -> str:
     return text
 
 
+def _insert_no_bbd_test(text: str) -> str:
+    command = "          python -m pytest -q tests/unit/test_verify_mlb_no_bbd_runtime.py\n"
+    list_entry = "            tests/unit/test_verify_mlb_no_bbd_runtime.py\n"
+    if command in text or list_entry in text:
+        return text
+
+    command_marker = "          python -m pytest -q tests/unit/test_mlb_production_acceptance.py\n"
+    if command_marker in text:
+        return text.replace(command_marker, command_marker + command, 1)
+
+    list_marker = "            tests/unit/test_mlb_production_acceptance.py\n"
+    if list_marker in text:
+        return text.replace(list_marker, list_marker + list_entry, 1)
+
+    raise RuntimeError("deploy_test_insertion_marker_missing")
+
+
 def patch_deploy(text: str) -> str:
     text, _ = _line(text, r"^          BBS_API_KEY_VALUE:[^\n]*\n")
     text, _ = _line(
@@ -83,13 +100,7 @@ def patch_deploy(text: str) -> str:
             raise RuntimeError("deploy_validation_insertion_marker_missing")
         text = text.replace(marker, verifier + marker, 1)
 
-    test_marker = "            tests/unit/test_mlb_production_acceptance.py\n"
-    test_line = "            tests/unit/test_verify_mlb_no_bbd_runtime.py\n"
-    if test_line not in text:
-        if test_marker not in text:
-            raise RuntimeError("deploy_test_insertion_marker_missing")
-        text = text.replace(test_marker, test_marker + test_line, 1)
-    return text
+    return _insert_no_bbd_test(text)
 
 
 def verify(template: str, deploy: str) -> list[str]:
