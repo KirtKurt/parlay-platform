@@ -10,6 +10,7 @@ def _write_required_provider_neutral_files(tmp_path: Path) -> None:
         ".github/workflows/mlb-v8-historical-context-backfill.yml": (
             "on:\n  schedule:\n    - cron: '47 * * * *'\n"
         ),
+        "scripts/stabilize_mlb_deploy_source.py": "PROVIDER_NEUTRAL = True\n",
         "scripts/run_mlb_v8_historical_context_backfill_entrypoint.py": (
             "class OfficialContextClient: pass\n"
             "PROVIDER = \"official_mlb\"\n"
@@ -39,6 +40,23 @@ def test_active_no_bbd_contract_rejects_secret_or_endpoint(tmp_path, monkeypatch
 
     errors = verifier.verify_files()
     assert any("active_bbd_reference:template.yaml" in error for error in errors)
+
+
+def test_active_no_bbd_contract_rejects_stale_deploy_stabilizer(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(verifier, "ROOT", tmp_path)
+    _write_required_provider_neutral_files(tmp_path)
+    forbidden = verifier.FORBIDDEN[0]
+    (tmp_path / "scripts/stabilize_mlb_deploy_source.py").write_text(
+        f"REQUIRED = [\"{forbidden}\"]\n", encoding="utf-8"
+    )
+
+    errors = verifier.verify_files()
+    assert any(
+        "active_bbd_reference:scripts/stabilize_mlb_deploy_source.py" in error
+        for error in errors
+    )
 
 
 def test_migration_workflow_name_is_accepted_but_contents_are_still_scanned(
