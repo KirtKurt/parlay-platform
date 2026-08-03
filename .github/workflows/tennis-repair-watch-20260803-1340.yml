@@ -71,12 +71,16 @@ jobs:
           test -n "$status_endpoint"; test "$status_endpoint" != None
           test -n "$run_endpoint"; test "$run_endpoint" != None
 
-          mapfile -t rules < <(aws cloudformation list-stack-resources --stack-name "$stack" --region "$region" --query "StackResourceSummaries[?ResourceType=='AWS::Events::Rule'].PhysicalResourceId" --output text | tr '\t' '\n' | sed '/^$/d')
           : > "$work/rules.tsv"
-          for rule in "${rules[@]}"; do
-            state=$(aws events describe-rule --name "$rule" --region "$region" --query State --output text)
-            printf '%s\t%s\n' "$rule" "$state" >> "$work/rules.tsv"
-          done
+          aws cloudformation list-stack-resources \
+            --stack-name "$stack" --region "$region" \
+            --query "StackResourceSummaries[?ResourceType=='AWS::Events::Rule'].[LogicalResourceId,PhysicalResourceId]" \
+            --output text > "$work/rule-identities.tsv"
+          while IFS=$'\t' read -r logical physical; do
+            [ -n "$physical" ] || continue
+            state=$(aws events describe-rule --name "$physical" --region "$region" --query State --output text)
+            printf '%s\t%s\t%s\n' "$logical" "$physical" "$state" >> "$work/rules.tsv"
+          done < "$work/rule-identities.tsv"
 
           curl -fsS --retry 4 --retry-all-errors --retry-delay 5 --max-time 60 "$status_endpoint" -o "$work/status-before.json"
           curl -fsS --retry 2 --retry-all-errors --retry-delay 10 -X POST --max-time 900 "$run_endpoint" -o "$work/run-response.json"
@@ -116,13 +120,18 @@ jobs:
           settle = actions.get('settle') if isinstance(actions.get('settle'), dict) else {}
 
           rules = []
-          path = Path(os.environ['RULES_PATH'])
-          if path.exists():
-              for line in path.read_text().splitlines():
-                  parts = line.split('\t', 1)
-                  if parts and parts[0]:
-                      rules.append({'name': parts[0], 'state': parts[1] if len(parts) > 1 else 'UNKNOWN'})
-          rules_enabled = bool(rules) and all(row['state'] == 'ENABLED' for row in rules)
+          for line in Path(os.environ['RULES_PATH']).read_text().splitlines():
+              parts = line.split('\t')
+              if len(parts) >= 3:
+                  rules.append({'logical_id': parts[0], 'name': parts[1], 'state': parts[2]})
+          required_tokens = ('CollectEvery15Minutes', 'SettleEvery30Minutes', 'AutonomousCycleEvery15Minutes')
+          required_rules = [r for r in rules if any(token in r['logical_id'] for token in required_tokens)]
+          backfill_rules = [r for r in rules if 'BackfillEveryHour' in r['logical_id']]
+          required_rules_enabled = (
+              len(required_rules) == len(required_tokens)
+              and all(r['state'] == 'ENABLED' for r in required_rules)
+          )
+          backfill_fail_closed = bool(backfill_rules) and all(r['state'] == 'DISABLED' for r in backfill_rules)
 
           training_before = int(before.get('training_samples') or 0)
           training_after = int(after.get('training_samples') or run.get('training_samples') or 0)
@@ -168,11 +177,12 @@ jobs:
               (authority == 'SHADOW' and automatic is False)
               or (authority == 'AUTHORITATIVE' and automatic is True and all_gates)
           )
-          schedule_advancing = before_age is not None and before_age <= 25.0 and rules_enabled
+          schedule_advancing = before_age is not None and before_age <= 25.0 and required_rules_enabled
           operational = (
               os.environ['STACK_STATUS'] == 'UPDATE_COMPLETE'
               and age is not None and age <= 45.0
-              and rules_enabled
+              and schedule_advancing
+              and backfill_fail_closed
               and failures < 3
               and authority_consistent
               and after.get('last_error') in (None, '')
@@ -204,7 +214,8 @@ jobs:
               'schedule_advancing_before_verification': schedule_advancing,
               'cycle_age_before_verification_minutes': before_age,
               'eventbridge_rules': rules,
-              'eventbridge_rules_enabled': rules_enabled,
+              'required_eventbridge_rules_enabled': required_rules_enabled,
+              'historical_backfill_rule_fail_closed': backfill_fail_closed,
               'verification_reason': 'scheduled_check_requested_fresh_evidence',
               'repair_attempted': before_age is None or before_age > 25.0,
               'repair_succeeded': operational,
@@ -247,7 +258,9 @@ jobs:
 
           assert status['stack_status'] == 'UPDATE_COMPLETE', status
           assert status['cycle_fresh'] is True, status
-          assert status['eventbridge_rules_enabled'] is True, status
+          assert status['schedule_advancing_before_verification'] is True, status
+          assert status['required_eventbridge_rules_enabled'] is True, status
+          assert status['historical_backfill_rule_fail_closed'] is True, status
           assert status['authority_consistent'] is True, status
           assert status['consecutive_failures'] < 3, status
           assert status['last_error'] in (None, ''), status
