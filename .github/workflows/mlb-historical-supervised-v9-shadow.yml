@@ -14,11 +14,14 @@ name: MLB Historical V7 Selective and V9 Shadow Evaluation
       - 'scripts/run_mlb_historical_supervised_v9_shadow*.py'
       - 'scripts/resolve_mlb_historical_artifacts_bucket.py'
       - 'scripts/validate_mlb_v9_shadow_workflow.py'
+      - 'scripts/publish_monotonic_json.py'
+      - 'runtime_reports/mlb_v8_historical_context_backfill_latest.json'
       - 'tests/unit/test_mlb_historical_supervised_v9*.py'
       - 'tests/unit/test_run_mlb_historical_supervised_v9_shadow*.py'
       - 'tests/unit/test_resolve_mlb_historical_artifacts_bucket.py'
       - 'tests/unit/test_mlb_historical_v7_*.py'
       - 'tests/unit/test_mlb_v7_v9_workflow_recovery_contract.py'
+      - 'tests/unit/test_publish_monotonic_json.py'
       - '.github/workflows/mlb-historical-supervised-v9-shadow.yml'
       - 'mlb_historical_optimizer/template.yaml'
   pull_request:
@@ -30,11 +33,13 @@ name: MLB Historical V7 Selective and V9 Shadow Evaluation
       - 'scripts/run_mlb_historical_supervised_v9_shadow*.py'
       - 'scripts/resolve_mlb_historical_artifacts_bucket.py'
       - 'scripts/validate_mlb_v9_shadow_workflow.py'
+      - 'scripts/publish_monotonic_json.py'
       - 'tests/unit/test_mlb_historical_supervised_v9*.py'
       - 'tests/unit/test_run_mlb_historical_supervised_v9_shadow*.py'
       - 'tests/unit/test_resolve_mlb_historical_artifacts_bucket.py'
       - 'tests/unit/test_mlb_historical_v7_*.py'
       - 'tests/unit/test_mlb_v7_v9_workflow_recovery_contract.py'
+      - 'tests/unit/test_publish_monotonic_json.py'
       - '.github/workflows/mlb-historical-supervised-v9-shadow.yml'
       - 'mlb_historical_optimizer/template.yaml'
 
@@ -49,6 +54,8 @@ env:
   STACK_NAME: parlay-platform-mlb-historical-optimizer
   REPORT_PATH: runtime_reports/mlb_historical_supervised_v9_shadow_latest.json
   HANDOFF_PATH: runtime_reports/mlb_historical_supervised_v9_candidate_handoff_latest.json
+  REPORT_CANDIDATE: /tmp/mlb-supervised-v9-report-candidate.json
+  HANDOFF_CANDIDATE: /tmp/mlb-supervised-v9-handoff-candidate.json
   VALIDATION_PATH: /tmp/mlb-v9-validation.json
   MLB_V7_SHADOW_REFIT_INCREMENT_GAMES: '50'
   MLB_V7_LIGHTWEIGHT_INCREMENT_GAMES: '25'
@@ -75,13 +82,15 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Preserve previous evidence and clear stale outputs
+      - name: Preserve previous evidence without touching latest pointers
         run: |
           set -euo pipefail
           git fetch origin main
           mkdir -p runtime_reports
           git show origin/main:"$REPORT_PATH" > /tmp/mlb-supervised-v9-previous.json 2>/dev/null || printf '{}\n' > /tmp/mlb-supervised-v9-previous.json
-          rm -f "$REPORT_PATH" "$HANDOFF_PATH" "$VALIDATION_PATH"
+          if test ! -s /tmp/mlb-supervised-v9-previous.json; then printf '{}\n' > /tmp/mlb-supervised-v9-previous.json; fi
+          python -m json.tool /tmp/mlb-supervised-v9-previous.json >/dev/null
+          rm -f "$REPORT_CANDIDATE" "$HANDOFF_CANDIDATE" "$VALIDATION_PATH"
 
       - name: Validate V9 implementation with durable diagnostics
         id: validation
@@ -194,14 +203,14 @@ jobs:
         run: |
           set -uo pipefail
           python scripts/run_mlb_historical_supervised_v9_shadow_v2.py \
-            --output "$REPORT_PATH" \
+            --output "$REPORT_CANDIDATE" \
             --previous-report /tmp/mlb-supervised-v9-previous.json \
-            --handoff-output "$HANDOFF_PATH" 2>&1 | tee /tmp/mlb-supervised-v9-shadow.log
+            --handoff-output "$HANDOFF_CANDIDATE" 2>&1 | tee /tmp/mlb-supervised-v9-shadow.log
           status=${PIPESTATUS[0]}
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
           exit "$status"
 
-      - name: Ensure fresh durable V9 evidence exists
+      - name: Ensure fresh durable V9 candidate evidence exists
         if: always()
         env:
           VALIDATION_OUTCOME: ${{ steps.validation.outcome }}
@@ -224,7 +233,7 @@ jobs:
               try: return json.loads(p.read_text())
               except Exception as exc: return {'ok':False,'parseError':str(exc)}
 
-          report_path=Path(os.environ['REPORT_PATH'])
+          report_path=Path(os.environ['REPORT_CANDIDATE'])
           current=load(report_path)
           fresh=(str(current.get('runId')) == str(os.environ.get('GITHUB_RUN_ID')) and current.get('sourceSha') == os.environ.get('GITHUB_SHA'))
           if fresh:
@@ -273,15 +282,20 @@ jobs:
           report_path.parent.mkdir(parents=True,exist_ok=True)
           report_path.write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
           PY
-          python -m json.tool "$REPORT_PATH" >/dev/null
+          test -s "$REPORT_CANDIDATE"
+          python -m json.tool "$REPORT_CANDIDATE" >/dev/null
+          if test -e "$HANDOFF_CANDIDATE"; then
+            test -s "$HANDOFF_CANDIDATE"
+            python -m json.tool "$HANDOFF_CANDIDATE" >/dev/null
+          fi
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: mlb-historical-v7-v9-${{ github.run_id }}
           path: |
-            runtime_reports/mlb_historical_supervised_v9_shadow_latest.json
-            runtime_reports/mlb_historical_supervised_v9_candidate_handoff_latest.json
+            /tmp/mlb-supervised-v9-report-candidate.json
+            /tmp/mlb-supervised-v9-handoff-candidate.json
             /tmp/mlb-v9-validation.json
             /tmp/mlb-v9-validation.log
             /tmp/mlb-supervised-v9-previous.json
@@ -290,23 +304,32 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
 
-      - name: Publish durable evidence from main-only runs
+      - name: Publish durable evidence atomically from main-only runs
         if: always() && github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          cp "$REPORT_PATH" /tmp/mlb-supervised-v9-report.json
-          test ! -f "$HANDOFF_PATH" || cp "$HANDOFF_PATH" /tmp/mlb-supervised-v9-handoff.json
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             git checkout -B mlb-supervised-v9-proof origin/main
             git reset --hard origin/main
             git clean -fd
             mkdir -p runtime_reports
-            cp /tmp/mlb-supervised-v9-report.json "$REPORT_PATH"
-            test ! -f /tmp/mlb-supervised-v9-handoff.json || cp /tmp/mlb-supervised-v9-handoff.json "$HANDOFF_PATH"
-            git add runtime_reports/
+            python scripts/publish_monotonic_json.py \
+              --candidate "$REPORT_CANDIDATE" \
+              --existing "$REPORT_PATH" \
+              --output "$REPORT_PATH"
+            if test -s "$HANDOFF_CANDIDATE"; then
+              python scripts/publish_monotonic_json.py \
+                --candidate "$HANDOFF_CANDIDATE" \
+                --existing "$HANDOFF_PATH" \
+                --output "$HANDOFF_PATH"
+            fi
+            test -s "$REPORT_PATH"
+            python -m json.tool "$REPORT_PATH" >/dev/null
+            git add "$REPORT_PATH"
+            if test -s "$HANDOFF_PATH"; then git add "$HANDOFF_PATH"; fi
             git diff --cached --quiet && exit 0
             git commit -m 'Publish gated MLB V7/V9 shadow learning evidence'
             git push origin HEAD:main && exit 0
@@ -320,7 +343,7 @@ jobs:
           python - <<'PY'
           import json, os
           from pathlib import Path
-          value=json.loads(Path(os.environ['REPORT_PATH']).read_text())
+          value=json.loads(Path(os.environ['REPORT_CANDIDATE']).read_text())
           assert str(value.get('runId')) == str(os.environ.get('GITHUB_RUN_ID')), value
           assert value.get('sourceSha') == os.environ.get('GITHUB_SHA'), value
           assert value.get('ok') is True, value
@@ -335,7 +358,7 @@ jobs:
               assert set(view.get('bandThresholds') or {}) == {'MLB_STRONG','MLB_LEAN','PASS'}, (name, view)
               assert set(view.get('byBand') or {}) == {'MLB_STRONG','MLB_LEAN','PASS'}, (name, view)
           if value.get('shadowRefitPerformed') is True:
-              handoff=json.loads(Path(os.environ['HANDOFF_PATH']).read_text())
+              handoff=json.loads(Path(os.environ['HANDOFF_CANDIDATE']).read_text())
               assert handoff.get('artifactVersion') == 'MLB-V9-SHADOW-MODEL-ARTIFACT-v1', handoff
               assert handoff.get('artifactType') == 'FROZEN_SHADOW_MODEL', handoff
               assert handoff.get('policy') and handoff.get('modelDigest') and handoff.get('digest'), handoff
