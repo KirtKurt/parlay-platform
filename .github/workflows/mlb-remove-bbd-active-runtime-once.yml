@@ -64,7 +64,8 @@ jobs:
             scripts/verify_mlb_no_bbd_runtime.py \
             scripts/run_mlb_v8_historical_context_backfill_entrypoint.py
           python scripts/remove_mlb_bbd_active_runtime.py --check
-      - name: Commit migrated active files
+      - name: Build verified migration commit
+        id: migration
         run: |
           set -euo pipefail
           active_files=(
@@ -78,10 +79,32 @@ jobs:
           )
           if git diff --quiet -- "${active_files[@]}"; then
             echo 'All active MLB workflows are already BBD-free.'
+            echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add "${active_files[@]}"
           git commit -m 'Remove BBD from all active MLB workflows'
-          git push origin HEAD:agent/mlb-remove-bbd-and-fix-blockers-20260802
+          commit_sha=$(git rev-parse HEAD)
+          echo "Verified migration commit: $commit_sha"
+          echo "$commit_sha" > /tmp/no-bbd-migration-commit.txt
+          git format-patch -1 --stdout > /tmp/no-bbd-migration.patch
+          echo "commit_sha=$commit_sha" >> "$GITHUB_OUTPUT"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          if git push origin HEAD:agent/mlb-remove-bbd-and-fix-blockers-20260802; then
+            echo 'Migration commit pushed directly.'
+          else
+            echo '::warning::Actions token cannot update workflow files; use the connected GitHub app to move the branch ref to the verified commit SHA.'
+          fi
+      - name: Upload verified migration commit and patch
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-no-bbd-migration-${{ github.run_id }}
+          path: |
+            /tmp/no-bbd-migration-commit.txt
+            /tmp/no-bbd-migration.patch
+          retention-days: 30
+          if-no-files-found: warn
