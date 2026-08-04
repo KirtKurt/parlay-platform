@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
 """Publish a latest JSON pointer without truncation or stale-run rollback.
 
-Recurring MLB workflows race each other after rebasing onto ``main``.  This
+Recurring MLB workflows race each other after rebasing onto ``main``. This
 module keeps the latest pointer monotonic, preserves the last valid document
 when a producer fails, and replaces files atomically so an interrupted copy can
 never leave an empty or partially written report.
+
+The V9 workflow intentionally uploads its complete per-game diagnostic report
+as a retained Actions artifact before publishing the repository's ``latest``
+pointer. The repository pointer is compacted to bounded representative rows so
+hourly no-change runs do not repeatedly commit a multi-megabyte document.
+Aggregate metrics, all daily summaries, row counts, authority fields, and the
+candidate handoff remain intact.
 """
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import shutil
@@ -37,6 +45,9 @@ CONTEXT_FIELDS = (
     "historicalBbsFundamentals",
 )
 APPLIED = "APPLIED"
+V9_LATEST_POINTER_NAME = "mlb_historical_supervised_v9_shadow_latest.json"
+V9_POINTER_COMPACTION_VERSION = "MLB-V9-LATEST-POINTER-COMPACTION-v1"
+V9_PUBLISHED_GAME_ROW_LIMIT = 100
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -180,6 +191,75 @@ def candidate_is_newer(candidate: Mapping[str, Any], current: Mapping[str, Any])
     return False
 
 
+def compact_latest_pointer(
+    value: Mapping[str, Any],
+    output_path: Path,
+    *,
+    v9_game_row_limit: int = V9_PUBLISHED_GAME_ROW_LIMIT,
+) -> dict[str, Any]:
+    """Return the bounded repository pointer; never mutate the full candidate."""
+
+    result = copy.deepcopy(dict(value))
+    if output_path.name != V9_LATEST_POINTER_NAME:
+        return result
+    if v9_game_row_limit < 0:
+        raise ValueError("V9 published game-row limit must be non-negative")
+
+    diagnostics = result.get("diagnosticSelectedPickBands")
+    total_untruncated = 0
+    total_published = 0
+    source_runs: set[str] = set()
+    compacted_views = 0
+    if isinstance(diagnostics, Mapping):
+        for name, raw_view in diagnostics.items():
+            if not isinstance(raw_view, Mapping):
+                continue
+            view = dict(raw_view)
+            games = list(view.get("games") or [])
+            untruncated = max(
+                len(games),
+                _integer(view.get("untruncatedRowCount")),
+                _integer(view.get("gameCount")),
+            )
+            source_run = str(
+                view.get("fullGameRowsSourceRunId")
+                or result.get("runId")
+                or "unknown"
+            )
+            published_games = games[:v9_game_row_limit]
+            view["games"] = published_games
+            view["publishedGameRowCount"] = len(published_games)
+            view["publishedGameRowLimit"] = v9_game_row_limit
+            view["publishedGamesTruncated"] = untruncated > len(published_games)
+            view["fullGameRowsAvailableInWorkflowArtifact"] = True
+            view["fullGameRowsSourceRunId"] = source_run
+            diagnostics[name] = view
+            total_untruncated += untruncated
+            total_published += len(published_games)
+            source_runs.add(source_run)
+            compacted_views += 1
+
+    artifact_names = [
+        f"mlb-historical-v7-v9-{run_id}"
+        for run_id in sorted(source_runs)
+        if run_id and run_id != "unknown"
+    ]
+    result["latestPointerCompaction"] = {
+        "version": V9_POINTER_COMPACTION_VERSION,
+        "diagnosticViewCount": compacted_views,
+        "untruncatedDiagnosticGameRowCount": total_untruncated,
+        "publishedDiagnosticGameRowCount": total_published,
+        "publishedGameRowLimitPerView": v9_game_row_limit,
+        "aggregateMetricsPreserved": True,
+        "dailySummariesPreserved": True,
+        "candidateHandoffPreserved": True,
+        "fullEvidenceRetainedAsWorkflowArtifact": True,
+        "fullEvidenceArtifactNames": artifact_names,
+        "productionAuthorityChanged": False,
+    }
+    return result
+
+
 def _atomic_copy_json(source: Path, destination: Path) -> None:
     """Copy one validated JSON object and atomically replace the destination."""
     _read(source)
@@ -206,6 +286,44 @@ def _atomic_copy_json(source: Path, destination: Path) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
+def _atomic_write_json(value: Mapping[str, Any], destination: Path) -> None:
+    """Serialize one JSON object and atomically replace the destination."""
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            dir=destination.parent,
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            json.dump(value, temporary, indent=2, sort_keys=True, default=str)
+            temporary.write("\n")
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        _read(temporary_path)
+        os.replace(temporary_path, destination)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def _publish_selected(
+    value: Mapping[str, Any], source: Path, destination: Path
+) -> bool:
+    compacted = compact_latest_pointer(value, destination)
+    if compacted == dict(value):
+        _atomic_copy_json(source, destination)
+        return False
+    _atomic_write_json(compacted, destination)
+    return True
+
+
 def publish(candidate_path: Path, existing_path: Path, output_path: Path) -> dict[str, Any]:
     candidate = _read(candidate_path)
     candidate_timestamp = evidence_time(candidate)
@@ -219,14 +337,16 @@ def publish(candidate_path: Path, existing_path: Path, output_path: Path) -> dic
     )
     rejection_reason = evidence_regression_reason(candidate, current) if current else None
     selected = not current or candidate_is_newer(candidate, current)
+    compacted = False
 
     if selected:
-        _atomic_copy_json(candidate_path, output_path)
+        compacted = _publish_selected(candidate, candidate_path, output_path)
     elif output_path.resolve() != existing_path.resolve():
-        _atomic_copy_json(existing_path, output_path)
+        compacted = _publish_selected(current, existing_path, output_path)
 
     return {
         "published": selected,
+        "compactedForLatestPointer": compacted,
         "rejectionReason": rejection_reason,
         "candidateTimestamp": candidate_timestamp.isoformat(),
         "existingTimestamp": (
