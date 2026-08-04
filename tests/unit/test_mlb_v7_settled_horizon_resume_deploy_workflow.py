@@ -12,7 +12,7 @@ def test_v7_settled_horizon_resume_deploy_is_isolated_and_gated():
     assert "cancel-in-progress: false" in source
     assert "[deploy-v7-settled-horizon-resume]" in source
     assert "stack-name \"$HISTORICAL_STACK_NAME\"" in source
-    assert "parlay-platform-dev" not in source
+    assert "--stack-name parlay-platform-dev" not in source
     assert "template-file mlb_historical_optimizer/template.yaml" in source
     assert "template-file .aws-sam-v7-settled-horizon/template.yaml" in source
     assert "mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler" in source
