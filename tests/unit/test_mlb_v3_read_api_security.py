@@ -10,6 +10,10 @@ from types import ModuleType
 
 
 ROOT = Path(__file__).resolve().parents[2]
+EXPECTED_API_VERSION = "MLB-V3-READ-API-v7-exact-persisted-prelock-public-read"
+EXPECTED_PRELOCK_READ_VERSION = (
+    "MLB-PERSISTED-PRELOCK-PUBLIC-READ-v2-raw-identity-decimal-safe"
+)
 
 
 def _runtime_payload(*, runtime_ok: bool) -> dict:
@@ -36,6 +40,8 @@ def _load_read_api(monkeypatch, calls, *, runtime_ok=True):
     engine.MLB_RANKED_WINNER_VERSION = "test-ranked-winner"
     engine.MLB_RANKED_WINNER_POLICY_VERSION = "test-ranked-policy"
     engine.MLB_ML_RUNTIME_INSTALL_V3 = runtime.install()
+    engine.history = ModuleType("test_history")
+    engine.history.PULLS = None
 
     def predict_all(date, *, store, limit):
         calls.append({"date": date, "store": store, "limit": limit})
@@ -92,7 +98,9 @@ def test_public_read_api_ignores_store_query_parameter(monkeypatch):
     assert calls == [{"date": "2026-07-16", "store": False, "limit": 17}]
     body = json.loads(response["body"])
     assert body["readOnly"] is True
-    assert body["apiRuntimeVersion"] == "MLB-V3-READ-API-v6-ranked-winner-v15.10"
+    assert body["apiRuntimeVersion"] == EXPECTED_API_VERSION
+    assert body["persistedPrelockPublicReadVersion"] == EXPECTED_PRELOCK_READ_VERSION
+    assert body["persistedPrelockPublicRead"]["productionAuthorityChanged"] is False
 
 
 def test_public_read_api_fails_closed_when_runtime_install_is_not_ok(monkeypatch):

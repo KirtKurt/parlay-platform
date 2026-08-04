@@ -8,6 +8,10 @@ from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 HELLO = ROOT / "hello_world"
+EXPECTED_API_VERSION = "MLB-V3-READ-API-v7-exact-persisted-prelock-public-read"
+EXPECTED_PRELOCK_READ_VERSION = (
+    "MLB-PERSISTED-PRELOCK-PUBLIC-READ-v2-raw-identity-decimal-safe"
+)
 
 
 def _load_api(runtime: dict, *, predictions=None):
@@ -19,6 +23,7 @@ def _load_api(runtime: dict, *, predictions=None):
         MLB_RANKED_WINNER_POLICY_VERSION=runtime.get("rankedWinnerPolicyVersion", "ranked-policy"),
         MODEL_VERSION="diagnostic-engine-model",
         ENGINE="diagnostic-engine",
+        history=SimpleNamespace(PULLS=None),
         read_persisted_predictions=lambda *args, **kwargs: {
             "predictions": list(predictions or []),
             "count": len(predictions or []),
@@ -101,6 +106,8 @@ def test_read_api_reports_historical_model_and_no_fallback_after_cutover():
     assert model["firstPromotionRequiresManualReview"] is False
     assert model["manualReviewCreatesShadowApprovalOnly"] is False
     assert model["runtimeAuthorityActivationAvailable"] is True
+    assert model["apiRuntimeVersion"] == EXPECTED_API_VERSION
+    assert model["persistedPrelockPublicReadVersion"] == EXPECTED_PRELOCK_READ_VERSION
 
     response = api.lambda_handler(
         {"path": "/v1/mlb/predictions", "queryStringParameters": {"date": "2026-07-24"}},
@@ -115,6 +122,9 @@ def test_read_api_reports_historical_model_and_no_fallback_after_cutover():
     assert body["automaticWagerAllowed"] is False
     assert body["predictionOnlyWagerSafetyInstalled"] is True
     assert body["rowLevelAutomaticWagerAllowed"] is False
+    assert body["apiRuntimeVersion"] == EXPECTED_API_VERSION
+    assert body["persistedPrelockPublicReadVersion"] == EXPECTED_PRELOCK_READ_VERSION
+    assert body["persistedPrelockPublicRead"]["productionAuthorityChanged"] is False
 
 
 def test_read_api_keeps_incumbent_only_in_coherent_pre_cutover_state():
@@ -125,7 +135,8 @@ def test_read_api_keeps_incumbent_only_in_coherent_pre_cutover_state():
     assert model["historicalDailyChampionActive"] is False
     assert model["historicalProductionCutoverActive"] is False
     assert model["incumbentRole"] == "active_until_historical_gate"
-    assert model["apiRuntimeVersion"] == "MLB-V3-READ-API-v6-ranked-winner-v15.10"
+    assert model["apiRuntimeVersion"] == EXPECTED_API_VERSION
+    assert model["persistedPrelockPublicReadVersion"] == EXPECTED_PRELOCK_READ_VERSION
     assert model["productionAuthoritySource"] == "mlb_ranked_winner_v15_10_active_ensemble"
     assert model["historicalApiExtensionVersion"] == api.HISTORICAL_API_EXTENSION_VERSION
     assert model["automaticPromotionPolicy"] == "winner model fixed for release; precision/trade promotion remains disabled"
