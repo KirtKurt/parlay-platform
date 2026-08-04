@@ -48,13 +48,45 @@
   "canonicalCandidateHandoff": {
     "artifactType": "FROZEN_SHADOW_MODEL",
     "artifactVersion": "MLB-V9-SHADOW-MODEL-ARTIFACT-v1",
+    "baselineUntouchedHoldoutMetrics": {
+      "brierScore": 0.2604999854865487,
+      "dailyCount": 15,
+      "dailyPassRate": 0.0,
+      "dayCount": 15,
+      "exactSlateCoverage": null,
+      "gameCount": 200,
+      "logLoss": 0.7322972952180291,
+      "meanDailyAccuracy": 0.56755519,
+      "minimumDailyAccuracy": 0.375,
+      "overallAccuracy": 0.58,
+      "sourceDigest": "ac8856139db6d975e1cb104a69d70b7262579d70d4501a395571099b7baedaf0",
+      "version": "MLB-V9-CURRENT-PARTITION-METRICS-v1"
+    },
+    "baselineWalkForwardMetrics": {
+      "brierScore": 0.27144674131054725,
+      "dailyCount": 20,
+      "dailyPassRate": 0.05,
+      "dayCount": 20,
+      "exactSlateCoverage": null,
+      "gameCount": 267,
+      "logLoss": 0.7574244349326249,
+      "meanDailyAccuracy": 0.5512629739999999,
+      "minimumDailyAccuracy": 0.0,
+      "overallAccuracy": 0.58426966,
+      "sourceDigest": "70f11803fd7155c8ca3288ef4e798d6b877f24390eb96aca67115169c89b9b75",
+      "version": "MLB-V9-CURRENT-PARTITION-METRICS-v1"
+    },
     "candidateKind": "BASELINE_FALLBACK",
-    "createdAtUtc": "2026-08-04T17:42:29.649059+00:00",
+    "createdAtUtc": "2026-08-04T18:10:54.143963+00:00",
     "datasetFingerprint": "c58923d57c4cb98fbd4c902c093a2433cd62d2c330bfbb41063d5650ae715dd7",
-    "digest": "936c1e370678de68d930093fb8599c8bd7f2ce37b71202994c253eae9e9b91de",
+    "digest": "9a0e2b5402b8b4db6f92d16cafb76741412304f516d2a8df40f55c9ed5e22c2f",
     "eligibleForCanonicalSeed": false,
     "frozenBeforeUntouchedHoldout": true,
     "holdoutLabelsUsedForFitOrSelection": false,
+    "metricEvidenceVersion": "MLB-V9-CURRENT-PARTITION-METRICS-v1",
+    "metricPartitionFingerprint": "4252089ec3bfb8a6551a3d85319091bfd3096bb7815581bf4fde1364914a7ba8",
+    "metricPublicationErrors": [],
+    "metricsCurrentPartition": true,
     "modelDigest": "1aa61cd1babd1023d55f615bb44ad8ee969b74b4d08dec02d157bd488d6b7dd9",
     "policy": {
       "acceleration180mWeight": 0.0,
@@ -239,13 +271,56 @@
     "requiresFresh200GameUntouchedAudit": true,
     "schemaVersion": "MLB-V7-SHADOW-CANDIDATE-HANDOFF-v1",
     "searchVersion": "MLB-HISTORICAL-SUPERVISED-v9.1-integrity-pattern-complete",
+    "selectedUntouchedHoldoutMetrics": {
+      "brierScore": 0.2604999854865487,
+      "dailyCount": 15,
+      "dailyPassRate": 0.0,
+      "dayCount": 15,
+      "exactSlateCoverage": null,
+      "gameCount": 200,
+      "logLoss": 0.7322972952180291,
+      "meanDailyAccuracy": 0.56755519,
+      "minimumDailyAccuracy": 0.375,
+      "overallAccuracy": 0.58,
+      "sourceDigest": "ac8856139db6d975e1cb104a69d70b7262579d70d4501a395571099b7baedaf0",
+      "version": "MLB-V9-CURRENT-PARTITION-METRICS-v1"
+    },
+    "selectedWalkForwardMetrics": {
+      "brierScore": 0.27144674131054725,
+      "dailyCount": 20,
+      "dailyPassRate": 0.05,
+      "dayCount": 20,
+      "exactSlateCoverage": null,
+      "gameCount": 267,
+      "logLoss": 0.7574244349326249,
+      "meanDailyAccuracy": 0.5512629739999999,
+      "minimumDailyAccuracy": 0.0,
+      "overallAccuracy": 0.58426966,
+      "sourceDigest": "70f11803fd7155c8ca3288ef4e798d6b877f24390eb96aca67115169c89b9b75",
+      "version": "MLB-V9-CURRENT-PARTITION-METRICS-v1"
+    },
+    "supervisedUntouchedHoldoutMetrics": null,
+    "supervisedWalkForwardMetrics": {
+      "brierScore": 0.27144674131054725,
+      "dailyCount": 20,
+      "dailyPassRate": 0.05,
+      "dayCount": 20,
+      "exactSlateCoverage": null,
+      "gameCount": 267,
+      "logLoss": 0.7574244349326249,
+      "meanDailyAccuracy": 0.5512629739999999,
+      "minimumDailyAccuracy": 0.0,
+      "overallAccuracy": 0.58426966,
+      "sourceDigest": "70f11803fd7155c8ca3288ef4e798d6b877f24390eb96aca67115169c89b9b75",
+      "version": "MLB-V9-CURRENT-PARTITION-METRICS-v1"
+    },
     "trainingGameCount": 3632,
     "untouchedHoldoutGameCount": 200,
     "walkForwardGameCount": 267
   },
   "canonicalFreshAuditIncrementGames": 250,
   "completeSlateCount": 331,
-  "createdAtUtc": "2026-08-04T17:32:48.496523+00:00",
+  "createdAtUtc": "2026-08-04T18:01:13.186786+00:00",
   "datasetFingerprint": "c58923d57c4cb98fbd4c902c093a2433cd62d2c330bfbb41063d5650ae715dd7",
   "diagnosticSelectedPickBands": {
     "allCanonicalGames": {
@@ -187949,9 +188024,41 @@
   "lastShadowFitEligibleGameCount": 4099,
   "lastShadowFitFeatureCorpusFingerprint": "18278b90b8dfcf12dc7f93e679ced6f344fc7f88a542e2bee235d234ed8848de",
   "lastShadowFitFeatureRowCount": 926,
+  "latestMetricEvidence": {
+    "candidateKind": "BASELINE_FALLBACK",
+    "metricPartitionFingerprint": "4252089ec3bfb8a6551a3d85319091bfd3096bb7815581bf4fde1364914a7ba8",
+    "metricsCurrentPartition": true,
+    "untouchedHoldout": {
+      "brierScore": 0.2604999854865487,
+      "dailyCount": 15,
+      "dailyPassRate": 0.0,
+      "dayCount": 15,
+      "exactSlateCoverage": null,
+      "gameCount": 200,
+      "logLoss": 0.7322972952180291,
+      "meanDailyAccuracy": 0.56755519,
+      "minimumDailyAccuracy": 0.375,
+      "overallAccuracy": 0.58,
+      "sourceDigest": "ac8856139db6d975e1cb104a69d70b7262579d70d4501a395571099b7baedaf0",
+      "version": "MLB-V9-CURRENT-PARTITION-METRICS-v1"
+    },
+    "version": "MLB-V9-CURRENT-PARTITION-METRICS-v1",
+    "walkForward": {
+      "brierScore": 0.27144674131054725,
+      "dailyCount": 20,
+      "dailyPassRate": 0.05,
+      "dayCount": 20,
+      "exactSlateCoverage": null,
+      "gameCount": 267,
+      "logLoss": 0.7574244349326249,
+      "meanDailyAccuracy": 0.5512629739999999,
+      "minimumDailyAccuracy": 0.0,
+      "overallAccuracy": 0.58426966,
+      "sourceDigest": "70f11803fd7155c8ca3288ef4e798d6b877f24390eb96aca67115169c89b9b75",
+      "version": "MLB-V9-CURRENT-PARTITION-METRICS-v1"
+    }
+  },
   "lightweightReasons": [
-    "canonical_dataset_rewritten_at_same_count",
-    "feature_corpus_rewritten_at_same_count",
     "full_refit_required"
   ],
   "lightweightSelectiveEvaluationIncrementCompleteSlates": 1,
@@ -187977,9 +188084,9 @@
     "staleLeaseRecoveryCount": 0
   },
   "previousReportCompleteSlateCount": 331,
-  "previousReportDatasetFingerprint": "048b1a1577a8358eda5381a8673297399368f1f3c1e00d96c787ca69937ecaab",
+  "previousReportDatasetFingerprint": "c58923d57c4cb98fbd4c902c093a2433cd62d2c330bfbb41063d5650ae715dd7",
   "previousReportEligibleGameCount": 4099,
-  "previousReportFeatureCorpusFingerprint": "8f93bf8c1bd9d1cc762538b9bae9ded2354183010fd7cec15faf91a12e07df4f",
+  "previousReportFeatureCorpusFingerprint": "18278b90b8dfcf12dc7f93e679ced6f344fc7f88a542e2bee235d234ed8848de",
   "previousReportFeatureRowCount": 926,
   "previousShadowDatasetFingerprint": "c58923d57c4cb98fbd4c902c093a2433cd62d2c330bfbb41063d5650ae715dd7",
   "previousShadowFeatureCorpusFingerprint": "18278b90b8dfcf12dc7f93e679ced6f344fc7f88a542e2bee235d234ed8848de",
@@ -187991,8 +188098,6 @@
   "providerNeutralOfficialContextRequired": true,
   "readOnly": true,
   "refitReasons": [
-    "canonical_dataset_rewritten_at_same_count",
-    "feature_corpus_rewritten_at_same_count",
     "forced"
   ],
   "remainingCompleteSlatesUntilLightweightEvaluation": 1,
@@ -188002,7 +188107,7 @@
   "remainingFeatureRowsUntilShadowRefit": 50,
   "retiredBbsOverlayRequired": false,
   "retrospectiveShadowOnly": true,
-  "runId": "30934287155",
+  "runId": "30936505004",
   "runtimeInstall": {
     "featureCount": 38,
     "featureVersion": "MLB-SUPERVISED-PAIR-FEATURES-v2-integrity-pattern-complete",
@@ -188013,7 +188118,7 @@
   "shadowRefitIncrementFeatureRows": 50,
   "shadowRefitIncrementGames": 50,
   "shadowRefitPerformed": true,
-  "sourceSha": "cee1d152c08f6942fa24dc82441275fedfd379ab",
+  "sourceSha": "0b175eeb2846bf9a82773cb07edd3a9bb7f828ee",
   "state": {
     "completeSlateCount": 331,
     "currentDate": "2026-08-04",
@@ -188026,7 +188131,7 @@
     "rematerializationErrors": []
   },
   "supervisedCandidate": {
-    "brierScore": null,
+    "brierScore": 0.27144674131054725,
     "diagnostics": {
       "calibration": "nested temperature scaling plus logit-space market blend",
       "extraPatternFeatures": [
@@ -188533,11 +188638,44 @@
       "walk_forward_mean_daily_accuracy_failed",
       "walk_forward_minimum_daily_accuracy_failed"
     ],
-    "logLoss": null,
+    "logLoss": 0.7574244349326249,
+    "metricEvidenceVersion": "MLB-V9-CURRENT-PARTITION-METRICS-v1",
+    "metricPartitionFingerprint": "4252089ec3bfb8a6551a3d85319091bfd3096bb7815581bf4fde1364914a7ba8",
+    "metricsCurrentPartition": true,
     "promotionPassed": false,
     "searchVersion": "MLB-HISTORICAL-SUPERVISED-v9.1-integrity-pattern-complete",
+    "selectedUntouchedHoldoutMetrics": {
+      "brierScore": 0.2604999854865487,
+      "dailyCount": 15,
+      "dailyPassRate": 0.0,
+      "dayCount": 15,
+      "exactSlateCoverage": null,
+      "gameCount": 200,
+      "logLoss": 0.7322972952180291,
+      "meanDailyAccuracy": 0.56755519,
+      "minimumDailyAccuracy": 0.375,
+      "overallAccuracy": 0.58,
+      "sourceDigest": "ac8856139db6d975e1cb104a69d70b7262579d70d4501a395571099b7baedaf0",
+      "version": "MLB-V9-CURRENT-PARTITION-METRICS-v1"
+    },
+    "selectedWalkForwardMetrics": {
+      "brierScore": 0.27144674131054725,
+      "dailyCount": 20,
+      "dailyPassRate": 0.05,
+      "dayCount": 20,
+      "exactSlateCoverage": null,
+      "gameCount": 267,
+      "logLoss": 0.7574244349326249,
+      "meanDailyAccuracy": 0.5512629739999999,
+      "minimumDailyAccuracy": 0.0,
+      "overallAccuracy": 0.58426966,
+      "sourceDigest": "70f11803fd7155c8ca3288ef4e798d6b877f24390eb96aca67115169c89b9b75",
+      "version": "MLB-V9-CURRENT-PARTITION-METRICS-v1"
+    },
     "settledGameCount": 4099,
     "status": "CANDIDATE_REJECTED",
+    "untouchedHoldoutBrierScore": 0.2604999854865487,
+    "untouchedHoldoutLogLoss": 0.7322972952180291,
     "untouchedHoldoutMeanDailyAccuracyPct": 56.7555,
     "untouchedHoldoutMinimumDailyAccuracyPct": 37.5,
     "walkForwardMeanDailyAccuracyPct": 55.1263,
@@ -189190,5 +189328,6 @@
       "selectionDayCount": 2,
       "threshold": 0.6
     }
-  }
+  },
+  "zeroBytePublicationAllowed": false
 }
