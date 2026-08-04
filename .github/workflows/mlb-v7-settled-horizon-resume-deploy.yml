@@ -23,8 +23,11 @@ name: MLB V7 Settled Horizon Resume Deploy
 permissions:
   contents: read
 
+# This workflow updates only parlay-platform-mlb-historical-optimizer. Keep its
+# queue independent from the unrelated parlay-platform-dev deployment stream so
+# evidence-only production pushes cannot replace a pending V7 repair run.
 concurrency:
-  group: parlay-platform-deploy
+  group: mlb-historical-optimizer-stack
   cancel-in-progress: false
 
 env:
@@ -84,7 +87,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Verify isolated deployment inputs and live stack
+      - name: Verify isolated deployment inputs and preserve live parameters
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
         run: |
@@ -168,7 +171,7 @@ jobs:
             --no-fail-on-empty-changeset \
             --parameter-overrides "${parameter_overrides[@]}"
 
-      - name: Verify exact deployed code identity and resume contract
+      - name: Verify deployed identity and fail-closed resume behavior
         run: |
           set -euo pipefail
           FUNCTION_NAME=$(aws cloudformation describe-stacks \
