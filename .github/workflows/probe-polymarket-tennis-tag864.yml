@@ -1,0 +1,62 @@
+name: Probe open Tennis events by tag 864
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/probe-polymarket-tennis-tag864.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - name: Query documented Gamma Tennis tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet requests
+          mkdir -p evidence
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import requests
+
+          s=requests.Session(); s.headers['user-agent']='tennis-tag-864-probe/1.0'
+          attempts=[]
+          for related in ('false','true'):
+              r=s.get('https://gamma-api.polymarket.com/events',params={
+                  'tag_id':'864','related_tags':related,'active':'true','closed':'false','limit':'500'
+              },timeout=45)
+              try: data=r.json()
+              except Exception: data=None
+              events=data if isinstance(data,list) else ((data or {}).get('events') if isinstance(data,dict) else [])
+              events=events if isinstance(events,list) else []
+              attempts.append({
+                  'relatedTags':related,
+                  'status':r.status_code,
+                  'url':r.url,
+                  'bodyPrefix':None if data is not None else r.text[:500],
+                  'topLevelType':type(data).__name__,
+                  'eventCount':len(events),
+                  'events':events,
+              })
+          Path('evidence/polymarket-tag864.json').write_text(json.dumps({'attempts':attempts},indent=2,sort_keys=True))
+          print(json.dumps({
+              'attempts':[
+                  {k:v for k,v in row.items() if k!='events'} | {'sampleTitles':[e.get('title') for e in row['events'][:20]]}
+                  for row in attempts
+              ]
+          },indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: polymarket-tag864-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: evidence/

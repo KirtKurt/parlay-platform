@@ -1,0 +1,245 @@
+name: Diagnose live Tennis schedule and odds coverage
+
+on:
+  push:
+    branches: [agent/diagnose-tennis-live-coverage-20260723]
+    paths: [".github/workflows/diagnose-tennis-live-coverage.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SLATE_DATE: "2026-07-23"
+      LEGACY_ODDS_KEY: ${{ secrets.TENNIS_ODDS_API_KEY || secrets.ODDS_API_KEY }}
+      GENERIC_TENNIS_ODDS_KEY: ${{ secrets.TENNIS_GENERIC_ODDS_API_KEY || secrets.THEODDSAPI_KEY || secrets.THE_ODDS_API_KEY || secrets.TENNIS_ODDS_API_KEY || secrets.ODDS_API_KEY }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Probe providers without writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet requests
+          mkdir -p evidence
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from typing import Any
+
+          import requests
+
+          slate = os.environ["SLATE_DATE"]
+          legacy_key = os.environ.get("LEGACY_ODDS_KEY", "").strip()
+          generic_key = os.environ.get("GENERIC_TENNIS_ODDS_KEY", "").strip()
+          out: dict[str, Any] = {
+              "checkedAtUtc": datetime.now(timezone.utc).isoformat(),
+              "slateDate": slate,
+              "credentials": {
+                  "legacyConfigured": bool(legacy_key),
+                  "genericConfigured": bool(generic_key),
+                  "sameConfiguredValue": bool(legacy_key and generic_key and legacy_key == generic_key),
+              },
+              "espn": {},
+              "legacyTheOddsApi": {},
+              "genericTheOddsApi": {},
+          }
+
+          session = requests.Session()
+          session.headers.update({"user-agent": "parlay-platform-tennis-coverage-diagnostic/1.0"})
+
+          def safe_json(resp: requests.Response) -> Any:
+              try:
+                  return resp.json()
+              except Exception:
+                  return None
+
+          def summarize_espn(label: str, url: str) -> None:
+              try:
+                  resp = session.get(url, timeout=30)
+                  data = safe_json(resp)
+                  summary: dict[str, Any] = {
+                      "urlHost": "site.api.espn.com",
+                      "status": resp.status_code,
+                      "contentType": resp.headers.get("content-type"),
+                  }
+                  if isinstance(data, dict):
+                      events = data.get("events") or []
+                      rows = []
+                      odds_count = 0
+                      for event in events:
+                          competitions = event.get("competitions") or []
+                          competition = competitions[0] if competitions else {}
+                          competitors = competition.get("competitors") or []
+                          names = [
+                              str((c.get("competitor") or {}).get("displayName") or c.get("displayName") or "")
+                              for c in competitors
+                          ]
+                          odds = competition.get("odds") or event.get("odds") or []
+                          if odds:
+                              odds_count += 1
+                          rows.append({
+                              "id": str(event.get("id") or ""),
+                              "name": str(event.get("name") or event.get("shortName") or ""),
+                              "date": event.get("date"),
+                              "status": ((event.get("status") or {}).get("type") or {}).get("name"),
+                              "competitors": [x for x in names if x],
+                              "oddsPresent": bool(odds),
+                              "league": ((event.get("league") or {}).get("name")),
+                          })
+                      summary.update({
+                          "topLevelKeys": sorted(data.keys()),
+                          "eventCount": len(events),
+                          "eventWithOddsCount": odds_count,
+                          "sampleEvents": rows[:20],
+                          "leagueCount": len(data.get("leagues") or []),
+                      })
+                  else:
+                      summary["bodyPrefix"] = resp.text[:300]
+                  out["espn"][label] = summary
+              except Exception as exc:
+                  out["espn"][label] = {"errorType": type(exc).__name__, "error": str(exc)[:300]}
+
+          espn_urls = {
+              "atp": f"https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard?dates={slate}&limit=1000",
+              "wta": f"https://site.api.espn.com/apis/site/v2/sports/tennis/wta/scoreboard?dates={slate}&limit=1000",
+              "all": f"https://site.api.espn.com/apis/site/v2/sports/tennis/tennis/scoreboard?dates={slate}&limit=1000",
+          }
+          for label, url in espn_urls.items():
+              summarize_espn(label, url)
+
+          legacy_base = "https://api.the-odds-api.com/v4"
+          legacy_keys = [
+              "tennis",
+              "tennis_atp",
+              "tennis_wta",
+              "tennis_atp_kitzbuhel",
+              "tennis_atp_estoril",
+              "tennis_wta_hamburg",
+              "tennis_wta_prague",
+              "upcoming",
+          ]
+          if not legacy_key:
+              out["legacyTheOddsApi"]["error"] = "credential_not_configured"
+          else:
+              for sport_key in legacy_keys:
+                  try:
+                      resp = session.get(
+                          f"{legacy_base}/sports/{sport_key}/odds/",
+                          params={
+                              "apiKey": legacy_key,
+                              "regions": "us,uk,eu",
+                              "markets": "h2h",
+                              "oddsFormat": "american",
+                              "dateFormat": "iso",
+                          },
+                          timeout=45,
+                      )
+                      data = safe_json(resp)
+                      row: dict[str, Any] = {"status": resp.status_code}
+                      if isinstance(data, list):
+                          row.update({
+                              "eventCount": len(data),
+                              "tennisEventCount": sum(1 for x in data if str(x.get("sport_key") or "").startswith("tennis")),
+                              "sample": [
+                                  {
+                                      "id": x.get("id"),
+                                      "sport_key": x.get("sport_key"),
+                                      "commence_time": x.get("commence_time"),
+                                      "home_team": x.get("home_team"),
+                                      "away_team": x.get("away_team"),
+                                      "bookmakerCount": len(x.get("bookmakers") or []),
+                                  }
+                                  for x in data[:12]
+                              ],
+                          })
+                      elif isinstance(data, dict):
+                          row.update({
+                              "errorCode": data.get("error_code") or data.get("code"),
+                              "message": str(data.get("message") or data.get("error") or "")[:300],
+                          })
+                      else:
+                          row["bodyPrefix"] = resp.text[:300]
+                      out["legacyTheOddsApi"][sport_key] = row
+                  except Exception as exc:
+                      out["legacyTheOddsApi"][sport_key] = {"errorType": type(exc).__name__, "error": str(exc)[:300]}
+
+          generic_base = "https://api.theoddsapi.com"
+          if not generic_key:
+              out["genericTheOddsApi"]["error"] = "credential_not_configured"
+          else:
+              headers = {"x-api-key": generic_key}
+              for label, path, params in [
+                  ("me", "/me/", {}),
+                  ("sports", "/sports/", {}),
+                  ("events_tennis", "/events/", {"sport_key": "tennis"}),
+                  (
+                      "odds_tennis",
+                      "/odds/",
+                      {
+                          "sport_key": "tennis",
+                          "markets": "h2h",
+                          "oddsFormat": "american",
+                          "regions": "us,uk,eu",
+                          "commenceTimeFrom": f"{slate}T00:00:00Z",
+                          "commenceTimeTo": "2026-07-24T23:59:59Z",
+                      },
+                  ),
+              ]:
+                  try:
+                      resp = session.get(generic_base + path, headers=headers, params=params, timeout=45)
+                      data = safe_json(resp)
+                      row = {"status": resp.status_code}
+                      if isinstance(data, dict):
+                          payload = data.get("data")
+                          if isinstance(payload, list):
+                              row.update({
+                                  "success": data.get("success"),
+                                  "recordCount": len(payload),
+                                  "sample": [
+                                      {
+                                          "event_id": x.get("event_id") or x.get("id"),
+                                          "league": x.get("league"),
+                                          "start_time": x.get("start_time") or x.get("commence_time"),
+                                          "home_team": x.get("home_team"),
+                                          "away_team": x.get("away_team"),
+                                          "bookCount": len(x.get("books") or x.get("bookmakers") or []),
+                                      }
+                                      for x in payload[:20]
+                                  ],
+                              })
+                          elif label == "sports":
+                              sports = data.get("sports") if isinstance(data.get("sports"), list) else []
+                              row.update({"sportCount": len(sports), "tennisEntries": [x for x in sports if str(x).lower().find("tennis") >= 0][:10]})
+                          else:
+                              row.update({
+                                  "success": data.get("success"),
+                                  "tier": data.get("tier") or ((data.get("data") or {}).get("tier") if isinstance(data.get("data"), dict) else None),
+                                  "message": str(data.get("message") or data.get("error") or "")[:300],
+                              })
+                      elif isinstance(data, list):
+                          row.update({"recordCount": len(data), "sample": data[:10]})
+                      else:
+                          row["bodyPrefix"] = resp.text[:300]
+                      out["genericTheOddsApi"][label] = row
+                  except Exception as exc:
+                      out["genericTheOddsApi"][label] = {"errorType": type(exc).__name__, "error": str(exc)[:300]}
+
+          Path("evidence/coverage-diagnostic.json").write_text(json.dumps(out, indent=2, sort_keys=True))
+          print(json.dumps(out, indent=2, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tennis-live-coverage-diagnostic-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: evidence/
