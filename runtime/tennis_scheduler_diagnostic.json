@@ -1,0 +1,497 @@
+{
+  "checked_at": "2026-08-04T14:48:45.306902+00:00",
+  "controller_config": {
+    "Architectures": [
+      "x86_64"
+    ],
+    "CodeSha256": "N21exoDCVsLuF9gSVsfL79ehCRLsN1OMoXCBq+Nd8aA=",
+    "CodeSize": 13675,
+    "Description": "",
+    "Environment": {
+      "Variables": {
+        "TENNIS_BACKFILL_FUNCTION": "parlay-platform-tennis-le-TennisHistoricalBackfill-4nRZ07g201dv",
+        "TENNIS_HISTORICAL_ENABLED": "false",
+        "TENNIS_HISTORICAL_REQUIRED": "false",
+        "TENNIS_INVOKE_BASE_DELAY_SECONDS": "2",
+        "TENNIS_INVOKE_MAX_ATTEMPTS": "4",
+        "TENNIS_INVOKE_MAX_DELAY_SECONDS": "20",
+        "TENNIS_LEARNING_TABLE": "inqis_tennis_learning",
+        "TENNIS_LIVE_FUNCTION": "parlay-platform-tennis-le-TennisLivePipelineFuncti-frB8PgbzMGyP",
+        "TENNIS_MAX_CONSECUTIVE_FAILURES": "3",
+        "TENNIS_MAX_LIVE_BRIER": "0.25",
+        "TENNIS_MIN_LIVE_ACCURACY": "0.55",
+        "TENNIS_MIN_LIVE_AUDIT": "30",
+        "TENNIS_MIN_TRAINING_SAMPLES": "100"
+      }
+    },
+    "EphemeralStorage": {
+      "Size": 512
+    },
+    "FunctionArn": "arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-tennis-le-TennisAutonomousControll-AQl5s4NlhAnu",
+    "FunctionName": "parlay-platform-tennis-le-TennisAutonomousControll-AQl5s4NlhAnu",
+    "Handler": "autonomous_controller.lambda_handler",
+    "LastModified": "2026-08-03T23:46:24.000+0000",
+    "LastUpdateStatus": "Successful",
+    "LoggingConfig": {
+      "LogFormat": "Text",
+      "LogGroup": "/aws/lambda/parlay-platform-tennis-le-TennisAutonomousControll-AQl5s4NlhAnu"
+    },
+    "MemorySize": 2048,
+    "PackageType": "Zip",
+    "RevisionId": "875a6112-a114-48b0-8b29-d9889c708f40",
+    "Role": "arn:aws:iam::735707987003:role/parlay-platform-tennis-le-TennisAutonomousControlle-d3UgHpdAAPs8",
+    "Runtime": "python3.11",
+    "RuntimeVersionConfig": {
+      "RuntimeVersionArn": "arn:aws:lambda:us-east-1::runtime:81a2f2bcc7b606f63601c58153453037785e00ca30d21476cee5f82df01b0d71"
+    },
+    "SnapStart": {
+      "ApplyOn": "None",
+      "OptimizationStatus": "Off"
+    },
+    "State": "Active",
+    "Timeout": 900,
+    "TracingConfig": {
+      "Mode": "PassThrough"
+    },
+    "Version": "$LATEST",
+    "VpcConfig": {
+      "Ipv6AllowedForDualStack": false,
+      "SecurityGroupIds": [],
+      "SubnetIds": [],
+      "VpcId": ""
+    }
+  },
+  "controller_errors": {
+    "Datapoints": [
+      {
+        "Sum": 0.0,
+        "Timestamp": "2026-08-04T14:08:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 0.0,
+        "Timestamp": "2026-08-04T14:43:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 0.0,
+        "Timestamp": "2026-08-04T13:23:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 0.0,
+        "Timestamp": "2026-08-04T12:38:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 0.0,
+        "Timestamp": "2026-08-04T11:53:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 0.0,
+        "Timestamp": "2026-08-04T14:23:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 0.0,
+        "Timestamp": "2026-08-04T13:38:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 0.0,
+        "Timestamp": "2026-08-04T12:53:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 0.0,
+        "Timestamp": "2026-08-04T12:08:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 0.0,
+        "Timestamp": "2026-08-04T14:38:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 0.0,
+        "Timestamp": "2026-08-04T13:53:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 0.0,
+        "Timestamp": "2026-08-04T13:43:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 0.0,
+        "Timestamp": "2026-08-04T13:08:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 0.0,
+        "Timestamp": "2026-08-04T12:23:00+00:00",
+        "Unit": "Count"
+      }
+    ],
+    "Label": "Errors"
+  },
+  "controller_function": "parlay-platform-tennis-le-TennisAutonomousControll-AQl5s4NlhAnu",
+  "controller_invocations": {
+    "Datapoints": [
+      {
+        "Sum": 1.0,
+        "Timestamp": "2026-08-04T14:08:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 4.0,
+        "Timestamp": "2026-08-04T14:43:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 1.0,
+        "Timestamp": "2026-08-04T13:23:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 1.0,
+        "Timestamp": "2026-08-04T12:38:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 1.0,
+        "Timestamp": "2026-08-04T11:53:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 1.0,
+        "Timestamp": "2026-08-04T14:23:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 1.0,
+        "Timestamp": "2026-08-04T13:38:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 1.0,
+        "Timestamp": "2026-08-04T12:53:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 1.0,
+        "Timestamp": "2026-08-04T12:08:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 1.0,
+        "Timestamp": "2026-08-04T14:38:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 1.0,
+        "Timestamp": "2026-08-04T13:53:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 4.0,
+        "Timestamp": "2026-08-04T13:43:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 1.0,
+        "Timestamp": "2026-08-04T13:08:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Sum": 2.0,
+        "Timestamp": "2026-08-04T12:23:00+00:00",
+        "Unit": "Count"
+      }
+    ],
+    "Label": "Invocations"
+  },
+  "mlb_resources_touched": false,
+  "read_only": true,
+  "rules": [
+    {
+      "describe": {
+        "Arn": "arn:aws:events:us-east-1:735707987003:rule/parlay-platform-tennis-le-TennisAutonomousControlle-9H683nSFfzNn",
+        "CreatedBy": "735707987003",
+        "EventBusName": "default",
+        "Name": "parlay-platform-tennis-le-TennisAutonomousControlle-9H683nSFfzNn",
+        "ScheduleExpression": "cron(11,26,41,56 * * * ? *)",
+        "State": "ENABLED"
+      },
+      "failed_invocations": {
+        "Datapoints": [],
+        "Label": "FailedInvocations"
+      },
+      "invocations": {
+        "Datapoints": [
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T14:08:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T13:23:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T12:38:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T11:53:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T14:23:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T13:38:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T12:53:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T12:08:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T14:38:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T13:53:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T13:08:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T12:23:00+00:00",
+            "Unit": "Count"
+          }
+        ],
+        "Label": "Invocations"
+      },
+      "logical_id": "TennisAutonomousControllerFunctionAutonomousCycleEvery15Minutes",
+      "physical_id": "parlay-platform-tennis-le-TennisAutonomousControlle-9H683nSFfzNn",
+      "resource_status": "UPDATE_COMPLETE",
+      "targets": {
+        "Targets": [
+          {
+            "Arn": "arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-tennis-le-TennisAutonomousControll-AQl5s4NlhAnu",
+            "Id": "TennisAutonomousControllerFunctionAutonomousCycleEveLambdaTarget",
+            "Input": "{\"action\":\"autonomous_cycle\"}",
+            "RetryPolicy": {
+              "MaximumEventAgeInSeconds": 900,
+              "MaximumRetryAttempts": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "describe": {
+        "Arn": "arn:aws:events:us-east-1:735707987003:rule/parlay-platform-tennis-le-TennisHistoricalBackfillF-dOrardqducuL",
+        "CreatedBy": "735707987003",
+        "EventBusName": "default",
+        "Name": "parlay-platform-tennis-le-TennisHistoricalBackfillF-dOrardqducuL",
+        "ScheduleExpression": "rate(1 hour)",
+        "State": "DISABLED"
+      },
+      "failed_invocations": {
+        "Datapoints": [],
+        "Label": "FailedInvocations"
+      },
+      "invocations": {
+        "Datapoints": [],
+        "Label": "Invocations"
+      },
+      "logical_id": "TennisHistoricalBackfillFunctionBackfillEveryHour",
+      "physical_id": "parlay-platform-tennis-le-TennisHistoricalBackfillF-dOrardqducuL",
+      "resource_status": "UPDATE_COMPLETE",
+      "targets": {
+        "Targets": [
+          {
+            "Arn": "arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-tennis-le-TennisHistoricalBackfill-4nRZ07g201dv",
+            "Id": "TennisHistoricalBackfillFunctionBackfillEveryHourLambdaTarget"
+          }
+        ]
+      }
+    },
+    {
+      "describe": {
+        "Arn": "arn:aws:events:us-east-1:735707987003:rule/parlay-platform-tennis-le-TennisLivePipelineFunctio-Kq6L01BLSV0q",
+        "CreatedBy": "735707987003",
+        "EventBusName": "default",
+        "Name": "parlay-platform-tennis-le-TennisLivePipelineFunctio-Kq6L01BLSV0q",
+        "ScheduleExpression": "cron(1,16,31,46 * * * ? *)",
+        "State": "ENABLED"
+      },
+      "failed_invocations": {
+        "Datapoints": [],
+        "Label": "FailedInvocations"
+      },
+      "invocations": {
+        "Datapoints": [
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T12:58:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T12:13:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T14:43:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T13:58:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T13:13:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T12:28:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T14:13:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T13:28:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T12:43:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T11:58:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T14:28:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T13:43:00+00:00",
+            "Unit": "Count"
+          }
+        ],
+        "Label": "Invocations"
+      },
+      "logical_id": "TennisLivePipelineFunctionCollectEvery15Minutes",
+      "physical_id": "parlay-platform-tennis-le-TennisLivePipelineFunctio-Kq6L01BLSV0q",
+      "resource_status": "UPDATE_COMPLETE",
+      "targets": {
+        "Targets": [
+          {
+            "Arn": "arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-tennis-le-TennisLivePipelineFuncti-frB8PgbzMGyP",
+            "Id": "TennisLivePipelineFunctionCollectEvery15MinutesLambdaTarget",
+            "Input": "{\"action\":\"collect\"}"
+          }
+        ]
+      }
+    },
+    {
+      "describe": {
+        "Arn": "arn:aws:events:us-east-1:735707987003:rule/parlay-platform-tennis-le-TennisLivePipelineFunctio-WhpfRnHz7nAf",
+        "CreatedBy": "735707987003",
+        "EventBusName": "default",
+        "Name": "parlay-platform-tennis-le-TennisLivePipelineFunctio-WhpfRnHz7nAf",
+        "ScheduleExpression": "cron(6,36 * * * ? *)",
+        "State": "ENABLED"
+      },
+      "failed_invocations": {
+        "Datapoints": [],
+        "Label": "FailedInvocations"
+      },
+      "invocations": {
+        "Datapoints": [
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T13:33:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T14:03:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T12:03:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T14:33:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T12:33:00+00:00",
+            "Unit": "Count"
+          },
+          {
+            "Sum": 1.0,
+            "Timestamp": "2026-08-04T13:03:00+00:00",
+            "Unit": "Count"
+          }
+        ],
+        "Label": "Invocations"
+      },
+      "logical_id": "TennisLivePipelineFunctionSettleEvery30Minutes",
+      "physical_id": "parlay-platform-tennis-le-TennisLivePipelineFunctio-WhpfRnHz7nAf",
+      "resource_status": "UPDATE_COMPLETE",
+      "targets": {
+        "Targets": [
+          {
+            "Arn": "arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-tennis-le-TennisLivePipelineFuncti-frB8PgbzMGyP",
+            "Id": "TennisLivePipelineFunctionSettleEvery30MinutesLambdaTarget",
+            "Input": "{\"action\":\"settle\"}"
+          }
+        ]
+      }
+    }
+  ],
+  "stack_status": "UPDATE_COMPLETE",
+  "window_start": "2026-08-04T11:48:45.306902+00:00"
+}
