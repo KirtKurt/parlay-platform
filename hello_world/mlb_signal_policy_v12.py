@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-VERSION = "MLB-SIGNAL-POLICY-v1.8-book-agreement-requires-structural-confirmation"
+VERSION = "MLB-SIGNAL-POLICY-v1.9-positive-structural-boosts-require-book-agreement"
 REQUIRED_MINUTES_BEFORE_GAME = 45
 DAILY_SLATE_DISPLAY_RULE = "show_one_required_winner_prediction_for_every_game_45_minutes_before_first_game_of_day"
 
@@ -145,12 +145,22 @@ def _components(row: Dict[str, Any]) -> List[Dict[str, Any]]:
     elif gap < 0.10:
         add("narrow_market_penalty", -3.0)
 
-    if "RUN_LINE_MOVEMENT" in tags and edge >= 0.10 and delta > 0 and rev <= 1:
+    run_line_independently_confirmed = (
+        "BOOK_AGREEMENT" in tags and "RUN_LINE_CONFIRMATION" in tags
+    )
+    if (
+        "RUN_LINE_MOVEMENT" in tags
+        and run_line_independently_confirmed
+        and edge >= 0.10
+        and delta > 0
+        and rev <= 1
+    ):
         add("aligned_run_line_boost", 3.0)
     elif "RUN_LINE_MOVEMENT" in tags:
         add("run_line_noise_penalty", -3.0)
 
-    if "STEAM" in tags and edge >= 0.10 and delta > 0 and rev <= 1:
+    steam_independently_confirmed = "BOOK_AGREEMENT" in tags and "STEAM" in tags
+    if steam_independently_confirmed and edge >= 0.10 and delta > 0 and rev <= 1:
         add("stable_steam_boost", 3.0)
     elif "STEAM" in tags:
         add("unstable_steam_penalty", -3.0)
