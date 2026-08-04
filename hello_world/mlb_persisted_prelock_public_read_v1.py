@@ -87,7 +87,13 @@ def _query_prefix(
         values = response.get("Items") or []
         if not isinstance(values, list):
             raise RuntimeError("persisted pre-lock query returned invalid items")
-        rows.extend(_plain(value) for value in values if isinstance(value, Mapping))
+        # Preserve DynamoDB Decimal values until the immutable fingerprint has
+        # been checked. Conversion happens only after a pair is accepted.
+        rows.extend(
+            copy.deepcopy(dict(value))
+            for value in values
+            if isinstance(value, Mapping)
+        )
         if limit is not None and len(rows) >= int(limit):
             return rows[: int(limit)]
         start_key = response.get("LastEvaluatedKey")
@@ -178,8 +184,6 @@ def _validate_pair(
     if snapshot.get("prediction_persistence_write_sk") != live_item.get("SK"):
         errors.append("live_write_sk_mismatch")
 
-    # DynamoDB numeric readbacks are Decimal. The canonical fingerprint helper
-    # owns their deterministic normalization, so do not coerce them first.
     expected_fingerprint = history_contract.canonical_payload_fingerprint(
         dict(snapshot_row)
     )
