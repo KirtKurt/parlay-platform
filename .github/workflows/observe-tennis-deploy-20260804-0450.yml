@@ -1,0 +1,65 @@
+name: Observe Tennis Deploy 2026-08-04 0450
+
+on:
+  workflow_run:
+    workflows: ['Deploy Tennis Learning']
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  publish-result:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Publish deployment result and clean one-shot workflows
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_STATUS: ${{ github.event.workflow_run.status }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_CREATED_AT: ${{ github.event.workflow_run.created_at }}
+          RUN_UPDATED_AT: ${{ github.event.workflow_run.updated_at }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          payload = {
+              'checked_at': datetime.now(timezone.utc).isoformat(),
+              'workflow': 'Deploy Tennis Learning',
+              'run_id': int(os.environ['RUN_ID']),
+              'status': os.environ['RUN_STATUS'],
+              'conclusion': os.environ['RUN_CONCLUSION'],
+              'head_sha': os.environ['RUN_HEAD_SHA'],
+              'created_at': os.environ['RUN_CREATED_AT'],
+              'updated_at': os.environ['RUN_UPDATED_AT'],
+              'run_url': os.environ['RUN_URL'],
+              'tests_and_deployment_passed': os.environ['RUN_CONCLUSION'] == 'success',
+          }
+          Path('runtime/tennis_deploy_verification.json').write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in $(seq 1 20); do
+            git fetch origin main
+            git reset --hard origin/main
+            mkdir -p runtime
+            cp runtime/tennis_deploy_verification.json /tmp/tennis_deploy_verification.json || true
+            cp /tmp/tennis_deploy_verification.json runtime/tennis_deploy_verification.json
+            git rm -f .github/workflows/observe-tennis-deploy-20260804-0450.yml
+            git rm -f .github/workflows/trigger-tennis-deploy-verification-20260804-0445.yml || true
+            git rm -f .github/workflows/trigger-tennis-status-refresh-20260804-0440.yml || true
+            git add runtime/tennis_deploy_verification.json
+            git commit -m 'Publish tennis deployment verification [skip ci]'
+            if git push origin HEAD:main; then exit 0; fi
+            sleep 3
+          done
+          exit 1
