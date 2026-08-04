@@ -83,9 +83,8 @@ jobs:
           git diff --check
 
       - name: Commit verified stall fixes to repair branch
-        if: github.event_name != 'pull_request'
         env:
-          BRANCH: ${{ github.ref_name }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
           set -euo pipefail
           if git diff --quiet; then
