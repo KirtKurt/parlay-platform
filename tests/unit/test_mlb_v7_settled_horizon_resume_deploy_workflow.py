@@ -7,7 +7,8 @@ WORKFLOW = Path(".github/workflows/mlb-v7-settled-horizon-resume-deploy.yml")
 def test_v7_settled_horizon_resume_deploy_is_isolated_and_gated():
     source = WORKFLOW.read_text(encoding="utf-8")
 
-    assert "group: parlay-platform-deploy" in source
+    assert "group: mlb-historical-optimizer-stack" in source
+    assert "group: parlay-platform-deploy" not in source
     assert "cancel-in-progress: false" in source
     assert "[deploy-v7-settled-horizon-resume]" in source
     assert "stack-name \"$HISTORICAL_STACK_NAME\"" in source
