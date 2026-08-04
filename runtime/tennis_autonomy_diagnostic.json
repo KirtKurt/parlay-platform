@@ -1,11 +1,11 @@
 {
   "actionable_runtime_error": false,
-  "checked_at": "2026-08-04T15:47:55.142716+00:00",
+  "checked_at": "2026-08-04T16:47:53.839353+00:00",
   "collection_summary": {
     "discovered_sport_keys": 2,
     "errors": {},
     "eventful_sport_keys": 2,
-    "events": 64,
+    "events": 63,
     "malformed": 0,
     "model": {
       "eligible": false,
@@ -21,16 +21,16 @@
         "best_of_five"
       ],
       "minimum_training_samples": 100,
-      "model_version": 53,
+      "model_version": 56,
       "persistence": "dynamodb",
       "service": "tennis-learning",
       "status": "learning",
-      "training_samples": 52,
-      "updated_at": "2026-08-04T04:06:24.022796+00:00"
+      "training_samples": 55,
+      "updated_at": "2026-08-04T16:41:18.557760+00:00"
     },
-    "predicted": 64,
+    "predicted": 63,
     "skipped": 0,
-    "stored": 64,
+    "stored": 63,
     "successful_sport_keys": 2
   },
   "cycle_response": {
@@ -46,7 +46,7 @@
         "discovered_sport_keys": 2,
         "errors": {},
         "eventful_sport_keys": 2,
-        "events": 64,
+        "events": 63,
         "malformed": 0,
         "model": {
           "eligible": false,
@@ -62,20 +62,20 @@
             "best_of_five"
           ],
           "minimum_training_samples": 100,
-          "model_version": 53,
+          "model_version": 56,
           "persistence": "dynamodb",
           "service": "tennis-learning",
           "status": "learning",
-          "training_samples": 52,
-          "updated_at": "2026-08-04T04:06:24.022796+00:00"
+          "training_samples": 55,
+          "updated_at": "2026-08-04T16:41:18.557760+00:00"
         },
-        "predicted": 64,
+        "predicted": 63,
         "skipped": 0,
-        "stored": 64,
+        "stored": 63,
         "successful_sport_keys": 2
       },
       "settle": {
-        "duplicates": 52,
+        "duplicates": 55,
         "errors": {},
         "malformed": 0,
         "missing_snapshots": 2,
@@ -93,12 +93,12 @@
             "best_of_five"
           ],
           "minimum_training_samples": 100,
-          "model_version": 53,
+          "model_version": 56,
           "persistence": "dynamodb",
           "service": "tennis-learning",
           "status": "learning",
-          "training_samples": 52,
-          "updated_at": "2026-08-04T04:06:24.022796+00:00"
+          "training_samples": 55,
+          "updated_at": "2026-08-04T16:41:18.557760+00:00"
         },
         "score_events": 119,
         "sport_keys": 4,
@@ -117,20 +117,143 @@
     },
     "historical_backfill_enabled": false,
     "historical_backfill_required": false,
-    "last_cycle_at": "2026-08-04T15:47:54.921391+00:00",
+    "last_cycle_at": "2026-08-04T16:47:53.679379+00:00",
     "last_error": null,
     "last_warning": null,
-    "live_accuracy": "0.94230769",
-    "live_audit_count": 52,
-    "live_brier": "0.10101406",
-    "model_version": 53,
+    "live_accuracy": "0.94545455",
+    "live_audit_count": 55,
+    "live_brier": "0.09923479",
+    "model_version": 56,
     "reason": "insufficient_total_training_samples",
-    "training_samples": 52
+    "training_samples": 55
   },
   "mlb_resources_touched": false,
   "operationally_healthy": true,
+  "publisher_latest_scheduled_run": {
+    "conclusion": "success",
+    "created_at": "2026-08-04T15:03:51Z",
+    "event": "schedule",
+    "head_sha": "f01ed041981dba54fbaa6bb7e48c96901f6fb1d0",
+    "html_url": "https://github.com/KirtKurt/parlay-platform/actions/runs/30922193894",
+    "id": 30922193894,
+    "run_started_at": "2026-08-04T15:03:51Z",
+    "status": "completed",
+    "updated_at": "2026-08-04T15:04:17Z"
+  },
+  "publisher_recent_runs": [
+    {
+      "conclusion": "success",
+      "created_at": "2026-08-04T15:58:22Z",
+      "event": "push",
+      "head_sha": "6c4395f7cd85a1c947253ad00b9c94958abf4624",
+      "html_url": "https://github.com/KirtKurt/parlay-platform/actions/runs/30926845553",
+      "id": 30926845553,
+      "run_started_at": "2026-08-04T15:58:22Z",
+      "status": "completed",
+      "updated_at": "2026-08-04T15:58:43Z"
+    },
+    {
+      "conclusion": "success",
+      "created_at": "2026-08-04T15:03:51Z",
+      "event": "schedule",
+      "head_sha": "f01ed041981dba54fbaa6bb7e48c96901f6fb1d0",
+      "html_url": "https://github.com/KirtKurt/parlay-platform/actions/runs/30922193894",
+      "id": 30922193894,
+      "run_started_at": "2026-08-04T15:03:51Z",
+      "status": "completed",
+      "updated_at": "2026-08-04T15:04:17Z"
+    },
+    {
+      "conclusion": "success",
+      "created_at": "2026-08-04T12:27:14Z",
+      "event": "schedule",
+      "head_sha": "da3ae9e48db9c6d34ff151c714490d56024482a9",
+      "html_url": "https://github.com/KirtKurt/parlay-platform/actions/runs/30909158000",
+      "id": 30909158000,
+      "run_started_at": "2026-08-04T12:27:14Z",
+      "status": "completed",
+      "updated_at": "2026-08-04T12:27:27Z"
+    },
+    {
+      "conclusion": "success",
+      "created_at": "2026-08-04T10:13:05Z",
+      "event": "schedule",
+      "head_sha": "7691f91c95d753c551660d8347c29330e21b603f",
+      "html_url": "https://github.com/KirtKurt/parlay-platform/actions/runs/30899710268",
+      "id": 30899710268,
+      "run_started_at": "2026-08-04T10:13:05Z",
+      "status": "completed",
+      "updated_at": "2026-08-04T10:13:26Z"
+    },
+    {
+      "conclusion": "success",
+      "created_at": "2026-08-04T09:45:00Z",
+      "event": "workflow_dispatch",
+      "head_sha": "e08aa40803dec6be3c3530fc2b9850e0d952d44f",
+      "html_url": "https://github.com/KirtKurt/parlay-platform/actions/runs/30897674445",
+      "id": 30897674445,
+      "run_started_at": "2026-08-04T09:45:00Z",
+      "status": "completed",
+      "updated_at": "2026-08-04T09:45:18Z"
+    },
+    {
+      "conclusion": "success",
+      "created_at": "2026-08-04T08:59:19Z",
+      "event": "workflow_dispatch",
+      "head_sha": "a64ff5a636edf01f0cd60428189c20e01d5f66e0",
+      "html_url": "https://github.com/KirtKurt/parlay-platform/actions/runs/30894307779",
+      "id": 30894307779,
+      "run_started_at": "2026-08-04T08:59:19Z",
+      "status": "completed",
+      "updated_at": "2026-08-04T08:59:36Z"
+    },
+    {
+      "conclusion": "success",
+      "created_at": "2026-08-04T08:43:15Z",
+      "event": "workflow_dispatch",
+      "head_sha": "14e099b2de294f8949c290d2c9a5657029f6ddd4",
+      "html_url": "https://github.com/KirtKurt/parlay-platform/actions/runs/30893148391",
+      "id": 30893148391,
+      "run_started_at": "2026-08-04T08:43:15Z",
+      "status": "completed",
+      "updated_at": "2026-08-04T08:43:32Z"
+    },
+    {
+      "conclusion": "success",
+      "created_at": "2026-08-04T07:43:03Z",
+      "event": "workflow_dispatch",
+      "head_sha": "7c869a8d4fd10367d79125aeda5665f002bef610",
+      "html_url": "https://github.com/KirtKurt/parlay-platform/actions/runs/30888930678",
+      "id": 30888930678,
+      "run_started_at": "2026-08-04T07:43:03Z",
+      "status": "completed",
+      "updated_at": "2026-08-04T07:43:26Z"
+    },
+    {
+      "conclusion": "success",
+      "created_at": "2026-08-04T07:15:59Z",
+      "event": "schedule",
+      "head_sha": "72fbdc33c956be39264f7280ac31b7a239c65603",
+      "html_url": "https://github.com/KirtKurt/parlay-platform/actions/runs/30887120462",
+      "id": 30887120462,
+      "run_started_at": "2026-08-04T07:15:59Z",
+      "status": "completed",
+      "updated_at": "2026-08-04T07:16:14Z"
+    },
+    {
+      "conclusion": "success",
+      "created_at": "2026-08-04T06:44:01Z",
+      "event": "workflow_dispatch",
+      "head_sha": "6ec6071145d9bc36a568c63606ec4a06e76ee630",
+      "html_url": "https://github.com/KirtKurt/parlay-platform/actions/runs/30885041388",
+      "id": 30885041388,
+      "run_started_at": "2026-08-04T06:44:01Z",
+      "status": "completed",
+      "updated_at": "2026-08-04T06:44:20Z"
+    }
+  ],
   "settlement_summary": {
-    "duplicates": 52,
+    "duplicates": 55,
     "errors": {},
     "malformed": 0,
     "missing_snapshots": 2,
@@ -148,12 +271,12 @@
         "best_of_five"
       ],
       "minimum_training_samples": 100,
-      "model_version": 53,
+      "model_version": 56,
       "persistence": "dynamodb",
       "service": "tennis-learning",
       "status": "learning",
-      "training_samples": 52,
-      "updated_at": "2026-08-04T04:06:24.022796+00:00"
+      "training_samples": 55,
+      "updated_at": "2026-08-04T16:41:18.557760+00:00"
     },
     "score_events": 119,
     "sport_keys": 4,
@@ -167,13 +290,13 @@
     "consecutive_failures": "0",
     "historical_backfill_enabled": false,
     "historical_backfill_required": false,
-    "last_cycle_at": "2026-08-04T15:47:54.921391+00:00",
-    "live_accuracy": "0.94230769",
-    "live_audit_count": "52",
-    "live_brier": "0.10101406",
-    "model_version": "53",
+    "last_cycle_at": "2026-08-04T16:47:53.679379+00:00",
+    "live_accuracy": "0.94545455",
+    "live_audit_count": "55",
+    "live_brier": "0.09923479",
+    "model_version": "56",
     "reason": "insufficient_total_training_samples",
     "service": "tennis-autonomy",
-    "training_samples": "52"
+    "training_samples": "55"
   }
 }
