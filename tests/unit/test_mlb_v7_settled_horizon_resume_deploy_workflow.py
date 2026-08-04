@@ -48,4 +48,4 @@ def test_v7_settled_horizon_resume_deploy_fails_closed_at_safe_horizon():
     assert "V7 crossed the safe settled horizon early" in source
     assert "productionAuthorityChanged" in source
     assert "MLB-HISTORICAL-INCREMENTAL-RANGE-EXTENSION-v2-waiting-resume" in source
-    assert "mode\\\":\\\"orchestrate" in source
+    assert '"mode":"orchestrate"' in source
