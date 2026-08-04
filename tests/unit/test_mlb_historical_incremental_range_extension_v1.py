@@ -160,3 +160,54 @@ def test_unsettled_boundary_is_deferred_without_discarding_proven_date(monkeypat
     assert handler.state["lastError"] is None
     assert handler.state["rangeExtensionNextRetryDate"] == "2026-07-26"
     assert handler.state["rangeExtensionDeferredDates"][0]["classification"] == "NOT_YET_PROVABLY_SETTLED"
+
+
+def test_waiting_phase_resumes_directly_when_horizon_advances(monkeypatch):
+    waiting = state()
+    waiting["phase"] = patch.WAITING_PHASE
+    waiting["settledHorizonWait"] = {
+        "authorizedThroughDate": "2026-07-24",
+        "settledHorizonDate": "2026-07-24",
+        "nextEligibleSlateDate": "2026-07-25",
+        "blockingError": False,
+    }
+    finals = {
+        "2026-07-25": {
+            "officialGameCount": 1,
+            "games": [{"gameDate": "2026-07-25T20:00:00Z"}],
+        }
+    }
+    handler = Handler(waiting, finals)
+    base = Base(handler)
+    monkeypatch.setattr(
+        patch,
+        "settled_horizon",
+        lambda: __import__("datetime").date(2026, 7, 25),
+    )
+
+    patch.install(base)
+    base._append_authorized_range_extension()
+
+    assert handler.calls == ["2026-07-25"]
+    assert handler.state["endDate"] == "2026-07-25"
+    assert handler.state["phase"] == "BACKFILLING"
+    assert handler.state["lastError"] is None
+    assert handler.state["rangeExtension"]["version"] == patch.VERSION
+
+
+def test_waiting_phase_does_not_cross_unsettled_horizon(monkeypatch):
+    waiting = state()
+    waiting["phase"] = patch.WAITING_PHASE
+    handler = Handler(waiting, {})
+    base = Base(handler)
+    monkeypatch.setattr(
+        patch,
+        "settled_horizon",
+        lambda: __import__("datetime").date(2026, 7, 24),
+    )
+
+    patch.install(base)
+    base._append_authorized_range_extension()
+
+    assert handler.calls == []
+    assert handler.state == waiting
