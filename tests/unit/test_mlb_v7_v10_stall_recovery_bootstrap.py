@@ -44,9 +44,11 @@ def test_bootstrap_publishes_fresh_v10_and_compact_v9_evidence() -> None:
     assert "value.get('sourceSha') == os.environ['GITHUB_SHA']" in text
     assert "str(value.get('runId')) == str(os.environ['GITHUB_RUN_ID'])" in text
     assert "value.get('stalledStage') is None" in text
+    assert "value.get('productionAuthority') is not True" in text
     assert "compact_latest_pointer" in text
     assert "fullEvidenceRetainedAsWorkflowArtifact" in text
-    assert "productionAuthorityChanged') is not False" in text
+    assert "contract.get('productionAuthorityChanged') is not False" in text
+    assert "value.get('productionAuthorityChanged') is False" in text
 
 
 def test_bootstrap_contains_no_invisible_unicode_or_recursive_report_trigger() -> None:
