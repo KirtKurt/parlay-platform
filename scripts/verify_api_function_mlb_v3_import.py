@@ -18,7 +18,10 @@ EXPECTED_RUNTIME = (
     "prelock-persistence-verified-stage-promotion-authority-"
     "verified-active-model-authority"
 )
-EXPECTED_API = "MLB-V3-READ-API-v6-ranked-winner-v15.10"
+EXPECTED_API = "MLB-V3-READ-API-v7-exact-persisted-prelock-public-read"
+EXPECTED_PERSISTED_PRELOCK_READ = (
+    "MLB-PERSISTED-PRELOCK-PUBLIC-READ-v2-raw-identity-decimal-safe"
+)
 EXPECTED_SELECTOR = "INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble"
 EXPECTED_POLICY = "2026-07-24-mlb-ranked-winner-primary-v1"
 
@@ -78,6 +81,7 @@ assert body.get("ok") is True, body
 assert body.get("engine_import_ok") is True, body
 assert body.get("model_version") == {EXPECTED_MODEL!r}, body
 assert body.get("apiRuntimeVersion") == {EXPECTED_API!r}, body
+assert body.get("persistedPrelockPublicReadVersion") == {EXPECTED_PERSISTED_PRELOCK_READ!r}, body
 assert body.get("primaryAlgorithm") == {EXPECTED_SELECTOR!r}, body
 assert body.get("primaryAlgorithmActive") is True, body
 assert body.get("rankedWinnerPolicyVersion") == {EXPECTED_POLICY!r}, body
@@ -148,6 +152,8 @@ assert read_calls == [{{"date": "2026-07-24", "store": False, "limit": 7}}], rea
 read_body = json.loads(read_response.get("body") or "{{}}")
 assert read_body.get("readOnly") is True, read_body
 assert read_body.get("primaryAlgorithm") == {EXPECTED_SELECTOR!r}, read_body
+assert read_body.get("persistedPrelockPublicReadVersion") == {EXPECTED_PERSISTED_PRELOCK_READ!r}, read_body
+assert (read_body.get("persistedPrelockPublicRead") or {{}}).get("productionAuthorityChanged") is False, read_body
 
 original_runtime = mlb_v3_read_api.ENGINE.MLB_ML_RUNTIME_INSTALL_V3
 fail_calls = []
@@ -165,7 +171,13 @@ finally:
     mlb_v3_read_api.ENGINE.read_persisted_predictions = original_reader
 assert failed.get("statusCode") == 503, failed
 assert fail_calls == [], fail_calls
-print(json.dumps({{"ok": True, "modelVersion": body.get("model_version"), "runtimeVersion": runtime.get("version")}}, indent=2))
+print(json.dumps({{
+    "ok": True,
+    "modelVersion": body.get("model_version"),
+    "runtimeVersion": runtime.get("version"),
+    "apiRuntimeVersion": body.get("apiRuntimeVersion"),
+    "persistedPrelockPublicReadVersion": body.get("persistedPrelockPublicReadVersion"),
+}}, indent=2))
 '''
     result = subprocess.run(
         [sys.executable, "-c", code],
@@ -180,7 +192,7 @@ print(json.dumps({{"ok": True, "modelVersion": body.get("model_version"), "runti
         sys.stderr.write(result.stderr)
         return result.returncode
     print(result.stdout.strip())
-    print("MLB V15.10 Lambda cold import, one-pick authority, read-only, and fail-closed contracts verified")
+    print("MLB V15.10 Lambda cold import, exact persisted prelock read, one-pick authority, read-only, and fail-closed contracts verified")
     return 0
 
 
