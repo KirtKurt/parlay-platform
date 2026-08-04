@@ -34,6 +34,25 @@ def row(tags):
     }
 
 
+def stable_row(tags):
+    return {
+        "predictedSide": "home",
+        "predictedWinner": "Home",
+        "homeSignal": {
+            "marketConsensusProbability": 0.60,
+            "latestGap": 0.20,
+            "delta": 0.02,
+            "reversalCount": 1,
+            "tags": tags,
+        },
+        "awaySignal": {"marketConsensusProbability": 0.40},
+    }
+
+
+def component_names(value):
+    return {item["name"] for item in module._components(value)}
+
+
 def main():
     agreement_only = module._signal_risk_gate_reasons(row(["BOOK_AGREEMENT"]))
     assert "positive_move_high_reversal_without_confirmation" in agreement_only
@@ -48,9 +67,29 @@ def main():
     agreement_and_run_line = module._signal_risk_gate_reasons(row(["BOOK_AGREEMENT", "RUN_LINE_CONFIRMATION"]))
     assert agreement_and_run_line == []
 
-    components = module._components(row(["BOOK_AGREEMENT"]))
-    names = {item["name"] for item in components}
+    names = component_names(row(["BOOK_AGREEMENT"]))
     assert "large_unconfirmed_reversal_move_penalty" in names
+
+    steam_without_agreement = component_names(stable_row(["STEAM"]))
+    assert "stable_steam_boost" not in steam_without_agreement
+    assert "unstable_steam_penalty" in steam_without_agreement
+
+    steam_with_agreement = component_names(stable_row(["BOOK_AGREEMENT", "STEAM"]))
+    assert "stable_steam_boost" in steam_with_agreement
+    assert "unstable_steam_penalty" not in steam_with_agreement
+
+    run_line_without_agreement = component_names(
+        stable_row(["RUN_LINE_MOVEMENT", "RUN_LINE_CONFIRMATION"])
+    )
+    assert "aligned_run_line_boost" not in run_line_without_agreement
+    assert "run_line_noise_penalty" in run_line_without_agreement
+
+    run_line_with_agreement = component_names(
+        stable_row(["BOOK_AGREEMENT", "RUN_LINE_MOVEMENT", "RUN_LINE_CONFIRMATION"])
+    )
+    assert "aligned_run_line_boost" in run_line_with_agreement
+    assert "run_line_noise_penalty" not in run_line_with_agreement
+
     print("MLB book-agreement confirmation gate PASS")
 
 
