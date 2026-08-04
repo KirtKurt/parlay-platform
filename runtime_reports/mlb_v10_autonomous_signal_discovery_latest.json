@@ -1201,8 +1201,8 @@
       ]
     },
     "untouchedHoldout": {
-      "accuracy": 0.5740740740740741,
-      "correct": 465,
+      "accuracy": 0.5721271393643031,
+      "correct": 468,
       "daily": [
         {
           "accuracy": 0.5714285714285714,
@@ -1599,12 +1599,18 @@
           "correct": 11,
           "pickCount": 15,
           "slateDateEt": "2026-08-02"
+        },
+        {
+          "accuracy": 0.375,
+          "correct": 3,
+          "pickCount": 8,
+          "slateDateEt": "2026-08-03"
         }
       ],
-      "losses": 345,
-      "meanDailyAccuracy": 0.5594838032338034,
+      "losses": 350,
+      "meanDailyAccuracy": 0.5567303136332988,
       "minimumDailyAccuracy": 0.0,
-      "pickCount": 810,
+      "pickCount": 818,
       "policyType": "DEVELOPMENT_FROZEN_WEIGHTED_PORTFOLIO",
       "predictions": [
         {
@@ -11144,12 +11150,12 @@
           ]
         }
       ],
-      "selectionDayCount": 66,
+      "selectionDayCount": 67,
       "selectionUsesHoldoutLabels": false,
       "selectionUsesWalkForwardLabels": false,
       "wilson95": [
-        0.5397493677687578,
-        0.6076994723986654
+        0.5379611403569674,
+        0.6056188390453895
       ]
     },
     "walkForward": {
@@ -21355,21 +21361,21 @@
     "artifactAuthoritiesTruncated": true,
     "artifactChecksumValidationApplied": true,
     "authority": "IMMUTABLE_COMPLETE_SLATE_ARTIFACTS",
-    "completedSlateCount": 330,
+    "completedSlateCount": 331,
     "lockContract": "EACH_GAME_T_MINUS_45",
-    "recordCountLoaded": 4091,
-    "rowEligibilityAliasesDerived": 4091,
+    "recordCountLoaded": 4099,
+    "rowEligibilityAliasesDerived": 4099,
     "rowLockProofValidationApplied": true,
     "slateFingerprintValidationApplied": true
   },
   "canonicalDeduplicationApplied": true,
   "canonicalEligibilityFailClosed": true,
   "canonicalSortApplied": true,
-  "completedAtUtc": "2026-08-03T05:23:09.837355+00:00",
+  "completedAtUtc": "2026-08-04T07:23:25.932138+00:00",
   "conflictingDuplicatesPermanentlyQuarantined": true,
-  "createdAtUtc": "2026-08-03T05:22:46.830491+00:00",
-  "datasetFingerprint": "632e307b686c2216da457c2e00db2ae64c687b33a887e0f4797d45df07eac9ec",
-  "durationSeconds": 63.65,
+  "createdAtUtc": "2026-08-04T07:23:02.138425+00:00",
+  "datasetFingerprint": "93ef9dc4199d3336593745ef2308b88261ef1ec936f54d123c2234813211fee3",
+  "durationSeconds": 91.838,
   "emptyRegistryStallFixed": true,
   "exactSignificanceTest": "two-sided exact binomial",
   "fdrAlpha": 0.1,
@@ -21379,16 +21385,15 @@
   "generatedPatternCount": 3389,
   "holdoutSelectionDefectFixed": true,
   "incrementalExecutionSupported": true,
-  "incrementalNoChange": true,
+  "incrementalNoChange": false,
   "individualSignalMaxControlRetainedForDiagnosticsOnly": true,
   "inputIntegrity": {
-    "canonicalRecordCount": 4091,
+    "canonicalRecordCount": 4099,
     "duplicateRecordCount": 0,
     "exclusionCounts": {},
-    "inputRecordCount": 4091,
+    "inputRecordCount": 4099,
     "quarantinedGameCount": 0
   },
-  "lastCheckedAtUtc": "2026-08-03T12:45:33.120264+00:00",
   "learningActive": true,
   "learningStatus": "VALIDATED_SHADOW_PORTFOLIO_ACTIVE",
   "mayPublishPicks": false,
@@ -21410,10 +21415,10 @@
       "seed": 17010
     },
     "untouchedHoldout": {
-      "cachedRuleApplicationCount": 8510,
+      "cachedRuleApplicationCount": 8623,
       "eligibleDefinitionCount": 39,
       "implementation": "MLB-V10-PERMUTATION-CONTROL-v2-cached-pregame-rules",
-      "maximumAccuracy95thPercentile": 0.675,
+      "maximumAccuracy95thPercentile": 0.65,
       "minimumPicks": 40,
       "passed": true,
       "pregameRulesCached": true,
@@ -21701,7 +21706,8 @@
       "2026-07-30",
       "2026-07-31",
       "2026-08-01",
-      "2026-08-02"
+      "2026-08-02",
+      "2026-08-03"
     ],
     "walkForward": [
       "2025-10-27",
@@ -21785,17 +21791,17 @@
     "selectionUsesUntouchedHoldoutLabels": false,
     "selectionUsesWalkForwardLabels": false,
     "untouchedHoldoutAuditControl": {
-      "accuracy95thPercentile": 0.5320987654320988,
+      "accuracy95thPercentile": 0.530562347188264,
       "implementation": "MLB-V10-PORTFOLIO-PERMUTATION-v1-fixed-pregame-policy",
       "minimumPicks": 80,
       "minimumSlateDays": 20,
-      "observedAccuracy": 0.5740740740740741,
+      "observedAccuracy": 0.5721271393643031,
       "observedWilson95": [
-        0.5397493677687578,
-        0.6076994723986654
+        0.5379611403569674,
+        0.6056188390453895
       ],
       "passed": true,
-      "pickCount": 810,
+      "pickCount": 818,
       "pregamePolicyFrozen": true,
       "rounds": 1000,
       "seed": 27102,
@@ -21841,39 +21847,630 @@
   ],
   "proofType": "MLB_V10_AUTONOMOUS_DISCOVERY_RUN",
   "prospectiveShadow": {
+    "cumulativeObservedShadow": {
+      "correct": 25,
+      "firstObservedSlateDate": "2026-08-01",
+      "lastObservedSlateDate": "2026-08-03",
+      "losses": 13,
+      "mayPublishPicks": false,
+      "mayWriteChampion": false,
+      "observedAccuracy": 0.6578947368421053,
+      "observedAccuracySemantics": "Observed retrospective shadow outcome rate; not a validated predictive probability.",
+      "productionAuthority": false,
+      "shadowOnly": true,
+      "snapshotCount": 8,
+      "status": "OBSERVED_SHADOW_HISTORY_AVAILABLE",
+      "uniqueObservedPickCount": 38,
+      "uniqueSlateDateCount": 3,
+      "version": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated"
+    },
     "frozenThroughDate": "2026-08-02",
-    "futureCanonicalGameCount": 0,
-    "futureSlateCount": 0,
+    "futureCanonicalGameCount": 8,
+    "futureSlateCount": 1,
+    "history": [
+      {
+        "correct": 0,
+        "evaluatedThroughDate": null,
+        "frozenThroughDate": "2026-07-24",
+        "futureCanonicalGameCount": 41,
+        "futureSlateCount": 3,
+        "games": [],
+        "losses": 0,
+        "observedAccuracy": null,
+        "observedAccuracySemantics": "Observed retrospective shadow outcome rate; not a validated predictive probability.",
+        "observedPickCount": 0,
+        "policyChangedDuringEvaluation": false,
+        "productionAuthority": false,
+        "registryFingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "registryVersion": "MLB-V10-AUTONOMOUS-SIGNAL-DISCOVERY-v2.2-overflow-safe-exact-binomial",
+        "selectionUsesFutureLabels": false,
+        "shadowOnly": true,
+        "snapshotFingerprint": "d9d895c731231fa90bd919cc375f86032551bfeba38a91f7d4b2c0af69f41cd7",
+        "version": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated"
+      },
+      {
+        "correct": 0,
+        "evaluatedThroughDate": null,
+        "frozenThroughDate": "2026-07-27",
+        "futureCanonicalGameCount": 15,
+        "futureSlateCount": 1,
+        "games": [],
+        "losses": 0,
+        "observedAccuracy": null,
+        "observedAccuracySemantics": "Observed retrospective shadow outcome rate; not a validated predictive probability.",
+        "observedPickCount": 0,
+        "policyChangedDuringEvaluation": false,
+        "productionAuthority": false,
+        "registryFingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "registryVersion": "MLB-V10-AUTONOMOUS-SIGNAL-DISCOVERY-v2.2-overflow-safe-exact-binomial",
+        "selectionUsesFutureLabels": false,
+        "shadowOnly": true,
+        "snapshotFingerprint": "656628006ec4340595a7d7f2ae0c1380ff8155db61849cc3472aadb3f5194812",
+        "version": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated"
+      },
+      {
+        "correct": 0,
+        "evaluatedThroughDate": null,
+        "frozenThroughDate": "2026-07-28",
+        "futureCanonicalGameCount": 16,
+        "futureSlateCount": 1,
+        "games": [],
+        "losses": 0,
+        "observedAccuracy": null,
+        "observedAccuracySemantics": "Observed retrospective shadow outcome rate; not a validated predictive probability.",
+        "observedPickCount": 0,
+        "policyChangedDuringEvaluation": false,
+        "productionAuthority": false,
+        "registryFingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "registryVersion": "MLB-V10-AUTONOMOUS-SIGNAL-DISCOVERY-v2.2-overflow-safe-exact-binomial",
+        "selectionUsesFutureLabels": false,
+        "shadowOnly": true,
+        "snapshotFingerprint": "b9ab168dc1649e88b9b319b75a0d52e5f5b320dc0442db313f900b5e42e99ce5",
+        "version": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated"
+      },
+      {
+        "correct": 0,
+        "evaluatedThroughDate": null,
+        "frozenThroughDate": "2026-07-29",
+        "futureCanonicalGameCount": 10,
+        "futureSlateCount": 1,
+        "games": [],
+        "losses": 0,
+        "observedAccuracy": null,
+        "observedAccuracySemantics": "Observed retrospective shadow outcome rate; not a validated predictive probability.",
+        "observedPickCount": 0,
+        "policyChangedDuringEvaluation": false,
+        "productionAuthority": false,
+        "registryFingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "registryVersion": "MLB-V10-AUTONOMOUS-SIGNAL-DISCOVERY-v2.2-overflow-safe-exact-binomial",
+        "selectionUsesFutureLabels": false,
+        "shadowOnly": true,
+        "snapshotFingerprint": "56e29375bf307d9a0daba7aaab69b6edbc5e8fdc0eebf2dbac4eca8ae1d8595d",
+        "version": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated"
+      },
+      {
+        "correct": 0,
+        "evaluatedThroughDate": null,
+        "frozenThroughDate": "2026-07-30",
+        "futureCanonicalGameCount": 15,
+        "futureSlateCount": 1,
+        "games": [],
+        "losses": 0,
+        "observedAccuracy": null,
+        "observedAccuracySemantics": "Observed retrospective shadow outcome rate; not a validated predictive probability.",
+        "observedPickCount": 0,
+        "policyChangedDuringEvaluation": false,
+        "productionAuthority": false,
+        "registryFingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "registryVersion": "MLB-V10-AUTONOMOUS-SIGNAL-DISCOVERY-v2.2-overflow-safe-exact-binomial",
+        "selectionUsesFutureLabels": false,
+        "shadowOnly": true,
+        "snapshotFingerprint": "d8b9b0bfe025c2791e18753d75db726359c9bc4a60c0cddcca43e6f5b17aec83",
+        "version": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated"
+      },
+      {
+        "correct": 11,
+        "evaluatedThroughDate": "2026-08-01",
+        "frozenThroughDate": "2026-07-31",
+        "futureCanonicalGameCount": 15,
+        "futureSlateCount": 1,
+        "games": [
+          {
+            "correct": true,
+            "gameId": "822781",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-01"
+          },
+          {
+            "correct": true,
+            "gameId": "822944",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-01"
+          },
+          {
+            "correct": true,
+            "gameId": "823109",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-01"
+          },
+          {
+            "correct": true,
+            "gameId": "823269",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-01"
+          },
+          {
+            "correct": false,
+            "gameId": "823594",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-01"
+          },
+          {
+            "correct": false,
+            "gameId": "823920",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-01"
+          },
+          {
+            "correct": true,
+            "gameId": "824000",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-01"
+          },
+          {
+            "correct": false,
+            "gameId": "824162",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-01"
+          },
+          {
+            "correct": true,
+            "gameId": "824326",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-01"
+          },
+          {
+            "correct": false,
+            "gameId": "824405",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-01"
+          },
+          {
+            "correct": true,
+            "gameId": "824485",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-01"
+          },
+          {
+            "correct": true,
+            "gameId": "824649",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-01"
+          },
+          {
+            "correct": true,
+            "gameId": "824808",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-01"
+          },
+          {
+            "correct": true,
+            "gameId": "824890",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-01"
+          },
+          {
+            "correct": true,
+            "gameId": "824972",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-01"
+          }
+        ],
+        "losses": 4,
+        "observedAccuracy": 0.7333333333333333,
+        "observedAccuracySemantics": "Observed retrospective shadow outcome rate; not a validated predictive probability.",
+        "observedPickCount": 15,
+        "policyChangedDuringEvaluation": false,
+        "productionAuthority": false,
+        "registryFingerprint": "ef0a7109e2ed4a30a1feeb99a8dad351c8edecabc0607f2c6bbfe19437cfb35d",
+        "registryVersion": "MLB-V10-AUTONOMOUS-SIGNAL-DISCOVERY-v3.0-development-frozen-portfolio",
+        "selectionUsesFutureLabels": false,
+        "shadowOnly": true,
+        "snapshotFingerprint": "59261e6f6f3aeeb6defce12bcac514a85fee2b0922d08e04f1070be8476b2bab",
+        "version": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated"
+      },
+      {
+        "correct": 11,
+        "evaluatedThroughDate": "2026-08-02",
+        "frozenThroughDate": "2026-08-01",
+        "futureCanonicalGameCount": 15,
+        "futureSlateCount": 1,
+        "games": [
+          {
+            "correct": false,
+            "gameId": "822783",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-02"
+          },
+          {
+            "correct": false,
+            "gameId": "822943",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-02"
+          },
+          {
+            "correct": true,
+            "gameId": "823107",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-02"
+          },
+          {
+            "correct": true,
+            "gameId": "823270",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-02"
+          },
+          {
+            "correct": true,
+            "gameId": "823592",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-02"
+          },
+          {
+            "correct": false,
+            "gameId": "823919",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-02"
+          },
+          {
+            "correct": false,
+            "gameId": "823996",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-02"
+          },
+          {
+            "correct": true,
+            "gameId": "824163",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-02"
+          },
+          {
+            "correct": true,
+            "gameId": "824323",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-02"
+          },
+          {
+            "correct": true,
+            "gameId": "824404",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-02"
+          },
+          {
+            "correct": true,
+            "gameId": "824483",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-02"
+          },
+          {
+            "correct": true,
+            "gameId": "824648",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-02"
+          },
+          {
+            "correct": true,
+            "gameId": "824807",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-02"
+          },
+          {
+            "correct": true,
+            "gameId": "824891",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-02"
+          },
+          {
+            "correct": true,
+            "gameId": "824971",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-02"
+          }
+        ],
+        "losses": 4,
+        "observedAccuracy": 0.7333333333333333,
+        "observedAccuracySemantics": "Observed retrospective shadow outcome rate; not a validated predictive probability.",
+        "observedPickCount": 15,
+        "policyChangedDuringEvaluation": false,
+        "productionAuthority": false,
+        "registryFingerprint": "0babadc5578c143349a0bbd2f950e9bfa8ae2ab29895219da07da5b9c2873bd5",
+        "registryVersion": "MLB-V10-AUTONOMOUS-SIGNAL-DISCOVERY-v3.0-development-frozen-portfolio",
+        "selectionUsesFutureLabels": false,
+        "shadowOnly": true,
+        "snapshotFingerprint": "0c05c86884502dfe75018dc35982a2dc5df65bde8647d9a97a21dfbb58e8eec6",
+        "version": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated"
+      },
+      {
+        "correct": 3,
+        "evaluatedThroughDate": "2026-08-03",
+        "frozenThroughDate": "2026-08-02",
+        "futureCanonicalGameCount": 8,
+        "futureSlateCount": 1,
+        "games": [
+          {
+            "correct": false,
+            "gameId": "822867",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-03"
+          },
+          {
+            "correct": true,
+            "gameId": "823431",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-03"
+          },
+          {
+            "correct": false,
+            "gameId": "823520",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-03"
+          },
+          {
+            "correct": false,
+            "gameId": "823757",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-03"
+          },
+          {
+            "correct": false,
+            "gameId": "824160",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-03"
+          },
+          {
+            "correct": true,
+            "gameId": "824324",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-03"
+          },
+          {
+            "correct": false,
+            "gameId": "824647",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-03"
+          },
+          {
+            "correct": true,
+            "gameId": "825095",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-03"
+          }
+        ],
+        "losses": 5,
+        "observedAccuracy": 0.375,
+        "observedAccuracySemantics": "Observed retrospective shadow outcome rate; not a validated predictive probability.",
+        "observedPickCount": 8,
+        "policyChangedDuringEvaluation": false,
+        "productionAuthority": false,
+        "registryFingerprint": "223630bde2d3df06ceda5b50b37aa56c4cbebe92491b9512e1680b76258b0dfb",
+        "registryVersion": "MLB-V10-AUTONOMOUS-SIGNAL-DISCOVERY-v3.0-development-frozen-portfolio",
+        "selectionUsesFutureLabels": false,
+        "shadowOnly": true,
+        "snapshotFingerprint": "56e05492ee06b3faab2d9d12f27c3c8e3c0ee0097a1a1e3d3c219295342bde31",
+        "version": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated"
+      }
+    ],
+    "historyAppendOnly": true,
+    "historyDeduplicated": true,
+    "historyVersion": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated",
     "policyChangedDuringEvaluation": false,
     "portfolio": {
-      "accuracy": null,
-      "correct": 0,
-      "daily": [],
-      "losses": 0,
-      "meanDailyAccuracy": null,
-      "minimumDailyAccuracy": null,
-      "pickCount": 0,
+      "accuracy": 0.375,
+      "correct": 3,
+      "daily": [
+        {
+          "accuracy": 0.375,
+          "correct": 3,
+          "pickCount": 8,
+          "slateDateEt": "2026-08-03"
+        }
+      ],
+      "losses": 5,
+      "meanDailyAccuracy": 0.375,
+      "minimumDailyAccuracy": 0.375,
+      "pickCount": 8,
       "policyType": "DEVELOPMENT_FROZEN_WEIGHTED_PORTFOLIO",
-      "predictions": [],
-      "selectionDayCount": 0,
+      "predictions": [
+        {
+          "awayVote": 0.0,
+          "correct": false,
+          "gameId": "822867",
+          "homeVote": 0.1312630931504146,
+          "normalizedVoteMargin": 1.0,
+          "selectedHome": true,
+          "selectedSide": "home",
+          "slateDateEt": "2026-08-03",
+          "supportingSignalCount": 4,
+          "supportingSignals": [
+            "lower:americanOdds:extreme",
+            "has_tag:FAVORITE",
+            "lacks_tag:UNDERDOG",
+            "interaction:higher:delta:large && lower:americanOdds:extreme"
+          ]
+        },
+        {
+          "awayVote": 0.0,
+          "correct": true,
+          "gameId": "823431",
+          "homeVote": 0.33733477538399304,
+          "normalizedVoteMargin": 1.0,
+          "selectedHome": true,
+          "selectedSide": "home",
+          "slateDateEt": "2026-08-03",
+          "supportingSignalCount": 9,
+          "supportingSignals": [
+            "lower:americanOdds:extreme",
+            "higher:probLatest:extreme",
+            "higher:probStart:extreme",
+            "has_tag:FAVORITE",
+            "lacks_tag:UNDERDOG",
+            "interaction:higher:derivedFeatures.agreementMomentum:small && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.agreementMomentum:small && higher:probStart:extreme",
+            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme"
+          ]
+        },
+        {
+          "awayVote": 0.0,
+          "correct": false,
+          "gameId": "823520",
+          "homeVote": 0.3833391772299779,
+          "normalizedVoteMargin": 1.0,
+          "selectedHome": true,
+          "selectedSide": "home",
+          "slateDateEt": "2026-08-03",
+          "supportingSignalCount": 10,
+          "supportingSignals": [
+            "lower:americanOdds:extreme",
+            "higher:probLatest:extreme",
+            "higher:probStart:extreme",
+            "has_tag:FAVORITE",
+            "lacks_tag:UNDERDOG",
+            "interaction:higher:delta:large && higher:probLatest:extreme",
+            "interaction:higher:delta:large && higher:probStart:extreme",
+            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme"
+          ]
+        },
+        {
+          "awayVote": 0.0,
+          "correct": false,
+          "gameId": "823757",
+          "homeVote": 0.4850530351648804,
+          "normalizedVoteMargin": 1.0,
+          "selectedHome": true,
+          "selectedSide": "home",
+          "slateDateEt": "2026-08-03",
+          "supportingSignalCount": 13,
+          "supportingSignals": [
+            "lower:americanOdds:extreme",
+            "higher:probLatest:extreme",
+            "higher:probStart:extreme",
+            "has_tag:FAVORITE",
+            "lacks_tag:UNDERDOG",
+            "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probStart:extreme",
+            "interaction:higher:derivedFeatures.agreementMomentum:medium && lower:americanOdds:extreme",
+            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probStart:extreme"
+          ]
+        },
+        {
+          "awayVote": 0.0,
+          "correct": false,
+          "gameId": "824160",
+          "homeVote": 0.3225267291168215,
+          "normalizedVoteMargin": 1.0,
+          "selectedHome": true,
+          "selectedSide": "home",
+          "slateDateEt": "2026-08-03",
+          "supportingSignalCount": 9,
+          "supportingSignals": [
+            "lower:americanOdds:extreme",
+            "higher:probLatest:extreme",
+            "has_tag:FAVORITE",
+            "lacks_tag:UNDERDOG",
+            "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.agreementMomentum:medium && lower:americanOdds:extreme",
+            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probLatest:extreme"
+          ]
+        },
+        {
+          "awayVote": 0.5492081790163581,
+          "correct": true,
+          "gameId": "824324",
+          "homeVote": 0.0,
+          "normalizedVoteMargin": 1.0,
+          "selectedHome": false,
+          "selectedSide": "away",
+          "slateDateEt": "2026-08-03",
+          "supportingSignalCount": 14,
+          "supportingSignals": [
+            "lower:americanOdds:extreme",
+            "higher:probLatest:extreme",
+            "higher:probStart:extreme",
+            "has_tag:FAVORITE",
+            "lacks_tag:UNDERDOG",
+            "interaction:higher:delta:large && higher:probLatest:extreme",
+            "interaction:higher:delta:large && higher:probStart:extreme",
+            "interaction:higher:delta:large && higher:temporalFeatures.horizons.full.accelerationPpHr2:medium",
+            "interaction:higher:delta:large && lower:americanOdds:extreme",
+            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probStart:extreme"
+          ]
+        },
+        {
+          "awayVote": 0.0920345570786884,
+          "correct": false,
+          "gameId": "824647",
+          "homeVote": 0.0,
+          "normalizedVoteMargin": 1.0,
+          "selectedHome": false,
+          "selectedSide": "away",
+          "slateDateEt": "2026-08-03",
+          "supportingSignalCount": 3,
+          "supportingSignals": [
+            "lower:americanOdds:extreme",
+            "has_tag:FAVORITE",
+            "lacks_tag:UNDERDOG"
+          ]
+        },
+        {
+          "awayVote": 0.0,
+          "correct": true,
+          "gameId": "825095",
+          "homeVote": 0.02632973665970038,
+          "normalizedVoteMargin": 1.0,
+          "selectedHome": true,
+          "selectedSide": "home",
+          "slateDateEt": "2026-08-03",
+          "supportingSignalCount": 1,
+          "supportingSignals": [
+            "lower:americanOdds:extreme"
+          ]
+        }
+      ],
+      "selectionDayCount": 1,
       "selectionUsesHoldoutLabels": false,
       "selectionUsesWalkForwardLabels": false,
       "wilson95": [
-        0.0,
-        1.0
+        0.13684175946152105,
+        0.6942621454161981
       ]
     },
+    "probabilitySemantics": "Observed retrospective shadow outcome rate; not a validated predictive probability.",
     "productionAuthority": false,
     "registryFingerprint": "223630bde2d3df06ceda5b50b37aa56c4cbebe92491b9512e1680b76258b0dfb",
     "registryVersion": "MLB-V10-AUTONOMOUS-SIGNAL-DISCOVERY-v3.0-development-frozen-portfolio",
     "researchGatePassedAtFreeze": true,
     "selectionUsesFutureLabels": false,
     "shadowOnly": true,
-    "status": "AWAITING_FUTURE_GAMES"
+    "status": "EVALUATED"
   },
+  "prospectiveShadowHistoryPreserved": true,
+  "prospectiveShadowHistoryVersion": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated",
   "registryFreeze": {
     "frozenSignalCount": 24,
-    "frozenThroughDate": "2026-08-02",
+    "frozenThroughDate": "2026-08-03",
     "portfolio": {
       "developmentMetrics": {
         "accuracy": 0.5671171171171171,
@@ -23169,8 +23766,8 @@
   "retainedPatternCount": 42,
   "reusedPriorRegistryForProspectiveShadow": true,
   "runAttempt": "1",
-  "runId": "30786938544",
-  "settledGameCount": 4091,
+  "runId": "30887455161",
+  "settledGameCount": 4099,
   "shadowSignalCount": 24,
   "signals": [
     {
@@ -23229,11 +23826,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "20947d5fb8aa52a7bb5d",
       "untouchedHoldout": {
-        "accuracy": 0.5918367346938775,
-        "correct": 261,
+        "accuracy": 0.5896860986547086,
+        "correct": 263,
         "family": "higher_numeric",
-        "pickCount": 441,
-        "slateDayCount": 65
+        "pickCount": 446,
+        "slateDayCount": 66
       },
       "walkForward": {
         "accuracy": 0.5352422907488987,
@@ -23264,11 +23861,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "e1b448f6e7e7b3b56e43",
       "untouchedHoldout": {
-        "accuracy": 0.5918367346938775,
-        "correct": 261,
+        "accuracy": 0.5896860986547086,
+        "correct": 263,
         "family": "higher_numeric",
-        "pickCount": 441,
-        "slateDayCount": 65
+        "pickCount": 446,
+        "slateDayCount": 66
       },
       "walkForward": {
         "accuracy": 0.5352422907488987,
@@ -23299,11 +23896,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "baf71e16a125c4f45191",
       "untouchedHoldout": {
-        "accuracy": 0.5918367346938775,
-        "correct": 261,
+        "accuracy": 0.5896860986547086,
+        "correct": 263,
         "family": "higher_numeric",
-        "pickCount": 441,
-        "slateDayCount": 65
+        "pickCount": 446,
+        "slateDayCount": 66
       },
       "walkForward": {
         "accuracy": 0.5352422907488987,
@@ -23334,11 +23931,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "c03a3d1402f071f30da2",
       "untouchedHoldout": {
-        "accuracy": 0.6040723981900452,
-        "correct": 267,
+        "accuracy": 0.6031390134529148,
+        "correct": 269,
         "family": "higher_numeric",
-        "pickCount": 442,
-        "slateDayCount": 65
+        "pickCount": 446,
+        "slateDayCount": 66
       },
       "walkForward": {
         "accuracy": 0.5403726708074534,
@@ -23369,11 +23966,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "dc871b699c969c0248f9",
       "untouchedHoldout": {
-        "accuracy": 0.6388888888888888,
-        "correct": 69,
+        "accuracy": 0.6363636363636364,
+        "correct": 70,
         "family": "interaction",
-        "pickCount": 108,
-        "slateDayCount": 54
+        "pickCount": 110,
+        "slateDayCount": 55
       },
       "walkForward": {
         "accuracy": 0.49019607843137253,
@@ -23439,11 +24036,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "1a75a16a113c7448b94a",
       "untouchedHoldout": {
-        "accuracy": 0.615819209039548,
-        "correct": 109,
+        "accuracy": 0.6077348066298343,
+        "correct": 110,
         "family": "interaction",
-        "pickCount": 177,
-        "slateDayCount": 62
+        "pickCount": 181,
+        "slateDayCount": 63
       },
       "walkForward": {
         "accuracy": 0.5337837837837838,
@@ -23474,11 +24071,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "e948d61dabe41ce9dcd0",
       "untouchedHoldout": {
-        "accuracy": 0.615819209039548,
-        "correct": 109,
+        "accuracy": 0.6077348066298343,
+        "correct": 110,
         "family": "interaction",
-        "pickCount": 177,
-        "slateDayCount": 62
+        "pickCount": 181,
+        "slateDayCount": 63
       },
       "walkForward": {
         "accuracy": 0.5337837837837838,
@@ -23509,11 +24106,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "69d0a496cc03c1a3a672",
       "untouchedHoldout": {
-        "accuracy": 0.6607142857142857,
-        "correct": 148,
+        "accuracy": 0.6578947368421053,
+        "correct": 150,
         "family": "interaction",
-        "pickCount": 224,
-        "slateDayCount": 63
+        "pickCount": 228,
+        "slateDayCount": 64
       },
       "walkForward": {
         "accuracy": 0.5760869565217391,
@@ -23544,11 +24141,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "f54e63bc1ecbf843e5d7",
       "untouchedHoldout": {
-        "accuracy": 0.586490939044481,
-        "correct": 356,
+        "accuracy": 0.5830618892508144,
+        "correct": 358,
         "family": "tag",
-        "pickCount": 607,
-        "slateDayCount": 66
+        "pickCount": 614,
+        "slateDayCount": 67
       },
       "walkForward": {
         "accuracy": 0.5563025210084034,
@@ -23579,11 +24176,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "812f3a78edf1206a4380",
       "untouchedHoldout": {
-        "accuracy": 0.5875190258751902,
-        "correct": 386,
+        "accuracy": 0.5843373493975904,
+        "correct": 388,
         "family": "tag",
-        "pickCount": 657,
-        "slateDayCount": 66
+        "pickCount": 664,
+        "slateDayCount": 67
       },
       "walkForward": {
         "accuracy": 0.5500770416024653,
@@ -23649,11 +24246,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "d60e4ebd8b9b6ec9d86f",
       "untouchedHoldout": {
-        "accuracy": 0.6581196581196581,
-        "correct": 77,
+        "accuracy": 0.6554621848739496,
+        "correct": 78,
         "family": "interaction",
-        "pickCount": 117,
-        "slateDayCount": 58
+        "pickCount": 119,
+        "slateDayCount": 59
       },
       "walkForward": {
         "accuracy": 0.5431034482758621,
@@ -23684,11 +24281,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "054b79d8a366eded0700",
       "untouchedHoldout": {
-        "accuracy": 0.574468085106383,
-        "correct": 81,
+        "accuracy": 0.5734265734265734,
+        "correct": 82,
         "family": "interaction",
-        "pickCount": 141,
-        "slateDayCount": 58
+        "pickCount": 143,
+        "slateDayCount": 59
       },
       "walkForward": {
         "accuracy": 0.4507042253521127,
@@ -23719,11 +24316,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "70d60e91e816834b1812",
       "untouchedHoldout": {
-        "accuracy": 0.574468085106383,
-        "correct": 81,
+        "accuracy": 0.5734265734265734,
+        "correct": 82,
         "family": "interaction",
-        "pickCount": 141,
-        "slateDayCount": 58
+        "pickCount": 143,
+        "slateDayCount": 59
       },
       "walkForward": {
         "accuracy": 0.4507042253521127,
@@ -23754,11 +24351,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "bb14a68e2dcf1b9fe43f",
       "untouchedHoldout": {
-        "accuracy": 0.574468085106383,
-        "correct": 81,
+        "accuracy": 0.5734265734265734,
+        "correct": 82,
         "family": "interaction",
-        "pickCount": 141,
-        "slateDayCount": 58
+        "pickCount": 143,
+        "slateDayCount": 59
       },
       "walkForward": {
         "accuracy": 0.4507042253521127,
@@ -23789,11 +24386,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "e44a54b5484188891a25",
       "untouchedHoldout": {
-        "accuracy": 0.5784313725490197,
-        "correct": 118,
+        "accuracy": 0.5776699029126213,
+        "correct": 119,
         "family": "interaction",
-        "pickCount": 204,
-        "slateDayCount": 60
+        "pickCount": 206,
+        "slateDayCount": 61
       },
       "walkForward": {
         "accuracy": 0.49166666666666664,
@@ -23859,11 +24456,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "2194a086a6fb0a5ea839",
       "untouchedHoldout": {
-        "accuracy": 0.6231884057971014,
-        "correct": 172,
+        "accuracy": 0.6192170818505338,
+        "correct": 174,
         "family": "interaction",
-        "pickCount": 276,
-        "slateDayCount": 64
+        "pickCount": 281,
+        "slateDayCount": 65
       },
       "walkForward": {
         "accuracy": 0.5555555555555556,
@@ -23894,11 +24491,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "80b36ed09f3746b28896",
       "untouchedHoldout": {
-        "accuracy": 0.6231884057971014,
-        "correct": 172,
+        "accuracy": 0.6192170818505338,
+        "correct": 174,
         "family": "interaction",
-        "pickCount": 276,
-        "slateDayCount": 64
+        "pickCount": 281,
+        "slateDayCount": 65
       },
       "walkForward": {
         "accuracy": 0.5555555555555556,
@@ -23929,11 +24526,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "106da8770822a00108a0",
       "untouchedHoldout": {
-        "accuracy": 0.6231884057971014,
-        "correct": 172,
+        "accuracy": 0.6192170818505338,
+        "correct": 174,
         "family": "interaction",
-        "pickCount": 276,
-        "slateDayCount": 64
+        "pickCount": 281,
+        "slateDayCount": 65
       },
       "walkForward": {
         "accuracy": 0.5555555555555556,
@@ -23964,11 +24561,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "42c69fa3ba4c1586017e",
       "untouchedHoldout": {
-        "accuracy": 0.5942857142857143,
+        "accuracy": 0.5875706214689266,
         "correct": 104,
         "family": "interaction",
-        "pickCount": 175,
-        "slateDayCount": 58
+        "pickCount": 177,
+        "slateDayCount": 59
       },
       "walkForward": {
         "accuracy": 0.5384615384615384,
@@ -23999,11 +24596,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "a3476179c2d0d7fd9913",
       "untouchedHoldout": {
-        "accuracy": 0.6283783783783784,
-        "correct": 93,
+        "accuracy": 0.6225165562913907,
+        "correct": 94,
         "family": "interaction",
-        "pickCount": 148,
-        "slateDayCount": 59
+        "pickCount": 151,
+        "slateDayCount": 60
       },
       "walkForward": {
         "accuracy": 0.5244755244755245,
@@ -24034,11 +24631,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "ca9f0dadb6f54d3cd704",
       "untouchedHoldout": {
-        "accuracy": 0.5540540540540541,
-        "correct": 41,
+        "accuracy": 0.56,
+        "correct": 42,
         "family": "interaction",
-        "pickCount": 74,
-        "slateDayCount": 44
+        "pickCount": 75,
+        "slateDayCount": 45
       },
       "walkForward": {
         "accuracy": 0.36538461538461536,
@@ -24069,11 +24666,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "8a9eae07fcedf01a6308",
       "untouchedHoldout": {
-        "accuracy": 0.5756154747948418,
-        "correct": 491,
+        "accuracy": 0.5737514518002322,
+        "correct": 494,
         "family": "lower_numeric",
-        "pickCount": 853,
-        "slateDayCount": 66
+        "pickCount": 861,
+        "slateDayCount": 67
       },
       "walkForward": {
         "accuracy": 0.5582278481012658,
@@ -24104,11 +24701,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "e2ff5914428ced3cbe51",
       "untouchedHoldout": {
-        "accuracy": 0.6483516483516484,
+        "accuracy": 0.6413043478260869,
         "correct": 59,
         "family": "interaction",
-        "pickCount": 91,
-        "slateDayCount": 50
+        "pickCount": 92,
+        "slateDayCount": 51
       },
       "walkForward": {
         "accuracy": 0.5568181818181818,
@@ -24139,11 +24736,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "c4b26edfa49ee4305976",
       "untouchedHoldout": {
-        "accuracy": 0.6261682242990654,
+        "accuracy": 0.6146788990825688,
         "correct": 67,
         "family": "interaction",
-        "pickCount": 107,
-        "slateDayCount": 53
+        "pickCount": 109,
+        "slateDayCount": 54
       },
       "walkForward": {
         "accuracy": 0.5510204081632653,
@@ -24174,11 +24771,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "c60e84b9ad75794ab6ad",
       "untouchedHoldout": {
-        "accuracy": 0.6261682242990654,
+        "accuracy": 0.6146788990825688,
         "correct": 67,
         "family": "interaction",
-        "pickCount": 107,
-        "slateDayCount": 53
+        "pickCount": 109,
+        "slateDayCount": 54
       },
       "walkForward": {
         "accuracy": 0.5510204081632653,
@@ -24209,11 +24806,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "7e52e07b2543871c0f77",
       "untouchedHoldout": {
-        "accuracy": 0.6261682242990654,
+        "accuracy": 0.6146788990825688,
         "correct": 67,
         "family": "interaction",
-        "pickCount": 107,
-        "slateDayCount": 53
+        "pickCount": 109,
+        "slateDayCount": 54
       },
       "walkForward": {
         "accuracy": 0.5510204081632653,
@@ -24279,11 +24876,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "9bf9de465cb841c79b59",
       "untouchedHoldout": {
-        "accuracy": 0.7272727272727273,
-        "correct": 32,
+        "accuracy": 0.7333333333333333,
+        "correct": 33,
         "family": "interaction",
-        "pickCount": 44,
-        "slateDayCount": 29
+        "pickCount": 45,
+        "slateDayCount": 30
       },
       "walkForward": {
         "accuracy": 0.6521739130434783,
@@ -24314,11 +24911,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "4cd0ae2bf89d88129e27",
       "untouchedHoldout": {
-        "accuracy": 0.723404255319149,
-        "correct": 34,
+        "accuracy": 0.7291666666666666,
+        "correct": 35,
         "family": "interaction",
-        "pickCount": 47,
-        "slateDayCount": 30
+        "pickCount": 48,
+        "slateDayCount": 31
       },
       "walkForward": {
         "accuracy": 0.6470588235294118,
@@ -24349,11 +24946,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "13600969c993dbf1f4db",
       "untouchedHoldout": {
-        "accuracy": 0.723404255319149,
-        "correct": 34,
+        "accuracy": 0.7291666666666666,
+        "correct": 35,
         "family": "interaction",
-        "pickCount": 47,
-        "slateDayCount": 30
+        "pickCount": 48,
+        "slateDayCount": 31
       },
       "walkForward": {
         "accuracy": 0.6470588235294118,
@@ -24384,11 +24981,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "1a15592c95f9824827a8",
       "untouchedHoldout": {
-        "accuracy": 0.723404255319149,
-        "correct": 34,
+        "accuracy": 0.7291666666666666,
+        "correct": 35,
         "family": "interaction",
-        "pickCount": 47,
-        "slateDayCount": 30
+        "pickCount": 48,
+        "slateDayCount": 31
       },
       "walkForward": {
         "accuracy": 0.6470588235294118,
@@ -24419,11 +25016,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "98999a01dd6a5ca3475f",
       "untouchedHoldout": {
-        "accuracy": 0.6666666666666666,
-        "correct": 52,
+        "accuracy": 0.6625,
+        "correct": 53,
         "family": "interaction",
-        "pickCount": 78,
-        "slateDayCount": 45
+        "pickCount": 80,
+        "slateDayCount": 46
       },
       "walkForward": {
         "accuracy": 0.4857142857142857,
@@ -24454,11 +25051,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "cf86d42d531b2225daeb",
       "untouchedHoldout": {
-        "accuracy": 0.5804195804195804,
-        "correct": 83,
+        "accuracy": 0.5833333333333334,
+        "correct": 84,
         "family": "interaction",
-        "pickCount": 143,
-        "slateDayCount": 59
+        "pickCount": 144,
+        "slateDayCount": 60
       },
       "walkForward": {
         "accuracy": 0.551948051948052,
@@ -24489,11 +25086,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "d6dae3fbe9495e87e702",
       "untouchedHoldout": {
-        "accuracy": 0.6413793103448275,
-        "correct": 93,
+        "accuracy": 0.6438356164383562,
+        "correct": 94,
         "family": "interaction",
-        "pickCount": 145,
-        "slateDayCount": 58
+        "pickCount": 146,
+        "slateDayCount": 59
       },
       "walkForward": {
         "accuracy": 0.5594405594405595,
@@ -24524,11 +25121,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "502e47571d8f69c6115b",
       "untouchedHoldout": {
-        "accuracy": 0.4855072463768116,
-        "correct": 67,
+        "accuracy": 0.48226950354609927,
+        "correct": 68,
         "family": "interaction",
-        "pickCount": 138,
-        "slateDayCount": 59
+        "pickCount": 141,
+        "slateDayCount": 60
       },
       "walkForward": {
         "accuracy": 0.5436893203883495,
@@ -24559,11 +25156,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "9cc5422bd5b772311c10",
       "untouchedHoldout": {
-        "accuracy": 0.7101449275362319,
+        "accuracy": 0.7,
         "correct": 49,
         "family": "interaction",
-        "pickCount": 69,
-        "slateDayCount": 41
+        "pickCount": 70,
+        "slateDayCount": 42
       },
       "walkForward": {
         "accuracy": 0.5853658536585366,
@@ -24594,11 +25191,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "f3f4fb59a628b4d71140",
       "untouchedHoldout": {
-        "accuracy": 0.5969162995594713,
-        "correct": 271,
+        "accuracy": 0.5943600867678959,
+        "correct": 274,
         "family": "interaction",
-        "pickCount": 454,
-        "slateDayCount": 65
+        "pickCount": 461,
+        "slateDayCount": 66
       },
       "walkForward": {
         "accuracy": 0.5454545454545454,
@@ -24629,11 +25226,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "395a3af65bcc91ffad63",
       "untouchedHoldout": {
-        "accuracy": 0.6413793103448275,
-        "correct": 93,
+        "accuracy": 0.6438356164383562,
+        "correct": 94,
         "family": "interaction",
-        "pickCount": 145,
-        "slateDayCount": 58
+        "pickCount": 146,
+        "slateDayCount": 59
       },
       "walkForward": {
         "accuracy": 0.5594405594405595,
@@ -24644,15 +25241,15 @@
       }
     }
   ],
-  "sourceSha": "bca8fa9790ce974935e9185c86073220ca2fe936",
-  "startedAtUtc": "2026-08-03T05:22:06.187532+00:00",
+  "sourceSha": "b543ee137b9d28bbcce8f7ddc8ff00dca3b77245",
+  "startedAtUtc": "2026-08-04T07:21:54.093762+00:00",
   "state": {
-    "completeSlateCount": 330,
-    "currentDate": "2026-08-03",
+    "completeSlateCount": 331,
+    "currentDate": "2026-08-04",
     "currentSlotIndex": 0,
-    "eligibleGameCount": 4091,
+    "eligibleGameCount": 4099,
     "phase": "WAITING_FOR_SETTLED_HORIZON",
-    "trainingRecordCountLoaded": 4091
+    "trainingRecordCountLoaded": 4099
   },
   "storageReader": "immutable_complete_slate_artifacts_with_derived_row_eligibility",
   "uncertaintyInterval": "Wilson 95%",
