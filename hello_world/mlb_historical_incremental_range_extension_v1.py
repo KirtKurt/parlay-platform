@@ -12,8 +12,9 @@ from types import SimpleNamespace
 from typing import Any, Dict, Mapping
 from zoneinfo import ZoneInfo
 
-VERSION = "MLB-HISTORICAL-INCREMENTAL-RANGE-EXTENSION-v1-settled-horizon"
+VERSION = "MLB-HISTORICAL-INCREMENTAL-RANGE-EXTENSION-v2-waiting-resume"
 EASTERN = ZoneInfo("America/New_York")
+WAITING_PHASE = "WAITING_FOR_SETTLED_HORIZON"
 
 
 def settled_horizon(now_utc: datetime | None = None) -> date:
@@ -67,6 +68,7 @@ def install(base: Any) -> None:
             "CANDIDATE_REJECTED",
             "RANGE_EXTENSION_BLOCKED_INCOMPLETE_LEDGER",
             "PAUSED_QUOTA",
+            WAITING_PHASE,
         }:
             return
 
