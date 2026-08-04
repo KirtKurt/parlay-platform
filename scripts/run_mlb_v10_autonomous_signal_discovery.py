@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 MAX_REPORT_BYTES = 20_000_000
+CADENCE_VERSION = "MLB-V10-DISCOVERY-CADENCE-v2-material-state-fast-path"
 
 
 def _write(path: Path, value: dict) -> None:
@@ -33,6 +34,93 @@ def _load_previous(path: Path):
         return json.loads(path.read_text()) if path.exists() else None
     except Exception:
         return None
+
+
+def _state_anchor(state: Mapping[str, Any]) -> dict[str, Any]:
+    """Return only material corpus fields; heartbeat revisions are excluded."""
+
+    completed = list(state.get("completedSlates") or [])
+    return {
+        "version": CADENCE_VERSION,
+        "eligibleGameCount": int(state.get("eligibleGameCount") or 0),
+        "completeSlateCount": int(
+            state.get("completeSlateCount") or len(completed) or 0
+        ),
+        "featureRematerializedSlateCount": int(
+            state.get("featureRematerializedSlateCount") or 0
+        ),
+        "featureDatasetVersion": str(state.get("featureDatasetVersion") or ""),
+    }
+
+
+def _previous_state_anchor(previous: Mapping[str, Any]) -> dict[str, Any]:
+    explicit = previous.get("cadenceAnchor")
+    if isinstance(explicit, Mapping):
+        return {
+            "version": CADENCE_VERSION,
+            "eligibleGameCount": int(explicit.get("eligibleGameCount") or 0),
+            "completeSlateCount": int(explicit.get("completeSlateCount") or 0),
+            "featureRematerializedSlateCount": int(
+                explicit.get("featureRematerializedSlateCount") or 0
+            ),
+            "featureDatasetVersion": str(
+                explicit.get("featureDatasetVersion") or ""
+            ),
+        }
+    state = previous.get("state") if isinstance(previous.get("state"), Mapping) else {}
+    proof = (
+        previous.get("canonicalCorpusProof")
+        if isinstance(previous.get("canonicalCorpusProof"), Mapping)
+        else {}
+    )
+    return {
+        "version": CADENCE_VERSION,
+        "eligibleGameCount": int(
+            state.get("eligibleGameCount")
+            or previous.get("settledGameCount")
+            or 0
+        ),
+        "completeSlateCount": int(
+            state.get("completeSlateCount")
+            or proof.get("completedSlateCount")
+            or 0
+        ),
+        "featureRematerializedSlateCount": int(
+            state.get("featureRematerializedSlateCount")
+            or state.get("completeSlateCount")
+            or proof.get("completedSlateCount")
+            or 0
+        ),
+        "featureDatasetVersion": str(
+            state.get("featureDatasetVersion")
+            or previous.get("featureDatasetVersion")
+            or ""
+        ),
+    }
+
+
+def _material_state_unchanged(
+    previous: Any,
+    state: Mapping[str, Any],
+    *,
+    expected_version: str,
+    force_full: bool,
+) -> bool:
+    if force_full or not isinstance(previous, Mapping):
+        return False
+    if previous.get("ok") is not True or previous.get("version") != expected_version:
+        return False
+    current = _state_anchor(state)
+    prior = _previous_state_anchor(previous)
+    compared = (
+        "eligibleGameCount",
+        "completeSlateCount",
+        "featureRematerializedSlateCount",
+        "featureDatasetVersion",
+    )
+    # Older reports did not persist featureDatasetVersion.  Missing on both
+    # sides is acceptable, but a one-sided value is material and forces proof.
+    return all(current.get(key) == prior.get(key) for key in compared)
 
 
 def _stable_row_fingerprint(row: Mapping[str, Any]) -> str:
@@ -179,6 +267,21 @@ def _load_canonical_records(handler: Any, state: Mapping[str, Any]) -> tuple[lis
     }
 
 
+def _status_state(state: Mapping[str, Any], record_count: int) -> dict[str, Any]:
+    return {
+        "phase": state.get("phase"),
+        "eligibleGameCount": state.get("eligibleGameCount") or record_count,
+        "completeSlateCount": state.get("completeSlateCount"),
+        "featureRematerializedSlateCount": state.get(
+            "featureRematerializedSlateCount"
+        ),
+        "featureDatasetVersion": state.get("featureDatasetVersion"),
+        "currentDate": state.get("currentDate"),
+        "currentSlotIndex": state.get("currentSlotIndex"),
+        "trainingRecordCountLoaded": record_count,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True)
@@ -198,6 +301,48 @@ def main() -> int:
         state = handler._load_state()
         if not isinstance(state, dict):
             raise RuntimeError("historical optimizer state is missing")
+        previous = _load_previous(previous_path)
+        if _material_state_unchanged(
+            previous,
+            state,
+            expected_version=v10.VERSION,
+            force_full=args.force_full,
+        ):
+            value = dict(previous)
+            value.update(
+                {
+                    "incrementalNoChange": True,
+                    "fastNoChange": True,
+                    "fullRebuild": False,
+                    "lastCheckedAtUtc": datetime.now(timezone.utc).isoformat(),
+                    "cadenceVersion": CADENCE_VERSION,
+                    "cadenceAnchor": _state_anchor(state),
+                    "learningStatus": "WAITING_FOR_NEW_CANONICAL_SLATE_OR_FEATURE_DATASET",
+                    "stalledStage": None,
+                    "blockers": [],
+                }
+            )
+            prior_count = int(
+                (previous.get("state") or {}).get("trainingRecordCountLoaded")
+                or previous.get("settledGameCount")
+                or state.get("eligibleGameCount")
+                or 0
+            )
+            value["state"] = _status_state(state, prior_count)
+            _write(path, value)
+            print(json.dumps({
+                "ok": True,
+                "version": value.get("version"),
+                "settledGameCount": value.get("settledGameCount"),
+                "datasetFingerprint": value.get("datasetFingerprint"),
+                "incrementalNoChange": True,
+                "fastNoChange": True,
+                "fullRebuild": False,
+                "cadenceAnchor": value.get("cadenceAnchor"),
+                "output": str(path),
+            }, indent=2, sort_keys=True))
+            return 0
+
         records, canonical_proof = _load_canonical_records(handler, state)
         if not records:
             raise RuntimeError("historical training corpus is empty")
@@ -206,7 +351,6 @@ def main() -> int:
         if not clean:
             raise RuntimeError(f"no canonical settled records: {integrity}")
         fingerprint = v10.dataset_fingerprint(clean)
-        previous = _load_previous(previous_path)
         unchanged = bool(
             previous
             and previous.get("datasetFingerprint") == fingerprint
@@ -217,10 +361,14 @@ def main() -> int:
         if unchanged:
             value = dict(previous)
             value["incrementalNoChange"] = True
+            value["fastNoChange"] = False
             value["lastCheckedAtUtc"] = datetime.now(timezone.utc).isoformat()
             value["canonicalCorpusProof"] = canonical_proof
             value["permutationControlImplementation"] = permutation_v2.VERSION
             value["prospectiveShadow"] = v10.evaluate_frozen_registry(clean, previous)
+            value["cadenceVersion"] = CADENCE_VERSION
+            value["cadenceAnchor"] = _state_anchor(state)
+            value["state"] = _status_state(state, len(records))
             _write(path, value)
             print(json.dumps({
                 "ok": True,
@@ -228,6 +376,7 @@ def main() -> int:
                 "settledGameCount": value.get("settledGameCount"),
                 "datasetFingerprint": fingerprint,
                 "incrementalNoChange": True,
+                "fastNoChange": False,
                 "fullRebuild": False,
                 "prospectiveShadowStatus": (value.get("prospectiveShadow") or {}).get("status"),
                 "permutationControlImplementation": permutation_v2.VERSION,
@@ -251,17 +400,15 @@ def main() -> int:
             "canonicalCorpusProof": canonical_proof,
             "permutationControlImplementation": permutation_v2.VERSION,
             "incrementalNoChange": False,
+            "fastNoChange": False,
             "reusedPriorRegistryForProspectiveShadow": bool(previous and previous.get("ok") is True),
             "fullRebuild": True,
+            "cadenceVersion": CADENCE_VERSION,
+            "cadenceAnchor": _state_anchor(state),
+            "learningStatus": "DISCOVERY_COMPLETED",
+            "stalledStage": None,
         })
-        report["state"] = {
-            "phase": state.get("phase"),
-            "eligibleGameCount": state.get("eligibleGameCount") or len(records),
-            "completeSlateCount": state.get("completeSlateCount"),
-            "currentDate": state.get("currentDate"),
-            "currentSlotIndex": state.get("currentSlotIndex"),
-            "trainingRecordCountLoaded": len(records),
-        }
+        report["state"] = _status_state(state, len(records))
         _write(path, report)
         print(json.dumps({
             "ok": True,
@@ -274,6 +421,7 @@ def main() -> int:
             "prospectiveShadowStatus": (report.get("prospectiveShadow") or {}).get("status"),
             "permutationControlImplementation": permutation_v2.VERSION,
             "incrementalNoChange": False,
+            "fastNoChange": False,
             "fullRebuild": True,
             "durationSeconds": report.get("durationSeconds"),
             "output": str(path),
@@ -299,6 +447,7 @@ def main() -> int:
             "error": str(exc),
             "tracebackTail": traceback.format_exc()[-12000:],
             "blockers": ["v10_discovery_execution_failed"],
+            "cadenceVersion": CADENCE_VERSION,
         }
         _write(path, failure)
         print(json.dumps(failure, indent=2, sort_keys=True), flush=True)
