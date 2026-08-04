@@ -89,6 +89,9 @@ def _dataset(row=None, **extra):
 def _state(dataset):
     return {
         "eligibleGameCount": len(dataset["records"]),
+        "completeSlateCount": 1,
+        "featureRematerializedSlateCount": 1,
+        "featureDatasetVersion": "dataset-v1",
         "completedSlates": [
             {
                 "slateDateEt": dataset["slateDateEt"],
@@ -134,6 +137,81 @@ def test_state_count_must_match_immutable_artifact_count():
     state["eligibleGameCount"] = 2
     with pytest.raises(RuntimeError, match="eligible count disagrees"):
         subject._load_canonical_records(Handler(dataset), state)
+
+
+def test_material_state_anchor_excludes_heartbeat_revision_and_timestamp():
+    dataset = _dataset()
+    first = _state(dataset)
+    second = dict(first)
+    first.update({"revision": 10, "updatedAtUtc": "before"})
+    second.update({"revision": 999, "updatedAtUtc": "after"})
+
+    assert subject._state_anchor(first) == subject._state_anchor(second)
+
+
+def test_unchanged_material_state_uses_fast_path_without_artifact_scan():
+    dataset = _dataset()
+    state = _state(dataset)
+    previous = {
+        "ok": True,
+        "version": v10.VERSION,
+        "state": {
+            "eligibleGameCount": 1,
+            "completeSlateCount": 1,
+            "featureRematerializedSlateCount": 1,
+            "featureDatasetVersion": "dataset-v1",
+        },
+    }
+
+    assert subject._material_state_unchanged(
+        previous,
+        state,
+        expected_version=v10.VERSION,
+        force_full=False,
+    ) is True
+
+
+def test_new_slate_or_feature_dataset_forces_v10_canonical_proof():
+    dataset = _dataset()
+    state = _state(dataset)
+    previous = {
+        "ok": True,
+        "version": v10.VERSION,
+        "cadenceAnchor": subject._state_anchor(state),
+    }
+    state["completeSlateCount"] = 2
+    state["featureRematerializedSlateCount"] = 2
+
+    assert subject._material_state_unchanged(
+        previous,
+        state,
+        expected_version=v10.VERSION,
+        force_full=False,
+    ) is False
+    state = _state(dataset)
+    state["featureDatasetVersion"] = "dataset-v2"
+    assert subject._material_state_unchanged(
+        previous,
+        state,
+        expected_version=v10.VERSION,
+        force_full=False,
+    ) is False
+
+
+def test_force_full_bypasses_v10_fast_no_change_cadence():
+    dataset = _dataset()
+    state = _state(dataset)
+    previous = {
+        "ok": True,
+        "version": v10.VERSION,
+        "cadenceAnchor": subject._state_anchor(state),
+    }
+    assert subject._material_state_unchanged(
+        previous,
+        state,
+        expected_version=v10.VERSION,
+        force_full=True,
+    ) is False
 
 
 def test_exact_binomial_is_finite_and_bounded_at_full_corpus_scale():
