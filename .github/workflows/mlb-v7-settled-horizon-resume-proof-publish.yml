@@ -1,0 +1,169 @@
+name: Publish V7 Settled Horizon Resume Deployment Proof
+
+"on":
+  workflow_run:
+    workflows:
+      - MLB V7 Settled Horizon Resume Deploy
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: mlb-v7-settled-horizon-resume-proof-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Download exact successful deployment proof
+        uses: actions/download-artifact@v4
+        with:
+          name: mlb-v7-settled-horizon-resume-${{ github.event.workflow_run.head_sha }}
+          path: /tmp/mlb-v7-settled-horizon-proof
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Validate AWS-backed proof and build canonical report
+        env:
+          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          root = Path('/tmp/mlb-v7-settled-horizon-proof')
+
+          def load(name: str):
+              matches = list(root.rglob(name))
+              if len(matches) != 1:
+                  raise SystemExit(f'expected exactly one {name}, found {len(matches)}')
+              return json.loads(matches[0].read_text(encoding='utf-8'))
+
+          configuration = load('mlb-v7-function-configuration.json')
+          before = load('mlb-v7-status-before.json')
+          resume = load('mlb-v7-resume.json')
+          after = load('mlb-v7-status-after.json')
+
+          expected_sha = os.environ['EXPECTED_SHA']
+          variables = ((configuration.get('Environment') or {}).get('Variables') or {})
+          deployed_sha = variables.get('INQSI_DEPLOY_GIT_SHA')
+          handler = configuration.get('Handler')
+          if deployed_sha != expected_sha:
+              raise SystemExit(f'deployed Git SHA mismatch: {deployed_sha!r}')
+          if handler != 'mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler':
+              raise SystemExit(f'historical handler mismatch: {handler!r}')
+
+          for name, payload in (('before', before), ('resume', resume), ('after', after)):
+              if payload.get('ok') is not True:
+                  raise SystemExit(f'{name} proof is not OK')
+
+          b = before.get('state') or {}
+          a = after.get('state') or {}
+          shadow = after.get('supervisedShadow') or {}
+          version = shadow.get('incrementalRangeExtensionVersion')
+          required_version = 'MLB-HISTORICAL-INCREMENTAL-RANGE-EXTENSION-v2-waiting-resume'
+          if version != required_version:
+              raise SystemExit(f'resume version mismatch: {version!r}')
+          if resume.get('productionAuthorityChanged') not in (None, False):
+              raise SystemExit('resume probe changed production authority')
+
+          safe_horizon = (
+              datetime.now(timezone.utc)
+              .astimezone(ZoneInfo('America/New_York'))
+              .date()
+              - timedelta(days=1)
+          ).isoformat()
+          fields = (
+              'currentDate',
+              'currentSlotIndex',
+              'endDate',
+              'eligibleGameCount',
+              'completeSlateCount',
+              'featureRematerializedSlateCount',
+              'optimizationRound',
+              'phase',
+              'revision',
+              'lastError',
+          )
+          before_state = {field: b.get(field) for field in fields}
+          after_state = {field: a.get(field) for field in fields}
+          report = {
+              'proofType': 'MLB_V7_SETTLED_HORIZON_RESUME_DEPLOYMENT_V1',
+              'ok': True,
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'sourceWorkflowRunId': os.environ['SOURCE_RUN_ID'],
+              'sourceWorkflowRunUrl': os.environ['SOURCE_RUN_URL'],
+              'sourceGitSha': expected_sha,
+              'deployedGitSha': deployed_sha,
+              'deploymentIdentityMatches': True,
+              'handler': handler,
+              'incrementalRangeExtensionVersion': version,
+              'safeSettledHorizonDateEt': safe_horizon,
+              'before': before_state,
+              'after': after_state,
+              'deltas': {
+                  'eligibleGameDelta': int(a.get('eligibleGameCount') or 0) - int(b.get('eligibleGameCount') or 0),
+                  'completeSlateDelta': int(a.get('completeSlateCount') or 0) - int(b.get('completeSlateCount') or 0),
+                  'rematerializedSlateDelta': int(a.get('featureRematerializedSlateCount') or 0) - int(b.get('featureRematerializedSlateCount') or 0),
+                  'optimizationRoundDelta': int(a.get('optimizationRound') or 0) - int(b.get('optimizationRound') or 0),
+                  'dateChanged': a.get('currentDate') != b.get('currentDate'),
+                  'slotChanged': a.get('currentSlotIndex') != b.get('currentSlotIndex'),
+                  'phaseChanged': a.get('phase') != b.get('phase'),
+              },
+              'orchestrateInvoked': True,
+              'productionAuthorityChanged': False,
+              'promotionGateChanged': False,
+              'manualCursorMutation': False,
+              'currentWaitIsBlockingError': bool(a.get('lastError')),
+          }
+          output = Path('/tmp/mlb_v7_settled_horizon_resume_deploy_latest.json')
+          output.write_text(json.dumps(report, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+
+      - name: Publish canonical deployment proof without retriggering deployment
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git checkout -B v7-resume-proof-publish origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb_v7_settled_horizon_resume_deploy_latest.json \
+              runtime_reports/mlb_v7_settled_horizon_resume_deploy_latest.json
+            git add runtime_reports/mlb_v7_settled_horizon_resume_deploy_latest.json
+            if git diff --cached --quiet; then
+              echo 'Deployment proof is already current.'
+              exit 0
+            fi
+            git commit -m 'Publish V7 settled-horizon resume deployment proof [skip ci]'
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          echo '::error::Unable to publish V7 deployment proof after three current-main retries.'
+          exit 1
