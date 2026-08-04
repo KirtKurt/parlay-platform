@@ -1,0 +1,48 @@
+name: Export exact Tennis V2.1 source for coverage repair
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/export-tennis-v2-1-source.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/tennis-mlb-process-flow-v2-1
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - name: Reconstruct and export exact post-catalog-fix source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/tennis-export
+          cat tennis_release/tennis_v2_1_deploy.tar.xz.b64.part-* \
+            | base64 --decode > /tmp/tennis-export/release.tar.xz
+          actual=$(sha256sum /tmp/tennis-export/release.tar.xz | awk '{print $1}')
+          test "$actual" = e1d429273b32deabd2eea97dbf1532318f94d41868eabf50758b470edf02deb5
+          mkdir -p /tmp/tennis-export/unpacked
+          tar -xJf /tmp/tennis-export/release.tar.xz -C /tmp/tennis-export/unpacked
+          root=$(find /tmp/tennis-export/unpacked -type f -name template.yaml -printf '%h\n' | head -1)
+          test -n "$root"
+          python .github/tennis-release/apply_catalog_fix.py "$root"
+          printf '%s\n' "$root" > /tmp/tennis-export/source-root.txt
+          (cd "$root" && python -m compileall -q src tests scripts)
+          tar -C "$root" -czf /tmp/tennis-export/tennis-v2-1-post-catalog-source.tar.gz .
+          sha256sum /tmp/tennis-export/tennis-v2-1-post-catalog-source.tar.gz \
+            > /tmp/tennis-export/tennis-v2-1-post-catalog-source.tar.gz.sha256
+          find "$root" -type f -printf '%P\n' | sort > /tmp/tennis-export/source-files.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tennis-v2-1-post-catalog-source-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: /tmp/tennis-export/
