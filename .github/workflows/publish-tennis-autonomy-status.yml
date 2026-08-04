@@ -3,8 +3,8 @@ name: Publish Tennis Autonomy Status
 on:
   workflow_dispatch:
   schedule:
-    # Keep cadence above the 20-minute timeout to avoid self-cancel starvation.
-    - cron: '7,37 * * * *'
+    # Publish every 20 minutes so repository evidence stays within the 25-minute freshness window.
+    - cron: '7,27,47 * * * *'
   workflow_run:
     workflows: ['Deploy Tennis Learning']
     types: [completed]
@@ -23,7 +23,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
       - name: Configure AWS credentials
