@@ -1,16 +1,4 @@
-"""Read the exact persisted MLB pre-lock card without recomputing predictions.
-
-The protected scorer writes two records for every visible pre-lock prediction:
-
-* a mutable ``GAME#...`` row used for the current card; and
-* a write-once ``PREGAME#GAME#...`` snapshot that fingerprints the exact
-  user-visible payload after the mutable DynamoDB write succeeds.
-
-This module exposes a bounded, read-only reconciliation path for the public API.
-A row is returned only when the current mutable value and its newest immutable
-snapshot agree exactly and every public/probability marker remains valid.  It
-never creates a prediction and it stops using pre-lock rows at T-45.
-"""
+"""Read exact persisted MLB pre-lock rows without recomputing predictions."""
 from __future__ import annotations
 
 import copy
@@ -27,7 +15,7 @@ from mlb_slate_coverage_patch import (
     game_identity,
 )
 
-VERSION = "MLB-PERSISTED-PRELOCK-PUBLIC-READ-v1-exact-live-snapshot-pair"
+VERSION = "MLB-PERSISTED-PRELOCK-PUBLIC-READ-v2-raw-identity-decimal-safe"
 LIVE_RECORD_TYPE = "mlb_single_game_moneyline_prediction"
 SNAPSHOT_RECORD_TYPE = "mlb_immutable_prelock_prediction_snapshot"
 SNAPSHOT_VERSION = "MLB-PREGAME-PREDICTION-SNAPSHOT-v3-user-visible-platform-prelock"
@@ -59,6 +47,19 @@ def _plain(value: Any) -> Any:
     if isinstance(value, list):
         return [_plain(item) for item in value]
     return value
+
+
+def _snapshot_identity(row: Mapping[str, Any]) -> str:
+    """Return the raw identity used inside the immutable snapshot sort key."""
+
+    value = str(
+        row.get("gameIdentity")
+        or row.get("gameId")
+        or row.get("eventId")
+        or row.get("providerEventId")
+        or ""
+    ).strip()
+    return value[len("provider:") :] if value.startswith("provider:") else value
 
 
 def _query_prefix(
@@ -96,7 +97,7 @@ def _query_prefix(
 
 def _marker_errors(item: Mapping[str, Any], row: Mapping[str, Any]) -> List[str]:
     errors: List[str] = []
-    expected_item = {
+    for field, expected in {
         "record_type": SNAPSHOT_RECORD_TYPE,
         "snapshot_version": SNAPSHOT_VERSION,
         "snapshot_role": SNAPSHOT_ROLE,
@@ -105,8 +106,7 @@ def _marker_errors(item: Mapping[str, Any], row: Mapping[str, Any]) -> List[str]
         "display_status": DISPLAY_STATUS,
         "display_surface": DISPLAY_SURFACE,
         "prediction_payload_fingerprint_version": PAYLOAD_FINGERPRINT_VERSION,
-    }
-    for field, expected in expected_item.items():
+    }.items():
         if item.get(field) != expected:
             errors.append(f"{field}_mismatch")
     for field in ("user_visible", "display_prediction", "immutable_pregame", "write_once"):
@@ -117,14 +117,13 @@ def _marker_errors(item: Mapping[str, Any], row: Mapping[str, Any]) -> List[str]
     if not isinstance(per_game, Mapping):
         per_game = {}
         errors.append("public_authority_missing")
-    expected_row = {
+    for field, expected in {
         "lockedPrediction": False,
         "officialPrediction": False,
         "displayPrediction": True,
         "officialPredictionStatus": DISPLAY_STATUS,
         "displayGroup": "pre_lock_prediction",
-    }
-    for field, expected in expected_row.items():
+    }.items():
         if row.get(field) != expected:
             errors.append(f"row_{field}_mismatch")
     if per_game.get("authorityVersion") != PUBLIC_AUTHORITY_VERSION:
@@ -179,13 +178,15 @@ def _validate_pair(
     if snapshot.get("prediction_persistence_write_sk") != live_item.get("SK"):
         errors.append("live_write_sk_mismatch")
 
+    # DynamoDB numeric readbacks are Decimal. The canonical fingerprint helper
+    # owns their deterministic normalization, so do not coerce them first.
     expected_fingerprint = history_contract.canonical_payload_fingerprint(
-        _plain(dict(snapshot_row))
+        dict(snapshot_row)
     )
     if snapshot.get("prediction_payload_fingerprint") != expected_fingerprint:
         errors.append("snapshot_payload_fingerprint_mismatch")
     if history_contract.canonical_payload_fingerprint(
-        _plain(dict(live_row))
+        dict(live_row)
     ) != expected_fingerprint:
         errors.append("mutable_live_row_changed_after_snapshot")
 
@@ -213,7 +214,7 @@ def _validate_pair(
 
     if errors:
         return None, sorted(set(errors))
-    return copy.deepcopy(dict(snapshot_row)), []
+    return copy.deepcopy(_plain(dict(snapshot_row))), []
 
 
 def read_validated_rows(
@@ -222,8 +223,6 @@ def read_validated_rows(
     *,
     now: Optional[datetime] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """Return latest exact persisted pre-lock rows under a bounded query plan."""
-
     observed = now or datetime.now(timezone.utc)
     if observed.tzinfo is None:
         observed = observed.replace(tzinfo=timezone.utc)
@@ -254,19 +253,20 @@ def read_validated_rows(
         live_row = live_item.get("data") or {}
         if not isinstance(live_row, Mapping):
             continue
-        identity = game_identity(dict(live_row))
-        if not identity:
+        canonical_identity = game_identity(dict(live_row))
+        raw_identity = _snapshot_identity(live_row)
+        if not canonical_identity or not raw_identity:
             continue
         snapshots = _query_prefix(
             table,
             pk=pk,
-            prefix=f"PREGAME#GAME#{identity}#PERSISTED#",
+            prefix=f"PREGAME#GAME#{raw_identity}#PERSISTED#",
             scan_forward=False,
             limit=1,
         )
         snapshot_query_count += 1
         if not snapshots:
-            invalid[identity] = ["immutable_pregame_snapshot_missing"]
+            invalid[canonical_identity] = ["immutable_pregame_snapshot_missing"]
             continue
         row, errors = _validate_pair(
             live_item,
@@ -275,9 +275,9 @@ def read_validated_rows(
             now=observed,
         )
         if errors:
-            invalid[identity] = errors
+            invalid[canonical_identity] = errors
             continue
-        rows[identity] = row or {}
+        rows[canonical_identity] = row or {}
 
     return list(rows.values()), {
         "ok": True,
@@ -394,12 +394,12 @@ def merge_into_payload(
     winner_rows = [
         row for row in merged if row.get("predictedWinner") not in (None, "")
     ]
+    game_count = int(out.get("gameCount") or len(merged) or 0)
     out["predictions"] = merged
     out["count"] = len(winner_rows)
-    game_count = int(out.get("gameCount") or len(merged) or 0)
-    out["allGamesPredicted"] = bool(
-        game_count and len(winner_rows) == game_count
-    )
+    out["displayPredictionCount"] = len(winner_rows)
+    out["allGamesPredicted"] = bool(game_count and len(winner_rows) == game_count)
+    out["allGamesHaveDisplayedWinnerPrediction"] = out["allGamesPredicted"]
     out["persistedPrelockPublicRead"] = {
         **proof,
         "placeholderReplacementCount": replaced,
