@@ -1,0 +1,263 @@
+name: MLB V7 Settled Horizon Resume Deploy
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - 'hello_world/mlb_historical_incremental_range_extension_v1.py'
+      - 'hello_world/mlb_historical_state_integrity_v1.py'
+      - 'tests/unit/test_mlb_historical_incremental_range_extension_v1.py'
+      - 'tests/unit/test_mlb_historical_state_integrity_v1.py'
+      - 'tests/unit/test_mlb_v7_settled_horizon_resume_deploy_workflow.py'
+      - '.github/workflows/mlb-v7-settled-horizon-resume-deploy.yml'
+  pull_request:
+    paths:
+      - 'hello_world/mlb_historical_incremental_range_extension_v1.py'
+      - 'hello_world/mlb_historical_state_integrity_v1.py'
+      - 'tests/unit/test_mlb_historical_incremental_range_extension_v1.py'
+      - 'tests/unit/test_mlb_historical_state_integrity_v1.py'
+      - 'tests/unit/test_mlb_v7_settled_horizon_resume_deploy_workflow.py'
+      - '.github/workflows/mlb-v7-settled-horizon-resume-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parlay-platform-deploy
+  cancel-in-progress: false
+
+env:
+  HISTORICAL_STACK_NAME: parlay-platform-mlb-historical-optimizer
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - name: Prove waiting-phase resume and safe horizon boundary
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'cfn-lint>=1,<2'
+          python -m pytest -q \
+            tests/unit/test_mlb_historical_incremental_range_extension_v1.py \
+            tests/unit/test_mlb_historical_state_integrity_v1.py \
+            tests/unit/test_mlb_v7_settled_horizon_resume_deploy_workflow.py
+          python -m py_compile \
+            hello_world/mlb_historical_incremental_range_extension_v1.py \
+            hello_world/mlb_historical_state_integrity_v1.py \
+            hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py
+          sam validate --lint --template-file mlb_historical_optimizer/template.yaml
+          rm -rf .aws-sam-v7-settled-horizon
+          sam build \
+            --no-cached \
+            --build-dir .aws-sam-v7-settled-horizon \
+            --template-file mlb_historical_optimizer/template.yaml
+          grep -Fq 'WAITING_PHASE = "WAITING_FOR_SETTLED_HORIZON"' \
+            .aws-sam-v7-settled-horizon/HistoricalOptimizerFunction/mlb_historical_incremental_range_extension_v1.py
+          grep -Fq 'WAITING_PHASE,' \
+            .aws-sam-v7-settled-horizon/HistoricalOptimizerFunction/mlb_historical_incremental_range_extension_v1.py
+
+  deploy-isolated-historical-worker:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && contains(github.event.head_commit.message, '[deploy-v7-settled-horizon-resume]'))
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verify isolated deployment inputs and live stack
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity
+          test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
+          STATUS=$(aws cloudformation describe-stacks \
+            --stack-name "$HISTORICAL_STACK_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query 'Stacks[0].StackStatus' \
+            --output text)
+          case "$STATUS" in
+            CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE)
+              ;;
+            *)
+              echo "::error::Historical optimizer stack is not updateable: $STATUS"
+              exit 1
+              ;;
+          esac
+          aws cloudformation describe-stacks \
+            --stack-name "$HISTORICAL_STACK_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query 'Stacks[0].Parameters' \
+            --output json > /tmp/mlb-v7-existing-parameters.json
+
+      - name: Rebuild exact isolated historical worker
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
+          python -m pytest -q \
+            tests/unit/test_mlb_historical_incremental_range_extension_v1.py \
+            tests/unit/test_mlb_historical_state_integrity_v1.py
+          rm -rf .aws-sam-v7-settled-horizon
+          sam build \
+            --no-cached \
+            --build-dir .aws-sam-v7-settled-horizon \
+            --template-file mlb_historical_optimizer/template.yaml
+
+      - name: Deploy only the separate historical optimizer stack
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          mapfile -t parameter_overrides < <(python - <<'PY'
+          import json
+          from pathlib import Path
+
+          required = (
+              'TargetSnapshotsTable',
+              'HistoricalStartDate',
+              'HistoricalEndDate',
+              'HistoricalTargetGames',
+              'HistoricalMaxCredits',
+              'HistoricalRequestsPerRun',
+              'HistoricalMaxCandidates',
+              'HistoricalMaxOptimizationRounds',
+              'HistoricalFreshAuditIncrementGames',
+              'HistoricalRangeExtensionAuthorized',
+          )
+          rows = json.loads(Path('/tmp/mlb-v7-existing-parameters.json').read_text())
+          values = {str(row.get('ParameterKey')): str(row.get('ParameterValue')) for row in rows}
+          missing = [key for key in required if not values.get(key)]
+          if missing:
+              raise SystemExit('missing existing historical parameters: ' + ','.join(missing))
+          for key in required:
+              print(f'{key}={values[key]}')
+          PY
+          )
+          parameter_overrides+=(
+            "OddsApiKey=${ODDS_API_KEY_VALUE}"
+            "DeployGitSha=${GITHUB_SHA}"
+          )
+          sam deploy \
+            --template-file .aws-sam-v7-settled-horizon/template.yaml \
+            --stack-name "$HISTORICAL_STACK_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides "${parameter_overrides[@]}"
+
+      - name: Verify exact deployed code identity and resume contract
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=$(aws cloudformation describe-stacks \
+            --stack-name "$HISTORICAL_STACK_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" \
+            --output text)
+          test -n "$FUNCTION_NAME" && test "$FUNCTION_NAME" != None
+          aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --output json > /tmp/mlb-v7-function-configuration.json
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          value = json.loads(Path('/tmp/mlb-v7-function-configuration.json').read_text())
+          if value.get('Handler') != 'mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler':
+              raise SystemExit('historical handler identity mismatch')
+          deployed = ((value.get('Environment') or {}).get('Variables') or {}).get('INQSI_DEPLOY_GIT_SHA')
+          if deployed != os.environ['GITHUB_SHA']:
+              raise SystemExit(f'deployed Git SHA mismatch: {deployed!r}')
+          PY
+
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --cli-read-timeout 900 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"mode":"status","run":"post_deploy_v7_settled_horizon_before"}' \
+            /tmp/mlb-v7-status-before.json >/tmp/mlb-v7-status-before-meta.json
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --cli-read-timeout 900 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"mode":"orchestrate","run":"post_deploy_v7_settled_horizon_resume_probe"}' \
+            /tmp/mlb-v7-resume.json >/tmp/mlb-v7-resume-meta.json
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --cli-read-timeout 900 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"mode":"status","run":"post_deploy_v7_settled_horizon_after"}' \
+            /tmp/mlb-v7-status-after.json >/tmp/mlb-v7-status-after-meta.json
+
+          python - <<'PY'
+          import json
+          from datetime import date, datetime, timedelta, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          before = json.loads(Path('/tmp/mlb-v7-status-before.json').read_text())
+          resume = json.loads(Path('/tmp/mlb-v7-resume.json').read_text())
+          after = json.loads(Path('/tmp/mlb-v7-status-after.json').read_text())
+          for name, value in (('before', before), ('resume', resume), ('after', after)):
+              if value.get('ok') is not True:
+                  raise SystemExit(f'{name} status is not OK: {value!r}')
+          b = before.get('state') or {}
+          a = after.get('state') or {}
+          contract = after.get('supervisedShadow') or {}
+          expected_version = 'MLB-HISTORICAL-INCREMENTAL-RANGE-EXTENSION-v2-waiting-resume'
+          if contract.get('incrementalRangeExtensionVersion') != expected_version:
+              raise SystemExit('deployed settled-horizon resume version missing')
+          if resume.get('productionAuthorityChanged') not in (None, False):
+              raise SystemExit('resume probe changed production authority')
+
+          horizon = datetime.now(timezone.utc).astimezone(
+              ZoneInfo('America/New_York')
+          ).date() - timedelta(days=1)
+          before_end = date.fromisoformat(str(b.get('endDate')))
+          after_end = date.fromisoformat(str(a.get('endDate')))
+          if b.get('phase') == 'WAITING_FOR_SETTLED_HORIZON' and horizon > before_end:
+              if after_end < horizon and a.get('phase') == 'WAITING_FOR_SETTLED_HORIZON':
+                  raise SystemExit('settled horizon advanced but V7 remained parked')
+          if horizon <= before_end and after_end > before_end:
+              raise SystemExit('V7 crossed the safe settled horizon early')
+          PY
+
+      - name: Upload isolated V7 deployment proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v7-settled-horizon-resume-${{ github.sha }}
+          path: |
+            /tmp/mlb-v7-existing-parameters.json
+            /tmp/mlb-v7-function-configuration.json
+            /tmp/mlb-v7-status-before.json
+            /tmp/mlb-v7-resume.json
+            /tmp/mlb-v7-status-after.json
+          retention-days: 90
+          if-no-files-found: warn
