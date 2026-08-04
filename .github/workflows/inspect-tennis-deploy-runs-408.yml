@@ -1,0 +1,64 @@
+name: Inspect Tennis Deploy Runs 408
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/inspect-tennis-deploy-runs-408.yml'
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish recent deploy workflow runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GH_REPO}/actions/workflows/deploy-tennis-learning.yml/runs?per_page=5" > /tmp/runs.json
+          latest=$(python - <<'PY'
+          import json
+          print((json.load(open('/tmp/runs.json')).get('workflow_runs') or [{}])[0].get('id') or '')
+          PY
+          )
+          if [ -n "$latest" ]; then
+            gh api "repos/${GH_REPO}/actions/runs/${latest}/jobs?per_page=100" > /tmp/jobs.json
+          else
+            echo '{"jobs":[]}' > /tmp/jobs.json
+          fi
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          raw=json.load(open('/tmp/runs.json'))
+          jobs_raw=json.load(open('/tmp/jobs.json'))
+          runs=[]
+          for item in raw.get('workflow_runs',[]):
+              runs.append({'id':item.get('id'),'status':item.get('status'),'conclusion':item.get('conclusion'),'event':item.get('event'),'head_sha':item.get('head_sha'),'created_at':item.get('created_at'),'updated_at':item.get('updated_at'),'run_started_at':item.get('run_started_at'),'html_url':item.get('html_url')})
+          jobs=[]
+          for job in jobs_raw.get('jobs',[]):
+              jobs.append({'id':job.get('id'),'name':job.get('name'),'status':job.get('status'),'conclusion':job.get('conclusion'),'steps':[{'name':s.get('name'),'status':s.get('status'),'conclusion':s.get('conclusion')} for s in job.get('steps',[])]})
+          payload={'checked_at':datetime.now(timezone.utc).isoformat(),'workflow':'Deploy Tennis Learning','runs':runs,'latest_jobs':jobs}
+          Path('/tmp/tennis_deploy_runs.json').write_text(json.dumps(payload,indent=2,sort_keys=True)+'\n')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in $(seq 1 20); do
+            git fetch origin main
+            git reset --hard origin/main
+            mkdir -p runtime
+            cp /tmp/tennis_deploy_runs.json runtime/tennis_deploy_runs.json
+            git rm -f .github/workflows/inspect-tennis-deploy-runs-408.yml
+            git add runtime/tennis_deploy_runs.json
+            git commit -m 'Publish tennis deployment run evidence [skip ci]'
+            if git push origin HEAD:main; then exit 0; fi
+            sleep 3
+          done
+          exit 1
