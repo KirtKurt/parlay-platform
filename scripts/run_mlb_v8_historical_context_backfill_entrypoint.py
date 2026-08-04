@@ -23,11 +23,12 @@ import mlb_v8_historical_context_overlay_v1 as target_overlay
 import mlb_v8_historical_point_in_time_context_v1 as context_source
 import run_mlb_v8_historical_bbs_backfill as backfill
 
-VERSION = "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v2-official-only"
+VERSION = "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v3-official-only-no-legacy-carry-forward"
 REPORT_TYPE = "MLB_V8_HISTORICAL_CONTEXT_BACKFILL"
 AUTHORITY = "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY"
 RECORD_TYPE = "mlb_v8_historical_official_context_active_manifest_v2"
 ARCHIVED_WEATHER_MODEL = "ecmwf_ifs"
+MIGRATION_VERSION = "MLB-V8-CONTEXT-POINTER-MIGRATION-v1-reset-retired-bbs-records"
 
 
 def _dict(value: Any) -> Dict[str, Any]:
@@ -157,6 +158,34 @@ def install_pointer_isolation(module: Any) -> Any:
     target_overlay.base.AUTHORITY = AUTHORITY
     module.VERSION = VERSION
     module.REPORT_TYPE = REPORT_TYPE
+    original_load_previous_manifest = getattr(
+        module, "_load_previous_manifest", lambda _table, _s3: (None, 0)
+    )
+
+    def load_previous_manifest(table: Any, s3: Any):
+        item = table.get_item(
+            Key={"PK": target_overlay.POINTER_PK, "SK": target_overlay.POINTER_SK},
+            ConsistentRead=True,
+        ).get("Item")
+        if not item:
+            return None, 0
+        revision = int(item.get("revision") or 0)
+        plain = getattr(module, "_plain", None)
+        raw_data = item.get("data") or {}
+        data = plain(raw_data) if callable(plain) else dict(raw_data)
+        provider = str(data.get("provider") or "")
+        official_pointer = bool(
+            item.get("record_type") == RECORD_TYPE
+            and data.get("authority") == AUTHORITY
+            and provider.startswith("official_mlb")
+        )
+        if not official_pointer:
+            # Preserve optimistic concurrency but never carry retired BBS rows
+            # into the provider-neutral official context corpus.
+            return None, revision
+        return original_load_previous_manifest(table, s3)
+
+    module._load_previous_manifest = load_previous_manifest
 
     def put_immutable(s3: Any, bucket: str, key: str, body: bytes) -> Dict[str, Any]:
         isolated = f"mlb/v8/historical-context/manifests/{Path(key).name}"
@@ -299,6 +328,9 @@ def install_run_contract(module: Any) -> Any:
                 "targetGameOutcomeUsed": False,
                 "selectionUsedOutcomes": False,
                 "productionAuthorityChanged": False,
+                "legacyBbsCarryForwardAllowed": False,
+                "pointerMigrationVersion": MIGRATION_VERSION,
+                "officialContextPointerAuthoritative": True,
                 "automaticWagerAllowed": False,
             }
         )

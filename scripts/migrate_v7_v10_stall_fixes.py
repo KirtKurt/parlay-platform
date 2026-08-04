@@ -22,10 +22,12 @@ STABILIZER = ROOT / "scripts" / "stabilize_mlb_deploy_source.py"
 
 
 def _replace_once(text: str, old: str, new: str, label: str) -> str:
-    if old in text:
-        return text.replace(old, new, 1)
+    # Check the full replacement first because many migration anchors are a
+    # strict substring of the replacement block itself.
     if new in text:
         return text
+    if old in text:
+        return text.replace(old, new, 1)
     raise RuntimeError(f"migration marker missing:{label}")
 
 
@@ -296,9 +298,11 @@ def patch_feature_runner_test(text: str) -> str:
         'assert report["stalledStage"] == "WAITING_FOR_NEW_GAMES_OR_FEATURE_ROWS"',
         'assert report["stalledStage"] == "WAITING_FOR_NEW_GAMES_FEATURE_ROWS_OR_COMPLETE_SLATES"',
     )
-    text = text.replace(
+    text = _replace_once(
+        text,
         'module.cadence_state.decide_cadence = decide\n    module.cadence_state.report_anchor_fields = anchors',
         'module.cadence_state.decide_cadence = decide\n    module.cadence_state.report_anchor_fields = anchors\n    module.cadence_v3.decide_cadence = decide\n    module.cadence_v3.report_anchor_fields = anchors',
+        "feature-aware test cadence v3 monkeypatch",
     )
     text = text.replace(
         'assert os.environ["MLB_V8_HISTORICAL_BBS_OVERLAY_ENABLED"] == "true"',
