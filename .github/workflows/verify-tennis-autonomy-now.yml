@@ -1,0 +1,21 @@
+name: Verify Tennis Autonomy Now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-tennis-autonomy-now.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch-status-publisher:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch permanent tennis autonomy status publisher
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run publish-tennis-autonomy-status.yml --repo "$GITHUB_REPOSITORY" --ref main
