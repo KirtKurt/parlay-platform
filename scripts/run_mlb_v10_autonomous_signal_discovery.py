@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 MAX_REPORT_BYTES = 20_000_000
-CADENCE_VERSION = "MLB-V10-DISCOVERY-CADENCE-v2-material-state-fast-path"
+CADENCE_VERSION = "MLB-V10-DISCOVERY-CADENCE-v3-material-state-fresh-evidence"
 
 
 def _write(path: Path, value: dict) -> None:
@@ -34,6 +34,24 @@ def _load_previous(path: Path):
         return json.loads(path.read_text()) if path.exists() else None
     except Exception:
         return None
+
+
+def _run_metadata(
+    started: datetime,
+    completed: datetime | None = None,
+) -> dict[str, Any]:
+    """Return fresh evidence identity for full and no-change executions."""
+
+    finished = completed or datetime.now(timezone.utc)
+    return {
+        "sourceSha": os.environ.get("GITHUB_SHA"),
+        "runId": os.environ.get("GITHUB_RUN_ID"),
+        "runAttempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+        "startedAtUtc": started.isoformat(),
+        "completedAtUtc": finished.isoformat(),
+        "lastCheckedAtUtc": finished.isoformat(),
+        "durationSeconds": round((finished - started).total_seconds(), 3),
+    }
 
 
 def _state_anchor(state: Mapping[str, Any]) -> dict[str, Any]:
@@ -118,8 +136,6 @@ def _material_state_unchanged(
         "featureRematerializedSlateCount",
         "featureDatasetVersion",
     )
-    # Older reports did not persist featureDatasetVersion.  Missing on both
-    # sides is acceptable, but a one-sided value is material and forces proof.
     return all(current.get(key) == prior.get(key) for key in compared)
 
 
@@ -142,13 +158,7 @@ def _assert_not_contradicted(row: Mapping[str, Any], key: str, expected: Any) ->
 
 
 def _load_canonical_records(handler: Any, state: Mapping[str, Any]) -> tuple[list[dict], dict]:
-    """Load immutable complete-slate artifacts and derive row eligibility from their proofs.
-
-    Historical dataset rows predate the row-level V10 eligibility fields. The immutable
-    artifact contains the stronger authority: complete full-slate coverage, per-game T-45
-    clipping, post-lock exclusion, checksums, and a deterministic slate fingerprint. We
-    validate those facts before adding the row-level aliases consumed by V10.
-    """
+    """Load immutable complete-slate artifacts and derive row eligibility from their proofs."""
     lock_minutes = int(getattr(handler.optimizer, "FULL_SLATE_LOCK_MINUTES", 0) or 0)
     if lock_minutes != 45:
         raise RuntimeError(f"historical optimizer lock contract is not T-45:{lock_minutes}")
@@ -308,18 +318,19 @@ def main() -> int:
             expected_version=v10.VERSION,
             force_full=args.force_full,
         ):
+            completed = datetime.now(timezone.utc)
             value = dict(previous)
             value.update(
                 {
                     "incrementalNoChange": True,
                     "fastNoChange": True,
                     "fullRebuild": False,
-                    "lastCheckedAtUtc": datetime.now(timezone.utc).isoformat(),
                     "cadenceVersion": CADENCE_VERSION,
                     "cadenceAnchor": _state_anchor(state),
                     "learningStatus": "WAITING_FOR_NEW_CANONICAL_SLATE_OR_FEATURE_DATASET",
                     "stalledStage": None,
                     "blockers": [],
+                    **_run_metadata(started, completed),
                 }
             )
             prior_count = int(
@@ -339,6 +350,8 @@ def main() -> int:
                 "fastNoChange": True,
                 "fullRebuild": False,
                 "cadenceAnchor": value.get("cadenceAnchor"),
+                "completedAtUtc": value.get("completedAtUtc"),
+                "runId": value.get("runId"),
                 "output": str(path),
             }, indent=2, sort_keys=True))
             return 0
@@ -359,15 +372,24 @@ def main() -> int:
             and not args.force_full
         )
         if unchanged:
+            completed = datetime.now(timezone.utc)
             value = dict(previous)
-            value["incrementalNoChange"] = True
-            value["fastNoChange"] = False
-            value["lastCheckedAtUtc"] = datetime.now(timezone.utc).isoformat()
-            value["canonicalCorpusProof"] = canonical_proof
-            value["permutationControlImplementation"] = permutation_v2.VERSION
-            value["prospectiveShadow"] = v10.evaluate_frozen_registry(clean, previous)
-            value["cadenceVersion"] = CADENCE_VERSION
-            value["cadenceAnchor"] = _state_anchor(state)
+            value.update(
+                {
+                    "incrementalNoChange": True,
+                    "fastNoChange": False,
+                    "fullRebuild": False,
+                    "canonicalCorpusProof": canonical_proof,
+                    "permutationControlImplementation": permutation_v2.VERSION,
+                    "prospectiveShadow": v10.evaluate_frozen_registry(clean, previous),
+                    "cadenceVersion": CADENCE_VERSION,
+                    "cadenceAnchor": _state_anchor(state),
+                    "learningStatus": "WAITING_FOR_NEW_CANONICAL_SLATE_OR_FEATURE_DATASET",
+                    "stalledStage": None,
+                    "blockers": [],
+                    **_run_metadata(started, completed),
+                }
+            )
             value["state"] = _status_state(state, len(records))
             _write(path, value)
             print(json.dumps({
@@ -380,6 +402,8 @@ def main() -> int:
                 "fullRebuild": False,
                 "prospectiveShadowStatus": (value.get("prospectiveShadow") or {}).get("status"),
                 "permutationControlImplementation": permutation_v2.VERSION,
+                "completedAtUtc": value.get("completedAtUtc"),
+                "runId": value.get("runId"),
                 "output": str(path),
             }, indent=2, sort_keys=True))
             return 0
@@ -389,12 +413,6 @@ def main() -> int:
         report.update({
             "ok": True,
             "proofType": "MLB_V10_AUTONOMOUS_DISCOVERY_RUN",
-            "sourceSha": os.environ.get("GITHUB_SHA"),
-            "runId": os.environ.get("GITHUB_RUN_ID"),
-            "runAttempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
-            "startedAtUtc": started.isoformat(),
-            "completedAtUtc": completed.isoformat(),
-            "durationSeconds": round((completed - started).total_seconds(), 3),
             "blockers": report.get("blockers") or [],
             "storageReader": "immutable_complete_slate_artifacts_with_derived_row_eligibility",
             "canonicalCorpusProof": canonical_proof,
@@ -407,6 +425,7 @@ def main() -> int:
             "cadenceAnchor": _state_anchor(state),
             "learningStatus": "DISCOVERY_COMPLETED",
             "stalledStage": None,
+            **_run_metadata(started, completed),
         })
         report["state"] = _status_state(state, len(records))
         _write(path, report)
@@ -424,6 +443,8 @@ def main() -> int:
             "fastNoChange": False,
             "fullRebuild": True,
             "durationSeconds": report.get("durationSeconds"),
+            "completedAtUtc": report.get("completedAtUtc"),
+            "runId": report.get("runId"),
             "output": str(path),
         }, indent=2, sort_keys=True))
         return 0
@@ -436,18 +457,13 @@ def main() -> int:
             "productionAuthority": False,
             "mayWriteChampion": False,
             "mayPublishPicks": False,
-            "sourceSha": os.environ.get("GITHUB_SHA"),
-            "runId": os.environ.get("GITHUB_RUN_ID"),
-            "runAttempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
-            "startedAtUtc": started.isoformat(),
-            "completedAtUtc": completed.isoformat(),
-            "durationSeconds": round((completed - started).total_seconds(), 3),
             "stalledStage": "V10_CORPUS_LOAD_OR_DISCOVERY",
             "errorType": type(exc).__name__,
             "error": str(exc),
             "tracebackTail": traceback.format_exc()[-12000:],
             "blockers": ["v10_discovery_execution_failed"],
             "cadenceVersion": CADENCE_VERSION,
+            **_run_metadata(started, completed),
         }
         _write(path, failure)
         print(json.dumps(failure, indent=2, sort_keys=True), flush=True)

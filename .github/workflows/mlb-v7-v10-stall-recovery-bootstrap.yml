@@ -1,0 +1,283 @@
+name: MLB V7-V10 Stall Recovery Bootstrap
+
+"on":
+  pull_request:
+    paths:
+      - '.github/workflows/mlb-v7-v10-stall-recovery-bootstrap.yml'
+      - 'scripts/run_mlb_v10_autonomous_signal_discovery.py'
+      - 'scripts/publish_monotonic_json.py'
+      - 'tests/unit/test_run_mlb_v10_autonomous_signal_discovery.py'
+      - 'tests/unit/test_publish_monotonic_json_v9_compaction.py'
+      - 'tests/unit/test_mlb_v7_v10_stall_recovery_bootstrap.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v7-v10-stall-recovery-bootstrap.yml'
+      - 'scripts/run_mlb_v10_autonomous_signal_discovery.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# A unique one-shot group bypasses pre-fix V8/V10 jobs without changing the
+# normal recurring groups or the shared production CloudFormation deploy lock.
+concurrency:
+  group: mlb-v7-v10-stall-recovery-bootstrap-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: .:hello_world:scripts
+  HISTORICAL_STACK: parlay-platform-mlb-historical-optimizer
+  FUNDAMENTALS_STACK: parlay-platform-mlb-v8-fundamentals-shadow
+  TABLE_NAME: parlay_platform_snapshots
+  V8_REPORT: runtime_reports/mlb_v8_historical_context_backfill_latest.json
+  V9_REPORT: runtime_reports/mlb_historical_supervised_v9_shadow_latest.json
+  V10_REPORT: runtime_reports/mlb_v10_autonomous_signal_discovery_latest.json
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate bounded recovery contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'numpy>=1.26,<3' 'pytest>=8,<9'
+          python -m py_compile \
+            scripts/run_mlb_v10_autonomous_signal_discovery.py \
+            scripts/run_mlb_v8_historical_context_backfill_entrypoint.py \
+            scripts/publish_monotonic_json.py
+          python -m pytest -q --tb=short \
+            tests/unit/test_run_mlb_v10_autonomous_signal_discovery.py \
+            tests/unit/test_publish_monotonic_json_v9_compaction.py \
+            tests/unit/test_mlb_v8_historical_context_workflow.py \
+            tests/unit/test_mlb_v7_v10_stall_recovery_bootstrap.py
+
+  compact-v9-latest:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compact whichever V9 pointer is current
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-v9-latest-compaction-bootstrap origin/main
+            git reset --hard origin/main
+            git clean -fd
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          from scripts import publish_monotonic_json as publisher
+
+          path = Path('runtime_reports/mlb_historical_supervised_v9_shadow_latest.json')
+          value = publisher._read(path)
+          compacted = publisher.compact_latest_pointer(value, path)
+          publisher._atomic_write_json(compacted, path)
+          contract = compacted.get('latestPointerCompaction') or {}
+          if contract.get('version') != publisher.V9_POINTER_COMPACTION_VERSION:
+              raise SystemExit('V9 latest-pointer compaction contract missing')
+          if contract.get('fullEvidenceRetainedAsWorkflowArtifact') is not True:
+              raise SystemExit('V9 full evidence provenance missing')
+          if contract.get('productionAuthorityChanged') is not False:
+              raise SystemExit('V9 compaction changed production authority')
+          print(json.dumps(contract, indent=2, sort_keys=True))
+          PY
+            git add "$V9_REPORT"
+            if git diff --cached --quiet; then
+              echo 'V9 latest pointer is already compact.'
+              exit 0
+            fi
+            git commit -m 'Compact current MLB V9 latest pointer [skip ci]'
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 3))
+          done
+          echo '::error::Unable to publish compact V9 latest pointer.'
+          exit 1
+
+  refresh-v10-evidence:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Run V10 material-state fast path with fresh evidence identity
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          TARGET_SNAPSHOTS_TABLE: parlay_platform_snapshots
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          cp "$V10_REPORT" /tmp/mlb-v10-previous.json
+          bucket_name=$(python scripts/resolve_mlb_historical_artifacts_bucket.py \
+            --region "$AWS_REGION_VALUE" \
+            --json-output /tmp/mlb-v10-bucket-resolution.json)
+          test -n "$bucket_name"
+          export MLB_HISTORICAL_ARTIFACTS_BUCKET="$bucket_name"
+          PYTHONPATH=.:hello_world:scripts python scripts/run_mlb_v10_autonomous_signal_discovery.py \
+            --output /tmp/mlb-v10-candidate.json \
+            --previous /tmp/mlb-v10-previous.json
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          value = json.loads(Path('/tmp/mlb-v10-candidate.json').read_text())
+          assert value.get('ok') is True, value
+          assert value.get('cadenceVersion') == 'MLB-V10-DISCOVERY-CADENCE-v3-material-state-fresh-evidence', value
+          assert value.get('stalledStage') is None, value
+          assert value.get('sourceSha') == os.environ['GITHUB_SHA'], value
+          assert str(value.get('runId')) == str(os.environ['GITHUB_RUN_ID']), value
+          assert value.get('completedAtUtc'), value
+          assert value.get('productionAuthority') is not True, value
+          assert value.get('mayWriteChampion') is not True, value
+          assert value.get('mayPublishPicks') is not True, value
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v10-stall-recovery-${{ github.run_id }}
+          path: |
+            /tmp/mlb-v10-candidate.json
+            /tmp/mlb-v10-bucket-resolution.json
+          retention-days: 90
+      - name: Publish fresh V10 evidence monotonically
+        run: |
+          set -euo pipefail
+          cp /tmp/mlb-v10-candidate.json /tmp/mlb-v10-candidate-preserved.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-v10-stall-recovery-proof origin/main
+            git reset --hard origin/main
+            git clean -fd
+            mkdir -p runtime_reports
+            python scripts/publish_monotonic_json.py \
+              --candidate /tmp/mlb-v10-candidate-preserved.json \
+              --existing "$V10_REPORT" \
+              --output "$V10_REPORT"
+            git add "$V10_REPORT"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish fresh MLB V10 anti-stall evidence [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
+
+  advance-v8-official-context:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Advance one bounded official context row
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'numpy>=1.26,<3'
+          success=false
+          for attempt in 1 2; do
+            rm -f /tmp/mlb-v8-context-bootstrap.json
+            if timeout --signal=TERM --kill-after=30s 15m \
+              python scripts/run_mlb_v8_historical_context_backfill_entrypoint.py \
+                --region "$AWS_REGION_VALUE" \
+                --table-name "$TABLE_NAME" \
+                --historical-stack "$HISTORICAL_STACK" \
+                --fundamentals-stack "$FUNDAMENTALS_STACK" \
+                --limit 1 \
+                --output /tmp/mlb-v8-context-bootstrap.json; then
+              success=true
+              break
+            fi
+            sleep $((attempt * 5))
+          done
+          test "$success" = true
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          value = json.loads(Path('/tmp/mlb-v8-context-bootstrap.json').read_text())
+          assert value.get('ok') is True, value
+          assert value.get('authority') == 'V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY', value
+          assert value.get('provider') == 'official_mlb_plus_internal_canonical_context', value
+          assert value.get('bbsApiUsed') is False, value
+          assert value.get('bbsCredentialRead') is False, value
+          assert value.get('productionAuthorityChanged') is False, value
+          assert value.get('selectionUsedOutcomes') is False, value
+          assert value.get('targetGameOutcomeUsed') is False, value
+          assert value.get('sameDayResultsExcluded') is True, value
+          assert value.get('automaticWagerAllowed') is False, value
+          assert 0 <= int(value.get('selectedGameCount') or 0) <= 1, value
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-v8-official-context-bootstrap-${{ github.run_id }}
+          path: /tmp/mlb-v8-context-bootstrap.json
+          retention-days: 90
+          if-no-files-found: warn
+      - name: Publish official context evidence monotonically
+        run: |
+          set -euo pipefail
+          cp /tmp/mlb-v8-context-bootstrap.json /tmp/mlb-v8-context-candidate.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-v8-context-stall-recovery-proof origin/main
+            git reset --hard origin/main
+            git clean -fd
+            mkdir -p runtime_reports
+            python scripts/publish_monotonic_json.py \
+              --candidate /tmp/mlb-v8-context-candidate.json \
+              --existing "$V8_REPORT" \
+              --output "$V8_REPORT"
+            git add "$V8_REPORT"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB V8 official context stall recovery [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
