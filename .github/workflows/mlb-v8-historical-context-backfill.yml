@@ -19,13 +19,13 @@ name: MLB V8 Historical Point-In-Time Context Backfill
       - 'hello_world/mlb_v8_historical_point_in_time_context_v1.py'
       - 'hello_world/mlb_v8_historical_context_overlay_v1.py'
   schedule:
-    - cron: '47 * * * *'
+    - cron: '12,27,42,57 * * * *'
   workflow_dispatch:
     inputs:
       limit:
         description: Canonical target games attempted in this bounded run
         required: false
-        default: '25'
+        default: '5'
 
 permissions:
   contents: write
@@ -75,8 +75,9 @@ jobs:
           )
           for token in retired:
               assert token not in entrypoint, token
-          assert "default: '25'" in workflow
-          assert "inputs.limit || '25'" in workflow
+          assert "default: '5'" in workflow
+          assert "inputs.limit || '5'" in workflow
+          assert "cron: '12,27,42,57 * * * *'" in workflow
           assert 'bbsApiUsed' in entrypoint
           assert '"official_mlb"' in entrypoint
           assert 'client_factory' in entrypoint
@@ -87,7 +88,7 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: validate
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -107,19 +108,20 @@ jobs:
         id: backfill
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
-          REQUESTED_LIMIT: ${{ inputs.limit || '25' }}
+          REQUESTED_LIMIT: ${{ inputs.limit || '5' }}
           AWS_EC2_METADATA_DISABLED: 'true'
         run: |
           set -euo pipefail
           mkdir -p runtime_reports
-          python scripts/run_mlb_v8_historical_context_backfill_entrypoint.py \
-            --region "$AWS_REGION_VALUE" \
-            --table-name "$TABLE_NAME" \
-            --historical-stack "$HISTORICAL_STACK" \
-            --fundamentals-stack "$FUNDAMENTALS_STACK" \
-            --limit "$REQUESTED_LIMIT" \
-            --output "$CONTEXT_REPORT" \
-            2>&1 | tee /tmp/mlb-v8-historical-context-backfill.log
+          timeout --signal=TERM --kill-after=45s 40m \
+            python scripts/run_mlb_v8_historical_context_backfill_entrypoint.py \
+              --region "$AWS_REGION_VALUE" \
+              --table-name "$TABLE_NAME" \
+              --historical-stack "$HISTORICAL_STACK" \
+              --fundamentals-stack "$FUNDAMENTALS_STACK" \
+              --limit "$REQUESTED_LIMIT" \
+              --output "$CONTEXT_REPORT" \
+              2>&1 | tee /tmp/mlb-v8-historical-context-backfill.log
       - name: Verify no-BBD evidence contract
         run: |
           set -euo pipefail
@@ -137,6 +139,7 @@ jobs:
           assert value.get('sameDayResultsExcluded') is True, value
           assert value.get('automaticWagerAllowed') is False, value
           assert value.get('ok') is True, value
+          assert 0 <= int(value.get('selectedGameCount') or 0) <= 5, value
           PY
           cp "$CONTEXT_REPORT" /tmp/mlb-v8-historical-context-backfill.json
       - uses: actions/upload-artifact@v4
