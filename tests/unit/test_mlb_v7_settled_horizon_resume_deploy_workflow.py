@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 WORKFLOW = Path(".github/workflows/mlb-v7-settled-horizon-resume-deploy.yml")
+PUBLISHER = Path(".github/workflows/mlb-v7-settled-horizon-resume-proof-publish.yml")
 
 
 def test_v7_settled_horizon_resume_deploy_is_isolated_and_gated():
@@ -50,3 +51,22 @@ def test_v7_settled_horizon_resume_deploy_fails_closed_at_safe_horizon():
     assert "productionAuthorityChanged" in source
     assert "MLB-HISTORICAL-INCREMENTAL-RANGE-EXTENSION-v2-waiting-resume" in source
     assert '"mode":"orchestrate"' in source
+
+
+def test_successful_main_deployment_publishes_aws_backed_proof():
+    source = PUBLISHER.read_text(encoding="utf-8")
+
+    assert "workflow_run:" in source
+    assert "MLB V7 Settled Horizon Resume Deploy" in source
+    assert "github.event.workflow_run.conclusion == 'success'" in source
+    assert "github.event.workflow_run.head_branch == 'main'" in source
+    assert "actions: read" in source
+    assert "contents: write" in source
+    assert "actions/download-artifact@v4" in source
+    assert "run-id: ${{ github.event.workflow_run.id }}" in source
+    assert "deployed Git SHA mismatch" in source
+    assert "deploymentIdentityMatches" in source
+    assert "productionAuthorityChanged" in source
+    assert "manualCursorMutation" in source
+    assert "runtime_reports/mlb_v7_settled_horizon_resume_deploy_latest.json" in source
+    assert "[skip ci]" in source
