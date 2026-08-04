@@ -103,4 +103,5 @@ jobs:
             .github/workflows/mlb-historical-supervised-v9-shadow.yml \
             tests/unit/test_run_mlb_historical_supervised_v9_shadow_feature_aware.py
           git commit -m 'Apply verified V7-V10 stall fixes'
+          echo "VERIFIED_STALL_FIX_COMMIT=$(git rev-parse HEAD)"
           git push origin "HEAD:${BRANCH}"
