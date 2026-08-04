@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import math
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -212,6 +213,29 @@ def test_force_full_bypasses_v10_fast_no_change_cadence():
         expected_version=v10.VERSION,
         force_full=True,
     ) is False
+
+
+def test_no_change_evidence_gets_fresh_timestamp_and_run_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GITHUB_SHA", "abc123")
+    monkeypatch.setenv("GITHUB_RUN_ID", "98765")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    started = datetime(2026, 8, 4, 20, 0, tzinfo=timezone.utc)
+    completed = datetime(2026, 8, 4, 20, 0, 7, tzinfo=timezone.utc)
+
+    value = subject._run_metadata(started, completed)
+
+    assert value == {
+        "sourceSha": "abc123",
+        "runId": "98765",
+        "runAttempt": "2",
+        "startedAtUtc": "2026-08-04T20:00:00+00:00",
+        "completedAtUtc": "2026-08-04T20:00:07+00:00",
+        "lastCheckedAtUtc": "2026-08-04T20:00:07+00:00",
+        "durationSeconds": 7.0,
+    }
+    assert subject.CADENCE_VERSION.endswith("fresh-evidence")
 
 
 def test_exact_binomial_is_finite_and_bounded_at_full_corpus_scale():
