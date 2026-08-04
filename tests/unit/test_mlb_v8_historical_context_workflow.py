@@ -23,12 +23,15 @@ def test_workflow_runs_isolated_official_context_backfill():
     assert "selectionUsedOutcomes') is False" in text
 
 
-def test_workflow_uses_bounded_batch_without_retired_provider_credentials():
+def test_workflow_uses_frequent_micro_batches_without_retired_provider_credentials():
     text = WORKFLOW.read_text()
 
-    assert "default: '25'" in text
-    assert "inputs.limit || '25'" in text
-    assert "timeout-minutes: 120" in text
+    assert "default: '5'" in text
+    assert "inputs.limit || '5'" in text
+    assert "cron: '12,27,42,57 * * * *'" in text
+    assert "timeout-minutes: 45" in text
+    assert "timeout --signal=TERM --kill-after=45s 40m" in text
+    assert "selectedGameCount') or 0) <= 5" in text
     assert "cancel-in-progress: false" in text
     assert "BBS_API_KEY" not in text
     assert "BBS_API_SECRET_ARN" not in text

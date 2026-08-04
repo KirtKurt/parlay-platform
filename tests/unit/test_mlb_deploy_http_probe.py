@@ -233,7 +233,7 @@ def test_single_attempt_standalone_probe_never_retries_failed_delivery(
     assert clock.sleeps == []
 
 
-def test_shared_deadline_retries_504_despite_single_delivery_cap() -> None:
+def test_shared_deadline_single_delivery_returns_outer_poll_retry_result() -> None:
     clock = Clock()
     outcomes = [
         urllib.error.HTTPError(
@@ -255,9 +255,20 @@ def test_shared_deadline_retries_504_despite_single_delivery_cap() -> None:
             raise outcome
         return outcome
 
-    result = probe.fetch_json_object(
+    deadline = clock.monotonic() + 30
+    first = probe.fetch_json_object(
         "https://example.test/status",
-        deadline_monotonic=clock.monotonic() + 30,
+        deadline_monotonic=deadline,
+        request_timeout_seconds=10,
+        retry_delay_seconds=4,
+        max_attempts=1,
+        opener=opener,
+        monotonic=clock.monotonic,
+        sleep=clock.sleep,
+    )
+    second = probe.fetch_json_object(
+        "https://example.test/status",
+        deadline_monotonic=deadline,
         request_timeout_seconds=10,
         retry_delay_seconds=4,
         max_attempts=1,
@@ -266,7 +277,46 @@ def test_shared_deadline_retries_504_despite_single_delivery_cap() -> None:
         sleep=clock.sleep,
     )
 
-    assert result["ok"] is True
+    assert first == {
+        "ok": False,
+        "transientProbe": True,
+        "retryable": True,
+        "probeVersion": probe.TRANSIENT_PROBE_RESULT_VERSION,
+        "attempts": 1,
+        "reason": "HTTP 504",
+    }
+    assert second["ok"] is True
+    assert calls == 2
+    assert clock.sleeps == []
+
+
+def test_shared_deadline_without_local_attempt_cap_retries_transient_delivery() -> None:
+    clock = Clock()
+    outcomes = [
+        TimeoutError("gateway integration still running"),
+        Response(200, {"ok": True}),
+    ]
+    calls = 0
+
+    def opener(_request, *, timeout):
+        nonlocal calls
+        calls += 1
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    result = probe.fetch_json_object(
+        "https://example.test/status",
+        deadline_monotonic=clock.monotonic() + 30,
+        request_timeout_seconds=10,
+        retry_delay_seconds=4,
+        opener=opener,
+        monotonic=clock.monotonic,
+        sleep=clock.sleep,
+    )
+
+    assert result == {"ok": True}
     assert calls == 2
     assert clock.sleeps == [4]
 
