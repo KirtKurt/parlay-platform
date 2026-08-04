@@ -6,7 +6,9 @@ on:
     paths:
       - '.github/workflows/mlb-daily-yesterday-audit.yml'
       - 'hello_world/mlb_yesterday_audit.py'
+      - 'hello_world/mlb_yesterday_audit_lock_card_resolver_patch.py'
       - 'scripts/verify_mlb_yesterday_audit_immutable_source.py'
+      - 'tests/unit/test_mlb_yesterday_audit_lock_card_resolver_patch.py'
   schedule:
     # 5:00 AM ET during daylight saving time. Audits the completed prior ET slate.
     - cron: '0 9 * * *'
@@ -33,10 +35,12 @@ jobs:
           python-version: '3.11'
 
       - name: Install runtime dependencies
-        run: python -m pip install --upgrade boto3
+        run: python -m pip install --upgrade boto3 pytest
 
       - name: Verify immutable historical-pick authority
-        run: python scripts/verify_mlb_yesterday_audit_immutable_source.py
+        run: |
+          python scripts/verify_mlb_yesterday_audit_immutable_source.py
+          python -m pytest -q tests/unit/test_mlb_yesterday_audit_lock_card_resolver_patch.py
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -57,7 +61,9 @@ jobs:
           python - <<'PY'
           import json, os
           import mlb_yesterday_audit
+          import mlb_yesterday_audit_lock_card_resolver_patch
 
+          mlb_yesterday_audit_lock_card_resolver_patch.apply(mlb_yesterday_audit)
           slate = (os.environ.get('INPUT_SLATE_DATE') or '').strip() or None
           report = mlb_yesterday_audit.build(slate_date=slate, days_from=3, store=True, write_file=True)
           print(json.dumps({
@@ -65,6 +71,7 @@ jobs:
               'slate_date': report.get('slate_date'),
               'status': report.get('status'),
               'immutableLockAuthority': report.get('immutableLockAuthority'),
+              'dailyLockCardResolution': report.get('dailyLockCardResolution'),
               'summary': report.get('summary'),
               'finalScoreCount': report.get('finalScoreCount'),
               'stored': report.get('stored'),
