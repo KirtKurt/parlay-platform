@@ -86,6 +86,8 @@ def _validate_deploy_workflow() -> None:
         "CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE|STACK_MISSING)",
         "Prove exact deployed Lambda identity and schedules",
         "verify_mlb_deploy_identity.py",
+        "warm_and_verify_mlb_lock_status.py",
+        "/tmp/mlb-lock-status-direct.json",
         "--expected-deploy-run-id",
         "steps.deploy.outputs.run_id",
         "--expected-code-manifest",

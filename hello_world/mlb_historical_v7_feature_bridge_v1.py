@@ -17,7 +17,7 @@ import mlb_historical_v7_priority_repairs_v1 as repairs
 import mlb_v8_historical_bbs_overlay_v1 as bbs_overlay
 import mlb_v8_historical_context_overlay_v1 as context_overlay
 
-VERSION = "MLB-HISTORICAL-V7-FEATURE-BRIDGE-v1-point-in-time-signal-wiring"
+VERSION = "MLB-HISTORICAL-V7-FEATURE-BRIDGE-v2-provider-neutral-official-primary"
 
 
 def _sha(value: Any) -> str:
@@ -190,6 +190,10 @@ def load_and_apply(
         "priorGameOverlay": prior_proof,
         "targetGameOverlay": target_proof,
         "featureCorpus": feature_state,
+        "primaryFeatureAuthority": context_overlay.AUTHORITY,
+        "providerNeutralOfficialContextPrimary": True,
+        "retiredBbsOverlayRequired": False,
+        "retiredBbsOverlayStatus": prior_proof.get("status"),
         "providerCallsMade": 0,
         "selectionUsedOutcomes": False,
         "productionAuthorityChanged": False,

@@ -14,17 +14,20 @@ def _module():
     bridge = types.ModuleType("mlb_historical_v7_feature_bridge_v1")
     legacy = types.ModuleType("scripts.run_mlb_historical_supervised_v9_shadow")
     cadence = types.ModuleType("scripts.run_mlb_historical_supervised_v9_shadow_cadence")
+    cadence_v3 = types.ModuleType("scripts.run_mlb_historical_supervised_v9_shadow_cadence_v3")
     package = types.ModuleType("scripts")
     package.__path__ = []
     package.run_mlb_historical_supervised_v9_shadow = legacy
     package.run_mlb_historical_supervised_v9_shadow_cadence = cadence
+    package.run_mlb_historical_supervised_v9_shadow_cadence_v3 = cadence_v3
     old = {name: sys.modules.get(name) for name in (
-        bridge.__name__, package.__name__, legacy.__name__, cadence.__name__
+        bridge.__name__, package.__name__, legacy.__name__, cadence.__name__, cadence_v3.__name__
     )}
     sys.modules[bridge.__name__] = bridge
     sys.modules[package.__name__] = package
     sys.modules[legacy.__name__] = legacy
     sys.modules[cadence.__name__] = cadence
+    sys.modules[cadence_v3.__name__] = cadence_v3
     try:
         spec = importlib.util.spec_from_file_location("feature_aware_under_test", MODULE)
         module = importlib.util.module_from_spec(spec)
@@ -68,7 +71,7 @@ def test_report_exposes_feature_cadence_without_changing_authority():
     )
     assert report["featureCorpus"]["materializedFeatureRowCount"] == 160
     assert report["newFeatureRowsSinceLastShadowFit"] == 10
-    assert report["stalledStage"] == "WAITING_FOR_NEW_GAMES_OR_FEATURE_ROWS"
+    assert report["stalledStage"] == "WAITING_FOR_NEW_GAMES_FEATURE_ROWS_OR_COMPLETE_SLATES"
     assert report["providerCallsMade"] == 0
     assert report["productionAuthorityChanged"] is False
 
@@ -144,6 +147,8 @@ def test_main_injects_enriched_records_and_feature_cadence(tmp_path, monkeypatch
 
     module.cadence_state.decide_cadence = decide
     module.cadence_state.report_anchor_fields = anchors
+    module.cadence_v3.decide_cadence = decide
+    module.cadence_v3.report_anchor_fields = anchors
 
     def legacy_main():
         loaded = handler._load_training_records({"eligibleGameCount": 2})
@@ -184,7 +189,7 @@ def test_main_injects_enriched_records_and_feature_cadence(tmp_path, monkeypatch
     assert value["featureCorpus"]["materializedFeatureRowCount"] == 50
     assert value["lastShadowFitFeatureRowCount"] == 50
     assert value["refitReasons"] == ["feature_row_increment_reached"]
-    assert os.environ["MLB_V8_HISTORICAL_BBS_OVERLAY_ENABLED"] == "true"
-    assert os.environ["MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED"] == "true"
+    assert os.environ["MLB_V8_HISTORICAL_BBS_OVERLAY_ENABLED"] == "false"
+    assert os.environ["MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED"] == "false"
     assert os.environ["MLB_V8_HISTORICAL_CONTEXT_OVERLAY_ENABLED"] == "true"
     assert os.environ["MLB_V8_HISTORICAL_CONTEXT_OVERLAY_REQUIRED"] == "true"

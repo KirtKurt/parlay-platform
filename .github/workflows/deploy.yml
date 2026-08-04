@@ -79,6 +79,8 @@ jobs:
           python -m pytest -q tests/unit/test_mlb_production_acceptance.py
           python -m pytest -q tests/unit/test_verify_mlb_no_bbd_runtime.py
           python -m py_compile scripts/mlb_deploy_http_probe.py
+          python -m py_compile scripts/warm_and_verify_mlb_lock_status.py
+          python -m pytest -q tests/unit/test_warm_and_verify_mlb_lock_status.py
           python -m py_compile scripts/mlb_lambda_artifact_identity.py
           python -m py_compile scripts/create_mlb_lambda_build_manifest.py
           python -m py_compile scripts/verify_mlb_deploy_identity.py
@@ -536,6 +538,10 @@ jobs:
           API_URL: ${{ steps.stack.outputs.api_url }}
         run: |
           set -euo pipefail
+          LOCK_FUNCTION=$(aws cloudformation describe-stack-resource             --stack-name parlay-platform-dev             --logical-resource-id MLBDailyPickLockFunction             --region "${{ secrets.AWS_REGION }}"             --query 'StackResourceDetail.PhysicalResourceId'             --output text)
+          test -n "$LOCK_FUNCTION"
+          test "$LOCK_FUNCTION" != "None"
+          python scripts/warm_and_verify_mlb_lock_status.py             --function-name "$LOCK_FUNCTION"             --region "${{ secrets.AWS_REGION }}"             --output /tmp/mlb-lock-status-direct.json             --invocation-output /tmp/mlb-lock-status-direct-invocation.json             --attempts 3             --delay-seconds 4
           python - <<'PY'
           import json
           import os
