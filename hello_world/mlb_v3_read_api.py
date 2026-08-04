@@ -7,6 +7,7 @@ from typing import Any, Dict
 from zoneinfo import ZoneInfo
 
 import mlb_ml_runtime_install_v3
+import mlb_persisted_prelock_public_read_v1 as persisted_prelock_read
 import mlb_terminal_lifecycle_count_reconciliation as lifecycle_counts
 
 RUNTIME_INSTALL = mlb_ml_runtime_install_v3.install()
@@ -28,7 +29,7 @@ except Exception:
 
 MODEL_VERSION = "INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble"
 HISTORICAL_MODEL_VERSION = "INQSI-MLB-v5.1.1-historical-daily-only-cutover-wager-disabled"
-VERSION = "MLB-V3-READ-API-v6-ranked-winner-v15.10"
+VERSION = "MLB-V3-READ-API-v7-exact-persisted-prelock-public-read"
 HISTORICAL_API_EXTENSION_VERSION = "MLB-V3-HISTORICAL-EXTENSION-v1.4-append-only-cutover-wager-disabled"
 
 
@@ -154,6 +155,7 @@ def _model_body() -> Dict[str, Any]:
         "engine_import_ok": ENGINE_IMPORT_OK,
         "engine_import_error": ENGINE_IMPORT_ERROR,
         "apiRuntimeVersion": VERSION,
+        "persistedPrelockPublicReadVersion": persisted_prelock_read.VERSION,
         "pick_type": (
             "individual_game_moneyline_pick_evaluated_as_complete_daily_slate"
             if historical_active
@@ -235,13 +237,34 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             store=False,
             limit=min(max(int(params.get("limit") or 500), 1), 500),
         )
+        # The canonical lifecycle reader may return one placeholder per game
+        # before T-45. Replace only those non-canonical placeholders with the
+        # exact stored GAME row when its newest write-once PREGAME snapshot
+        # validates byte-for-byte. No prediction is recalculated here.
+        result = persisted_prelock_read.merge_into_payload(
+            ENGINE,
+            date,
+            result or {},
+        )
     except Exception as exc:
         return _response(500, {**_model_body(), "ok": False, "date": date, "error": str(exc), "winner_predictions": [], "predictions": [], "count": 0})
     result = dict(result or {})
+    prelock_proof = dict(result.get("persistedPrelockPublicRead") or {})
     result = lifecycle_counts.reconcile_payload(
         result,
         row_field="predictions",
     )
+    # Lifecycle reconciliation intentionally reports canonical T-45 coverage.
+    # Preserve the separate pre-lock display-coverage truth established by the
+    # exact persisted row/snapshot pair so deployment and clients do not confuse
+    # an open lock with a missing prediction.
+    if prelock_proof.get("coverageComplete") is True:
+        displayed = int(prelock_proof.get("returnedWinnerPredictionCount") or 0)
+        result["displayPredictionCount"] = displayed
+        result["allGamesPredicted"] = True
+        result["allGamesHaveDisplayedWinnerPrediction"] = True
+        result["predictionCoverageComplete"] = True
+        result["persistedPrelockPublicRead"] = prelock_proof
     result.update({
         "sport": "mlb",
         "date": date,
@@ -267,6 +290,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "rowLevelAutomaticWagerAllowed": False,
         "ml_runtime_install": model.get("ml_runtime_install"),
         "apiRuntimeVersion": VERSION,
+        "persistedPrelockPublicReadVersion": persisted_prelock_read.VERSION,
         "winner_predictions": result.get("predictions") or [],
         "parlaysEnabled": False,
         "readOnly": True,
