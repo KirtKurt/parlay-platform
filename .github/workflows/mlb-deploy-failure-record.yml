@@ -14,9 +14,15 @@ concurrency:
 
 jobs:
   record:
+    # A cancelled, skipped, neutral, or stale run did not prove deployment
+    # failure and must not overwrite the last verified scoring acceptance.
+    # Only terminal failure conclusions publish a negative proof.
     if: >-
       github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.conclusion != 'success'
+      (github.event.workflow_run.conclusion == 'failure' ||
+       github.event.workflow_run.conclusion == 'timed_out' ||
+       github.event.workflow_run.conclusion == 'action_required' ||
+       github.event.workflow_run.conclusion == 'startup_failure')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,17 +45,30 @@ jobs:
           from datetime import datetime, timezone
           from pathlib import Path
 
+          conclusion = os.environ.get('DEPLOY_CONCLUSION')
+          terminal_conclusions = {
+              'failure',
+              'timed_out',
+              'action_required',
+              'startup_failure',
+          }
+          if conclusion not in terminal_conclusions:
+              raise SystemExit(
+                  f'non-terminal deploy conclusion cannot publish failure proof: {conclusion}'
+              )
           report = {
               'ok': False,
               'proofType': 'MLB_SCORING_FIX_POST_DEPLOY_ACCEPTANCE',
-              'version': 'MLB-SCORING-FIX-POST-DEPLOY-v1',
+              'version': 'MLB-SCORING-FIX-POST-DEPLOY-v2-terminal-failures-only',
               'createdAtUtc': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
               'deployedCommit': os.environ.get('DEPLOY_HEAD_SHA'),
-              'deployWorkflowConclusion': os.environ.get('DEPLOY_CONCLUSION'),
+              'deployWorkflowConclusion': conclusion,
               'deployWorkflowRunId': os.environ.get('DEPLOY_RUN_ID'),
               'deployWorkflowRunUrl': os.environ.get('DEPLOY_RUN_URL'),
+              'terminalDeployFailure': True,
+              'nonTerminalCancellationIsFailure': False,
               'scoringGuardPassed': False,
-              'blockers': ['deploy_workflow_not_successful'],
+              'blockers': [f'deploy_workflow_terminal_{conclusion}'],
               'secretExposed': False,
           }
           Path('runtime_reports/mlb_scoring_fix_post_deploy_latest.json').write_text(
