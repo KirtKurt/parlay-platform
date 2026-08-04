@@ -14,6 +14,7 @@ from typing import Any, Callable, Mapping, Optional
 
 
 TRANSIENT_HTTP_STATUSES = {429, *range(500, 600)}
+TRANSIENT_PROBE_RESULT_VERSION = "MLB-DEPLOY-HTTP-PROBE-v2-outer-poll-safe"
 
 
 class HttpProbeError(RuntimeError):
@@ -26,6 +27,25 @@ class PermanentHttpProbeError(HttpProbeError):
 
 class TransientHttpProbeExhausted(HttpProbeError):
     """Transient delivery failures consumed the bounded probe deadline."""
+
+
+def _transient_probe_result(attempts: int, reason: str) -> dict[str, Any]:
+    """Return a fail-closed object that an outer lifecycle poll can retry.
+
+    The result intentionally cannot satisfy any production acceptance contract:
+    ``ok`` is false and no domain fields are present.  It exists only so a
+    caller that owns a longer shared deadline can perform one sequential HTTP
+    delivery per outer attempt without one timeout consuming that whole window.
+    """
+
+    return {
+        "ok": False,
+        "transientProbe": True,
+        "retryable": True,
+        "probeVersion": TRANSIENT_PROBE_RESULT_VERSION,
+        "attempts": int(attempts),
+        "reason": str(reason or "transient delivery failure"),
+    }
 
 
 def fetch_json_object(
@@ -44,12 +64,16 @@ def fetch_json_object(
     """Fetch one JSON object, retrying only capacity/network-class failures.
 
     Calls are strictly sequential. HTTP 429, HTTP 5xx, transport errors, and
-    truncated/invalid JSON are retried until a bounded deadline. ``max_attempts``
-    applies to standalone probes; when the caller supplies an explicit shared
-    deadline, that deadline is authoritative so a transient API Gateway 504
-    cannot abort the surrounding bounded lifecycle poll after one delivery.
-    Other HTTP statuses and valid non-object payloads fail immediately because
-    they indicate a deployment contract error.
+    truncated/invalid JSON are retryable. ``max_attempts`` always bounds the
+    deliveries made by this function call.
+
+    When the caller supplies an explicit shared deadline and the local attempt
+    cap is reached first, the function returns a fail-closed transient object
+    instead of raising.  This lets the caller's outer lifecycle loop sleep,
+    refresh its state, and retry one delivery at a time.  A shared deadline that
+    is already exhausted still raises immediately.  Non-retryable HTTP statuses
+    and valid non-object payloads always fail immediately because they indicate
+    a deployment contract error.
     """
 
     if not url:
@@ -71,7 +95,7 @@ def fetch_json_object(
     )
     request_headers = {
         "accept": "application/json",
-        "user-agent": "inqsi-capacity-safe-deploy-probe/1.1",
+        "user-agent": "inqsi-capacity-safe-deploy-probe/2.0",
         **dict(headers or {}),
     }
     last_transient = "transient delivery failure"
@@ -136,14 +160,9 @@ def fetch_json_object(
                 )
             return payload
 
-        # A caller-owned shared deadline bounds the whole lifecycle poll. Keep
-        # transient deliveries sequentially retrying within that same deadline;
-        # standalone probes retain their explicit attempt cap.
-        if (
-            not shared_deadline
-            and max_attempts is not None
-            and attempt >= max_attempts
-        ):
+        if max_attempts is not None and attempt >= max_attempts:
+            if shared_deadline:
+                return _transient_probe_result(attempt, last_transient)
             raise TransientHttpProbeExhausted(
                 f"JSON probe attempt limit exhausted after {attempt} attempts: "
                 f"{last_transient}"
