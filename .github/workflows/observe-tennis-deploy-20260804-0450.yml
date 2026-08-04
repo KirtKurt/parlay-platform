@@ -46,13 +46,13 @@ jobs:
           }
           Path('runtime/tennis_deploy_verification.json').write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n')
           PY
+          cp runtime/tennis_deploy_verification.json /tmp/tennis_deploy_verification.json
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           for attempt in $(seq 1 20); do
             git fetch origin main
             git reset --hard origin/main
             mkdir -p runtime
-            cp runtime/tennis_deploy_verification.json /tmp/tennis_deploy_verification.json || true
             cp /tmp/tennis_deploy_verification.json runtime/tennis_deploy_verification.json
             git rm -f .github/workflows/observe-tennis-deploy-20260804-0450.yml
             git rm -f .github/workflows/trigger-tennis-deploy-verification-20260804-0445.yml || true
