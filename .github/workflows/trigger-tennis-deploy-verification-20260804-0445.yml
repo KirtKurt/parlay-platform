@@ -1,0 +1,22 @@
+name: Trigger Tennis Deploy Verification 2026-08-04 0445
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/trigger-tennis-deploy-verification-20260804-0445.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch isolated tennis deployment workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run deploy-tennis-learning.yml --repo "$GH_REPO" --ref main
