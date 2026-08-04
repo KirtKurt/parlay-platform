@@ -116,7 +116,7 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: validate
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -145,7 +145,7 @@ jobs:
             --json-output /tmp/mlb-v10-bucket-resolution.json)
           test -n "$bucket_name"
           export MLB_HISTORICAL_ARTIFACTS_BUCKET="$bucket_name"
-          PYTHONPATH=.:​hello_world:scripts python scripts/run_mlb_v10_autonomous_signal_discovery.py \
+          PYTHONPATH=.:hello_world:scripts python scripts/run_mlb_v10_autonomous_signal_discovery.py \
             --output /tmp/mlb-v10-candidate.json \
             --previous /tmp/mlb-v10-previous.json
           python - <<'PY'
