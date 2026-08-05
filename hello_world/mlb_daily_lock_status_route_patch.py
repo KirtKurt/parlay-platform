@@ -80,7 +80,15 @@ def _cache_max_age_seconds() -> int:
     return max(30, min(value, CACHE_TTL_SECONDS))
 
 
-def _resolved_slate_date(module: Any, value: Any) -> str:
+def _resolved_slate_date(module: Any, value: Any) -> Optional[str]:
+    """Resolve a cache key without replacing the lock module's date authority.
+
+    Explicit dates are safe to use immediately. Date aliases use the lock
+    module's canonical ET resolver when it exposes one. Otherwise this returns
+    ``None`` so ``_status_payload(None)`` retains the module's own default-date
+    behavior; the returned payload then supplies the durable cache key.
+    """
+
     normalized = _normalized_slate_date(value)
     if normalized:
         return normalized
@@ -89,7 +97,7 @@ def _resolved_slate_date(module: Any, value: Any) -> str:
         resolved = resolver()
         if resolved:
             return str(resolved)
-    return datetime.now(timezone.utc).date().isoformat()
+    return None
 
 
 def _cache_key(slate_date: str) -> Dict[str, str]:
@@ -145,7 +153,7 @@ def _load_cached_summary(module: Any, slate_date: str) -> Optional[Dict[str, Any
 
 def _store_cached_summary(module: Any, slate_date: str, body: Dict[str, Any]) -> bool:
     table = _status_table(module)
-    if table is None or body.get("ok") is not True:
+    if table is None or not slate_date or body.get("ok") is not True:
         return False
     now = datetime.now(timezone.utc)
     cached = copy.deepcopy(body)
@@ -190,17 +198,20 @@ def _decorate_summary(body: Dict[str, Any], *, cache_hit: bool) -> Dict[str, Any
     return output
 
 
-def _refresh_cached_summary(module: Any, slate_date: str) -> bool:
+def _refresh_cached_summary(module: Any, requested_slate: Optional[str]) -> bool:
     """Refresh the public summary outside API Gateway's request deadline."""
 
     token = _INCLUDE_ATTEMPT_DIAGNOSTICS.set(False)
     try:
-        body = module._status_payload(slate_date)
+        body = module._status_payload(requested_slate)
         if not isinstance(body, dict):
+            return False
+        actual_slate = str(body.get("slateDateEt") or requested_slate or "")
+        if not actual_slate:
             return False
         return _store_cached_summary(
             module,
-            slate_date,
+            actual_slate,
             _decorate_summary(body, cache_hit=False),
         )
     except Exception:
@@ -297,19 +308,20 @@ def apply(module: Any) -> Any:
                 or payload.get("slateDateEt")
                 or payload.get("date")
             )
-            slate_date = _resolved_slate_date(module, requested_slate)
+            normalized_slate = _normalized_slate_date(requested_slate)
+            cache_slate = _resolved_slate_date(module, requested_slate)
             include_diagnostics = _explicit_bool(
                 payload.get("includeAttemptDiagnostics"),
                 default=False,
             )
-            if not include_diagnostics:
-                cached = _load_cached_summary(module, slate_date)
+            if not include_diagnostics and cache_slate:
+                cached = _load_cached_summary(module, cache_slate)
                 if cached is not None:
                     return module._resp(200, _decorate_summary(cached, cache_hit=True))
 
             token = _INCLUDE_ATTEMPT_DIAGNOSTICS.set(include_diagnostics)
             try:
-                body = module._status_payload(slate_date)
+                body = module._status_payload(normalized_slate)
                 if isinstance(body, dict):
                     body = copy.deepcopy(body)
                     body.update(
@@ -323,7 +335,14 @@ def apply(module: Any) -> Any:
                     )
                     if not include_diagnostics:
                         body = _decorate_summary(body, cache_hit=False)
-                        _store_cached_summary(module, slate_date, body)
+                        actual_slate = str(
+                            body.get("slateDateEt")
+                            or cache_slate
+                            or normalized_slate
+                            or ""
+                        )
+                        if actual_slate:
+                            _store_cached_summary(module, actual_slate, body)
                 return module._resp(200, body)
             except Exception as exc:
                 return module._resp(
@@ -350,7 +369,7 @@ def apply(module: Any) -> Any:
             )
             _refresh_cached_summary(
                 module,
-                _resolved_slate_date(module, requested_slate),
+                _normalized_slate_date(requested_slate),
             )
         return response
 
