@@ -1,49 +1,108 @@
 {
-  "activePointerRevision": 68,
+  "activePointerRevision": 69,
   "authority": "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY",
   "automaticWagerAllowed": false,
   "bbsApiUsed": false,
   "bbsCredentialRead": false,
   "blockers": [],
-  "createdAtUtc": "2026-08-05T20:20:50.189284+00:00",
+  "coreEligibleGameCount": 5,
+  "createdAtUtc": "2026-08-05T21:07:45.956566+00:00",
   "crosswalkQuarantine": [],
   "crosswalkQuarantineCount": 0,
   "cursorAdvanced": true,
-  "eligibleGameCount": 0,
-  "ineligibleGameCount": 45,
+  "diagnosedGameCount": 5,
+  "domainCoverage": {
+    "bullpens": {
+      "coverage": 1.0,
+      "eligibleGameCount": 5,
+      "evaluatedGameCount": 5
+    },
+    "injuries": {
+      "coverage": 1.0,
+      "eligibleGameCount": 5,
+      "evaluatedGameCount": 5
+    },
+    "lineups": {
+      "coverage": 1.0,
+      "eligibleGameCount": 5,
+      "evaluatedGameCount": 5
+    },
+    "park": {
+      "coverage": 1.0,
+      "eligibleGameCount": 5,
+      "evaluatedGameCount": 5
+    },
+    "pitchers": {
+      "coverage": 1.0,
+      "eligibleGameCount": 5,
+      "evaluatedGameCount": 5
+    },
+    "team_context": {
+      "coverage": 1.0,
+      "eligibleGameCount": 5,
+      "evaluatedGameCount": 5
+    },
+    "weather": {
+      "coverage": 0.0,
+      "eligibleGameCount": 0,
+      "evaluatedGameCount": 5
+    }
+  },
+  "eligibilityPolicyVersion": "MLB-V8-CONTEXT-ELIGIBILITY-v2-feature-aware",
+  "eligibilityReasonCounts": {
+    "weather_resource_unavailable": 5
+  },
+  "eligibilityReasonsByGame": {
+    "778491": [
+      "weather_resource_unavailable"
+    ],
+    "778492": [
+      "weather_resource_unavailable"
+    ],
+    "778493": [
+      "weather_resource_unavailable"
+    ],
+    "778497": [
+      "weather_resource_unavailable"
+    ],
+    "778498": [
+      "weather_resource_unavailable"
+    ]
+  },
+  "eligibleGameCount": 5,
+  "fullFeatureEligibleGameCount": 0,
+  "ineligibleGameCount": 0,
   "legacyBbsCarryForwardAllowed": false,
   "manifest": {
     "alreadyExisted": false,
     "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
-    "key": "mlb/v8/historical-context/manifests/0f7f3e96ac0220c6dcd0aae6743135b4ca79efa180be81ba5cc1d11d948f9e8e.json",
-    "sha256": "d8c014ea8fe54acc9e8bad0c454262313ba0b40331b04c40ca1f6dcecb425781",
-    "versionId": "HN6txy7D6e4wvaUF_yitT3MGb0AIu3zD"
+    "key": "mlb/v8/historical-context/manifests/3e0742fb2deb75cdca3462af866a0ac71773427f84f5e470192b55b9bdcce8d0.json",
+    "sha256": "c4f3512c7a9a6fb24293e564f9a2e9659d3afc22d3e7bce909977bcfab0fd8ec",
+    "versionId": "HWF66UZpRR4T2dkiIzCmClH_4kEU.4yC"
   },
-  "manifestDigest": "0f7f3e96ac0220c6dcd0aae6743135b4ca79efa180be81ba5cc1d11d948f9e8e",
-  "newEligibleGameCount": 0,
+  "manifestDigest": "3e0742fb2deb75cdca3462af866a0ac71773427f84f5e470192b55b9bdcce8d0",
+  "materializerVersion": "MLB-V8-OFFICIAL-CONTEXT-v2-projection-aware",
+  "newEligibleGameCount": 5,
   "newRecordCount": 5,
   "officialContextPointerAuthoritative": true,
   "ok": true,
   "pointInTimeRequired": true,
-  "pointerMigrationVersion": "MLB-V8-CONTEXT-POINTER-MIGRATION-v1-reset-retired-bbs-records",
-  "processedGameCount": 45,
+  "pointerMigrationVersion": "MLB-V8-CONTEXT-POINTER-MIGRATION-v2-feature-aware-replay",
+  "processedGameCount": 5,
   "productionAuthorityChanged": false,
   "progressMade": true,
   "proofType": "MLB_V8_HISTORICAL_CONTEXT_BACKFILL",
   "provider": "official_mlb_plus_internal_canonical_context",
   "providerCallsMade": 36,
-  "remainingGameCount": 4069,
-  "runId": "31043446154",
+  "remainingGameCount": 4109,
+  "replayFromStartApplied": true,
+  "runId": "31047257759",
   "sameDayResultsExcluded": true,
   "selectedGameCount": 5,
   "selectionUsedOutcomes": false,
-  "sourceSha": "7125cd045fe81517215e44765b0e0f333a7791d7",
+  "sourceSha": "2566221182194e8563fe7ec15393868a8655a9f8",
   "targetGameOutcomeUsed": false,
-  "trainingCoverage": 0.0,
-  "version": "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v4-autonomous-cursor",
-  "warnings": [
-    "current_batch_added_zero_training_eligible_official_context_rows",
-    "cursor_advanced_across_training_ineligible_historical_rows",
-    "no_training_eligible_point_in_time_official_context_rows_yet"
-  ]
+  "trainingCoverage": 0.00121536,
+  "version": "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v5-feature-aware-replay",
+  "warnings": []
 }
