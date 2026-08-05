@@ -15,6 +15,8 @@ name: MLB V8 Autonomous Controller
       - 'hello_world/mlb_v8_prospective_audit_v1.py'
       - 'hello_world/mlb_supervised_feature_groups_v2_4.py'
       - 'hello_world/mlb_v8_historical_point_in_time_context_v1.py'
+      - 'hello_world/mlb_v8_historical_context_overlay_v1.py'
+      - 'hello_world/mlb_v8_historical_bbs_overlay_v1.py'
       - 'scripts/run_mlb_v8_autonomous_training.py'
       - 'scripts/run_mlb_v8_prospective_audit.py'
       - 'scripts/run_mlb_v8_autonomous_controller.py'
@@ -26,6 +28,8 @@ name: MLB V8 Autonomous Controller
       - 'tests/unit/test_mlb_v8_model_runtime.py'
       - 'tests/unit/test_mlb_v8_prospective_audit_v1.py'
       - 'tests/unit/test_mlb_supervised_feature_groups_v2_4.py'
+      - 'tests/unit/test_mlb_v8_historical_context_overlay_v1.py'
+      - 'tests/unit/test_mlb_v8_historical_bbs_overlay_v1.py'
       - 'tests/unit/test_run_mlb_v8_autonomous_training.py'
       - 'tests/unit/test_run_mlb_v8_prospective_audit.py'
       - 'tests/unit/test_run_mlb_v8_autonomous_controller.py'
@@ -92,6 +96,8 @@ jobs:
             hello_world/mlb_v8_prospective_audit_v1.py \
             hello_world/mlb_supervised_feature_groups_v2_4.py \
             hello_world/mlb_v8_historical_point_in_time_context_v1.py \
+            hello_world/mlb_v8_historical_context_overlay_v1.py \
+            hello_world/mlb_v8_historical_bbs_overlay_v1.py \
             scripts/run_mlb_v8_autonomous_training.py \
             scripts/run_mlb_v8_prospective_audit.py \
             scripts/run_mlb_v8_autonomous_controller.py \
@@ -103,6 +109,8 @@ jobs:
             tests/unit/test_mlb_v8_model_runtime.py \
             tests/unit/test_mlb_v8_prospective_audit_v1.py \
             tests/unit/test_mlb_supervised_feature_groups_v2_4.py \
+            tests/unit/test_mlb_v8_historical_context_overlay_v1.py \
+            tests/unit/test_mlb_v8_historical_bbs_overlay_v1.py \
             tests/unit/test_run_mlb_v8_autonomous_training.py \
             tests/unit/test_run_mlb_v8_prospective_audit.py \
             tests/unit/test_run_mlb_v8_autonomous_controller.py \
@@ -258,12 +266,21 @@ jobs:
           python - <<'PY'
           import json, os
           from pathlib import Path
+          context=json.loads(Path(os.environ['CONTEXT_REPORT']).read_text())
           raw=json.loads(Path(os.environ['TRAINING_REPORT']).read_text())
           effective=json.loads(Path(os.environ['EFFECTIVE_TRAINING_REPORT']).read_text())
           audit=json.loads(Path(os.environ['PROSPECTIVE_REPORT']).read_text())
           controller=json.loads(Path(os.environ['CONTROLLER_REPORT']).read_text())
           promotion=json.loads(Path(os.environ['PROMOTION_REPORT']).read_text())
           learning=raw.get('learningExecution') or {}
+          eligibility=raw.get('prospectiveCandidateEligibility') or {}
+          assert context.get('ok') is True, context
+          assert context.get('authority') == 'V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY', context
+          assert context.get('bbsApiUsed') is False, context
+          assert context.get('bbsCredentialRead') is False, context
+          assert context.get('productionAuthorityChanged') is False, context
+          assert context.get('automaticWagerAllowed') is False, context
+          assert context.get('progressMade') is True or int(context.get('remainingGameCount') or 0) == 0, context
           assert raw.get('ok') is True, raw
           assert raw.get('historicalBbsRequired') is False, raw
           assert raw.get('automaticWagerAllowed') is False, raw
@@ -271,6 +288,19 @@ jobs:
           assert int(learning.get('learnedCandidateCount') or 0) > 0, learning
           assert int(learning.get('totalOptimizationSteps') or 0) > 0, learning
           assert learning.get('qualityGateWeakened') is False, learning
+          assert eligibility.get('automaticWagerAllowed') is False, eligibility
+          assert eligibility.get('productionAuthorityChanged') is False, eligibility
+          selected_group=str(eligibility.get('selectedFeatureGroup') or '')
+          if selected_group == 'market_baseline':
+              assert eligibility.get('runtimeBundleApplicable') is False, eligibility
+              assert eligibility.get('runtimeBundleStatus') == 'NOT_APPLICABLE_MARKET_BASELINE_RETAINED', eligibility
+              assert not any(str(error).startswith('runtime_bundle_invalid:') for error in eligibility.get('errors') or []), eligibility
+          else:
+              assert eligibility.get('runtimeBundleApplicable') is True, eligibility
+              assert eligibility.get('runtimeBundleStatus') in {
+                  'VALID_LEARNED_CANDIDATE_BUNDLE',
+                  'INVALID_LEARNED_CANDIDATE_BUNDLE',
+              }, eligibility
           assert effective.get('automaticWagerAllowed') is False, effective
           assert audit.get('ok') is True, audit
           assert audit.get('modelRefitDuringProspectiveAudit') is False, audit

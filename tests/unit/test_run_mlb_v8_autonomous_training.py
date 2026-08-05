@@ -37,6 +37,11 @@ def _base_result():
         "freshProspectiveAuditRequired": True,
         "productionPromotionEligible": False,
         "recordCountLoaded": 1500,
+        "partitions": {
+            "train": {"lastDate": "2026-06-30"},
+            "walkForward": {"lastDate": "2026-07-15"},
+            "untouchedAudit": {"lastDate": "2026-07-31"},
+        },
     }
 
 
@@ -59,6 +64,7 @@ def test_run_decorates_and_rewrites_training_report(monkeypatch, tmp_path):
     )
 
     stored = json.loads(output.read_text())
+    eligibility = value["prospectiveCandidateEligibility"]
     assert calls["region"] == "us-east-1"
     assert value["learningExecution"]["learningExecuted"] is True
     assert value["learningExecution"]["totalOptimizationSteps"] > 0
@@ -68,3 +74,16 @@ def test_run_decorates_and_rewrites_training_report(monkeypatch, tmp_path):
     assert stored["resultDigest"] == value["resultDigest"]
     assert stored["historicalBbsRequired"] is False
     assert stored["providerNeutralTrainingAllowed"] is True
+    assert eligibility["eligible"] is False
+    assert eligibility["selectedFeatureGroup"] == "market_baseline"
+    assert eligibility["runtimeBundleApplicable"] is False
+    assert (
+        eligibility["runtimeBundleStatus"]
+        == "NOT_APPLICABLE_MARKET_BASELINE_RETAINED"
+    )
+    assert not any(
+        error.startswith("runtime_bundle_invalid:")
+        for error in eligibility["errors"]
+    )
+    assert eligibility["automaticWagerAllowed"] is False
+    assert eligibility["productionAuthorityChanged"] is False

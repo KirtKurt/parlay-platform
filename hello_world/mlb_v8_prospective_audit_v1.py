@@ -51,24 +51,47 @@ def _last_corpus_day(training: Mapping[str, Any]) -> str:
 def candidate_eligibility(training: Mapping[str, Any]) -> Dict[str, Any]:
     errors = []
     learning = training.get("learningExecution") or {}
+    selection = training.get("selection") or {}
+    model = training.get("model") or {}
+    selected_group = str(
+        learning.get("selectedFeatureGroup")
+        or selection.get("selectedFeatureGroup")
+        or model.get("featureGroup")
+        or ""
+    ).strip()
+    baseline_retained = bool(
+        selected_group == "market_baseline"
+        or learning.get("marketBaselineRetainedByGuard") is True
+    )
+
     if training.get("ok") is not True:
         errors.append("training_report_unhealthy")
     if learning.get("learningExecuted") is not True:
         errors.append("learning_execution_unproven")
     if learning.get("learnedCandidateSelected") is not True:
         errors.append("learned_candidate_not_selected")
-    if learning.get("marketBaselineRetainedByGuard") is True:
+    if baseline_retained:
         errors.append("market_baseline_retained")
     if (training.get("promotionGate") or {}).get("passed") is not True:
         errors.append("retrospective_promotion_gate_not_passed")
     if training.get("automaticWagerAllowed") is not False:
         errors.append("automatic_wager_must_remain_disabled")
+
     bundle = None
-    try:
-        bundle = runtime.build_bundle(training)
-        runtime.verify_bundle(bundle)
-    except Exception as exc:
-        errors.append(f"runtime_bundle_invalid:{type(exc).__name__}:{exc}")
+    runtime_bundle_applicable = not baseline_retained
+    runtime_bundle_status = (
+        "NOT_APPLICABLE_MARKET_BASELINE_RETAINED"
+        if baseline_retained
+        else "INVALID_LEARNED_CANDIDATE_BUNDLE"
+    )
+    if runtime_bundle_applicable:
+        try:
+            bundle = runtime.build_bundle(training)
+            runtime.verify_bundle(bundle)
+            runtime_bundle_status = "VALID_LEARNED_CANDIDATE_BUNDLE"
+        except Exception as exc:
+            errors.append(f"runtime_bundle_invalid:{type(exc).__name__}:{exc}")
+
     boundary = None
     try:
         boundary = _last_corpus_day(training)
@@ -79,6 +102,9 @@ def candidate_eligibility(training: Mapping[str, Any]) -> Dict[str, Any]:
         "errors": sorted(set(errors)),
         "modelBundle": bundle,
         "frozenCorpusLastDate": boundary,
+        "selectedFeatureGroup": selected_group or None,
+        "runtimeBundleApplicable": runtime_bundle_applicable,
+        "runtimeBundleStatus": runtime_bundle_status,
     }
 
 
