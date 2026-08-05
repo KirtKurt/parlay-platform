@@ -192,6 +192,7 @@ def evaluate_candidate(
         "version": VERSION,
         "candidateDigest": candidate["candidateDigest"],
         "modelDigest": candidate["modelDigest"],
+        "sourceModelDigest": candidate.get("sourceModelDigest"),
         "frozenCorpusLastDate": candidate["frozenCorpusLastDate"],
         "prospectiveFirstDate": min((row.day for row in examples), default=None),
         "prospectiveLastDate": max((row.day for row in examples), default=None),
@@ -233,6 +234,8 @@ def augment_training_for_promotion(
             "prospectiveAudit": copy.deepcopy(dict(audit)),
             "prospectiveCandidateDigest": candidate["candidateDigest"],
             "prospectiveAuditDigest": audit.get("auditDigest"),
+            "frozenModelBundle": copy.deepcopy(candidate["modelBundle"]),
+            "frozenModelBundleDigest": candidate["modelDigest"],
             "productionAuthorityChanged": False,
             "automaticWagerAllowed": False,
         }
