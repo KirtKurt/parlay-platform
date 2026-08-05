@@ -1,11 +1,25 @@
-name: MLB V8 Model Runtime CI
+name: MLB V8 Autonomy CI
 
-on:
+"on":
   pull_request:
     paths:
       - 'hello_world/mlb_v8_model_runtime.py'
       - 'hello_world/mlb_v8_first_five_training.py'
+      - 'hello_world/mlb_v8_autonomy_v1.py'
+      - 'hello_world/mlb_v8_prospective_audit_v1.py'
+      - 'scripts/run_mlb_v8_autonomous_training.py'
+      - 'scripts/run_mlb_v8_prospective_audit.py'
+      - 'scripts/run_mlb_v8_autonomous_controller.py'
+      - 'scripts/run_mlb_v8_historical_context_backfill_autonomous.py'
+      - 'scripts/promote_mlb_v8_autonomous_champion.py'
       - 'tests/unit/test_mlb_v8_model_runtime.py'
+      - 'tests/unit/test_mlb_v8_autonomy_v1.py'
+      - 'tests/unit/test_mlb_v8_prospective_audit_v1.py'
+      - 'tests/unit/test_run_mlb_v8_autonomous_training.py'
+      - 'tests/unit/test_run_mlb_v8_prospective_audit.py'
+      - 'tests/unit/test_run_mlb_v8_autonomous_controller.py'
+      - 'tests/unit/test_run_mlb_v8_historical_context_backfill_autonomous.py'
+      - 'tests/unit/test_promote_mlb_v8_autonomous_champion.py'
       - '.github/workflows/mlb-v8-model-runtime-ci.yml'
   workflow_dispatch:
 
@@ -13,13 +27,32 @@ permissions:
   contents: read
 
 jobs:
-  verify-v8-runtime-contract:
+  verify-v8-autonomy-contract:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python -m pip install --quiet 'pytest>=8,<9'
-      - run: python -m py_compile hello_world/mlb_v8_model_runtime.py hello_world/mlb_v8_first_five_training.py
-      - run: PYTHONPATH=. python -m pytest -q tests/unit/test_mlb_v8_model_runtime.py
+      - run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+      - run: |
+          set -euo pipefail
+          python -m py_compile \
+            hello_world/mlb_v8_model_runtime.py \
+            hello_world/mlb_v8_first_five_training.py \
+            hello_world/mlb_v8_autonomy_v1.py \
+            hello_world/mlb_v8_prospective_audit_v1.py \
+            scripts/run_mlb_v8_autonomous_training.py \
+            scripts/run_mlb_v8_prospective_audit.py \
+            scripts/run_mlb_v8_autonomous_controller.py \
+            scripts/run_mlb_v8_historical_context_backfill_autonomous.py \
+            scripts/promote_mlb_v8_autonomous_champion.py
+          PYTHONPATH=.:hello_world:scripts python -m pytest -q \
+            tests/unit/test_mlb_v8_model_runtime.py \
+            tests/unit/test_mlb_v8_autonomy_v1.py \
+            tests/unit/test_mlb_v8_prospective_audit_v1.py \
+            tests/unit/test_run_mlb_v8_autonomous_training.py \
+            tests/unit/test_run_mlb_v8_prospective_audit.py \
+            tests/unit/test_run_mlb_v8_autonomous_controller.py \
+            tests/unit/test_run_mlb_v8_historical_context_backfill_autonomous.py \
+            tests/unit/test_promote_mlb_v8_autonomous_champion.py

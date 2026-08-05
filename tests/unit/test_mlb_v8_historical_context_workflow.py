@@ -5,48 +5,72 @@ from pathlib import Path
 import mlb_v8_historical_point_in_time_context_v1 as context
 
 
-WORKFLOW = Path(".github/workflows/mlb-v8-historical-context-backfill.yml")
+COMPATIBILITY_WORKFLOW = Path(
+    ".github/workflows/mlb-v8-historical-context-backfill.yml"
+)
+CONTROLLER_WORKFLOW = Path(
+    ".github/workflows/mlb-v8-autonomous-controller.yml"
+)
+OFFICIAL_ENTRYPOINT = Path(
+    "scripts/run_mlb_v8_historical_context_backfill_entrypoint.py"
+)
+AUTONOMOUS_ENTRYPOINT = Path(
+    "scripts/run_mlb_v8_historical_context_backfill_autonomous.py"
+)
 
 
-def test_workflow_runs_isolated_official_context_backfill():
-    text = WORKFLOW.read_text()
+def test_single_controller_runs_isolated_official_context_backfill():
+    compatibility = COMPATIBILITY_WORKFLOW.read_text()
+    controller = CONTROLLER_WORKFLOW.read_text()
+    official = OFFICIAL_ENTRYPOINT.read_text()
+    autonomous = AUTONOMOUS_ENTRYPOINT.read_text()
 
-    assert "run_mlb_v8_historical_context_backfill_entrypoint.py" in text
-    assert "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY" in text
-    assert "official_mlb_plus_internal_canonical_context" in text
-    assert "mlb-supervised-shadow-v2-recurring.yml" not in text
-    assert "cancel-in-progress: false" in text
-    assert "git reset --hard origin/main" in text
-    assert "git clean -fd" in text
-    assert "productionAuthorityChanged') is False" in text
-    assert "sameDayResultsExcluded') is True" in text
-    assert "selectionUsedOutcomes') is False" in text
-
-
-def test_workflow_uses_frequent_micro_batches_without_retired_provider_credentials():
-    text = WORKFLOW.read_text()
-
-    assert "default: '5'" in text
-    assert "inputs.limit || '5'" in text
-    assert "cron: '12,27,42,57 * * * *'" in text
-    assert "timeout-minutes: 45" in text
-    assert "timeout --signal=TERM --kill-after=45s 40m" in text
-    assert "selectedGameCount') or 0) <= 5" in text
-    assert "cancel-in-progress: false" in text
-    assert "BBS_API_KEY" not in text
-    assert "BBS_API_SECRET_ARN" not in text
-    assert "api.bigballsdata.com" not in text
+    assert "run_mlb_v8_historical_context_backfill_entrypoint.py" in compatibility
+    assert "run_mlb_v8_historical_context_backfill_autonomous.py" in controller
+    assert "mlb-v8-autonomous-controller.yml" in compatibility
+    assert "schedule:" not in compatibility
+    assert "cron: '8/15 * * * *'" in controller
+    assert "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY" in official
+    assert "official_mlb_plus_internal_canonical_context" in official
+    assert "install_artifact_bucket_alias" in autonomous
+    assert "HistoricalArtifactsBucketName" in autonomous
+    assert "cancel-in-progress: false" in compatibility
+    assert "cancel-in-progress: false" in controller
+    assert "git reset --hard refs/remotes/origin/main" in controller
+    assert "git clean -fd" in controller
 
 
-def test_workflow_enforces_no_bbd_and_leakage_safe_evidence_contract():
-    text = WORKFLOW.read_text()
+def test_controller_uses_frequent_micro_batches_without_retired_credentials():
+    compatibility = COMPATIBILITY_WORKFLOW.read_text()
+    controller = CONTROLLER_WORKFLOW.read_text()
+    combined = compatibility + "\n" + controller
 
-    assert "bbsApiUsed') is False" in text
-    assert "bbsCredentialRead') is False" in text
-    assert "targetGameOutcomeUsed') is False" in text
-    assert "sameDayResultsExcluded') is True" in text
-    assert "automaticWagerAllowed') is False" in text
-    assert "authority') == 'V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY'" in text
+    assert "default: '5'" in compatibility
+    assert "inputs.limit || '5'" in compatibility
+    assert "inputs.context_limit || '5'" in controller
+    assert "timeout-minutes: 55" in controller
+    assert "--limit \"$CONTEXT_LIMIT\"" in controller
+    assert "cron: '8/15 * * * *'" in controller
+    assert "cancel-in-progress: false" in combined
+    assert "BBS_API_KEY" not in combined
+    assert "BBS_API_SECRET_ARN" not in combined
+    assert "api.bigballsdata.com" not in combined
+    assert "MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED: 'false'" in controller
+
+
+def test_controller_enforces_no_bbd_and_leakage_safe_evidence_contract():
+    controller = CONTROLLER_WORKFLOW.read_text()
+    official = OFFICIAL_ENTRYPOINT.read_text()
+
+    assert "bbsApiUsed') is False" in controller
+    assert "bbsCredentialRead') is False" in controller
+    assert "selectionUsedOutcomes') is False" in controller
+    assert "productionAuthorityChanged') is False" in controller
+    assert "automaticWagerAllowed') is False" in controller
+    assert '"targetGameOutcomeUsed": False' in official
+    assert '"sameDayResultsExcluded": True' in official
+    assert '"authority": AUTHORITY' in official
+    assert 'AUTHORITY = "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY"' in official
 
 
 def _canonical():
