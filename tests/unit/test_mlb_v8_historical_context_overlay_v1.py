@@ -8,6 +8,7 @@ import json
 import pytest
 
 import mlb_v8_historical_bbs_overlay_v1 as base
+import mlb_v8_historical_context_eligibility_v2 as eligibility
 import mlb_v8_historical_context_overlay_v1 as context
 
 
@@ -139,6 +140,55 @@ def test_target_overlay_rejects_missing_weather_context():
     assert proof["invalidGameCount"] == 1
 
 
+def test_feature_aware_target_accepts_explicit_optional_weather_missingness():
+    target = snapshot(
+        context.TARGET_ROLE,
+        home={"starterQuality": -3.1, "bullpenQuality": -3.4},
+        away={"starterQuality": -4.1, "bullpenQuality": -4.4},
+        park=1.0,
+        weather=None,
+    )
+    target.update(
+        {
+            "eligibilityPolicyVersion": eligibility.VERSION,
+            "materializerVersion": eligibility.MATERIALIZER_VERSION,
+            "featureEligibility": {
+                "pitchers": True,
+                "bullpens": True,
+                "lineups": True,
+                "injuries": True,
+                "team_context": True,
+                "park": True,
+                "weather": False,
+            },
+            "featureMissingness": {
+                "pitchers": False,
+                "bullpens": False,
+                "lineups": False,
+                "injuries": False,
+                "team_context": False,
+                "park": False,
+                "weather": True,
+            },
+            "featureAvailabilityMode": {
+                "weather": "unavailable",
+            },
+            "eligibilityWarnings": ["weather_resource_unavailable"],
+        }
+    )
+    target["fingerprint"] = base.snapshot_fingerprint(target)
+
+    rows, proof = context.apply_manifest([canonical()], manifest(target))
+
+    merged = rows[0]["frozenFundamentalsSnapshot"]
+    assert proof["appliedGameCount"] == 1
+    assert proof["invalidGameCount"] == 0
+    assert merged["weatherRunFactor"] is None
+    assert merged["featureEligibility"]["weather"] is False
+    assert merged["featureMissingness"]["weather"] is True
+    assert merged["eligibilityPolicyVersion"] == eligibility.VERSION
+
+
 def test_retired_bbs_manifest_authority_is_rejected():
     target = snapshot(
         context.TARGET_ROLE,
@@ -172,7 +222,10 @@ def test_official_target_snapshot_does_not_require_bbs_authority():
     assert target["authority"] != base.AUTHORITY
 
 
-def test_load_requires_official_pointer_type_authority_and_provider(monkeypatch):
+@pytest.mark.parametrize("record_type", sorted(context.SUPPORTED_POINTER_RECORD_TYPES))
+def test_load_requires_official_pointer_type_authority_and_provider(
+    monkeypatch, record_type
+):
     target = snapshot(
         context.TARGET_ROLE,
         home={"starterQuality": -3.1},
@@ -190,7 +243,7 @@ def test_load_requires_official_pointer_type_authority_and_provider(monkeypatch)
                 "Item": {
                     "PK": context.POINTER_PK,
                     "SK": context.POINTER_SK,
-                    "record_type": context.POINTER_RECORD_TYPE,
+                    "record_type": record_type,
                     "revision": 60,
                     "data": {
                         "authority": context.AUTHORITY,
@@ -219,4 +272,15 @@ def test_load_requires_official_pointer_type_authority_and_provider(monkeypatch)
 
     assert rows[0]["historicalTargetGameContext"]["trainingEligible"] is True
     assert proof["pointerRevision"] == 60
+    assert proof["pointerRecordType"] == record_type
     assert proof["authority"] == context.AUTHORITY
+
+
+def test_supported_pointer_types_exclude_retired_bbs_pointer():
+    assert context.POINTER_RECORD_TYPE.endswith("_v3")
+    assert "mlb_v8_historical_official_context_active_manifest_v2" in (
+        context.LEGACY_POINTER_RECORD_TYPES
+    )
+    assert "mlb_v8_historical_bbs_active_manifest_v1" not in (
+        context.SUPPORTED_POINTER_RECORD_TYPES
+    )

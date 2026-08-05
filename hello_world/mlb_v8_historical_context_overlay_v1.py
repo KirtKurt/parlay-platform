@@ -18,10 +18,16 @@ import boto3
 
 import mlb_v8_historical_bbs_overlay_v1 as base
 
-VERSION = "MLB-V8-HISTORICAL-CONTEXT-OVERLAY-v2-official-authority"
+VERSION = "MLB-V8-HISTORICAL-CONTEXT-OVERLAY-v3-pointer-feature-compatible"
 POINTER_PK = "MLB_V8_HISTORICAL_CONTEXT#V1"
 POINTER_SK = "ACTIVE"
-POINTER_RECORD_TYPE = "mlb_v8_historical_official_context_active_manifest_v2"
+POINTER_RECORD_TYPE = "mlb_v8_historical_official_context_active_manifest_v3"
+LEGACY_POINTER_RECORD_TYPES = frozenset(
+    {"mlb_v8_historical_official_context_active_manifest_v2"}
+)
+SUPPORTED_POINTER_RECORD_TYPES = frozenset(
+    {POINTER_RECORD_TYPE, *LEGACY_POINTER_RECORD_TYPES}
+)
 DEFAULT_TABLE = base.DEFAULT_TABLE
 AUTHORITY = "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY"
 MANIFEST_VERSION = base.MANIFEST_VERSION
@@ -142,9 +148,16 @@ def _validate_target_snapshot(
     role = str(snapshot.get("snapshotRole") or "")
     if role != TARGET_ROLE and not has_family(snapshot, TARGET_FAMILY):
         errors.append("target_context_snapshot_role_mismatch")
-    if snapshot.get("parkRunFactor") is None:
+
+    feature_eligibility = snapshot.get("featureEligibility")
+    feature_aware = isinstance(feature_eligibility, Mapping)
+    if snapshot.get("parkRunFactor") is None and (
+        not feature_aware or feature_eligibility.get("park") is not False
+    ):
         errors.append("target_context_park_missing")
-    if snapshot.get("weatherRunFactor") is None:
+    if snapshot.get("weatherRunFactor") is None and (
+        not feature_aware or feature_eligibility.get("weather") is not False
+    ):
         errors.append("target_context_weather_missing")
     return not errors, sorted(set(errors))
 
@@ -187,7 +200,10 @@ def merge_snapshots(
         "snapshotFingerprint": target.get("fingerprint"),
         "snapshotRole": target.get("snapshotRole"),
         "providerEvidence": copy.deepcopy(target.get("providerEvidence") or {}),
+        "featureEligibility": copy.deepcopy(target.get("featureEligibility") or {}),
+        "featureMissingness": copy.deepcopy(target.get("featureMissingness") or {}),
         "eligibilityErrors": [],
+        "eligibilityWarnings": copy.deepcopy(target.get("eligibilityWarnings") or []),
     }
 
     provider_evidence: Dict[str, Any] = {}
@@ -216,6 +232,13 @@ def merge_snapshots(
         "weatherRunFactor": target.get("weatherRunFactor"),
         "providerEvidence": provider_evidence,
         "featureFamilies": families,
+        "featureEligibility": copy.deepcopy(target.get("featureEligibility") or {}),
+        "featureMissingness": copy.deepcopy(target.get("featureMissingness") or {}),
+        "featureAvailabilityMode": copy.deepcopy(
+            target.get("featureAvailabilityMode") or {}
+        ),
+        "eligibilityPolicyVersion": target.get("eligibilityPolicyVersion"),
+        "materializerVersion": target.get("materializerVersion"),
         "crosswalkMethod": target.get("crosswalkMethod"),
         "pointInTimeVerified": True,
         "postgameFieldsExcluded": True,
@@ -224,6 +247,7 @@ def merge_snapshots(
         "selectionUsedOutcomes": False,
         "trainingEligible": True,
         "eligibilityErrors": [],
+        "eligibilityWarnings": copy.deepcopy(target.get("eligibilityWarnings") or []),
         "productionAuthorityChanged": False,
     }
     merged["fingerprint"] = base.snapshot_fingerprint(merged)
@@ -391,7 +415,8 @@ def load_and_apply(
         }
 
     pointer_data = _plain(item.get("data") or {})
-    if item.get("record_type") != POINTER_RECORD_TYPE:
+    pointer_record_type = str(item.get("record_type") or "")
+    if pointer_record_type not in SUPPORTED_POINTER_RECORD_TYPES:
         raise RuntimeError("historical target-context active pointer type mismatch")
     if pointer_data.get("authority") != AUTHORITY:
         raise RuntimeError("historical target-context active pointer authority mismatch")
@@ -410,6 +435,7 @@ def load_and_apply(
     manifest = json.loads(body.decode("utf-8"))
     output, proof = apply_manifest(records, manifest)
     proof["pointerRevision"] = int(item.get("revision") or 0)
+    proof["pointerRecordType"] = pointer_record_type
     proof["manifestPointer"] = {
         "bucket": bucket,
         "key": key,
