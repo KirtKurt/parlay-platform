@@ -24,6 +24,14 @@ def _replace_once(text: str, old: str, new: str, label: str) -> str:
 
 
 def patch_feature_bridge(text: str) -> str:
+    provider_neutral_markers = (
+        "MLB-HISTORICAL-V7-FEATURE-BRIDGE-v2-provider-neutral-official-primary",
+        '"primaryFeatureAuthority": context_overlay.AUTHORITY',
+        '"providerNeutralOfficialContextPrimary": True',
+        '"retiredBbsOverlayRequired": False',
+    )
+    if all(marker in text for marker in provider_neutral_markers):
+        return text
     text = _replace_once(
         text,
         '"historicalFeatureFamily": overlay.TARGET_FAMILY,\n        "trainingEligible": True,',
