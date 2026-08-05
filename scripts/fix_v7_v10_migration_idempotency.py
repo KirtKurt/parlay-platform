@@ -33,6 +33,11 @@ NEW_TEST_PATCH = '''    text = _replace_once(
         "feature-aware test cadence v3 monkeypatch",
     )
 '''
+CURRENT_TEST_PATCH_MARKERS = (
+    "package.run_mlb_historical_supervised_v9_shadow_cadence_v3 = cadence_v3",
+    "module.cadence_v3.decide_cadence = decide",
+    "module.cadence_v3.report_anchor_fields = anchors",
+)
 
 ORIGINAL_V8_ENTRYPOINT_PATCH = '''def patch_v8_entrypoint(text: str) -> str:
     text = text.replace(
@@ -74,6 +79,18 @@ def _replace_or_verify(text: str, old: str, new: str, label: str) -> tuple[str, 
     return text.replace(old, new, 1), True
 
 
+def _upgrade_test_patch(text: str) -> tuple[str, bool]:
+    if all(marker in text for marker in CURRENT_TEST_PATCH_MARKERS):
+        return text, False
+    if NEW_TEST_PATCH in text:
+        return text, False
+    if OLD_TEST_PATCH in text:
+        return text.replace(OLD_TEST_PATCH, NEW_TEST_PATCH, 1), True
+    raise RuntimeError(
+        "V7-V10 migration idempotency marker missing:feature-aware test monkeypatch"
+    )
+
+
 def _upgrade_v8_guard(text: str) -> tuple[str, bool]:
     if NEW_V8_ENTRYPOINT_PATCH in text:
         return text, False
@@ -92,9 +109,7 @@ def main() -> int:
         text, OLD_HELPER, NEW_HELPER, "replacement helper"
     )
     changed = changed or helper_changed
-    text, test_patch_changed = _replace_or_verify(
-        text, OLD_TEST_PATCH, NEW_TEST_PATCH, "feature-aware test monkeypatch"
-    )
+    text, test_patch_changed = _upgrade_test_patch(text)
     changed = changed or test_patch_changed
     text, v8_patch_changed = _upgrade_v8_guard(text)
     changed = changed or v8_patch_changed
