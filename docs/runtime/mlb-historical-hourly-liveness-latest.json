@@ -25,10 +25,11 @@
     "targetSettledGames": 4149,
     "updatedAtUtc": "2026-08-05T12:27:29.923580+00:00"
   },
-  "blockers": [
-    "state_still_stale_after_recovery"
-  ],
-  "createdAtUtc": "2026-08-05T20:36:51.416477+00:00",
+  "blockers": [],
+  "createdAtUtc": "2026-08-05T21:08:22.357243+00:00",
+  "heartbeatAtUtc": "2026-08-05T21:08:22.298447+00:00",
+  "livenessPolicyVersion": "MLB-HISTORICAL-LIVENESS-POLICY-v2-waiting-healthy",
+  "livenessStatus": "WAITING_HEALTHY",
   "movement": {
     "completeSlateDelta": 0,
     "dateChanged": false,
@@ -38,9 +39,10 @@
     "revisionDelta": 0,
     "slotChanged": false
   },
-  "ok": false,
+  "ok": true,
   "proofType": "MLB_HISTORICAL_HOURLY_LIVENESS_V1",
-  "recoveryInvoked": true,
+  "recoveryInvoked": false,
+  "recoveryRequired": false,
   "rules": [
     {
       "Arn": "arn:aws:events:us-east-1:735707987003:rule/parlay-platform-mlb-histo-HistoricalOptimizerFuncti-eono96Rzwmzv",
@@ -54,8 +56,11 @@
     }
   ],
   "runAttempt": "1",
-  "runId": "31044870569",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/31044870569",
-  "sourceSha": "8e6f367421d8be8f5db8e233c3475d6c7345b9a7",
-  "stateAgeMinutes": 489.3582148166667
+  "runId": "31047259818",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/31047259818",
+  "sourceSha": "2566221182194e8563fe7ec15393868a8655a9f8",
+  "sourceStateStale": true,
+  "sourceStateUpdatedAtUtc": "2026-08-05T12:27:29.923580+00:00",
+  "stateAgeMinutes": 520.8729144499999,
+  "waitingHealthy": true
 }
