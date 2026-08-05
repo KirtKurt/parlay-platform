@@ -69,6 +69,16 @@ NEW_V8_ENTRYPOINT_PATCH = '''def patch_v8_entrypoint(text: str) -> str:
         return text
     text = text.replace(
 '''
+CURRENT_V8_GUARD_MARKERS = (
+    "def patch_v8_entrypoint(text: str) -> str:",
+    "feature_aware_markers = (",
+    '"eligibilityPolicyVersion"',
+    '"eligibility.VERSION"',
+    '"materializerVersion"',
+    '"eligibility.MATERIALIZER_VERSION"',
+    '"replayFromStartApplied"',
+    "if all(marker in text for marker in feature_aware_markers):",
+)
 
 
 def _replace_or_verify(text: str, old: str, new: str, label: str) -> tuple[str, bool]:
@@ -92,6 +102,8 @@ def _upgrade_test_patch(text: str) -> tuple[str, bool]:
 
 
 def _upgrade_v8_guard(text: str) -> tuple[str, bool]:
+    if all(marker in text for marker in CURRENT_V8_GUARD_MARKERS):
+        return text, False
     if NEW_V8_ENTRYPOINT_PATCH in text:
         return text, False
     for old in (LEGACY_V8_ENTRYPOINT_PATCH, ORIGINAL_V8_ENTRYPOINT_PATCH):
