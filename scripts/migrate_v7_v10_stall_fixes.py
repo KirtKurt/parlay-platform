@@ -206,6 +206,15 @@ def patch_feature_bridge(text: str) -> str:
 
 
 def patch_v8_entrypoint(text: str) -> str:
+    # The feature-aware replay contract supersedes the old one-shot pointer
+    # migration. Treat it as an already-migrated state instead of searching for
+    # source anchors that were intentionally removed by the newer repair.
+    if (
+        'eligibilityPolicyVersion": eligibility.VERSION' in text
+        and 'materializerVersion": eligibility.MATERIALIZER_VERSION' in text
+        and 'replayFromStartApplied' in text
+    ):
+        return text
     text = text.replace(
         'VERSION = "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v2-official-only"',
         'VERSION = "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v3-official-only-no-legacy-carry-forward"',
