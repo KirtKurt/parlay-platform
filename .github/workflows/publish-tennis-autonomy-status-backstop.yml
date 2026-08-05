@@ -3,8 +3,8 @@ name: Tennis Autonomy Status Backstop
 on:
   workflow_dispatch:
   schedule:
-    # Backstop only; the primary publisher runs more frequently.
-    - cron: '8,28,48 * * * *'
+    # Run every five minutes; AWS is queried only when checked-in evidence is older than ten minutes.
+    - cron: '3,8,13,18,23,28,33,38,43,48,53,58 * * * *'
   workflow_run:
     # Run directly after recurring workflows so bot-authored commits and delayed cron schedules
     # cannot leave tennis evidence stale. The freshness check keeps this bounded and fail-closed.
@@ -50,7 +50,7 @@ jobs:
                   if raw:
                       stamp = datetime.fromisoformat(str(raw).replace('Z', '+00:00'))
                       age = (datetime.now(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds()
-                      needed = age > 1200
+                      needed = age > 600
               except Exception:
                   needed = True
           with open(__import__('os').environ['GITHUB_OUTPUT'], 'a') as handle:
