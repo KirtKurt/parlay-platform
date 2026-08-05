@@ -34,6 +34,22 @@ NEW_TEST_PATCH = '''    text = _replace_once(
     )
 '''
 
+OLD_V8_ENTRYPOINT_PATCH = '''def patch_v8_entrypoint(text: str) -> str:
+    text = text.replace(
+'''
+NEW_V8_ENTRYPOINT_PATCH = '''def patch_v8_entrypoint(text: str) -> str:
+    # The feature-aware replay contract supersedes the old one-shot pointer
+    # migration. Treat it as an already-migrated state instead of searching for
+    # source anchors that were intentionally removed by the newer repair.
+    if (
+        'eligibilityPolicyVersion": eligibility.VERSION' in text
+        and 'materializerVersion": eligibility.MATERIALIZER_VERSION' in text
+        and 'replayFromStartApplied' in text
+    ):
+        return text
+    text = text.replace(
+'''
+
 
 def _replace_or_verify(text: str, old: str, new: str, label: str) -> tuple[str, bool]:
     if new in text:
@@ -54,6 +70,13 @@ def main() -> int:
         text, OLD_TEST_PATCH, NEW_TEST_PATCH, "feature-aware test monkeypatch"
     )
     changed = changed or test_patch_changed
+    text, v8_patch_changed = _replace_or_verify(
+        text,
+        OLD_V8_ENTRYPOINT_PATCH,
+        NEW_V8_ENTRYPOINT_PATCH,
+        "feature-aware V8 entrypoint",
+    )
+    changed = changed or v8_patch_changed
     if changed:
         PATH.write_text(text, encoding="utf-8")
         print("Fixed V7-V10 migration idempotency guards")
