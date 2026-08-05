@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Any, Dict
 
 import mlb_v8_autonomy_v1 as autonomy
+import mlb_v8_prospective_audit_v1 as prospective
 import run_mlb_supervised_shadow_v2 as runner
 
-VERSION = "MLB-V8-AUTONOMOUS-TRAINING-ENTRYPOINT-v1"
+VERSION = "MLB-V8-AUTONOMOUS-TRAINING-ENTRYPOINT-v2-explicit-runtime-bundle-status"
 
 
 def run(
@@ -31,6 +32,17 @@ def run(
     decorated["historicalBbsRequired"] = False
     decorated["providerNeutralTrainingAllowed"] = True
     decorated["automaticWagerAllowed"] = False
+    eligibility = prospective.candidate_eligibility(decorated)
+    decorated["prospectiveCandidateEligibility"] = {
+        "eligible": eligibility.get("ok") is True,
+        "errors": list(eligibility.get("errors") or []),
+        "selectedFeatureGroup": eligibility.get("selectedFeatureGroup"),
+        "runtimeBundleApplicable": eligibility.get("runtimeBundleApplicable"),
+        "runtimeBundleStatus": eligibility.get("runtimeBundleStatus"),
+        "frozenCorpusLastDate": eligibility.get("frozenCorpusLastDate"),
+        "automaticWagerAllowed": False,
+        "productionAuthorityChanged": False,
+    }
     decorated["resultDigest"] = autonomy._sha(
         {
             key: item
@@ -66,6 +78,9 @@ def main() -> int:
                 "learningExecution": value.get("learningExecution"),
                 "autonomyDecision": value.get("autonomyDecision"),
                 "promotionGate": value.get("promotionGate"),
+                "prospectiveCandidateEligibility": value.get(
+                    "prospectiveCandidateEligibility"
+                ),
                 "recordCountLoaded": value.get("recordCountLoaded"),
             },
             indent=2,
