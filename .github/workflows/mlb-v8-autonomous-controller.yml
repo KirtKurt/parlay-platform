@@ -1,0 +1,288 @@
+name: MLB V8 Autonomous Controller
+
+"on":
+  workflow_dispatch:
+    inputs:
+      context_limit:
+        description: Maximum new official-context games to process this cycle
+        required: false
+        default: '5'
+  push:
+    branches: [main]
+    paths:
+      - 'hello_world/mlb_v8_autonomy_v1.py'
+      - 'scripts/run_mlb_v8_autonomous_training.py'
+      - 'scripts/run_mlb_v8_autonomous_controller.py'
+      - 'scripts/run_mlb_v8_historical_context_backfill_autonomous.py'
+      - 'scripts/promote_mlb_v8_autonomous_champion.py'
+      - 'tests/unit/test_mlb_v8_autonomy_v1.py'
+      - 'tests/unit/test_run_mlb_v8_autonomous_training.py'
+      - 'tests/unit/test_run_mlb_v8_autonomous_controller.py'
+      - 'tests/unit/test_run_mlb_v8_historical_context_backfill_autonomous.py'
+      - 'tests/unit/test_promote_mlb_v8_autonomous_champion.py'
+      - '.github/workflows/mlb-v8-autonomous-controller.yml'
+  schedule:
+    - cron: '8/15 * * * *'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: mlb-v8-autonomous-control-plane
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: hello_world:scripts
+  AWS_EC2_METADATA_DISABLED: 'true'
+  HISTORICAL_STACK: parlay-platform-mlb-historical-optimizer
+  FUNDAMENTALS_STACK: parlay-platform-mlb-v8-fundamentals-shadow
+  SNAPSHOTS_TABLE: parlay_platform_snapshots
+  CONTEXT_REPORT: runtime_reports/mlb_v8_historical_context_backfill_latest.json
+  TRAINING_REPORT: runtime_reports/mlb_v8_autonomous_training_latest.json
+  CONTROLLER_REPORT: runtime_reports/mlb_v8_autonomous_controller_latest.json
+  PROMOTION_REPORT: runtime_reports/mlb_v8_autonomous_promotion_latest.json
+  MLB_V8_HISTORICAL_BBS_OVERLAY_ENABLED: 'false'
+  MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED: 'false'
+  MLB_V8_HISTORICAL_BBS_TABLE: parlay_platform_snapshots
+
+jobs:
+  autonomous-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout exact controller source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Validate autonomy contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'numpy>=1.26,<3' 'pytest>=8,<9'
+          python -m py_compile \
+            hello_world/mlb_v8_autonomy_v1.py \
+            scripts/run_mlb_v8_autonomous_training.py \
+            scripts/run_mlb_v8_autonomous_controller.py \
+            scripts/run_mlb_v8_historical_context_backfill_autonomous.py \
+            scripts/promote_mlb_v8_autonomous_champion.py
+          python -m pytest -q \
+            tests/unit/test_mlb_v8_autonomy_v1.py \
+            tests/unit/test_run_mlb_v8_autonomous_training.py \
+            tests/unit/test_run_mlb_v8_autonomous_controller.py \
+            tests/unit/test_run_mlb_v8_historical_context_backfill_autonomous.py \
+            tests/unit/test_promote_mlb_v8_autonomous_champion.py \
+            tests/unit/test_run_mlb_v8_historical_context_backfill_entrypoint.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_5.py \
+            tests/unit/test_mlb_supervised_selection_guard_v2_6.py
+
+      - name: Verify AWS identity and historical runtime
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity > /tmp/mlb-v8-controller-aws-identity.json
+          aws cloudformation describe-stacks \
+            --stack-name "$HISTORICAL_STACK" \
+            --region "${{ secrets.AWS_REGION }}" \
+            > /tmp/mlb-v8-controller-historical-stack.json
+          test "$(jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="HistoricalOptimizerFunctionName") | .OutputValue' /tmp/mlb-v8-controller-historical-stack.json)" != ""
+          test "$(jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="HistoricalArtifactsBucketName") | .OutputValue' /tmp/mlb-v8-controller-historical-stack.json)" != ""
+
+      - name: Advance official point-in-time context
+        id: context
+        continue-on-error: true
+        env:
+          CONTEXT_LIMIT: ${{ inputs.context_limit || '5' }}
+        run: |
+          set -o pipefail
+          mkdir -p runtime_reports
+          python scripts/run_mlb_v8_historical_context_backfill_autonomous.py \
+            --region "${{ secrets.AWS_REGION }}" \
+            --table-name "$SNAPSHOTS_TABLE" \
+            --historical-stack "$HISTORICAL_STACK" \
+            --fundamentals-stack "$FUNDAMENTALS_STACK" \
+            --limit "$CONTEXT_LIMIT" \
+            --output "$CONTEXT_REPORT" \
+            2>&1 | tee /tmp/mlb-v8-context.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Guarantee a context status document
+        if: always()
+        env:
+          CONTEXT_OUTCOME: ${{ steps.context.outcome }}
+          CONTEXT_EXIT_CODE: ${{ steps.context.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          if test ! -s "$CONTEXT_REPORT"; then
+            python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          value={
+              'proofType':'MLB_V8_HISTORICAL_CONTEXT_BACKFILL',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ['GITHUB_SHA'],
+              'runId':os.environ['GITHUB_RUN_ID'],
+              'ok':False,
+              'provider':'official_mlb_plus_internal_canonical_context',
+              'bbsApiUsed':False,
+              'bbsCredentialRead':False,
+              'selectionUsedOutcomes':False,
+              'productionAuthorityChanged':False,
+              'automaticWagerAllowed':False,
+              'blockers':['context_report_missing'],
+          }
+          Path(os.environ['CONTEXT_REPORT']).write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+          PY
+          fi
+          python -m json.tool "$CONTEXT_REPORT" >/dev/null
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          value=json.loads(Path(os.environ['CONTEXT_REPORT']).read_text())
+          assert value.get('bbsApiUsed') is False, value
+          assert value.get('bbsCredentialRead') is False, value
+          assert value.get('selectionUsedOutcomes') is False, value
+          assert value.get('productionAuthorityChanged') is False, value
+          assert value.get('automaticWagerAllowed') is False, value
+          PY
+
+      - name: Train and validate all V8 candidates
+        id: training
+        run: |
+          set -euo pipefail
+          python scripts/run_mlb_v8_autonomous_training.py \
+            --region "${{ secrets.AWS_REGION }}" \
+            --stack-name "$HISTORICAL_STACK" \
+            --table-name "$SNAPSHOTS_TABLE" \
+            --output "$TRAINING_REPORT" \
+            2>&1 | tee /tmp/mlb-v8-training.log
+
+      - name: Build controller decision
+        run: |
+          set -euo pipefail
+          python scripts/run_mlb_v8_autonomous_controller.py \
+            --training-report "$TRAINING_REPORT" \
+            --context-report "$CONTEXT_REPORT" \
+            --output "$CONTROLLER_REPORT"
+
+      - name: Promote, verify, and rollback automatically when eligible
+        id: promotion
+        run: |
+          set -euo pipefail
+          promotion_requested=$(jq -r '.promotionRequested' "$CONTROLLER_REPORT")
+          if test "$promotion_requested" = 'true'; then
+            python scripts/promote_mlb_v8_autonomous_champion.py \
+              --region "${{ secrets.AWS_REGION }}" \
+              --stack-name "$HISTORICAL_STACK" \
+              --table-name "$SNAPSHOTS_TABLE" \
+              --training-report "$TRAINING_REPORT" \
+              --output "$PROMOTION_REPORT"
+          else
+            python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          controller=json.loads(Path(os.environ['CONTROLLER_REPORT']).read_text())
+          value={
+              'proofType':'MLB_V8_AUTONOMOUS_CHAMPION_PROMOTION',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'ok':True,
+              'promoted':False,
+              'rolledBack':False,
+              'reason':controller.get('nextAction'),
+              'productionAuthorityChanged':False,
+              'automaticWagerAllowed':False,
+          }
+          Path(os.environ['PROMOTION_REPORT']).write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+          PY
+          fi
+          python -m json.tool "$PROMOTION_REPORT" >/dev/null
+
+      - name: Enforce autonomous-cycle health
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          training=json.loads(Path(os.environ['TRAINING_REPORT']).read_text())
+          controller=json.loads(Path(os.environ['CONTROLLER_REPORT']).read_text())
+          promotion=json.loads(Path(os.environ['PROMOTION_REPORT']).read_text())
+          learning=training.get('learningExecution') or {}
+          assert training.get('ok') is True, training
+          assert training.get('historicalBbsRequired') is False, training
+          assert training.get('automaticWagerAllowed') is False, training
+          assert learning.get('learningExecuted') is True, learning
+          assert int(learning.get('learnedCandidateCount') or 0) > 0, learning
+          assert int(learning.get('totalOptimizationSteps') or 0) > 0, learning
+          assert learning.get('qualityGateWeakened') is False, learning
+          assert controller.get('ok') is True, controller
+          assert controller.get('fullyAutonomous') is True, controller
+          assert controller.get('normalOperationManualInterventionRequired') is False, controller
+          assert controller.get('automaticWagerAllowed') is False, controller
+          assert promotion.get('ok') is True, promotion
+          assert promotion.get('productionAuthorityChanged') is False, promotion
+          assert promotion.get('automaticWagerAllowed') is False, promotion
+          if controller.get('promotionRequested') is True:
+              assert promotion.get('promoted') is True, promotion
+              assert promotion.get('rolledBack') is False, promotion
+          PY
+
+      - name: Upload exact autonomy evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v8-autonomous-controller-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_v8_historical_context_backfill_latest.json
+            runtime_reports/mlb_v8_autonomous_training_latest.json
+            runtime_reports/mlb_v8_autonomous_controller_latest.json
+            runtime_reports/mlb_v8_autonomous_promotion_latest.json
+            /tmp/mlb-v8-context.log
+            /tmp/mlb-v8-training.log
+            /tmp/mlb-v8-controller-aws-identity.json
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Publish monotonic latest state
+        if: always() && github.ref_name == 'main'
+        run: |
+          set -euo pipefail
+          tmpdir=$(mktemp -d)
+          cp "$CONTEXT_REPORT" "$tmpdir/context.json"
+          cp "$TRAINING_REPORT" "$tmpdir/training.json"
+          cp "$CONTROLLER_REPORT" "$tmpdir/controller.json"
+          cp "$PROMOTION_REPORT" "$tmpdir/promotion.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+            git checkout -B mlb-v8-autonomy-state refs/remotes/origin/main
+            git reset --hard refs/remotes/origin/main
+            git clean -fd
+            mkdir -p runtime_reports
+            cp "$tmpdir/context.json" "$CONTEXT_REPORT"
+            cp "$tmpdir/training.json" "$TRAINING_REPORT"
+            cp "$tmpdir/controller.json" "$CONTROLLER_REPORT"
+            cp "$tmpdir/promotion.json" "$PROMOTION_REPORT"
+            git add "$CONTEXT_REPORT" "$TRAINING_REPORT" "$CONTROLLER_REPORT" "$PROMOTION_REPORT"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB V8 autonomous lifecycle state [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
