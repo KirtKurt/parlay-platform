@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import mlb_v8_historical_context_eligibility_v2 as eligibility
 import run_mlb_v8_historical_context_backfill_entrypoint as entrypoint
 
 
@@ -48,24 +49,50 @@ def test_legacy_bbs_pointer_is_not_carried_into_official_context():
     assert manifest is None
     assert revision == 59
     assert called == []
+    assert module._v8_context_replay_from_start is True
 
 
-def test_official_pointer_delegates_to_verified_manifest_loader():
+def test_old_official_policy_replays_instead_of_reusing_skipped_rows():
+    called = []
+    module = _module(lambda *_args: called.append(True) or ({"old": True}, 60))
+    entrypoint.install_pointer_isolation(module)
+    table = _Table(
+        {
+            "record_type": "mlb_v8_historical_official_context_active_manifest_v2",
+            "revision": 60,
+            "data": {
+                "authority": entrypoint.AUTHORITY,
+                "provider": "official_mlb_plus_internal_canonical",
+            },
+        }
+    )
+
+    manifest, revision = module._load_previous_manifest(table, object())
+
+    assert manifest is None
+    assert revision == 60
+    assert called == []
+    assert module._v8_context_replay_from_start is True
+
+
+def test_current_policy_pointer_delegates_to_verified_manifest_loader():
     called = []
 
     def delegate(table, s3):
         called.append((table, s3))
-        return {"official": True}, 60
+        return {"official": True}, 61
 
     module = _module(delegate)
     entrypoint.install_pointer_isolation(module)
     table = _Table(
         {
             "record_type": entrypoint.RECORD_TYPE,
-            "revision": 60,
+            "revision": 61,
             "data": {
                 "authority": entrypoint.AUTHORITY,
                 "provider": "official_mlb_plus_internal_canonical",
+                "eligibilityPolicyVersion": eligibility.VERSION,
+                "materializerVersion": eligibility.MATERIALIZER_VERSION,
             },
         }
     )
@@ -74,5 +101,6 @@ def test_official_pointer_delegates_to_verified_manifest_loader():
     manifest, revision = module._load_previous_manifest(table, s3)
 
     assert manifest == {"official": True}
-    assert revision == 60
+    assert revision == 61
     assert called == [(table, s3)]
+    assert module._v8_context_replay_from_start is False
