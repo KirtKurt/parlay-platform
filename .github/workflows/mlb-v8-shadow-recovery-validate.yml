@@ -24,10 +24,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - uses: aws-actions/setup-sam@v2
+
       - name: Compile V8 source
         env:
           AWS_DEFAULT_REGION: us-east-1
@@ -42,6 +45,7 @@ jobs:
           python -m py_compile \
             hello_world/mlb_odds_market_expansion_v8.py \
             hello_world/mlb_odds_v8_shadow_collector.py
+
       - name: Run V8 tests with concise evidence
         env:
           AWS_DEFAULT_REGION: us-east-1
@@ -54,13 +58,15 @@ jobs:
           set -uo pipefail
           mkdir -p runtime_reports
           set +e
-          python -m pytest -q --tb=short --junitxml=runtime_reports/mlb_v8_shadow_pytest.xml \
+          python -m pytest -q --tb=short \
+            --junitxml=runtime_reports/mlb_v8_shadow_pytest.xml \
             tests/unit/test_mlb_odds_market_expansion_v8.py \
             >runtime_reports/mlb_v8_shadow_pytest.log 2>&1
           status=$?
           set -e
           tail -n 240 runtime_reports/mlb_v8_shadow_pytest.log
           exit "$status"
+
       - name: Upload V8 test evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -70,15 +76,22 @@ jobs:
             runtime_reports/mlb_v8_shadow_pytest.log
             runtime_reports/mlb_v8_shadow_pytest.xml
           retention-days: 30
-      - name: Validate controlled scheduled shadow template
+
+      - name: Validate controlled scheduled-shadow contract
         run: |
           set -euo pipefail
           sam validate --lint --template-file mlb_odds_v8_shadow/template.yaml
-          grep -Fq 'Value: SHADOW_ONLY' mlb_odds_v8_shadow/template.yaml
-          grep -Fq 'Schedule: rate(15 minutes)' mlb_odds_v8_shadow/template.yaml
+          grep -Eq 'Schedule(Expression)?: rate\(15 minutes\)' mlb_odds_v8_shadow/template.yaml
           grep -Fq "Default: 'false'" mlb_odds_v8_shadow/template.yaml
           grep -Fq 'MLB_V8_MAX_CREDITS_PER_CYCLE' mlb_odds_v8_shadow/template.yaml
           grep -Fq "MLB_V8_PLAYER_PROPS_ENABLED: 'false'" mlb_odds_v8_shadow/template.yaml
+          grep -Fq 'Value: SHADOW_ONLY' mlb_odds_v8_shadow/template.yaml
+          grep -Fq 's3:GetObject' mlb_odds_v8_shadow/template.yaml
+          grep -Fq 's3:ListBucket' mlb_odds_v8_shadow/template.yaml
+          grep -Fq 'Input: ''{"mode":"scheduled_shadow"}''' mlb_odds_v8_shadow/template.yaml
+          grep -Fq 'SHADOW_STATUS' hello_world/mlb_odds_v8_shadow_collector.py
+          grep -Fq 'triggerMode' hello_world/mlb_odds_v8_shadow_collector.py
+
       - name: Build V8 shadow cleanly
         run: |
           set -euo pipefail
