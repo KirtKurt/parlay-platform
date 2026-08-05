@@ -83,7 +83,7 @@ def test_non_missing_stack_error_fails_closed():
 
 
 def _projection_resources(*, verified=True):
-    def envelope(mode):
+    def envelope(name, mode):
         return {
             "data": {},
             "meta": {
@@ -97,9 +97,25 @@ def _projection_resources(*, verified=True):
             "error": None,
         }
 
+    optional = {
+        "data": {"runFactor": 1.0},
+        "meta": {
+            "complete": True,
+            "authoritative": True,
+            "asOfUtc": "2026-06-30T23:59:59+00:00",
+            "derivationVersion": entrypoint.context_source.VERSION,
+        },
+        "error": None,
+    }
     return {
-        "pitchers": envelope("STRICTLY_PRIOR_ROTATION_PROJECTION"),
-        "lineups": envelope("STRICTLY_PRIOR_LINEUP_PROJECTION"),
+        "pitchers": envelope(
+            "pitchers", "STRICTLY_PRIOR_ROTATION_PROJECTION"
+        ),
+        "lineups": envelope(
+            "lineups", "STRICTLY_PRIOR_LINEUP_PROJECTION"
+        ),
+        "park": optional,
+        "weather": optional,
     }
 
 
@@ -145,6 +161,8 @@ def _projection_module(*, extra_errors=None):
             "productionAuthorityChanged": False,
             "trainingEligible": False,
             "eligibilityErrors": errors,
+            "parkRunFactor": 1.0,
+            "weatherRunFactor": 1.0,
         }
 
     return SimpleNamespace(
@@ -158,7 +176,7 @@ def test_verified_strictly_prior_projections_replace_live_confirmation_requireme
     entrypoint.install_verified_projection_eligibility(module)
 
     value = module.build_training_snapshot(
-        {},
+        {"predictionLockAtUtc": "2026-07-01T22:00:00+00:00"},
         {},
         _normalized_projection(),
         _projection_resources(),
@@ -171,6 +189,7 @@ def test_verified_strictly_prior_projections_replace_live_confirmation_requireme
     assert proof["accepted"] is True
     assert proof["pitcherProjectionVerified"] is True
     assert proof["lineupProjectionVerified"] is True
+    assert proof["optionalParkWeatherVerified"] is True
     assert proof["starterStructureVerified"] is True
     assert proof["lineupStructureVerified"] is True
     assert proof["targetGameOutcomeExcluded"] is True
@@ -183,7 +202,7 @@ def test_unverified_projection_remains_training_ineligible():
     entrypoint.install_verified_projection_eligibility(module)
 
     value = module.build_training_snapshot(
-        {},
+        {"predictionLockAtUtc": "2026-07-01T22:00:00+00:00"},
         {},
         _normalized_projection(),
         _projection_resources(verified=False),
@@ -202,7 +221,7 @@ def test_projection_does_not_hide_other_missing_domains_or_time_errors():
     entrypoint.install_verified_projection_eligibility(module)
 
     value = module.build_training_snapshot(
-        {},
+        {"predictionLockAtUtc": "2026-07-01T22:00:00+00:00"},
         {},
         _normalized_projection(missing_domains=["bullpens"]),
         _projection_resources(),
@@ -221,7 +240,7 @@ def test_projection_requires_complete_unique_starter_and_lineup_identity():
     normalized["lineups"]["away"]["players"][8]["id"] = "away-8"
 
     value = module.build_training_snapshot(
-        {},
+        {"predictionLockAtUtc": "2026-07-01T22:00:00+00:00"},
         {},
         normalized,
         _projection_resources(),
@@ -234,13 +253,28 @@ def test_projection_requires_complete_unique_starter_and_lineup_identity():
     assert proof["lineupStructureVerified"] is False
 
 
-def test_official_install_does_not_relabel_retired_compatibility_authority():
-    entrypoint.retired_bbs_overlay.AUTHORITY = entrypoint.official.AUTHORITY
-    module = SimpleNamespace(overlay=entrypoint.retired_bbs_overlay)
+def test_official_authority_is_scoped_to_manifest_creation():
+    observed = []
 
-    value = entrypoint.restore_retired_overlay_authority(module)
+    def run():
+        observed.append(entrypoint.retired_bbs_overlay.AUTHORITY)
+        return {"ok": True}
+
+    entrypoint.retired_bbs_overlay.AUTHORITY = entrypoint.official.AUTHORITY
+    module = SimpleNamespace(
+        overlay=entrypoint.retired_bbs_overlay,
+        run=run,
+    )
+
+    value = entrypoint.install_scoped_official_authority(module)
 
     assert value is module
+    assert (
+        entrypoint.retired_bbs_overlay.AUTHORITY
+        == entrypoint.RETIRED_BBS_AUTHORITY
+    )
+    assert module.run() == {"ok": True}
+    assert observed == [entrypoint.official.AUTHORITY]
     assert (
         entrypoint.retired_bbs_overlay.AUTHORITY
         == entrypoint.RETIRED_BBS_AUTHORITY
@@ -249,3 +283,22 @@ def test_official_install_does_not_relabel_retired_compatibility_authority():
         entrypoint.official.target_overlay.base.AUTHORITY
         == entrypoint.RETIRED_BBS_AUTHORITY
     )
+
+
+def test_optional_park_or_weather_after_lock_remains_ineligible():
+    module = _projection_module()
+    entrypoint.install_verified_projection_eligibility(module)
+    resources = _projection_resources()
+    resources["weather"]["meta"]["asOfUtc"] = "2026-07-01T22:01:00+00:00"
+
+    value = module.build_training_snapshot(
+        {"predictionLockAtUtc": "2026-07-01T22:00:00+00:00"},
+        {},
+        _normalized_projection(),
+        resources,
+    )
+
+    proof = value["historicalProjectionEligibility"]
+    assert value["trainingEligible"] is False
+    assert proof["accepted"] is False
+    assert proof["optionalParkWeatherVerified"] is False
