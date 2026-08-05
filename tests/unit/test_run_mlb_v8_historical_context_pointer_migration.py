@@ -128,32 +128,34 @@ def test_stall_migration_preserves_provider_neutral_feature_bridge():
     assert migration.patch_feature_bridge(source) == source
 
 
-def test_stall_migration_preserves_current_complete_slate_cadence():
+def test_stall_migration_preserves_current_feature_runner_contract():
     source = (
-        'VERSION = "MLB-V7-LEARNING-CADENCE-STATE-v3-complete-slate-aware"\n'
-        '"newCompleteSlatesSinceLastShadowFit": 1,\n'
-        '"newCompleteSlatesSinceLastLightweightEvaluation": 1,\n'
-        '"remainingCompleteSlatesUntilLightweightEvaluation": 0,\n'
-        '"completeSlateCountRegressed": False,\n'
-        '"lightweightSelectiveEvaluationIncrementCompleteSlates": 1,\n'
-    )
-
-    assert migration.patch_cadence_v3(source) == source
-
-
-def test_stall_migration_preserves_current_trainer_and_test_wiring():
-    trainer = (
+        'VERSION = "MLB-V7-V9-FEATURE-AWARE-SHADOW-RUNNER-v2-provider-neutral-complete-slate-aware"\n'
         'from scripts import run_mlb_historical_supervised_v9_shadow_cadence_v3 as cadence_v3\n'
         'cadence_v3.decide_cadence(\n'
         'cadence_v3.report_anchor_fields(\n'
-        '"newCompleteSlatesSinceLastShadowFit": 1,\n'
-        '"newCompleteSlatesSinceLastLightweightEvaluation": 1,\n'
+        '"providerNeutralOfficialContextRequired": True,\n'
+        '"retiredBbsOverlayRequired": False,\n'
+        'MLB_V8_HISTORICAL_BBS_OVERLAY_ENABLED", "false\n'
+        'MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED", "false\n'
     )
-    test_source = (
+
+    assert migration.patch_feature_runner(source) == source
+
+
+def test_stall_migration_preserves_current_test_wiring():
+    source = (
         'package.run_mlb_historical_supervised_v9_shadow_cadence_v3 = cadence_v3\n'
         'module.cadence_v3.decide_cadence = decide\n'
         'module.cadence_v3.report_anchor_fields = anchors\n'
+        'MLB_V8_HISTORICAL_BBS_OVERLAY_ENABLED"] == "false"\n'
+        'MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED"] == "false"\n'
     )
 
-    assert migration.patch_feature_aware_trainer(trainer) == trainer
-    assert migration.patch_tests(test_source) == test_source
+    assert migration.patch_feature_runner_test(source) == source
+
+
+def test_full_migration_retains_workflow_and_stabilizer_targets():
+    assert migration.V9_WORKFLOW in migration.PATCHES
+    assert migration.DEPLOY_WORKFLOW in migration.PATCHES
+    assert migration.STABILIZER in migration.PATCHES
