@@ -152,11 +152,11 @@ def _validate_target_snapshot(
     feature_eligibility = snapshot.get("featureEligibility")
     feature_aware = isinstance(feature_eligibility, Mapping)
     if snapshot.get("parkRunFactor") is None and (
-        not feature_aware or feature_eligibility.get("park") is True
+        not feature_aware or feature_eligibility.get("park") is not False
     ):
         errors.append("target_context_park_missing")
     if snapshot.get("weatherRunFactor") is None and (
-        not feature_aware or feature_eligibility.get("weather") is True
+        not feature_aware or feature_eligibility.get("weather") is not False
     ):
         errors.append("target_context_weather_missing")
     return not errors, sorted(set(errors))
@@ -442,3 +442,24 @@ def load_and_apply(
         "sha256": expected_sha,
     }
     return output, proof
+
+
+def install(model_module: Any) -> Any:
+    if getattr(model_module, "_INQSI_MLB_HISTORICAL_CONTEXT_OVERLAY_INSTALLED", False):
+        return model_module
+    original = model_module.train_and_evaluate
+
+    def patched(records: Sequence[Mapping[str, Any]], **kwargs: Any) -> Dict[str, Any]:
+        enriched, proof = load_and_apply(records)
+        result = original(enriched, **kwargs)
+        result["historicalTargetGameContext"] = proof
+        digest = getattr(model_module, "_sha", None)
+        if callable(digest):
+            result["resultDigest"] = digest(
+                {key: value for key, value in result.items() if key != "resultDigest"}
+            )
+        return result
+
+    model_module.train_and_evaluate = patched
+    model_module._INQSI_MLB_HISTORICAL_CONTEXT_OVERLAY_INSTALLED = True
+    return model_module
