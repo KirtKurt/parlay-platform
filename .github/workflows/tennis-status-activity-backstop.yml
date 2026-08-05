@@ -2,6 +2,9 @@ name: Tennis Status Activity Backstop
 
 on:
   workflow_dispatch:
+  schedule:
+    # Independent five-minute cadence closes gaps when GitHub delays the primary publisher schedule.
+    - cron: '*/5 * * * *'
   push:
     branches: [main]
     paths:
