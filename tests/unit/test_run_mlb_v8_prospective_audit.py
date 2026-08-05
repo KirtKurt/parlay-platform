@@ -1,5 +1,4 @@
 import copy
-from io import BytesIO
 from types import SimpleNamespace
 
 from hello_world import mlb_v8_autonomy_v1 as autonomy
@@ -78,7 +77,7 @@ def _training(*, eligible=True):
                 "means": [0.0] if eligible else [],
                 "scales": [1.0] if eligible else [],
             },
-            "weights": [2.0] if eligible else [],
+            "weights": [2.5] if eligible else [],
             "intercept": 0.0,
             "trainingSteps": 700 if eligible else 0,
             "calibrator": {"identity": True},
