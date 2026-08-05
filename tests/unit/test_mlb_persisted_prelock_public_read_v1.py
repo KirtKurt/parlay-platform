@@ -178,11 +178,43 @@ def test_reads_exact_decimal_backed_snapshot_and_replaces_only_placeholder():
     assert row["persistedPrelockPublicReadVersion"] == subject.VERSION
     assert row["lockedPrediction"] is False
     assert row["officialPrediction"] is False
+    assert "pickReliability" in row
+    assert row["pickReliability"] is None
+    assert "pickReliabilityPct" in row
+    assert row["pickReliabilityPct"] is None
+    assert row["pickReliabilityMeaning"] == (
+        "estimated_probability_selected_pick_is_correct_not_team_win_probability"
+    )
+    assert row["publicProbabilitySchemaVersion"] == (
+        subject.PUBLIC_PROBABILITY_SCHEMA_VERSION
+    )
+    assert row["publicProbabilitySchemaCompletedAfterImmutableValidation"] is True
     proof = result["persistedPrelockPublicRead"]
     assert proof["coverageComplete"] is True
     assert proof["validatedPredictionCount"] == 1
     assert proof["recomputed"] is False
     assert proof["productionAuthorityChanged"] is False
+    assert proof["publicProbabilitySchemaVersion"] == (
+        subject.PUBLIC_PROBABILITY_SCHEMA_VERSION
+    )
+    assert proof["probabilitySchemaCompletedAfterImmutableValidation"] is True
+
+
+def test_public_probability_schema_preserves_available_reliability_exactly():
+    row = subject._complete_public_probability_schema(
+        {
+            "pickReliability": 0.731,
+            "pickReliabilityPct": 73.1,
+            "pickReliabilityMeaning": "source-model-reliability",
+        }
+    )
+
+    assert row["pickReliability"] == 0.731
+    assert row["pickReliabilityPct"] == 73.1
+    assert row["pickReliabilityMeaning"] == "source-model-reliability"
+    assert row["publicProbabilitySchemaVersion"] == (
+        subject.PUBLIC_PROBABILITY_SCHEMA_VERSION
+    )
 
 
 def test_raw_provider_prefix_identity_is_normalized_for_snapshot_lookup():
@@ -237,6 +269,7 @@ def test_existing_locked_canonical_row_is_never_overwritten():
 
     assert result["predictions"][0]["predictedWinner"] == "Away Club"
     assert result["predictions"][0]["lockedPrediction"] is True
+    assert "pickReliability" in result["predictions"][0]
     assert result["persistedPrelockPublicRead"]["placeholderReplacementCount"] == 0
 
 
