@@ -5,6 +5,8 @@ import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
 import mlb_v8_historical_context_overlay_v1 as overlay
 import run_mlb_v8_historical_context_backfill_entrypoint as entrypoint
 
@@ -87,7 +89,7 @@ def test_official_client_returns_resource_bundle_without_bbd(monkeypatch):
     assert value["error"] is None
 
 
-def test_pointer_isolation_uses_official_context_authority():
+def test_pointer_isolation_does_not_relabel_retired_compatibility_overlay():
     calls = {}
 
     class Table:
@@ -125,8 +127,10 @@ def test_pointer_isolation_uses_official_context_authority():
         0,
     )
 
-    assert module.overlay.POINTER_PK == overlay.POINTER_PK
-    assert module.overlay.AUTHORITY == entrypoint.AUTHORITY
+    assert module.overlay.POINTER_PK == "old"
+    assert module.overlay.AUTHORITY == "old-authority"
+    assert overlay.AUTHORITY == entrypoint.AUTHORITY
+    assert overlay.base.AUTHORITY == entrypoint.RETIRED_BBS_AUTHORITY
     assert pointer["key"] == "mlb/v8/historical-context/manifests/a.json"
     assert calls["s3"]["Metadata"]["provider"] == "official-mlb"
     assert calls["Item"]["record_type"] == entrypoint.RECORD_TYPE
@@ -176,26 +180,56 @@ def test_snapshot_contract_rewrites_provider_evidence_and_excludes_outcomes():
     assert value["fingerprint"] == "snapshot-sha"
 
 
-def test_run_contract_forces_official_client_and_no_bbd_evidence(tmp_path):
+def test_run_contract_scopes_official_authority_and_restores_it(tmp_path):
     captured = {}
+    fake_overlay = SimpleNamespace(AUTHORITY="fake-retired-authority")
+    module = SimpleNamespace(overlay=fake_overlay)
 
     def base_run(*_args, **kwargs):
         captured.update(kwargs)
+        captured["overlayAuthorityDuringRun"] = fake_overlay.AUTHORITY
+        captured["baseAuthorityDuringRun"] = overlay.base.AUTHORITY
+        captured["targetAuthorityDuringRun"] = overlay.AUTHORITY
         return {"ok": True}
 
-    module = SimpleNamespace(run=base_run)
+    module.run = base_run
     entrypoint.install_run_contract(module)
     output = tmp_path / "report.json"
 
     value = module.run(output=output)
 
     assert captured["client_factory"] is entrypoint.OfficialContextClient
+    assert captured["overlayAuthorityDuringRun"] == entrypoint.AUTHORITY
+    assert captured["baseAuthorityDuringRun"] == entrypoint.AUTHORITY
+    assert captured["targetAuthorityDuringRun"] == entrypoint.AUTHORITY
+    assert fake_overlay.AUTHORITY == "fake-retired-authority"
+    assert overlay.base.AUTHORITY == entrypoint.RETIRED_BBS_AUTHORITY
     assert value["provider"] == "official_mlb_plus_internal_canonical_context"
     assert value["bbsApiUsed"] is False
     assert value["bbsCredentialRead"] is False
     assert value["productionAuthorityChanged"] is False
     assert value["automaticWagerAllowed"] is False
     assert output.exists()
+
+
+def test_run_contract_restores_authority_after_failure():
+    fake_overlay = SimpleNamespace(AUTHORITY="fake-retired-authority")
+    module = SimpleNamespace(overlay=fake_overlay)
+
+    def base_run(*_args, **_kwargs):
+        assert fake_overlay.AUTHORITY == entrypoint.AUTHORITY
+        assert overlay.base.AUTHORITY == entrypoint.AUTHORITY
+        raise RuntimeError("expected failure")
+
+    module.run = base_run
+    entrypoint.install_run_contract(module)
+
+    with pytest.raises(RuntimeError, match="expected failure"):
+        module.run()
+
+    assert fake_overlay.AUTHORITY == "fake-retired-authority"
+    assert overlay.AUTHORITY == entrypoint.AUTHORITY
+    assert overlay.base.AUTHORITY == entrypoint.RETIRED_BBS_AUTHORITY
 
 
 def test_zero_eligible_official_batch_advances_cursor_without_entering_training(
@@ -267,7 +301,11 @@ def test_zero_eligible_official_batch_advances_cursor_without_entering_training(
         )
         return revision + 1
 
-    module = SimpleNamespace(run=base_run, _activate=activate)
+    module = SimpleNamespace(
+        overlay=SimpleNamespace(AUTHORITY=entrypoint.RETIRED_BBS_AUTHORITY),
+        run=base_run,
+        _activate=activate,
+    )
     entrypoint.install_run_contract(module)
     output = tmp_path / "report.json"
 
@@ -290,3 +328,4 @@ def test_zero_eligible_official_batch_advances_cursor_without_entering_training(
     ]
     assert all(record["trainingEligible"] is False for record in manifest["records"])
     assert all(record["snapshot"] is None for record in manifest["records"])
+    assert overlay.base.AUTHORITY == entrypoint.RETIRED_BBS_AUTHORITY
