@@ -115,3 +115,14 @@ def test_stall_migration_preserves_feature_aware_replay_contract():
     )
 
     assert migration.patch_v8_entrypoint(source) == source
+
+
+def test_stall_migration_preserves_provider_neutral_feature_bridge():
+    source = (
+        'VERSION = "MLB-HISTORICAL-V7-FEATURE-BRIDGE-v2-provider-neutral-official-primary"\n'
+        '"primaryFeatureAuthority": context_overlay.AUTHORITY,\n'
+        '"providerNeutralOfficialContextPrimary": True,\n'
+        '"retiredBbsOverlayRequired": False,\n'
+    )
+
+    assert migration.patch_feature_bridge(source) == source
