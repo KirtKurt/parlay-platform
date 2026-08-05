@@ -66,6 +66,7 @@ def test_baseline_retention_reports_nonzero_learning_execution():
     assert proof["learnedCandidateSelected"] is False
     assert proof["marketBaselineRetainedByGuard"] is True
     assert proof["qualityGateWeakened"] is False
+    assert proof["evidencePreservedAcrossLifecycleStage"] is False
     assert value["learningStatus"] == "LEARNING_EXECUTED_MARKET_BASELINE_RETAINED"
     assert value["autonomyDecision"] == "CONTINUE_AUTONOMOUS_CANDIDATE_SEARCH"
     assert value["resultDigest"] != "old"
@@ -92,6 +93,52 @@ def test_learned_candidate_advances_only_through_remaining_gates():
     assert prospective["autonomyDecision"] == "COLLECT_AUTONOMOUS_PROSPECTIVE_AUDIT"
     assert promote["autonomyDecision"] == "AUTO_PROMOTE_GUARDED_CHAMPION"
     assert promote["autonomy"]["automaticWagerAllowed"] is False
+
+
+def test_verified_learning_proof_is_monotonic_across_lifecycle_stages():
+    first = autonomy.decorate_result(
+        _report(selected="market_temporal_team", gate=True, prospective=True)
+    )
+    reduced = {
+        "ok": True,
+        "selection": {"selectedFeatureGroup": "market_temporal_team"},
+        "model": {"featureGroup": "market_temporal_team", "trainingSteps": 700},
+        "learningExecution": first["learningExecution"],
+        "promotionGate": {"passed": True},
+        "freshProspectiveAuditRequired": False,
+        "productionPromotionEligible": True,
+    }
+
+    later = autonomy.decorate_result(reduced)
+
+    assert later["learningExecution"]["learningExecuted"] is True
+    assert later["learningExecution"]["learnedCandidateCount"] == 22
+    assert later["learningExecution"]["totalOptimizationSteps"] == (
+        first["learningExecution"]["totalOptimizationSteps"]
+    )
+    assert later["learningExecution"][
+        "evidencePreservedAcrossLifecycleStage"
+    ] is True
+    assert later["learningExecution"]["qualityGateWeakened"] is False
+    assert later["autonomyDecision"] == "AUTO_PROMOTE_GUARDED_CHAMPION"
+
+
+def test_unproven_existing_claim_is_recomputed_fail_closed():
+    value = _report()
+    value["learningExecution"] = {
+        "learningExecuted": True,
+        "learnedCandidateCount": 0,
+        "totalOptimizationSteps": 0,
+        "qualityGateWeakened": False,
+    }
+
+    decorated = autonomy.decorate_result(value)
+
+    assert decorated["learningExecution"]["learnedCandidateCount"] == 22
+    assert decorated["learningExecution"]["totalOptimizationSteps"] > 0
+    assert decorated["learningExecution"][
+        "evidencePreservedAcrossLifecycleStage"
+    ] is False
 
 
 def test_install_wraps_trainer_once():
