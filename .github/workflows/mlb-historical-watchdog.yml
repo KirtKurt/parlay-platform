@@ -8,6 +8,8 @@ name: MLB Historical Ingestion Watchdog
     paths:
       - '.github/workflows/mlb-historical-watchdog.yml'
       - 'hello_world/mlb_historical_optimizer_entrypoint.py'
+      - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
+      - 'mlb_historical_optimizer/template.yaml'
   workflow_dispatch:
 
 permissions:
@@ -16,7 +18,6 @@ permissions:
 env:
   OPTIMIZER_STACK: parlay-platform-mlb-historical-optimizer
   EXPECTED_HANDLER: mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler
-  EXPECTED_END_DATE: '2026-07-24'
   EXPECTED_MAX_CREDITS: '300000'
 
 concurrency:
@@ -40,6 +41,28 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Resolve canonical historical boundary
+        run: |
+          set -euo pipefail
+          EXPECTED_END_DATE=$(python - <<'PY'
+          from pathlib import Path
+          import re
+
+          text = Path('mlb_historical_optimizer/template.yaml').read_text(encoding='utf-8')
+          match = re.search(
+              r"(?ms)^  HistoricalEndDate:\s*$.*?^    Default: ['\"]?([^'\"\s]+)['\"]?\s*$",
+              text,
+          )
+          if not match:
+              raise SystemExit('canonical HistoricalEndDate default is missing')
+          print(match.group(1))
+          PY
+          )
+          test -n "$EXPECTED_END_DATE"
+          echo "EXPECTED_END_DATE=$EXPECTED_END_DATE" >> "$GITHUB_ENV"
+          printf '{"canonicalHistoricalEndDate":"%s"}\n' "$EXPECTED_END_DATE" \
+            > /tmp/canonical-historical-boundary.json
 
       - name: Resolve and verify canonical V7 runtime
         id: runtime
@@ -91,6 +114,7 @@ jobs:
           open('/tmp/runtime-config.json','w').write(json.dumps({
               'functionName': value.get('FunctionName'),
               'handler': value.get('Handler'),
+              'canonicalHistoricalEndDate': os.environ['EXPECTED_END_DATE'],
               'environment': {
                   'MLB_HISTORICAL_END_DATE': env.get('MLB_HISTORICAL_END_DATE'),
                   'MLB_HISTORICAL_MAX_CREDITS': env.get('MLB_HISTORICAL_MAX_CREDITS'),
@@ -164,7 +188,7 @@ jobs:
           read_status /tmp/after.json watchdog_after
 
           python - <<'PY'
-          import json
+          import json, os
           from datetime import datetime, timezone
           from pathlib import Path
 
@@ -202,8 +226,11 @@ jobs:
               raise SystemExit(f"feature rematerialization errors remain: {a.get('featureRematerializationErrors')}")
           if a.get('lastError'):
               raise SystemExit(f"optimizer persisted an error: {a.get('lastError')}")
-          if str(a.get('endDate') or '') != '2026-07-24':
-              raise SystemExit(f"historical end date drifted: {a.get('endDate')}")
+          expected_end_date = os.environ['EXPECTED_END_DATE']
+          if str(a.get('endDate') or '') != expected_end_date:
+              raise SystemExit(
+                  f"historical end date drifted: expected={expected_end_date} actual={a.get('endDate')}"
+              )
 
           quota=(a.get('lastQuota') or {}).get('x-requests-remaining')
           if isinstance(quota,int) and quota <= 100:
@@ -251,6 +278,7 @@ jobs:
         with:
           name: mlb-historical-watchdog-${{ github.run_id }}
           path: |
+            /tmp/canonical-historical-boundary.json
             /tmp/runtime-config.json
             /tmp/runtime-config-history.txt
             /tmp/watchdog-report.json
