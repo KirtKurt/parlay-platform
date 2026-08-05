@@ -1,236 +1,45 @@
 {
-  "acceptedCrosswalkCount": 35,
   "activePointerRevision": 59,
-  "authority": "V8_HISTORICAL_BBS_SHADOW_ONLY",
+  "authority": "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY",
   "automaticWagerAllowed": false,
-  "blockers": [],
-  "confirmedOrProjectionSafeTargetIdentityRequired": true,
-  "createdAtUtc": "2026-08-03T12:45:49.454605+00:00",
-  "crosswalkQuarantine": [
-    {
-      "candidateOfficialGamePks": [],
-      "providerIndex": 0,
-      "providerKickoffUtc": "2026-05-21T00:40:00+00:00",
-      "providerMatchId": "a2a16422-4dc8-4f9d-bdd6-d51f79b8647c",
-      "providerRowFingerprint": "e9e5fa43ea96eac5007f0226ec175921179c687475b8a74a3dc94c4c711a9719",
-      "reasons": [
-        "provider_official_game_crosswalk_not_unique"
-      ]
-    },
-    {
-      "candidateOfficialGamePks": [],
-      "providerIndex": 1,
-      "providerKickoffUtc": "2026-05-21T01:38:00+00:00",
-      "providerMatchId": "25505120-db2a-484e-83f4-adccf1536d4d",
-      "providerRowFingerprint": "9dbc5e36302609428531e74811b5593e682313d11618417f8b111c8bf6a3aa83",
-      "reasons": [
-        "provider_official_game_crosswalk_not_unique"
-      ]
-    }
+  "bbsApiUsed": false,
+  "bbsCredentialRead": false,
+  "blockers": [
+    "current_batch_added_zero_training_eligible_rows",
+    "no_training_eligible_point_in_time_bbs_rows"
   ],
-  "crosswalkQuarantineCount": 2,
-  "diagnosticsContainProviderValues": false,
-  "eligibilityErrorCounts": {},
-  "eligibleGameCount": 926,
-  "featureFamily": "targetGame",
-  "ineligibleGameCount": 9,
+  "createdAtUtc": "2026-08-05T05:48:51.347965+00:00",
+  "crosswalkQuarantine": [],
+  "crosswalkQuarantineCount": 0,
+  "eligibleGameCount": 0,
+  "ineligibleGameCount": 5,
+  "legacyBbsCarryForwardAllowed": false,
   "manifest": {
     "alreadyExisted": false,
     "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
-    "key": "mlb/v8/historical-context/manifests/dda0f0b80e47b1e0dbef7a04050668682f5d5a89ca4931ae64554d5c89e9d285.json",
-    "sha256": "6d0869f5e0b81824c210e65579c6b97cd9b78366ee15125041052cfb0764dc79",
-    "versionId": "3j2QE9kISBCEcrPXTqfB2N0KNLGCFHfO"
+    "key": "mlb/v8/historical-context/manifests/291abf358987292fb97b93301e25ce22ba6fb47cf1d1ba8078572308d90cddae.json",
+    "sha256": "997fe10bf3d49c5751aca10426a489107395e76c1e4d7658da6e0fb47f1a443e",
+    "versionId": "cQFwcIXv3tkTXHVKb5ic4FhHdpgLXF4D"
   },
-  "manifestDigest": "dda0f0b80e47b1e0dbef7a04050668682f5d5a89ca4931ae64554d5c89e9d285",
-  "manifestPointerPk": "MLB_V8_HISTORICAL_CONTEXT#V1",
-  "manifestPointerSk": "ACTIVE",
-  "newEligibleGameCount": 25,
-  "newRecordCount": 25,
-  "officialContextRequestsMade": 0,
-  "ok": true,
+  "manifestDigest": "291abf358987292fb97b93301e25ce22ba6fb47cf1d1ba8078572308d90cddae",
+  "newEligibleGameCount": 0,
+  "newRecordCount": 5,
+  "officialContextPointerAuthoritative": true,
+  "ok": false,
   "pointInTimeRequired": true,
-  "processedGameCount": 935,
+  "pointerMigrationVersion": "MLB-V8-CONTEXT-POINTER-MIGRATION-v1-reset-retired-bbs-records",
+  "processedGameCount": 5,
   "productionAuthorityChanged": false,
   "proofType": "MLB_V8_HISTORICAL_CONTEXT_BACKFILL",
-  "provider": "bigballsdata_stored_confirmation_plus_official_prior_context",
-  "providerCallsMade": 178,
-  "providerDiscovery": [
-    {
-      "acceptedCrosswalkCount": 7,
-      "canonicalGameCount": 7,
-      "providerRowCount": 7,
-      "quarantinedProviderRowCount": 2,
-      "slateDateEt": "2026-05-21",
-      "unmatchedCanonicalGameCount": 0
-    },
-    {
-      "acceptedCrosswalkCount": 14,
-      "canonicalGameCount": 14,
-      "providerRowCount": 0,
-      "quarantinedProviderRowCount": 0,
-      "slateDateEt": "2026-05-22",
-      "unmatchedCanonicalGameCount": 0
-    },
-    {
-      "acceptedCrosswalkCount": 14,
-      "canonicalGameCount": 14,
-      "providerRowCount": 0,
-      "quarantinedProviderRowCount": 0,
-      "slateDateEt": "2026-05-23",
-      "unmatchedCanonicalGameCount": 0
-    }
-  ],
-  "providerDiscoveryDateCount": 3,
-  "providerRowsReturned": 7,
-  "remainingGameCount": 3156,
-  "requiredDomains": [
-    "pitchers",
-    "bullpens",
-    "lineups",
-    "injuries",
-    "team_context"
-  ],
-  "requiredPointInTimeOptionalDomains": [
-    "weather",
-    "park"
-  ],
-  "resourceDataShapes": {
-    "bullpens": {
-      "away": {
-        "availableRelievers": "int",
-        "closerAvailable": "bool",
-        "era": "float",
-        "expectedInnings": "float",
-        "fip": "float",
-        "highLeverageAvailable": "bool",
-        "historyGameCount": "int",
-        "last2DaysPitches": "int",
-        "last3DaysInnings": "float"
-      },
-      "home": {
-        "availableRelievers": "int",
-        "closerAvailable": "bool",
-        "era": "float",
-        "expectedInnings": "float",
-        "fip": "float",
-        "highLeverageAvailable": "bool",
-        "historyGameCount": "int",
-        "last2DaysPitches": "int",
-        "last3DaysInnings": "float"
-      }
-    },
-    "injuries": {
-      "away": {
-        "count": 0,
-        "item": "empty",
-        "type": "array"
-      },
-      "home": {
-        "count": 0,
-        "item": "empty",
-        "type": "array"
-      }
-    },
-    "lineups": {
-      "away": {
-        "confirmed": "bool",
-        "players": "array[9]",
-        "projected": "bool",
-        "projectionMethod": "str"
-      },
-      "home": {
-        "confirmed": "bool",
-        "players": "array[9]",
-        "projected": "bool",
-        "projectionMethod": "str"
-      }
-    },
-    "park": {
-      "historyEndDate": "str",
-      "name": "str",
-      "priorLeagueGameCount": "int",
-      "priorVenueGameCount": "int",
-      "runFactor": "float",
-      "venueId": "str"
-    },
-    "pitchers": {
-      "away": {
-        "confirmed": "bool",
-        "expectedInnings": "float",
-        "id": "str",
-        "lastStartDate": "str",
-        "name": "str",
-        "projected": "bool",
-        "projectionMethod": "str",
-        "recentThreeStarts": "object",
-        "stats": "object"
-      },
-      "home": {
-        "confirmed": "bool",
-        "expectedInnings": "float",
-        "id": "str",
-        "lastStartDate": "str",
-        "name": "str",
-        "projected": "bool",
-        "projectionMethod": "str",
-        "recentThreeStarts": "object",
-        "stats": "object"
-      }
-    },
-    "team_context": {
-      "away": {
-        "defense": "object",
-        "homeAwaySplit": "object",
-        "id": "str",
-        "name": "str",
-        "offense": "object",
-        "recentForm": "object",
-        "record": "object",
-        "restDays": "int",
-        "travel": "object"
-      },
-      "home": {
-        "defense": "object",
-        "homeAwaySplit": "object",
-        "id": "str",
-        "name": "str",
-        "offense": "object",
-        "recentForm": "object",
-        "record": "object",
-        "restDays": "int",
-        "travel": "object"
-      }
-    },
-    "weather": {
-      "conservativeAvailableAtUtc": "str",
-      "derivationVersion": "str",
-      "fallbackAttemptHoursBack": "int",
-      "forecastHoursRequested": "int",
-      "forecastTimeUtc": "str",
-      "model": "str",
-      "precipitation": "float",
-      "relative_humidity_2m": "int",
-      "runFactor": "float",
-      "runInitialisedAtUtc": "str",
-      "source": "str",
-      "temperature_2m": "float",
-      "wind_direction_10m": "int",
-      "wind_gusts_10m": "float",
-      "wind_speed_10m": "float"
-    }
-  },
-  "resourceErrorCounts": {},
-  "runId": "30814862689",
+  "provider": "official_mlb_plus_internal_canonical_context",
+  "providerCallsMade": 36,
+  "remainingGameCount": 4109,
+  "runId": "30979239134",
   "sameDayResultsExcluded": true,
-  "selectedGameCount": 25,
-  "selectionOrder": "newest_unprocessed_canonical_games_first",
+  "selectedGameCount": 5,
   "selectionUsedOutcomes": false,
-  "sourceSha": "b7226a496e8fc221de818f4f256469df93c9c307",
-  "storedDiscoveryErrorCount": 0,
-  "syntheticOfficialIdentityCount": 0,
+  "sourceSha": "7cf43e7641d079ef334e90ed42d3cf8f38dd2ebe",
   "targetGameOutcomeUsed": false,
-  "trainingCoverage": 0.22635053,
-  "unmatchedCanonicalGameCount": 0,
-  "version": "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v1-isolated-pointer",
-  "weatherArchiveModel": "ecmwf_ifs"
+  "trainingCoverage": 0.0,
+  "version": "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v3-official-only-no-legacy-carry-forward"
 }

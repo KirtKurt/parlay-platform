@@ -1,0 +1,51 @@
+{
+  "action": "CONTINUE_AUTONOMOUS_CANDIDATE_SEARCH",
+  "audit": {},
+  "auditArtifact": {},
+  "automaticWagerAllowed": false,
+  "blockers": [
+    "learned_candidate_not_selected",
+    "market_baseline_retained",
+    "retrospective_promotion_gate_not_passed",
+    "runtime_bundle_invalid:V8ModelRuntimeError:selected V8 model has no feature names"
+  ],
+  "candidateArtifact": {},
+  "candidateDigest": null,
+  "createdAtUtc": "2026-08-05T05:57:15.552011+00:00",
+  "frozenCorpusLastDate": null,
+  "lifecycleDigest": "b619e08163ce5d1fbdb7707d199bae65a4bfaac45025f4778acf18807d2b4bae",
+  "modelDigest": null,
+  "modelRefitDuringProspectiveAudit": false,
+  "ok": true,
+  "pointerRevision": 0,
+  "productionAuthorityChanged": false,
+  "proofType": "MLB_V8_PROSPECTIVE_AUDIT_LIFECYCLE",
+  "prospectiveAuditPassed": null,
+  "prospectiveAuditRejected": null,
+  "prospectiveEvidenceComplete": null,
+  "recordCountLoaded": 4114,
+  "runtimeIdentity": {
+    "functionName": "parlay-platform-mlb-histo-HistoricalOptimizerFunct-8e5kYFR21rxv",
+    "functionResolution": {
+      "attempts": [
+        {
+          "found": true,
+          "outputKeys": [
+            "HistoricalArtifactsBucketName",
+            "HistoricalOptimizerFunctionName"
+          ],
+          "strategy": "cloudformation_output"
+        }
+      ],
+      "strategy": "cloudformation_output"
+    },
+    "handler": "mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler",
+    "recordCount": 4114,
+    "stackName": "parlay-platform-mlb-historical-optimizer",
+    "stateCurrentDate": "2026-08-05",
+    "stateEndDate": "2026-08-04"
+  },
+  "selectionUsedProspectiveOutcomes": false,
+  "status": "WAITING_FOR_RETROSPECTIVE_GATE",
+  "version": "MLB-V8-PROSPECTIVE-AUDIT-RUNNER-v1-atomic-state"
+}
