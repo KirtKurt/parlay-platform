@@ -5,6 +5,13 @@ on:
   schedule:
     # Backstop only; the primary publisher runs more frequently.
     - cron: '8,28,48 * * * *'
+  workflow_run:
+    # Run directly after recurring workflows so bot-authored commits and delayed cron schedules
+    # cannot leave tennis evidence stale. The freshness check keeps this bounded and fail-closed.
+    workflows:
+      - 'MLB V8 Autonomous Controller'
+      - 'MLB Historical Hourly Liveness V1'
+    types: [completed]
   push:
     branches: [main]
     paths:
