@@ -8,11 +8,18 @@ from __future__ import annotations
 
 import copy
 from datetime import date, timedelta
+from decimal import Decimal
+import hashlib
+import json
+import math
 from typing import Any, Mapping
 
 import mlb_historical_incremental_range_extension_v1 as incremental_range_extension
 
-VERSION = "MLB-HISTORICAL-STATE-INTEGRITY-v1-settled-horizon-idempotent"
+VERSION = "MLB-HISTORICAL-STATE-INTEGRITY-v2-canonical-ddb-material"
+WAITING_PROOF_VERSION = (
+    "MLB-HISTORICAL-STATE-INTEGRITY-v1-settled-horizon-idempotent"
+)
 WAITING_PHASE = "WAITING_FOR_SETTLED_HORIZON"
 _VOLATILE_STATE_FIELDS = frozenset({"revision", "updatedAtUtc"})
 
@@ -24,11 +31,90 @@ def _date(value: Any, fallback: str) -> date:
         return date.fromisoformat(fallback)
 
 
+def _canonical_ddb_value(value: Any, *, in_mapping: bool = False) -> Any:
+    """Normalize exactly the JSON-like material DynamoDB persists and reloads.
+
+    The optimizer's persistence adapter omits mapping entries whose value is
+    ``None`` and converts finite floats to ``Decimal`` before writing. The read
+    adapter converts integral decimals to ``int`` and non-integral decimals to
+    ``float``. Comparing pre-write Python dictionaries directly therefore treats
+    a semantically identical state as changed. This normalizer mirrors that
+    round-trip before the state fingerprint is calculated.
+    """
+
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            raise ValueError("historical state contains non-finite decimal")
+        return int(value) if value == value.to_integral_value() else float(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("historical state contains non-finite float")
+        decimal_value = Decimal(str(value))
+        return (
+            int(decimal_value)
+            if decimal_value == decimal_value.to_integral_value()
+            else float(decimal_value)
+        )
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        return value
+    if isinstance(value, Mapping):
+        output: dict[str, Any] = {}
+        for raw_key, raw_item in value.items():
+            if raw_item is None:
+                continue
+            key = str(raw_key)
+            if key in output:
+                raise ValueError(
+                    "historical state contains duplicate keys after string normalization"
+                )
+            output[key] = _canonical_ddb_value(raw_item, in_mapping=True)
+        return output
+    if isinstance(value, list):
+        return [_canonical_ddb_value(item) for item in value]
+    if isinstance(value, bytes):
+        return {"__ddb_binary_hex__": value.hex()}
+    if isinstance(value, (set, frozenset)):
+        normalized = [_canonical_ddb_value(item) for item in value]
+        return {
+            "__ddb_set__": sorted(
+                normalized,
+                key=lambda item: json.dumps(
+                    item,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ),
+            )
+        }
+    raise ValueError(
+        f"historical state contains unsupported value type:{type(value).__name__}"
+    )
+
+
 def _material(handler: Any, state: Mapping[str, Any]) -> dict[str, Any]:
     value = handler._migrate_state(copy.deepcopy(dict(state or {})))
     for key in _VOLATILE_STATE_FIELDS:
         value.pop(key, None)
-    return value
+    normalized = _canonical_ddb_value(value)
+    if not isinstance(normalized, dict):
+        raise ValueError("historical state material is not an object")
+    return normalized
+
+
+def _material_fingerprint(handler: Any, state: Mapping[str, Any]) -> str:
+    body = json.dumps(
+        _material(handler, state),
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(body).hexdigest()
 
 
 def install(handler: Any, base: Any) -> None:
@@ -42,7 +128,9 @@ def install(handler: Any, base: Any) -> None:
         candidate = handler._migrate_state(copy.deepcopy(dict(state or {})))
         candidate["version"] = handler.VERSION
         current = handler._load_state()
-        if isinstance(current, Mapping) and _material(handler, current) == _material(handler, candidate):
+        if isinstance(current, Mapping) and _material_fingerprint(
+            handler, current
+        ) == _material_fingerprint(handler, candidate):
             return copy.deepcopy(dict(current))
         return original_save_state(candidate)
 
@@ -55,7 +143,10 @@ def install(handler: Any, base: Any) -> None:
         if isinstance(state, dict):
             previous_end = _date(state.get("endDate"), handler.END_DATE)
             configured_end = _date(handler.END_DATE, handler.END_DATE)
-            horizon = min(configured_end, incremental_range_extension.settled_horizon())
+            horizon = min(
+                configured_end,
+                incremental_range_extension.settled_horizon(),
+            )
             if state.get("phase") == WAITING_PHASE and horizon > previous_end:
                 resumed = copy.deepcopy(state)
                 resumed["phase"] = "DATA_RANGE_EXHAUSTED"
@@ -70,13 +161,19 @@ def install(handler: Any, base: Any) -> None:
             return
         previous_end = _date(state.get("endDate"), handler.END_DATE)
         configured_end = _date(handler.END_DATE, handler.END_DATE)
-        horizon = min(configured_end, incremental_range_extension.settled_horizon())
-        current = _date(state.get("currentDate"), previous_end.isoformat())
+        horizon = min(
+            configured_end,
+            incremental_range_extension.settled_horizon(),
+        )
+        current = _date(
+            state.get("currentDate"), previous_end.isoformat()
+        )
         should_wait = (
             configured_end > previous_end
             and horizon <= previous_end
             and current > previous_end
-            and state.get("phase") in {
+            and state.get("phase")
+            in {
                 "BACKFILLING",
                 "DATA_RANGE_EXHAUSTED",
                 WAITING_PHASE,
@@ -88,13 +185,17 @@ def install(handler: Any, base: Any) -> None:
         waiting = copy.deepcopy(state)
         waiting["phase"] = WAITING_PHASE
         waiting["lastError"] = None
-        waiting["rangeExtensionNextRetryDate"] = (previous_end + timedelta(days=1)).isoformat()
+        waiting["rangeExtensionNextRetryDate"] = (
+            previous_end + timedelta(days=1)
+        ).isoformat()
         waiting["settledHorizonWait"] = {
-            "version": VERSION,
+            "version": WAITING_PROOF_VERSION,
             "authorizedThroughDate": previous_end.isoformat(),
             "settledHorizonDate": horizon.isoformat(),
             "configuredCeilingDate": configured_end.isoformat(),
-            "nextEligibleSlateDate": (previous_end + timedelta(days=1)).isoformat(),
+            "nextEligibleSlateDate": (
+                previous_end + timedelta(days=1)
+            ).isoformat(),
             "blockingError": False,
         }
         handler._save_state(waiting)
