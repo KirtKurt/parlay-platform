@@ -5,6 +5,13 @@ on:
   schedule:
     # Independent five-minute cadence closes gaps when GitHub delays the primary publisher schedule.
     - cron: '*/5 * * * *'
+  workflow_run:
+    # Bot-authored evidence commits do not reliably emit new push-triggered workflows.
+    # Completed recurring workflows provide a token-independent dispatch signal.
+    workflows:
+      - 'MLB V8 Autonomous Controller'
+      - 'MLB Historical Hourly Liveness V1'
+    types: [completed]
   push:
     branches: [main]
     paths:
