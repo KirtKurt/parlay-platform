@@ -6,12 +6,44 @@ import hello_world.mlb_v8_prospective_audit_v1 as audit
 from hello_world import mlb_v8_autonomy_v1 as autonomy
 
 
+def _selection(group="market_temporal_team"):
+    return {
+        "selectedFeatureGroup": group,
+        "candidateCount": 2,
+        "foldCount": 3,
+        "selectionGuard": {
+            "thresholds": {"regularizationGrid": [0.1]},
+            "learnedEligibleCandidateCount": 1,
+        },
+        "ablation": {
+            "market_baseline": {},
+            "market_temporal_team": {
+                "l2": 0.1,
+                "guard": {
+                    "eligible": True,
+                    "errors": [],
+                    "stability": {
+                        "positiveFoldCount": 3,
+                        "overallAccuracyUplift": 0.02,
+                        "meanDailyAccuracyUplift": 0.02,
+                    },
+                },
+                "oofMetrics": {
+                    "overallAccuracy": 0.82,
+                    "meanDailyAccuracy": 0.82,
+                    "minimumDailyAccuracy": 0.80,
+                },
+            },
+        },
+    }
+
+
 def _training():
     value = {
         "ok": True,
         "createdAtUtc": "2026-08-05T05:00:00+00:00",
         "architecture": {"probabilityBounds": [0.05, 0.95]},
-        "selection": {"selectedFeatureGroup": "market_temporal_team"},
+        "selection": _selection(),
         "model": {
             "featureCompilerVersion": "compiler-v8",
             "featureGroup": "market_temporal_team",
@@ -30,8 +62,8 @@ def _training():
             "learningExecuted": True,
             "learnedCandidateSelected": True,
             "marketBaselineRetainedByGuard": False,
-            "learnedCandidateCount": 10,
-            "totalOptimizationSteps": 1000,
+            "learnedCandidateCount": 1,
+            "totalOptimizationSteps": 1360,
             "selectedFeatureGroup": "market_temporal_team",
         },
         "promotionGate": {"passed": True, "errors": []},
@@ -129,6 +161,8 @@ def test_passed_audit_produces_an_automatically_promotable_frozen_report(monkeyp
     assert effective["freshProspectiveAuditRequired"] is False
     assert effective["productionPromotionEligible"] is True
     assert effective["retrospectiveArchitectureEvaluation"] is False
+    assert effective["learningExecution"]["learningExecuted"] is True
+    assert effective["learningExecution"]["learnedCandidateSelected"] is True
     assert effective["autonomyDecision"] == "AUTO_PROMOTE_GUARDED_CHAMPION"
     assert effective["prospectiveCandidateDigest"] == candidate["candidateDigest"]
     assert effective["automaticWagerAllowed"] is False
