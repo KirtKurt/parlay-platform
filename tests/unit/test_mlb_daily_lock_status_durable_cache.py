@@ -30,7 +30,16 @@ def _response(status, body):
 
 
 def _payload(event):
-    return dict(event.get("queryStringParameters") or {})
+    payload = dict(event.get("queryStringParameters") or {})
+    payload.update(
+        {
+            key: value
+            for key, value in event.items()
+            if not key.startswith("aws")
+            and key not in {"httpMethod", "path", "rawPath", "requestContext"}
+        }
+    )
+    return payload
 
 
 def _module(table):
@@ -150,4 +159,26 @@ def test_stale_summary_cache_recomputes(monkeypatch):
     assert response["statusCode"] == 200
     assert calls["status"] == 1
     assert table.put_calls == 1
+    assert body["statusCache"]["hit"] is False
+
+
+def test_scheduled_lock_run_refreshes_summary_outside_public_request_path():
+    table = Table()
+    module, calls = _module(table)
+
+    response = module.handle(
+        {"slate_date": "2026-08-05", "scheduled": True},
+        None,
+    )
+
+    assert response["statusCode"] == 200
+    assert calls["delegated"] == 1
+    assert calls["status"] == 1
+    assert table.put_calls == 1
+    cached = table.items[
+        ("MLB_LOCK_STATUS_CACHE#2026-08-05", route_patch.CACHE_SK)
+    ]
+    body = json.loads(cached["data_json"])
+    assert body["readOnly"] is True
+    assert body["statusDetail"] == "SUMMARY"
     assert body["statusCache"]["hit"] is False
