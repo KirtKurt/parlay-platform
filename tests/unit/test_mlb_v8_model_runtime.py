@@ -33,7 +33,7 @@ def _report():
 
 
 def _supervised_report():
-    report = {
+    return {
         "createdAtUtc": "2026-08-05T05:00:00+00:00",
         "resultDigest": "training-result-digest",
         "architecture": {"probabilityBounds": [0.05, 0.95]},
@@ -53,7 +53,6 @@ def _supervised_report():
             "modelDigest": "source-model-digest",
         },
     }
-    return report
 
 
 def test_bundle_is_content_addressed_and_shadow_only():
@@ -92,8 +91,6 @@ def test_supervised_bundle_preserves_standardizer_market_offset_and_calibrator()
         },
     )
 
-    # Standardized features are 1.0 and 1.0.  Residual is therefore
-    # 0.1 + 0.4 - 0.2 = 0.3 and is added to the market logit before Platt.
     residual = 0.3
     market_logit = math.log(0.60 / 0.40)
     raw = 1.0 / (1.0 + math.exp(-(market_logit + residual)))
@@ -113,6 +110,37 @@ def test_supervised_bundle_preserves_standardizer_market_offset_and_calibrator()
         "bullpen_delta": pytest.approx(1.0),
     }
     assert result["probability"] == pytest.approx(expected)
+
+
+def test_prospectively_approved_report_reuses_exact_frozen_bundle():
+    original = _supervised_report()
+    frozen = build_bundle(original)
+    augmented = copy.deepcopy(original)
+    augmented["resultDigest"] = "different-augmented-report-digest"
+    augmented["prospectiveAudit"] = {"prospectiveAuditPassed": True}
+    augmented["frozenModelBundle"] = copy.deepcopy(frozen)
+    augmented["frozenModelBundleDigest"] = frozen["modelDigest"]
+
+    rebuilt = build_bundle(augmented)
+
+    assert rebuilt == frozen
+    assert rebuilt["modelDigest"] == frozen["modelDigest"]
+    assert rebuilt["trainingReportDigest"] == "training-result-digest"
+
+
+def test_tampered_frozen_bundle_or_pointer_fails_closed():
+    report = _supervised_report()
+    frozen = build_bundle(report)
+    augmented = copy.deepcopy(report)
+    augmented["frozenModelBundle"] = copy.deepcopy(frozen)
+    augmented["frozenModelBundleDigest"] = "wrong"
+    with pytest.raises(V8ModelRuntimeError, match="identity mismatch"):
+        build_bundle(augmented)
+
+    augmented["frozenModelBundleDigest"] = frozen["modelDigest"]
+    augmented["frozenModelBundle"]["intercept"] = 99.0
+    with pytest.raises(V8ModelRuntimeError, match="digest mismatch"):
+        build_bundle(augmented)
 
 
 def test_incomplete_live_vector_fails_closed():
