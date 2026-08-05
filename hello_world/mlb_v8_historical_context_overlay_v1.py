@@ -1,10 +1,9 @@
-"""Apply immutable target-game point-in-time context after the prior-game V8 overlay.
+"""Apply immutable official target-game point-in-time context to V8 history.
 
-This overlay uses a separate DynamoDB manifest pointer so a completed prior-game
-backfill can never make target-game starter, bullpen, lineup, injury, park, or
-weather work appear complete.  The target snapshot is merged with any already
-attached strictly-prior snapshot.  It remains shadow-only and cannot change a
-champion, production prediction, cutover, or wagering authority.
+The official context overlay owns a provider-neutral manifest authority that is
+independent from the retired BBD/BBS compatibility overlay. It remains read-only,
+shadow-only, and unable to change production predictions, champions, cutover, or
+wagering authority.
 """
 from __future__ import annotations
 
@@ -19,11 +18,14 @@ import boto3
 
 import mlb_v8_historical_bbs_overlay_v1 as base
 
-VERSION = "MLB-V8-HISTORICAL-CONTEXT-OVERLAY-v1-point-in-time"
+VERSION = "MLB-V8-HISTORICAL-CONTEXT-OVERLAY-v2-official-authority"
 POINTER_PK = "MLB_V8_HISTORICAL_CONTEXT#V1"
 POINTER_SK = "ACTIVE"
+POINTER_RECORD_TYPE = "mlb_v8_historical_official_context_active_manifest_v2"
 DEFAULT_TABLE = base.DEFAULT_TABLE
-AUTHORITY = base.AUTHORITY
+AUTHORITY = "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY"
+MANIFEST_VERSION = base.MANIFEST_VERSION
+SNAPSHOT_VERSION = base.SNAPSHOT_VERSION
 TARGET_FAMILY = "targetGame"
 PRIOR_FAMILY = "priorGame"
 COMPOSITE_ROLE = "HISTORICAL_COMPOSITE_POINT_IN_TIME_AT_T_MINUS_45"
@@ -38,12 +40,6 @@ def _plain(value: Any) -> Any:
     if isinstance(value, list):
         return [_plain(item) for item in value]
     return value
-
-
-def _json_bytes(value: Any) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode(
-        "utf-8"
-    )
 
 
 def _identity(value: Mapping[str, Any]) -> Tuple[str, str]:
@@ -94,19 +90,58 @@ def has_family(snapshot: Any, name: str) -> bool:
     return bool(entry.get("available") is True and entry.get("trainingEligible") is True)
 
 
+def _validate_official_snapshot(
+    snapshot: Any, record: Mapping[str, Any]
+) -> Tuple[bool, list[str]]:
+    """Validate official target/composite evidence without BBS authority coupling."""
+
+    if not isinstance(snapshot, Mapping):
+        return False, ["snapshot_missing"]
+    errors: list[str] = []
+    if snapshot.get("version") != SNAPSHOT_VERSION:
+        errors.append("snapshot_version_mismatch")
+    if snapshot.get("authority") != AUTHORITY:
+        errors.append("snapshot_authority_mismatch")
+    if snapshot.get("trainingEligible") is not True:
+        errors.append("snapshot_not_training_eligible")
+    if snapshot.get("pointInTimeVerified") is not True:
+        errors.append("snapshot_point_in_time_unverified")
+    if snapshot.get("postgameFieldsExcluded") is not True:
+        errors.append("snapshot_postgame_exclusion_missing")
+    if str(snapshot.get("officialGamePk") or "") != str(
+        record.get("officialGamePk") or ""
+    ):
+        errors.append("snapshot_official_game_identity_mismatch")
+    if str(snapshot.get("predictionLockAtUtc") or "") != str(
+        record.get("predictionLockAtUtc") or ""
+    ):
+        errors.append("snapshot_lock_identity_mismatch")
+    if not isinstance(snapshot.get("home"), Mapping) or not isinstance(
+        snapshot.get("away"), Mapping
+    ):
+        errors.append("snapshot_side_payload_missing")
+    if snapshot.get("fingerprint") != base.snapshot_fingerprint(snapshot):
+        errors.append("snapshot_fingerprint_mismatch")
+    if snapshot.get("selectionUsedOutcomes") is not False:
+        errors.append("snapshot_outcome_selection_contract_missing")
+    if snapshot.get("targetGameOutcomeUsed") is not False:
+        errors.append("snapshot_target_outcome_exclusion_missing")
+    if snapshot.get("sameDayResultsExcluded") is not True:
+        errors.append("snapshot_same_day_results_exclusion_missing")
+    if snapshot.get("productionAuthorityChanged") is not False:
+        errors.append("snapshot_production_authority_changed")
+    return not errors, sorted(set(errors))
+
+
 def _validate_target_snapshot(
     snapshot: Any, record: Mapping[str, Any]
 ) -> Tuple[bool, list[str]]:
-    valid, errors = base._validate_snapshot(snapshot, record)
+    valid, errors = _validate_official_snapshot(snapshot, record)
     if not isinstance(snapshot, Mapping):
         return False, errors
     role = str(snapshot.get("snapshotRole") or "")
     if role != TARGET_ROLE and not has_family(snapshot, TARGET_FAMILY):
         errors.append("target_context_snapshot_role_mismatch")
-    if snapshot.get("targetGameOutcomeUsed") is not False:
-        errors.append("target_context_outcome_exclusion_missing")
-    if snapshot.get("productionAuthorityChanged") is not False:
-        errors.append("target_context_production_authority_changed")
     if snapshot.get("parkRunFactor") is None:
         errors.append("target_context_park_missing")
     if snapshot.get("weatherRunFactor") is None:
@@ -117,7 +152,8 @@ def _validate_target_snapshot(
 def merge_snapshots(
     record: Mapping[str, Any], prior: Any, target: Mapping[str, Any]
 ) -> Dict[str, Any]:
-    """Merge two independently validated point-in-time feature families."""
+    """Merge independently validated legacy-prior and official-target families."""
+
     target_valid, target_errors = _validate_target_snapshot(target, record)
     if not target_valid:
         raise RuntimeError(
@@ -164,7 +200,7 @@ def merge_snapshots(
     )
 
     merged: Dict[str, Any] = {
-        "version": base.SNAPSHOT_VERSION,
+        "version": SNAPSHOT_VERSION,
         "authority": AUTHORITY,
         "snapshotRole": COMPOSITE_ROLE,
         "createdAtUtc": target.get("createdAtUtc"),
@@ -191,14 +227,14 @@ def merge_snapshots(
         "productionAuthorityChanged": False,
     }
     merged["fingerprint"] = base.snapshot_fingerprint(merged)
-    valid, errors = base._validate_snapshot(merged, record)
+    valid, errors = _validate_official_snapshot(merged, record)
     if not valid:
         raise RuntimeError("merged historical snapshot is invalid:" + ",".join(errors))
     return merged
 
 
 def _validate_manifest(manifest: Mapping[str, Any]) -> None:
-    if manifest.get("version") != base.MANIFEST_VERSION:
+    if manifest.get("version") != MANIFEST_VERSION:
         raise RuntimeError("historical target-context manifest version mismatch")
     if manifest.get("authority") != AUTHORITY:
         raise RuntimeError("historical target-context manifest authority mismatch")
@@ -355,6 +391,12 @@ def load_and_apply(
         }
 
     pointer_data = _plain(item.get("data") or {})
+    if item.get("record_type") != POINTER_RECORD_TYPE:
+        raise RuntimeError("historical target-context active pointer type mismatch")
+    if pointer_data.get("authority") != AUTHORITY:
+        raise RuntimeError("historical target-context active pointer authority mismatch")
+    if not str(pointer_data.get("provider") or "").startswith("official_mlb"):
+        raise RuntimeError("historical target-context active pointer provider mismatch")
     pointer = pointer_data.get("manifest") or {}
     bucket = str(pointer.get("bucket") or "")
     key = str(pointer.get("key") or "")
