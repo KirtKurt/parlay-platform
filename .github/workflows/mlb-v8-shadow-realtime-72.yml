@@ -1,224 +1,49 @@
-name: MLB V8 Real-Time Shadow 72
+name: MLB V8 Real-Time Shadow 72 Compatibility
 
 "on":
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'hello_world/mlb_v8_shadow_realtime_policy_v1.py'
-      - 'scripts/run_mlb_supervised_shadow_v2.py'
-      - 'runtime_reports/mlb_supervised_shadow_v2_latest.json'
-      - '.github/workflows/mlb-v8-shadow-realtime-72.yml'
-  schedule:
-    - cron: '27 * * * *'
 
 permissions:
-  contents: write
+  contents: read
+  actions: write
 
 concurrency:
-  group: mlb-v8-shadow-realtime-72
+  group: mlb-v8-shadow-realtime-72-compatibility
   cancel-in-progress: false
 
 env:
-  STACK_NAME: parlay-platform-mlb-historical-optimizer
-  REPORT_PATH: runtime_reports/mlb_v8_shadow_realtime_72_latest.json
-  MLB_V8_SHADOW_TARGET_ACCURACY: '0.72'
-  MLB_V8_SHADOW_AUTHORITY: SHADOW_ONLY
   PYTHONPATH: hello_world:scripts
 
 jobs:
-  shadow-evaluate:
+  delegate-to-autonomous-controller:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
+      - name: Checkout exact compatibility source
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Validate 72 percent shadow-only policy
+      - name: Verify shadow policy remains safe
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json
           from mlb_v8_shadow_realtime_policy_v1 import status
           value=status()
-          assert value['targetAccuracy'] == 0.72, value
           assert value['authority'] == 'SHADOW_ONLY', value
           assert value['productionAuthorityChanged'] is False, value
           assert value['automaticWagerAllowed'] is False, value
           assert value['historicalLearningEnabled'] is True, value
           assert value['liveShadowEvaluationEnabled'] is True, value
-          print(json.dumps(value, sort_keys=True))
           PY
 
-      - name: Run V8 shadow evaluation against immutable historical evidence
-        id: evaluation
-        continue-on-error: true
+      - name: Dispatch the single V8 control plane
         env:
-          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
-          AWS_EC2_METADATA_DISABLED: 'true'
-          MLB_V8_HISTORICAL_BBS_OVERLAY_ENABLED: 'true'
-          MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED: 'true'
-          MLB_V8_HISTORICAL_BBS_TABLE: parlay_platform_snapshots
-        run: |
-          set +e
-          python -m pip install --quiet 'boto3>=1.34,<2' 'numpy>=1.26,<3'
-          mkdir -p runtime_reports
-          python - <<'PY' 2>&1 | tee /tmp/mlb_v8_shadow_realtime.log
-          import json, os
-          from pathlib import Path
-          import boto3
-          import run_mlb_supervised_shadow_v2 as runner
-
-          region=os.environ['AWS_REGION_VALUE']
-          stack=os.environ['STACK_NAME']
-          cf=boto3.client('cloudformation', region_name=region)
-          lam=boto3.client('lambda', region_name=region)
-          attempts=[]
-          function_name=None
-          try:
-              stacks=cf.describe_stacks(StackName=stack).get('Stacks') or []
-              outputs={str(x.get('OutputKey')):str(x.get('OutputValue')) for x in (stacks[0].get('Outputs') or [])} if stacks else {}
-              function_name=outputs.get('HistoricalOptimizerFunctionName')
-              attempts.append({'strategy':'cloudformation_output','found':bool(function_name),'outputKeys':sorted(outputs)})
-          except Exception as exc:
-              attempts.append({'strategy':'cloudformation_output','error':f'{type(exc).__name__}:{exc}'})
-
-          if not function_name:
-              matches=[]
-              paginator=lam.get_paginator('list_functions')
-              for page in paginator.paginate():
-                  for item in page.get('Functions') or []:
-                      if item.get('Handler') != runner.EXPECTED_HANDLER:
-                          continue
-                      name=str(item.get('FunctionName') or '')
-                      if name:
-                          matches.append(name)
-              matches=sorted(set(matches))
-              attempts.append({'strategy':'lambda_handler_scan','matches':matches})
-              if len(matches) == 1:
-                  function_name=matches[0]
-              elif len(matches) > 1:
-                  qualified=[]
-                  for name in matches:
-                      config=lam.get_function_configuration(FunctionName=name)
-                      env=((config.get('Environment') or {}).get('Variables') or {})
-                      if env.get('MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED') == 'true':
-                          qualified.append(name)
-                  attempts.append({'strategy':'lambda_environment_filter','matches':qualified})
-                  if len(qualified) == 1:
-                      function_name=qualified[0]
-
-          Path('/tmp/mlb_v8_shadow_runtime_resolution.json').write_text(json.dumps({'functionName':function_name,'attempts':attempts},indent=2,sort_keys=True)+'\n')
-          if not function_name:
-              raise RuntimeError('historical optimizer Lambda could not be resolved uniquely')
-
-          runner._outputs=lambda _cf, _stack: {'HistoricalOptimizerFunctionName':function_name}
-          value=runner.run(
-              region=region,
-              stack_name=stack,
-              table_name='parlay_platform_snapshots',
-              output=Path('/tmp/mlb_v8_shadow_source.json'),
-          )
-          bbd=value.get('historicalBbsFundamentals') or {}
-          assert bbd.get('status') == 'APPLIED', bbd
-          assert int(bbd.get('appliedGameCount') or 0) > 0, bbd
-          print(json.dumps({'ok':value.get('ok'),'functionName':function_name,'recordCountLoaded':value.get('recordCountLoaded'),'historicalBbsFundamentals':bbd,'promotionGate':value.get('promotionGate')},indent=2,sort_keys=True))
-          PY
-          status=${PIPESTATUS[0]}
-          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
-          exit "$status"
-
-      - name: Publish real-time shadow dashboard report
-        if: always()
-        env:
-          EVALUATION_OUTCOME: ${{ steps.evaluation.outcome }}
-          EVALUATION_EXIT_CODE: ${{ steps.evaluation.outputs.exit_code }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p runtime_reports
-          python - <<'PY'
-          import json, os
-          from datetime import datetime, timezone
-          from pathlib import Path
-          from mlb_v8_shadow_realtime_policy_v1 import status
-
-          def load(path):
-              p=Path(path)
-              if not p.exists() or not p.stat().st_size:
-                  return {}
-              try:
-                  return json.loads(p.read_text())
-              except Exception as exc:
-                  return {'parseError':str(exc)}
-
-          source=load('/tmp/mlb_v8_shadow_source.json')
-          resolution=load('/tmp/mlb_v8_shadow_runtime_resolution.json')
-          log_tail=Path('/tmp/mlb_v8_shadow_realtime.log').read_text(errors='replace')[-12000:] if Path('/tmp/mlb_v8_shadow_realtime.log').exists() else ''
-          policy=status()
-          outcome=os.environ.get('EVALUATION_OUTCOME')
-          exit_code=os.environ.get('EVALUATION_EXIT_CODE')
-          bbd=source.get('historicalBbsFundamentals') or {}
-          report={
-              'proofType':'MLB_V8_REALTIME_SHADOW_72',
-              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
-              'sourceSha':os.environ['GITHUB_SHA'],
-              'runId':os.environ['GITHUB_RUN_ID'],
-              'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
-              **policy,
-              'evaluationOutcome':outcome,
-              'evaluationExitCode':exit_code,
-              'evaluationSucceeded':outcome == 'success' and str(exit_code) == '0' and bool(source) and bbd.get('status') == 'APPLIED',
-              'historicalTrainerContinuesIndependently':True,
-              'runtimeResolution':resolution,
-              'sourceEvaluation':source,
-              'errorLogTail':log_tail if not source else '',
-          }
-          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
-          PY
-          python -m json.tool "$REPORT_PATH" >/dev/null
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mlb-v8-shadow-realtime-72-${{ github.run_id }}
-          path: |
-            runtime_reports/mlb_v8_shadow_realtime_72_latest.json
-            /tmp/mlb_v8_shadow_source.json
-            /tmp/mlb_v8_shadow_realtime.log
-            /tmp/mlb_v8_shadow_runtime_resolution.json
-          retention-days: 90
-          if-no-files-found: warn
-
-      - name: Commit durable dashboard state
-        if: always()
-        run: |
-          set -euo pipefail
-          cp "$REPORT_PATH" /tmp/mlb-v8-shadow-report.json
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          for attempt in 1 2 3 4 5; do
-            git fetch origin main
-            git checkout -B mlb-v8-shadow-proof origin/main
-            git reset --hard origin/main
-            git clean -fd
-            mkdir -p runtime_reports
-            cp /tmp/mlb-v8-shadow-report.json "$REPORT_PATH"
-            git add "$REPORT_PATH"
-            git diff --cached --quiet && exit 0
-            git commit -m "Update MLB V8 72% real-time shadow dashboard [skip ci]"
-            git push origin HEAD:main && exit 0
-            sleep $((attempt * 3))
-          done
-          exit 1
+          gh workflow run mlb-v8-autonomous-controller.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$GITHUB_REF_NAME"
