@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, Optional
 
 
-VERSION = "MLB-DEPLOY-CUTOFF-SMOKE-POLICY-v3-status-only-historical-reconciled-counts"
+VERSION = "MLB-DEPLOY-CUTOFF-SMOKE-POLICY-v4-status-authoritative-projection"
 LOCK_MINUTES_BEFORE_GAME = 45
 ALLOWED_POST_CUTOFF_STATUSES = frozenset({
     "MISSED_LOCK",
@@ -39,6 +39,14 @@ def _row_status(row: Dict[str, Any]) -> str:
     ).strip().upper()
 
 
+def _row_identity(row: Dict[str, Any]) -> str:
+    return str(row.get("gameId") or row.get("gameIdentity") or "").strip()
+
+
+def _winner(row: Dict[str, Any]) -> str:
+    return str(row.get("predictedWinner") or "").strip()
+
+
 def _zero_count(value: Any) -> bool:
     try:
         return int(value or 0) == 0
@@ -64,6 +72,55 @@ def all_game_cutoffs_passed(
     return bool(cutoffs) and all(observed_at >= cutoff for cutoff in cutoffs)
 
 
+def _status_row_is_authoritative(row: Dict[str, Any]) -> bool:
+    winner = _winner(row)
+    if winner:
+        return row.get("lockedPrediction") is True
+    return _row_status(row) in ALLOWED_POST_CUTOFF_STATUSES
+
+
+def _project_authoritative_status(
+    predictions: Dict[str, Any],
+    status: list[Dict[str, Any]],
+    game_count: int,
+) -> None:
+    projected_rows = copy.deepcopy(status)
+    locked_predictions = sum(
+        1
+        for row in projected_rows
+        if row.get("lockedPrediction") is True and bool(_winner(row))
+    )
+    terminal_no_winner = game_count - locked_predictions
+    ignored_rows = [
+        row
+        for row in (predictions.get("predictions") or [])
+        if isinstance(row, dict)
+        and bool(_winner(row))
+        and row.get("lockedPrediction") is not True
+    ]
+    predictions.update({
+        "sport": "mlb",
+        "gameCount": game_count,
+        "predictions": projected_rows,
+        "displayStatusCoverageComplete": True,
+        "lifecycleCoverageComplete": True,
+        "lockedPredictionCount": locked_predictions,
+        "officialPredictionCount": locked_predictions,
+        "lockedStatusCount": game_count,
+        "noPredictionDataCount": terminal_no_winner,
+        "lockStatusComplete": True,
+        "canonicalPredictionComplete": locked_predictions == game_count,
+        "operationalDefect": bool(predictions.get("operationalDefect", True)),
+        "statusOnlyHistoricalProjection": locked_predictions == 0,
+        "statusOnlyHistoricalProjectionVersion": VERSION,
+        "statusOnlyHistoricalProjectionPersisted": False,
+        "statusAuthoritativeHistoricalProjection": True,
+        "statusAuthoritativeHistoricalProjectionVersion": VERSION,
+        "statusAuthoritativeHistoricalProjectionPersisted": False,
+        "ignoredNonAuthoritativeWinnerCount": len(ignored_rows),
+    })
+
+
 def historical_lifecycle_acceptance(
     predictions: Dict[str, Any],
     status_rows: Iterable[Dict[str, Any]],
@@ -71,25 +128,18 @@ def historical_lifecycle_acceptance(
     *,
     now: Optional[datetime] = None,
 ) -> bool:
-    """Allow deployment verification without fabricating late pregame picks.
+    """Verify a post-cutoff slate from immutable lock lifecycle evidence.
 
-    The exception is intentionally narrow and applies only after every game's
-    immutable T-minus-45 cutoff. The lock-status endpoint must expose exactly
-    one explicit no-backfill lifecycle row per official game, with unique game
-    identities and no winner. The predictions endpoint may either expose the
-    same complete lifecycle rows or an explicitly empty persisted-prediction
-    result with zero winner counts. Partial prediction coverage is rejected.
+    Before the final T-minus-45 cutoff this helper always returns False. After
+    every cutoff, the lock-status rows become the verification authority: each
+    official game must have one unique row that is either an immutable locked
+    prediction or an explicit terminal no-winner status. Prediction-endpoint
+    rows are never promoted here. Stale, unlocked winners may be ignored only
+    when the lock-status authority proves the complete slate and aggregate
+    fields make no contradictory immutable-winner claim.
 
-    For the explicitly empty historical case, this helper creates a transient
-    verification-only lifecycle projection inside ``predictions``. The rows are
-    exact deep copies of the already-validated public lock-status rows. Nothing
-    is written to DynamoDB, no winner is added, and the projection is marked so
-    logs cannot confuse it with persisted prediction data. The projection also
-    derives its lifecycle counters from those rows so the aggregate contract
-    cannot disagree with the one-to-one projected evidence.
-
-    Before the final cutoff, the normal pre-lock probability-contract checks
-    remain authoritative and this function always returns False.
+    The accepted evidence is projected only into the in-process smoke payload;
+    no DynamoDB row, winner, probability, or production pointer is written.
     """
 
     if game_count <= 0 or not isinstance(predictions, dict):
@@ -98,17 +148,10 @@ def historical_lifecycle_acceptance(
     status = [row for row in status_rows if isinstance(row, dict)]
     if len(status) != game_count or not all_game_cutoffs_passed(status, now=now):
         return False
-    if any(row.get("predictedWinner") not in (None, "") for row in status):
+    status_ids = [_row_identity(row) for row in status]
+    if any(not identity for identity in status_ids) or len(set(status_ids)) != game_count:
         return False
-
-    status_values = {_row_status(row) for row in status}
-    if not status_values or not status_values.issubset(ALLOWED_POST_CUTOFF_STATUSES):
-        return False
-    status_ids = {
-        str(row.get("gameId") or row.get("gameIdentity") or "")
-        for row in status
-    }
-    if "" in status_ids or len(status_ids) != game_count:
+    if not all(_status_row_is_authoritative(row) for row in status):
         return False
 
     raw_rows = predictions.get("predictions")
@@ -117,67 +160,33 @@ def historical_lifecycle_acceptance(
     rows = [row for row in raw_rows if isinstance(row, dict)]
     if len(rows) != len(raw_rows):
         return False
-    if any(row.get("predictedWinner") not in (None, "") for row in rows):
-        return False
     if predictions.get("sport") not in (None, "", "mlb"):
         return False
 
-    # Historical slates affected by an earlier outage may correctly have no
-    # persisted prediction rows. Accept only an explicitly empty result with no
-    # winner-count claims; then expose exact status-row copies to the remainder
-    # of this one GitHub Actions process for identity/lifecycle verification.
+    authoritative_locked = {
+        _row_identity(row): _winner(row)
+        for row in status
+        if row.get("lockedPrediction") is True and bool(_winner(row))
+    }
     if not rows:
-        accepted = bool(
+        if not (
             _zero_count(predictions.get("lockedPredictionCount"))
             and _zero_count(predictions.get("officialPredictionCount"))
             and predictions.get("canonicalPredictionComplete") is not True
-        )
-        if not accepted:
+        ):
             return False
+    elif predictions.get("canonicalPredictionComplete") is True and len(authoritative_locked) != game_count:
+        return False
 
-        projected_rows = copy.deepcopy(status)
-        terminal_status_count = len(projected_rows)
-        predictions.update({
-            "sport": "mlb",
-            "gameCount": game_count,
-            "predictions": projected_rows,
-            "displayStatusCoverageComplete": True,
-            "lifecycleCoverageComplete": True,
-            "lockedPredictionCount": 0,
-            "officialPredictionCount": 0,
-            # lockedStatusCount is the complete terminal lifecycle coverage.
-            # With no immutable winners, every projected row belongs to the
-            # no-prediction-data side of the reconciliation equation.
-            "lockedStatusCount": terminal_status_count,
-            "noPredictionDataCount": terminal_status_count,
-            "lockStatusComplete": terminal_status_count == game_count,
-            "canonicalPredictionComplete": False,
-            "operationalDefect": bool(predictions.get("operationalDefect", True)),
-            "statusOnlyHistoricalProjection": True,
-            "statusOnlyHistoricalProjectionVersion": VERSION,
-            "statusOnlyHistoricalProjectionPersisted": False,
-        })
-        return True
+    # If the prediction endpoint claims an immutable winner, it must exactly
+    # match the lock-status authority. Unlocked winners are non-authoritative
+    # after cutoff and may not block a read-only deployment verification.
+    for row in rows:
+        identity = _row_identity(row)
+        winner = _winner(row)
+        if row.get("lockedPrediction") is True:
+            if not identity or authoritative_locked.get(identity) != winner or not winner:
+                return False
 
-    # A non-empty historical prediction result must remain complete and exactly
-    # identity-matched. Partial rows are never accepted as historical evidence.
-    if len(rows) != game_count:
-        return False
-    if predictions.get("displayStatusCoverageComplete") is not True:
-        return False
-    if predictions.get("lifecycleCoverageComplete") is not True:
-        return False
-    prediction_values = {_row_status(row) for row in rows}
-    if not prediction_values or not prediction_values.issubset(
-        ALLOWED_POST_CUTOFF_STATUSES
-    ):
-        return False
-    prediction_ids = {
-        str(row.get("gameId") or row.get("gameIdentity") or "")
-        for row in rows
-    }
-    return (
-        "" not in prediction_ids
-        and len(prediction_ids) == game_count
-        and status_ids == prediction_ids
-    )
+    _project_authoritative_status(predictions, status, game_count)
+    return True
