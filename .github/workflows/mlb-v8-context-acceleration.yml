@@ -1,0 +1,246 @@
+name: MLB V8 Official Context Acceleration
+
+"on":
+  workflow_dispatch:
+    inputs:
+      context_limit:
+        description: Maximum new official-context games to process
+        required: false
+        default: '100'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v8-context-acceleration.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-v8-autonomous-control-plane
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: hello_world:scripts
+  AWS_EC2_METADATA_DISABLED: 'true'
+  HISTORICAL_STACK: parlay-platform-mlb-historical-optimizer
+  FUNDAMENTALS_STACK: parlay-platform-mlb-v8-fundamentals-shadow
+  SNAPSHOTS_TABLE: parlay_platform_snapshots
+  CONTEXT_REPORT: runtime_reports/mlb_v8_historical_context_acceleration_latest.json
+  DIAGNOSTIC_REPORT: runtime_reports/mlb_v8_historical_context_acceleration_diagnostics.json
+
+jobs:
+  accelerate-official-context:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Validate official-context contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'numpy>=1.26,<3' 'pytest>=8,<9'
+          python -m py_compile \
+            hello_world/mlb_v8_historical_point_in_time_context_v1.py \
+            hello_world/mlb_v8_historical_context_overlay_v1.py \
+            hello_world/mlb_v8_historical_bbs_overlay_v1.py \
+            scripts/run_mlb_v8_historical_context_backfill_entrypoint.py \
+            scripts/run_mlb_v8_historical_context_backfill_autonomous.py
+          python -m pytest -q \
+            tests/unit/test_run_mlb_v8_historical_context_backfill_autonomous.py \
+            tests/unit/test_run_mlb_v8_historical_context_backfill_entrypoint.py \
+            tests/unit/test_mlb_v8_historical_context_overlay_v1.py \
+            tests/unit/test_mlb_v8_historical_bbs_overlay_v1.py
+
+      - name: Advance 100 official point-in-time games
+        id: context
+        continue-on-error: true
+        env:
+          CONTEXT_LIMIT: ${{ inputs.context_limit || '100' }}
+        run: |
+          set -o pipefail
+          mkdir -p runtime_reports
+          python scripts/run_mlb_v8_historical_context_backfill_autonomous.py \
+            --region "${{ secrets.AWS_REGION }}" \
+            --table-name "$SNAPSHOTS_TABLE" \
+            --historical-stack "$HISTORICAL_STACK" \
+            --fundamentals-stack "$FUNDAMENTALS_STACK" \
+            --limit "$CONTEXT_LIMIT" \
+            --output "$CONTEXT_REPORT" \
+            2>&1 | tee /tmp/mlb-v8-context-acceleration.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Materialize exact manifest diagnostics
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s "$CONTEXT_REPORT"
+          python -m json.tool "$CONTEXT_REPORT" >/dev/null
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from collections import Counter
+          from pathlib import Path
+
+          import boto3
+
+          report_path = Path(os.environ['CONTEXT_REPORT'])
+          diagnostic_path = Path(os.environ['DIAGNOSTIC_REPORT'])
+          report = json.loads(report_path.read_text())
+          pointer = report.get('manifest') or {}
+          bucket = str(pointer.get('bucket') or '')
+          key = str(pointer.get('key') or '')
+          expected_sha = str(pointer.get('sha256') or '')
+          if not bucket or not key or not expected_sha:
+              raise SystemExit('Official-context manifest pointer is incomplete')
+          body = boto3.client('s3').get_object(Bucket=bucket, Key=key)['Body'].read()
+          actual_sha = hashlib.sha256(body).hexdigest()
+          if actual_sha != expected_sha:
+              raise SystemExit('Official-context manifest checksum mismatch')
+          manifest = json.loads(body.decode('utf-8'))
+          records = [row for row in manifest.get('records') or [] if isinstance(row, dict)]
+          new_count = int(report.get('newRecordCount') or 0)
+          new_rows = records[-new_count:] if new_count else []
+          errors = Counter(
+              str(error)
+              for row in new_rows
+              for error in row.get('eligibilityErrors') or []
+          )
+          diagnostic_rows = []
+          for row in new_rows:
+              snapshot = row.get('snapshot') if isinstance(row.get('snapshot'), dict) else {}
+              diagnostic_rows.append({
+                  'slateDateEt': row.get('slateDateEt'),
+                  'officialGamePk': row.get('officialGamePk'),
+                  'homeTeam': row.get('homeTeam'),
+                  'awayTeam': row.get('awayTeam'),
+                  'predictionLockAtUtc': row.get('predictionLockAtUtc'),
+                  'providerMatchId': row.get('providerMatchId'),
+                  'crosswalkMethod': row.get('crosswalkMethod'),
+                  'trainingEligible': row.get('trainingEligible') is True,
+                  'eligibilityErrors': list(row.get('eligibilityErrors') or []),
+                  'snapshotAuthority': snapshot.get('authority'),
+                  'snapshotRole': snapshot.get('snapshotRole'),
+                  'historicalProjectionEligibility': snapshot.get(
+                      'historicalProjectionEligibility'
+                  ),
+                  'targetGameOutcomeUsed': snapshot.get('targetGameOutcomeUsed'),
+                  'sameDayResultsExcluded': snapshot.get('sameDayResultsExcluded'),
+                  'productionAuthorityChanged': snapshot.get(
+                      'productionAuthorityChanged'
+                  ),
+              })
+          dates = sorted(
+              str(row.get('slateDateEt'))
+              for row in new_rows
+              if row.get('slateDateEt')
+          )
+          diagnostic = {
+              'proofType': 'MLB_V8_HISTORICAL_CONTEXT_ACCELERATION_DIAGNOSTICS',
+              'sourceSha': os.environ.get('GITHUB_SHA'),
+              'runId': os.environ.get('GITHUB_RUN_ID'),
+              'manifestChecksumVerified': True,
+              'manifestDigestVerified': (
+                  manifest.get('manifestDigest') == report.get('manifestDigest')
+              ),
+              'manifestRecordCount': len(records),
+              'newRecordCount': len(new_rows),
+              'newEligibleGameCount': sum(
+                  row.get('trainingEligible') is True for row in new_rows
+              ),
+              'newIneligibleGameCount': sum(
+                  row.get('trainingEligible') is not True for row in new_rows
+              ),
+              'eligibilityErrorCounts': dict(sorted(errors.items())),
+              'selectedSlateDateRange': {
+                  'first': dates[0] if dates else None,
+                  'last': dates[-1] if dates else None,
+              },
+              'rows': diagnostic_rows,
+              'bbsApiUsed': False,
+              'bbsCredentialRead': False,
+              'targetGameOutcomeUsed': False,
+              'sameDayResultsExcluded': True,
+              'selectionUsedOutcomes': False,
+              'productionAuthorityChanged': False,
+              'automaticWagerAllowed': False,
+          }
+          diagnostic_path.parent.mkdir(parents=True, exist_ok=True)
+          diagnostic_path.write_text(json.dumps(diagnostic, indent=2, sort_keys=True) + '\n')
+          print(json.dumps({
+              key: diagnostic[key]
+              for key in (
+                  'manifestRecordCount',
+                  'newRecordCount',
+                  'newEligibleGameCount',
+                  'newIneligibleGameCount',
+                  'eligibilityErrorCounts',
+                  'selectedSlateDateRange',
+              )
+          }, indent=2, sort_keys=True))
+          PY
+
+      - name: Enforce acceleration repair acceptance
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = json.loads(Path(os.environ['CONTEXT_REPORT']).read_text())
+          diagnostic = json.loads(Path(os.environ['DIAGNOSTIC_REPORT']).read_text())
+          assert report.get('ok') is True, report
+          assert report.get('authority') == 'V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY', report
+          assert report.get('provider') == 'official_mlb_plus_internal_canonical_context', report
+          assert report.get('bbsApiUsed') is False, report
+          assert report.get('bbsCredentialRead') is False, report
+          assert report.get('targetGameOutcomeUsed') is False, report
+          assert report.get('sameDayResultsExcluded') is True, report
+          assert report.get('selectionUsedOutcomes') is False, report
+          assert report.get('productionAuthorityChanged') is False, report
+          assert report.get('automaticWagerAllowed') is False, report
+          assert report.get('progressMade') is True, report
+          assert diagnostic.get('manifestChecksumVerified') is True, diagnostic
+          assert diagnostic.get('manifestDigestVerified') is True, diagnostic
+          assert int(diagnostic.get('newRecordCount') or 0) == int(report.get('newRecordCount') or 0), diagnostic
+          assert int(diagnostic.get('newEligibleGameCount') or 0) == int(report.get('newEligibleGameCount') or 0), diagnostic
+          assert int(report.get('newEligibleGameCount') or 0) > 0, diagnostic
+          for row in diagnostic.get('rows') or []:
+              if row.get('trainingEligible') is not True:
+                  continue
+              assert row.get('snapshotAuthority') == 'V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY', row
+              assert row.get('targetGameOutcomeUsed') is False, row
+              assert row.get('sameDayResultsExcluded') is True, row
+              assert row.get('productionAuthorityChanged') is False, row
+          PY
+
+      - name: Upload exact acceleration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v8-context-acceleration-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_v8_historical_context_acceleration_latest.json
+            runtime_reports/mlb_v8_historical_context_acceleration_diagnostics.json
+            /tmp/mlb-v8-context-acceleration.log
+          retention-days: 90
+          if-no-files-found: error
