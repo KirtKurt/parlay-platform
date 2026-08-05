@@ -20,7 +20,7 @@ def _training():
                 "means": [0.0],
                 "scales": [1.0],
             },
-            "weights": [2.0],
+            "weights": [2.5],
             "intercept": 0.0,
             "trainingSteps": 700,
             "calibrator": {"identity": True, "slope": 1.0, "intercept": 0.0},
