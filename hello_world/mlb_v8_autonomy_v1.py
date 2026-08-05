@@ -6,6 +6,10 @@ not be reported as if training never ran.  This module derives an explicit,
 fail-closed learning execution record from the completed nested-selection result
 and supplies the controller decision used by the autonomous workflow.
 
+Learning evidence is monotonic: once a completed training stage proves nonzero
+candidate optimization, later prospective and promotion stages may preserve that
+proof but can never replace it with a weaker or contradictory inference.
+
 It never weakens model-quality gates, changes production authority, or enables
 wagering.
 """
@@ -14,9 +18,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from typing import Any, Dict, Mapping, MutableMapping
+from typing import Any, Dict, Mapping
 
-VERSION = "MLB-V8-AUTONOMY-v1-guarded-learning-controller"
+VERSION = "MLB-V8-AUTONOMY-v2-monotonic-learning-evidence"
 BASELINE_GROUP = "market_baseline"
 INNER_FIT_STEPS = 220
 
@@ -119,16 +123,47 @@ def _decision(result: Mapping[str, Any], learning: Mapping[str, Any]) -> str:
     return "CONTINUE_AUTONOMOUS_SHADOW_VALIDATION"
 
 
-def decorate_result(value: Mapping[str, Any]) -> Dict[str, Any]:
-    """Return a copy with explicit nonzero candidate-learning evidence.
+def _preserved_learning(result: Mapping[str, Any]) -> Dict[str, Any] | None:
+    existing = result.get("learningExecution")
+    if not isinstance(existing, Mapping):
+        return None
+    if existing.get("learningExecuted") is not True:
+        return None
+    if _i(existing.get("learnedCandidateCount")) <= 0:
+        return None
+    if _i(existing.get("totalOptimizationSteps")) <= 0:
+        return None
+    if existing.get("qualityGateWeakened") is True:
+        return None
+    selected = str(
+        existing.get("selectedFeatureGroup")
+        or (result.get("selection") or {}).get("selectedFeatureGroup")
+        or (result.get("model") or {}).get("featureGroup")
+        or ""
+    )
+    learning = copy.deepcopy(dict(existing))
+    learning.update(
+        {
+            "version": VERSION,
+            "learningExecuted": True,
+            "selectedFeatureGroup": selected or None,
+            "learnedCandidateSelected": bool(
+                selected and selected != BASELINE_GROUP
+            ),
+            "marketBaselineRetainedByGuard": bool(
+                selected == BASELINE_GROUP
+            ),
+            "qualityGateWeakened": False,
+            "evidencePreservedAcrossLifecycleStage": True,
+        }
+    )
+    learning.setdefault(
+        "evidenceSource", "prior_verified_learning_execution"
+    )
+    return learning
 
-    A successful nested selector returns only after every configured candidate and
-    chronological fold has completed.  Candidate/fold counts therefore provide a
-    deterministic execution attestation even when the final guard retains the
-    zero-parameter market baseline.
-    """
 
-    result: Dict[str, Any] = copy.deepcopy(dict(value))
+def _derived_learning(result: Mapping[str, Any]) -> Dict[str, Any]:
     selection = result.get("selection") or {}
     guard = selection.get("selectionGuard") or {}
     ablation = selection.get("ablation") or {}
@@ -158,8 +193,7 @@ def decorate_result(value: Mapping[str, Any]) -> Dict[str, Any]:
         and fold_count > 0
         and cross_validation_steps > 0
     )
-    retained = bool(learning_executed and not learned_selected)
-    learning = {
+    return {
         "version": VERSION,
         "learningExecuted": learning_executed,
         "candidateCount": candidate_count,
@@ -178,18 +212,28 @@ def decorate_result(value: Mapping[str, Any]) -> Dict[str, Any]:
         ),
         "selectedFeatureGroup": selected_group or None,
         "learnedCandidateSelected": learned_selected,
-        "marketBaselineRetainedByGuard": retained,
+        "marketBaselineRetainedByGuard": bool(
+            learning_executed and not learned_selected
+        ),
         "bestLearnedCandidate": _best_learned_candidate(selection),
         "selectionUsedUntouchedAudit": bool(
             selection.get("selectionUsedUntouchedAudit")
         ),
         "qualityGateWeakened": False,
+        "evidencePreservedAcrossLifecycleStage": False,
         "evidenceSource": "completed_nested_chronological_selection",
     }
+
+
+def decorate_result(value: Mapping[str, Any]) -> Dict[str, Any]:
+    """Return a copy with explicit, monotonic learning evidence."""
+
+    result: Dict[str, Any] = copy.deepcopy(dict(value))
+    learning = _preserved_learning(result) or _derived_learning(result)
     result["learningExecution"] = learning
-    if not learning_executed:
+    if learning.get("learningExecuted") is not True:
         result["learningStatus"] = "TRAINER_EXECUTION_UNPROVEN"
-    elif learned_selected:
+    elif learning.get("learnedCandidateSelected") is True:
         result["learningStatus"] = "LEARNED_CANDIDATE_SELECTED"
     else:
         result["learningStatus"] = "LEARNING_EXECUTED_MARKET_BASELINE_RETAINED"
