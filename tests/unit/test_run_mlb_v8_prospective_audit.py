@@ -62,13 +62,46 @@ class FakeTable:
         return {}
 
 
+def _selection(group):
+    selected_learned = group != "market_baseline"
+    return {
+        "selectedFeatureGroup": group,
+        "candidateCount": 2,
+        "foldCount": 3,
+        "selectionGuard": {
+            "thresholds": {"regularizationGrid": [0.1]},
+            "learnedEligibleCandidateCount": 1 if selected_learned else 0,
+        },
+        "ablation": {
+            "market_baseline": {},
+            "market_temporal_team": {
+                "l2": 0.1,
+                "guard": {
+                    "eligible": selected_learned,
+                    "errors": [] if selected_learned else ["stability_gate"],
+                    "stability": {
+                        "positiveFoldCount": 3 if selected_learned else 0,
+                        "overallAccuracyUplift": 0.02 if selected_learned else -0.01,
+                        "meanDailyAccuracyUplift": 0.02 if selected_learned else -0.01,
+                    },
+                },
+                "oofMetrics": {
+                    "overallAccuracy": 0.82 if selected_learned else 0.55,
+                    "meanDailyAccuracy": 0.82 if selected_learned else 0.55,
+                    "minimumDailyAccuracy": 0.80 if selected_learned else 0.40,
+                },
+            },
+        },
+    }
+
+
 def _training(*, eligible=True):
     group = "market_temporal_team" if eligible else "market_baseline"
     value = {
         "ok": True,
         "createdAtUtc": "2026-08-05T05:00:00+00:00",
         "architecture": {"probabilityBounds": [0.05, 0.95]},
-        "selection": {"selectedFeatureGroup": group},
+        "selection": _selection(group),
         "model": {
             "featureCompilerVersion": "compiler-v8",
             "featureGroup": group,
@@ -87,8 +120,8 @@ def _training(*, eligible=True):
             "learningExecuted": True,
             "learnedCandidateSelected": eligible,
             "marketBaselineRetainedByGuard": not eligible,
-            "learnedCandidateCount": 10,
-            "totalOptimizationSteps": 1000,
+            "learnedCandidateCount": 1,
+            "totalOptimizationSteps": 1360 if eligible else 660,
             "selectedFeatureGroup": group,
         },
         "promotionGate": {"passed": eligible, "errors": []},
@@ -180,6 +213,8 @@ def test_candidate_freezes_then_passes_on_later_settled_slates(monkeypatch):
     assert table.item["data"]["status"] == "PASSED"
     assert effective["freshProspectiveAuditRequired"] is False
     assert effective["productionPromotionEligible"] is True
+    assert effective["learningExecution"]["learningExecuted"] is True
+    assert effective["learningExecution"]["learnedCandidateSelected"] is True
     assert effective["autonomyDecision"] == "AUTO_PROMOTE_GUARDED_CHAMPION"
     assert effective["automaticWagerAllowed"] is False
 
@@ -223,4 +258,5 @@ def test_passed_pointer_rehydrates_frozen_training_without_refit(monkeypatch):
     assert lifecycle["status"] == "PASSED"
     assert lifecycle["action"] == "AUTO_PROMOTE_GUARDED_CHAMPION"
     assert effective["model"]["featureGroup"] == "market_temporal_team"
+    assert effective["learningExecution"]["learnedCandidateSelected"] is True
     assert effective["prospectiveAudit"]["modelRefitDuringProspectiveAudit"] is False
