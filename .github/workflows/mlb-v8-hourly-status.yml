@@ -19,7 +19,7 @@ name: MLB V8 Hourly Numerical Status
       - '.github/workflows/mlb-v8-hourly-status.yml'
 
 permissions:
-  contents: read
+  contents: write
   actions: read
   issues: write
 
@@ -29,10 +29,12 @@ concurrency:
 
 env:
   PYTHONPATH: hello_world:scripts
-  STATUS_ISSUE: '457'
+  STATUS_ISSUE: '458'
   HISTORICAL_STACK: parlay-platform-mlb-historical-optimizer
   REPORT_JSON: /tmp/mlb-v8-hourly-status.json
   REPORT_MARKDOWN: /tmp/mlb-v8-hourly-status.md
+  PUBLISHED_JSON: runtime_reports/mlb_v8_hourly_status_latest.json
+  PUBLISHED_MARKDOWN: runtime_reports/mlb_v8_hourly_status_latest.md
 
 jobs:
   validate:
@@ -179,7 +181,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/issues/$STATUS_ISSUE" --jq '.body // ""' > /tmp/mlb-v8-hourly/previous.md
+          if test -s "$PUBLISHED_MARKDOWN"; then
+            cp "$PUBLISHED_MARKDOWN" /tmp/mlb-v8-hourly/previous.md
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$STATUS_ISSUE" --jq '.body // ""' > /tmp/mlb-v8-hourly/previous.md
+          fi
 
       - name: Build source-honest hourly report
         run: |
@@ -202,11 +208,43 @@ jobs:
           python -m json.tool "$REPORT_JSON" >/dev/null
           test -s "$REPORT_MARKDOWN"
 
-      - name: Publish latest report and hourly history comment
+      - name: Publish authoritative latest report to main
+        run: |
+          set -euo pipefail
+          tmpdir=$(mktemp -d)
+          cp "$REPORT_JSON" "$tmpdir/report.json"
+          cp "$REPORT_MARKDOWN" "$tmpdir/report.md"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+            git checkout -B mlb-v8-hourly-status-publisher refs/remotes/origin/main
+            git reset --hard refs/remotes/origin/main
+            git clean -fd
+            mkdir -p runtime_reports
+            cp "$tmpdir/report.json" "$PUBLISHED_JSON"
+            cp "$tmpdir/report.md" "$PUBLISHED_MARKDOWN"
+            git add "$PUBLISHED_JSON" "$PUBLISHED_MARKDOWN"
+            if git diff --cached --quiet; then
+              printf '{"published":true,"changed":false,"attempt":%s}\n' "$attempt" > /tmp/mlb-v8-hourly/repository-publication-status.json
+              exit 0
+            fi
+            git commit -m 'Publish MLB V8 hourly numerical status [skip ci]'
+            if git push origin HEAD:main; then
+              printf '{"published":true,"changed":true,"attempt":%s}\n' "$attempt" > /tmp/mlb-v8-hourly/repository-publication-status.json
+              exit 0
+            fi
+            sleep $((attempt * 3))
+          done
+          printf '{"published":false,"changed":false,"error":"push_retries_exhausted"}\n' > /tmp/mlb-v8-hourly/repository-publication-status.json
+          exit 1
+
+      - name: Mirror latest report to status issue
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
+          set +e
           python - <<'PY'
           import json, os, re
           from pathlib import Path
@@ -215,8 +253,25 @@ jobs:
           Path('/tmp/mlb-v8-hourly/issue-update.json').write_text(json.dumps({'body':body}))
           Path('/tmp/mlb-v8-hourly/comment.json').write_text(json.dumps({'body':comment}))
           PY
-          gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/$STATUS_ISSUE" --input /tmp/mlb-v8-hourly/issue-update.json >/tmp/mlb-v8-hourly/issue-response.json
-          gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$STATUS_ISSUE/comments" --input /tmp/mlb-v8-hourly/comment.json >/tmp/mlb-v8-hourly/comment-response.json
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/$STATUS_ISSUE" --input /tmp/mlb-v8-hourly/issue-update.json >/tmp/mlb-v8-hourly/issue-response.json 2>/tmp/mlb-v8-hourly/issue-update-error.log
+          patch_status=$?
+          gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$STATUS_ISSUE/comments" --input /tmp/mlb-v8-hourly/comment.json >/tmp/mlb-v8-hourly/comment-response.json 2>/tmp/mlb-v8-hourly/comment-error.log
+          comment_status=$?
+          export PATCH_STATUS="$patch_status" COMMENT_STATUS="$comment_status"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          value={
+              'issueNumber': int(os.environ['STATUS_ISSUE']),
+              'bodyUpdated': os.environ['PATCH_STATUS'] == '0',
+              'historyCommentAdded': os.environ['COMMENT_STATUS'] == '0',
+              'authoritativeRepositoryPublicationUnaffected': True,
+          }
+          Path('/tmp/mlb-v8-hourly/issue-publication-status.json').write_text(
+              json.dumps(value, indent=2, sort_keys=True)+'\n'
+          )
+          PY
+          exit 0
 
       - name: Upload exact hourly evidence
         if: always()
@@ -229,7 +284,11 @@ jobs:
             /tmp/mlb-v8-hourly/historical-status.json
             /tmp/mlb-v8-hourly/source-status.json
             /tmp/mlb-v8-hourly/workflows.json
+            /tmp/mlb-v8-hourly/repository-publication-status.json
+            /tmp/mlb-v8-hourly/issue-publication-status.json
             /tmp/mlb-v8-hourly/issue-response.json
             /tmp/mlb-v8-hourly/comment-response.json
+            /tmp/mlb-v8-hourly/issue-update-error.log
+            /tmp/mlb-v8-hourly/comment-error.log
           retention-days: 90
           if-no-files-found: warn
