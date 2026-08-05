@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -194,3 +196,97 @@ def test_run_contract_forces_official_client_and_no_bbd_evidence(tmp_path):
     assert value["productionAuthorityChanged"] is False
     assert value["automaticWagerAllowed"] is False
     assert output.exists()
+
+
+def test_zero_eligible_official_batch_advances_cursor_without_entering_training(
+    monkeypatch, tmp_path
+):
+    manifest = {
+        "manifestDigest": "manifest-digest",
+        "processedGameCount": 5,
+        "eligibleGameCount": 0,
+        "records": [
+            {
+                "officialGamePk": str(index),
+                "trainingEligible": False,
+                "snapshot": None,
+            }
+            for index in range(5)
+        ],
+    }
+    pointer = {
+        "bucket": "bucket",
+        "key": "mlb/v8/historical-context/manifests/manifest.json",
+        "sha256": "sha",
+    }
+    activated = {}
+
+    class S3:
+        def get_object(self, **_kwargs):
+            return {"Body": io.BytesIO(json.dumps(manifest).encode("utf-8"))}
+
+    class DDB:
+        def Table(self, name):
+            activated["tableName"] = name
+            return "table"
+
+    monkeypatch.setattr(
+        entrypoint.boto3,
+        "client",
+        lambda service, **_kwargs: S3() if service == "s3" else None,
+    )
+    monkeypatch.setattr(
+        entrypoint.boto3,
+        "resource",
+        lambda service, **_kwargs: DDB() if service == "dynamodb" else None,
+    )
+
+    def base_run(*_args, **_kwargs):
+        return {
+            "ok": False,
+            "manifest": pointer,
+            "activePointerRevision": 59,
+            "newRecordCount": 5,
+            "newEligibleGameCount": 0,
+            "eligibleGameCount": 0,
+            "remainingGameCount": 4109,
+            "blockers": [
+                "no_training_eligible_point_in_time_bbs_rows",
+                "current_batch_added_zero_training_eligible_rows",
+            ],
+        }
+
+    def activate(table, received_pointer, received_manifest, revision):
+        activated.update(
+            {
+                "table": table,
+                "pointer": received_pointer,
+                "manifest": received_manifest,
+                "revision": revision,
+            }
+        )
+        return revision + 1
+
+    module = SimpleNamespace(run=base_run, _activate=activate)
+    entrypoint.install_run_contract(module)
+    output = tmp_path / "report.json"
+
+    value = module.run(
+        region="us-east-1",
+        table_name="snapshots",
+        output=output,
+    )
+
+    assert activated["tableName"] == "snapshots"
+    assert activated["revision"] == 59
+    assert activated["manifest"]["eligibleGameCount"] == 0
+    assert value["activePointerRevision"] == 60
+    assert value["cursorAdvanced"] is True
+    assert value["progressMade"] is True
+    assert value["ok"] is True
+    assert value["blockers"] == []
+    assert "cursor_advanced_across_training_ineligible_historical_rows" in value[
+        "warnings"
+    ]
+    assert all(record["trainingEligible"] is False for record in manifest["records"])
+    assert all(record["snapshot"] is None for record in manifest["records"])

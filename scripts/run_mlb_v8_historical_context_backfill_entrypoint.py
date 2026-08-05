@@ -2,9 +2,10 @@
 """Populate leakage-safe MLB historical context without BBD/BBS.
 
 This entrypoint reuses the immutable historical-manifest machinery while replacing
-its provider client with an official MLB Stats API/Open-Meteo adapter.  It never
+its provider client with an official MLB Stats API/Open-Meteo adapter. It never
 reads a BBD credential, never calls a BBD endpoint, never uses same-day results,
-and never changes production authority.
+and never changes production authority. Permanently ineligible historical rows
+still advance the official-context cursor so autonomous recovery cannot stall.
 """
 from __future__ import annotations
 
@@ -17,18 +18,23 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Mapping
 
+import boto3
 from botocore.exceptions import ClientError
 
 import mlb_v8_historical_context_overlay_v1 as target_overlay
 import mlb_v8_historical_point_in_time_context_v1 as context_source
 import run_mlb_v8_historical_bbs_backfill as backfill
 
-VERSION = "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v3-official-only-no-legacy-carry-forward"
+VERSION = "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v4-autonomous-cursor"
 REPORT_TYPE = "MLB_V8_HISTORICAL_CONTEXT_BACKFILL"
 AUTHORITY = "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY"
 RECORD_TYPE = "mlb_v8_historical_official_context_active_manifest_v2"
 ARCHIVED_WEATHER_MODEL = "ecmwf_ifs"
 MIGRATION_VERSION = "MLB-V8-CONTEXT-POINTER-MIGRATION-v1-reset-retired-bbs-records"
+EXPECTED_EMPTY_ELIGIBILITY_BLOCKERS = {
+    "no_training_eligible_point_in_time_bbs_rows",
+    "current_batch_added_zero_training_eligible_rows",
+}
 
 
 def _dict(value: Any) -> Dict[str, Any]:
@@ -310,12 +316,67 @@ def install_snapshot_contract(module: Any) -> Any:
     return module
 
 
+def _advance_ineligible_cursor(
+    module: Any,
+    report: Dict[str, Any],
+    kwargs: Mapping[str, Any],
+) -> bool:
+    """Activate a manifest that only records permanently ineligible rows.
+
+    Eligibility remains false and no snapshot enters training. The pointer is
+    advanced solely so the next autonomous cycle processes later canonical games
+    instead of repeating the same insufficient-history batch forever.
+    """
+
+    if int(report.get("newRecordCount") or 0) <= 0:
+        return False
+    if int(report.get("eligibleGameCount") or 0) != 0:
+        return False
+    pointer = _dict(report.get("manifest"))
+    bucket = str(pointer.get("bucket") or "")
+    key = str(pointer.get("key") or "")
+    region = str(kwargs.get("region") or "")
+    table_name = str(kwargs.get("table_name") or "")
+    if not bucket or not key or not region or not table_name:
+        raise RuntimeError("official_context_cursor_activation_inputs_missing")
+    s3 = boto3.client("s3", region_name=region)
+    response = s3.get_object(Bucket=bucket, Key=key)
+    manifest = json.loads(response["Body"].read().decode("utf-8"))
+    table = boto3.resource("dynamodb", region_name=region).Table(table_name)
+    previous_revision = int(report.get("activePointerRevision") or 0)
+    report["activePointerRevision"] = module._activate(
+        table,
+        pointer,
+        manifest,
+        previous_revision,
+    )
+    return True
+
+
 def install_run_contract(module: Any) -> Any:
     original = module.run
 
     def run(*args: Any, **kwargs: Any) -> Dict[str, Any]:
         kwargs["client_factory"] = OfficialContextClient
         report = original(*args, **kwargs)
+        cursor_advanced = _advance_ineligible_cursor(module, report, kwargs)
+        inherited_blockers = [str(value) for value in report.get("blockers") or []]
+        warnings = []
+        blockers = []
+        for blocker in inherited_blockers:
+            if blocker in EXPECTED_EMPTY_ELIGIBILITY_BLOCKERS:
+                warnings.append(
+                    {
+                        "no_training_eligible_point_in_time_bbs_rows":
+                            "no_training_eligible_point_in_time_official_context_rows_yet",
+                        "current_batch_added_zero_training_eligible_rows":
+                            "current_batch_added_zero_training_eligible_official_context_rows",
+                    }[blocker]
+                )
+            else:
+                blockers.append(blocker)
+        if cursor_advanced:
+            warnings.append("cursor_advanced_across_training_ineligible_historical_rows")
         report.update(
             {
                 "proofType": REPORT_TYPE,
@@ -332,6 +393,15 @@ def install_run_contract(module: Any) -> Any:
                 "pointerMigrationVersion": MIGRATION_VERSION,
                 "officialContextPointerAuthoritative": True,
                 "automaticWagerAllowed": False,
+                "cursorAdvanced": bool(
+                    cursor_advanced
+                    or int(report.get("newRecordCount") or 0) > 0
+                    and int(report.get("eligibleGameCount") or 0) > 0
+                ),
+                "progressMade": int(report.get("newRecordCount") or 0) > 0,
+                "warnings": sorted(set(warnings)),
+                "blockers": sorted(set(blockers)),
+                "ok": not blockers,
             }
         )
         output = kwargs.get("output")
