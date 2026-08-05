@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import mlb_v8_historical_context_eligibility_v2 as eligibility
+import migrate_v7_v10_stall_fixes as migration
 import run_mlb_v8_historical_context_backfill_entrypoint as entrypoint
 
 
@@ -104,3 +105,13 @@ def test_current_policy_pointer_delegates_to_verified_manifest_loader():
     assert revision == 61
     assert called == [(table, s3)]
     assert module._v8_context_replay_from_start is False
+
+
+def test_stall_migration_preserves_feature_aware_replay_contract():
+    source = (
+        'report["eligibilityPolicyVersion"] = eligibility.VERSION\n'
+        'report["materializerVersion"] = eligibility.MATERIALIZER_VERSION\n'
+        'report["replayFromStartApplied"] = True\n'
+    )
+
+    assert migration.patch_v8_entrypoint(source) == source
