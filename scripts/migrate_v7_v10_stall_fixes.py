@@ -40,6 +40,18 @@ def _replace_all(text: str, old: str, new: str, label: str) -> str:
 
 
 def patch_feature_runner(text: str) -> str:
+    current_markers = (
+        "MLB-V7-V9-FEATURE-AWARE-SHADOW-RUNNER-v2-provider-neutral-complete-slate-aware",
+        "run_mlb_historical_supervised_v9_shadow_cadence_v3 as cadence_v3",
+        "cadence_v3.decide_cadence(",
+        "cadence_v3.report_anchor_fields(",
+        "providerNeutralOfficialContextRequired",
+        "retiredBbsOverlayRequired",
+        'MLB_V8_HISTORICAL_BBS_OVERLAY_ENABLED", "false',
+        'MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED", "false',
+    )
+    if all(marker in text for marker in current_markers):
+        return text
     text = text.replace(
         "loads the immutable BBS/context overlays first",
         "loads provider-neutral official context first and treats retired BBS context as disabled",
@@ -184,6 +196,14 @@ def patch_feature_runner(text: str) -> str:
 
 
 def patch_feature_bridge(text: str) -> str:
+    current_markers = (
+        "MLB-HISTORICAL-V7-FEATURE-BRIDGE-v2-provider-neutral-official-primary",
+        '"primaryFeatureAuthority": context_overlay.AUTHORITY',
+        '"providerNeutralOfficialContextPrimary": True',
+        '"retiredBbsOverlayRequired": False',
+    )
+    if all(marker in text for marker in current_markers):
+        return text
     text = text.replace(
         'VERSION = "MLB-HISTORICAL-V7-FEATURE-BRIDGE-v1-point-in-time-signal-wiring"',
         'VERSION = "MLB-HISTORICAL-V7-FEATURE-BRIDGE-v2-provider-neutral-official-primary"',
@@ -206,6 +226,17 @@ def patch_feature_bridge(text: str) -> str:
 
 
 def patch_v8_entrypoint(text: str) -> str:
+    # The feature-aware replay contract supersedes the old one-shot pointer
+    # migration. Detect semantic policy markers rather than exact formatting.
+    feature_aware_markers = (
+        "eligibilityPolicyVersion",
+        "eligibility.VERSION",
+        "materializerVersion",
+        "eligibility.MATERIALIZER_VERSION",
+        "replayFromStartApplied",
+    )
+    if all(marker in text for marker in feature_aware_markers):
+        return text
     text = text.replace(
         'VERSION = "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v2-official-only"',
         'VERSION = "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v3-official-only-no-legacy-carry-forward"',
@@ -270,6 +301,15 @@ def patch_v8_entrypoint(text: str) -> str:
 
 
 def patch_feature_runner_test(text: str) -> str:
+    current_markers = (
+        "package.run_mlb_historical_supervised_v9_shadow_cadence_v3 = cadence_v3",
+        "module.cadence_v3.decide_cadence = decide",
+        "module.cadence_v3.report_anchor_fields = anchors",
+        'MLB_V8_HISTORICAL_BBS_OVERLAY_ENABLED"] == "false"',
+        'MLB_V8_HISTORICAL_BBS_OVERLAY_REQUIRED"] == "false"',
+    )
+    if all(marker in text for marker in current_markers):
+        return text
     text = _replace_once(
         text,
         '    cadence = types.ModuleType("scripts.run_mlb_historical_supervised_v9_shadow_cadence")\n',
@@ -405,6 +445,8 @@ PATCHES = {
 def apply(*, check: bool = False) -> list[str]:
     changed: list[str] = []
     for path, patcher in PATCHES.items():
+        if not path.exists():
+            raise RuntimeError(f"migration target missing:{path.relative_to(ROOT)}")
         original = path.read_text(encoding="utf-8")
         updated = patcher(original)
         if updated != original:
