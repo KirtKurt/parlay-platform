@@ -16,6 +16,9 @@ from mlb_slate_coverage_patch import (
 )
 
 VERSION = "MLB-PERSISTED-PRELOCK-PUBLIC-READ-v2-raw-identity-decimal-safe"
+PUBLIC_PROBABILITY_SCHEMA_VERSION = (
+    "MLB-PUBLIC-PROBABILITY-SCHEMA-v1-explicit-unavailable-reliability"
+)
 LIVE_RECORD_TYPE = "mlb_single_game_moneyline_prediction"
 SNAPSHOT_RECORD_TYPE = "mlb_immutable_prelock_prediction_snapshot"
 SNAPSHOT_VERSION = "MLB-PREGAME-PREDICTION-SNAPSHOT-v3-user-visible-platform-prelock"
@@ -47,6 +50,27 @@ def _plain(value: Any) -> Any:
     if isinstance(value, list):
         return [_plain(item) for item in value]
     return value
+
+
+def _complete_public_probability_schema(row: Mapping[str, Any]) -> Dict[str, Any]:
+    """Expose unavailable reliability explicitly without recomputing evidence.
+
+    DynamoDB-safe persistence may omit null-valued fields.  Public consumers
+    still require a stable probability schema, so this presentation-only step
+    runs after immutable snapshot and fingerprint verification. Existing
+    reliability values are preserved exactly; unavailable values remain null.
+    """
+
+    out = copy.deepcopy(dict(row))
+    out.setdefault("pickReliability", None)
+    out.setdefault("pickReliabilityPct", None)
+    out.setdefault(
+        "pickReliabilityMeaning",
+        "estimated_probability_selected_pick_is_correct_not_team_win_probability",
+    )
+    out["publicProbabilitySchemaVersion"] = PUBLIC_PROBABILITY_SCHEMA_VERSION
+    out["publicProbabilitySchemaCompletedAfterImmutableValidation"] = True
+    return out
 
 
 def _snapshot_identity(row: Mapping[str, Any]) -> str:
@@ -395,6 +419,10 @@ def merge_into_payload(
             merged.append(_bind_lifecycle(row, None))
             replaced += 1
 
+    # Immutable rows have already passed exact fingerprint validation above.
+    # Complete only the public response schema; do not recompute a model,
+    # direction, probability, reliability estimate, or training field.
+    merged = [_complete_public_probability_schema(row) for row in merged]
     winner_rows = [
         row for row in merged if row.get("predictedWinner") not in (None, "")
     ]
@@ -410,5 +438,7 @@ def merge_into_payload(
         "returnedWinnerPredictionCount": len(winner_rows),
         "manifestGameCount": game_count,
         "coverageComplete": bool(game_count and len(winner_rows) == game_count),
+        "publicProbabilitySchemaVersion": PUBLIC_PROBABILITY_SCHEMA_VERSION,
+        "probabilitySchemaCompletedAfterImmutableValidation": True,
     }
     return out
