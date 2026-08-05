@@ -3,8 +3,8 @@ name: Publish Tennis Autonomy Status
 on:
   workflow_dispatch:
   schedule:
-    # Publish every 20 minutes so repository evidence stays within the 25-minute freshness window.
-    - cron: '7,27,47 * * * *'
+    # Publish every 10 minutes so one delayed run still stays inside the 25-minute freshness window.
+    - cron: '2,12,22,32,42,52 * * * *'
   workflow_run:
     workflows: ['Deploy Tennis Learning']
     types: [completed]
