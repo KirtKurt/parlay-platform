@@ -13,18 +13,24 @@ name: MLB V8 Autonomous Controller
       - 'hello_world/mlb_v8_autonomy_v1.py'
       - 'hello_world/mlb_v8_model_runtime.py'
       - 'hello_world/mlb_v8_prospective_audit_v1.py'
+      - 'hello_world/mlb_supervised_feature_groups_v2_4.py'
+      - 'hello_world/mlb_v8_historical_point_in_time_context_v1.py'
       - 'scripts/run_mlb_v8_autonomous_training.py'
       - 'scripts/run_mlb_v8_prospective_audit.py'
       - 'scripts/run_mlb_v8_autonomous_controller.py'
       - 'scripts/run_mlb_v8_historical_context_backfill_autonomous.py'
+      - 'scripts/run_mlb_v8_historical_context_backfill_entrypoint.py'
+      - 'scripts/run_mlb_v8_historical_bbs_backfill.py'
       - 'scripts/promote_mlb_v8_autonomous_champion.py'
       - 'tests/unit/test_mlb_v8_autonomy_v1.py'
       - 'tests/unit/test_mlb_v8_model_runtime.py'
       - 'tests/unit/test_mlb_v8_prospective_audit_v1.py'
+      - 'tests/unit/test_mlb_supervised_feature_groups_v2_4.py'
       - 'tests/unit/test_run_mlb_v8_autonomous_training.py'
       - 'tests/unit/test_run_mlb_v8_prospective_audit.py'
       - 'tests/unit/test_run_mlb_v8_autonomous_controller.py'
       - 'tests/unit/test_run_mlb_v8_historical_context_backfill_autonomous.py'
+      - 'tests/unit/test_run_mlb_v8_historical_context_backfill_entrypoint.py'
       - 'tests/unit/test_promote_mlb_v8_autonomous_champion.py'
       - '.github/workflows/mlb-v8-autonomous-controller.yml'
   schedule:
@@ -84,15 +90,19 @@ jobs:
             hello_world/mlb_v8_autonomy_v1.py \
             hello_world/mlb_v8_model_runtime.py \
             hello_world/mlb_v8_prospective_audit_v1.py \
+            hello_world/mlb_supervised_feature_groups_v2_4.py \
+            hello_world/mlb_v8_historical_point_in_time_context_v1.py \
             scripts/run_mlb_v8_autonomous_training.py \
             scripts/run_mlb_v8_prospective_audit.py \
             scripts/run_mlb_v8_autonomous_controller.py \
             scripts/run_mlb_v8_historical_context_backfill_autonomous.py \
+            scripts/run_mlb_v8_historical_context_backfill_entrypoint.py \
             scripts/promote_mlb_v8_autonomous_champion.py
           python -m pytest -q \
             tests/unit/test_mlb_v8_autonomy_v1.py \
             tests/unit/test_mlb_v8_model_runtime.py \
             tests/unit/test_mlb_v8_prospective_audit_v1.py \
+            tests/unit/test_mlb_supervised_feature_groups_v2_4.py \
             tests/unit/test_run_mlb_v8_autonomous_training.py \
             tests/unit/test_run_mlb_v8_prospective_audit.py \
             tests/unit/test_run_mlb_v8_autonomous_controller.py \
