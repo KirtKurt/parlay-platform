@@ -1,0 +1,235 @@
+name: MLB V8 Hourly Numerical Status
+
+"on":
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/build_mlb_v8_hourly_report.py'
+      - 'tests/unit/test_build_mlb_v8_hourly_report.py'
+      - 'tests/unit/test_mlb_v8_hourly_status_workflow.py'
+      - '.github/workflows/mlb-v8-hourly-status.yml'
+  pull_request:
+    paths:
+      - 'scripts/build_mlb_v8_hourly_report.py'
+      - 'tests/unit/test_build_mlb_v8_hourly_report.py'
+      - 'tests/unit/test_mlb_v8_hourly_status_workflow.py'
+      - '.github/workflows/mlb-v8-hourly-status.yml'
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: mlb-v8-hourly-numerical-status
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: hello_world:scripts
+  STATUS_ISSUE: '457'
+  HISTORICAL_STACK: parlay-platform-mlb-historical-optimizer
+  REPORT_JSON: /tmp/mlb-v8-hourly-status.json
+  REPORT_MARKDOWN: /tmp/mlb-v8-hourly-status.md
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate hourly reporter contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9'
+          python -m py_compile scripts/build_mlb_v8_hourly_report.py
+          python -m pytest -q \
+            tests/unit/test_build_mlb_v8_hourly_report.py \
+            tests/unit/test_mlb_v8_hourly_status_workflow.py
+
+  hourly-report:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout canonical main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Retrieve live historical optimizer state
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -u
+          mkdir -p /tmp/mlb-v8-hourly
+          live_ok=false
+          function_name=$(aws cloudformation describe-stacks \
+            --stack-name "$HISTORICAL_STACK" \
+            --region "$AWS_REGION_VALUE" \
+            --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" \
+            --output text 2>/tmp/mlb-v8-hourly/cloudformation-error.log || true)
+          if test -n "${function_name:-}" && test "$function_name" != None; then
+            if aws lambda invoke \
+              --function-name "$function_name" \
+              --region "$AWS_REGION_VALUE" \
+              --cli-read-timeout 120 \
+              --cli-binary-format raw-in-base64-out \
+              --payload '{"mode":"status","run":"github_hourly_v8_status"}' \
+              /tmp/mlb-v8-hourly/historical-raw.json \
+              >/tmp/mlb-v8-hourly/historical-meta.json 2>/tmp/mlb-v8-hourly/lambda-error.log; then
+              if python - <<'PY'
+          import json
+          from pathlib import Path
+          raw=json.loads(Path('/tmp/mlb-v8-hourly/historical-raw.json').read_text())
+          if isinstance(raw, dict) and 'statusCode' in raw and 'body' in raw:
+              raw=json.loads(raw.get('body') or '{}')
+          if not isinstance(raw, dict) or raw.get('ok') is not True:
+              raise SystemExit(1)
+          Path('/tmp/mlb-v8-hourly/historical-status.json').write_text(
+              json.dumps(raw, indent=2, sort_keys=True)+'\n'
+          )
+          PY
+              then
+                live_ok=true
+              fi
+            fi
+          fi
+          if test "$live_ok" != true; then
+            cp docs/runtime/mlb-historical-live-status.json /tmp/mlb-v8-hourly/historical-status.json
+          fi
+          export LIVE_OK="$live_ok"
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          value={
+              'retrievedAtUtc': datetime.now(timezone.utc).isoformat(),
+              'liveAwsStatusRetrieved': os.environ.get('LIVE_OK','false') == 'true',
+              'source': 'AWS_LAMBDA_STATUS' if os.environ.get('LIVE_OK','false') == 'true' else 'REPOSITORY_STATUS_FALLBACK',
+              'fallbackClearlyLabeled': True,
+          }
+          Path('/tmp/mlb-v8-hourly/source-status.json').write_text(
+              json.dumps(value, indent=2, sort_keys=True)+'\n'
+          )
+          PY
+
+      - name: Stage lifecycle reports without inventing missing data
+        run: |
+          set -euo pipefail
+          stage() {
+            source="$1"
+            target="$2"
+            if test -s "$source"; then
+              cp "$source" "$target"
+            else
+              printf '{}\n' > "$target"
+            fi
+          }
+          stage runtime_reports/mlb_v8_autonomous_training_latest.json /tmp/mlb-v8-hourly/training.json
+          stage runtime_reports/mlb_supervised_shadow_v2_latest.json /tmp/mlb-v8-hourly/validation.json
+          stage runtime_reports/mlb_v8_autonomous_controller_latest.json /tmp/mlb-v8-hourly/controller.json
+          stage runtime_reports/mlb_v8_prospective_audit_latest.json /tmp/mlb-v8-hourly/prospective.json
+          stage runtime_reports/mlb_v8_historical_context_backfill_latest.json /tmp/mlb-v8-hourly/context.json
+          stage runtime_reports/mlb_v8_shadow_realtime_72_latest.json /tmp/mlb-v8-hourly/shadow.json
+          stage runtime_reports/mlb_v8_autonomous_promotion_latest.json /tmp/mlb-v8-hourly/promotion.json
+
+      - name: Retrieve latest workflow and artifact evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs?branch=main&per_page=100" > /tmp/mlb-v8-hourly/runs.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" > /tmp/mlb-v8-hourly/artifacts.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          runs=json.loads(Path('/tmp/mlb-v8-hourly/runs.json').read_text())
+          artifacts=json.loads(Path('/tmp/mlb-v8-hourly/artifacts.json').read_text())
+          value={
+              'workflow_runs': runs.get('workflow_runs') or [],
+              'artifacts': artifacts.get('artifacts') or [],
+          }
+          Path('/tmp/mlb-v8-hourly/workflows.json').write_text(
+              json.dumps(value, indent=2, sort_keys=True)+'\n'
+          )
+          PY
+
+      - name: Retrieve prior hourly state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/issues/$STATUS_ISSUE" --jq '.body // ""' > /tmp/mlb-v8-hourly/previous.md
+
+      - name: Build source-honest hourly report
+        run: |
+          set -euo pipefail
+          python scripts/build_mlb_v8_hourly_report.py \
+            --historical-status /tmp/mlb-v8-hourly/historical-status.json \
+            --training-report /tmp/mlb-v8-hourly/training.json \
+            --validation-report /tmp/mlb-v8-hourly/validation.json \
+            --controller-report /tmp/mlb-v8-hourly/controller.json \
+            --prospective-audit /tmp/mlb-v8-hourly/prospective.json \
+            --context-report /tmp/mlb-v8-hourly/context.json \
+            --shadow-report /tmp/mlb-v8-hourly/shadow.json \
+            --promotion-report /tmp/mlb-v8-hourly/promotion.json \
+            --workflows /tmp/mlb-v8-hourly/workflows.json \
+            --previous-markdown /tmp/mlb-v8-hourly/previous.md \
+            --source-status /tmp/mlb-v8-hourly/source-status.json \
+            --output-json "$REPORT_JSON" \
+            --output-markdown "$REPORT_MARKDOWN" \
+            --issue-number "$STATUS_ISSUE"
+          python -m json.tool "$REPORT_JSON" >/dev/null
+          test -s "$REPORT_MARKDOWN"
+
+      - name: Publish latest report and hourly history comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          body=Path(os.environ['REPORT_MARKDOWN']).read_text()
+          comment=re.sub(r'\n?<!--\s*MLB_V8_HOURLY_STATE:.*?-->\s*$', '', body, flags=re.S).rstrip()+'\n'
+          Path('/tmp/mlb-v8-hourly/issue-update.json').write_text(json.dumps({'body':body}))
+          Path('/tmp/mlb-v8-hourly/comment.json').write_text(json.dumps({'body':comment}))
+          PY
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/$STATUS_ISSUE" --input /tmp/mlb-v8-hourly/issue-update.json >/tmp/mlb-v8-hourly/issue-response.json
+          gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$STATUS_ISSUE/comments" --input /tmp/mlb-v8-hourly/comment.json >/tmp/mlb-v8-hourly/comment-response.json
+
+      - name: Upload exact hourly evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v8-hourly-status-${{ github.run_id }}
+          path: |
+            /tmp/mlb-v8-hourly-status.json
+            /tmp/mlb-v8-hourly-status.md
+            /tmp/mlb-v8-hourly/historical-status.json
+            /tmp/mlb-v8-hourly/source-status.json
+            /tmp/mlb-v8-hourly/workflows.json
+            /tmp/mlb-v8-hourly/issue-response.json
+            /tmp/mlb-v8-hourly/comment-response.json
+          retention-days: 90
+          if-no-files-found: warn
