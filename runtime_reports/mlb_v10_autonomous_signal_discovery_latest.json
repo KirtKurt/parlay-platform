@@ -21219,7 +21219,7 @@
     "completeSlateCount": 332,
     "eligibleGameCount": 4114,
     "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable",
-    "featureRematerializedSlateCount": 331,
+    "featureRematerializedSlateCount": 332,
     "version": "MLB-V10-DISCOVERY-CADENCE-v3-material-state-fresh-evidence"
   },
   "cadenceVersion": "MLB-V10-DISCOVERY-CADENCE-v3-material-state-fresh-evidence",
@@ -21389,22 +21389,22 @@
   "canonicalDeduplicationApplied": true,
   "canonicalEligibilityFailClosed": true,
   "canonicalSortApplied": true,
-  "completedAtUtc": "2026-08-05T04:49:20.104872+00:00",
+  "completedAtUtc": "2026-08-05T08:08:14.299077+00:00",
   "conflictingDuplicatesPermanentlyQuarantined": true,
   "createdAtUtc": "2026-08-05T04:49:02.090601+00:00",
   "datasetFingerprint": "9f61ef16ad64089c8e53c49eb8bffee2521b93662b4c93c1ae365fa91e9fefc9",
-  "durationSeconds": 72.973,
+  "durationSeconds": 38.402,
   "emptyRegistryStallFixed": true,
   "exactSignificanceTest": "two-sided exact binomial",
   "fastNoChange": false,
   "fdrAlpha": 0.1,
   "fdrRetainedPatternCount": 42,
-  "fullRebuild": true,
+  "fullRebuild": false,
   "fullRebuildRecommendedCadence": "DAILY",
   "generatedPatternCount": 3389,
   "holdoutSelectionDefectFixed": true,
   "incrementalExecutionSupported": true,
-  "incrementalNoChange": false,
+  "incrementalNoChange": true,
   "individualSignalMaxControlRetainedForDiagnosticsOnly": true,
   "inputIntegrity": {
     "canonicalRecordCount": 4114,
@@ -21413,9 +21413,9 @@
     "inputRecordCount": 4114,
     "quarantinedGameCount": 0
   },
-  "lastCheckedAtUtc": "2026-08-05T04:49:20.104872+00:00",
+  "lastCheckedAtUtc": "2026-08-05T08:08:14.299077+00:00",
   "learningActive": true,
-  "learningStatus": "DISCOVERY_COMPLETED",
+  "learningStatus": "WAITING_FOR_NEW_CANONICAL_SLATE_OR_FEATURE_DATASET",
   "mayPublishPicks": false,
   "mayWriteChampion": false,
   "minimumPatternDays": 8,
@@ -21885,9 +21885,9 @@
       "uniqueSlateDateCount": 4,
       "version": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated"
     },
-    "frozenThroughDate": "2026-08-03",
-    "futureCanonicalGameCount": 15,
-    "futureSlateCount": 1,
+    "frozenThroughDate": "2026-08-04",
+    "futureCanonicalGameCount": 0,
+    "futureSlateCount": 0,
     "history": [
       {
         "correct": 0,
@@ -22385,313 +22385,31 @@
     "historyVersion": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated",
     "policyChangedDuringEvaluation": false,
     "portfolio": {
-      "accuracy": 0.6923076923076923,
-      "correct": 9,
-      "daily": [
-        {
-          "accuracy": 0.6923076923076923,
-          "correct": 9,
-          "pickCount": 13,
-          "slateDateEt": "2026-08-04"
-        }
-      ],
-      "losses": 4,
-      "meanDailyAccuracy": 0.6923076923076923,
-      "minimumDailyAccuracy": 0.6923076923076923,
-      "pickCount": 13,
+      "accuracy": null,
+      "correct": 0,
+      "daily": [],
+      "losses": 0,
+      "meanDailyAccuracy": null,
+      "minimumDailyAccuracy": null,
+      "pickCount": 0,
       "policyType": "DEVELOPMENT_FROZEN_WEIGHTED_PORTFOLIO",
-      "predictions": [
-        {
-          "awayVote": 0.0,
-          "correct": true,
-          "gameId": "822865",
-          "homeVote": 0.38935286616665815,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": true,
-          "selectedSide": "home",
-          "slateDateEt": "2026-08-04",
-          "supportingSignalCount": 10,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probLatest:extreme",
-            "higher:probStart:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG",
-            "interaction:higher:derivedFeatures.agreementMomentum:small && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.agreementMomentum:small && higher:probStart:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme",
-            "interaction:higher:fairProbability:extreme && higher:marketConsensusProbability:extreme"
-          ]
-        },
-        {
-          "awayVote": 0.0,
-          "correct": true,
-          "gameId": "823432",
-          "homeVote": 0.3833391772299779,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": true,
-          "selectedSide": "home",
-          "slateDateEt": "2026-08-04",
-          "supportingSignalCount": 10,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probLatest:extreme",
-            "higher:probStart:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG",
-            "interaction:higher:delta:large && higher:probLatest:extreme",
-            "interaction:higher:delta:large && higher:probStart:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme"
-          ]
-        },
-        {
-          "awayVote": 0.0,
-          "correct": true,
-          "gameId": "823517",
-          "homeVote": 0.5015473859613481,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": true,
-          "selectedSide": "home",
-          "slateDateEt": "2026-08-04",
-          "supportingSignalCount": 13,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probLatest:extreme",
-            "higher:probStart:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG",
-            "interaction:higher:delta:large && higher:probLatest:extreme",
-            "interaction:higher:delta:large && higher:probStart:extreme",
-            "interaction:higher:delta:large && lower:americanOdds:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probStart:extreme"
-          ]
-        },
-        {
-          "awayVote": 0.17169285444362106,
-          "correct": false,
-          "gameId": "824084",
-          "homeVote": 0.0,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": false,
-          "selectedSide": "away",
-          "slateDateEt": "2026-08-04",
-          "supportingSignalCount": 5,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probLatest:extreme",
-            "higher:probStart:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG"
-          ]
-        },
-        {
-          "awayVote": 0.0,
-          "correct": true,
-          "gameId": "824161",
-          "homeVote": 0.29115493214409893,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": true,
-          "selectedSide": "home",
-          "slateDateEt": "2026-08-04",
-          "supportingSignalCount": 8,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probLatest:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG",
-            "interaction:higher:delta:large && higher:probLatest:extreme",
-            "interaction:higher:delta:large && lower:americanOdds:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme"
-          ]
-        },
-        {
-          "awayVote": 0.5015473859613481,
-          "correct": true,
-          "gameId": "824321",
-          "homeVote": 0.0,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": false,
-          "selectedSide": "away",
-          "slateDateEt": "2026-08-04",
-          "supportingSignalCount": 13,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probLatest:extreme",
-            "higher:probStart:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG",
-            "interaction:higher:delta:large && higher:probLatest:extreme",
-            "interaction:higher:delta:large && higher:probStart:extreme",
-            "interaction:higher:delta:large && lower:americanOdds:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probStart:extreme"
-          ]
-        },
-        {
-          "awayVote": 0.0,
-          "correct": false,
-          "gameId": "824403",
-          "homeVote": 0.17169285444362106,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": true,
-          "selectedSide": "home",
-          "slateDateEt": "2026-08-04",
-          "supportingSignalCount": 5,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probStart:extreme",
-            "higher:probLatest:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG"
-          ]
-        },
-        {
-          "awayVote": 0.0,
-          "correct": true,
-          "gameId": "824484",
-          "homeVote": 0.321430478642232,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": true,
-          "selectedSide": "home",
-          "slateDateEt": "2026-08-04",
-          "supportingSignalCount": 8,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probStart:extreme",
-            "higher:probLatest:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG",
-            "interaction:higher:fairProbability:extreme && higher:marketConsensusProbability:extreme",
-            "interaction:higher:fairProbability:extreme && higher:probLatest:extreme",
-            "interaction:higher:fairProbability:extreme && higher:probStart:extreme"
-          ]
-        },
-        {
-          "awayVote": 0.17169285444362106,
-          "correct": false,
-          "gameId": "824645",
-          "homeVote": 0.0,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": false,
-          "selectedSide": "away",
-          "slateDateEt": "2026-08-04",
-          "supportingSignalCount": 5,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probStart:extreme",
-            "higher:probLatest:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG"
-          ]
-        },
-        {
-          "awayVote": 0.0,
-          "correct": true,
-          "gameId": "824731",
-          "homeVote": 0.24907067888707465,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": true,
-          "selectedSide": "home",
-          "slateDateEt": "2026-08-04",
-          "supportingSignalCount": 7,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probLatest:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG",
-            "interaction:higher:delta:large && higher:probLatest:extreme",
-            "interaction:higher:delta:large && lower:americanOdds:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme"
-          ]
-        },
-        {
-          "awayVote": 0.0,
-          "correct": true,
-          "gameId": "824805",
-          "homeVote": 0.4850530351648804,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": true,
-          "selectedSide": "home",
-          "slateDateEt": "2026-08-04",
-          "supportingSignalCount": 13,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probLatest:extreme",
-            "higher:probStart:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probStart:extreme",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && lower:americanOdds:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probStart:extreme"
-          ]
-        },
-        {
-          "awayVote": 0.0,
-          "correct": true,
-          "gameId": "824888",
-          "homeVote": 0.24543477666260222,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": true,
-          "selectedSide": "home",
-          "slateDateEt": "2026-08-04",
-          "supportingSignalCount": 7,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probLatest:extreme",
-            "higher:probStart:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme"
-          ]
-        },
-        {
-          "awayVote": 0.0,
-          "correct": false,
-          "gameId": "825054",
-          "homeVote": 0.02632973665970038,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": true,
-          "selectedSide": "home",
-          "slateDateEt": "2026-08-04",
-          "supportingSignalCount": 1,
-          "supportingSignals": [
-            "lower:americanOdds:extreme"
-          ]
-        }
-      ],
-      "selectionDayCount": 1,
+      "predictions": [],
+      "selectionDayCount": 0,
       "selectionUsesHoldoutLabels": false,
       "selectionUsesWalkForwardLabels": false,
       "wilson95": [
-        0.4236888781333764,
-        0.8731950283838191
+        0.0,
+        1.0
       ]
     },
     "probabilitySemantics": "Observed retrospective shadow outcome rate; not a validated predictive probability.",
     "productionAuthority": false,
-    "registryFingerprint": "223630bde2d3df06ceda5b50b37aa56c4cbebe92491b9512e1680b76258b0dfb",
+    "registryFingerprint": "c51002c7ccbc9b8b073d3dbaf11afc862a478a6fb0fa29b8f14ffb1d2b084e61",
     "registryVersion": "MLB-V10-AUTONOMOUS-SIGNAL-DISCOVERY-v3.0-development-frozen-portfolio",
     "researchGatePassedAtFreeze": true,
     "selectionUsesFutureLabels": false,
     "shadowOnly": true,
-    "status": "EVALUATED"
+    "status": "AWAITING_FUTURE_GAMES"
   },
   "prospectiveShadowHistoryPreserved": true,
   "prospectiveShadowHistoryVersion": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated",
@@ -23999,7 +23717,7 @@
   "retainedPatternCount": 42,
   "reusedPriorRegistryForProspectiveShadow": true,
   "runAttempt": "1",
-  "runId": "30976152106",
+  "runId": "30987698981",
   "settledGameCount": 4114,
   "shadowSignalCount": 24,
   "signals": [
@@ -25474,17 +25192,17 @@
       }
     }
   ],
-  "sourceSha": "01e76c9da7df93e80b4435f083a6823c80bcd0e9",
+  "sourceSha": "cadcc9c4255e39ee6200a425fe5fd022858dbcad",
   "stalledStage": null,
-  "startedAtUtc": "2026-08-05T04:48:07.131769+00:00",
+  "startedAtUtc": "2026-08-05T08:07:35.897458+00:00",
   "state": {
     "completeSlateCount": 332,
     "currentDate": "2026-08-05",
     "currentSlotIndex": 0,
     "eligibleGameCount": 4114,
     "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable",
-    "featureRematerializedSlateCount": 331,
-    "phase": "BACKFILLING",
+    "featureRematerializedSlateCount": 332,
+    "phase": "WAITING_FOR_SETTLED_HORIZON",
     "trainingRecordCountLoaded": 4114
   },
   "storageReader": "immutable_complete_slate_artifacts_with_derived_row_eligibility",
