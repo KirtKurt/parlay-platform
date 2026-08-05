@@ -6,13 +6,17 @@ name: MLB V8 Autonomy CI
       - 'hello_world/mlb_v8_model_runtime.py'
       - 'hello_world/mlb_v8_first_five_training.py'
       - 'hello_world/mlb_v8_autonomy_v1.py'
+      - 'hello_world/mlb_v8_prospective_audit_v1.py'
       - 'scripts/run_mlb_v8_autonomous_training.py'
+      - 'scripts/run_mlb_v8_prospective_audit.py'
       - 'scripts/run_mlb_v8_autonomous_controller.py'
       - 'scripts/run_mlb_v8_historical_context_backfill_autonomous.py'
       - 'scripts/promote_mlb_v8_autonomous_champion.py'
       - 'tests/unit/test_mlb_v8_model_runtime.py'
       - 'tests/unit/test_mlb_v8_autonomy_v1.py'
+      - 'tests/unit/test_mlb_v8_prospective_audit_v1.py'
       - 'tests/unit/test_run_mlb_v8_autonomous_training.py'
+      - 'tests/unit/test_run_mlb_v8_prospective_audit.py'
       - 'tests/unit/test_run_mlb_v8_autonomous_controller.py'
       - 'tests/unit/test_run_mlb_v8_historical_context_backfill_autonomous.py'
       - 'tests/unit/test_promote_mlb_v8_autonomous_champion.py'
@@ -37,14 +41,18 @@ jobs:
             hello_world/mlb_v8_model_runtime.py \
             hello_world/mlb_v8_first_five_training.py \
             hello_world/mlb_v8_autonomy_v1.py \
+            hello_world/mlb_v8_prospective_audit_v1.py \
             scripts/run_mlb_v8_autonomous_training.py \
+            scripts/run_mlb_v8_prospective_audit.py \
             scripts/run_mlb_v8_autonomous_controller.py \
             scripts/run_mlb_v8_historical_context_backfill_autonomous.py \
             scripts/promote_mlb_v8_autonomous_champion.py
           PYTHONPATH=.:hello_world:scripts python -m pytest -q \
             tests/unit/test_mlb_v8_model_runtime.py \
             tests/unit/test_mlb_v8_autonomy_v1.py \
+            tests/unit/test_mlb_v8_prospective_audit_v1.py \
             tests/unit/test_run_mlb_v8_autonomous_training.py \
+            tests/unit/test_run_mlb_v8_prospective_audit.py \
             tests/unit/test_run_mlb_v8_autonomous_controller.py \
             tests/unit/test_run_mlb_v8_historical_context_backfill_autonomous.py \
             tests/unit/test_promote_mlb_v8_autonomous_champion.py
