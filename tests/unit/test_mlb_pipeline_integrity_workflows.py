@@ -13,7 +13,12 @@ V10_WORKFLOW = ROOT / ".github" / "workflows" / "mlb-v10-autonomous-signal-disco
 POST_DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "mlb-post-deploy-fix-verification.yml"
 HISTORICAL_WATCHDOG = ROOT / ".github" / "workflows" / "mlb-historical-watchdog.yml"
 HISTORICAL_TEMPLATE = ROOT / "mlb_historical_optimizer" / "template.yaml"
-OBSOLETE_SAM_REPAIR = ROOT / ".github" / "workflows" / "repair-sam-obsolete-retry-once.yml"
+OBSOLETE_REPAIR_WORKFLOWS = (
+    ROOT / ".github" / "workflows" / "repair-sam-obsolete-retry-once.yml",
+    ROOT / ".github" / "workflows" / "mlb-historical-ingestion-hardening-v5.yml",
+    ROOT / ".github" / "workflows" / "mlb-historical-emergency-deploy-v7.yml",
+    ROOT / ".github" / "workflows" / "mlb-supervised-recovery-contract-repair-once.yml",
+)
 
 
 def test_monotonic_publisher_accepts_completed_timestamp():
@@ -91,5 +96,6 @@ def test_historical_watchdog_derives_boundary_from_canonical_template():
     assert "2026-07-24" not in workflow
 
 
-def test_completed_one_shot_sam_repair_workflow_is_removed():
-    assert not OBSOLETE_SAM_REPAIR.exists()
+def test_obsolete_self_mutating_and_emergency_workflows_are_removed():
+    remaining = [str(path.relative_to(ROOT)) for path in OBSOLETE_REPAIR_WORKFLOWS if path.exists()]
+    assert remaining == []
