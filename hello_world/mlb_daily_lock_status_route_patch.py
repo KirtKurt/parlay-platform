@@ -171,6 +171,44 @@ def _store_cached_summary(module: Any, slate_date: str, body: Dict[str, Any]) ->
         return False
 
 
+def _decorate_summary(body: Dict[str, Any], *, cache_hit: bool) -> Dict[str, Any]:
+    output = copy.deepcopy(body)
+    output.update(
+        {
+            "readOnly": True,
+            "statusDetail": "SUMMARY",
+            "attemptDiagnosticsIncluded": False,
+        }
+    )
+    if not cache_hit:
+        output["statusCache"] = {
+            "version": CACHE_VERSION,
+            "hit": False,
+            "ageSeconds": 0.0,
+            "updatedAtUtc": datetime.now(timezone.utc).isoformat(),
+        }
+    return output
+
+
+def _refresh_cached_summary(module: Any, slate_date: str) -> bool:
+    """Refresh the public summary outside API Gateway's request deadline."""
+
+    token = _INCLUDE_ATTEMPT_DIAGNOSTICS.set(False)
+    try:
+        body = module._status_payload(slate_date)
+        if not isinstance(body, dict):
+            return False
+        return _store_cached_summary(
+            module,
+            slate_date,
+            _decorate_summary(body, cache_hit=False),
+        )
+    except Exception:
+        return False
+    finally:
+        _INCLUDE_ATTEMPT_DIAGNOSTICS.reset(token)
+
+
 def _game_identity(patch_module: Any, game: Any) -> Optional[str]:
     if not isinstance(game, dict):
         return None
@@ -267,14 +305,7 @@ def apply(module: Any) -> Any:
             if not include_diagnostics:
                 cached = _load_cached_summary(module, slate_date)
                 if cached is not None:
-                    cached.update(
-                        {
-                            "readOnly": True,
-                            "statusDetail": "SUMMARY",
-                            "attemptDiagnosticsIncluded": False,
-                        }
-                    )
-                    return module._resp(200, cached)
+                    return module._resp(200, _decorate_summary(cached, cache_hit=True))
 
             token = _INCLUDE_ATTEMPT_DIAGNOSTICS.set(include_diagnostics)
             try:
@@ -291,12 +322,7 @@ def apply(module: Any) -> Any:
                         }
                     )
                     if not include_diagnostics:
-                        body["statusCache"] = {
-                            "version": CACHE_VERSION,
-                            "hit": False,
-                            "ageSeconds": 0.0,
-                            "updatedAtUtc": datetime.now(timezone.utc).isoformat(),
-                        }
+                        body = _decorate_summary(body, cache_hit=False)
                         _store_cached_summary(module, slate_date, body)
                 return module._resp(200, body)
             except Exception as exc:
@@ -312,7 +338,21 @@ def apply(module: Any) -> Any:
                 )
             finally:
                 _INCLUDE_ATTEMPT_DIAGNOSTICS.reset(token)
-        return original_handle(event, context)
+
+        response = original_handle(event, context)
+        scheduled = not bool(method or event.get("requestContext"))
+        if scheduled:
+            payload = module._payload(event)
+            requested_slate = (
+                payload.get("slate_date")
+                or payload.get("slateDateEt")
+                or payload.get("date")
+            )
+            _refresh_cached_summary(
+                module,
+                _resolved_slate_date(module, requested_slate),
+            )
+        return response
 
     module._payload = normalized_payload
     module.handle = handle
