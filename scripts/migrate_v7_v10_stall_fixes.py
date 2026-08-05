@@ -113,6 +113,16 @@ def patch_v8_entrypoint(text: str) -> str:
 
 
 def patch_cadence_v3(text: str) -> str:
+    current_markers = (
+        "MLB-V7-LEARNING-CADENCE-STATE-v3-complete-slate-aware",
+        "newCompleteSlatesSinceLastShadowFit",
+        "newCompleteSlatesSinceLastLightweightEvaluation",
+        "remainingCompleteSlatesUntilLightweightEvaluation",
+        "completeSlateCountRegressed",
+        "lightweightSelectiveEvaluationIncrementCompleteSlates",
+    )
+    if all(marker in text for marker in current_markers):
+        return text
     text = _replace_once(
         text,
         'VERSION = "MLB-HISTORICAL-SUPERVISED-V9-CADENCE-STATE-v1"',
@@ -141,36 +151,52 @@ def patch_cadence_v3(text: str) -> str:
 
 
 def patch_feature_aware_trainer(text: str) -> str:
-    text = _replace_once(
+    current_markers = (
+        "run_mlb_historical_supervised_v9_shadow_cadence_v3 as cadence_v3",
+        "cadence_v3.decide_cadence(",
+        "cadence_v3.report_anchor_fields(",
+        "newCompleteSlatesSinceLastShadowFit",
+        "newCompleteSlatesSinceLastLightweightEvaluation",
+    )
+    if all(marker in text for marker in current_markers):
+        return text
+    return _replace_once(
         text,
         'module.cadence_state.decide_cadence = decide\n    module.cadence_state.report_anchor_fields = anchors',
         'module.cadence_state.decide_cadence = decide\n    module.cadence_state.report_anchor_fields = anchors\n    module.cadence_v3.decide_cadence = decide\n    module.cadence_v3.report_anchor_fields = anchors',
         "feature-aware trainer cadence v3 wiring",
     )
-    return text
 
 
 def patch_tests(text: str) -> str:
-    text = _replace_once(
+    current_markers = (
+        "package.run_mlb_historical_supervised_v9_shadow_cadence_v3 = cadence_v3",
+        "module.cadence_v3.decide_cadence = decide",
+        "module.cadence_v3.report_anchor_fields = anchors",
+    )
+    if all(marker in text for marker in current_markers):
+        return text
+    return _replace_once(
         text,
         'module.cadence_state.decide_cadence = decide\n    module.cadence_state.report_anchor_fields = anchors',
         'module.cadence_state.decide_cadence = decide\n    module.cadence_state.report_anchor_fields = anchors\n    module.cadence_v3.decide_cadence = decide\n    module.cadence_v3.report_anchor_fields = anchors',
         "feature-aware test cadence v3 monkeypatch",
     )
-    return text
 
 
 def migrate(*, check: bool = False) -> list[str]:
     targets = {
         "hello_world/mlb_historical_v7_feature_bridge_v1.py": patch_feature_bridge,
         "scripts/run_mlb_v8_historical_context_backfill_entrypoint.py": patch_v8_entrypoint,
-        "hello_world/mlb_historical_supervised_v9_cadence_state_v1.py": patch_cadence_v3,
+        "scripts/run_mlb_historical_supervised_v9_shadow_cadence_v3.py": patch_cadence_v3,
         "scripts/run_mlb_historical_supervised_v9_shadow_feature_aware.py": patch_feature_aware_trainer,
         "tests/unit/test_run_mlb_historical_supervised_v9_shadow_feature_aware.py": patch_tests,
     }
     changed = []
     for relative, patcher in targets.items():
         path = ROOT / relative
+        if not path.exists():
+            raise RuntimeError(f"migration target missing:{relative}")
         before = path.read_text(encoding="utf-8")
         after = patcher(before)
         if after != before:
