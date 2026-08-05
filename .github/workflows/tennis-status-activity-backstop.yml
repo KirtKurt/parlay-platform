@@ -1,0 +1,32 @@
+name: Tennis Status Activity Backstop
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'runtime_reports/mlb_supervised_shadow_v2_latest.json'
+      - 'docs/runtime/mlb-historical-hourly-liveness-latest.json'
+      - '.github/workflows/tennis-status-activity-backstop.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: tennis-status-activity-backstop
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch fail-closed tennis status backstop
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run publish-tennis-autonomy-status-backstop.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
