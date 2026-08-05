@@ -1,8 +1,8 @@
 """Leakage-safe prospective audit for autonomous MLB V8 challengers.
 
 A challenger is frozen only after a learned residual clears the retrospective
-chronological gate.  Its model, standardizer, calibrator, and full training report
-are content-addressed with a corpus boundary.  Only complete settled slates after
+chronological gate. Its model, standardizer, calibrator, and full training report
+are content-addressed with a corpus boundary. Only complete settled slates after
 that boundary may qualify the challenger for automatic promotion.
 """
 from __future__ import annotations
@@ -49,26 +49,50 @@ def _last_corpus_day(training: Mapping[str, Any]) -> str:
 
 
 def candidate_eligibility(training: Mapping[str, Any]) -> Dict[str, Any]:
+    """Describe whether one learned challenger can enter prospective audit.
+
+    A retained market baseline is a valid autonomous *decision*, but it is not a
+    deployable residual challenger.  Therefore no residual runtime bundle is
+    required or built for that state.  This prevents a healthy baseline retention
+    from being mislabeled as a broken model while still blocking promotion until a
+    learned candidate clears every gate.
+    """
+
     errors = []
     learning = training.get("learningExecution") or {}
+    learned_selected = learning.get("learnedCandidateSelected") is True
+    baseline_retained = learning.get("marketBaselineRetainedByGuard") is True
+
     if training.get("ok") is not True:
         errors.append("training_report_unhealthy")
     if learning.get("learningExecuted") is not True:
         errors.append("learning_execution_unproven")
-    if learning.get("learnedCandidateSelected") is not True:
+    if not learned_selected:
         errors.append("learned_candidate_not_selected")
-    if learning.get("marketBaselineRetainedByGuard") is True:
+    if baseline_retained:
         errors.append("market_baseline_retained")
     if (training.get("promotionGate") or {}).get("passed") is not True:
         errors.append("retrospective_promotion_gate_not_passed")
     if training.get("automaticWagerAllowed") is not False:
         errors.append("automatic_wager_must_remain_disabled")
+
     bundle = None
-    try:
-        bundle = runtime.build_bundle(training)
-        runtime.verify_bundle(bundle)
-    except Exception as exc:
-        errors.append(f"runtime_bundle_invalid:{type(exc).__name__}:{exc}")
+    bundle_required = learned_selected
+    if bundle_required:
+        bundle_status = "REQUIRED_PENDING_VALIDATION"
+        try:
+            bundle = runtime.build_bundle(training)
+            runtime.verify_bundle(bundle)
+        except Exception as exc:
+            bundle_status = "INVALID_LEARNED_CANDIDATE_BUNDLE"
+            errors.append(f"runtime_bundle_invalid:{type(exc).__name__}:{exc}")
+        else:
+            bundle_status = "VALID_LEARNED_CANDIDATE_BUNDLE"
+    elif baseline_retained:
+        bundle_status = "NOT_APPLICABLE_MARKET_BASELINE_RETAINED"
+    else:
+        bundle_status = "NOT_APPLICABLE_NO_LEARNED_CANDIDATE"
+
     boundary = None
     try:
         boundary = _last_corpus_day(training)
@@ -78,6 +102,8 @@ def candidate_eligibility(training: Mapping[str, Any]) -> Dict[str, Any]:
         "ok": not errors,
         "errors": sorted(set(errors)),
         "modelBundle": bundle,
+        "runtimeBundleRequired": bundle_required,
+        "runtimeBundleStatus": bundle_status,
         "frozenCorpusLastDate": boundary,
     }
 
@@ -139,7 +165,7 @@ def _prospective_examples(
     candidate: Mapping[str, Any], records: Sequence[Mapping[str, Any]]
 ):
     # Compile the complete corpus first so every prospective team-history feature
-    # uses the same strictly-prior-slate ledger as training.  Filter only after
+    # uses the same strictly-prior-slate ledger as training. Filter only after
     # compilation; same-day results remain excluded by the feature compiler.
     compiled = features.prepare_examples(records)
     boundary = str(candidate["frozenCorpusLastDate"])
