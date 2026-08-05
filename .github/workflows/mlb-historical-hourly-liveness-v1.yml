@@ -5,7 +5,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/mlb-historical-hourly-liveness-v1.yml'
+      - 'scripts/mlb_historical_liveness_policy_v2.py'
       - 'tests/unit/test_mlb_historical_hourly_liveness_workflow.py'
+      - 'tests/unit/test_mlb_historical_liveness_policy_v2.py'
   schedule:
     - cron: '7 * * * *'
   workflow_dispatch:
@@ -83,7 +85,7 @@ jobs:
           done
           test "$enabled" -ge 1
 
-      - name: Refresh status and recover only if stale
+      - name: Refresh status and recover only if advancement is stale
         run: |
           set -euo pipefail
           invoke() {
@@ -96,28 +98,27 @@ jobs:
               --payload "$payload" "$output" >/tmp/invoke-meta.json
           }
           invoke '{"mode":"status","run":"mlb_historical_hourly_liveness_before"}' /tmp/before.json
-          stale=$(python - <<'PY'
+          python - <<'PY' >/tmp/liveness-classification-before.json
           import json
-          from datetime import datetime,timezone
+          from scripts.mlb_historical_liveness_policy_v2 import classify
           value=json.load(open('/tmp/before.json'))
           assert value.get('ok') is True, value
-          state=value.get('state') or {}
-          raw=state.get('updatedAtUtc') or state.get('stateUpdatedAtUtc')
-          if not raw:
-              print('true')
-          else:
-              stamp=datetime.fromisoformat(str(raw).replace('Z','+00:00'))
-              if stamp.tzinfo is None: stamp=stamp.replace(tzinfo=timezone.utc)
-              age=(datetime.now(timezone.utc)-stamp.astimezone(timezone.utc)).total_seconds()/60
-              print('true' if age > 75 else 'false')
+          print(json.dumps(classify(value.get('state') or {}), indent=2, sort_keys=True))
           PY
-          )
+          recovery_required=$(python -c "import json; print('true' if json.load(open('/tmp/liveness-classification-before.json')).get('recoveryRequired') else 'false')")
           recovered=false
-          if [ "$stale" = true ]; then
+          if [ "$recovery_required" = true ]; then
             invoke '{"mode":"orchestrate","run":"mlb_historical_hourly_liveness_recovery"}' /tmp/recovery.json
             recovered=true
           fi
           invoke '{"mode":"status","run":"mlb_historical_hourly_liveness_after"}' /tmp/after.json
+          python - <<'PY' >/tmp/liveness-classification-after.json
+          import json
+          from scripts.mlb_historical_liveness_policy_v2 import classify
+          value=json.load(open('/tmp/after.json'))
+          assert value.get('ok') is True, value
+          print(json.dumps(classify(value.get('state') or {}), indent=2, sort_keys=True))
+          PY
           echo "RECOVERED=$recovered" >> "$GITHUB_ENV"
 
       - name: Validate and publish compact proof
@@ -127,8 +128,10 @@ jobs:
           python - <<'PY'
           import json,os
           from datetime import datetime,timezone
+          from scripts.mlb_historical_liveness_policy_v2 import VERSION as POLICY_VERSION
           before=json.load(open('/tmp/before.json'))
           after=json.load(open('/tmp/after.json'))
+          classification=json.load(open('/tmp/liveness-classification-after.json'))
           b=before.get('state') or {}
           a=after.get('state') or {}
           def i(v):
@@ -149,18 +152,29 @@ jobs:
           if a.get('featureRematerializationErrors'): blockers.append('feature_rematerialization_errors')
           if a.get('phase') in {'PAUSED_QUOTA','DATA_RANGE_EXHAUSTED','OPTIMIZATION_BLOCKED'}:
               blockers.append(str(a.get('phase')).lower())
-          raw=a.get('updatedAtUtc') or a.get('stateUpdatedAtUtc')
-          stale=True
-          age=None
-          if raw:
-              stamp=datetime.fromisoformat(str(raw).replace('Z','+00:00'))
-              if stamp.tzinfo is None: stamp=stamp.replace(tzinfo=timezone.utc)
-              age=(datetime.now(timezone.utc)-stamp.astimezone(timezone.utc)).total_seconds()/60
-              stale=age>75
-          if stale: blockers.append('state_still_stale_after_recovery')
+          if classification.get('recoveryRequired') is True:
+              blockers.append('state_still_stale_after_recovery')
+
+          substantive_movement=any(bool(value) for value in movement.values())
+          if blockers:
+              liveness_status='BLOCKED'
+          elif classification.get('waitingHealthy') is True:
+              liveness_status='WAITING_HEALTHY'
+          elif substantive_movement:
+              liveness_status='ADVANCING'
+          else:
+              liveness_status='HEALTHY_IDLE'
+
           report={
               'proofType':'MLB_HISTORICAL_HOURLY_LIVENESS_V1',
+              'livenessPolicyVersion':POLICY_VERSION,
               'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'heartbeatAtUtc':classification.get('heartbeatAtUtc'),
+              'livenessStatus':liveness_status,
+              'sourceStateStale':classification.get('sourceStateStale'),
+              'waitingHealthy':classification.get('waitingHealthy'),
+              'recoveryRequired':classification.get('recoveryRequired'),
+              'sourceStateUpdatedAtUtc':classification.get('sourceStateUpdatedAtUtc'),
               'sourceSha':os.environ.get('GITHUB_SHA'),
               'runId':os.environ.get('GITHUB_RUN_ID'),
               'runAttempt':os.environ.get('GITHUB_RUN_ATTEMPT'),
@@ -169,14 +183,14 @@ jobs:
               'rules':[json.loads(x) for x in open('/tmp/rules.ndjson') if x.strip()],
               'before':{k:b.get(k) for k in ('phase','currentDate','currentSlotIndex','eligibleGameCount','completeSlateCount','networkRequestCount','revision','targetSettledGames','updatedAtUtc','stateUpdatedAtUtc','lastError')},
               'after':{k:a.get(k) for k in ('phase','currentDate','currentSlotIndex','eligibleGameCount','completeSlateCount','networkRequestCount','revision','targetSettledGames','updatedAtUtc','stateUpdatedAtUtc','lastError')},
-              'stateAgeMinutes':age,
+              'stateAgeMinutes':classification.get('sourceStateAgeMinutes'),
               'movement':movement,
-              'blockers':blockers,
+              'blockers':sorted(set(blockers)),
               'ok':not blockers,
           }
           open(os.environ['PROOF_PATH'],'w').write(json.dumps(report,indent=2,sort_keys=True)+'\n')
           print(json.dumps(report,indent=2,sort_keys=True))
-          if blockers: raise SystemExit(','.join(blockers))
+          if blockers: raise SystemExit(','.join(sorted(set(blockers))))
           PY
 
       - name: Publish proof safely
