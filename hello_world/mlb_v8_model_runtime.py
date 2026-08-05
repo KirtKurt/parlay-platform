@@ -7,6 +7,7 @@ readable for compatibility.  No bundle can change production or wagering authori
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -86,11 +87,36 @@ def _calibration(model: Mapping[str, Any], selection: Mapping[str, Any]) -> dict
     }
 
 
+def _frozen_bundle(training_report: Mapping[str, Any]) -> dict[str, Any] | None:
+    value = training_report.get("frozenModelBundle")
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise V8ModelRuntimeError("frozen V8 model bundle is invalid")
+    bundle = copy.deepcopy(dict(value))
+    verify_bundle(bundle)
+    expected = str(training_report.get("frozenModelBundleDigest") or "")
+    if not expected:
+        raise V8ModelRuntimeError("frozen V8 model bundle digest is missing")
+    if bundle.get("modelDigest") != expected:
+        raise V8ModelRuntimeError("frozen V8 model bundle identity mismatch")
+    return bundle
+
+
 def build_bundle(training_report: Mapping[str, Any]) -> dict[str, Any]:
-    """Extract a content-addressed deployable model from one training report."""
+    """Extract a content-addressed deployable model from one training report.
+
+    Prospectively approved reports carry the exact bundle frozen before the audit.
+    That immutable bundle is returned verbatim after validation; it is never rebuilt
+    from the augmented promotion report.
+    """
 
     if not isinstance(training_report, Mapping):
         raise V8ModelRuntimeError("training report is not an object")
+    frozen = _frozen_bundle(training_report)
+    if frozen is not None:
+        return frozen
+
     selection = training_report.get("selection") or {}
     if not isinstance(selection, Mapping):
         selection = {}
