@@ -12,6 +12,7 @@ V9_WORKFLOW = ROOT / ".github" / "workflows" / "mlb-historical-supervised-v9-sha
 V10_WORKFLOW = ROOT / ".github" / "workflows" / "mlb-v10-autonomous-signal-discovery.yml"
 POST_DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "mlb-post-deploy-fix-verification.yml"
 HISTORICAL_WATCHDOG = ROOT / ".github" / "workflows" / "mlb-historical-watchdog.yml"
+HISTORICAL_WATCHDOG_RUNNER = ROOT / "scripts" / "run_mlb_historical_watchdog.py"
 HISTORICAL_TEMPLATE = ROOT / "mlb_historical_optimizer" / "template.yaml"
 OBSOLETE_REPAIR_WORKFLOWS = (
     ROOT / ".github" / "workflows" / "repair-sam-obsolete-retry-once.yml",
@@ -78,24 +79,33 @@ def test_post_deploy_still_fails_closed_on_identity_and_runtime_defects():
     assert "MLB deployment health verification failed" in text
 
 
-def test_historical_watchdog_derives_boundary_from_canonical_template():
+def test_historical_watchdog_uses_settled_horizon_aware_verifier():
     workflow = HISTORICAL_WATCHDOG.read_text(encoding="utf-8")
+    runner = HISTORICAL_WATCHDOG_RUNNER.read_text(encoding="utf-8")
     template = HISTORICAL_TEMPLATE.read_text(encoding="utf-8")
     match = re.search(
         r"(?ms)^  HistoricalEndDate:\s*$.*?^    Default: ['\"]?([^'\"\s]+)['\"]?\s*$",
         template,
     )
     assert match is not None
-    canonical_end_date = match.group(1)
-    assert canonical_end_date == "2026-12-31"
-    assert "Resolve canonical historical boundary" in workflow
-    assert "mlb_historical_optimizer/template.yaml" in workflow
-    assert "echo \"EXPECTED_END_DATE=$EXPECTED_END_DATE\" >> \"$GITHUB_ENV\"" in workflow
-    assert "env.get('MLB_HISTORICAL_END_DATE') == os.environ['EXPECTED_END_DATE']" in workflow
-    assert "expected_end_date = os.environ['EXPECTED_END_DATE']" in workflow
+    assert match.group(1) == "2026-12-31"
+    assert "python scripts/run_mlb_historical_watchdog.py" in workflow
+    assert "--template mlb_historical_optimizer/template.yaml" in workflow
+    assert "tests/unit/test_run_mlb_historical_watchdog.py" in workflow
+    assert "WAITING_FOR_SETTLED_HORIZON" in workflow
+    assert "configuredCeilingIsNotSettledAuthority" in workflow
+    assert "WAITING_FOR_SETTLED_HORIZON" in runner
+    assert "validate_repeated_wait_is_idempotent" in runner
+    assert "authorized_range_exceeds_configured_ceiling" in runner
+    assert "active_optimizer_did_not_make_substantive_progress" in runner
     assert "2026-07-24" not in workflow
+    assert "2026-07-24" not in runner
 
 
 def test_obsolete_self_mutating_and_emergency_workflows_are_removed():
-    remaining = [str(path.relative_to(ROOT)) for path in OBSOLETE_REPAIR_WORKFLOWS if path.exists()]
+    remaining = [
+        str(path.relative_to(ROOT))
+        for path in OBSOLETE_REPAIR_WORKFLOWS
+        if path.exists()
+    ]
     assert remaining == []
