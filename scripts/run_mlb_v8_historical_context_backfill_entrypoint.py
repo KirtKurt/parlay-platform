@@ -14,9 +14,10 @@ import hashlib
 import json
 import os
 import time
+from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Mapping
+from typing import Any, Dict, Iterator, Mapping
 
 import boto3
 from botocore.exceptions import ClientError
@@ -25,9 +26,10 @@ import mlb_v8_historical_context_overlay_v1 as target_overlay
 import mlb_v8_historical_point_in_time_context_v1 as context_source
 import run_mlb_v8_historical_bbs_backfill as backfill
 
-VERSION = "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v4-autonomous-cursor"
+VERSION = "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v5-scoped-official-authority"
 REPORT_TYPE = "MLB_V8_HISTORICAL_CONTEXT_BACKFILL"
 AUTHORITY = "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY"
+RETIRED_BBS_AUTHORITY = "V8_HISTORICAL_BBS_SHADOW_ONLY"
 RECORD_TYPE = "mlb_v8_historical_official_context_active_manifest_v2"
 ARCHIVED_WEATHER_MODEL = "ecmwf_ifs"
 MIGRATION_VERSION = "MLB-V8-CONTEXT-POINTER-MIGRATION-v1-reset-retired-bbs-records"
@@ -39,6 +41,48 @@ EXPECTED_EMPTY_ELIGIBILITY_BLOCKERS = {
 
 def _dict(value: Any) -> Dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _restore_authority_defaults() -> None:
+    """Keep official and retired compatibility authorities process-independent."""
+
+    target_overlay.AUTHORITY = AUTHORITY
+    base = getattr(target_overlay, "base", None)
+    if base is not None:
+        base.AUTHORITY = RETIRED_BBS_AUTHORITY
+    module_overlay = getattr(backfill, "overlay", None)
+    if module_overlay is not None:
+        module_overlay.AUTHORITY = RETIRED_BBS_AUTHORITY
+
+
+@contextmanager
+def official_authority_scope(module: Any) -> Iterator[None]:
+    """Temporarily bind the shared manifest builder to official authority.
+
+    The legacy manifest implementation reads its overlay authority dynamically.
+    The official adapter therefore scopes that one mutable compatibility value to
+    the exact build call and restores every prior value in ``finally``. Importing
+    or installing this module can never relabel the retired BBS overlay.
+    """
+
+    overlay = getattr(module, "overlay", None)
+    base = getattr(target_overlay, "base", None)
+    previous_overlay = getattr(overlay, "AUTHORITY", None)
+    previous_base = getattr(base, "AUTHORITY", None)
+    previous_target = target_overlay.AUTHORITY
+    if overlay is not None:
+        overlay.AUTHORITY = AUTHORITY
+    if base is not None:
+        base.AUTHORITY = AUTHORITY
+    target_overlay.AUTHORITY = AUTHORITY
+    try:
+        yield
+    finally:
+        if overlay is not None:
+            overlay.AUTHORITY = previous_overlay
+        if base is not None:
+            base.AUTHORITY = previous_base
+        target_overlay.AUTHORITY = previous_target
 
 
 def _team_name(game: Mapping[str, Any], side: str) -> str:
@@ -56,7 +100,9 @@ class OfficialContextClient:
         self.games: Dict[tuple[str, str], Dict[str, Any]] = {}
         self.bundles: Dict[tuple[str, str, str], Dict[str, Any]] = {}
 
-    def list_mlb_matches(self, game_date: str, *, limit: int = 200, **_: Any) -> Dict[str, Any]:
+    def list_mlb_matches(
+        self, game_date: str, *, limit: int = 200, **_: Any
+    ) -> Dict[str, Any]:
         day = date.fromisoformat(str(game_date)[:10])
         payload: Mapping[str, Any] = {}
         last_error: Exception | None = None
@@ -105,7 +151,9 @@ class OfficialContextClient:
             "error": None,
         }
 
-    def _canonical(self, match_id: str, game_date: str, as_of: str) -> Dict[str, Any]:
+    def _canonical(
+        self, match_id: str, game_date: str, as_of: str
+    ) -> Dict[str, Any]:
         key = (str(game_date)[:10], str(match_id))
         row = self.games.get(key)
         if row is None:
@@ -157,11 +205,8 @@ class OfficialContextClient:
 
 
 def install_pointer_isolation(module: Any) -> Any:
-    module.overlay.POINTER_PK = target_overlay.POINTER_PK
-    module.overlay.POINTER_SK = target_overlay.POINTER_SK
-    module.overlay.AUTHORITY = AUTHORITY
-    target_overlay.AUTHORITY = AUTHORITY
-    target_overlay.base.AUTHORITY = AUTHORITY
+    if getattr(module, "_INQSI_MLB_V8_OFFICIAL_POINTER_ISOLATION_INSTALLED", False):
+        return module
     module.VERSION = VERSION
     module.REPORT_TYPE = REPORT_TYPE
     original_load_previous_manifest = getattr(
@@ -193,7 +238,9 @@ def install_pointer_isolation(module: Any) -> Any:
 
     module._load_previous_manifest = load_previous_manifest
 
-    def put_immutable(s3: Any, bucket: str, key: str, body: bytes) -> Dict[str, Any]:
+    def put_immutable(
+        s3: Any, bucket: str, key: str, body: bytes
+    ) -> Dict[str, Any]:
         isolated = f"mlb/v8/historical-context/manifests/{Path(key).name}"
         digest = hashlib.sha256(body).hexdigest()
         try:
@@ -223,7 +270,10 @@ def install_pointer_isolation(module: Any) -> Any:
                 (exc.response.get("ResponseMetadata") or {}).get("HTTPStatusCode")
                 or 0
             )
-            if code not in {"PreconditionFailed", "ConditionalRequestConflict"} and status not in {409, 412}:
+            if code not in {
+                "PreconditionFailed",
+                "ConditionalRequestConflict",
+            } and status not in {409, 412}:
                 raise
             head = s3.head_object(Bucket=bucket, Key=isolated)
             existing = str((head.get("Metadata") or {}).get("sha256") or "")
@@ -275,10 +325,13 @@ def install_pointer_isolation(module: Any) -> Any:
 
     module._put_immutable = put_immutable
     module._activate = activate
+    module._INQSI_MLB_V8_OFFICIAL_POINTER_ISOLATION_INSTALLED = True
     return module
 
 
 def install_snapshot_contract(module: Any) -> Any:
+    if getattr(module, "_INQSI_MLB_V8_OFFICIAL_SNAPSHOT_CONTRACT_INSTALLED", False):
+        return module
     original = module.build_training_snapshot
 
     def build_snapshot(*args: Any, **kwargs: Any) -> Dict[str, Any]:
@@ -313,6 +366,7 @@ def install_snapshot_contract(module: Any) -> Any:
         return snapshot
 
     module.build_training_snapshot = build_snapshot
+    module._INQSI_MLB_V8_OFFICIAL_SNAPSHOT_CONTRACT_INSTALLED = True
     return module
 
 
@@ -354,11 +408,14 @@ def _advance_ineligible_cursor(
 
 
 def install_run_contract(module: Any) -> Any:
+    if getattr(module, "_INQSI_MLB_V8_OFFICIAL_RUN_CONTRACT_INSTALLED", False):
+        return module
     original = module.run
 
     def run(*args: Any, **kwargs: Any) -> Dict[str, Any]:
         kwargs["client_factory"] = OfficialContextClient
-        report = original(*args, **kwargs)
+        with official_authority_scope(module):
+            report = original(*args, **kwargs)
         cursor_advanced = _advance_ineligible_cursor(module, report, kwargs)
         inherited_blockers = [str(value) for value in report.get("blockers") or []]
         warnings = []
@@ -376,7 +433,9 @@ def install_run_contract(module: Any) -> Any:
             else:
                 blockers.append(blocker)
         if cursor_advanced:
-            warnings.append("cursor_advanced_across_training_ineligible_historical_rows")
+            warnings.append(
+                "cursor_advanced_across_training_ineligible_historical_rows"
+            )
         report.update(
             {
                 "proofType": REPORT_TYPE,
@@ -410,20 +469,26 @@ def install_run_contract(module: Any) -> Any:
         return report
 
     module.run = run
+    module._INQSI_MLB_V8_OFFICIAL_RUN_CONTRACT_INSTALLED = True
     return module
 
 
 def install() -> Any:
+    _restore_authority_defaults()
     context_source.WEATHER_MODEL = ARCHIVED_WEATHER_MODEL
     install_pointer_isolation(backfill)
     install_snapshot_contract(backfill)
     install_run_contract(backfill)
+    _restore_authority_defaults()
     return backfill
 
 
 def main() -> int:
     install()
     return backfill.main()
+
+
+_restore_authority_defaults()
 
 
 if __name__ == "__main__":
