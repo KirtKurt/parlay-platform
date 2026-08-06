@@ -1,18 +1,21 @@
 """Fail-closed compatibility handler for the canonical MLB AWS trainer.
 
 The canonical implementation remains in ``mlb_ml_aws_training_v1.py``. This
-uniquely named Lambda entrypoint installs two narrow normalizations:
+uniquely named Lambda entrypoint installs three narrow normalizations:
 
 * unresolved canonical-slate continuity is represented as a healthy,
-  non-authoritative wait at both persistence and return boundaries; and
+  non-authoritative wait at both persistence and return boundaries;
 * after a scheduled run is persisted, the Lambda returns the exact immutable
-  run record read back from the status store when available.
+  run record read back from the status store when available; and
+* existing immutable locks and labels are corrected in memory only when their
+  sole exclusion is a pre-lock state made false by a verified exact T-45 lock.
 
 The persisted read-back prevents harmless DynamoDB numeric round-trip changes
 from making deployment verification compare a pre-persistence object with a
-post-persistence object. No chronology, final-label, holdout, calibration,
-accuracy, promotion, champion, inference-authority, or production-authority
-rule is weakened.
+post-persistence object. The prospective read repair never rewrites an
+immutable lock or label and preserves every chronology, source, fundamentals,
+vector, final-label, holdout, calibration, accuracy, promotion, champion,
+inference-authority, and production-authority gate.
 """
 from __future__ import annotations
 
@@ -22,6 +25,9 @@ from collections.abc import Mapping
 from functools import wraps
 from pathlib import Path
 from typing import Any, Dict
+
+import mlb_prospective_trainer_read_repair as prospective_trainer_read_repair
+
 
 COMPAT_VERSION = "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v5-persisted-return"
 _BASE_MODULE_NAME = "_inqsi_mlb_ml_aws_training_v1_canonical"
@@ -112,6 +118,7 @@ def persisted_run_response(service: Any, payload: Mapping[str, Any]) -> Dict[str
 
 
 canonical = _load_canonical_module()
+prospective_trainer_read_repair.install()
 
 _original_save_run_status = canonical.TrainingService._save_run_status
 if not getattr(_original_save_run_status, "_mlb_unique_continuity_wait_patch", False):

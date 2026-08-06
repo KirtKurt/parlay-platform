@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import copy
 import json
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
+
+import mlb_prospective_row_repair as prospective_row_repair
 
 
 VERSION = "MLB-TERMINAL-LIFECYCLE-COUNT-RECONCILIATION-v1-row-derived"
-
 # These states are terminal without an immutable winner. They may prove that a
 # game's T-minus-45 lifecycle is accounted for, but they never become a pick,
 # training row, promotion artifact, or wagering authority.
@@ -216,5 +217,10 @@ def reconcile_http_response(
         return out
     if not isinstance(payload, dict):
         return out
-    out["body"] = json.dumps(reconcile_payload(payload, row_field=row_field), default=str)
+    out["body"] = json.dumps(
+        reconcile_payload(payload, row_field=row_field), default=str
+    )
     return out
+
+
+prospective_row_repair.install()
