@@ -29,7 +29,7 @@ from typing import Any, Dict
 import mlb_prospective_trainer_read_repair as prospective_trainer_read_repair
 
 
-COMPAT_VERSION = "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v6-prospective-read-repair"
+COMPAT_VERSION = "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v5-persisted-return"
 _BASE_MODULE_NAME = "_inqsi_mlb_ml_aws_training_v1_canonical"
 _BASE_PATH = Path(__file__).resolve().with_name("mlb_ml_aws_training_v1.py")
 
