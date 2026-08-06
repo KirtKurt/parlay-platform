@@ -247,7 +247,8 @@ def test_lambda_config_outlives_deployed_lock_timeout():
     config = subject.durable_lambda_config()
     assert config.connect_timeout == 10
     assert config.read_timeout == 420
-    assert config.retries["max_attempts"] == 1
+    assert config.retries["total_max_attempts"] == 1
+    assert "max_attempts" not in config.retries
 
 
 def test_source_has_no_storage_prediction_or_authority_writer():
