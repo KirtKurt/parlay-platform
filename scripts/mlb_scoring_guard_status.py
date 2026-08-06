@@ -22,7 +22,7 @@ import boto3
 from boto3.dynamodb.conditions import Key
 
 PROOF_TYPE = "MLB_SCORING_GUARD_READ_ONLY_PROOF"
-PROOF_VERSION = "MLB-SCORING-GUARD-v2-prediction-team-integrity"
+PROOF_VERSION = "MLB-SCORING-GUARD-v3-movement-team-integrity"
 SLATE_TZ = ZoneInfo("America/New_York")
 PULL_RECORD_TYPE = "pull_run"
 PREDICTION_RECORD_TYPE = "mlb_single_game_moneyline_prediction"
@@ -282,6 +282,22 @@ def _prediction_team_is_valid(game: Dict[str, Any], prediction: Optional[Dict[st
     return bool(winner and away and home and winner in {away, home})
 
 
+def _movement_team_is_valid(game: Dict[str, Any], feature: Optional[Dict[str, Any]]) -> bool:
+    """Fail closed on directional movement attributed to a team outside the matchup."""
+    if not feature:
+        return False
+    hot_team = _norm(feature.get("hot_team") or feature.get("hotTeam"))
+    if not hot_team:
+        try:
+            hot_delta = abs(float(feature.get("hot_delta") or feature.get("hotDelta") or 0.0))
+        except (TypeError, ValueError):
+            return False
+        return hot_delta == 0.0
+    away = _norm(game.get("away_team") or game.get("awayTeam"))
+    home = _norm(game.get("home_team") or game.get("homeTeam"))
+    return bool(away and home and hot_team in {away, home})
+
+
 def evaluate_slate(
     *,
     slate_date: str,
@@ -308,6 +324,7 @@ def evaluate_slate(
     missing_predictions: List[str] = []
     missing_movement: List[str] = []
     invalid_prediction_teams: List[str] = []
+    invalid_movement_teams: List[str] = []
     prediction_matches: Set[str] = set()
     movement_matches: Set[str] = set()
     fundamentals_applied = 0
@@ -319,6 +336,7 @@ def evaluate_slate(
         feature = _matching_feature(tokens, movement)
         scoreable = any(tokens & candidate for candidate in scoreable_sets)
         prediction_team_valid = _prediction_team_is_valid(game, prediction)
+        movement_team_valid = _movement_team_is_valid(game, feature) if feature else None
         if prediction:
             prediction_matches.add(identity)
             if not prediction_team_valid:
@@ -327,6 +345,8 @@ def evaluate_slate(
             missing_predictions.append(identity)
         if feature:
             movement_matches.add(identity)
+            if movement_team_valid is not True:
+                invalid_movement_teams.append(identity)
         elif scoreable:
             missing_movement.append(identity)
         state = _fundamentals_state(prediction)
@@ -343,6 +363,7 @@ def evaluate_slate(
             "movementFeaturePresent": feature is not None,
             "latestMovementAtUtc": (feature or {}).get("latest_asof"),
             "hotTeam": (feature or {}).get("hot_team"),
+            "hotTeamInMatchup": movement_team_valid,
             "hotDelta": (feature or {}).get("hot_delta"),
             "movementStrength": (feature or {}).get("movement_strength"),
             "predictionPresent": prediction is not None,
@@ -366,6 +387,8 @@ def evaluate_slate(
         blockers.append("PREDICTED_WINNER_NOT_IN_MATCHUP")
     if missing_movement:
         blockers.append("MOVEMENT_FEATURE_COVERAGE_INCOMPLETE")
+    if invalid_movement_teams:
+        blockers.append("MOVEMENT_TEAM_NOT_IN_MATCHUP")
 
     latest_pull_at = _parse_dt((pulls[-1] if pulls else {}).get("pulled_at"))
     return {
@@ -391,6 +414,7 @@ def evaluate_slate(
             "movementFeatureGameCount": len(movement_matches),
             "persistedPredictionGameCount": len(prediction_matches),
             "invalidPredictionTeamCount": len(invalid_prediction_teams),
+            "invalidMovementTeamCount": len(invalid_movement_teams),
             "fundamentalsAppliedCount": fundamentals_applied,
             "fundamentalsNotAppliedOrMissingCount": max(official_count - fundamentals_applied, 0),
             "missingMovementCount": len(missing_movement),
@@ -399,6 +423,7 @@ def evaluate_slate(
         "missingMovementGameIdentities": missing_movement,
         "missingPredictionGameIdentities": missing_predictions,
         "invalidPredictionTeamGameIdentities": invalid_prediction_teams,
+        "invalidMovementTeamGameIdentities": invalid_movement_teams,
         "blockers": blockers,
         "games": games,
         "secretExposed": False,

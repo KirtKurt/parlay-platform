@@ -1,0 +1,143 @@
+name: Publish Tennis Daily Card
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-tennis-daily-card.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '8,23,38,53 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-tennis-daily-card
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Build daily card from DynamoDB
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          TABLE_NAME: inqis_tennis_learning
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from decimal import Decimal
+          from zoneinfo import ZoneInfo
+
+          import boto3
+          from boto3.dynamodb.conditions import Attr
+
+          table = boto3.resource('dynamodb', region_name=os.environ['AWS_REGION_VALUE']).Table(os.environ['TABLE_NAME'])
+
+          def scan_prefix(prefix):
+              out = []
+              kwargs = {'FilterExpression': Attr('PK').begins_with(prefix)}
+              while True:
+                  page = table.scan(**kwargs)
+                  out.extend(page.get('Items', []))
+                  key = page.get('LastEvaluatedKey')
+                  if not key:
+                      return out
+                  kwargs['ExclusiveStartKey'] = key
+
+          eastern = ZoneInfo('America/New_York')
+          now = datetime.now(timezone.utc)
+          today = now.astimezone(eastern).date()
+
+          live = {}
+          for item in scan_prefix('LIVE#'):
+              event_id = str(item.get('event_id') or str(item.get('PK','')).split('#',1)[-1])
+              raw = str(item.get('commence_time') or '')
+              try:
+                  dt = datetime.fromisoformat(raw.replace('Z','+00:00')).astimezone(eastern)
+              except Exception:
+                  continue
+              if dt.date() != today:
+                  continue
+              live[event_id] = {
+                  'event_id': event_id,
+                  'player': str(item.get('player') or ''),
+                  'opponent': str(item.get('opponent') or ''),
+                  'commence_time': dt.isoformat(),
+                  'updated_at': str(item.get('updated_at') or ''),
+              }
+
+          latest = {}
+          for item in scan_prefix('PREDICTION#'):
+              event_id = str(item.get('PK','')).split('#',1)[-1]
+              if event_id not in live:
+                  continue
+              stamp = str(item.get('SK') or '')
+              if event_id not in latest or stamp > str(latest[event_id].get('SK') or ''):
+                  latest[event_id] = item
+
+          picks = []
+          for event_id, event in live.items():
+              pred = latest.get(event_id)
+              if not pred:
+                  continue
+              p = float(pred.get('probability'))
+              pick = event['player'] if p >= 0.5 else event['opponent']
+              confidence = p if p >= 0.5 else 1.0 - p
+              band = 'STRONG' if confidence >= 0.60 else ('WATCH' if confidence >= 0.55 else 'PASS')
+              picks.append({
+                  **event,
+                  'pick': pick,
+                  'probability': round(confidence, 6),
+                  'probability_pct': round(confidence * 100, 2),
+                  'band': band,
+                  'model_version': int(pred.get('model_version') or 0),
+                  'prediction_timestamp': str(pred.get('SK') or ''),
+              })
+
+          picks.sort(key=lambda x: (x['commence_time'], -x['probability']))
+          payload = {
+              'service': 'tennis-daily-card',
+              'date_et': str(today),
+              'generated_at': now.isoformat(),
+              'source': 'inqis_tennis_learning DynamoDB latest pre-match records',
+              'match_count': len(picks),
+              'official_pick_count': sum(p['band'] == 'STRONG' for p in picks),
+              'watch_count': sum(p['band'] == 'WATCH' for p in picks),
+              'pass_count': sum(p['band'] == 'PASS' for p in picks),
+              'picks': picks,
+          }
+
+          os.makedirs('runtime', exist_ok=True)
+          with open('runtime/tennis_daily_card.json', 'w') as f:
+              json.dump(payload, f, indent=2, sort_keys=True, default=lambda x: float(x) if isinstance(x, Decimal) else str(x))
+              f.write('\n')
+          print(json.dumps(payload, indent=2))
+          PY
+      - name: Commit daily card
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in $(seq 1 20); do
+            cp runtime/tennis_daily_card.json /tmp/tennis_daily_card.json
+            git fetch origin main
+            git reset --hard origin/main
+            mkdir -p runtime
+            cp /tmp/tennis_daily_card.json runtime/tennis_daily_card.json
+            git add runtime/tennis_daily_card.json
+            if git diff --cached --quiet; then exit 0; fi
+            git commit -m 'Publish tennis daily card [skip ci]'
+            if git push origin HEAD:main; then exit 0; fi
+            sleep 3
+          done
+          exit 1

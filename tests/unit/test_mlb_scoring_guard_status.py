@@ -59,14 +59,14 @@ def prediction(pk: str, winner: str, score: float, fundamentals: bool):
     }
 
 
-def feature(game_key: str):
+def feature(game_key: str, hot_team: str | None = "Home Club", hot_delta: float = 0.01):
     return {
         "entity_type": "HOT_PULL_MOVEMENT_FEATURE",
         "game_key": game_key,
         "latest_asof": "2026-07-22T12:15:00+00:00",
-        "hot_team": "Home Club",
-        "hot_delta": 0.01,
-        "movement_strength": "MEDIUM",
+        "hot_team": hot_team,
+        "hot_delta": hot_delta,
+        "movement_strength": "MEDIUM" if hot_delta else "FLAT",
     }
 
 
@@ -104,9 +104,11 @@ def test_complete_doubleheader_slate_passes():
     assert report["summary"]["officialGameCount"] == 2
     assert report["summary"]["persistedPredictionGameCount"] == 2
     assert report["summary"]["invalidPredictionTeamCount"] == 0
+    assert report["summary"]["invalidMovementTeamCount"] == 0
     assert report["summary"]["movementFeatureGameCount"] == 2
     assert report["summary"]["fundamentalsAppliedCount"] == 1
     assert all(row["predictedWinnerInMatchup"] for row in report["games"])
+    assert all(row["hotTeamInMatchup"] for row in report["games"])
     assert len({row["gameIdentity"] for row in report["games"]}) == 2
 
 
@@ -127,6 +129,26 @@ def test_prediction_for_team_outside_matchup_fails_closed():
     assert report["invalidPredictionTeamGameIdentities"] == ["official:1001"]
     assert report["games"][0]["predictedWinnerInMatchup"] is False
     assert "PREDICTED_WINNER_NOT_IN_MATCHUP" in report["blockers"]
+
+
+def test_movement_hot_team_outside_matchup_fails_closed():
+    _, _, features = fixture()
+    features[0] = feature("provider-a", hot_team="Unrelated Club")
+    report = evaluate(features=features)
+    assert report["guardPassed"] is False
+    assert report["summary"]["invalidMovementTeamCount"] == 1
+    assert report["invalidMovementTeamGameIdentities"] == ["official:1001"]
+    assert report["games"][0]["hotTeamInMatchup"] is False
+    assert "MOVEMENT_TEAM_NOT_IN_MATCHUP" in report["blockers"]
+
+
+def test_flat_movement_without_hot_team_is_valid():
+    _, _, features = fixture()
+    features[0] = feature("provider-a", hot_team=None, hot_delta=0.0)
+    report = evaluate(features=features)
+    assert report["guardPassed"] is True
+    assert report["summary"]["invalidMovementTeamCount"] == 0
+    assert report["games"][0]["hotTeamInMatchup"] is True
 
 
 def test_missing_movement_feature_fails_closed():
