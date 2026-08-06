@@ -72,11 +72,7 @@ def lock_result(slate_date, *, canonical=10, terminal=5):
                 "ok": True,
                 "sport": "mlb",
                 "slateDateEt": slate_date,
-                "lockStatusComplete": True,
-                "officialScheduleBacked": True,
-                "officialScheduleGameCount": game_count,
                 "perGameLockProgress": {
-                    "officialScheduleBacked": True,
                     "manifestGameCount": game_count,
                     "games": [
                         {"gameIdentity": f"game-{index}"}
@@ -88,6 +84,31 @@ def lock_result(slate_date, *, canonical=10, terminal=5):
                     "missedCount": 0,
                     "dueMissingCount": 0,
                 },
+            }
+        ),
+    }
+
+
+def status_result(slate_date, *, canonical=10, terminal=5):
+    game_count = canonical + terminal
+    return {
+        "statusCode": 200,
+        "body": json.dumps(
+            {
+                "ok": True,
+                "sport": "mlb",
+                "slateDateEt": slate_date,
+                "gameCount": game_count,
+                "officialScheduleBacked": True,
+                "officialScheduleAuthorityVersion": (
+                    subject.OFFICIAL_SCHEDULE_AUTHORITY_VERSION
+                ),
+                "officialScheduleAuthoritativeStartTimes": True,
+                "officialScheduleGameCount": game_count,
+                "lockedPredictionCount": canonical,
+                "noPredictionDataCount": terminal,
+                "lockedStatusCount": game_count,
+                "lockStatusComplete": True,
             }
         ),
     }
@@ -113,7 +134,6 @@ def test_date_range_is_release_cutoff_through_yesterday_et():
         now_utc=datetime(2026, 8, 6, 2, 0, tzinfo=timezone.utc),
         max_slate_days=14,
     )
-
     assert dates == ["2026-08-03", "2026-08-04"]
 
 
@@ -129,12 +149,14 @@ def test_date_range_is_hard_bounded():
         )
 
 
-def test_reconcile_uses_only_protected_lock_and_settlement_lambdas():
+def test_reconcile_binds_protected_replay_to_read_only_official_status():
     lambda_client = FakeLambda(
         [
             lock_result("2026-08-03"),
+            status_result("2026-08-03"),
             settlement_result("2026-08-03"),
             lock_result("2026-08-04"),
+            status_result("2026-08-04"),
             settlement_result("2026-08-04"),
         ]
     )
@@ -148,14 +170,15 @@ def test_reconcile_uses_only_protected_lock_and_settlement_lambdas():
 
     assert result["ok"] is True
     assert result["reconciledSlateCount"] == 2
+    assert result["readOnlyOfficialStatusProof"] is True
     assert result["directTableWrite"] is False
     assert result["postStartPredictionCreationAllowed"] is False
     assert result["immutablePredictionRewriteAllowed"] is False
-    assert result["promotionAuthorityChanged"] is False
-    assert result["productionAuthorityChanged"] is False
     assert [call["FunctionName"] for call in lambda_client.invocations] == [
         "physical-MLBDailyPickLockFunction",
+        "physical-MLBDailyPickLockFunction",
         "physical-MLBResultsSchedulerFunction",
+        "physical-MLBDailyPickLockFunction",
         "physical-MLBDailyPickLockFunction",
         "physical-MLBResultsSchedulerFunction",
     ]
@@ -166,69 +189,92 @@ def test_reconcile_uses_only_protected_lock_and_settlement_lambdas():
         "force": True,
     }
     assert lambda_client.invocations[1]["Payload"] == {
-        "sport": "mlb",
-        "run": "prospective_backlog_settlement",
-        "slate_date": "2026-08-03",
-        "days_from": 0,
+        "httpMethod": "GET",
+        "path": "/v1/mlb/locks/status",
+        "queryStringParameters": {"date": "2026-08-03"},
     }
 
 
-def test_nonempty_slate_requires_exact_terminal_coverage():
-    payload = json.loads(lock_result("2026-08-03")["body"])
-    payload["perGameLockProgress"]["lockOutcomeCount"] = 14
+def _payload(response):
+    return json.loads(response["body"])
 
+
+def test_mutation_and_read_side_counts_must_match():
+    mutation = _payload(lock_result("2026-08-03"))
+    status = _payload(status_result("2026-08-03", canonical=9, terminal=6))
+    with pytest.raises(
+        subject.ReconciliationError,
+        match="mutation_and_status_prediction_count_mismatch",
+    ):
+        subject.validate_lock_result(mutation, status, "2026-08-03")
+
+
+def test_nonempty_slate_requires_exact_terminal_coverage():
+    mutation = _payload(lock_result("2026-08-03"))
+    mutation["perGameLockProgress"]["lockOutcomeCount"] = 14
     with pytest.raises(
         subject.ReconciliationError,
         match="prospective_slate_terminal_coverage_incomplete",
     ):
-        subject.validate_lock_result(payload, "2026-08-03")
-
-
-def test_candidate_and_terminal_counts_must_reconcile():
-    payload = json.loads(lock_result("2026-08-03")["body"])
-    payload["perGameLockProgress"]["noPredictionDataCount"] = 4
-
-    with pytest.raises(
-        subject.ReconciliationError,
-        match="prospective_slate_terminal_counts_inconsistent",
-    ):
-        subject.validate_lock_result(payload, "2026-08-03")
+        subject.validate_lock_result(
+            mutation,
+            _payload(status_result("2026-08-03")),
+            "2026-08-03",
+        )
 
 
 def test_unresolved_missed_game_fails_closed():
-    payload = json.loads(lock_result("2026-08-03")["body"])
-    payload["perGameLockProgress"]["missedCount"] = 1
-
+    mutation = _payload(lock_result("2026-08-03"))
+    mutation["perGameLockProgress"]["missedCount"] = 1
     with pytest.raises(
         subject.ReconciliationError,
         match="prospective_slate_still_unresolved",
     ):
-        subject.validate_lock_result(payload, "2026-08-03")
+        subject.validate_lock_result(
+            mutation,
+            _payload(status_result("2026-08-03")),
+            "2026-08-03",
+        )
 
 
-def test_zero_game_date_requires_official_zero_game_proof():
-    payload = {
+def test_official_schedule_proof_is_required_from_read_side():
+    status = _payload(status_result("2026-08-03"))
+    status["officialScheduleBacked"] = False
+    with pytest.raises(
+        subject.ReconciliationError,
+        match="official_schedule_authority_unproven",
+    ):
+        subject.validate_lock_result(
+            _payload(lock_result("2026-08-03")),
+            status,
+            "2026-08-03",
+        )
+
+
+def test_zero_game_date_requires_exact_official_zero_game_status():
+    mutation = {
         "ok": True,
         "sport": "mlb",
         "slateDateEt": "2026-08-03",
-        "officialScheduleBacked": True,
-        "officialScheduleGameCount": 0,
-        "perGameLockProgress": {
-            "officialScheduleBacked": True,
-            "manifestGameCount": 0,
-            "games": [],
-        },
+        "perGameLockProgress": {"manifestGameCount": 0, "games": []},
     }
-
-    result = subject.validate_lock_result(payload, "2026-08-03")
-
+    status = {
+        "ok": True,
+        "sport": "mlb",
+        "slateDateEt": "2026-08-03",
+        "gameCount": 0,
+        "officialScheduleBacked": True,
+        "officialScheduleAuthorityVersion": subject.OFFICIAL_SCHEDULE_AUTHORITY_VERSION,
+        "officialScheduleAuthoritativeStartTimes": True,
+        "officialScheduleGameCount": 0,
+        "lockedPredictionCount": 0,
+        "noPredictionDataCount": 0,
+        "lockedStatusCount": 0,
+        "lockStatusComplete": False,
+    }
+    result = subject.validate_lock_result(mutation, status, "2026-08-03")
     assert result["offDay"] is True
-    payload.pop("officialScheduleGameCount")
-    with pytest.raises(
-        subject.ReconciliationError,
-        match="official_zero_game_slate_unproven",
-    ):
-        subject.validate_lock_result(payload, "2026-08-03")
+    assert result["officialStatusReadBound"] is True
 
 
 def test_lambda_function_error_is_terminal():
@@ -251,7 +297,6 @@ def test_source_contains_no_direct_storage_or_prediction_write_path():
     source = (
         ROOT / "scripts" / "reconcile_mlb_prospective_backlog.py"
     ).read_text(encoding="utf-8")
-
     forbidden = (
         "put_item(",
         "update_item(",
@@ -264,6 +309,7 @@ def test_source_contains_no_direct_storage_or_prediction_write_path():
     )
     assert all(token not in source for token in forbidden)
     assert '"force": True' in source
-    assert '"slate_date": slate_date' in source
+    assert '"httpMethod": "GET"' in source
+    assert "readOnlyOfficialStatusProof" in source
     assert "postStartPredictionCreationAllowed" in source
     assert "productionAuthorityChanged" in source
