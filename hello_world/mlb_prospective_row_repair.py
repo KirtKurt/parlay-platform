@@ -22,6 +22,12 @@ EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS = frozenset(
         "incomplete_slate_coverage",
     }
 )
+_CACHED_TERMINAL_RECONCILIATION_REASONS = frozenset(
+    {"POST_WINDOW_TERMINAL_STATUS_ALREADY_RECONCILED"}
+)
+_EXISTING_POST_WINDOW_SUCCESS_REASONS = frozenset(
+    {"POST_WINDOW_TERMINAL_STATUS_RECONCILED"}
+)
 
 
 def _int(value: Any, default: int = 0) -> int:
@@ -286,13 +292,46 @@ def _attach_repair(
     result: Dict[str, Any],
     report: Dict[str, Any],
 ) -> Dict[str, Any]:
+    """Attach repair evidence while preserving established public contracts.
+
+    Existing lifecycle reason strings and progress payloads remain untouched
+    unless this layer itself performs a new durable terminal transition. The
+    pre-existing post-window success response is also preserved verbatim even
+    when this layer adds the missing per-game durable terminal behind it.
+    """
+
     out = copy.deepcopy(result)
     out["missedLockTerminalReconciliation"] = copy.deepcopy(report)
     progress = report.get("progressAfter")
     if not isinstance(progress, dict):
         return out
+
+    reconciled_count = _int(report.get("reconciledCount"), 0)
     remaining = _int(progress.get("missedCount"), 0)
     due = _int(progress.get("dueMissingCount"), 0)
+    transition_complete = bool(
+        report.get("ok") is True
+        and reconciled_count > 0
+        and remaining == 0
+        and due == 0
+    )
+    if not transition_complete:
+        return out
+
+    out["durableNoPredictionTerminalReconciled"] = True
+    out["durableNoPredictionTerminalReconciledCount"] = reconciled_count
+    out["postStartPredictionCreationAllowed"] = False
+
+    if (
+        str(result.get("reason") or "")
+        in _EXISTING_POST_WINDOW_SUCCESS_REASONS
+        and result.get("lockStatusComplete") is True
+    ):
+        # The established post-window API intentionally reports its cached
+        # lifecycle view. Preserve that response exactly while the durable
+        # per-game terminal written above unblocks settlement/training readers.
+        return out
+
     out["perGameLockProgress"] = copy.deepcopy(progress)
     out["missedGameCount"] = remaining
     out["noPredictionDataCount"] = _int(
@@ -308,25 +347,15 @@ def _attach_repair(
     out["canonicalPredictionComplete"] = bool(
         manifest_count and canonical_count == manifest_count
     )
-    if report.get("ok") is True and remaining == 0 and due == 0:
-        out.update(
-            {
-                "ok": True,
-                "reason": "PROVEN_NO_PREDICTION_TERMINALS_RECONCILED",
-                "skipped": False,
-                "postStartPredictionCreationAllowed": False,
-            }
-        )
-        out.pop("failClosed", None)
-    else:
-        out.update(
-            {
-                "ok": False,
-                "reason": "MISSED_PER_GAME_LOCK_NOT_TERMINALIZED",
-                "failClosed": True,
-                "postStartPredictionCreationAllowed": False,
-            }
-        )
+    out.update(
+        {
+            "ok": True,
+            "reason": "PROVEN_NO_PREDICTION_TERMINALS_RECONCILED",
+            "skipped": False,
+            "postStartPredictionCreationAllowed": False,
+        }
+    )
+    out.pop("failClosed", None)
     return out
 
 
@@ -349,7 +378,14 @@ def install_prospective_row_repair(module: Any, patch: Any) -> Any:
             force=force,
             scheduled=scheduled,
         )
-        if not isinstance(result, dict) or _missed_count_from_result(result) <= 0:
+        if not isinstance(result, dict):
+            return result
+        if (
+            str(result.get("reason") or "")
+            in _CACHED_TERMINAL_RECONCILIATION_REASONS
+        ):
+            return result
+        if _missed_count_from_result(result) <= 0:
             return result
         slate = str(
             slate_date or result.get("slateDateEt") or module._today_et()
