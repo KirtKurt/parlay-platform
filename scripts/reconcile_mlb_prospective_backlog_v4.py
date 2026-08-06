@@ -64,7 +64,7 @@ def durable_lambda_config(*args: Any, **kwargs: Any) -> Config:
     return Config(
         connect_timeout=10,
         read_timeout=420,
-        retries={"max_attempts": 1, "mode": "standard"},
+        retries={"total_max_attempts": 1, "mode": "standard"},
     )
 
 
