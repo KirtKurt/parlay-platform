@@ -11,6 +11,7 @@ model authority, promotion authority, or wagering authority is rewritten.
 from __future__ import annotations
 
 import json
+import sys
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Mapping, Optional
@@ -55,6 +56,12 @@ MUTABLE_INCOMPLETE_STATUS_ERRORS = frozenset(
         "official_status_not_complete",
     }
 )
+
+
+def control_plane_config() -> Config:
+    """Retain bounded retries for CloudFormation resource discovery."""
+
+    return Config(retries={"total_max_attempts": 4, "mode": "standard"})
 
 
 def durable_lambda_config(*args: Any, **kwargs: Any) -> Config:
@@ -247,10 +254,42 @@ def reconcile(
 
 
 def main() -> int:
-    base.VERSION = VERSION
-    base.Config = durable_lambda_config
-    base.reconcile = reconcile
-    return base.main()
+    args = base._parser().parse_args()
+    session = base.boto3.session.Session(region_name=args.region)
+    cloudformation = session.client(
+        "cloudformation",
+        config=control_plane_config(),
+    )
+    lambda_client = session.client(
+        "lambda",
+        config=durable_lambda_config(),
+    )
+    try:
+        report = reconcile(
+            cloudformation,
+            lambda_client,
+            stack_name=args.stack_name,
+            max_slate_days=args.max_slate_days,
+        )
+    except Exception as exc:
+        report = {
+            "ok": False,
+            "version": VERSION,
+            "stackName": args.stack_name,
+            "error": f"{type(exc).__name__}:{exc}",
+            "directTableWrite": False,
+            "postStartPredictionCreationAllowed": False,
+            "immutablePredictionRewriteAllowed": False,
+            "promotionAuthorityChanged": False,
+            "productionAuthorityChanged": False,
+            "automaticWagerAllowed": False,
+        }
+        base._write_report(args.output, report)
+        print(json.dumps(report, sort_keys=True), file=sys.stderr)
+        return 1
+    base._write_report(args.output, report)
+    print(json.dumps(report, indent=2, sort_keys=True, default=str))
+    return 0
 
 
 if __name__ == "__main__":
