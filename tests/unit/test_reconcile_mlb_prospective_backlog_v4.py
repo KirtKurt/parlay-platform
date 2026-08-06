@@ -243,12 +243,15 @@ def test_schedule_authority_failure_does_not_trigger_mutation():
     assert calls[0]["httpMethod"] == "GET"
 
 
-def test_lambda_config_outlives_deployed_lock_timeout():
-    config = subject.durable_lambda_config()
-    assert config.connect_timeout == 10
-    assert config.read_timeout == 420
-    assert config.retries["total_max_attempts"] == 1
-    assert "max_attempts" not in config.retries
+def test_control_plane_and_lambda_retry_configs_are_isolated():
+    control = subject.control_plane_config()
+    assert control.retries["total_max_attempts"] == 4
+
+    lambda_config = subject.durable_lambda_config()
+    assert lambda_config.connect_timeout == 10
+    assert lambda_config.read_timeout == 420
+    assert lambda_config.retries["total_max_attempts"] == 1
+    assert "max_attempts" not in lambda_config.retries
 
 
 def test_source_has_no_storage_prediction_or_authority_writer():
@@ -264,6 +267,7 @@ def test_source_has_no_storage_prediction_or_authority_writer():
         "INQSI_MLB_ML_AUTO_PROMOTE",
         "productionAuthorityChanged = True",
         "liveInferenceAuthority = True",
+        "base.Config =",
     ):
         assert forbidden not in source
     assert "statusFirst" in source
