@@ -1,0 +1,151 @@
+name: Reconcile MLB prospective backlog once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/reconcile_mlb_prospective_backlog.py"
+      - "tests/unit/test_reconcile_mlb_prospective_backlog.py"
+      - "tests/unit/test_mlb_prospective_backlog_workflow.py"
+      - ".github/workflows/mlb-prospective-backlog-reconcile-once.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parlay-platform-mlb-prospective-backlog-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile-and-train:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact source commit
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Install verification runtime
+        run: python -m pip install --quiet "boto3>=1.34,<2" "pytest>=8,<9"
+
+      - name: Verify bounded replay source
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/reconcile_mlb_prospective_backlog.py
+          python -m pytest -q \
+            tests/unit/test_reconcile_mlb_prospective_backlog.py \
+            tests/unit/test_mlb_prospective_backlog_workflow.py
+
+      - name: Reconcile release-cutoff prospective slate backlog
+        run: |
+          set -euo pipefail
+          python scripts/reconcile_mlb_prospective_backlog.py \
+            --stack-name parlay-platform-dev \
+            --region "${{ secrets.AWS_REGION }}" \
+            --max-slate-days 14 \
+            --output runtime_reports/mlb_prospective_backlog_reconciliation_latest.json
+
+      - name: Invoke trainer and prove usable prospective rows
+        env:
+          AWS_MAX_ATTEMPTS: "1"
+        run: |
+          set -euo pipefail
+          TRAINER_ARN=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id MLBMLTrainingFunction \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$TRAINER_ARN"
+          test "$TRAINER_ARN" != "None"
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"prospective_backlog_reconciled_training"}' \
+            --response /tmp/mlb-prospective-training.json \
+            --invocation /tmp/mlb-prospective-training-invoke.json \
+            --retry-execution-lease \
+            --deadline-seconds 1200 \
+            --retry-delay-seconds 20
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --payload '{"sport":"mlb","mode":"selection_capture","run":"prospective_backlog_reconciled_selection_capture"}' \
+            --response /tmp/mlb-prospective-selection.json \
+            --invocation /tmp/mlb-prospective-selection-invoke.json \
+            --retry-execution-lease \
+            --deadline-seconds 1200 \
+            --retry-delay-seconds 20
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --status-training-result /tmp/mlb-prospective-training.json \
+            --status-selection-capture-result /tmp/mlb-prospective-selection.json \
+            --response /tmp/mlb-prospective-status.json \
+            --invocation /tmp/mlb-prospective-status-invoke.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          training = json.loads(Path('/tmp/mlb-prospective-training.json').read_text(encoding='utf-8'))
+          status = json.loads(Path('/tmp/mlb-prospective-status.json').read_text(encoding='utf-8'))
+          health = status.get('trainingHealth') or {}
+          latest = health.get('latestRun') or {}
+          accepted = latest.get('acceptedRowCount')
+          if accepted is None:
+              accepted = training.get('acceptedRowCount')
+          try:
+              accepted = int(accepted)
+          except (TypeError, ValueError):
+              accepted = 0
+          evidence = {
+              'ok': accepted > 0,
+              'acceptedRowCount': accepted,
+              'rejectedRowCount': latest.get('rejectedRowCount', training.get('rejectedRowCount')),
+              'status': latest.get('status', training.get('status')),
+              'canonicalSlateContinuity': latest.get('canonicalSlateContinuity', training.get('canonicalSlateContinuity')),
+              'partitionCounts': latest.get('partitionCounts', training.get('partitionCounts')),
+              'rejectionReasonCounts': latest.get('rejectionReasonCounts', training.get('rejectionReasonCounts')),
+              'modelTrained': latest.get('modelTrained', training.get('modelTrained')),
+              'liveInferenceAuthority': latest.get('liveInferenceAuthority', training.get('liveInferenceAuthority')),
+              'productionAuthorityChanged': latest.get('productionAuthorityChanged', training.get('productionAuthorityChanged')),
+          }
+          Path('runtime_reports/mlb_prospective_rows_after_reconciliation_latest.json').write_text(
+              json.dumps(evidence, indent=2, sort_keys=True, default=str) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(evidence, indent=2, sort_keys=True, default=str))
+          if accepted <= 0:
+              raise SystemExit('MLB prospective trainer still has zero accepted rows after bounded reconciliation')
+          if evidence['liveInferenceAuthority'] is True:
+              raise SystemExit('Prospective repair unexpectedly activated live inference authority')
+          if evidence['productionAuthorityChanged'] is True:
+              raise SystemExit('Prospective repair unexpectedly changed production authority')
+          PY
+
+      - name: Upload exact reconciliation and trainer evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-prospective-backlog-reconciliation-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            runtime_reports/mlb_prospective_backlog_reconciliation_latest.json
+            runtime_reports/mlb_prospective_rows_after_reconciliation_latest.json
+            /tmp/mlb-prospective-training.json
+            /tmp/mlb-prospective-training-invoke.json
+            /tmp/mlb-prospective-selection.json
+            /tmp/mlb-prospective-selection-invoke.json
+            /tmp/mlb-prospective-status.json
+            /tmp/mlb-prospective-status-invoke.json
