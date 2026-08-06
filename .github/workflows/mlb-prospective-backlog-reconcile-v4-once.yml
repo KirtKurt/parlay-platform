@@ -8,7 +8,6 @@ on:
       - "tests/unit/test_reconcile_mlb_prospective_backlog_v4.py"
       - ".github/workflows/mlb-prospective-backlog-reconcile-v4-once.yml"
   push:
-    branches: [main]
     paths:
       - "scripts/reconcile_mlb_prospective_backlog_v4.py"
       - "tests/unit/test_reconcile_mlb_prospective_backlog_v4.py"
@@ -53,7 +52,7 @@ jobs:
           git diff --check
 
   reconcile-and-train:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 120
