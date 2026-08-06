@@ -173,6 +173,7 @@ def test_proven_absence_is_terminalized_without_creating_a_prediction():
     assert result["lockStatusComplete"] is True
     assert result["canonicalPredictionComplete"] is False
     assert result["noPredictionDataCount"] == 1
+    assert result["durableNoPredictionTerminalReconciled"] is True
     repair = result["missedLockTerminalReconciliation"]
     assert repair["reconciledCount"] == 1
     assert repair["remainingMissedCount"] == 0
@@ -193,12 +194,43 @@ def test_existing_candidate_is_not_relabelled_as_no_data():
 
     assert module.outcome is None
     assert result["ok"] is False
-    assert result["reason"] == "MISSED_PER_GAME_LOCK_NOT_TERMINALIZED"
+    assert result["reason"] == "MISSED_PER_GAME_LOCK_NOT_BACKFILLED"
     repair = result["missedLockTerminalReconciliation"]
     assert repair["reconciledCount"] == 0
     assert repair["remainingMissedCount"] == 1
     assert repair["unresolved"][0]["candidatePresent"] is True
     assert repair["candidateIntegrityFailuresRelabeled"] is False
+
+
+def test_existing_post_window_success_contract_is_preserved():
+    class PostWindowModule(FakeModule):
+        def run_lock(self, slate_date=None, force=False, *, scheduled=False):
+            result = super().run_lock(
+                slate_date=slate_date,
+                force=force,
+                scheduled=scheduled,
+            )
+            result.update(
+                {
+                    "ok": True,
+                    "reason": "POST_WINDOW_TERMINAL_STATUS_RECONCILED",
+                    "lockStatusComplete": True,
+                }
+            )
+            return result
+
+    module = PostWindowModule()
+    prospective.install_prospective_row_repair(module, FakePatch)
+
+    result = module.run_lock(slate_date=SLATE, scheduled=True)
+
+    assert module.outcome["lock_status"] == "LOCKED_NO_PREDICTION_DATA"
+    assert result["ok"] is True
+    assert result["reason"] == "POST_WINDOW_TERMINAL_STATUS_RECONCILED"
+    assert result["lockStatusComplete"] is True
+    assert result["perGameLockProgress"]["missedCount"] == 1
+    assert result["perGameLockProgress"]["lockOutcomeCount"] == 0
+    assert result["durableNoPredictionTerminalReconciled"] is True
 
 
 def _locked_row(*reasons, verified=True):
