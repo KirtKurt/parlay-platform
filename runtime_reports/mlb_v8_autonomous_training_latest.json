@@ -33,13 +33,13 @@
     "version": "MLB-V8-AUTONOMY-v2-monotonic-learning-evidence"
   },
   "autonomyDecision": "CONTINUE_AUTONOMOUS_CANDIDATE_SEARCH",
-  "createdAtUtc": "2026-08-07T16:31:33.095748+00:00",
+  "createdAtUtc": "2026-08-07T17:31:15.870596+00:00",
   "featureCoverage": {
     "bbsPriorAvailable": 0.0,
     "bbsPriorSupported": 0.41811594,
     "bbsPriorWithinSupported": 0.0,
     "exampleCount": 4140,
-    "frozenFundamentals": 0.02898551,
+    "frozenFundamentals": 0.03019324,
     "strictlyPastTeamHistory": 0.98140097,
     "v8Any": 1.0,
     "v8FirstFive": 0.0
@@ -70,21 +70,21 @@
     "quotaRemaining": 4943633
   },
   "historicalTargetGameContext": {
-    "appliedGameCount": 120,
+    "appliedGameCount": 125,
     "authority": "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY",
-    "coverage": 0.02898551,
+    "coverage": 0.03019324,
     "ineligibleGameCount": 0,
     "invalidGameCount": 0,
-    "manifestDigest": "b18cddc39e411691ef82f06ef8f5a9e6787f4b5a56162dd62a0f92050cad4e09",
-    "manifestEligibleGameCount": 120,
+    "manifestDigest": "119193cbcf931480f4f00ce445902c219f1870194d4f24fed0dbe345006ae6de",
+    "manifestEligibleGameCount": 125,
     "manifestPointer": {
       "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
-      "key": "mlb/v8/historical-context/manifests/b18cddc39e411691ef82f06ef8f5a9e6787f4b5a56162dd62a0f92050cad4e09.json",
-      "sha256": "6cfef0da972ecb721a35ce1ba93a3ac96c5bd69cf313aa152b0941edb0c2fdd2"
+      "key": "mlb/v8/historical-context/manifests/119193cbcf931480f4f00ce445902c219f1870194d4f24fed0dbe345006ae6de.json",
+      "sha256": "19efe866ebc96d97bec384a098dbe6089108e2daf0f56190cd726174a1881860"
     },
-    "manifestRecordCount": 120,
+    "manifestRecordCount": 125,
     "pointerRecordType": "mlb_v8_historical_official_context_active_manifest_v3",
-    "pointerRevision": 92,
+    "pointerRevision": 93,
     "productionAuthorityChanged": false,
     "recordCount": 4140,
     "selectionUsedOutcomes": false,
@@ -98,32 +98,17 @@
     "bestLearnedCandidate": {
       "eligible": false,
       "errors": [
-        "overall_fundamentals_available_below_0.50",
-        "overall_fundamentals_group_coverage_below_0.50",
-        "train_fold_1_fundamentals_available_below_0.50",
-        "train_fold_1_fundamentals_group_coverage_below_0.50",
-        "train_fold_2_fundamentals_available_below_0.50",
-        "train_fold_2_fundamentals_group_coverage_below_0.50",
-        "train_fold_3_fundamentals_available_below_0.50",
-        "train_fold_3_fundamentals_group_coverage_below_0.50",
-        "validation_fold_1_fundamentals_available_below_0.50",
-        "validation_fold_1_fundamentals_group_coverage_below_0.50",
-        "validation_fold_2_fundamentals_available_below_0.50",
-        "validation_fold_2_fundamentals_group_coverage_below_0.50",
-        "validation_fold_3_fundamentals_available_below_0.50",
-        "validation_fold_3_fundamentals_group_coverage_below_0.50",
         "aggregate_accuracy_uplift_below_floor",
         "net_correct_uplift_below_floor",
-        "positive_fold_count_below_floor",
-        "worst_fold_accuracy_regression_too_large"
+        "positive_fold_count_below_floor"
       ],
-      "featureGroup": "market_temporal_team_fundamentals_regime",
-      "l2": 0.1,
-      "meanDailyAccuracy": 0.55473291,
-      "meanDailyAccuracyUplift": 0.00156105,
-      "minimumDailyAccuracy": 0.0,
-      "overallAccuracy": 0.55996549,
-      "overallAccuracyUplift": 0.00258844,
+      "featureGroup": "market_temporal_team",
+      "l2": 0.5,
+      "meanDailyAccuracy": 0.556642,
+      "meanDailyAccuracyUplift": 0.00347014,
+      "minimumDailyAccuracy": 0.16666667,
+      "overallAccuracy": 0.55910267,
+      "overallAccuracyUplift": 0.00172562,
       "positiveFoldCount": 1
     },
     "candidateCount": 104,
@@ -5598,10 +5583,10 @@
   },
   "providerNeutralTrainingAllowed": true,
   "recordCountLoaded": 4140,
-  "resultDigest": "34e6e4be4119c14a6130039940201f2ae0dc2ba54f7c751e3ac95af2b03c5a2e",
+  "resultDigest": "5fc5b557d2455ef9243bef9739c5f724c0d711d46816a475f97eba48dcf208d7",
   "retrospectiveArchitectureEvaluation": true,
-  "runId": "31197841695",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/31197841695",
+  "runId": "31202527100",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/31202527100",
   "runtimeIdentity": {
     "checks": {
       "featureMaterializationReady": true,
@@ -17945,50 +17930,50 @@
               "overallAccuracy": 0.55269923
             },
             "metrics": {
-              "brierScore": 0.25064492,
+              "brierScore": 0.25062906,
               "calibrationBins": [
                 {
-                  "absoluteError": 0.14729709,
+                  "absoluteError": 0.14790392,
                   "count": 16,
                   "lower": 0.3,
-                  "meanProbability": 0.35270291,
+                  "meanProbability": 0.35209608,
                   "observedHomeWinRate": 0.5,
                   "upper": 0.4
                 },
                 {
-                  "absoluteError": 0.00541827,
-                  "count": 103,
+                  "absoluteError": 0.01533759,
+                  "count": 107,
                   "lower": 0.4,
-                  "meanProbability": 0.46060114,
-                  "observedHomeWinRate": 0.46601942,
+                  "meanProbability": 0.46129792,
+                  "observedHomeWinRate": 0.47663551,
                   "upper": 0.5
                 },
                 {
-                  "absoluteError": 0.02392686,
-                  "count": 204,
+                  "absoluteError": 0.02929383,
+                  "count": 202,
                   "lower": 0.5,
-                  "meanProbability": 0.54843666,
-                  "observedHomeWinRate": 0.5245098,
+                  "meanProbability": 0.54909581,
+                  "observedHomeWinRate": 0.51980198,
                   "upper": 0.6
                 },
                 {
-                  "absoluteError": 0.05334959,
-                  "count": 64,
+                  "absoluteError": 0.05097912,
+                  "count": 62,
                   "lower": 0.6,
-                  "meanProbability": 0.63147459,
-                  "observedHomeWinRate": 0.578125,
+                  "meanProbability": 0.63162428,
+                  "observedHomeWinRate": 0.58064516,
                   "upper": 0.7
                 },
                 {
-                  "absoluteError": 0.2177626,
+                  "absoluteError": 0.2170267,
                   "count": 2,
                   "lower": 0.7,
-                  "meanProbability": 0.7177626,
+                  "meanProbability": 0.7170267,
                   "observedHomeWinRate": 0.5,
                   "upper": 0.8
                 }
               ],
-              "correct": 208,
+              "correct": 206,
               "daily": [
                 {
                   "accuracy": 0.64285714,
@@ -18012,8 +17997,8 @@
                   "slateDateEt": "2026-04-05"
                 },
                 {
-                  "accuracy": 0.53846154,
-                  "correct": 7,
+                  "accuracy": 0.46153846,
+                  "correct": 6,
                   "dayPassed": false,
                   "gameCount": 13,
                   "slateDateEt": "2026-04-06"
@@ -18047,8 +18032,8 @@
                   "slateDateEt": "2026-04-10"
                 },
                 {
-                  "accuracy": 0.6,
-                  "correct": 9,
+                  "accuracy": 0.53333333,
+                  "correct": 8,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-04-11"
@@ -18082,8 +18067,8 @@
                   "slateDateEt": "2026-04-15"
                 },
                 {
-                  "accuracy": 0.6,
-                  "correct": 6,
+                  "accuracy": 0.5,
+                  "correct": 5,
                   "dayPassed": false,
                   "gameCount": 10,
                   "slateDateEt": "2026-04-16"
@@ -18173,8 +18158,8 @@
                   "slateDateEt": "2026-04-28"
                 },
                 {
-                  "accuracy": 0.30769231,
-                  "correct": 4,
+                  "accuracy": 0.38461538,
+                  "correct": 5,
                   "dayPassed": false,
                   "gameCount": 13,
                   "slateDateEt": "2026-04-29"
@@ -18196,12 +18181,12 @@
               ],
               "dailyPassRate": 0.03448276,
               "dayCount": 29,
-              "expectedCalibrationError": 0.02993782,
+              "expectedCalibrationError": 0.03475501,
               "gameCount": 389,
-              "logLoss": 0.69467048,
-              "meanDailyAccuracy": 0.53620489,
+              "logLoss": 0.69463573,
+              "meanDailyAccuracy": 0.53045776,
               "minimumDailyAccuracy": 0.25,
-              "overallAccuracy": 0.53470437
+              "overallAccuracy": 0.52956298
             },
             "trainFirstDate": "2025-04-01",
             "trainLastDate": "2026-04-02",
@@ -18470,58 +18455,58 @@
               "overallAccuracy": 0.55784062
             },
             "metrics": {
-              "brierScore": 0.24642634,
+              "brierScore": 0.24641336,
               "calibrationBins": [
                 {
-                  "absoluteError": 0.27313156,
+                  "absoluteError": 0.26812055,
                   "count": 1,
                   "lower": 0.2,
-                  "meanProbability": 0.27313156,
+                  "meanProbability": 0.26812055,
                   "observedHomeWinRate": 0.0,
                   "upper": 0.3
                 },
                 {
-                  "absoluteError": 0.23687088,
+                  "absoluteError": 0.23510926,
                   "count": 7,
                   "lower": 0.3,
-                  "meanProbability": 0.37972802,
+                  "meanProbability": 0.3779664,
                   "observedHomeWinRate": 0.14285714,
                   "upper": 0.4
                 },
                 {
-                  "absoluteError": 0.01803868,
-                  "count": 88,
+                  "absoluteError": 0.00814319,
+                  "count": 92,
                   "lower": 0.4,
-                  "meanProbability": 0.47059769,
-                  "observedHomeWinRate": 0.48863636,
+                  "meanProbability": 0.47011768,
+                  "observedHomeWinRate": 0.47826087,
                   "upper": 0.5
                 },
                 {
-                  "absoluteError": 0.01146818,
-                  "count": 254,
+                  "absoluteError": 0.00657839,
+                  "count": 252,
                   "lower": 0.5,
-                  "meanProbability": 0.54690125,
-                  "observedHomeWinRate": 0.53543307,
+                  "meanProbability": 0.54626093,
+                  "observedHomeWinRate": 0.53968254,
                   "upper": 0.6
                 },
                 {
-                  "absoluteError": 0.06408898,
-                  "count": 35,
+                  "absoluteError": 0.06033421,
+                  "count": 33,
                   "lower": 0.6,
-                  "meanProbability": 0.63551755,
-                  "observedHomeWinRate": 0.57142857,
+                  "meanProbability": 0.63609179,
+                  "observedHomeWinRate": 0.57575758,
                   "upper": 0.7
                 },
                 {
-                  "absoluteError": 0.02451655,
+                  "absoluteError": 0.02564589,
                   "count": 4,
                   "lower": 0.7,
-                  "meanProbability": 0.72548345,
+                  "meanProbability": 0.72435411,
                   "observedHomeWinRate": 0.75,
                   "upper": 0.8
                 }
               ],
-              "correct": 211,
+              "correct": 213,
               "daily": [
                 {
                   "accuracy": 0.53333333,
@@ -18531,8 +18516,8 @@
                   "slateDateEt": "2026-05-02"
                 },
                 {
-                  "accuracy": 0.6,
-                  "correct": 9,
+                  "accuracy": 0.66666667,
+                  "correct": 10,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-03"
@@ -18608,8 +18593,8 @@
                   "slateDateEt": "2026-05-13"
                 },
                 {
-                  "accuracy": 0.54545455,
-                  "correct": 6,
+                  "accuracy": 0.45454545,
+                  "correct": 5,
                   "dayPassed": false,
                   "gameCount": 11,
                   "slateDateEt": "2026-05-14"
@@ -18636,8 +18621,8 @@
                   "slateDateEt": "2026-05-17"
                 },
                 {
-                  "accuracy": 0.57142857,
-                  "correct": 8,
+                  "accuracy": 0.64285714,
+                  "correct": 9,
                   "dayPassed": false,
                   "gameCount": 14,
                   "slateDateEt": "2026-05-18"
@@ -18692,8 +18677,8 @@
                   "slateDateEt": "2026-05-25"
                 },
                 {
-                  "accuracy": 0.6,
-                  "correct": 9,
+                  "accuracy": 0.66666667,
+                  "correct": 10,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-26"
@@ -18729,12 +18714,12 @@
               ],
               "dailyPassRate": 0.0,
               "dayCount": 29,
-              "expectedCalibrationError": 0.022552,
+              "expectedCalibrationError": 0.01648953,
               "gameCount": 389,
-              "logLoss": 0.6858349,
-              "meanDailyAccuracy": 0.52751157,
+              "logLoss": 0.68580092,
+              "meanDailyAccuracy": 0.53143753,
               "minimumDailyAccuracy": 0.16666667,
-              "overallAccuracy": 0.54241645
+              "overallAccuracy": 0.54755784
             },
             "trainFirstDate": "2025-04-01",
             "trainLastDate": "2026-05-01",
@@ -19011,45 +18996,45 @@
               "overallAccuracy": 0.56167979
             },
             "metrics": {
-              "brierScore": 0.24818468,
+              "brierScore": 0.24812444,
               "calibrationBins": [
                 {
-                  "absoluteError": 0.00548412,
+                  "absoluteError": 0.00799096,
                   "count": 13,
                   "lower": 0.3,
-                  "meanProbability": 0.37913126,
+                  "meanProbability": 0.37662442,
                   "observedHomeWinRate": 0.38461538,
                   "upper": 0.4
                 },
                 {
-                  "absoluteError": 0.04577758,
-                  "count": 106,
+                  "absoluteError": 0.04725184,
+                  "count": 108,
                   "lower": 0.4,
-                  "meanProbability": 0.46365638,
-                  "observedHomeWinRate": 0.50943396,
+                  "meanProbability": 0.46200742,
+                  "observedHomeWinRate": 0.50925926,
                   "upper": 0.5
                 },
                 {
-                  "absoluteError": 0.01363383,
-                  "count": 207,
+                  "absoluteError": 0.02259531,
+                  "count": 209,
                   "lower": 0.5,
-                  "meanProbability": 0.54986572,
-                  "observedHomeWinRate": 0.53623188,
+                  "meanProbability": 0.5489111,
+                  "observedHomeWinRate": 0.52631579,
                   "upper": 0.6
                 },
                 {
-                  "absoluteError": 0.06577572,
-                  "count": 53,
+                  "absoluteError": 0.0200198,
+                  "count": 49,
                   "lower": 0.6,
-                  "meanProbability": 0.63181345,
-                  "observedHomeWinRate": 0.56603774,
+                  "meanProbability": 0.6322647,
+                  "observedHomeWinRate": 0.6122449,
                   "upper": 0.7
                 },
                 {
-                  "absoluteError": 0.21632689,
+                  "absoluteError": 0.21584286,
                   "count": 2,
                   "lower": 0.7,
-                  "meanProbability": 0.71632689,
+                  "meanProbability": 0.71584286,
                   "observedHomeWinRate": 0.5,
                   "upper": 0.8
                 }
@@ -19204,8 +19189,8 @@
                   "slateDateEt": "2026-06-20"
                 },
                 {
-                  "accuracy": 0.57142857,
-                  "correct": 8,
+                  "accuracy": 0.64285714,
+                  "correct": 9,
                   "dayPassed": false,
                   "gameCount": 14,
                   "slateDateEt": "2026-06-21"
@@ -19218,8 +19203,8 @@
                   "slateDateEt": "2026-06-22"
                 },
                 {
-                  "accuracy": 0.6,
-                  "correct": 9,
+                  "accuracy": 0.53333333,
+                  "correct": 8,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-06-23"
@@ -19262,10 +19247,10 @@
               ],
               "dailyPassRate": 0.06896552,
               "dayCount": 29,
-              "expectedCalibrationError": 0.03061598,
+              "expectedCalibrationError": 0.02976944,
               "gameCount": 381,
-              "logLoss": 0.68952418,
-              "meanDailyAccuracy": 0.53075397,
+              "logLoss": 0.68939686,
+              "meanDailyAccuracy": 0.53091817,
               "minimumDailyAccuracy": 0.25,
               "overallAccuracy": 0.53018373
             },
@@ -19300,8 +19285,8 @@
             ],
             "foldEvaluation": {},
             "overall": {
-              "fundamentals_available": 0.03276898,
-              "fundamentals_group_coverage": 0.02457673
+              "fundamentals_available": 0.03413435,
+              "fundamentals_group_coverage": 0.02560076
             },
             "requirements": {
               "fundamentals_available": 0.5,
@@ -19310,16 +19295,16 @@
             "supportCounts": {},
             "trainingFolds": [
               {
-                "fundamentals_available": 0.04794247,
-                "fundamentals_group_coverage": 0.03595685
+                "fundamentals_available": 0.04994007,
+                "fundamentals_group_coverage": 0.03745505
               },
               {
-                "fundamentals_available": 0.04149378,
-                "fundamentals_group_coverage": 0.03112033
+                "fundamentals_available": 0.04322268,
+                "fundamentals_group_coverage": 0.03241701
               },
               {
-                "fundamentals_available": 0.03657422,
-                "fundamentals_group_coverage": 0.02743066
+                "fundamentals_available": 0.03809814,
+                "fundamentals_group_coverage": 0.02857361
               }
             ],
             "validationFolds": [
@@ -19369,11 +19354,11 @@
               "worst_fold_accuracy_regression_too_large"
             ],
             "foldAccuracyUplifts": [
-              -0.01799486,
-              -0.01542417,
+              -0.02313625,
+              -0.01028278,
               -0.03149606
             ],
-            "meanDailyAccuracyUplift": -0.02168172,
+            "meanDailyAccuracyUplift": -0.02223404,
             "minimumNetCorrectUplift": 6,
             "netCorrectUplift": -25,
             "overallAccuracyUplift": -0.02157032,
@@ -20057,53 +20042,53 @@
           "overallAccuracy": 0.55737705
         },
         "oofMetrics": {
-          "brierScore": 0.24842026,
+          "brierScore": 0.24839078,
           "calibrationBins": [
             {
-              "absoluteError": 0.27313156,
+              "absoluteError": 0.26812055,
               "count": 1,
               "lower": 0.2,
-              "meanProbability": 0.27313156,
+              "meanProbability": 0.26812055,
               "observedHomeWinRate": 0.0,
               "upper": 0.3
             },
             {
-              "absoluteError": 0.02138753,
+              "absoluteError": 0.02290501,
               "count": 36,
               "lower": 0.3,
-              "meanProbability": 0.36750136,
+              "meanProbability": 0.36598388,
               "observedHomeWinRate": 0.38888889,
               "upper": 0.4
             },
             {
-              "absoluteError": 0.02356199,
-              "count": 297,
+              "absoluteError": 0.02440878,
+              "count": 307,
               "lower": 0.4,
-              "meanProbability": 0.4646535,
-              "observedHomeWinRate": 0.48821549,
+              "meanProbability": 0.46419057,
+              "observedHomeWinRate": 0.48859935,
               "upper": 0.5
             },
             {
-              "absoluteError": 0.01596421,
-              "count": 665,
+              "absoluteError": 0.01854831,
+              "count": 663,
               "lower": 0.5,
-              "meanProbability": 0.54829504,
-              "observedHomeWinRate": 0.53233083,
+              "meanProbability": 0.54796007,
+              "observedHomeWinRate": 0.52941176,
               "upper": 0.6
             },
             {
-              "absoluteError": 0.06015527,
-              "count": 152,
+              "absoluteError": 0.04258823,
+              "count": 144,
               "lower": 0.6,
-              "meanProbability": 0.63252369,
-              "observedHomeWinRate": 0.57236842,
+              "meanProbability": 0.632866,
+              "observedHomeWinRate": 0.59027778,
               "upper": 0.7
             },
             {
-              "absoluteError": 0.0962641,
+              "absoluteError": 0.09539445,
               "count": 8,
               "lower": 0.7,
-              "meanProbability": 0.7212641,
+              "meanProbability": 0.72039445,
               "observedHomeWinRate": 0.625,
               "upper": 0.8
             }
@@ -20132,8 +20117,8 @@
               "slateDateEt": "2026-04-05"
             },
             {
-              "accuracy": 0.53846154,
-              "correct": 7,
+              "accuracy": 0.46153846,
+              "correct": 6,
               "dayPassed": false,
               "gameCount": 13,
               "slateDateEt": "2026-04-06"
@@ -20167,8 +20152,8 @@
               "slateDateEt": "2026-04-10"
             },
             {
-              "accuracy": 0.6,
-              "correct": 9,
+              "accuracy": 0.53333333,
+              "correct": 8,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-04-11"
@@ -20202,8 +20187,8 @@
               "slateDateEt": "2026-04-15"
             },
             {
-              "accuracy": 0.6,
-              "correct": 6,
+              "accuracy": 0.5,
+              "correct": 5,
               "dayPassed": false,
               "gameCount": 10,
               "slateDateEt": "2026-04-16"
@@ -20293,8 +20278,8 @@
               "slateDateEt": "2026-04-28"
             },
             {
-              "accuracy": 0.30769231,
-              "correct": 4,
+              "accuracy": 0.38461538,
+              "correct": 5,
               "dayPassed": false,
               "gameCount": 13,
               "slateDateEt": "2026-04-29"
@@ -20321,8 +20306,8 @@
               "slateDateEt": "2026-05-02"
             },
             {
-              "accuracy": 0.6,
-              "correct": 9,
+              "accuracy": 0.66666667,
+              "correct": 10,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-05-03"
@@ -20398,8 +20383,8 @@
               "slateDateEt": "2026-05-13"
             },
             {
-              "accuracy": 0.54545455,
-              "correct": 6,
+              "accuracy": 0.45454545,
+              "correct": 5,
               "dayPassed": false,
               "gameCount": 11,
               "slateDateEt": "2026-05-14"
@@ -20426,8 +20411,8 @@
               "slateDateEt": "2026-05-17"
             },
             {
-              "accuracy": 0.57142857,
-              "correct": 8,
+              "accuracy": 0.64285714,
+              "correct": 9,
               "dayPassed": false,
               "gameCount": 14,
               "slateDateEt": "2026-05-18"
@@ -20482,8 +20467,8 @@
               "slateDateEt": "2026-05-25"
             },
             {
-              "accuracy": 0.6,
-              "correct": 9,
+              "accuracy": 0.66666667,
+              "correct": 10,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-05-26"
@@ -20664,8 +20649,8 @@
               "slateDateEt": "2026-06-20"
             },
             {
-              "accuracy": 0.57142857,
-              "correct": 8,
+              "accuracy": 0.64285714,
+              "correct": 9,
               "dayPassed": false,
               "gameCount": 14,
               "slateDateEt": "2026-06-21"
@@ -20678,8 +20663,8 @@
               "slateDateEt": "2026-06-22"
             },
             {
-              "accuracy": 0.6,
-              "correct": 9,
+              "accuracy": 0.53333333,
+              "correct": 8,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-06-23"
@@ -20722,10 +20707,10 @@
           ],
           "dailyPassRate": 0.03448276,
           "dayCount": 87,
-          "expectedCalibrationError": 0.02465134,
+          "expectedCalibrationError": 0.02396858,
           "gameCount": 1159,
-          "logLoss": 0.6900132,
-          "meanDailyAccuracy": 0.53149014,
+          "logLoss": 0.68994828,
+          "meanDailyAccuracy": 0.53093782,
           "minimumDailyAccuracy": 0.16666667,
           "overallAccuracy": 0.53580673
         }
@@ -21002,58 +20987,58 @@
               "overallAccuracy": 0.55269923
             },
             "metrics": {
-              "brierScore": 0.24886148,
+              "brierScore": 0.24890083,
               "calibrationBins": [
                 {
-                  "absoluteError": 0.02568192,
+                  "absoluteError": 0.02399123,
                   "count": 7,
                   "lower": 0.2,
-                  "meanProbability": 0.26003237,
+                  "meanProbability": 0.26172306,
                   "observedHomeWinRate": 0.28571429,
                   "upper": 0.3
                 },
                 {
-                  "absoluteError": 0.15844397,
-                  "count": 19,
+                  "absoluteError": 0.10457028,
+                  "count": 17,
                   "lower": 0.3,
-                  "meanProbability": 0.36787182,
-                  "observedHomeWinRate": 0.52631579,
+                  "meanProbability": 0.36601795,
+                  "observedHomeWinRate": 0.47058824,
                   "upper": 0.4
                 },
                 {
-                  "absoluteError": 0.00606262,
+                  "absoluteError": 0.01684705,
                   "count": 90,
                   "lower": 0.4,
-                  "meanProbability": 0.46161817,
-                  "observedHomeWinRate": 0.45555556,
+                  "meanProbability": 0.46093073,
+                  "observedHomeWinRate": 0.47777778,
                   "upper": 0.5
                 },
                 {
-                  "absoluteError": 0.02237331,
+                  "absoluteError": 0.0227992,
                   "count": 214,
                   "lower": 0.5,
-                  "meanProbability": 0.5457378,
+                  "meanProbability": 0.54616368,
                   "observedHomeWinRate": 0.52336449,
                   "upper": 0.6
                 },
                 {
-                  "absoluteError": 0.03032913,
-                  "count": 53,
+                  "absoluteError": 0.05891402,
+                  "count": 54,
                   "lower": 0.6,
-                  "meanProbability": 0.63410272,
-                  "observedHomeWinRate": 0.60377358,
+                  "meanProbability": 0.63298809,
+                  "observedHomeWinRate": 0.57407407,
                   "upper": 0.7
                 },
                 {
-                  "absoluteError": 0.06004151,
-                  "count": 6,
+                  "absoluteError": 0.009951,
+                  "count": 7,
                   "lower": 0.7,
-                  "meanProbability": 0.72670818,
-                  "observedHomeWinRate": 0.66666667,
+                  "meanProbability": 0.72423671,
+                  "observedHomeWinRate": 0.71428571,
                   "upper": 0.8
                 }
               ],
-              "correct": 211,
+              "correct": 209,
               "daily": [
                 {
                   "accuracy": 0.5,
@@ -21070,8 +21055,8 @@
                   "slateDateEt": "2026-04-04"
                 },
                 {
-                  "accuracy": 0.375,
-                  "correct": 6,
+                  "accuracy": 0.3125,
+                  "correct": 5,
                   "dayPassed": false,
                   "gameCount": 16,
                   "slateDateEt": "2026-04-05"
@@ -21140,8 +21125,8 @@
                   "slateDateEt": "2026-04-14"
                 },
                 {
-                  "accuracy": 0.73333333,
-                  "correct": 11,
+                  "accuracy": 0.66666667,
+                  "correct": 10,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-04-15"
@@ -21261,12 +21246,12 @@
               ],
               "dailyPassRate": 0.0,
               "dayCount": 29,
-              "expectedCalibrationError": 0.02697025,
+              "expectedCalibrationError": 0.02979925,
               "gameCount": 389,
-              "logLoss": 0.69079359,
-              "meanDailyAccuracy": 0.54491117,
-              "minimumDailyAccuracy": 0.375,
-              "overallAccuracy": 0.54241645
+              "logLoss": 0.69087473,
+              "meanDailyAccuracy": 0.54045715,
+              "minimumDailyAccuracy": 0.3125,
+              "overallAccuracy": 0.53727506
             },
             "trainFirstDate": "2025-04-01",
             "trainLastDate": "2026-04-02",
@@ -21535,7 +21520,7 @@
               "overallAccuracy": 0.55784062
             },
             "metrics": {
-              "brierScore": 0.24230072,
+              "brierScore": 0.24236138,
               "calibrationBins": [
                 {
                   "absoluteError": 0.05,
@@ -21546,55 +21531,55 @@
                   "upper": 0.1
                 },
                 {
-                  "absoluteError": 0.24688047,
+                  "absoluteError": 0.24893251,
                   "count": 1,
                   "lower": 0.2,
-                  "meanProbability": 0.24688047,
+                  "meanProbability": 0.24893251,
                   "observedHomeWinRate": 0.0,
                   "upper": 0.3
                 },
                 {
-                  "absoluteError": 0.09555856,
-                  "count": 15,
+                  "absoluteError": 0.12820197,
+                  "count": 14,
                   "lower": 0.3,
-                  "meanProbability": 0.3711081,
-                  "observedHomeWinRate": 0.46666667,
+                  "meanProbability": 0.37179803,
+                  "observedHomeWinRate": 0.5,
                   "upper": 0.4
                 },
                 {
-                  "absoluteError": 0.04020231,
-                  "count": 124,
+                  "absoluteError": 0.0422735,
+                  "count": 122,
                   "lower": 0.4,
-                  "meanProbability": 0.45955715,
-                  "observedHomeWinRate": 0.41935484,
+                  "meanProbability": 0.46030629,
+                  "observedHomeWinRate": 0.41803279,
                   "upper": 0.5
                 },
                 {
-                  "absoluteError": 0.00118077,
-                  "count": 202,
+                  "absoluteError": 0.00299858,
+                  "count": 205,
                   "lower": 0.5,
-                  "meanProbability": 0.54832418,
-                  "observedHomeWinRate": 0.54950495,
+                  "meanProbability": 0.54934004,
+                  "observedHomeWinRate": 0.54634146,
                   "upper": 0.6
                 },
                 {
-                  "absoluteError": 0.07796633,
-                  "count": 41,
+                  "absoluteError": 0.07096918,
+                  "count": 40,
                   "lower": 0.6,
-                  "meanProbability": 0.62935074,
-                  "observedHomeWinRate": 0.70731707,
+                  "meanProbability": 0.62903082,
+                  "observedHomeWinRate": 0.7,
                   "upper": 0.7
                 },
                 {
-                  "absoluteError": 0.07845525,
-                  "count": 5,
+                  "absoluteError": 0.11400395,
+                  "count": 6,
                   "lower": 0.7,
-                  "meanProbability": 0.72154475,
-                  "observedHomeWinRate": 0.8,
+                  "meanProbability": 0.71932938,
+                  "observedHomeWinRate": 0.83333333,
                   "upper": 0.8
                 }
               ],
-              "correct": 226,
+              "correct": 225,
               "daily": [
                 {
                   "accuracy": 0.53333333,
@@ -21716,8 +21701,8 @@
                   "slateDateEt": "2026-05-18"
                 },
                 {
-                  "accuracy": 0.73333333,
-                  "correct": 11,
+                  "accuracy": 0.66666667,
+                  "correct": 10,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-19"
@@ -21744,8 +21729,8 @@
                   "slateDateEt": "2026-05-22"
                 },
                 {
-                  "accuracy": 0.5,
-                  "correct": 7,
+                  "accuracy": 0.57142857,
+                  "correct": 8,
                   "dayPassed": false,
                   "gameCount": 14,
                   "slateDateEt": "2026-05-23"
@@ -21758,8 +21743,8 @@
                   "slateDateEt": "2026-05-24"
                 },
                 {
-                  "accuracy": 0.53846154,
-                  "correct": 7,
+                  "accuracy": 0.46153846,
+                  "correct": 6,
                   "dayPassed": false,
                   "gameCount": 13,
                   "slateDateEt": "2026-05-25"
@@ -21802,12 +21787,12 @@
               ],
               "dailyPassRate": 0.03448276,
               "dayCount": 29,
-              "expectedCalibrationError": 0.0271022,
+              "expectedCalibrationError": 0.02927668,
               "gameCount": 389,
-              "logLoss": 0.67694593,
-              "meanDailyAccuracy": 0.5640262,
+              "logLoss": 0.67706569,
+              "meanDailyAccuracy": 0.56153789,
               "minimumDailyAccuracy": 0.0,
-              "overallAccuracy": 0.58097686
+              "overallAccuracy": 0.57840617
             },
             "trainFirstDate": "2025-04-01",
             "trainLastDate": "2026-05-01",
@@ -22084,58 +22069,58 @@
               "overallAccuracy": 0.56167979
             },
             "metrics": {
-              "brierScore": 0.24747881,
+              "brierScore": 0.24750123,
               "calibrationBins": [
                 {
-                  "absoluteError": 0.27755778,
+                  "absoluteError": 0.27833029,
                   "count": 1,
                   "lower": 0.2,
-                  "meanProbability": 0.27755778,
+                  "meanProbability": 0.27833029,
                   "observedHomeWinRate": 0.0,
                   "upper": 0.3
                 },
                 {
-                  "absoluteError": 0.2890787,
-                  "count": 6,
+                  "absoluteError": 0.2262872,
+                  "count": 5,
                   "lower": 0.3,
-                  "meanProbability": 0.37758797,
-                  "observedHomeWinRate": 0.66666667,
+                  "meanProbability": 0.3737128,
+                  "observedHomeWinRate": 0.6,
                   "upper": 0.4
                 },
                 {
-                  "absoluteError": 0.02468621,
+                  "absoluteError": 0.01464225,
                   "count": 100,
                   "lower": 0.4,
-                  "meanProbability": 0.46468621,
-                  "observedHomeWinRate": 0.44,
+                  "meanProbability": 0.46464225,
+                  "observedHomeWinRate": 0.45,
                   "upper": 0.5
                 },
                 {
-                  "absoluteError": 0.01206154,
-                  "count": 226,
+                  "absoluteError": 0.00969253,
+                  "count": 225,
                   "lower": 0.5,
-                  "meanProbability": 0.54103581,
-                  "observedHomeWinRate": 0.55309735,
+                  "meanProbability": 0.54141858,
+                  "observedHomeWinRate": 0.55111111,
                   "upper": 0.6
                 },
                 {
-                  "absoluteError": 0.00473747,
-                  "count": 45,
+                  "absoluteError": 0.01032303,
+                  "count": 47,
                   "lower": 0.6,
-                  "meanProbability": 0.62695969,
-                  "observedHomeWinRate": 0.62222222,
+                  "meanProbability": 0.62734431,
+                  "observedHomeWinRate": 0.61702128,
                   "upper": 0.7
                 },
                 {
-                  "absoluteError": 0.75144318,
+                  "absoluteError": 0.75295031,
                   "count": 3,
                   "lower": 0.7,
-                  "meanProbability": 0.75144318,
+                  "meanProbability": 0.75295031,
                   "observedHomeWinRate": 0.0,
                   "upper": 0.8
                 }
               ],
-              "correct": 212,
+              "correct": 211,
               "daily": [
                 {
                   "accuracy": 0.86666667,
@@ -22306,8 +22291,8 @@
                   "slateDateEt": "2026-06-23"
                 },
                 {
-                  "accuracy": 0.5625,
-                  "correct": 9,
+                  "accuracy": 0.5,
+                  "correct": 8,
                   "dayPassed": false,
                   "gameCount": 16,
                   "slateDateEt": "2026-06-24"
@@ -22343,12 +22328,12 @@
               ],
               "dailyPassRate": 0.10344828,
               "dayCount": 29,
-              "expectedCalibrationError": 0.02539127,
+              "expectedCalibrationError": 0.02046941,
               "gameCount": 381,
-              "logLoss": 0.68845759,
-              "meanDailyAccuracy": 0.55526136,
+              "logLoss": 0.68851291,
+              "meanDailyAccuracy": 0.55310619,
               "minimumDailyAccuracy": 0.35714286,
-              "overallAccuracy": 0.55643045
+              "overallAccuracy": 0.55380577
             },
             "trainFirstDate": "2025-04-01",
             "trainLastDate": "2026-05-30",
@@ -22381,8 +22366,8 @@
             ],
             "foldEvaluation": {},
             "overall": {
-              "fundamentals_available": 0.03276898,
-              "fundamentals_group_coverage": 0.02457673
+              "fundamentals_available": 0.03413435,
+              "fundamentals_group_coverage": 0.02560076
             },
             "requirements": {
               "fundamentals_available": 0.5,
@@ -22391,16 +22376,16 @@
             "supportCounts": {},
             "trainingFolds": [
               {
-                "fundamentals_available": 0.04794247,
-                "fundamentals_group_coverage": 0.03595685
+                "fundamentals_available": 0.04994007,
+                "fundamentals_group_coverage": 0.03745505
               },
               {
-                "fundamentals_available": 0.04149378,
-                "fundamentals_group_coverage": 0.03112033
+                "fundamentals_available": 0.04322268,
+                "fundamentals_group_coverage": 0.03241701
               },
               {
-                "fundamentals_available": 0.03657422,
-                "fundamentals_group_coverage": 0.02743066
+                "fundamentals_available": 0.03809814,
+                "fundamentals_group_coverage": 0.02857361
               }
             ],
             "validationFolds": [
@@ -22436,6 +22421,7 @@
             "validation_fold_3_fundamentals_group_coverage_below_0.50",
             "aggregate_accuracy_uplift_below_floor",
             "net_correct_uplift_below_floor",
+            "mean_daily_accuracy_worse_than_market",
             "positive_fold_count_below_floor",
             "worst_fold_accuracy_regression_too_large"
           ],
@@ -22444,21 +22430,22 @@
             "errors": [
               "aggregate_accuracy_uplift_below_floor",
               "net_correct_uplift_below_floor",
+              "mean_daily_accuracy_worse_than_market",
               "positive_fold_count_below_floor",
               "worst_fold_accuracy_regression_too_large"
             ],
             "foldAccuracyUplifts": [
-              -0.01028278,
-              0.02313624,
-              -0.00524934
+              -0.01542417,
+              0.02056555,
+              -0.00787402
             ],
-            "meanDailyAccuracyUplift": 0.00156105,
+            "meanDailyAccuracyUplift": -0.00147145,
             "minimumNetCorrectUplift": 6,
-            "netCorrectUplift": 3,
-            "overallAccuracyUplift": 0.00258844,
+            "netCorrectUplift": -1,
+            "overallAccuracyUplift": -0.00086281,
             "positiveFoldCount": 1,
             "requiredPositiveFoldCount": 2,
-            "worstFoldAccuracyUplift": -0.01028278
+            "worstFoldAccuracyUplift": -0.01542417
           }
         },
         "l2": 0.1,
@@ -23136,7 +23123,7 @@
           "overallAccuracy": 0.55737705
         },
         "oofMetrics": {
-          "brierScore": 0.24620494,
+          "brierScore": 0.24624587,
           "calibrationBins": [
             {
               "absoluteError": 0.05,
@@ -23147,55 +23134,55 @@
               "upper": 0.1
             },
             {
-              "absoluteError": 0.03829609,
+              "absoluteError": 0.03992491,
               "count": 9,
               "lower": 0.2,
-              "meanProbability": 0.26051832,
+              "meanProbability": 0.26214714,
               "observedHomeWinRate": 0.22222222,
               "upper": 0.3
             },
             {
-              "absoluteError": 0.15445715,
-              "count": 40,
+              "absoluteError": 0.13066551,
+              "count": 36,
               "lower": 0.3,
-              "meanProbability": 0.37054285,
-              "observedHomeWinRate": 0.525,
+              "meanProbability": 0.36933449,
+              "observedHomeWinRate": 0.5,
               "upper": 0.4
             },
             {
-              "absoluteError": 0.02547561,
-              "count": 314,
+              "absoluteError": 0.01636333,
+              "count": 312,
               "lower": 0.4,
-              "meanProbability": 0.46178134,
-              "observedHomeWinRate": 0.43630573,
+              "meanProbability": 0.46187615,
+              "observedHomeWinRate": 0.44551282,
               "upper": 0.5
             },
             {
-              "absoluteError": 0.00284029,
-              "count": 642,
+              "absoluteError": 0.00514428,
+              "count": 644,
               "lower": 0.5,
-              "meanProbability": 0.54489636,
-              "observedHomeWinRate": 0.54205607,
+              "meanProbability": 0.54551695,
+              "observedHomeWinRate": 0.54037267,
               "upper": 0.6
             },
             {
-              "absoluteError": 0.0098992,
-              "count": 139,
+              "absoluteError": 0.00587073,
+              "count": 141,
               "lower": 0.6,
-              "meanProbability": 0.63038857,
-              "observedHomeWinRate": 0.64028777,
+              "meanProbability": 0.6299842,
+              "observedHomeWinRate": 0.62411348,
               "upper": 0.7
             },
             {
-              "absoluteError": 0.15873588,
-              "count": 14,
+              "absoluteError": 0.10278026,
+              "count": 16,
               "lower": 0.7,
-              "meanProbability": 0.73016445,
-              "observedHomeWinRate": 0.57142857,
+              "meanProbability": 0.72778026,
+              "observedHomeWinRate": 0.625,
               "upper": 0.8
             }
           ],
-          "correct": 649,
+          "correct": 645,
           "daily": [
             {
               "accuracy": 0.5,
@@ -23212,8 +23199,8 @@
               "slateDateEt": "2026-04-04"
             },
             {
-              "accuracy": 0.375,
-              "correct": 6,
+              "accuracy": 0.3125,
+              "correct": 5,
               "dayPassed": false,
               "gameCount": 16,
               "slateDateEt": "2026-04-05"
@@ -23282,8 +23269,8 @@
               "slateDateEt": "2026-04-14"
             },
             {
-              "accuracy": 0.73333333,
-              "correct": 11,
+              "accuracy": 0.66666667,
+              "correct": 10,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-04-15"
@@ -23520,8 +23507,8 @@
               "slateDateEt": "2026-05-18"
             },
             {
-              "accuracy": 0.73333333,
-              "correct": 11,
+              "accuracy": 0.66666667,
+              "correct": 10,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-05-19"
@@ -23548,8 +23535,8 @@
               "slateDateEt": "2026-05-22"
             },
             {
-              "accuracy": 0.5,
-              "correct": 7,
+              "accuracy": 0.57142857,
+              "correct": 8,
               "dayPassed": false,
               "gameCount": 14,
               "slateDateEt": "2026-05-23"
@@ -23562,8 +23549,8 @@
               "slateDateEt": "2026-05-24"
             },
             {
-              "accuracy": 0.53846154,
-              "correct": 7,
+              "accuracy": 0.46153846,
+              "correct": 6,
               "dayPassed": false,
               "gameCount": 13,
               "slateDateEt": "2026-05-25"
@@ -23772,8 +23759,8 @@
               "slateDateEt": "2026-06-23"
             },
             {
-              "accuracy": 0.5625,
-              "correct": 9,
+              "accuracy": 0.5,
+              "correct": 8,
               "dayPassed": false,
               "gameCount": 16,
               "slateDateEt": "2026-06-24"
@@ -23809,12 +23796,12 @@
           ],
           "dailyPassRate": 0.04597701,
           "dayCount": 87,
-          "expectedCalibrationError": 0.01725112,
+          "expectedCalibrationError": 0.0138083,
           "gameCount": 1159,
-          "logLoss": 0.68537793,
-          "meanDailyAccuracy": 0.55473291,
+          "logLoss": 0.68546354,
+          "meanDailyAccuracy": 0.55170041,
           "minimumDailyAccuracy": 0.0,
-          "overallAccuracy": 0.55996549
+          "overallAccuracy": 0.55651424
         }
       },
       "market_temporal_team_fundamentals_v8": {
@@ -24089,54 +24076,54 @@
               "overallAccuracy": 0.55269923
             },
             "metrics": {
-              "brierScore": 0.24998323,
+              "brierScore": 0.24944092,
               "calibrationBins": [
                 {
-                  "absoluteError": 0.13897247,
-                  "count": 9,
+                  "absoluteError": 0.10212119,
+                  "count": 12,
                   "lower": 0.3,
-                  "meanProbability": 0.36119469,
-                  "observedHomeWinRate": 0.22222222,
+                  "meanProbability": 0.35212119,
+                  "observedHomeWinRate": 0.25,
                   "upper": 0.4
                 },
                 {
-                  "absoluteError": 0.00071162,
-                  "count": 90,
+                  "absoluteError": 0.02921006,
+                  "count": 79,
                   "lower": 0.4,
-                  "meanProbability": 0.46595505,
-                  "observedHomeWinRate": 0.46666667,
+                  "meanProbability": 0.46446083,
+                  "observedHomeWinRate": 0.49367089,
                   "upper": 0.5
                 },
                 {
-                  "absoluteError": 0.01130253,
-                  "count": 239,
+                  "absoluteError": 0.0282719,
+                  "count": 247,
                   "lower": 0.5,
-                  "meanProbability": 0.54686738,
-                  "observedHomeWinRate": 0.53556485,
+                  "meanProbability": 0.54649053,
+                  "observedHomeWinRate": 0.51821862,
                   "upper": 0.6
                 },
                 {
-                  "absoluteError": 0.04351548,
-                  "count": 50,
+                  "absoluteError": 0.00638167,
+                  "count": 49,
                   "lower": 0.6,
-                  "meanProbability": 0.62351548,
-                  "observedHomeWinRate": 0.58,
+                  "meanProbability": 0.6262714,
+                  "observedHomeWinRate": 0.63265306,
                   "upper": 0.7
                 },
                 {
-                  "absoluteError": 0.71856176,
-                  "count": 1,
+                  "absoluteError": 0.72940047,
+                  "count": 2,
                   "lower": 0.7,
-                  "meanProbability": 0.71856176,
+                  "meanProbability": 0.72940047,
                   "observedHomeWinRate": 0.0,
                   "upper": 0.8
                 }
               ],
-              "correct": 212,
+              "correct": 208,
               "daily": [
                 {
-                  "accuracy": 0.78571429,
-                  "correct": 11,
+                  "accuracy": 0.64285714,
+                  "correct": 9,
                   "dayPassed": false,
                   "gameCount": 14,
                   "slateDateEt": "2026-04-03"
@@ -24156,8 +24143,8 @@
                   "slateDateEt": "2026-04-05"
                 },
                 {
-                  "accuracy": 0.61538462,
-                  "correct": 8,
+                  "accuracy": 0.46153846,
+                  "correct": 6,
                   "dayPassed": false,
                   "gameCount": 13,
                   "slateDateEt": "2026-04-06"
@@ -24170,15 +24157,15 @@
                   "slateDateEt": "2026-04-07"
                 },
                 {
-                  "accuracy": 0.4,
-                  "correct": 6,
+                  "accuracy": 0.46666667,
+                  "correct": 7,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-04-08"
                 },
                 {
-                  "accuracy": 0.33333333,
-                  "correct": 2,
+                  "accuracy": 0.5,
+                  "correct": 3,
                   "dayPassed": false,
                   "gameCount": 6,
                   "slateDateEt": "2026-04-09"
@@ -24191,8 +24178,8 @@
                   "slateDateEt": "2026-04-10"
                 },
                 {
-                  "accuracy": 0.6,
-                  "correct": 9,
+                  "accuracy": 0.53333333,
+                  "correct": 8,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-04-11"
@@ -24205,36 +24192,36 @@
                   "slateDateEt": "2026-04-12"
                 },
                 {
-                  "accuracy": 0.7,
-                  "correct": 7,
+                  "accuracy": 0.6,
+                  "correct": 6,
                   "dayPassed": false,
                   "gameCount": 10,
                   "slateDateEt": "2026-04-13"
                 },
                 {
-                  "accuracy": 0.46666667,
-                  "correct": 7,
+                  "accuracy": 0.53333333,
+                  "correct": 8,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-04-14"
                 },
                 {
-                  "accuracy": 0.8,
-                  "correct": 12,
-                  "dayPassed": true,
+                  "accuracy": 0.73333333,
+                  "correct": 11,
+                  "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-04-15"
                 },
                 {
-                  "accuracy": 0.6,
-                  "correct": 6,
+                  "accuracy": 0.5,
+                  "correct": 5,
                   "dayPassed": false,
                   "gameCount": 10,
                   "slateDateEt": "2026-04-16"
                 },
                 {
-                  "accuracy": 0.53333333,
-                  "correct": 8,
+                  "accuracy": 0.6,
+                  "correct": 9,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-04-17"
@@ -24296,8 +24283,8 @@
                   "slateDateEt": "2026-04-25"
                 },
                 {
-                  "accuracy": 0.5,
-                  "correct": 8,
+                  "accuracy": 0.5625,
+                  "correct": 9,
                   "dayPassed": false,
                   "gameCount": 16,
                   "slateDateEt": "2026-04-26"
@@ -24317,8 +24304,8 @@
                   "slateDateEt": "2026-04-28"
                 },
                 {
-                  "accuracy": 0.46153846,
-                  "correct": 6,
+                  "accuracy": 0.38461538,
+                  "correct": 5,
                   "dayPassed": false,
                   "gameCount": 13,
                   "slateDateEt": "2026-04-29"
@@ -24338,14 +24325,14 @@
                   "slateDateEt": "2026-05-01"
                 }
               ],
-              "dailyPassRate": 0.03448276,
+              "dailyPassRate": 0.0,
               "dayCount": 29,
-              "expectedCalibrationError": 0.01776462,
+              "expectedCalibrationError": 0.03158795,
               "gameCount": 389,
-              "logLoss": 0.69331215,
-              "meanDailyAccuracy": 0.54571554,
+              "logLoss": 0.69225214,
+              "meanDailyAccuracy": 0.53613647,
               "minimumDailyAccuracy": 0.3125,
-              "overallAccuracy": 0.54498715
+              "overallAccuracy": 0.53470437
             },
             "trainFirstDate": "2025-04-01",
             "trainLastDate": "2026-04-02",
@@ -24614,69 +24601,69 @@
               "overallAccuracy": 0.55784062
             },
             "metrics": {
-              "brierScore": 0.24576147,
+              "brierScore": 0.2450804,
               "calibrationBins": [
                 {
-                  "absoluteError": 0.20794162,
+                  "absoluteError": 0.05,
                   "count": 1,
-                  "lower": 0.2,
-                  "meanProbability": 0.20794162,
+                  "lower": 0.0,
+                  "meanProbability": 0.05,
                   "observedHomeWinRate": 0.0,
-                  "upper": 0.3
+                  "upper": 0.1
                 },
                 {
-                  "absoluteError": 0.27737384,
-                  "count": 11,
+                  "absoluteError": 0.19965924,
+                  "count": 12,
                   "lower": 0.3,
-                  "meanProbability": 0.36828293,
-                  "observedHomeWinRate": 0.09090909,
+                  "meanProbability": 0.36632591,
+                  "observedHomeWinRate": 0.16666667,
                   "upper": 0.4
                 },
                 {
-                  "absoluteError": 0.03815967,
-                  "count": 117,
+                  "absoluteError": 0.04684051,
+                  "count": 109,
                   "lower": 0.4,
-                  "meanProbability": 0.46611383,
-                  "observedHomeWinRate": 0.5042735,
+                  "meanProbability": 0.46692095,
+                  "observedHomeWinRate": 0.51376147,
                   "upper": 0.5
                 },
                 {
-                  "absoluteError": 6.946e-05,
-                  "count": 205,
+                  "absoluteError": 0.01719759,
+                  "count": 223,
                   "lower": 0.5,
-                  "meanProbability": 0.54641092,
-                  "observedHomeWinRate": 0.54634146,
+                  "meanProbability": 0.54634557,
+                  "observedHomeWinRate": 0.52914798,
                   "upper": 0.6
                 },
                 {
-                  "absoluteError": 0.09974882,
-                  "count": 49,
+                  "absoluteError": 0.05638472,
+                  "count": 38,
                   "lower": 0.6,
-                  "meanProbability": 0.63036106,
-                  "observedHomeWinRate": 0.53061224,
+                  "meanProbability": 0.63533209,
+                  "observedHomeWinRate": 0.57894737,
                   "upper": 0.7
                 },
                 {
-                  "absoluteError": 0.09922313,
+                  "absoluteError": 0.11004869,
                   "count": 6,
                   "lower": 0.7,
-                  "meanProbability": 0.7341102,
+                  "meanProbability": 0.72328464,
                   "observedHomeWinRate": 0.83333333,
                   "upper": 0.8
                 }
               ],
-              "correct": 212,
+              "correct": 209,
               "daily": [
                 {
-                  "accuracy": 0.53333333,
-                  "correct": 8,
+                  "accuracy": 0.6,
+                  "correct": 9,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-02"
                 },
                 {
-                  "accuracy": 0.73333333,
-                  "correct": 11,
+                  "accuracy": 0.66666667,
+                  "correct": 10,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-03"
@@ -24696,8 +24683,8 @@
                   "slateDateEt": "2026-05-05"
                 },
                 {
-                  "accuracy": 0.6,
-                  "correct": 9,
+                  "accuracy": 0.53333333,
+                  "correct": 8,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-06"
@@ -24710,15 +24697,15 @@
                   "slateDateEt": "2026-05-07"
                 },
                 {
-                  "accuracy": 0.53333333,
-                  "correct": 8,
+                  "accuracy": 0.6,
+                  "correct": 9,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-08"
                 },
                 {
-                  "accuracy": 0.5,
-                  "correct": 7,
+                  "accuracy": 0.57142857,
+                  "correct": 8,
                   "dayPassed": false,
                   "gameCount": 14,
                   "slateDateEt": "2026-05-09"
@@ -24738,15 +24725,15 @@
                   "slateDateEt": "2026-05-11"
                 },
                 {
-                  "accuracy": 0.73333333,
-                  "correct": 11,
+                  "accuracy": 0.66666667,
+                  "correct": 10,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-12"
                 },
                 {
-                  "accuracy": 0.53333333,
-                  "correct": 8,
+                  "accuracy": 0.6,
+                  "correct": 9,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-13"
@@ -24766,8 +24753,8 @@
                   "slateDateEt": "2026-05-15"
                 },
                 {
-                  "accuracy": 0.46666667,
-                  "correct": 7,
+                  "accuracy": 0.53333333,
+                  "correct": 8,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-16"
@@ -24794,8 +24781,8 @@
                   "slateDateEt": "2026-05-19"
                 },
                 {
-                  "accuracy": 0.53333333,
-                  "correct": 8,
+                  "accuracy": 0.6,
+                  "correct": 9,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-20"
@@ -24808,29 +24795,29 @@
                   "slateDateEt": "2026-05-21"
                 },
                 {
-                  "accuracy": 0.5,
-                  "correct": 7,
+                  "accuracy": 0.42857143,
+                  "correct": 6,
                   "dayPassed": false,
                   "gameCount": 14,
                   "slateDateEt": "2026-05-22"
                 },
                 {
-                  "accuracy": 0.35714286,
-                  "correct": 5,
+                  "accuracy": 0.21428571,
+                  "correct": 3,
                   "dayPassed": false,
                   "gameCount": 14,
                   "slateDateEt": "2026-05-23"
                 },
                 {
-                  "accuracy": 0.46666667,
-                  "correct": 7,
+                  "accuracy": 0.53333333,
+                  "correct": 8,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-24"
                 },
                 {
-                  "accuracy": 0.46153846,
-                  "correct": 6,
+                  "accuracy": 0.38461538,
+                  "correct": 5,
                   "dayPassed": false,
                   "gameCount": 13,
                   "slateDateEt": "2026-05-25"
@@ -24843,15 +24830,15 @@
                   "slateDateEt": "2026-05-26"
                 },
                 {
-                  "accuracy": 0.66666667,
-                  "correct": 10,
+                  "accuracy": 0.6,
+                  "correct": 9,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-27"
                 },
                 {
-                  "accuracy": 0.33333333,
-                  "correct": 2,
+                  "accuracy": 0.16666667,
+                  "correct": 1,
                   "dayPassed": false,
                   "gameCount": 6,
                   "slateDateEt": "2026-05-28"
@@ -24864,8 +24851,8 @@
                   "slateDateEt": "2026-05-29"
                 },
                 {
-                  "accuracy": 0.53333333,
-                  "correct": 8,
+                  "accuracy": 0.46666667,
+                  "correct": 7,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-30"
@@ -24873,12 +24860,12 @@
               ],
               "dailyPassRate": 0.0,
               "dayCount": 29,
-              "expectedCalibrationError": 0.03398716,
+              "expectedCalibrationError": 0.03647686,
               "gameCount": 389,
-              "logLoss": 0.68432764,
-              "meanDailyAccuracy": 0.53376164,
-              "minimumDailyAccuracy": 0.28571429,
-              "overallAccuracy": 0.54498715
+              "logLoss": 0.68272529,
+              "meanDailyAccuracy": 0.52273474,
+              "minimumDailyAccuracy": 0.16666667,
+              "overallAccuracy": 0.53727506
             },
             "trainFirstDate": "2025-04-01",
             "trainLastDate": "2026-05-01",
@@ -25155,38 +25142,38 @@
               "overallAccuracy": 0.56167979
             },
             "metrics": {
-              "brierScore": 0.24930506,
+              "brierScore": 0.25079149,
               "calibrationBins": [
                 {
-                  "absoluteError": 0.37810249,
-                  "count": 3,
+                  "absoluteError": 0.11847172,
+                  "count": 4,
                   "lower": 0.3,
-                  "meanProbability": 0.37810249,
-                  "observedHomeWinRate": 0.0,
+                  "meanProbability": 0.36847172,
+                  "observedHomeWinRate": 0.25,
                   "upper": 0.4
                 },
                 {
-                  "absoluteError": 0.05565909,
-                  "count": 94,
+                  "absoluteError": 0.05047838,
+                  "count": 97,
                   "lower": 0.4,
-                  "meanProbability": 0.46561751,
-                  "observedHomeWinRate": 0.5212766,
+                  "meanProbability": 0.46498553,
+                  "observedHomeWinRate": 0.51546392,
                   "upper": 0.5
                 },
                 {
-                  "absoluteError": 0.01967937,
-                  "count": 233,
+                  "absoluteError": 0.01512955,
+                  "count": 217,
                   "lower": 0.5,
-                  "meanProbability": 0.54757637,
-                  "observedHomeWinRate": 0.527897,
+                  "meanProbability": 0.54969176,
+                  "observedHomeWinRate": 0.53456221,
                   "upper": 0.6
                 },
                 {
-                  "absoluteError": 0.05342404,
-                  "count": 51,
+                  "absoluteError": 0.08869319,
+                  "count": 63,
                   "lower": 0.6,
-                  "meanProbability": 0.62205149,
-                  "observedHomeWinRate": 0.56862745,
+                  "meanProbability": 0.62837573,
+                  "observedHomeWinRate": 0.53968254,
                   "upper": 0.7
                 }
               ],
@@ -25200,8 +25187,8 @@
                   "slateDateEt": "2026-05-31"
                 },
                 {
-                  "accuracy": 0.33333333,
-                  "correct": 3,
+                  "accuracy": 0.44444444,
+                  "correct": 4,
                   "dayPassed": false,
                   "gameCount": 9,
                   "slateDateEt": "2026-06-01"
@@ -25221,15 +25208,15 @@
                   "slateDateEt": "2026-06-03"
                 },
                 {
-                  "accuracy": 0.33333333,
-                  "correct": 3,
+                  "accuracy": 0.44444444,
+                  "correct": 4,
                   "dayPassed": false,
                   "gameCount": 9,
                   "slateDateEt": "2026-06-04"
                 },
                 {
-                  "accuracy": 0.53333333,
-                  "correct": 8,
+                  "accuracy": 0.46666667,
+                  "correct": 7,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-06-05"
@@ -25249,15 +25236,15 @@
                   "slateDateEt": "2026-06-07"
                 },
                 {
-                  "accuracy": 0.5,
-                  "correct": 4,
+                  "accuracy": 0.625,
+                  "correct": 5,
                   "dayPassed": false,
                   "gameCount": 8,
                   "slateDateEt": "2026-06-08"
                 },
                 {
-                  "accuracy": 0.53333333,
-                  "correct": 8,
+                  "accuracy": 0.4,
+                  "correct": 6,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-06-09"
@@ -25284,8 +25271,8 @@
                   "slateDateEt": "2026-06-12"
                 },
                 {
-                  "accuracy": 0.53333333,
-                  "correct": 8,
+                  "accuracy": 0.46666667,
+                  "correct": 7,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-06-13"
@@ -25312,8 +25299,8 @@
                   "slateDateEt": "2026-06-16"
                 },
                 {
-                  "accuracy": 0.5,
-                  "correct": 7,
+                  "accuracy": 0.42857143,
+                  "correct": 6,
                   "dayPassed": false,
                   "gameCount": 14,
                   "slateDateEt": "2026-06-17"
@@ -25340,15 +25327,15 @@
                   "slateDateEt": "2026-06-20"
                 },
                 {
-                  "accuracy": 0.5,
-                  "correct": 7,
+                  "accuracy": 0.57142857,
+                  "correct": 8,
                   "dayPassed": false,
                   "gameCount": 14,
                   "slateDateEt": "2026-06-21"
                 },
                 {
-                  "accuracy": 0.66666667,
-                  "correct": 8,
+                  "accuracy": 0.58333333,
+                  "correct": 7,
                   "dayPassed": false,
                   "gameCount": 12,
                   "slateDateEt": "2026-06-22"
@@ -25368,8 +25355,8 @@
                   "slateDateEt": "2026-06-24"
                 },
                 {
-                  "accuracy": 0.25,
-                  "correct": 2,
+                  "accuracy": 0.375,
+                  "correct": 3,
                   "dayPassed": false,
                   "gameCount": 8,
                   "slateDateEt": "2026-06-25"
@@ -25389,8 +25376,8 @@
                   "slateDateEt": "2026-06-27"
                 },
                 {
-                  "accuracy": 0.6,
-                  "correct": 9,
+                  "accuracy": 0.66666667,
+                  "correct": 10,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-06-28"
@@ -25398,11 +25385,11 @@
               ],
               "dailyPassRate": 0.03448276,
               "dayCount": 29,
-              "expectedCalibrationError": 0.03589549,
+              "expectedCalibrationError": 0.03737814,
               "gameCount": 381,
-              "logLoss": 0.69173766,
-              "meanDailyAccuracy": 0.52157225,
-              "minimumDailyAccuracy": 0.25,
+              "logLoss": 0.6947999,
+              "meanDailyAccuracy": 0.52808566,
+              "minimumDailyAccuracy": 0.28571429,
               "overallAccuracy": 0.52493438
             },
             "trainFirstDate": "2025-04-01",
@@ -25445,8 +25432,8 @@
             ],
             "foldEvaluation": {},
             "overall": {
-              "fundamentals_available": 0.03276898,
-              "fundamentals_group_coverage": 0.02457673,
+              "fundamentals_available": 0.03413435,
+              "fundamentals_group_coverage": 0.02560076,
               "v8_available": 1.0,
               "v8_f5_available": 0.0
             },
@@ -25459,20 +25446,20 @@
             "supportCounts": {},
             "trainingFolds": [
               {
-                "fundamentals_available": 0.04794247,
-                "fundamentals_group_coverage": 0.03595685,
+                "fundamentals_available": 0.04994007,
+                "fundamentals_group_coverage": 0.03745505,
                 "v8_available": 1.0,
                 "v8_f5_available": 0.0
               },
               {
-                "fundamentals_available": 0.04149378,
-                "fundamentals_group_coverage": 0.03112033,
+                "fundamentals_available": 0.04322268,
+                "fundamentals_group_coverage": 0.03241701,
                 "v8_available": 1.0,
                 "v8_f5_available": 0.0
               },
               {
-                "fundamentals_available": 0.03657422,
-                "fundamentals_group_coverage": 0.02743066,
+                "fundamentals_available": 0.03809814,
+                "fundamentals_group_coverage": 0.02857361,
                 "v8_available": 1.0,
                 "v8_f5_available": 0.0
               }
@@ -25537,20 +25524,20 @@
               "worst_fold_accuracy_regression_too_large"
             ],
             "foldAccuracyUplifts": [
-              -0.00771208,
-              -0.01285347,
+              -0.01799486,
+              -0.02056556,
               -0.03674541
             ],
-            "meanDailyAccuracyUplift": -0.01948872,
+            "meanDailyAccuracyUplift": -0.02418624,
             "minimumNetCorrectUplift": 6,
-            "netCorrectUplift": -22,
-            "overallAccuracyUplift": -0.01898188,
+            "netCorrectUplift": -29,
+            "overallAccuracyUplift": -0.02502157,
             "positiveFoldCount": 0,
             "requiredPositiveFoldCount": 2,
             "worstFoldAccuracyUplift": -0.03674541
           }
         },
-        "l2": 1.0,
+        "l2": 0.2,
         "oofMarketBaseline": {
           "brierScore": 0.24732178,
           "calibrationBins": [
@@ -26225,62 +26212,62 @@
           "overallAccuracy": 0.55737705
         },
         "oofMetrics": {
-          "brierScore": 0.24834333,
+          "brierScore": 0.24842135,
           "calibrationBins": [
             {
-              "absoluteError": 0.20794162,
+              "absoluteError": 0.05,
               "count": 1,
-              "lower": 0.2,
-              "meanProbability": 0.20794162,
+              "lower": 0.0,
+              "meanProbability": 0.05,
               "observedHomeWinRate": 0.0,
-              "upper": 0.3
+              "upper": 0.1
             },
             {
-              "absoluteError": 0.2363553,
-              "count": 23,
+              "absoluteError": 0.146259,
+              "count": 28,
               "lower": 0.3,
-              "meanProbability": 0.36679009,
-              "observedHomeWinRate": 0.13043478,
+              "meanProbability": 0.36054472,
+              "observedHomeWinRate": 0.21428571,
               "upper": 0.4
             },
             {
-              "absoluteError": 0.03242751,
-              "count": 301,
+              "absoluteError": 0.04319163,
+              "count": 285,
               "lower": 0.4,
-              "meanProbability": 0.46591136,
-              "observedHomeWinRate": 0.49833887,
+              "meanProbability": 0.4655803,
+              "observedHomeWinRate": 0.50877193,
               "upper": 0.5
             },
             {
-              "absoluteError": 0.0107841,
-              "count": 677,
+              "absoluteError": 0.02052596,
+              "count": 687,
               "lower": 0.5,
-              "meanProbability": 0.54697317,
-              "observedHomeWinRate": 0.53618907,
+              "meanProbability": 0.54745463,
+              "observedHomeWinRate": 0.52692868,
               "upper": 0.6
             },
             {
-              "absoluteError": 0.06525394,
+              "absoluteError": 0.04945059,
               "count": 150,
               "lower": 0.6,
-              "meanProbability": 0.62525394,
-              "observedHomeWinRate": 0.56,
+              "meanProbability": 0.62945059,
+              "observedHomeWinRate": 0.58,
               "upper": 0.7
             },
             {
-              "absoluteError": 0.01760328,
-              "count": 7,
+              "absoluteError": 0.0998136,
+              "count": 8,
               "lower": 0.7,
-              "meanProbability": 0.73188899,
-              "observedHomeWinRate": 0.71428571,
+              "meanProbability": 0.7248136,
+              "observedHomeWinRate": 0.625,
               "upper": 0.8
             }
           ],
-          "correct": 624,
+          "correct": 617,
           "daily": [
             {
-              "accuracy": 0.78571429,
-              "correct": 11,
+              "accuracy": 0.64285714,
+              "correct": 9,
               "dayPassed": false,
               "gameCount": 14,
               "slateDateEt": "2026-04-03"
@@ -26300,8 +26287,8 @@
               "slateDateEt": "2026-04-05"
             },
             {
-              "accuracy": 0.61538462,
-              "correct": 8,
+              "accuracy": 0.46153846,
+              "correct": 6,
               "dayPassed": false,
               "gameCount": 13,
               "slateDateEt": "2026-04-06"
@@ -26314,15 +26301,15 @@
               "slateDateEt": "2026-04-07"
             },
             {
-              "accuracy": 0.4,
-              "correct": 6,
+              "accuracy": 0.46666667,
+              "correct": 7,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-04-08"
             },
             {
-              "accuracy": 0.33333333,
-              "correct": 2,
+              "accuracy": 0.5,
+              "correct": 3,
               "dayPassed": false,
               "gameCount": 6,
               "slateDateEt": "2026-04-09"
@@ -26335,8 +26322,8 @@
               "slateDateEt": "2026-04-10"
             },
             {
-              "accuracy": 0.6,
-              "correct": 9,
+              "accuracy": 0.53333333,
+              "correct": 8,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-04-11"
@@ -26349,36 +26336,36 @@
               "slateDateEt": "2026-04-12"
             },
             {
-              "accuracy": 0.7,
-              "correct": 7,
+              "accuracy": 0.6,
+              "correct": 6,
               "dayPassed": false,
               "gameCount": 10,
               "slateDateEt": "2026-04-13"
             },
             {
-              "accuracy": 0.46666667,
-              "correct": 7,
+              "accuracy": 0.53333333,
+              "correct": 8,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-04-14"
             },
             {
-              "accuracy": 0.8,
-              "correct": 12,
-              "dayPassed": true,
+              "accuracy": 0.73333333,
+              "correct": 11,
+              "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-04-15"
             },
             {
-              "accuracy": 0.6,
-              "correct": 6,
+              "accuracy": 0.5,
+              "correct": 5,
               "dayPassed": false,
               "gameCount": 10,
               "slateDateEt": "2026-04-16"
             },
             {
-              "accuracy": 0.53333333,
-              "correct": 8,
+              "accuracy": 0.6,
+              "correct": 9,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-04-17"
@@ -26440,8 +26427,8 @@
               "slateDateEt": "2026-04-25"
             },
             {
-              "accuracy": 0.5,
-              "correct": 8,
+              "accuracy": 0.5625,
+              "correct": 9,
               "dayPassed": false,
               "gameCount": 16,
               "slateDateEt": "2026-04-26"
@@ -26461,8 +26448,8 @@
               "slateDateEt": "2026-04-28"
             },
             {
-              "accuracy": 0.46153846,
-              "correct": 6,
+              "accuracy": 0.38461538,
+              "correct": 5,
               "dayPassed": false,
               "gameCount": 13,
               "slateDateEt": "2026-04-29"
@@ -26482,15 +26469,15 @@
               "slateDateEt": "2026-05-01"
             },
             {
-              "accuracy": 0.53333333,
-              "correct": 8,
+              "accuracy": 0.6,
+              "correct": 9,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-05-02"
             },
             {
-              "accuracy": 0.73333333,
-              "correct": 11,
+              "accuracy": 0.66666667,
+              "correct": 10,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-05-03"
@@ -26510,8 +26497,8 @@
               "slateDateEt": "2026-05-05"
             },
             {
-              "accuracy": 0.6,
-              "correct": 9,
+              "accuracy": 0.53333333,
+              "correct": 8,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-05-06"
@@ -26524,15 +26511,15 @@
               "slateDateEt": "2026-05-07"
             },
             {
-              "accuracy": 0.53333333,
-              "correct": 8,
+              "accuracy": 0.6,
+              "correct": 9,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-05-08"
             },
             {
-              "accuracy": 0.5,
-              "correct": 7,
+              "accuracy": 0.57142857,
+              "correct": 8,
               "dayPassed": false,
               "gameCount": 14,
               "slateDateEt": "2026-05-09"
@@ -26552,15 +26539,15 @@
               "slateDateEt": "2026-05-11"
             },
             {
-              "accuracy": 0.73333333,
-              "correct": 11,
+              "accuracy": 0.66666667,
+              "correct": 10,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-05-12"
             },
             {
-              "accuracy": 0.53333333,
-              "correct": 8,
+              "accuracy": 0.6,
+              "correct": 9,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-05-13"
@@ -26580,8 +26567,8 @@
               "slateDateEt": "2026-05-15"
             },
             {
-              "accuracy": 0.46666667,
-              "correct": 7,
+              "accuracy": 0.53333333,
+              "correct": 8,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-05-16"
@@ -26608,8 +26595,8 @@
               "slateDateEt": "2026-05-19"
             },
             {
-              "accuracy": 0.53333333,
-              "correct": 8,
+              "accuracy": 0.6,
+              "correct": 9,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-05-20"
@@ -26622,29 +26609,29 @@
               "slateDateEt": "2026-05-21"
             },
             {
-              "accuracy": 0.5,
-              "correct": 7,
+              "accuracy": 0.42857143,
+              "correct": 6,
               "dayPassed": false,
               "gameCount": 14,
               "slateDateEt": "2026-05-22"
             },
             {
-              "accuracy": 0.35714286,
-              "correct": 5,
+              "accuracy": 0.21428571,
+              "correct": 3,
               "dayPassed": false,
               "gameCount": 14,
               "slateDateEt": "2026-05-23"
             },
             {
-              "accuracy": 0.46666667,
-              "correct": 7,
+              "accuracy": 0.53333333,
+              "correct": 8,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-05-24"
             },
             {
-              "accuracy": 0.46153846,
-              "correct": 6,
+              "accuracy": 0.38461538,
+              "correct": 5,
               "dayPassed": false,
               "gameCount": 13,
               "slateDateEt": "2026-05-25"
@@ -26657,15 +26644,15 @@
               "slateDateEt": "2026-05-26"
             },
             {
-              "accuracy": 0.66666667,
-              "correct": 10,
+              "accuracy": 0.6,
+              "correct": 9,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-05-27"
             },
             {
-              "accuracy": 0.33333333,
-              "correct": 2,
+              "accuracy": 0.16666667,
+              "correct": 1,
               "dayPassed": false,
               "gameCount": 6,
               "slateDateEt": "2026-05-28"
@@ -26678,8 +26665,8 @@
               "slateDateEt": "2026-05-29"
             },
             {
-              "accuracy": 0.53333333,
-              "correct": 8,
+              "accuracy": 0.46666667,
+              "correct": 7,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-05-30"
@@ -26692,8 +26679,8 @@
               "slateDateEt": "2026-05-31"
             },
             {
-              "accuracy": 0.33333333,
-              "correct": 3,
+              "accuracy": 0.44444444,
+              "correct": 4,
               "dayPassed": false,
               "gameCount": 9,
               "slateDateEt": "2026-06-01"
@@ -26713,15 +26700,15 @@
               "slateDateEt": "2026-06-03"
             },
             {
-              "accuracy": 0.33333333,
-              "correct": 3,
+              "accuracy": 0.44444444,
+              "correct": 4,
               "dayPassed": false,
               "gameCount": 9,
               "slateDateEt": "2026-06-04"
             },
             {
-              "accuracy": 0.53333333,
-              "correct": 8,
+              "accuracy": 0.46666667,
+              "correct": 7,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-06-05"
@@ -26741,15 +26728,15 @@
               "slateDateEt": "2026-06-07"
             },
             {
-              "accuracy": 0.5,
-              "correct": 4,
+              "accuracy": 0.625,
+              "correct": 5,
               "dayPassed": false,
               "gameCount": 8,
               "slateDateEt": "2026-06-08"
             },
             {
-              "accuracy": 0.53333333,
-              "correct": 8,
+              "accuracy": 0.4,
+              "correct": 6,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-06-09"
@@ -26776,8 +26763,8 @@
               "slateDateEt": "2026-06-12"
             },
             {
-              "accuracy": 0.53333333,
-              "correct": 8,
+              "accuracy": 0.46666667,
+              "correct": 7,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-06-13"
@@ -26804,8 +26791,8 @@
               "slateDateEt": "2026-06-16"
             },
             {
-              "accuracy": 0.5,
-              "correct": 7,
+              "accuracy": 0.42857143,
+              "correct": 6,
               "dayPassed": false,
               "gameCount": 14,
               "slateDateEt": "2026-06-17"
@@ -26832,15 +26819,15 @@
               "slateDateEt": "2026-06-20"
             },
             {
-              "accuracy": 0.5,
-              "correct": 7,
+              "accuracy": 0.57142857,
+              "correct": 8,
               "dayPassed": false,
               "gameCount": 14,
               "slateDateEt": "2026-06-21"
             },
             {
-              "accuracy": 0.66666667,
-              "correct": 8,
+              "accuracy": 0.58333333,
+              "correct": 7,
               "dayPassed": false,
               "gameCount": 12,
               "slateDateEt": "2026-06-22"
@@ -26860,8 +26847,8 @@
               "slateDateEt": "2026-06-24"
             },
             {
-              "accuracy": 0.25,
-              "correct": 2,
+              "accuracy": 0.375,
+              "correct": 3,
               "dayPassed": false,
               "gameCount": 8,
               "slateDateEt": "2026-06-25"
@@ -26881,21 +26868,21 @@
               "slateDateEt": "2026-06-27"
             },
             {
-              "accuracy": 0.6,
-              "correct": 9,
+              "accuracy": 0.66666667,
+              "correct": 10,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-06-28"
             }
           ],
-          "dailyPassRate": 0.02298851,
+          "dailyPassRate": 0.01149425,
           "dayCount": 87,
-          "expectedCalibrationError": 0.02814232,
+          "expectedCalibrationError": 0.03345323,
           "gameCount": 1159,
-          "logLoss": 0.68977905,
-          "meanDailyAccuracy": 0.53368314,
-          "minimumDailyAccuracy": 0.25,
-          "overallAccuracy": 0.53839517
+          "logLoss": 0.68989213,
+          "meanDailyAccuracy": 0.52898562,
+          "minimumDailyAccuracy": 0.16666667,
+          "overallAccuracy": 0.53235548
         }
       },
       "market_temporal_team_fundamentals_v8_regime": {
@@ -27170,62 +27157,62 @@
               "overallAccuracy": 0.55269923
             },
             "metrics": {
-              "brierScore": 0.24937901,
+              "brierScore": 0.24949703,
               "calibrationBins": [
                 {
-                  "absoluteError": 0.00120301,
+                  "absoluteError": 1.407e-05,
                   "count": 8,
                   "lower": 0.2,
-                  "meanProbability": 0.24879699,
+                  "meanProbability": 0.25001407,
                   "observedHomeWinRate": 0.25,
                   "upper": 0.3
                 },
                 {
-                  "absoluteError": 0.1676116,
-                  "count": 19,
+                  "absoluteError": 0.19777444,
+                  "count": 18,
                   "lower": 0.3,
-                  "meanProbability": 0.35870419,
-                  "observedHomeWinRate": 0.52631579,
+                  "meanProbability": 0.35778112,
+                  "observedHomeWinRate": 0.55555556,
                   "upper": 0.4
                 },
                 {
-                  "absoluteError": 0.0005679,
-                  "count": 91,
+                  "absoluteError": 0.0160629,
+                  "count": 90,
                   "lower": 0.4,
-                  "meanProbability": 0.46097056,
-                  "observedHomeWinRate": 0.46153846,
+                  "meanProbability": 0.46050734,
+                  "observedHomeWinRate": 0.44444444,
                   "upper": 0.5
                 },
                 {
-                  "absoluteError": 0.02402235,
+                  "absoluteError": 0.02416118,
                   "count": 197,
                   "lower": 0.5,
-                  "meanProbability": 0.54686499,
+                  "meanProbability": 0.54700382,
                   "observedHomeWinRate": 0.52284264,
                   "upper": 0.6
                 },
                 {
-                  "absoluteError": 0.04534803,
-                  "count": 63,
+                  "absoluteError": 0.03307013,
+                  "count": 65,
                   "lower": 0.6,
-                  "meanProbability": 0.63264962,
-                  "observedHomeWinRate": 0.58730159,
+                  "meanProbability": 0.63307013,
+                  "observedHomeWinRate": 0.6,
                   "upper": 0.7
                 },
                 {
-                  "absoluteError": 0.09539628,
+                  "absoluteError": 0.09700745,
                   "count": 11,
                   "lower": 0.7,
-                  "meanProbability": 0.73175992,
+                  "meanProbability": 0.73337109,
                   "observedHomeWinRate": 0.63636364,
                   "upper": 0.8
                 }
               ],
-              "correct": 211,
+              "correct": 213,
               "daily": [
                 {
-                  "accuracy": 0.5,
-                  "correct": 7,
+                  "accuracy": 0.57142857,
+                  "correct": 8,
                   "dayPassed": false,
                   "gameCount": 14,
                   "slateDateEt": "2026-04-03"
@@ -27406,8 +27393,8 @@
                   "slateDateEt": "2026-04-28"
                 },
                 {
-                  "accuracy": 0.38461538,
-                  "correct": 5,
+                  "accuracy": 0.46153846,
+                  "correct": 6,
                   "dayPassed": false,
                   "gameCount": 13,
                   "slateDateEt": "2026-04-29"
@@ -27429,12 +27416,12 @@
               ],
               "dailyPassRate": 0.03448276,
               "dayCount": 29,
-              "expectedCalibrationError": 0.0305517,
+              "expectedCalibrationError": 0.03337302,
               "gameCount": 389,
-              "logLoss": 0.69200042,
-              "meanDailyAccuracy": 0.54597462,
+              "logLoss": 0.69224818,
+              "meanDailyAccuracy": 0.55109019,
               "minimumDailyAccuracy": 0.3125,
-              "overallAccuracy": 0.54241645
+              "overallAccuracy": 0.54755784
             },
             "trainFirstDate": "2025-04-01",
             "trainLastDate": "2026-04-02",
@@ -27703,7 +27690,7 @@
               "overallAccuracy": 0.55784062
             },
             "metrics": {
-              "brierScore": 0.24650469,
+              "brierScore": 0.24653026,
               "calibrationBins": [
                 {
                   "absoluteError": 0.05,
@@ -27714,71 +27701,71 @@
                   "upper": 0.1
                 },
                 {
-                  "absoluteError": 0.14859933,
+                  "absoluteError": 0.15006532,
                   "count": 1,
                   "lower": 0.1,
-                  "meanProbability": 0.14859933,
+                  "meanProbability": 0.15006532,
                   "observedHomeWinRate": 0.0,
                   "upper": 0.2
                 },
                 {
-                  "absoluteError": 0.2390722,
+                  "absoluteError": 0.24294473,
                   "count": 1,
                   "lower": 0.2,
-                  "meanProbability": 0.2390722,
+                  "meanProbability": 0.24294473,
                   "observedHomeWinRate": 0.0,
                   "upper": 0.3
                 },
                 {
-                  "absoluteError": 0.03219401,
-                  "count": 12,
+                  "absoluteError": 0.0005998,
+                  "count": 11,
                   "lower": 0.3,
-                  "meanProbability": 0.36552734,
-                  "observedHomeWinRate": 0.33333333,
+                  "meanProbability": 0.36423617,
+                  "observedHomeWinRate": 0.36363636,
                   "upper": 0.4
                 },
                 {
-                  "absoluteError": 0.01263604,
-                  "count": 115,
+                  "absoluteError": 0.01665261,
+                  "count": 112,
                   "lower": 0.4,
-                  "meanProbability": 0.46562483,
-                  "observedHomeWinRate": 0.47826087,
+                  "meanProbability": 0.46549025,
+                  "observedHomeWinRate": 0.48214286,
                   "upper": 0.5
                 },
                 {
-                  "absoluteError": 1.45e-06,
-                  "count": 202,
+                  "absoluteError": 0.00644581,
+                  "count": 206,
                   "lower": 0.5,
-                  "meanProbability": 0.544553,
-                  "observedHomeWinRate": 0.54455446,
+                  "meanProbability": 0.54528077,
+                  "observedHomeWinRate": 0.53883495,
                   "upper": 0.6
                 },
                 {
-                  "absoluteError": 0.0497509,
+                  "absoluteError": 0.05124363,
                   "count": 48,
                   "lower": 0.6,
-                  "meanProbability": 0.63308424,
+                  "meanProbability": 0.63457696,
                   "observedHomeWinRate": 0.58333333,
                   "upper": 0.7
                 },
                 {
-                  "absoluteError": 0.17001156,
+                  "absoluteError": 0.17157421,
                   "count": 7,
                   "lower": 0.7,
-                  "meanProbability": 0.74144013,
+                  "meanProbability": 0.74300278,
                   "observedHomeWinRate": 0.57142857,
                   "upper": 0.8
                 },
                 {
-                  "absoluteError": 0.18863318,
+                  "absoluteError": 0.18819728,
                   "count": 2,
                   "lower": 0.8,
-                  "meanProbability": 0.81136682,
+                  "meanProbability": 0.81180272,
                   "observedHomeWinRate": 1.0,
                   "upper": 0.9
                 }
               ],
-              "correct": 215,
+              "correct": 213,
               "daily": [
                 {
                   "accuracy": 0.6,
@@ -27809,8 +27796,8 @@
                   "slateDateEt": "2026-05-05"
                 },
                 {
-                  "accuracy": 0.66666667,
-                  "correct": 10,
+                  "accuracy": 0.6,
+                  "correct": 9,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-06"
@@ -27851,8 +27838,8 @@
                   "slateDateEt": "2026-05-11"
                 },
                 {
-                  "accuracy": 0.66666667,
-                  "correct": 10,
+                  "accuracy": 0.6,
+                  "correct": 9,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-12"
@@ -27886,8 +27873,8 @@
                   "slateDateEt": "2026-05-16"
                 },
                 {
-                  "accuracy": 0.6,
-                  "correct": 9,
+                  "accuracy": 0.53333333,
+                  "correct": 8,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-17"
@@ -27970,9 +27957,9 @@
                   "slateDateEt": "2026-05-28"
                 },
                 {
-                  "accuracy": 0.73333333,
-                  "correct": 11,
-                  "dayPassed": false,
+                  "accuracy": 0.8,
+                  "correct": 12,
+                  "dayPassed": true,
                   "gameCount": 15,
                   "slateDateEt": "2026-05-29"
                 },
@@ -27984,14 +27971,14 @@
                   "slateDateEt": "2026-05-30"
                 }
               ],
-              "dailyPassRate": 0.0,
+              "dailyPassRate": 0.03448276,
               "dayCount": 29,
-              "expectedCalibrationError": 0.01602269,
+              "expectedCalibrationError": 0.01974202,
               "gameCount": 389,
-              "logLoss": 0.68545491,
-              "meanDailyAccuracy": 0.54610849,
+              "logLoss": 0.68551821,
+              "meanDailyAccuracy": 0.54151079,
               "minimumDailyAccuracy": 0.16666667,
-              "overallAccuracy": 0.55269923
+              "overallAccuracy": 0.54755784
             },
             "trainFirstDate": "2025-04-01",
             "trainLastDate": "2026-05-01",
@@ -28268,82 +28255,82 @@
               "overallAccuracy": 0.56167979
             },
             "metrics": {
-              "brierScore": 0.25078983,
+              "brierScore": 0.25092511,
               "calibrationBins": [
                 {
-                  "absoluteError": 0.17541363,
+                  "absoluteError": 0.17573158,
                   "count": 1,
                   "lower": 0.1,
-                  "meanProbability": 0.17541363,
+                  "meanProbability": 0.17573158,
                   "observedHomeWinRate": 0.0,
                   "upper": 0.2
                 },
                 {
-                  "absoluteError": 0.23113571,
+                  "absoluteError": 0.23119995,
                   "count": 2,
                   "lower": 0.2,
-                  "meanProbability": 0.26886429,
+                  "meanProbability": 0.26880005,
                   "observedHomeWinRate": 0.5,
                   "upper": 0.3
                 },
                 {
-                  "absoluteError": 0.16028988,
+                  "absoluteError": 0.1598622,
                   "count": 31,
                   "lower": 0.3,
-                  "meanProbability": 0.35583915,
+                  "meanProbability": 0.35626683,
                   "observedHomeWinRate": 0.51612903,
                   "upper": 0.4
                 },
                 {
-                  "absoluteError": 0.01442596,
-                  "count": 96,
+                  "absoluteError": 0.02130438,
+                  "count": 93,
                   "lower": 0.4,
-                  "meanProbability": 0.46234263,
-                  "observedHomeWinRate": 0.44791667,
+                  "meanProbability": 0.4621646,
+                  "observedHomeWinRate": 0.44086022,
                   "upper": 0.5
                 },
                 {
-                  "absoluteError": 0.02084453,
-                  "count": 176,
+                  "absoluteError": 0.01791921,
+                  "count": 177,
                   "lower": 0.5,
-                  "meanProbability": 0.54733729,
-                  "observedHomeWinRate": 0.56818182,
+                  "meanProbability": 0.54705255,
+                  "observedHomeWinRate": 0.56497175,
                   "upper": 0.6
                 },
                 {
-                  "absoluteError": 0.11444477,
-                  "count": 55,
+                  "absoluteError": 0.10505749,
+                  "count": 56,
                   "lower": 0.6,
-                  "meanProbability": 0.6417175,
-                  "observedHomeWinRate": 0.52727273,
+                  "meanProbability": 0.64077178,
+                  "observedHomeWinRate": 0.53571429,
                   "upper": 0.7
                 },
                 {
-                  "absoluteError": 0.13737769,
-                  "count": 18,
+                  "absoluteError": 0.11626525,
+                  "count": 19,
                   "lower": 0.7,
-                  "meanProbability": 0.7484888,
-                  "observedHomeWinRate": 0.61111111,
+                  "meanProbability": 0.7478442,
+                  "observedHomeWinRate": 0.63157895,
                   "upper": 0.8
                 },
                 {
-                  "absoluteError": 0.19228492,
+                  "absoluteError": 0.19373049,
                   "count": 1,
                   "lower": 0.8,
-                  "meanProbability": 0.80771508,
+                  "meanProbability": 0.80626951,
                   "observedHomeWinRate": 1.0,
                   "upper": 0.9
                 },
                 {
-                  "absoluteError": 0.92788481,
+                  "absoluteError": 0.92769116,
                   "count": 1,
                   "lower": 0.9,
-                  "meanProbability": 0.92788481,
+                  "meanProbability": 0.92769116,
                   "observedHomeWinRate": 0.0,
                   "upper": 1.0
                 }
               ],
-              "correct": 211,
+              "correct": 212,
               "daily": [
                 {
                   "accuracy": 0.8,
@@ -28500,8 +28487,8 @@
                   "slateDateEt": "2026-06-21"
                 },
                 {
-                  "accuracy": 0.66666667,
-                  "correct": 8,
+                  "accuracy": 0.75,
+                  "correct": 9,
                   "dayPassed": false,
                   "gameCount": 12,
                   "slateDateEt": "2026-06-22"
@@ -28514,8 +28501,8 @@
                   "slateDateEt": "2026-06-23"
                 },
                 {
-                  "accuracy": 0.4375,
-                  "correct": 7,
+                  "accuracy": 0.5,
+                  "correct": 8,
                   "dayPassed": false,
                   "gameCount": 16,
                   "slateDateEt": "2026-06-24"
@@ -28542,8 +28529,8 @@
                   "slateDateEt": "2026-06-27"
                 },
                 {
-                  "accuracy": 0.6,
-                  "correct": 9,
+                  "accuracy": 0.53333333,
+                  "correct": 8,
                   "dayPassed": false,
                   "gameCount": 15,
                   "slateDateEt": "2026-06-28"
@@ -28551,12 +28538,12 @@
               ],
               "dailyPassRate": 0.10344828,
               "dayCount": 29,
-              "expectedCalibrationError": 0.05393079,
+              "expectedCalibrationError": 0.05238989,
               "gameCount": 381,
-              "logLoss": 0.69710967,
-              "meanDailyAccuracy": 0.55554871,
+              "logLoss": 0.69741753,
+              "meanDailyAccuracy": 0.5582786,
               "minimumDailyAccuracy": 0.25,
-              "overallAccuracy": 0.55380577
+              "overallAccuracy": 0.55643045
             },
             "trainFirstDate": "2025-04-01",
             "trainLastDate": "2026-05-30",
@@ -28598,8 +28585,8 @@
             ],
             "foldEvaluation": {},
             "overall": {
-              "fundamentals_available": 0.03276898,
-              "fundamentals_group_coverage": 0.02457673,
+              "fundamentals_available": 0.03413435,
+              "fundamentals_group_coverage": 0.02560076,
               "v8_available": 1.0,
               "v8_f5_available": 0.0
             },
@@ -28612,20 +28599,20 @@
             "supportCounts": {},
             "trainingFolds": [
               {
-                "fundamentals_available": 0.04794247,
-                "fundamentals_group_coverage": 0.03595685,
+                "fundamentals_available": 0.04994007,
+                "fundamentals_group_coverage": 0.03745505,
                 "v8_available": 1.0,
                 "v8_f5_available": 0.0
               },
               {
-                "fundamentals_available": 0.04149378,
-                "fundamentals_group_coverage": 0.03112033,
+                "fundamentals_available": 0.04322268,
+                "fundamentals_group_coverage": 0.03241701,
                 "v8_available": 1.0,
                 "v8_f5_available": 0.0
               },
               {
-                "fundamentals_available": 0.03657422,
-                "fundamentals_group_coverage": 0.02743066,
+                "fundamentals_available": 0.03809814,
+                "fundamentals_group_coverage": 0.02857361,
                 "v8_available": 1.0,
                 "v8_f5_available": 0.0
               }
@@ -28690,14 +28677,14 @@
               "worst_fold_accuracy_regression_too_large"
             ],
             "foldAccuracyUplifts": [
-              -0.01028278,
               -0.00514139,
-              -0.00787402
+              -0.01028278,
+              -0.00524934
             ],
-            "meanDailyAccuracyUplift": -0.00396125,
+            "meanDailyAccuracyUplift": -0.00287867,
             "minimumNetCorrectUplift": 6,
-            "netCorrectUplift": -9,
-            "overallAccuracyUplift": -0.00776532,
+            "netCorrectUplift": -8,
+            "overallAccuracyUplift": -0.0069025,
             "positiveFoldCount": 0,
             "requiredPositiveFoldCount": 2,
             "worstFoldAccuracyUplift": -0.01028278
@@ -29378,7 +29365,7 @@
           "overallAccuracy": 0.55737705
         },
         "oofMetrics": {
-          "brierScore": 0.24887807,
+          "brierScore": 0.24897074,
           "calibrationBins": [
             {
               "absoluteError": 0.05,
@@ -29389,83 +29376,83 @@
               "upper": 0.1
             },
             {
-              "absoluteError": 0.16200648,
+              "absoluteError": 0.16289845,
               "count": 2,
               "lower": 0.1,
-              "meanProbability": 0.16200648,
+              "meanProbability": 0.16289845,
               "observedHomeWinRate": 0.0,
               "upper": 0.2
             },
             {
-              "absoluteError": 0.02116576,
+              "absoluteError": 0.01994024,
               "count": 11,
               "lower": 0.2,
-              "meanProbability": 0.25156152,
+              "meanProbability": 0.25278703,
               "observedHomeWinRate": 0.27272727,
               "upper": 0.3
             },
             {
-              "absoluteError": 0.12527869,
-              "count": 62,
+              "absoluteError": 0.14181784,
+              "count": 60,
               "lower": 0.3,
-              "meanProbability": 0.35859228,
-              "observedHomeWinRate": 0.48387097,
+              "meanProbability": 0.35818216,
+              "observedHomeWinRate": 0.5,
               "upper": 0.4
             },
             {
-              "absoluteError": 0.00039712,
-              "count": 302,
+              "absoluteError": 0.00529449,
+              "count": 295,
               "lower": 0.4,
-              "meanProbability": 0.46317903,
-              "observedHomeWinRate": 0.46357616,
+              "meanProbability": 0.46292161,
+              "observedHomeWinRate": 0.45762712,
               "upper": 0.5
             },
             {
-              "absoluteError": 0.00184952,
-              "count": 575,
+              "absoluteError": 0.0050274,
+              "count": 580,
               "lower": 0.5,
-              "meanProbability": 0.54619734,
-              "observedHomeWinRate": 0.54434783,
+              "meanProbability": 0.54640671,
+              "observedHomeWinRate": 0.54137931,
               "upper": 0.6
             },
             {
-              "absoluteError": 0.06951465,
-              "count": 166,
+              "absoluteError": 0.06208564,
+              "count": 169,
               "lower": 0.6,
-              "meanProbability": 0.63577971,
-              "observedHomeWinRate": 0.56626506,
+              "meanProbability": 0.63605013,
+              "observedHomeWinRate": 0.5739645,
               "upper": 0.7
             },
             {
-              "absoluteError": 0.13089551,
-              "count": 36,
+              "absoluteError": 0.12100382,
+              "count": 37,
               "lower": 0.7,
-              "meanProbability": 0.74200662,
-              "observedHomeWinRate": 0.61111111,
+              "meanProbability": 0.74262544,
+              "observedHomeWinRate": 0.62162162,
               "upper": 0.8
             },
             {
-              "absoluteError": 0.18985043,
+              "absoluteError": 0.19004168,
               "count": 3,
               "lower": 0.8,
-              "meanProbability": 0.81014957,
+              "meanProbability": 0.80995832,
               "observedHomeWinRate": 1.0,
               "upper": 0.9
             },
             {
-              "absoluteError": 0.92788481,
+              "absoluteError": 0.92769116,
               "count": 1,
               "lower": 0.9,
-              "meanProbability": 0.92788481,
+              "meanProbability": 0.92769116,
               "observedHomeWinRate": 0.0,
               "upper": 1.0
             }
           ],
-          "correct": 637,
+          "correct": 638,
           "daily": [
             {
-              "accuracy": 0.5,
-              "correct": 7,
+              "accuracy": 0.57142857,
+              "correct": 8,
               "dayPassed": false,
               "gameCount": 14,
               "slateDateEt": "2026-04-03"
@@ -29646,8 +29633,8 @@
               "slateDateEt": "2026-04-28"
             },
             {
-              "accuracy": 0.38461538,
-              "correct": 5,
+              "accuracy": 0.46153846,
+              "correct": 6,
               "dayPassed": false,
               "gameCount": 13,
               "slateDateEt": "2026-04-29"
@@ -29695,8 +29682,8 @@
               "slateDateEt": "2026-05-05"
             },
             {
-              "accuracy": 0.66666667,
-              "correct": 10,
+              "accuracy": 0.6,
+              "correct": 9,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-05-06"
@@ -29737,8 +29724,8 @@
               "slateDateEt": "2026-05-11"
             },
             {
-              "accuracy": 0.66666667,
-              "correct": 10,
+              "accuracy": 0.6,
+              "correct": 9,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-05-12"
@@ -29772,8 +29759,8 @@
               "slateDateEt": "2026-05-16"
             },
             {
-              "accuracy": 0.6,
-              "correct": 9,
+              "accuracy": 0.53333333,
+              "correct": 8,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-05-17"
@@ -29856,9 +29843,9 @@
               "slateDateEt": "2026-05-28"
             },
             {
-              "accuracy": 0.73333333,
-              "correct": 11,
-              "dayPassed": false,
+              "accuracy": 0.8,
+              "correct": 12,
+              "dayPassed": true,
               "gameCount": 15,
               "slateDateEt": "2026-05-29"
             },
@@ -30024,8 +30011,8 @@
               "slateDateEt": "2026-06-21"
             },
             {
-              "accuracy": 0.66666667,
-              "correct": 8,
+              "accuracy": 0.75,
+              "correct": 9,
               "dayPassed": false,
               "gameCount": 12,
               "slateDateEt": "2026-06-22"
@@ -30038,8 +30025,8 @@
               "slateDateEt": "2026-06-23"
             },
             {
-              "accuracy": 0.4375,
-              "correct": 7,
+              "accuracy": 0.5,
+              "correct": 8,
               "dayPassed": false,
               "gameCount": 16,
               "slateDateEt": "2026-06-24"
@@ -30066,21 +30053,21 @@
               "slateDateEt": "2026-06-27"
             },
             {
-              "accuracy": 0.6,
-              "correct": 9,
+              "accuracy": 0.53333333,
+              "correct": 8,
               "dayPassed": false,
               "gameCount": 15,
               "slateDateEt": "2026-06-28"
             }
           ],
-          "dailyPassRate": 0.04597701,
+          "dailyPassRate": 0.05747126,
           "dayCount": 87,
-          "expectedCalibrationError": 0.0235605,
+          "expectedCalibrationError": 0.02592701,
           "gameCount": 1159,
-          "logLoss": 0.6914831,
-          "meanDailyAccuracy": 0.54921061,
+          "logLoss": 0.6916887,
+          "meanDailyAccuracy": 0.55029319,
           "minimumDailyAccuracy": 0.16666667,
-          "overallAccuracy": 0.54961173
+          "overallAccuracy": 0.55047455
         }
       },
       "market_temporal_team_regime": {
@@ -46791,6 +46778,6 @@
     "v8FullGameCandidateRequiresFirstFive": false,
     "version": "MLB-SUPERVISED-SHADOW-v2.6-seed-aligned-regularization-grid"
   },
-  "sourceSha": "57b8ae3b8338fa8484d2b8b81297757055265db7",
+  "sourceSha": "331eb88df0dd348dfcde5718717580da48806b65",
   "version": "MLB-SUPERVISED-SHADOW-v2.6-seed-aligned-regularization-grid"
 }
