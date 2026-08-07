@@ -1,6 +1,6 @@
 # MLB V8 Hourly Numerical Status
 
-**Updated:** 2026-08-06T15:24:53.072673+00:00
+**Updated:** 2026-08-07T00:11:59.090976+00:00
 
 Accuracy is shown only when a source explicitly publishes it. This reporter never derives accuracy from wins and losses. Backfill, training, retrospective validation, prospective audit, shadow evaluation, and production promotion remain separate.
 
@@ -27,9 +27,9 @@ Historical eligible games and settled trainer games are separate, **incomparable
 
 | Metric | Current | Change |
 |---|---:|---:|
-| Latest trainer workflow | **31112041505 / SUCCESS** | — |
+| Latest trainer workflow | **31125530780 / FAILURE** | — |
 | Trainer report status | **SUCCESS** | — |
-| Trainer timestamp | **2026-08-06T14:43:44.212610+00:00** (current) | — |
+| Trainer timestamp | **2026-08-06T14:43:44.212610+00:00** (stale) | — |
 | Training rows | **3662** | **0** |
 | Validation samples | **202** | **0** |
 | Walk-forward samples | **265** | **0** |
@@ -59,7 +59,7 @@ These are retrospective historical measurements, not prospective shadow-pick win
 | Metric | Value |
 |---|---:|
 | Status | **WAITING_FOR_RETROSPECTIVE_GATE** |
-| Timestamp | **2026-08-06T14:46:41.884191+00:00 (current)** |
+| Timestamp | **2026-08-06T14:46:41.884191+00:00 (stale)** |
 | Sample size | **Unavailable** |
 | Wins | **Unavailable** |
 | Losses | **Unavailable** |
@@ -92,7 +92,7 @@ These are retrospective historical measurements, not prospective shadow-pick win
 | Metric | Value |
 |---|---:|
 | Status / authority | **V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY** |
-| Timestamp | **2026-08-06T14:41:52.634064+00:00 (current)** |
+| Timestamp | **2026-08-06T14:41:52.634064+00:00 (stale)** |
 | Processed games | **55** |
 | Eligible games | **55** |
 | New eligible games | **5** |
@@ -106,7 +106,7 @@ These are retrospective historical measurements, not prospective shadow-pick win
 
 | Metric | Value |
 |---|---:|
-| Trainer artifacts | **1 / 165748 bytes** |
+| Trainer artifacts | **0 / 0 bytes** |
 | Shadow artifacts | **Unavailable / Unavailable bytes** |
 | Deployment artifacts | **1 / 6048 bytes** |
 | Latest deployment workflow | **31111794666 / SUCCESS** |
@@ -125,4 +125,4 @@ These are retrospective historical measurements, not prospective shadow-pick win
 
 A quality gate is not a runtime failure. Promotion remains separate from collection, backfill, training, validation, prospective auditing, and shadow evaluation.
 
-<!-- MLB_V8_HOURLY_STATE:{"completedSlateCount":333,"contextEligibleGames":55,"contextNewEligibleGames":5,"contextPointerRevision":79,"contextProcessedGames":55,"contextProviderCalls":36,"contextRemainingGames":4074,"creditsConsumed":264000,"deploymentArtifactCount":1,"gradedPredictions":null,"historicalCursorDate":"2026-08-06","historicalDateReached":"2026-08-05","historicalEligibleGames":4129,"historicalRemainingGames":null,"historicalRemainingSlates":null,"historicalTargetGames":4149,"learnedCandidateCount":96,"learnedEligibleCandidateCount":0,"learningSteps":63360,"networkRequests":26400,"optimizerRevision":5664,"prospectiveSample":null,"settledGames":null,"shadowArtifactCount":null,"shadowSample":null,"trainingArtifactCount":1,"trainingRows":3662,"validationSamples":202,"walkForwardSamples":265} -->
+<!-- MLB_V8_HOURLY_STATE:{"completedSlateCount":333,"contextEligibleGames":55,"contextNewEligibleGames":5,"contextPointerRevision":79,"contextProcessedGames":55,"contextProviderCalls":36,"contextRemainingGames":4074,"creditsConsumed":264000,"deploymentArtifactCount":1,"gradedPredictions":null,"historicalCursorDate":"2026-08-06","historicalDateReached":"2026-08-05","historicalEligibleGames":4129,"historicalRemainingGames":null,"historicalRemainingSlates":null,"historicalTargetGames":4149,"learnedCandidateCount":96,"learnedEligibleCandidateCount":0,"learningSteps":63360,"networkRequests":26400,"optimizerRevision":5664,"prospectiveSample":null,"settledGames":null,"shadowArtifactCount":null,"shadowSample":null,"trainingArtifactCount":0,"trainingRows":3662,"validationSamples":202,"walkForwardSamples":265} -->
