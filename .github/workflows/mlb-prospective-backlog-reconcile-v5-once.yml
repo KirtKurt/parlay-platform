@@ -1,0 +1,148 @@
+name: Reconcile MLB prospective backlog v5 once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/reconcile_mlb_prospective_backlog_v5.py"
+      - "tests/unit/test_reconcile_mlb_prospective_backlog_v5.py"
+      - ".github/workflows/mlb-prospective-backlog-reconcile-v5-once.yml"
+  push:
+    paths:
+      - "scripts/reconcile_mlb_prospective_backlog_v5.py"
+      - "tests/unit/test_reconcile_mlb_prospective_backlog_v5.py"
+      - ".github/workflows/mlb-prospective-backlog-reconcile-v5-once.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parlay-platform-mlb-prospective-backlog-reconcile-v5-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --quiet "boto3>=1.34,<2" "pytest>=8,<9"
+      - name: Verify readable incomplete-status repair
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/reconcile_mlb_prospective_backlog_v4.py scripts/reconcile_mlb_prospective_backlog_v5.py
+          python -m pytest -q tests/unit/test_reconcile_mlb_prospective_backlog_v4.py tests/unit/test_reconcile_mlb_prospective_backlog_v5.py tests/unit/test_mlb_prospective_backlog_workflow.py
+          git diff --check
+
+  reconcile-and-train:
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - run: python -m pip install --quiet "boto3>=1.34,<2" "pytest>=8,<9"
+      - name: Reconcile readable incomplete statuses with v4 backpressure
+        run: |
+          set -euo pipefail
+          python scripts/reconcile_mlb_prospective_backlog_v5.py \
+            --stack-name parlay-platform-dev \
+            --region "${{ secrets.AWS_REGION }}" \
+            --max-slate-days 14 \
+            --output runtime_reports/mlb_prospective_backlog_v5_latest.json
+      - name: Invoke trainer and require accepted prospective rows
+        env:
+          AWS_MAX_ATTEMPTS: "10"
+          AWS_RETRY_MODE: "standard"
+        run: |
+          set -euo pipefail
+          TRAINER_ARN=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id MLBMLTrainingFunction \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$TRAINER_ARN"
+          test "$TRAINER_ARN" != "None"
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"prospective_backlog_v5_reconciled_training"}' \
+            --response /tmp/mlb-prospective-v5-training.json \
+            --invocation /tmp/mlb-prospective-v5-training-invoke.json \
+            --retry-execution-lease \
+            --deadline-seconds 1800 \
+            --retry-delay-seconds 30
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --payload '{"sport":"mlb","mode":"selection_capture","run":"prospective_backlog_v5_reconciled_selection_capture"}' \
+            --response /tmp/mlb-prospective-v5-selection.json \
+            --invocation /tmp/mlb-prospective-v5-selection-invoke.json \
+            --retry-execution-lease \
+            --deadline-seconds 1800 \
+            --retry-delay-seconds 30
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --status-training-result /tmp/mlb-prospective-v5-training.json \
+            --status-selection-capture-result /tmp/mlb-prospective-v5-selection.json \
+            --response /tmp/mlb-prospective-v5-status.json \
+            --invocation /tmp/mlb-prospective-v5-status-invoke.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          training = json.loads(Path('/tmp/mlb-prospective-v5-training.json').read_text())
+          status = json.loads(Path('/tmp/mlb-prospective-v5-status.json').read_text())
+          latest = ((status.get('trainingHealth') or {}).get('latestRun') or {})
+          accepted = latest.get('acceptedRowCount', training.get('acceptedRowCount'))
+          try:
+              accepted = int(accepted)
+          except (TypeError, ValueError):
+              accepted = 0
+          evidence = {
+              'ok': accepted > 0,
+              'acceptedRowCount': accepted,
+              'rejectedRowCount': latest.get('rejectedRowCount', training.get('rejectedRowCount')),
+              'status': latest.get('status', training.get('status')),
+              'canonicalSlateContinuity': latest.get('canonicalSlateContinuity', training.get('canonicalSlateContinuity')),
+              'partitionCounts': latest.get('partitionCounts', training.get('partitionCounts')),
+              'rejectionReasonCounts': latest.get('rejectionReasonCounts', training.get('rejectionReasonCounts')),
+              'modelTrained': latest.get('modelTrained', training.get('modelTrained')),
+              'liveInferenceAuthority': latest.get('liveInferenceAuthority', training.get('liveInferenceAuthority')),
+              'productionAuthorityChanged': latest.get('productionAuthorityChanged', training.get('productionAuthorityChanged')),
+          }
+          Path('runtime_reports/mlb_prospective_rows_v5_latest.json').write_text(json.dumps(evidence, indent=2, sort_keys=True, default=str) + '\n')
+          print(json.dumps(evidence, indent=2, sort_keys=True, default=str))
+          if accepted <= 0:
+              raise SystemExit('MLB prospective trainer still has zero accepted rows after readable-status reconciliation')
+          if evidence['liveInferenceAuthority'] is True or evidence['productionAuthorityChanged'] is True:
+              raise SystemExit('Prospective repair unexpectedly changed production authority')
+          PY
+      - name: Upload exact v5 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-prospective-backlog-v5-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            runtime_reports/mlb_prospective_backlog_v5_latest.json
+            runtime_reports/mlb_prospective_rows_v5_latest.json
+            /tmp/mlb-prospective-v5-training.json
+            /tmp/mlb-prospective-v5-training-invoke.json
+            /tmp/mlb-prospective-v5-selection.json
+            /tmp/mlb-prospective-v5-selection-invoke.json
+            /tmp/mlb-prospective-v5-status.json
+            /tmp/mlb-prospective-v5-status-invoke.json
