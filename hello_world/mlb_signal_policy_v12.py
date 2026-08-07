@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-VERSION = "MLB-SIGNAL-POLICY-v1.9-positive-structural-boosts-require-book-agreement"
+VERSION = "MLB-SIGNAL-POLICY-v1.10-market-against-selection-requires-confirmation"
 REQUIRED_MINUTES_BEFORE_GAME = 45
 DAILY_SLATE_DISPLAY_RULE = "show_one_required_winner_prediction_for_every_game_45_minutes_before_first_game_of_day"
 
@@ -53,8 +53,11 @@ def _temporal_horizon(sig: Dict[str, Any], name: str) -> Dict[str, Any]:
 
 def _signal_risk_gate_reasons(row: Dict[str, Any]) -> List[str]:
     sig = _sig(row)
+    opp = _opp(row)
     tags = _tags(row, sig)
     prob = _f(sig.get("marketConsensusProbability"), _f(sig.get("probLatest"), 0.5))
+    opp_prob = _f(opp.get("marketConsensusProbability"), _f(opp.get("probLatest"), 1.0 - prob))
+    edge = prob - opp_prob
     delta = _f(sig.get("delta"), 0.0)
     rev = _i(sig.get("reversalCount"), 0)
     structural_confirmation = bool(tags & {"STEAM", "RUN_LINE_CONFIRMATION"})
@@ -72,6 +75,8 @@ def _signal_risk_gate_reasons(row: Dict[str, Any]) -> List[str]:
     v180 = _f(h180.get("velocityPpHr"), 0.0)
 
     reasons: List[str] = []
+    if edge < 0 and not independently_confirmed:
+        reasons.append("market_direction_against_selection_without_confirmation")
     if delta > 0 and rev >= 3 and prob < 0.58 and not independently_confirmed:
         reasons.append("positive_move_high_reversal_without_confirmation")
     if (rev60 >= 2 or rev180 >= 5 or revfull >= 10) and not independently_confirmed:
@@ -250,7 +255,7 @@ def _apply_row(row: Dict[str, Any]) -> Dict[str, Any]:
             "blocked": True,
             "version": VERSION,
             "reasons": risk_gate_reasons,
-            "policy": "Composite reversal and late-instability risk may block playability but never removes the required official winner prediction.",
+            "policy": "Composite market-direction, reversal, and late-instability risk may block playability but never removes the required official winner prediction.",
         }
     else:
         out["signalRiskGate"] = {
@@ -258,7 +263,7 @@ def _apply_row(row: Dict[str, Any]) -> Dict[str, Any]:
             "blocked": False,
             "version": VERSION,
             "reasons": [],
-            "policy": "Composite reversal and late-instability risk may block playability but never removes the required official winner prediction.",
+            "policy": "Composite market-direction, reversal, and late-instability risk may block playability but never removes the required official winner prediction.",
         }
 
     out["predictionRequired"] = True
@@ -341,7 +346,7 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
         "riskGateBlockedCount": len(risk_blocked),
         "showOneWinnerForEveryGameAtSlateLock": True,
         "displayRule": DAILY_SLATE_DISPLAY_RULE,
-        "policy": "Audit findings adjust score and may block playability for composite reversal or late-instability risk. No signal rule removes a required game prediction.",
+        "policy": "Audit findings adjust score and may block playability for market-direction conflict, composite reversal, or late-instability risk. No signal rule removes a required game prediction.",
     }
     summary = dict(out.get("rolling24hAccuracyTarget") or out.get("accuracyTarget") or {})
     summary["signalPolicyV13"] = out["signalPolicyV13"]

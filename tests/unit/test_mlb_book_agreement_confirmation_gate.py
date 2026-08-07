@@ -49,6 +49,22 @@ def stable_row(tags):
     }
 
 
+def against_market_row(tags):
+    return {
+        "predictedSide": "home",
+        "predictedWinner": "Home",
+        "playable": True,
+        "homeSignal": {
+            "marketConsensusProbability": 0.45,
+            "latestGap": 0.10,
+            "delta": -0.02,
+            "reversalCount": 1,
+            "tags": tags,
+        },
+        "awaySignal": {"marketConsensusProbability": 0.55},
+    }
+
+
 def component_names(value):
     return {item["name"] for item in module._components(value)}
 
@@ -89,6 +105,21 @@ def main():
     )
     assert "aligned_run_line_boost" in run_line_with_agreement
     assert "run_line_noise_penalty" not in run_line_with_agreement
+
+    market_against = against_market_row([])
+    reasons = module._signal_risk_gate_reasons(market_against)
+    assert "market_direction_against_selection_without_confirmation" in reasons
+    assert module._is_playable(market_against) is False
+
+    agreement_only_against = module._signal_risk_gate_reasons(
+        against_market_row(["BOOK_AGREEMENT"])
+    )
+    assert "market_direction_against_selection_without_confirmation" in agreement_only_against
+
+    confirmed_against = module._signal_risk_gate_reasons(
+        against_market_row(["BOOK_AGREEMENT", "STEAM"])
+    )
+    assert "market_direction_against_selection_without_confirmation" not in confirmed_against
 
     print("MLB book-agreement confirmation gate PASS")
 
