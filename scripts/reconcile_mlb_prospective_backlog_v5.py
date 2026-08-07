@@ -22,6 +22,15 @@ import reconcile_mlb_prospective_backlog_v4 as v4
 
 VERSION = "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5-readable-incomplete-status"
 STATUS_PATH = "/v1/mlb/locks/status"
+SAFE_APPLICATION_FIELDS = (
+    "error",
+    "reason",
+    "status",
+    "lockStatus",
+    "lifecycleStatus",
+    "slateDateEt",
+    "run",
+)
 
 
 def _is_read_only_status_event(event: Mapping[str, Any]) -> bool:
@@ -29,6 +38,26 @@ def _is_read_only_status_event(event: Mapping[str, Any]) -> bool:
         str(event.get("httpMethod") or "").upper() == "GET"
         and str(event.get("path") or "") == STATUS_PATH
     )
+
+
+def _safe_application_detail(
+    application_status: int,
+    application: Mapping[str, Any],
+    event: Mapping[str, Any],
+) -> str:
+    detail: Dict[str, Any] = {
+        "applicationStatusCode": application_status,
+        "eventKind": (
+            "read_only_lock_status"
+            if _is_read_only_status_event(event)
+            else str(event.get("run") or "mutation_or_settlement")
+        ),
+    }
+    for key in SAFE_APPLICATION_FIELDS:
+        value = application.get(key)
+        if value not in (None, "", [], {}):
+            detail[key] = value
+    return json.dumps(detail, sort_keys=True, default=str, separators=(",", ":"))
 
 
 def invoke_json_preserving_status_body(
@@ -68,7 +97,10 @@ def invoke_json_preserving_status_body(
     if 200 <= application_status < 300:
         return application
     if not _is_read_only_status_event(event):
-        raise base.ReconciliationError("lambda_application_status_not_success")
+        raise base.ReconciliationError(
+            "lambda_application_status_not_success:"
+            + _safe_application_detail(application_status, application, event)
+        )
 
     # Preserve exact provider/status evidence without declaring it healthy.
     # V4 still validates official authority, exact date, counts, and terminal
