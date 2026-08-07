@@ -782,6 +782,8 @@ Resources:
             TableName: !Ref OutcomesTable
         - DynamoDBCrudPolicy:
             TableName: !Ref PredictionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SignalLedgerTable
       Events:
         MLBFinalScoresGet:
           Type: Api
