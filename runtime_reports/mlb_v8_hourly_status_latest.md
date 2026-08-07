@@ -1,6 +1,6 @@
 # MLB V8 Hourly Numerical Status
 
-**Updated:** 2026-08-07T19:10:28.784614+00:00
+**Updated:** 2026-08-07T20:53:26.691095+00:00
 
 Accuracy is shown only when a source explicitly publishes it. This reporter never derives accuracy from wins and losses. Backfill, training, retrospective validation, prospective audit, shadow evaluation, and production promotion remain separate.
 
@@ -27,9 +27,9 @@ Historical eligible games and settled trainer games are separate, **incomparable
 
 | Metric | Current | Change |
 |---|---:|---:|
-| Latest trainer workflow | **31206999020 / SUCCESS** | — |
+| Latest trainer workflow | **31215424949 / SUCCESS** | — |
 | Trainer report status | **SUCCESS** | — |
-| Trainer timestamp | **2026-08-07T18:29:31.547058+00:00** (current) | — |
+| Trainer timestamp | **2026-08-07T20:22:50.604634+00:00** (current) | — |
 | Training rows | **3662** | **0** |
 | Validation samples | **213** | **0** |
 | Walk-forward samples | **265** | **0** |
@@ -59,7 +59,7 @@ These are retrospective historical measurements, not prospective shadow-pick win
 | Metric | Value |
 |---|---:|
 | Status | **WAITING_FOR_RETROSPECTIVE_GATE** |
-| Timestamp | **2026-08-07T18:33:18.616330+00:00 (current)** |
+| Timestamp | **2026-08-07T20:27:39.627704+00:00 (current)** |
 | Sample size | **Unavailable** |
 | Wins | **Unavailable** |
 | Losses | **Unavailable** |
@@ -92,21 +92,21 @@ These are retrospective historical measurements, not prospective shadow-pick win
 | Metric | Value |
 |---|---:|
 | Status / authority | **V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY** |
-| Timestamp | **2026-08-07T18:28:18.204541+00:00 (current)** |
-| Processed games | **130** |
-| Eligible games | **130** |
+| Timestamp | **2026-08-07T20:21:12.791990+00:00 (current)** |
+| Processed games | **140** |
+| Eligible games | **140** |
 | New eligible games | **5** |
 | Ineligible games | **0** |
-| Remaining games | **4010** |
-| Provider calls | **36** |
-| Pointer revision | **94** |
+| Remaining games | **4000** |
+| Provider calls | **37** |
+| Pointer revision | **96** |
 | Progress made | **Yes** |
 
 ## Artifacts and production promotion
 
 | Metric | Value |
 |---|---:|
-| Trainer artifacts | **1 / 165447 bytes** |
+| Trainer artifacts | **1 / 165474 bytes** |
 | Shadow artifacts | **Unavailable / Unavailable bytes** |
 | Deployment artifacts | **Unavailable / Unavailable bytes** |
 | Latest deployment workflow | **Unavailable / UNAVAILABLE** |
@@ -125,4 +125,4 @@ These are retrospective historical measurements, not prospective shadow-pick win
 
 A quality gate is not a runtime failure. Promotion remains separate from collection, backfill, training, validation, prospective auditing, and shadow evaluation.
 
-<!-- MLB_V8_HOURLY_STATE:{"completedSlateCount":334,"contextEligibleGames":130,"contextNewEligibleGames":5,"contextPointerRevision":94,"contextProcessedGames":130,"contextProviderCalls":36,"contextRemainingGames":4010,"creditsConsumed":264800,"deploymentArtifactCount":null,"gradedPredictions":null,"historicalCursorDate":"2026-08-07","historicalDateReached":"2026-08-06","historicalEligibleGames":4140,"historicalRemainingGames":null,"historicalRemainingSlates":null,"historicalTargetGames":4149,"learnedCandidateCount":96,"learnedEligibleCandidateCount":0,"learningSteps":63360,"networkRequests":26480,"optimizerRevision":5676,"prospectiveSample":null,"settledGames":null,"shadowArtifactCount":null,"shadowSample":null,"trainingArtifactCount":1,"trainingRows":3662,"validationSamples":213,"walkForwardSamples":265} -->
+<!-- MLB_V8_HOURLY_STATE:{"completedSlateCount":334,"contextEligibleGames":140,"contextNewEligibleGames":5,"contextPointerRevision":96,"contextProcessedGames":140,"contextProviderCalls":37,"contextRemainingGames":4000,"creditsConsumed":264800,"deploymentArtifactCount":null,"gradedPredictions":null,"historicalCursorDate":"2026-08-07","historicalDateReached":"2026-08-06","historicalEligibleGames":4140,"historicalRemainingGames":null,"historicalRemainingSlates":null,"historicalTargetGames":4149,"learnedCandidateCount":96,"learnedEligibleCandidateCount":0,"learningSteps":63360,"networkRequests":26480,"optimizerRevision":5676,"prospectiveSample":null,"settledGames":null,"shadowArtifactCount":null,"shadowSample":null,"trainingArtifactCount":1,"trainingRows":3662,"validationSamples":213,"walkForwardSamples":265} -->
