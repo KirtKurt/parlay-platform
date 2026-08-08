@@ -13,18 +13,20 @@
   ],
   "artifactsAndPromotion": {
     "deploymentArtifacts": {
-      "bytes": null,
-      "count": null,
-      "names": [],
-      "status": "UNAVAILABLE"
+      "bytes": 6248,
+      "count": 1,
+      "names": [
+        "mlb-scoring-fix-post-deploy-31242211723"
+      ],
+      "status": "AVAILABLE"
     },
     "deploymentWorkflow": {
-      "conclusion": null,
-      "headSha": null,
-      "name": null,
-      "runId": null,
-      "status": "UNAVAILABLE",
-      "timestamp": null
+      "conclusion": "SUCCESS",
+      "headSha": "affa41347563476f3368abb9952cad901255248d",
+      "name": "Verify MLB Scoring Fix After Deploy",
+      "runId": 31242211723,
+      "status": "COMPLETED",
+      "timestamp": "2026-08-08T05:46:16+00:00"
     },
     "newLearnedModelArtifactCreated": null,
     "newV8ModelPromoted": false,
@@ -37,9 +39,11 @@
       "status": "UNAVAILABLE"
     },
     "trainingArtifacts": {
-      "bytes": 0,
-      "count": 0,
-      "names": [],
+      "bytes": 165501,
+      "count": 1,
+      "names": [
+        "mlb-v8-autonomous-controller-31241160222"
+      ],
       "status": "AVAILABLE"
     }
   },
@@ -50,7 +54,7 @@
     "normalOperationManualInterventionRequired": false,
     "promotionRequested": false
   },
-  "createdAtUtc": "2026-08-08T04:18:00.514125+00:00",
+  "createdAtUtc": "2026-08-08T05:52:30.897380+00:00",
   "freshness": {
     "context": "CURRENT",
     "historical": "CURRENT",
@@ -65,45 +69,45 @@
     "metrics": {
       "completedSlates": {
         "comparable": true,
-        "delta": 0,
+        "delta": 1,
         "note": null,
         "status": "AVAILABLE",
-        "value": 334
+        "value": 335
       },
       "creditsConsumed": {
         "comparable": true,
-        "delta": 0,
+        "delta": 830,
         "note": null,
         "status": "AVAILABLE",
-        "value": 264800
+        "value": 265630
       },
       "cursorDate": {
         "comparable": false,
         "delta": null,
         "note": null,
         "status": "AVAILABLE",
-        "value": "2026-08-07"
+        "value": "2026-08-08"
       },
       "dateReached": {
         "comparable": false,
         "delta": null,
         "note": null,
         "status": "AVAILABLE",
-        "value": "2026-08-06"
+        "value": "2026-08-07"
       },
       "eligibleGames": {
         "comparable": true,
-        "delta": 0,
+        "delta": 15,
         "note": null,
         "status": "AVAILABLE",
-        "value": 4140
+        "value": 4155
       },
       "networkRequests": {
         "comparable": true,
-        "delta": 0,
+        "delta": 83,
         "note": null,
         "status": "AVAILABLE",
-        "value": 26480
+        "value": 26563
       },
       "remainingGames": {
         "comparable": true,
@@ -121,10 +125,10 @@
       },
       "revision": {
         "comparable": true,
-        "delta": 2,
+        "delta": 10,
         "note": null,
         "status": "AVAILABLE",
-        "value": 5678
+        "value": 5688
       },
       "targetGames": {
         "comparable": true,
@@ -134,22 +138,22 @@
         "value": 4149
       }
     },
-    "phase": "DATA_RANGE_EXHAUSTED",
+    "phase": "WAITING_FOR_SETTLED_HORIZON",
     "runtimeBlockers": [],
-    "stateTimestamp": "2026-08-08T04:01:45.236465+00:00"
+    "stateTimestamp": "2026-08-08T05:21:44.749790+00:00"
   },
   "historicalContext": {
     "blockers": [],
-    "eligibleGameCount": 175,
+    "eligibleGameCount": 185,
     "ineligibleGameCount": 0,
     "newEligibleGameCount": 5,
-    "pointerRevision": 103,
-    "processedGameCount": 175,
+    "pointerRevision": 105,
+    "processedGameCount": 185,
     "progressMade": true,
     "providerCallsMade": 36,
-    "remainingGameCount": 3965,
+    "remainingGameCount": 3955,
     "status": "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY",
-    "timestamp": "2026-08-08T03:02:38.097018+00:00"
+    "timestamp": "2026-08-08T05:12:34.190720+00:00"
   },
   "issueNumber": 458,
   "ok": true,
@@ -168,7 +172,7 @@
     "sourceReportedOverallAccuracy": null,
     "sourceReportedSelectedPickAccuracy": null,
     "status": "WAITING_FOR_RETROSPECTIVE_GATE",
-    "timestamp": "2026-08-08T03:09:24.661905+00:00",
+    "timestamp": "2026-08-08T05:17:09.406621+00:00",
     "voids": null,
     "wins": null
   },
@@ -201,12 +205,12 @@
     "pushesAndVoidsExcludedFromDerivedAccuracy": true
   },
   "sourceTimestamps": {
-    "context": "2026-08-08T03:02:38.097018+00:00",
-    "historical": "2026-08-08T04:01:45.236465+00:00",
-    "promotion": "2026-08-08T03:09:26.800826+00:00",
-    "prospective": "2026-08-08T03:09:24.661905+00:00",
+    "context": "2026-08-08T05:12:34.190720+00:00",
+    "historical": "2026-08-08T05:21:44.749790+00:00",
+    "promotion": "2026-08-08T05:17:10.934163+00:00",
+    "prospective": "2026-08-08T05:17:09.406621+00:00",
     "shadow": "2026-08-05T04:38:10.928628+00:00",
-    "training": "2026-08-08T03:04:52.472874+00:00",
+    "training": "2026-08-08T05:13:40.787574+00:00",
     "validation": "2026-08-05T03:24:01.722516+00:00"
   },
   "sources": {
@@ -228,7 +232,7 @@
     "liveSource": {
       "fallbackClearlyLabeled": true,
       "liveAwsStatusRetrieved": true,
-      "retrievedAtUtc": "2026-08-08T04:17:57.720340+00:00",
+      "retrievedAtUtc": "2026-08-08T05:52:28.028556+00:00",
       "source": "AWS_LAMBDA_STATUS"
     },
     "promotion": {
@@ -263,32 +267,32 @@
     }
   },
   "state": {
-    "completedSlateCount": 334,
-    "contextEligibleGames": 175,
+    "completedSlateCount": 335,
+    "contextEligibleGames": 185,
     "contextNewEligibleGames": 5,
-    "contextPointerRevision": 103,
-    "contextProcessedGames": 175,
+    "contextPointerRevision": 105,
+    "contextProcessedGames": 185,
     "contextProviderCalls": 36,
-    "contextRemainingGames": 3965,
-    "creditsConsumed": 264800,
-    "deploymentArtifactCount": null,
+    "contextRemainingGames": 3955,
+    "creditsConsumed": 265630,
+    "deploymentArtifactCount": 1,
     "gradedPredictions": null,
-    "historicalCursorDate": "2026-08-07",
-    "historicalDateReached": "2026-08-06",
-    "historicalEligibleGames": 4140,
+    "historicalCursorDate": "2026-08-08",
+    "historicalDateReached": "2026-08-07",
+    "historicalEligibleGames": 4155,
     "historicalRemainingGames": null,
     "historicalRemainingSlates": null,
     "historicalTargetGames": 4149,
     "learnedCandidateCount": 96,
     "learnedEligibleCandidateCount": 0,
     "learningSteps": 63360,
-    "networkRequests": 26480,
-    "optimizerRevision": 5678,
+    "networkRequests": 26563,
+    "optimizerRevision": 5688,
     "prospectiveSample": null,
     "settledGames": null,
     "shadowArtifactCount": null,
     "shadowSample": null,
-    "trainingArtifactCount": 0,
+    "trainingArtifactCount": 1,
     "trainingRows": 3662,
     "validationSamples": 213,
     "walkForwardSamples": 265
@@ -339,7 +343,7 @@
     "promotionGatePassed": false,
     "recordCountLoaded": 4140,
     "reportStatus": "SUCCESS",
-    "reportTimestamp": "2026-08-08T03:04:52.472874+00:00",
+    "reportTimestamp": "2026-08-08T05:13:40.787574+00:00",
     "retrospectiveValidation": {
       "selectedOutOfFold": {
         "accuracy": null,
@@ -366,12 +370,12 @@
     "selectedFeatureGroup": "market_baseline",
     "totalOptimizationSteps": 63360,
     "workflow": {
-      "conclusion": null,
-      "headSha": "302a3941ba7972a32f049e372ca9fe88ed3a8ebf",
+      "conclusion": "SUCCESS",
+      "headSha": "aabdc5830af043e167e428dd433b8b04273626bd",
       "name": "MLB V8 Autonomous Controller",
-      "runId": 31239118236,
-      "status": "IN_PROGRESS",
-      "timestamp": "2026-08-08T04:17:40+00:00"
+      "runId": 31241160222,
+      "status": "COMPLETED",
+      "timestamp": "2026-08-08T05:17:17+00:00"
     }
   },
   "version": "MLB-V8-HOURLY-STATUS-v1-source-honest"
