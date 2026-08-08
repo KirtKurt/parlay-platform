@@ -75,6 +75,21 @@ def resource_block(current: str, resource_name: str) -> str:
     return "\n".join(lines[start:end])
 
 
+def ensure_results_scheduler_signal_ledger_policy(current: str) -> str:
+    """Allow the settlement Lambda to persist its documented result-signal ledger rows."""
+    block = resource_block(current, "MLBResultsSchedulerFunction")
+    if not block:
+        raise RuntimeError("MLBResultsSchedulerFunction resource missing")
+    required = "        - DynamoDBCrudPolicy:\n            TableName: !Ref SignalLedgerTable"
+    if required in block:
+        return current
+    marker = "        - DynamoDBCrudPolicy:\n            TableName: !Ref PredictionsTable"
+    if marker not in block:
+        raise RuntimeError("MLBResultsSchedulerFunction PredictionsTable policy marker missing")
+    patched = block.replace(marker, marker + "\n" + required, 1)
+    return current.replace(block, patched, 1)
+
+
 for obsolete_verifier_event in [
     "MLBProductionIngestVerifyDaily435Et",
     "MLBProductionLockVerifyDaily556Et",
@@ -180,6 +195,8 @@ verifier = """
 
 """
 text = insert_once(text, "  MLBResultsSchedulerFunction:\n", verifier, "  MLBProductionVerifierFunction:\n")
+text = ensure_results_scheduler_signal_ledger_policy(text)
+results_scheduler_block = resource_block(text, "MLBResultsSchedulerFunction")
 
 required = [
     "Handler: inqsi_backend_api_wrapper.lambda_handler",
@@ -200,11 +217,15 @@ invalid_read_policy = (
     "DynamoDBReadPolicy:" not in mlb_v3_read_block
     or "DynamoDBCrudPolicy:" in mlb_v3_read_block
 )
+missing_results_signal_ledger_policy = (
+    "        - DynamoDBCrudPolicy:\n            TableName: !Ref SignalLedgerTable"
+    not in results_scheduler_block
+)
 obsolete_verifiers = [
     name for name in ("MLBProductionIngestVerifyDaily435Et", "MLBProductionLockVerifyDaily556Et")
     if name in text
 ]
-if missing or invalid_top_level or missing_function_tokens or invalid_read_policy or obsolete_verifiers:
+if missing or invalid_top_level or missing_function_tokens or invalid_read_policy or missing_results_signal_ledger_policy or obsolete_verifiers:
     details = []
     if missing:
         details.append("missing: " + ", ".join(missing))
@@ -214,8 +235,10 @@ if missing or invalid_top_level or missing_function_tokens or invalid_read_polic
         details.append("function-specific admin token missing: " + ", ".join(missing_function_tokens))
     if invalid_read_policy:
         details.append("MLBV3ReadFunction must have DynamoDBReadPolicy and no DynamoDBCrudPolicy")
+    if missing_results_signal_ledger_policy:
+        details.append("MLBResultsSchedulerFunction must have SignalLedgerTable DynamoDBCrudPolicy")
     if obsolete_verifiers:
         details.append("obsolete fixed-UTC verifier events remain: " + ", ".join(obsolete_verifiers))
     raise RuntimeError("MLB dedicated v3 route patch failed; " + "; ".join(details))
 TEMPLATE.write_text(text)
-print("Patched template.yaml with dedicated MLB v3 reads, protected writes, and one continuous production verifier.")
+print("Patched template.yaml with dedicated MLB v3 reads, protected writes, results signal-ledger persistence, and one continuous production verifier.")
