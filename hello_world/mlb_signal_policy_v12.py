@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-VERSION = "MLB-SIGNAL-POLICY-v1.10-market-against-selection-requires-confirmation"
+VERSION = "MLB-SIGNAL-POLICY-v1.11-large-move-late-instability-gate"
 REQUIRED_MINUTES_BEFORE_GAME = 45
 DAILY_SLATE_DISPLAY_RULE = "show_one_required_winner_prediction_for_every_game_45_minutes_before_first_game_of_day"
 
@@ -51,6 +51,30 @@ def _temporal_horizon(sig: Dict[str, Any], name: str) -> Dict[str, Any]:
     return horizon if isinstance(horizon, dict) else {}
 
 
+def _market_curve(sig: Dict[str, Any]) -> Dict[str, Any]:
+    intelligence = sig.get("marketIntelligence") or {}
+    if not isinstance(intelligence, dict):
+        return {}
+    curve = intelligence.get("curve") or {}
+    return curve if isinstance(curve, dict) else {}
+
+
+def _research_magnitude_bucket(value: float) -> str:
+    """Mirror the leakage-safe V10 discovery buckets for side-to-side differences."""
+    magnitude = abs(float(value))
+    if magnitude < 1e-12:
+        return "zero"
+    if magnitude < 0.0025:
+        return "tiny"
+    if magnitude < 0.01:
+        return "small"
+    if magnitude < 0.03:
+        return "medium"
+    if magnitude < 0.10:
+        return "large"
+    return "extreme"
+
+
 def _signal_risk_gate_reasons(row: Dict[str, Any]) -> List[str]:
     sig = _sig(row)
     opp = _opp(row)
@@ -59,6 +83,7 @@ def _signal_risk_gate_reasons(row: Dict[str, Any]) -> List[str]:
     opp_prob = _f(opp.get("marketConsensusProbability"), _f(opp.get("probLatest"), 1.0 - prob))
     edge = prob - opp_prob
     delta = _f(sig.get("delta"), 0.0)
+    opp_delta = _f(opp.get("delta"), 0.0)
     rev = _i(sig.get("reversalCount"), 0)
     structural_confirmation = bool(tags & {"STEAM", "RUN_LINE_CONFIRMATION"})
     independently_confirmed = "BOOK_AGREEMENT" in tags and structural_confirmation
@@ -74,6 +99,19 @@ def _signal_risk_gate_reasons(row: Dict[str, Any]) -> List[str]:
     v60 = _f(h60.get("velocityPpHr"), 0.0)
     v180 = _f(h180.get("velocityPpHr"), 0.0)
 
+    selected_curve = _market_curve(sig)
+    opponent_curve = _market_curve(opp)
+    delta_side_gap = delta - opp_delta
+    late_movement_side_gap = _f(selected_curve.get("lateMovement"), 0.0) - _f(
+        opponent_curve.get("lateMovement"), 0.0
+    )
+    large_move_medium_late_pattern = bool(
+        delta_side_gap > 0.0
+        and late_movement_side_gap > 0.0
+        and _research_magnitude_bucket(delta_side_gap) == "large"
+        and _research_magnitude_bucket(late_movement_side_gap) == "medium"
+    )
+
     reasons: List[str] = []
     if edge < 0 and not independently_confirmed:
         reasons.append("market_direction_against_selection_without_confirmation")
@@ -87,6 +125,8 @@ def _signal_risk_gate_reasons(row: Dict[str, Any]) -> List[str]:
     )
     if late_direction_conflict and not independently_confirmed:
         reasons.append("late_direction_conflict_without_confirmation")
+    if large_move_medium_late_pattern and not independently_confirmed:
+        reasons.append("large_move_medium_late_instability_without_confirmation")
     return sorted(set(reasons))
 
 
@@ -144,6 +184,8 @@ def _components(row: Dict[str, Any]) -> List[Dict[str, Any]]:
         add("late_direction_conflict_penalty", -5.0)
     if "positive_move_high_reversal_without_confirmation" in risk_gate_reasons:
         add("positive_move_unconfirmed_reversal_trap_penalty", -4.0)
+    if "large_move_medium_late_instability_without_confirmation" in risk_gate_reasons:
+        add("large_move_medium_late_instability_penalty", -6.0)
 
     if gap < 0.05:
         add("compressed_market_penalty", -6.0)
