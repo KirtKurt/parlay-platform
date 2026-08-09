@@ -8,7 +8,10 @@ on:
       - '.github/workflows/mlb-fresh-audit-publisher.yml'
   schedule:
     # 1:35 a.m. America/New_York in either daylight or standard time.
-    - cron: '35 5,6 * * *'
+    # Keep these as separate cron expressions so a delayed Actions start can still
+    # identify which nominal UTC schedule fired without relying on wall-clock hour.
+    - cron: '35 5 * * *'
+    - cron: '35 6 * * *'
   workflow_dispatch:
 
 permissions:
@@ -22,13 +25,29 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Gate scheduled run to 1 a.m. Eastern
+      - name: Gate scheduled run to 1:35 a.m. Eastern
         id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE_EXPRESSION: ${{ github.event.schedule }}
         run: |
           SHOULD_RUN=true
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            ET_HOUR=$(TZ=America/New_York date +%H)
-            if [ "$ET_HOUR" != "01" ]; then
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            EXPECTED_SCHEDULE=$(python - <<'PY'
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          now_et = datetime.now(ZoneInfo("America/New_York"))
+          offset_hours = int(now_et.utcoffset().total_seconds() // 3600)
+          if offset_hours == -4:
+              print("35 5 * * *")
+          elif offset_hours == -5:
+              print("35 6 * * *")
+          else:
+              raise SystemExit(f"unexpected America/New_York UTC offset: {offset_hours}")
+          PY
+            )
+            if [ "$SCHEDULE_EXPRESSION" != "$EXPECTED_SCHEDULE" ]; then
               SHOULD_RUN=false
             fi
           fi
