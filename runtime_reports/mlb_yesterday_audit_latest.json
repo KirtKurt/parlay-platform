@@ -2,108 +2,108 @@
   "ok": false,
   "proofType": "MLB_YESTERDAY_IMMUTABLE_LOCK_AUDIT",
   "version": "MLB-YESTERDAY-AUDIT-v2.1-immutable-lock-identity",
-  "createdAt": "2026-08-08T09:25:58.757617+00:00",
+  "createdAt": "2026-08-09T09:27:45.834637+00:00",
   "sport": "mlb",
-  "slate_date": "2026-08-07",
-  "status": "LOCKED_EVIDENCE_UNAVAILABLE",
-  "reason": "IMMUTABLE_DAILY_LOCK_CARD_UNAVAILABLE|LOCK_CARD_RESOLUTION={'version': 'MLB-YESTERDAY-AUDIT-LOCK-CARD-RESOLVER-v2-canonical-per-game-source', 'preferredSk': 'DAILY_LOCK#TMINUS45', 'candidateSks': ['DAILY_LOCK#TMINUS45'], 'queryError': None, 'validationErrors': {'DAILY_LOCK#TMINUS45': 'IMMUTABLE_DAILY_LOCK_CARD_UNAVAILABLE'}, 'canonicalPerGameError': 'CANONICAL_IMMUTABLE_PER_GAME_ROWS_UNAVAILABLE'}",
+  "slate_date": "2026-08-08",
+  "status": "FINAL_OUTCOME_IDENTITY_MISMATCH",
+  "reason": "LOCKED_AND_FINAL_GAME_IDENTITIES_NOT_ONE_TO_ONE",
   "finalScoreCount": 15,
   "officialSchedule": {
     "ok": true,
     "source": "official_mlb_stats_api",
-    "requestedDate": "2026-08-07",
+    "requestedDate": "2026-08-08",
     "exactDateVerified": true,
     "totalGames": 15,
     "gamePks": [
-      "823349",
-      "823428",
-      "822699",
-      "823515",
-      "824727",
-      "823836",
-      "824566",
-      "823750",
-      "824081",
-      "823024",
-      "822863",
-      "825051",
-      "823266",
-      "823103",
-      "823191"
+      "823514",
+      "824726",
+      "823834",
+      "823426",
+      "823348",
+      "822701",
+      "824079",
+      "823752",
+      "823267",
+      "823188",
+      "823021",
+      "822864",
+      "824565",
+      "825049",
+      "823102"
     ],
     "gameStates": [
       {
-        "gamePk": "823349",
+        "gamePk": "823514",
         "abstractGameState": "Final",
         "detailedState": "Final"
       },
       {
-        "gamePk": "823428",
+        "gamePk": "824726",
         "abstractGameState": "Final",
         "detailedState": "Final"
       },
       {
-        "gamePk": "822699",
+        "gamePk": "823834",
         "abstractGameState": "Final",
         "detailedState": "Final"
       },
       {
-        "gamePk": "823515",
+        "gamePk": "823426",
         "abstractGameState": "Final",
         "detailedState": "Final"
       },
       {
-        "gamePk": "824727",
+        "gamePk": "823348",
         "abstractGameState": "Final",
         "detailedState": "Final"
       },
       {
-        "gamePk": "823836",
+        "gamePk": "822701",
         "abstractGameState": "Final",
         "detailedState": "Final"
       },
       {
-        "gamePk": "824566",
+        "gamePk": "824079",
         "abstractGameState": "Final",
         "detailedState": "Final"
       },
       {
-        "gamePk": "823750",
+        "gamePk": "823752",
         "abstractGameState": "Final",
         "detailedState": "Final"
       },
       {
-        "gamePk": "824081",
+        "gamePk": "823267",
         "abstractGameState": "Final",
         "detailedState": "Final"
       },
       {
-        "gamePk": "823024",
+        "gamePk": "823188",
         "abstractGameState": "Final",
         "detailedState": "Final"
       },
       {
-        "gamePk": "822863",
+        "gamePk": "823021",
         "abstractGameState": "Final",
         "detailedState": "Final"
       },
       {
-        "gamePk": "825051",
+        "gamePk": "822864",
         "abstractGameState": "Final",
         "detailedState": "Final"
       },
       {
-        "gamePk": "823266",
+        "gamePk": "824565",
         "abstractGameState": "Final",
         "detailedState": "Final"
       },
       {
-        "gamePk": "823103",
+        "gamePk": "825049",
         "abstractGameState": "Final",
         "detailedState": "Final"
       },
       {
-        "gamePk": "823191",
+        "gamePk": "823102",
         "abstractGameState": "Final",
         "detailedState": "Final"
       }
@@ -112,5 +112,36 @@
   "stored": false,
   "failClosed": true,
   "historicalPredictionsRecomputed": false,
-  "policy": "The audit requires an independently verified exact-date official MLB schedule, complete FINAL provider coverage, and one-to-one immutable locked game identities. Any uncertainty fails closed without changing LATEST."
+  "policy": "The audit requires an independently verified exact-date official MLB schedule, complete FINAL provider coverage, and one-to-one immutable locked game identities. Any uncertainty fails closed without changing LATEST.",
+  "immutableLockAuthority": {
+    "version": "MLB-YESTERDAY-AUDIT-v2.1-immutable-lock-identity",
+    "resolverVersion": "MLB-YESTERDAY-AUDIT-LOCK-CARD-RESOLVER-v2-canonical-per-game-source",
+    "authorityClass": "CANONICAL_IMMUTABLE_PER_GAME_ROWS_DIRECT_QUERY",
+    "historicalPredictionsRecomputed": false,
+    "consistentRead": true,
+    "writeOnce": true,
+    "cardPk": null,
+    "cardSk": null,
+    "cardCreatedAtUtc": null,
+    "cardModelVersion": null,
+    "perGameLock": true,
+    "canonicalSingleGameRowsVerified": true,
+    "canonicalRowsQueriedDirectly": true,
+    "dailyCardRequired": false,
+    "canonicalKeys": [
+      {
+        "PK": "GAME_WINNERS#mlb#2026-08-08",
+        "SK": "LOCKED#GAME#2026-08-08T19:05:00+00:00#5c292777a98d90d363d05f1ad9eb489d"
+      },
+      {
+        "PK": "GAME_WINNERS#mlb#2026-08-08",
+        "SK": "LOCKED#GAME#2026-08-08T20:10:00+00:00#60f49a7e49d759fbf523ceb66bc321c7"
+      }
+    ],
+    "predictionCount": 2,
+    "stageAuthorityValidated": true,
+    "selectionLockVectorStatusValidated": true,
+    "partitionFingerprint": "8de9c42019923ff627f4a483cd3c9366e5dd1f267c5e21aac2e74aaf2140b6c0",
+    "discoveryIsAuthority": false
+  }
 }
