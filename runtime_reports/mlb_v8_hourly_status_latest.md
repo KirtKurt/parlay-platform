@@ -1,6 +1,6 @@
 # MLB V8 Hourly Numerical Status
 
-**Updated:** 2026-08-09T04:26:32.619777+00:00
+**Updated:** 2026-08-09T05:54:38.506377+00:00
 
 Accuracy is shown only when a source explicitly publishes it. This reporter never derives accuracy from wins and losses. Backfill, training, retrospective validation, prospective audit, shadow evaluation, and production promotion remain separate.
 
@@ -10,16 +10,16 @@ Accuracy is shown only when a source explicitly publishes it. This reporter neve
 |---|---:|---:|
 | Historical eligible games | **4155** | **0** |
 | Completed slates | **335** | **0** |
-| Historical date reached | **2026-08-07** | **—** |
+| Historical date reached | **2026-08-08** | **—** |
 | Current historical cursor | **2026-08-08** | **—** |
 | Configured recovery target | **4149** | **0** |
 | Remaining games | **Unavailable — unavailable (source-reported; not recomputed)** | **—** |
 | Remaining slates | **Unavailable — unavailable (not calculated when omitted)** | **—** |
-| Optimizer revision | **5690** | **+2** |
-| Network requests | **26563** | **0** |
-| Credits consumed | **265630** | **0** |
-| Optimizer phase | **DATA_RANGE_EXHAUSTED** | — |
-| Latest state timestamp | **2026-08-09T04:01:45.168662+00:00** (current) | — |
+| Optimizer revision | **5704** | **+14** |
+| Network requests | **26643** | **+80** |
+| Credits consumed | **266430** | **+800** |
+| Optimizer phase | **BACKFILLING** | — |
+| Latest state timestamp | **2026-08-09T05:41:45.197246+00:00** (current) | — |
 
 Historical eligible games and settled trainer games are separate, **incomparable** populations unless a source explicitly defines otherwise.
 
@@ -27,9 +27,9 @@ Historical eligible games and settled trainer games are separate, **incomparable
 
 | Metric | Current | Change |
 |---|---:|---:|
-| Latest trainer workflow | **31291752817 / SUCCESS** | — |
+| Latest trainer workflow | **31296877066 / SUCCESS** | — |
 | Trainer report status | **SUCCESS** | — |
-| Trainer timestamp | **2026-08-09T03:09:11.358633+00:00** (current) | — |
+| Trainer timestamp | **2026-08-09T05:34:08.632850+00:00** (current) | — |
 | Training rows | **3690** | **0** |
 | Validation samples | **206** | **0** |
 | Walk-forward samples | **259** | **0** |
@@ -59,7 +59,7 @@ These are retrospective historical measurements, not prospective shadow-pick win
 | Metric | Value |
 |---|---:|
 | Status | **WAITING_FOR_RETROSPECTIVE_GATE** |
-| Timestamp | **2026-08-09T03:14:18.255936+00:00 (current)** |
+| Timestamp | **2026-08-09T05:38:29.777527+00:00 (current)** |
 | Sample size | **Unavailable** |
 | Wins | **Unavailable** |
 | Losses | **Unavailable** |
@@ -92,21 +92,21 @@ These are retrospective historical measurements, not prospective shadow-pick win
 | Metric | Value |
 |---|---:|
 | Status / authority | **V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY** |
-| Timestamp | **2026-08-09T03:07:09.431235+00:00 (current)** |
-| Processed games | **330** |
-| Eligible games | **330** |
+| Timestamp | **2026-08-09T05:32:09.874707+00:00 (current)** |
+| Processed games | **340** |
+| Eligible games | **340** |
 | New eligible games | **5** |
 | Ineligible games | **0** |
-| Remaining games | **3825** |
-| Provider calls | **36** |
-| Pointer revision | **134** |
+| Remaining games | **3815** |
+| Provider calls | **37** |
+| Pointer revision | **136** |
 | Progress made | **Yes** |
 
 ## Artifacts and production promotion
 
 | Metric | Value |
 |---|---:|
-| Trainer artifacts | **1 / 167265 bytes** |
+| Trainer artifacts | **1 / 167103 bytes** |
 | Shadow artifacts | **Unavailable / Unavailable bytes** |
 | Deployment artifacts | **Unavailable / Unavailable bytes** |
 | Latest deployment workflow | **Unavailable / UNAVAILABLE** |
@@ -125,4 +125,4 @@ These are retrospective historical measurements, not prospective shadow-pick win
 
 A quality gate is not a runtime failure. Promotion remains separate from collection, backfill, training, validation, prospective auditing, and shadow evaluation.
 
-<!-- MLB_V8_HOURLY_STATE:{"completedSlateCount":335,"contextEligibleGames":330,"contextNewEligibleGames":5,"contextPointerRevision":134,"contextProcessedGames":330,"contextProviderCalls":36,"contextRemainingGames":3825,"creditsConsumed":265630,"deploymentArtifactCount":null,"gradedPredictions":null,"historicalCursorDate":"2026-08-08","historicalDateReached":"2026-08-07","historicalEligibleGames":4155,"historicalRemainingGames":null,"historicalRemainingSlates":null,"historicalTargetGames":4149,"learnedCandidateCount":96,"learnedEligibleCandidateCount":0,"learningSteps":63360,"networkRequests":26563,"optimizerRevision":5690,"prospectiveSample":null,"settledGames":null,"shadowArtifactCount":null,"shadowSample":null,"trainingArtifactCount":1,"trainingRows":3690,"validationSamples":206,"walkForwardSamples":259} -->
+<!-- MLB_V8_HOURLY_STATE:{"completedSlateCount":335,"contextEligibleGames":340,"contextNewEligibleGames":5,"contextPointerRevision":136,"contextProcessedGames":340,"contextProviderCalls":37,"contextRemainingGames":3815,"creditsConsumed":266430,"deploymentArtifactCount":null,"gradedPredictions":null,"historicalCursorDate":"2026-08-08","historicalDateReached":"2026-08-08","historicalEligibleGames":4155,"historicalRemainingGames":null,"historicalRemainingSlates":null,"historicalTargetGames":4149,"learnedCandidateCount":96,"learnedEligibleCandidateCount":0,"learningSteps":63360,"networkRequests":26643,"optimizerRevision":5704,"prospectiveSample":null,"settledGames":null,"shadowArtifactCount":null,"shadowSample":null,"trainingArtifactCount":1,"trainingRows":3690,"validationSamples":206,"walkForwardSamples":259} -->
