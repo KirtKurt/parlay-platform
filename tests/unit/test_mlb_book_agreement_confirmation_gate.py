@@ -65,6 +65,27 @@ def against_market_row(tags):
     }
 
 
+def large_move_late_instability_row(tags, *, late_movement=0.02):
+    return {
+        "predictedSide": "home",
+        "predictedWinner": "Home",
+        "playable": True,
+        "homeSignal": {
+            "marketConsensusProbability": 0.60,
+            "latestGap": 0.20,
+            "delta": 0.04,
+            "reversalCount": 1,
+            "tags": tags,
+            "marketIntelligence": {"curve": {"lateMovement": late_movement}},
+        },
+        "awaySignal": {
+            "marketConsensusProbability": 0.40,
+            "delta": 0.0,
+            "marketIntelligence": {"curve": {"lateMovement": 0.0}},
+        },
+    }
+
+
 def component_names(value):
     return {item["name"] for item in module._components(value)}
 
@@ -120,6 +141,22 @@ def main():
         against_market_row(["BOOK_AGREEMENT", "STEAM"])
     )
     assert "market_direction_against_selection_without_confirmation" not in confirmed_against
+
+    late_instability = large_move_late_instability_row([])
+    late_reasons = module._signal_risk_gate_reasons(late_instability)
+    assert "large_move_medium_late_instability_without_confirmation" in late_reasons
+    assert module._is_playable(late_instability) is False
+    assert "large_move_medium_late_instability_penalty" in component_names(late_instability)
+
+    confirmed_late_instability = module._signal_risk_gate_reasons(
+        large_move_late_instability_row(["BOOK_AGREEMENT", "STEAM"])
+    )
+    assert "large_move_medium_late_instability_without_confirmation" not in confirmed_late_instability
+
+    small_late_move = module._signal_risk_gate_reasons(
+        large_move_late_instability_row([], late_movement=0.005)
+    )
+    assert "large_move_medium_late_instability_without_confirmation" not in small_late_move
 
     print("MLB book-agreement confirmation gate PASS")
 
