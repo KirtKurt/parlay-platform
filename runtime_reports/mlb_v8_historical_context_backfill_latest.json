@@ -1,14 +1,26 @@
 {
-  "activePointerRevision": 157,
+  "activePointerRevision": 158,
   "authority": "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY",
   "automaticWagerAllowed": false,
   "bbsApiUsed": false,
   "bbsCredentialRead": false,
   "blockers": [],
   "coreEligibleGameCount": 5,
-  "createdAtUtc": "2026-08-09T20:57:35.011131+00:00",
-  "crosswalkQuarantine": [],
-  "crosswalkQuarantineCount": 0,
+  "createdAtUtc": "2026-08-09T21:45:15.447838+00:00",
+  "crosswalkQuarantine": [
+    {
+      "candidateOfficialGamePks": [],
+      "providerIndex": 1,
+      "providerKickoffUtc": "2025-05-05T22:45:00+00:00",
+      "providerMatchId": "778046",
+      "providerRowFingerprint": "4e3d8e38fbad69e89f65b1a5535c91b3efb7211b29e8d0fc05eb6c49870bd07d",
+      "reasons": [
+        "provider_direct_official_game_not_in_corpus",
+        "provider_official_game_crosswalk_not_unique"
+      ]
+    }
+  ],
+  "crosswalkQuarantineCount": 1,
   "cursorAdvanced": true,
   "diagnosedGameCount": 5,
   "domainCoverage": {
@@ -53,34 +65,34 @@
     "weather_resource_unavailable": 5
   },
   "eligibilityReasonsByGame": {
-    "778048": [
+    "778045": [
       "weather_resource_unavailable"
     ],
-    "778050": [
+    "778047": [
       "weather_resource_unavailable"
     ],
-    "778052": [
+    "778049": [
       "weather_resource_unavailable"
     ],
-    "778055": [
+    "778060": [
       "weather_resource_unavailable"
     ],
-    "778058": [
+    "778068": [
       "weather_resource_unavailable"
     ]
   },
-  "eligibleGameCount": 445,
+  "eligibleGameCount": 450,
   "fullFeatureEligibleGameCount": 0,
   "ineligibleGameCount": 0,
   "legacyBbsCarryForwardAllowed": false,
   "manifest": {
     "alreadyExisted": false,
     "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
-    "key": "mlb/v8/historical-context/manifests/694b9367893a5804a1fdffd1744d8efde316ad0013649051591b1f4f243ceff9.json",
-    "sha256": "51c95594606dcb67f019d43d358715dfb473bda8c4241daccdb2f9d10883f778",
-    "versionId": "lZxK7547KFIh1btybwjpvTwOuKibrFTZ"
+    "key": "mlb/v8/historical-context/manifests/8939faba22bd1221603a7050322c6836b4778b110f7db2b910f8609020944b47.json",
+    "sha256": "b897ee0579f065eb642c540363b836a90ed7c5628051abb75000a5918639a006",
+    "versionId": "0bHOb__JrKPKV1TeJbDag6Zq8tm878k2"
   },
-  "manifestDigest": "694b9367893a5804a1fdffd1744d8efde316ad0013649051591b1f4f243ceff9",
+  "manifestDigest": "8939faba22bd1221603a7050322c6836b4778b110f7db2b910f8609020944b47",
   "materializerVersion": "MLB-V8-OFFICIAL-CONTEXT-v2-projection-aware",
   "newEligibleGameCount": 5,
   "newRecordCount": 5,
@@ -88,21 +100,21 @@
   "ok": true,
   "pointInTimeRequired": true,
   "pointerMigrationVersion": "MLB-V8-CONTEXT-POINTER-MIGRATION-v2-feature-aware-replay",
-  "processedGameCount": 445,
+  "processedGameCount": 450,
   "productionAuthorityChanged": false,
   "progressMade": true,
   "proofType": "MLB_V8_HISTORICAL_CONTEXT_BACKFILL",
   "provider": "official_mlb_plus_internal_canonical_context",
-  "providerCallsMade": 36,
-  "remainingGameCount": 3710,
+  "providerCallsMade": 37,
+  "remainingGameCount": 3705,
   "replayFromStartApplied": false,
-  "runId": "31335555900",
+  "runId": "31337622442",
   "sameDayResultsExcluded": true,
   "selectedGameCount": 5,
   "selectionUsedOutcomes": false,
-  "sourceSha": "89b4831c9dab5467d2c21c7ae333a55a83a79ed3",
+  "sourceSha": "3bc9dc9e52d815bb870a1efa89fd1527d6db023b",
   "targetGameOutcomeUsed": false,
-  "trainingCoverage": 0.10709988,
+  "trainingCoverage": 0.10830325,
   "version": "MLB-V8-HISTORICAL-CONTEXT-BACKFILL-v5-feature-aware-replay",
   "warnings": []
 }
