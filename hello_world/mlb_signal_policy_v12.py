@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-VERSION = "MLB-SIGNAL-POLICY-v1.11-large-move-late-instability-gate"
+VERSION = "MLB-SIGNAL-POLICY-v1.11-large-move-extreme-180m-acceleration-gate"
 REQUIRED_MINUTES_BEFORE_GAME = 45
 DAILY_SLATE_DISPLAY_RULE = "show_one_required_winner_prediction_for_every_game_45_minutes_before_first_game_of_day"
 
@@ -51,14 +51,6 @@ def _temporal_horizon(sig: Dict[str, Any], name: str) -> Dict[str, Any]:
     return horizon if isinstance(horizon, dict) else {}
 
 
-def _market_curve(sig: Dict[str, Any]) -> Dict[str, Any]:
-    intelligence = sig.get("marketIntelligence") or {}
-    if not isinstance(intelligence, dict):
-        return {}
-    curve = intelligence.get("curve") or {}
-    return curve if isinstance(curve, dict) else {}
-
-
 def _research_magnitude_bucket(value: float) -> str:
     """Mirror the leakage-safe V10 discovery buckets for side-to-side differences."""
     magnitude = abs(float(value))
@@ -92,6 +84,7 @@ def _signal_risk_gate_reasons(row: Dict[str, Any]) -> List[str]:
     h60 = _temporal_horizon(sig, "60m")
     h180 = _temporal_horizon(sig, "180m")
     hfull = _temporal_horizon(sig, "full")
+    opp_h180 = _temporal_horizon(opp, "180m")
     rev60 = _i(h60.get("reversalCount"), 0)
     rev180 = _i(h180.get("reversalCount"), 0)
     revfull = _i(hfull.get("reversalCount"), 0)
@@ -99,17 +92,15 @@ def _signal_risk_gate_reasons(row: Dict[str, Any]) -> List[str]:
     v60 = _f(h60.get("velocityPpHr"), 0.0)
     v180 = _f(h180.get("velocityPpHr"), 0.0)
 
-    selected_curve = _market_curve(sig)
-    opponent_curve = _market_curve(opp)
     delta_side_gap = delta - opp_delta
-    late_movement_side_gap = _f(selected_curve.get("lateMovement"), 0.0) - _f(
-        opponent_curve.get("lateMovement"), 0.0
+    acceleration_180_side_gap = _f(h180.get("accelerationPpHr2"), 0.0) - _f(
+        opp_h180.get("accelerationPpHr2"), 0.0
     )
-    large_move_medium_late_pattern = bool(
+    large_move_extreme_acceleration_pattern = bool(
         delta_side_gap > 0.0
-        and late_movement_side_gap > 0.0
+        and acceleration_180_side_gap > 0.0
         and _research_magnitude_bucket(delta_side_gap) == "large"
-        and _research_magnitude_bucket(late_movement_side_gap) == "medium"
+        and _research_magnitude_bucket(acceleration_180_side_gap) == "extreme"
     )
 
     reasons: List[str] = []
@@ -125,8 +116,8 @@ def _signal_risk_gate_reasons(row: Dict[str, Any]) -> List[str]:
     )
     if late_direction_conflict and not independently_confirmed:
         reasons.append("late_direction_conflict_without_confirmation")
-    if large_move_medium_late_pattern and not independently_confirmed:
-        reasons.append("large_move_medium_late_instability_without_confirmation")
+    if large_move_extreme_acceleration_pattern and not independently_confirmed:
+        reasons.append("large_move_extreme_180m_acceleration_without_confirmation")
     return sorted(set(reasons))
 
 
@@ -184,8 +175,8 @@ def _components(row: Dict[str, Any]) -> List[Dict[str, Any]]:
         add("late_direction_conflict_penalty", -5.0)
     if "positive_move_high_reversal_without_confirmation" in risk_gate_reasons:
         add("positive_move_unconfirmed_reversal_trap_penalty", -4.0)
-    if "large_move_medium_late_instability_without_confirmation" in risk_gate_reasons:
-        add("large_move_medium_late_instability_penalty", -6.0)
+    if "large_move_extreme_180m_acceleration_without_confirmation" in risk_gate_reasons:
+        add("large_move_extreme_180m_acceleration_penalty", -6.0)
 
     if gap < 0.05:
         add("compressed_market_penalty", -6.0)
