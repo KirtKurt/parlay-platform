@@ -65,7 +65,7 @@ def against_market_row(tags):
     }
 
 
-def large_move_late_instability_row(tags, *, late_movement=0.02):
+def large_move_extreme_acceleration_row(tags, *, acceleration_180=0.12):
     return {
         "predictedSide": "home",
         "predictedWinner": "Home",
@@ -76,18 +76,50 @@ def large_move_late_instability_row(tags, *, late_movement=0.02):
             "delta": 0.04,
             "reversalCount": 1,
             "tags": tags,
-            "marketIntelligence": {"curve": {"lateMovement": late_movement}},
+            "temporalFeatures": {
+                "horizons": {
+                    "180m": {
+                        "velocityPpHr": 1.0,
+                        "accelerationPpHr2": acceleration_180,
+                    }
+                }
+            },
         },
         "awaySignal": {
             "marketConsensusProbability": 0.40,
             "delta": 0.0,
-            "marketIntelligence": {"curve": {"lateMovement": 0.0}},
+            "temporalFeatures": {
+                "horizons": {
+                    "180m": {
+                        "velocityPpHr": 0.5,
+                        "accelerationPpHr2": 0.0,
+                    }
+                }
+            },
         },
     }
 
 
 def component_names(value):
     return {item["name"] for item in module._components(value)}
+
+
+def test_large_move_extreme_180m_acceleration_gate():
+    unstable = large_move_extreme_acceleration_row([])
+    reasons = module._signal_risk_gate_reasons(unstable)
+    assert "large_move_extreme_180m_acceleration_without_confirmation" in reasons
+    assert module._is_playable(unstable) is False
+    assert "large_move_extreme_180m_acceleration_penalty" in component_names(unstable)
+
+    confirmed = module._signal_risk_gate_reasons(
+        large_move_extreme_acceleration_row(["BOOK_AGREEMENT", "STEAM"])
+    )
+    assert "large_move_extreme_180m_acceleration_without_confirmation" not in confirmed
+
+    medium_acceleration = module._signal_risk_gate_reasons(
+        large_move_extreme_acceleration_row([], acceleration_180=0.02)
+    )
+    assert "large_move_extreme_180m_acceleration_without_confirmation" not in medium_acceleration
 
 
 def main():
@@ -142,21 +174,7 @@ def main():
     )
     assert "market_direction_against_selection_without_confirmation" not in confirmed_against
 
-    late_instability = large_move_late_instability_row([])
-    late_reasons = module._signal_risk_gate_reasons(late_instability)
-    assert "large_move_medium_late_instability_without_confirmation" in late_reasons
-    assert module._is_playable(late_instability) is False
-    assert "large_move_medium_late_instability_penalty" in component_names(late_instability)
-
-    confirmed_late_instability = module._signal_risk_gate_reasons(
-        large_move_late_instability_row(["BOOK_AGREEMENT", "STEAM"])
-    )
-    assert "large_move_medium_late_instability_without_confirmation" not in confirmed_late_instability
-
-    small_late_move = module._signal_risk_gate_reasons(
-        large_move_late_instability_row([], late_movement=0.005)
-    )
-    assert "large_move_medium_late_instability_without_confirmation" not in small_late_move
+    test_large_move_extreme_180m_acceleration_gate()
 
     print("MLB book-agreement confirmation gate PASS")
 
