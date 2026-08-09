@@ -8,7 +8,10 @@ on:
       - '.github/workflows/mlb-fresh-audit-publisher.yml'
   schedule:
     # 1:35 a.m. America/New_York in either daylight or standard time.
-    - cron: '35 5,6 * * *'
+    # Keep these as separate cron expressions so a delayed Actions start can still
+    # identify which nominal UTC schedule fired without relying on runner wall-clock hour.
+    - cron: '35 5 * * *'
+    - cron: '35 6 * * *'
   workflow_dispatch:
 
 permissions:
@@ -22,15 +25,36 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Gate scheduled run to 1 a.m. Eastern
+      - name: Gate scheduled run to nominal 1:35 a.m. Eastern
         id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE_EXPRESSION: ${{ github.event.schedule }}
         run: |
           SHOULD_RUN=true
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            ET_HOUR=$(TZ=America/New_York date +%H)
-            if [ "$ET_HOUR" != "01" ]; then
-              SHOULD_RUN=false
-            fi
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            SHOULD_RUN=$(python - <<'PY'
+          import os
+          from datetime import datetime, timedelta, timezone
+          from zoneinfo import ZoneInfo
+
+          schedule = os.environ.get("SCHEDULE_EXPRESSION", "")
+          scheduled_hours = {
+              "35 5 * * *": 5,
+              "35 6 * * *": 6,
+          }
+          hour = scheduled_hours.get(schedule)
+          if hour is None:
+              raise SystemExit(f"unexpected schedule expression: {schedule!r}")
+
+          now_utc = datetime.now(timezone.utc)
+          nominal_utc = now_utc.replace(hour=hour, minute=35, second=0, microsecond=0)
+          if nominal_utc > now_utc:
+              nominal_utc -= timedelta(days=1)
+          nominal_et = nominal_utc.astimezone(ZoneInfo("America/New_York"))
+          print("true" if (nominal_et.hour == 1 and nominal_et.minute == 35) else "false")
+          PY
+            )
           fi
           echo "run=$SHOULD_RUN" >> "$GITHUB_OUTPUT"
 
