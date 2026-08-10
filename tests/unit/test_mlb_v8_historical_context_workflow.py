@@ -106,24 +106,97 @@ def test_weather_fallback_retries_earlier_single_run_with_minimal_contract():
     source._get = get
     value = source.weather(_canonical(), {})
 
-    assert value["source"] == "Open-Meteo Single Runs archived forecast fallback"
+    assert value["source"] == "Open-Meteo Single Runs archived forecast"
+    assert value["sourceClass"] == "EXACT_ARCHIVED_MODEL_RUN"
     assert value["fallbackAttemptHoursBack"] == 6
     assert value["conservativeAvailableAtUtc"] <= _canonical()["predictionLockAtUtc"]
+    assert value["pointInTimeProjectionVerified"] is True
     assert calls[0][1]["models"] == "ecmwf_ifs"
     assert calls[0][1]["forecast_hours"] >= 12
     assert "forecast_days" not in calls[0][1]
     assert "precipitation_probability" not in calls[0][1]["hourly"]
 
 
-def test_weather_fallback_uses_exact_lock_mlb_timecode_when_archive_is_unavailable():
+def test_weather_fallback_uses_fixed_24h_previous_run_before_official_feed():
+    source = context.OfficialContextSource()
+    source._venue_coordinates = lambda _current: (42.3467, -71.0972)
+    calls = []
+
+    def get(endpoint, params=None):
+        params = dict(params or {})
+        calls.append((endpoint, params))
+        if endpoint == context.OPEN_METEO_SINGLE_RUN:
+            raise RuntimeError("single_run_archive_unavailable")
+        assert endpoint == context.PREVIOUS_RUNS_API
+        assert "temperature_2m_previous_day1" in params["hourly"]
+        return {
+            "model": "ncep_gfs013",
+            "hourly": {
+                "time": ["2026-07-28T23:00"],
+                "temperature_2m_previous_day1": [27.0],
+                "relative_humidity_2m_previous_day1": [58.0],
+                "precipitation_probability_previous_day1": [20.0],
+                "precipitation_previous_day1": [0.0],
+                "wind_speed_10m_previous_day1": [12.0],
+                "wind_direction_10m_previous_day1": [220.0],
+                "wind_gusts_10m_previous_day1": [18.0],
+            },
+        }
+
+    source._get = get
+    value = source.weather(_canonical(), {})
+
+    assert value["sourceClass"] == "FIXED_LEAD_PREVIOUS_RUN"
+    assert value["targetIdentityMode"] == "FIXED_24H_PRIOR_FORECAST"
+    assert value["forecastLeadHours"] == 24
+    assert value["pointInTimeProjectionVerified"] is True
+    assert value["weatherFeatureComplete"] is True
+    assert value["missingVariables"] == []
+    assert value["sourceEffectiveAtUtc"] == "2026-07-27T23:00:00+00:00"
+    assert value["conservativeAvailableAtUtc"] == "2026-07-28T05:00:00+00:00"
+    assert value["conservativeAvailableAtUtc"] <= _canonical()["predictionLockAtUtc"]
+    assert not any(endpoint.endswith("/777001/feed/live") for endpoint, _ in calls)
+
+
+def test_previous_run_temperature_only_is_explicitly_partial_not_fabricated():
+    source = context.OfficialContextSource()
+    source._venue_coordinates = lambda _current: (42.3467, -71.0972)
+
+    def get(endpoint, params=None):
+        if endpoint == context.OPEN_METEO_SINGLE_RUN:
+            raise RuntimeError("single_run_archive_unavailable")
+        params = dict(params or {})
+        hourly = str(params.get("hourly") or "")
+        if "," in hourly:
+            raise RuntimeError("full_previous_run_profile_unavailable")
+        return {
+            "model": "ncep_gfs013",
+            "hourly": {
+                "time": ["2026-07-28T23:00"],
+                "temperature_2m_previous_day1": [26.5],
+            },
+        }
+
+    source._get = get
+    value = source.weather(_canonical(), {})
+
+    assert value["sourceClass"] == "FIXED_LEAD_PREVIOUS_RUN"
+    assert value["weatherFeatureComplete"] is False
+    assert value["availableVariables"] == ["temperature_2m"]
+    assert "wind_speed_10m" in value["missingVariables"]
+    assert value["historicalForecastStitchedArchiveUsed"] is False
+    assert value["reanalysisUsed"] is False
+
+
+def test_weather_fallback_uses_exact_lock_mlb_timecode_last():
     source = context.OfficialContextSource()
     source._venue_coordinates = lambda _current: (42.3467, -71.0972)
     calls = []
 
     def get(endpoint, params=None):
         calls.append((endpoint, dict(params or {})))
-        if endpoint == context.OPEN_METEO_SINGLE_RUN:
-            raise RuntimeError("archive_unavailable")
+        if endpoint in {context.OPEN_METEO_SINGLE_RUN, context.PREVIOUS_RUNS_API}:
+            raise RuntimeError("forecast_archive_unavailable")
         assert endpoint.endswith("/777001/feed/live")
         return {
             "gameData": {
@@ -139,11 +212,13 @@ def test_weather_fallback_uses_exact_lock_mlb_timecode_when_archive_is_unavailab
     source._get = get
     value = source.weather(_canonical(), {})
 
-    assert value["source"] == "MLB StatsAPI exact-lock timecode pregame weather"
+    assert value["sourceClass"] == "OFFICIAL_EXACT_LOCK_TIMECODE"
     assert value["timecode"] == "20260728_221500"
     assert value["conservativeAvailableAtUtc"] == "2026-07-28T22:15:00+00:00"
     assert value["targetOutcomeUsed"] is False
     assert value["sameDayResultsUsed"] is False
+    assert value["historicalForecastStitchedArchiveUsed"] is False
+    assert value["reanalysisUsed"] is False
     assert any(
         params.get("timecode") == "20260728_221500"
         for endpoint, params in calls
@@ -151,7 +226,7 @@ def test_weather_fallback_uses_exact_lock_mlb_timecode_when_archive_is_unavailab
     )
 
 
-def test_weather_fallback_remains_fail_closed_when_both_sources_fail():
+def test_weather_fallback_remains_fail_closed_when_all_sources_fail():
     source = context.OfficialContextSource()
     source._venue_coordinates = lambda _current: (42.3467, -71.0972)
     source._get = lambda *_args, **_kwargs: (_ for _ in ()).throw(
@@ -161,6 +236,10 @@ def test_weather_fallback_remains_fail_closed_when_both_sources_fail():
     try:
         source.weather(_canonical(), {})
     except RuntimeError as exc:
-        assert "point_in_time_weather_sources_exhausted" in str(exc)
+        text = str(exc)
+        assert "point_in_time_weather_sources_exhausted" in text
+        assert "single_run" in text
+        assert "previous_run_24h" in text
+        assert "official_timecode" in text
     else:
         raise AssertionError("weather fallback must fail closed when no source is available")
