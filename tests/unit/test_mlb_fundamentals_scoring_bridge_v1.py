@@ -13,6 +13,7 @@ if str(HELLO_WORLD) not in sys.path:
 
 import mlb_fundamentals_scoring_bridge_v1 as bridge
 import mlb_fundamentals_snapshot_v1 as snapshot_v1
+import mlb_fundamentals_snapshot_v2 as snapshot_v2
 import mlb_winner_stack_v2 as winner_stack
 
 
@@ -204,3 +205,116 @@ def test_legacy_snapshot_installer_always_installs_live_scoring_bridge():
         reloaded_winner_stack._INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED
         is True
     )
+
+
+def _provenance(dataset):
+    return {
+        "provider": "fixture-provider",
+        "endpoint": "https://example.invalid/pregame",
+        "dataset": dataset,
+        "retrievedAtUtc": "2026-08-10T17:00:10+00:00",
+        "sourceEffectiveAtUtc": "2026-08-10T16:59:00+00:00",
+        "payloadFingerprint": f"fixture-{dataset}",
+    }
+
+
+def _real_v2_row():
+    row = _row()
+    row.update(
+        {
+            "gameId": "official:999",
+            "officialGamePk": 999,
+            "slateDateEt": "2026-08-10",
+            "commenceTime": "2026-08-10T19:00:00+00:00",
+            "homeTeam": "Home Club",
+            "awayTeam": "Away Club",
+            "predictionSourcePullAt": "2026-08-10T17:00:00+00:00",
+            "predictionSourcePullId": "pull-999",
+            "advanced_context": {
+                "confirmed_probable_pitchers": {
+                    "source_status": "CONNECTED",
+                    "home_probable_pitcher": "Home Starter",
+                    "away_probable_pitcher": "Away Starter",
+                    "sourceProvenance": _provenance("probable-pitchers"),
+                },
+                "fip_xfip": {
+                    "source_status": "CONNECTED",
+                    "home_starter_fip": 3.1,
+                    "away_starter_fip": 4.2,
+                    "home_starter_xfip": 3.3,
+                    "away_starter_xfip": 4.0,
+                    "home_starter_k_minus_bb_pct": 0.19,
+                    "away_starter_k_minus_bb_pct": 0.12,
+                    "sourceProvenance": _provenance("starter-quality"),
+                },
+                "wrc_plus": {
+                    "source_status": "CONNECTED",
+                    "home_team_wrc_plus": 112.0,
+                    "away_team_wrc_plus": 98.0,
+                    "sourceProvenance": _provenance("offense-quality"),
+                },
+                "starter_handedness_splits": {
+                    "source_status": "NOT_CONNECTED_SOURCE_REQUIRED",
+                    "reason": "not required for partial-safe live scoring",
+                },
+                "bullpen_fatigue": {
+                    "source_status": "CONNECTED",
+                    "home_reliever_usage_1d_3d_5d": {"oneDay": 18},
+                    "away_reliever_usage_1d_3d_5d": {"oneDay": 37},
+                    "home_available_relievers": ["H1", "H2"],
+                    "away_available_relievers": ["A1"],
+                    "home_bullpen_fatigue_score": 0.2,
+                    "away_bullpen_fatigue_score": 0.8,
+                    "sourceProvenance": _provenance("bullpen"),
+                },
+                "confirmed_lineups": {
+                    "source_status": "CONNECTED",
+                    "home_lineup_confirmed": True,
+                    "away_lineup_confirmed": True,
+                    "home_batting_order": ["H1", "H2"],
+                    "away_batting_order": ["A1", "A2"],
+                    "home_lineup_strength_delta": 0.2,
+                    "away_lineup_strength_delta": -0.1,
+                    "sourceProvenance": _provenance("lineups"),
+                },
+                "weather_wind_roof": {
+                    "source_status": "NOT_CONNECTED_SOURCE_REQUIRED",
+                    "reason": "weather unavailable",
+                },
+                "ballpark_factors": {
+                    "source_status": "NOT_CONNECTED_SOURCE_REQUIRED",
+                    "reason": "park unavailable",
+                },
+                "injuries_late_scratches_news": {
+                    "source_status": "CONNECTED",
+                    "home_key_injuries": [],
+                    "away_key_injuries": ["Away regular"],
+                    "late_scratch_flags": [],
+                    "pitcher_change_flag": False,
+                    "sourceProvenance": _provenance("injuries"),
+                },
+                "travel_rest": {
+                    "source_status": "CONNECTED",
+                    "home_rest_days": 2,
+                    "away_rest_days": 0,
+                    "sourceProvenance": _provenance("rest"),
+                },
+            },
+        }
+    )
+    return row
+
+
+def test_real_v2_snapshot_validation_and_live_scoring_bridge_work_together():
+    row = _real_v2_row()
+    snapshot_v2.enhance_row(row)
+
+    assert snapshot_v2.validate(row["fundamentalsSnapshotV2"]) == []
+    assert "weather_roof" in row["fundamentalsSnapshotV2"]["missingGroups"]
+
+    prepared = bridge.apply_to_row(row)
+
+    assert prepared["fundamentalsApplied"] is True
+    assert prepared["winnerOptimizer"]["fundamentalsApplied"] is True
+    assert prepared["fundamentalsLayer"]["weatherMissing"] is True
+    assert prepared["homeSignal"]["fundamentalsAdjustment"] > 0
