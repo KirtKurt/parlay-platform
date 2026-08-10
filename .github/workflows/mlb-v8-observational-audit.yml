@@ -9,6 +9,7 @@ name: MLB V8 Observational Audit
     paths:
       - 'hello_world/mlb_v8_observational_audit_v1.py'
       - 'hello_world/mlb_v8_observational_audit_v1_1.py'
+      - 'hello_world/mlb_v8_observational_audit_v1_2.py'
       - 'scripts/run_mlb_v8_observational_audit.py'
       - 'tests/unit/test_mlb_v8_observational_audit_v1.py'
       - 'tests/unit/test_run_mlb_v8_observational_audit.py'
@@ -52,6 +53,7 @@ jobs:
           python -m py_compile \
             hello_world/mlb_v8_observational_audit_v1.py \
             hello_world/mlb_v8_observational_audit_v1_1.py \
+            hello_world/mlb_v8_observational_audit_v1_2.py \
             scripts/run_mlb_v8_observational_audit.py
           python -m pytest -q \
             tests/unit/test_mlb_v8_observational_audit_v1.py \
