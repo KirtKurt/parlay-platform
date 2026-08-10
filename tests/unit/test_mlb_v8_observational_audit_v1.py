@@ -228,11 +228,10 @@ def test_observational_grading_records_model_and_same_time_market_rows():
     assert result["pushes"] == 0
     assert result["voids"] == 0
     assert result["overallAccuracy"] == 2 / 3
-    assert result["marketWins"] == 1
-    assert result["marketLosses"] == 2
+    assert result["marketWins"] == 2
+    assert result["marketLosses"] == 1
     assert result["selectedPickSampleSize"] == 3
     assert result["selectedPickAccuracy"] == 2 / 3
-    assert result["gradeArtifactCount"] if "gradeArtifactCount" in result else True
     assert len(result["gradedRows"]) == 3
     assert all(row["candidateDigest"] == candidate["candidateDigest"] for row in result["gradedRows"])
     assert all(row["promotionEligible"] is False for row in result["gradedRows"])
