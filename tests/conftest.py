@@ -24,3 +24,10 @@ os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
 os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
 os.environ.setdefault("AWS_SESSION_TOKEN", "testing")
+
+# Import the same compatibility layer used by the runtime runner so direct tests
+# exercise stable identities, the latched evidence window, and DynamoDB-safe writes.
+try:
+    import mlb_v8_observational_audit_v1_3  # noqa: F401
+except Exception:
+    pass
