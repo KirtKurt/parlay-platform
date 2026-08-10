@@ -3,6 +3,10 @@
 The optimizer is scheduled frequently. A settled-range cursor can legitimately be
 unable to advance until yesterday's MLB slate is final, but that state is not active
 backfilling and must not generate a new DynamoDB revision on every invocation.
+
+The active ledger is also authoritative for the proven historical end date. If a
+prior invocation completed a slate but a retry persisted a stale top-level endDate,
+repair that bookkeeping before deciding whether range extension is exhausted.
 """
 from __future__ import annotations
 
@@ -16,9 +20,9 @@ from typing import Any, Mapping
 
 import mlb_historical_incremental_range_extension_v1 as incremental_range_extension
 
-VERSION = "MLB-HISTORICAL-STATE-INTEGRITY-v2-canonical-ddb-material"
+VERSION = "MLB-HISTORICAL-STATE-INTEGRITY-v3-ledger-end-reconcile"
 WAITING_PROOF_VERSION = (
-    "MLB-HISTORICAL-STATE-INTEGRITY-v1-settled-horizon-idempotent"
+    "MLB-HISTORICAL-STATE-INTEGRITY-v2-settled-horizon-ledger-aware"
 )
 WAITING_PHASE = "WAITING_FOR_SETTLED_HORIZON"
 _VOLATILE_STATE_FIELDS = frozenset({"revision", "updatedAtUtc"})
@@ -117,6 +121,51 @@ def _material_fingerprint(handler: Any, state: Mapping[str, Any]) -> str:
     return hashlib.sha256(body).hexdigest()
 
 
+def _proven_ledger_end(state: Mapping[str, Any], fallback: str) -> date:
+    """Return the latest date already proven by the active authorized ledger."""
+    candidates = [_date(state.get("endDate"), fallback)]
+    plan = state.get("plan") or {}
+    if isinstance(plan, Mapping):
+        raw_plan_end = plan.get("endDate") or plan.get("plannedThroughDate")
+        if raw_plan_end:
+            candidates.append(_date(raw_plan_end, fallback))
+        for row in plan.get("slates") or []:
+            if not isinstance(row, Mapping) or not row.get("slateDateEt"):
+                continue
+            candidates.append(_date(row.get("slateDateEt"), fallback))
+    return max(candidates)
+
+
+def _waiting_proof_matches(
+    state: Mapping[str, Any],
+    *,
+    previous_end: date,
+    horizon: date,
+    configured_end: date,
+) -> bool:
+    """Return true when an existing settled-horizon proof is already sufficient.
+
+    Older proofs intentionally remain valid. Optional telemetry may be added when
+    entering a new wait, but it must not force a one-time rewrite of an otherwise
+    semantically identical waiting state.
+    """
+    if state.get("phase") != WAITING_PHASE:
+        return False
+    proof = state.get("settledHorizonWait") or {}
+    if not isinstance(proof, Mapping):
+        return False
+    expected_next = (previous_end + timedelta(days=1)).isoformat()
+    return bool(
+        str(proof.get("authorizedThroughDate") or "") == previous_end.isoformat()
+        and str(proof.get("settledHorizonDate") or "") == horizon.isoformat()
+        and str(proof.get("configuredCeilingDate") or "") == configured_end.isoformat()
+        and str(proof.get("nextEligibleSlateDate") or "") == expected_next
+        and proof.get("blockingError") is False
+        and str(state.get("rangeExtensionNextRetryDate") or "") == expected_next
+        and not state.get("lastError")
+    )
+
+
 def install(handler: Any, base: Any) -> None:
     """Install idempotent state writes and an honest settled-horizon phase."""
     if getattr(handler, "_INQSI_HISTORICAL_STATE_INTEGRITY_V1_INSTALLED", False):
@@ -141,8 +190,27 @@ def install(handler: Any, base: Any) -> None:
     def append_with_settled_horizon_state() -> None:
         state = handler._load_state()
         if isinstance(state, dict):
-            previous_end = _date(state.get("endDate"), handler.END_DATE)
+            persisted_end = _date(state.get("endDate"), handler.END_DATE)
+            ledger_end = _proven_ledger_end(state, handler.END_DATE)
             configured_end = _date(handler.END_DATE, handler.END_DATE)
+
+            # A completed/fingerprinted ledger row is stronger evidence than a stale
+            # top-level endDate. Repair only forward, never past the configured ceiling.
+            repaired_end = min(ledger_end, configured_end)
+            if repaired_end > persisted_end:
+                repaired = copy.deepcopy(state)
+                repaired["endDate"] = repaired_end.isoformat()
+                repaired["rangeExtensionStateRepair"] = {
+                    "version": VERSION,
+                    "priorEndDate": persisted_end.isoformat(),
+                    "repairedEndDate": repaired_end.isoformat(),
+                    "authority": "existing_fingerprinted_plan_only",
+                    "newProviderEvidenceCreated": False,
+                }
+                handler._save_state(repaired)
+                state = handler._load_state()
+
+            previous_end = _date(state.get("endDate"), handler.END_DATE)
             horizon = min(
                 configured_end,
                 incremental_range_extension.settled_horizon(),
@@ -165,26 +233,36 @@ def install(handler: Any, base: Any) -> None:
             configured_end,
             incremental_range_extension.settled_horizon(),
         )
-        current = _date(
-            state.get("currentDate"), previous_end.isoformat()
-        )
+        current = _date(state.get("currentDate"), previous_end.isoformat())
+        phase = str(state.get("phase") or "")
+        target = int(state.get("targetSettledGames") or 0)
+        eligible = int(state.get("eligibleGameCount") or 0)
+
+        # DATA_RANGE_EXHAUSTED at the settled horizon is a temporal wait, not an
+        # execution failure. BACKFILLING should enter the same wait only after its
+        # cursor is beyond the proven range; otherwise there may still be slots left.
         should_wait = (
             configured_end > previous_end
             and horizon <= previous_end
-            and current > previous_end
-            and state.get("phase")
-            in {
-                "BACKFILLING",
-                "DATA_RANGE_EXHAUSTED",
-                WAITING_PHASE,
-            }
+            and phase in {"BACKFILLING", "DATA_RANGE_EXHAUSTED", WAITING_PHASE}
+            and (phase == "DATA_RANGE_EXHAUSTED" or current > previous_end or phase == WAITING_PHASE)
         )
         if not should_wait:
+            return
+        if _waiting_proof_matches(
+            state,
+            previous_end=previous_end,
+            horizon=horizon,
+            configured_end=configured_end,
+        ):
             return
 
         waiting = copy.deepcopy(state)
         waiting["phase"] = WAITING_PHASE
-        waiting["lastError"] = None
+        if str(waiting.get("lastError") or "").startswith(
+            "configured historical range ended before"
+        ):
+            waiting["lastError"] = None
         waiting["rangeExtensionNextRetryDate"] = (
             previous_end + timedelta(days=1)
         ).isoformat()
@@ -197,6 +275,9 @@ def install(handler: Any, base: Any) -> None:
                 previous_end + timedelta(days=1)
             ).isoformat(),
             "blockingError": False,
+            "eligibleGameCount": eligible,
+            "targetSettledGames": target,
+            "remainingEvidenceGames": max(0, target - eligible),
         }
         handler._save_state(waiting)
 
