@@ -1219,8 +1219,8 @@
       ]
     },
     "untouchedHoldout": {
-      "accuracy": 0.5698663426488457,
-      "correct": 469,
+      "accuracy": 0.568019093078759,
+      "correct": 476,
       "daily": [
         {
           "accuracy": 0.42857142857142855,
@@ -1623,12 +1623,18 @@
           "correct": 7,
           "pickCount": 14,
           "slateDateEt": "2026-08-07"
+        },
+        {
+          "accuracy": 0.4666666666666667,
+          "correct": 7,
+          "pickCount": 15,
+          "slateDateEt": "2026-08-08"
         }
       ],
-      "losses": 354,
-      "meanDailyAccuracy": 0.5562929400615969,
+      "losses": 362,
+      "meanDailyAccuracy": 0.5549749066293186,
       "minimumDailyAccuracy": 0.0,
-      "pickCount": 823,
+      "pickCount": 838,
       "policyType": "DEVELOPMENT_FROZEN_WEIGHTED_PORTFOLIO",
       "predictions": [
         {
@@ -11223,12 +11229,12 @@
           ]
         }
       ],
-      "selectionDayCount": 67,
+      "selectionDayCount": 68,
       "selectionUsesHoldoutLabels": false,
       "selectionUsesWalkForwardLabels": false,
       "wilson95": [
-        0.5357933332417847,
-        0.6032901381268548
+        0.5342450498327357,
+        0.60117234935495
       ]
     },
     "walkForward": {
@@ -21273,10 +21279,10 @@
   "autonomousFeatureGeneration": true,
   "blockers": [],
   "cadenceAnchor": {
-    "completeSlateCount": 335,
-    "eligibleGameCount": 4155,
+    "completeSlateCount": 336,
+    "eligibleGameCount": 4170,
     "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable",
-    "featureRematerializedSlateCount": 335,
+    "featureRematerializedSlateCount": 336,
     "version": "MLB-V10-DISCOVERY-CADENCE-v3-material-state-fresh-evidence"
   },
   "cadenceVersion": "MLB-V10-DISCOVERY-CADENCE-v3-material-state-fresh-evidence",
@@ -21436,43 +21442,43 @@
     "artifactAuthoritiesTruncated": true,
     "artifactChecksumValidationApplied": true,
     "authority": "IMMUTABLE_COMPLETE_SLATE_ARTIFACTS",
-    "completedSlateCount": 335,
+    "completedSlateCount": 336,
     "lockContract": "EACH_GAME_T_MINUS_45",
-    "recordCountLoaded": 4155,
-    "rowEligibilityAliasesDerived": 4155,
+    "recordCountLoaded": 4170,
+    "rowEligibilityAliasesDerived": 4170,
     "rowLockProofValidationApplied": true,
     "slateFingerprintValidationApplied": true
   },
   "canonicalDeduplicationApplied": true,
   "canonicalEligibilityFailClosed": true,
   "canonicalSortApplied": true,
-  "completedAtUtc": "2026-08-10T06:55:06.279938+00:00",
+  "completedAtUtc": "2026-08-10T09:02:58.960488+00:00",
   "conflictingDuplicatesPermanentlyQuarantined": true,
-  "createdAtUtc": "2026-08-08T05:25:20.212958+00:00",
-  "datasetFingerprint": "9b5524227ee245316dc59771e6ff15a5a4bf329115639c2b15b2ca9c101642a1",
-  "durationSeconds": 0.658,
+  "createdAtUtc": "2026-08-10T09:02:33.995343+00:00",
+  "datasetFingerprint": "3d5a198a15c3c071d8215586db704fce32eb681932f62c8bcf2679331de4270b",
+  "durationSeconds": 87.904,
   "emptyRegistryStallFixed": true,
   "exactSignificanceTest": "two-sided exact binomial",
-  "fastNoChange": true,
+  "fastNoChange": false,
   "fdrAlpha": 0.1,
   "fdrRetainedPatternCount": 41,
-  "fullRebuild": false,
+  "fullRebuild": true,
   "fullRebuildRecommendedCadence": "DAILY",
   "generatedPatternCount": 3389,
   "holdoutSelectionDefectFixed": true,
   "incrementalExecutionSupported": true,
-  "incrementalNoChange": true,
+  "incrementalNoChange": false,
   "individualSignalMaxControlRetainedForDiagnosticsOnly": true,
   "inputIntegrity": {
-    "canonicalRecordCount": 4155,
+    "canonicalRecordCount": 4170,
     "duplicateRecordCount": 0,
     "exclusionCounts": {},
-    "inputRecordCount": 4155,
+    "inputRecordCount": 4170,
     "quarantinedGameCount": 0
   },
-  "lastCheckedAtUtc": "2026-08-10T06:55:06.279938+00:00",
+  "lastCheckedAtUtc": "2026-08-10T09:02:58.960488+00:00",
   "learningActive": true,
-  "learningStatus": "WAITING_FOR_NEW_CANONICAL_SLATE_OR_FEATURE_DATASET",
+  "learningStatus": "DISCOVERY_COMPLETED",
   "mayPublishPicks": false,
   "mayWriteChampion": false,
   "minimumPatternDays": 8,
@@ -21492,10 +21498,10 @@
       "seed": 17010
     },
     "untouchedHoldout": {
-      "cachedRuleApplicationCount": 8967,
+      "cachedRuleApplicationCount": 9151,
       "eligibleDefinitionCount": 39,
       "implementation": "MLB-V10-PERMUTATION-CONTROL-v2-cached-pregame-rules",
-      "maximumAccuracy95thPercentile": 0.660377358490566,
+      "maximumAccuracy95thPercentile": 0.6538461538461539,
       "minimumPicks": 40,
       "passed": true,
       "pregameRulesCached": true,
@@ -21787,7 +21793,8 @@
       "2026-08-04",
       "2026-08-05",
       "2026-08-06",
-      "2026-08-07"
+      "2026-08-07",
+      "2026-08-08"
     ],
     "walkForward": [
       "2025-10-31",
@@ -21872,17 +21879,17 @@
     "selectionUsesUntouchedHoldoutLabels": false,
     "selectionUsesWalkForwardLabels": false,
     "untouchedHoldoutAuditControl": {
-      "accuracy95thPercentile": 0.5358444714459295,
+      "accuracy95thPercentile": 0.5369928400954654,
       "implementation": "MLB-V10-PORTFOLIO-PERMUTATION-v1-fixed-pregame-policy",
       "minimumPicks": 80,
       "minimumSlateDays": 20,
-      "observedAccuracy": 0.5698663426488457,
+      "observedAccuracy": 0.568019093078759,
       "observedWilson95": [
-        0.5357933332417847,
-        0.6032901381268548
+        0.5342450498327357,
+        0.60117234935495
       ],
       "passed": true,
-      "pickCount": 823,
+      "pickCount": 838,
       "pregamePolicyFrozen": true,
       "rounds": 1000,
       "seed": 27102,
@@ -21929,23 +21936,23 @@
   "proofType": "MLB_V10_AUTONOMOUS_DISCOVERY_RUN",
   "prospectiveShadow": {
     "cumulativeObservedShadow": {
-      "correct": 56,
+      "correct": 63,
       "firstObservedSlateDate": "2026-08-01",
-      "lastObservedSlateDate": "2026-08-07",
-      "losses": 34,
+      "lastObservedSlateDate": "2026-08-08",
+      "losses": 42,
       "mayPublishPicks": false,
       "mayWriteChampion": false,
-      "observedAccuracy": 0.6222222222222222,
+      "observedAccuracy": 0.6,
       "observedAccuracySemantics": "Observed retrospective shadow outcome rate; not a validated predictive probability.",
       "productionAuthority": false,
       "shadowOnly": true,
-      "snapshotCount": 12,
+      "snapshotCount": 13,
       "status": "OBSERVED_SHADOW_HISTORY_AVAILABLE",
-      "uniqueObservedPickCount": 90,
-      "uniqueSlateDateCount": 7,
+      "uniqueObservedPickCount": 105,
+      "uniqueSlateDateCount": 8,
       "version": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated"
     },
-    "frozenThroughDate": "2026-08-06",
+    "frozenThroughDate": "2026-08-07",
     "futureCanonicalGameCount": 15,
     "futureSlateCount": 1,
     "history": [
@@ -22735,6 +22742,117 @@
         "shadowOnly": true,
         "snapshotFingerprint": "8fe8478c0ede4d826b49f3ba3bb466a1b349c661374c494531596058ada4680f",
         "version": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated"
+      },
+      {
+        "correct": 7,
+        "evaluatedThroughDate": "2026-08-08",
+        "frozenThroughDate": "2026-08-07",
+        "futureCanonicalGameCount": 15,
+        "futureSlateCount": 1,
+        "games": [
+          {
+            "correct": false,
+            "gameId": "822701",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-08"
+          },
+          {
+            "correct": true,
+            "gameId": "822864",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-08"
+          },
+          {
+            "correct": false,
+            "gameId": "823021",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-08"
+          },
+          {
+            "correct": false,
+            "gameId": "823102",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-08"
+          },
+          {
+            "correct": true,
+            "gameId": "823188",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-08"
+          },
+          {
+            "correct": true,
+            "gameId": "823267",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-08"
+          },
+          {
+            "correct": true,
+            "gameId": "823348",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-08"
+          },
+          {
+            "correct": false,
+            "gameId": "823426",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-08"
+          },
+          {
+            "correct": false,
+            "gameId": "823514",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-08"
+          },
+          {
+            "correct": true,
+            "gameId": "823752",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-08"
+          },
+          {
+            "correct": true,
+            "gameId": "823834",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-08"
+          },
+          {
+            "correct": false,
+            "gameId": "824079",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-08"
+          },
+          {
+            "correct": false,
+            "gameId": "824565",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-08"
+          },
+          {
+            "correct": false,
+            "gameId": "824726",
+            "selectedSide": "home",
+            "slateDateEt": "2026-08-08"
+          },
+          {
+            "correct": true,
+            "gameId": "825049",
+            "selectedSide": "away",
+            "slateDateEt": "2026-08-08"
+          }
+        ],
+        "losses": 8,
+        "observedAccuracy": 0.4666666666666667,
+        "observedAccuracySemantics": "Observed retrospective shadow outcome rate; not a validated predictive probability.",
+        "observedPickCount": 15,
+        "policyChangedDuringEvaluation": false,
+        "productionAuthority": false,
+        "registryFingerprint": "004a2cabd283ddef9dfed84fe4fafc284afa90e7f33cf393f94a1eb2142b75bf",
+        "registryVersion": "MLB-V10-AUTONOMOUS-SIGNAL-DISCOVERY-v3.0-development-frozen-portfolio",
+        "selectionUsesFutureLabels": false,
+        "shadowOnly": true,
+        "snapshotFingerprint": "0953ffd38f62d48b05834f24515d120a8a0964e0bc9727bd567e436eafc6707d",
+        "version": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated"
       }
     ],
     "historyAppendOnly": true,
@@ -22742,81 +22860,58 @@
     "historyVersion": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated",
     "policyChangedDuringEvaluation": false,
     "portfolio": {
-      "accuracy": 0.5,
+      "accuracy": 0.4666666666666667,
       "correct": 7,
       "daily": [
         {
-          "accuracy": 0.5,
+          "accuracy": 0.4666666666666667,
           "correct": 7,
-          "pickCount": 14,
-          "slateDateEt": "2026-08-07"
+          "pickCount": 15,
+          "slateDateEt": "2026-08-08"
         }
       ],
-      "losses": 7,
-      "meanDailyAccuracy": 0.5,
-      "minimumDailyAccuracy": 0.5,
-      "pickCount": 14,
+      "losses": 8,
+      "meanDailyAccuracy": 0.4666666666666667,
+      "minimumDailyAccuracy": 0.4666666666666667,
+      "pickCount": 15,
       "policyType": "DEVELOPMENT_FROZEN_WEIGHTED_PORTFOLIO",
       "predictions": [
         {
-          "awayVote": 0.0,
-          "correct": true,
-          "gameId": "822699",
-          "homeVote": 0.0969969200276118,
+          "awayVote": 0.17241122260002117,
+          "correct": false,
+          "gameId": "822701",
+          "homeVote": 0.0,
           "normalizedVoteMargin": 1.0,
-          "selectedHome": true,
-          "selectedSide": "home",
-          "slateDateEt": "2026-08-07",
-          "supportingSignalCount": 3,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "lacks_tag:UNDERDOG",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && lower:americanOdds:extreme"
-          ]
-        },
-        {
-          "awayVote": 0.0,
-          "correct": true,
-          "gameId": "822863",
-          "homeVote": 0.2941392298257865,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": true,
-          "selectedSide": "home",
-          "slateDateEt": "2026-08-07",
-          "supportingSignalCount": 8,
+          "selectedHome": false,
+          "selectedSide": "away",
+          "slateDateEt": "2026-08-08",
+          "supportingSignalCount": 5,
           "supportingSignals": [
             "lower:americanOdds:extreme",
             "higher:probStart:extreme",
             "higher:probLatest:extreme",
             "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probStart:extreme"
+            "lacks_tag:UNDERDOG"
           ]
         },
         {
           "awayVote": 0.0,
           "correct": true,
-          "gameId": "823024",
-          "homeVote": 0.6193681302006759,
+          "gameId": "822864",
+          "homeVote": 0.4622225022003762,
           "normalizedVoteMargin": 1.0,
           "selectedHome": true,
           "selectedSide": "home",
-          "slateDateEt": "2026-08-07",
-          "supportingSignalCount": 16,
+          "slateDateEt": "2026-08-08",
+          "supportingSignalCount": 12,
           "supportingSignals": [
             "lower:americanOdds:extreme",
             "higher:probLatest:extreme",
             "higher:probStart:extreme",
             "has_tag:FAVORITE",
             "lacks_tag:UNDERDOG",
-            "interaction:higher:delta:large && higher:probLatest:extreme",
-            "interaction:higher:delta:large && higher:probStart:extreme",
-            "interaction:higher:delta:large && lower:americanOdds:extreme",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probStart:extreme",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && lower:americanOdds:extreme",
+            "interaction:higher:derivedFeatures.agreementMomentum:small && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.agreementMomentum:small && higher:probStart:extreme",
             "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
             "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme",
             "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme",
@@ -22827,32 +22922,135 @@
         {
           "awayVote": 0.0,
           "correct": false,
-          "gameId": "823103",
-          "homeVote": 0.026358232756989786,
+          "gameId": "823021",
+          "homeVote": 0.4622225022003762,
           "normalizedVoteMargin": 1.0,
           "selectedHome": true,
           "selectedSide": "home",
-          "slateDateEt": "2026-08-07",
-          "supportingSignalCount": 1,
+          "slateDateEt": "2026-08-08",
+          "supportingSignalCount": 12,
           "supportingSignals": [
-            "lower:americanOdds:extreme"
+            "lower:americanOdds:extreme",
+            "higher:probLatest:extreme",
+            "higher:probStart:extreme",
+            "has_tag:FAVORITE",
+            "lacks_tag:UNDERDOG",
+            "interaction:higher:derivedFeatures.agreementMomentum:small && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.agreementMomentum:small && higher:probStart:extreme",
+            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probStart:extreme"
           ]
         },
         {
-          "awayVote": 0.32869950192864283,
+          "awayVote": 0.0,
           "correct": false,
-          "gameId": "823191",
+          "gameId": "823102",
+          "homeVote": 0.13205557640277785,
+          "normalizedVoteMargin": 1.0,
+          "selectedHome": true,
+          "selectedSide": "home",
+          "slateDateEt": "2026-08-08",
+          "supportingSignalCount": 4,
+          "supportingSignals": [
+            "lower:americanOdds:extreme",
+            "has_tag:FAVORITE",
+            "lacks_tag:UNDERDOG",
+            "interaction:higher:delta:large && lower:americanOdds:extreme"
+          ]
+        },
+        {
+          "awayVote": 0.10375405203643912,
+          "correct": true,
+          "gameId": "823188",
           "homeVote": 0.0,
           "normalizedVoteMargin": 1.0,
           "selectedHome": false,
           "selectedSide": "away",
-          "slateDateEt": "2026-08-07",
-          "supportingSignalCount": 9,
+          "slateDateEt": "2026-08-08",
+          "supportingSignalCount": 3,
+          "supportingSignals": [
+            "lower:americanOdds:extreme",
+            "interaction:higher:delta:large && lower:americanOdds:extreme",
+            "interaction:higher:derivedFeatures.agreementMomentum:medium && lower:americanOdds:extreme"
+          ]
+        },
+        {
+          "awayVote": 0.0,
+          "correct": true,
+          "gameId": "823267",
+          "homeVote": 0.059800158060429084,
+          "normalizedVoteMargin": 1.0,
+          "selectedHome": true,
+          "selectedSide": "home",
+          "slateDateEt": "2026-08-08",
+          "supportingSignalCount": 2,
+          "supportingSignals": [
+            "lower:americanOdds:extreme",
+            "lacks_tag:UNDERDOG"
+          ]
+        },
+        {
+          "awayVote": 0.0,
+          "correct": true,
+          "gameId": "823348",
+          "homeVote": 0.09917025183106225,
+          "normalizedVoteMargin": 1.0,
+          "selectedHome": true,
+          "selectedSide": "home",
+          "slateDateEt": "2026-08-08",
+          "supportingSignalCount": 3,
+          "supportingSignals": [
+            "lower:americanOdds:extreme",
+            "higher:probStart:extreme",
+            "lacks_tag:UNDERDOG"
+          ]
+        },
+        {
+          "awayVote": 0.0,
+          "correct": false,
+          "gameId": "823426",
+          "homeVote": 0.549394003227776,
+          "normalizedVoteMargin": 1.0,
+          "selectedHome": true,
+          "selectedSide": "home",
+          "slateDateEt": "2026-08-08",
+          "supportingSignalCount": 14,
+          "supportingSignals": [
+            "lower:americanOdds:extreme",
+            "higher:probLatest:extreme",
+            "higher:probStart:extreme",
+            "has_tag:FAVORITE",
+            "lacks_tag:UNDERDOG",
+            "interaction:higher:delta:large && higher:probLatest:extreme",
+            "interaction:higher:delta:large && higher:probStart:extreme",
+            "interaction:higher:delta:large && lower:americanOdds:extreme",
+            "interaction:higher:derivedFeatures.agreementMomentum:large && higher:probStart:extreme",
+            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probStart:extreme"
+          ]
+        },
+        {
+          "awayVote": 0.3739458182861282,
+          "correct": false,
+          "gameId": "823514",
+          "homeVote": 0.0,
+          "normalizedVoteMargin": 1.0,
+          "selectedHome": false,
+          "selectedSide": "away",
+          "slateDateEt": "2026-08-08",
+          "supportingSignalCount": 10,
           "supportingSignals": [
             "lower:americanOdds:extreme",
             "higher:probLatest:extreme",
             "has_tag:FAVORITE",
             "lacks_tag:UNDERDOG",
+            "interaction:higher:delta:large && higher:marketIntelligence.curve.lateMovement:medium",
             "interaction:higher:delta:large && higher:probLatest:extreme",
             "interaction:higher:delta:large && lower:americanOdds:extreme",
             "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
@@ -22862,31 +23060,13 @@
         },
         {
           "awayVote": 0.0,
-          "correct": false,
-          "gameId": "823349",
-          "homeVote": 0.1718236973084082,
+          "correct": true,
+          "gameId": "823752",
+          "homeVote": 0.17241122260002117,
           "normalizedVoteMargin": 1.0,
           "selectedHome": true,
           "selectedSide": "home",
-          "slateDateEt": "2026-08-07",
-          "supportingSignalCount": 5,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probStart:extreme",
-            "higher:probLatest:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG"
-          ]
-        },
-        {
-          "awayVote": 0.0,
-          "correct": false,
-          "gameId": "823428",
-          "homeVote": 0.1718236973084082,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": true,
-          "selectedSide": "home",
-          "slateDateEt": "2026-08-07",
+          "slateDateEt": "2026-08-08",
           "supportingSignalCount": 5,
           "supportingSignals": [
             "lower:americanOdds:extreme",
@@ -22899,16 +23079,51 @@
         {
           "awayVote": 0.0,
           "correct": true,
-          "gameId": "823515",
-          "homeVote": 0.1313651519413333,
+          "gameId": "823834",
+          "homeVote": 0.17241122260002117,
           "normalizedVoteMargin": 1.0,
           "selectedHome": true,
           "selectedSide": "home",
-          "slateDateEt": "2026-08-07",
-          "supportingSignalCount": 4,
+          "slateDateEt": "2026-08-08",
+          "supportingSignalCount": 5,
           "supportingSignals": [
             "lower:americanOdds:extreme",
             "higher:probStart:extreme",
+            "higher:probLatest:extreme",
+            "has_tag:FAVORITE",
+            "lacks_tag:UNDERDOG"
+          ]
+        },
+        {
+          "awayVote": 0.17241122260002117,
+          "correct": false,
+          "gameId": "824079",
+          "homeVote": 0.0,
+          "normalizedVoteMargin": 1.0,
+          "selectedHome": false,
+          "selectedSide": "away",
+          "slateDateEt": "2026-08-08",
+          "supportingSignalCount": 5,
+          "supportingSignals": [
+            "lower:americanOdds:extreme",
+            "higher:probStart:extreme",
+            "higher:probLatest:extreme",
+            "has_tag:FAVORITE",
+            "lacks_tag:UNDERDOG"
+          ]
+        },
+        {
+          "awayVote": 0.09245074773343678,
+          "correct": false,
+          "gameId": "824565",
+          "homeVote": 0.0,
+          "normalizedVoteMargin": 1.0,
+          "selectedHome": false,
+          "selectedSide": "away",
+          "slateDateEt": "2026-08-08",
+          "supportingSignalCount": 3,
+          "supportingSignals": [
+            "lower:americanOdds:extreme",
             "has_tag:FAVORITE",
             "lacks_tag:UNDERDOG"
           ]
@@ -22916,13 +23131,41 @@
         {
           "awayVote": 0.0,
           "correct": false,
-          "gameId": "823750",
-          "homeVote": 0.49705259768329774,
+          "gameId": "824726",
+          "homeVote": 0.5926779689866186,
           "normalizedVoteMargin": 1.0,
           "selectedHome": true,
           "selectedSide": "home",
-          "slateDateEt": "2026-08-07",
-          "supportingSignalCount": 13,
+          "slateDateEt": "2026-08-08",
+          "supportingSignalCount": 15,
+          "supportingSignals": [
+            "lower:americanOdds:extreme",
+            "higher:probLatest:extreme",
+            "higher:probStart:extreme",
+            "has_tag:FAVORITE",
+            "lacks_tag:UNDERDOG",
+            "interaction:higher:delta:large && higher:marketIntelligence.curve.lateMovement:medium",
+            "interaction:higher:delta:large && higher:probLatest:extreme",
+            "interaction:higher:delta:large && higher:probStart:extreme",
+            "interaction:higher:delta:large && lower:americanOdds:extreme",
+            "interaction:higher:derivedFeatures.agreementMomentum:large && higher:probStart:extreme",
+            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probLatest:extreme",
+            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probStart:extreme"
+          ]
+        },
+        {
+          "awayVote": 0.549394003227776,
+          "correct": true,
+          "gameId": "825049",
+          "homeVote": 0.0,
+          "normalizedVoteMargin": 1.0,
+          "selectedHome": false,
+          "selectedSide": "away",
+          "slateDateEt": "2026-08-08",
+          "supportingSignalCount": 14,
           "supportingSignals": [
             "lower:americanOdds:extreme",
             "higher:probLatest:extreme",
@@ -22932,125 +23175,7 @@
             "interaction:higher:delta:large && higher:probLatest:extreme",
             "interaction:higher:delta:large && higher:probStart:extreme",
             "interaction:higher:delta:large && lower:americanOdds:extreme",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probStart:extreme",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && lower:americanOdds:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme"
-          ]
-        },
-        {
-          "awayVote": 0.0,
-          "correct": false,
-          "gameId": "823836",
-          "homeVote": 0.1718236973084082,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": true,
-          "selectedSide": "home",
-          "slateDateEt": "2026-08-07",
-          "supportingSignalCount": 5,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probStart:extreme",
-            "higher:probLatest:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG"
-          ]
-        },
-        {
-          "awayVote": 0.4840586661171671,
-          "correct": true,
-          "gameId": "824081",
-          "homeVote": 0.0,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": false,
-          "selectedSide": "away",
-          "slateDateEt": "2026-08-07",
-          "supportingSignalCount": 13,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probLatest:extreme",
-            "higher:probStart:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probStart:extreme",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && lower:americanOdds:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probStart:extreme"
-          ]
-        },
-        {
-          "awayVote": 0.3617431335997888,
-          "correct": true,
-          "gameId": "824566",
-          "homeVote": 0.0,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": false,
-          "selectedSide": "away",
-          "slateDateEt": "2026-08-07",
-          "supportingSignalCount": 10,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probLatest:extreme",
-            "higher:probStart:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probStart:extreme",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && lower:americanOdds:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme"
-          ]
-        },
-        {
-          "awayVote": 0.0,
-          "correct": true,
-          "gameId": "824727",
-          "homeVote": 0.4840586661171671,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": true,
-          "selectedSide": "home",
-          "slateDateEt": "2026-08-07",
-          "supportingSignalCount": 13,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probLatest:extreme",
-            "higher:probStart:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probStart:extreme",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && lower:americanOdds:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probStart:extreme"
-          ]
-        },
-        {
-          "awayVote": 0.4840586661171671,
-          "correct": false,
-          "gameId": "825051",
-          "homeVote": 0.0,
-          "normalizedVoteMargin": 1.0,
-          "selectedHome": false,
-          "selectedSide": "away",
-          "slateDateEt": "2026-08-07",
-          "supportingSignalCount": 13,
-          "supportingSignals": [
-            "lower:americanOdds:extreme",
-            "higher:probLatest:extreme",
-            "higher:probStart:extreme",
-            "has_tag:FAVORITE",
-            "lacks_tag:UNDERDOG",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probLatest:extreme",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probStart:extreme",
-            "interaction:higher:derivedFeatures.agreementMomentum:medium && lower:americanOdds:extreme",
+            "interaction:higher:derivedFeatures.agreementMomentum:large && higher:probStart:extreme",
             "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
             "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme",
             "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme",
@@ -23063,13 +23188,13 @@
       "selectionUsesHoldoutLabels": false,
       "selectionUsesWalkForwardLabels": false,
       "wilson95": [
-        0.2679886791947528,
-        0.7320113208052472
+        0.24809225259746442,
+        0.6988336984894921
       ]
     },
     "probabilitySemantics": "Observed retrospective shadow outcome rate; not a validated predictive probability.",
     "productionAuthority": false,
-    "registryFingerprint": "4976505a22c410dde5926b334fc5a38834aa85756a6dc7b8d99f3462240c50b7",
+    "registryFingerprint": "004a2cabd283ddef9dfed84fe4fafc284afa90e7f33cf393f94a1eb2142b75bf",
     "registryVersion": "MLB-V10-AUTONOMOUS-SIGNAL-DISCOVERY-v3.0-development-frozen-portfolio",
     "researchGatePassedAtFreeze": true,
     "selectionUsesFutureLabels": false,
@@ -23080,7 +23205,7 @@
   "prospectiveShadowHistoryVersion": "MLB-V10-PROSPECTIVE-SHADOW-HISTORY-v1-append-only-deduplicated",
   "registryFreeze": {
     "frozenSignalCount": 24,
-    "frozenThroughDate": "2026-08-07",
+    "frozenThroughDate": "2026-08-08",
     "portfolio": {
       "developmentMetrics": {
         "accuracy": 0.5668016194331984,
@@ -24394,8 +24519,8 @@
   "retainedPatternCount": 41,
   "reusedPriorRegistryForProspectiveShadow": true,
   "runAttempt": "1",
-  "runId": "31363742395",
-  "settledGameCount": 4155,
+  "runId": "31372630707",
+  "settledGameCount": 4170,
   "shadowSignalCount": 24,
   "signals": [
     {
@@ -24454,11 +24579,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "20947d5fb8aa52a7bb5d",
       "untouchedHoldout": {
-        "accuracy": 0.5862068965517241,
-        "correct": 272,
+        "accuracy": 0.5822784810126582,
+        "correct": 276,
         "family": "higher_numeric",
-        "pickCount": 464,
-        "slateDayCount": 66
+        "pickCount": 474,
+        "slateDayCount": 67
       },
       "walkForward": {
         "accuracy": 0.5454545454545454,
@@ -24489,11 +24614,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "e1b448f6e7e7b3b56e43",
       "untouchedHoldout": {
-        "accuracy": 0.5862068965517241,
-        "correct": 272,
+        "accuracy": 0.5822784810126582,
+        "correct": 276,
         "family": "higher_numeric",
-        "pickCount": 464,
-        "slateDayCount": 66
+        "pickCount": 474,
+        "slateDayCount": 67
       },
       "walkForward": {
         "accuracy": 0.5454545454545454,
@@ -24524,11 +24649,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "baf71e16a125c4f45191",
       "untouchedHoldout": {
-        "accuracy": 0.5862068965517241,
-        "correct": 272,
+        "accuracy": 0.5822784810126582,
+        "correct": 276,
         "family": "higher_numeric",
-        "pickCount": 464,
-        "slateDayCount": 66
+        "pickCount": 474,
+        "slateDayCount": 67
       },
       "walkForward": {
         "accuracy": 0.5454545454545454,
@@ -24559,11 +24684,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "dc871b699c969c0248f9",
       "untouchedHoldout": {
-        "accuracy": 0.6324786324786325,
-        "correct": 74,
+        "accuracy": 0.625,
+        "correct": 75,
         "family": "interaction",
-        "pickCount": 117,
-        "slateDayCount": 57
+        "pickCount": 120,
+        "slateDayCount": 58
       },
       "walkForward": {
         "accuracy": 0.5094339622641509,
@@ -24594,11 +24719,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "c03a3d1402f071f30da2",
       "untouchedHoldout": {
-        "accuracy": 0.6021739130434782,
-        "correct": 277,
+        "accuracy": 0.6,
+        "correct": 282,
         "family": "higher_numeric",
-        "pickCount": 460,
-        "slateDayCount": 66
+        "pickCount": 470,
+        "slateDayCount": 67
       },
       "walkForward": {
         "accuracy": 0.5496031746031746,
@@ -24629,11 +24754,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "1a75a16a113c7448b94a",
       "untouchedHoldout": {
-        "accuracy": 0.6062176165803109,
-        "correct": 117,
+        "accuracy": 0.5979899497487438,
+        "correct": 119,
         "family": "interaction",
-        "pickCount": 193,
-        "slateDayCount": 63
+        "pickCount": 199,
+        "slateDayCount": 64
       },
       "walkForward": {
         "accuracy": 0.5394736842105263,
@@ -24664,11 +24789,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "e948d61dabe41ce9dcd0",
       "untouchedHoldout": {
-        "accuracy": 0.6062176165803109,
-        "correct": 117,
+        "accuracy": 0.5979899497487438,
+        "correct": 119,
         "family": "interaction",
-        "pickCount": 193,
-        "slateDayCount": 63
+        "pickCount": 199,
+        "slateDayCount": 64
       },
       "walkForward": {
         "accuracy": 0.5394736842105263,
@@ -24699,11 +24824,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "69d0a496cc03c1a3a672",
       "untouchedHoldout": {
-        "accuracy": 0.6653061224489796,
-        "correct": 163,
+        "accuracy": 0.66,
+        "correct": 165,
         "family": "interaction",
-        "pickCount": 245,
-        "slateDayCount": 65
+        "pickCount": 250,
+        "slateDayCount": 66
       },
       "walkForward": {
         "accuracy": 0.582010582010582,
@@ -24734,11 +24859,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "f54e63bc1ecbf843e5d7",
       "untouchedHoldout": {
-        "accuracy": 0.5822784810126582,
-        "correct": 368,
+        "accuracy": 0.5789473684210527,
+        "correct": 374,
         "family": "tag",
-        "pickCount": 632,
-        "slateDayCount": 67
+        "pickCount": 646,
+        "slateDayCount": 68
       },
       "walkForward": {
         "accuracy": 0.5641025641025641,
@@ -24769,11 +24894,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "d60e4ebd8b9b6ec9d86f",
       "untouchedHoldout": {
-        "accuracy": 0.6640625,
-        "correct": 85,
+        "accuracy": 0.6541353383458647,
+        "correct": 87,
         "family": "interaction",
-        "pickCount": 128,
-        "slateDayCount": 61
+        "pickCount": 133,
+        "slateDayCount": 62
       },
       "walkForward": {
         "accuracy": 0.5384615384615384,
@@ -24839,11 +24964,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "812f3a78edf1206a4380",
       "untouchedHoldout": {
-        "accuracy": 0.5824665676077266,
-        "correct": 392,
+        "accuracy": 0.5781021897810219,
+        "correct": 396,
         "family": "tag",
-        "pickCount": 673,
-        "slateDayCount": 67
+        "pickCount": 685,
+        "slateDayCount": 68
       },
       "walkForward": {
         "accuracy": 0.5580029368575624,
@@ -24874,11 +24999,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "054b79d8a366eded0700",
       "untouchedHoldout": {
-        "accuracy": 0.564935064935065,
-        "correct": 87,
+        "accuracy": 0.5569620253164557,
+        "correct": 88,
         "family": "interaction",
-        "pickCount": 154,
-        "slateDayCount": 60
+        "pickCount": 158,
+        "slateDayCount": 61
       },
       "walkForward": {
         "accuracy": 0.48,
@@ -24909,11 +25034,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "70d60e91e816834b1812",
       "untouchedHoldout": {
-        "accuracy": 0.564935064935065,
-        "correct": 87,
+        "accuracy": 0.5569620253164557,
+        "correct": 88,
         "family": "interaction",
-        "pickCount": 154,
-        "slateDayCount": 60
+        "pickCount": 158,
+        "slateDayCount": 61
       },
       "walkForward": {
         "accuracy": 0.48,
@@ -24944,11 +25069,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "bb14a68e2dcf1b9fe43f",
       "untouchedHoldout": {
-        "accuracy": 0.564935064935065,
-        "correct": 87,
+        "accuracy": 0.5569620253164557,
+        "correct": 88,
         "family": "interaction",
-        "pickCount": 154,
-        "slateDayCount": 60
+        "pickCount": 158,
+        "slateDayCount": 61
       },
       "walkForward": {
         "accuracy": 0.48,
@@ -24979,11 +25104,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "e44a54b5484188891a25",
       "untouchedHoldout": {
-        "accuracy": 0.5727699530516432,
-        "correct": 122,
+        "accuracy": 0.5662100456621004,
+        "correct": 124,
         "family": "interaction",
-        "pickCount": 213,
-        "slateDayCount": 62
+        "pickCount": 219,
+        "slateDayCount": 63
       },
       "walkForward": {
         "accuracy": 0.49612403100775193,
@@ -25049,11 +25174,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "2194a086a6fb0a5ea839",
       "untouchedHoldout": {
-        "accuracy": 0.6245847176079734,
-        "correct": 188,
+        "accuracy": 0.6188925081433225,
+        "correct": 190,
         "family": "interaction",
-        "pickCount": 301,
-        "slateDayCount": 65
+        "pickCount": 307,
+        "slateDayCount": 66
       },
       "walkForward": {
         "accuracy": 0.5625,
@@ -25084,11 +25209,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "80b36ed09f3746b28896",
       "untouchedHoldout": {
-        "accuracy": 0.6245847176079734,
-        "correct": 188,
+        "accuracy": 0.6188925081433225,
+        "correct": 190,
         "family": "interaction",
-        "pickCount": 301,
-        "slateDayCount": 65
+        "pickCount": 307,
+        "slateDayCount": 66
       },
       "walkForward": {
         "accuracy": 0.5625,
@@ -25119,11 +25244,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "106da8770822a00108a0",
       "untouchedHoldout": {
-        "accuracy": 0.6245847176079734,
-        "correct": 188,
+        "accuracy": 0.6188925081433225,
+        "correct": 190,
         "family": "interaction",
-        "pickCount": 301,
-        "slateDayCount": 65
+        "pickCount": 307,
+        "slateDayCount": 66
       },
       "walkForward": {
         "accuracy": 0.5625,
@@ -25154,11 +25279,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "a3476179c2d0d7fd9913",
       "untouchedHoldout": {
-        "accuracy": 0.6172839506172839,
-        "correct": 100,
+        "accuracy": 0.6071428571428571,
+        "correct": 102,
         "family": "interaction",
-        "pickCount": 162,
-        "slateDayCount": 61
+        "pickCount": 168,
+        "slateDayCount": 62
       },
       "walkForward": {
         "accuracy": 0.5241379310344828,
@@ -25189,11 +25314,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "42c69fa3ba4c1586017e",
       "untouchedHoldout": {
-        "accuracy": 0.6010928961748634,
-        "correct": 110,
+        "accuracy": 0.6032608695652174,
+        "correct": 111,
         "family": "interaction",
-        "pickCount": 183,
-        "slateDayCount": 60
+        "pickCount": 184,
+        "slateDayCount": 61
       },
       "walkForward": {
         "accuracy": 0.5432098765432098,
@@ -25259,11 +25384,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "8a9eae07fcedf01a6308",
       "untouchedHoldout": {
-        "accuracy": 0.5709342560553633,
-        "correct": 495,
+        "accuracy": 0.5691609977324263,
+        "correct": 502,
         "family": "lower_numeric",
-        "pickCount": 867,
-        "slateDayCount": 67
+        "pickCount": 882,
+        "slateDayCount": 68
       },
       "walkForward": {
         "accuracy": 0.5633971291866029,
@@ -25434,11 +25559,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "3bd397faa88d8d5bdc1e",
       "untouchedHoldout": {
-        "accuracy": 0.43956043956043955,
+        "accuracy": 0.43010752688172044,
         "correct": 40,
         "family": "interaction",
-        "pickCount": 91,
-        "slateDayCount": 50
+        "pickCount": 93,
+        "slateDayCount": 51
       },
       "walkForward": {
         "accuracy": 0.5,
@@ -25469,11 +25594,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "9bf9de465cb841c79b59",
       "untouchedHoldout": {
-        "accuracy": 0.74,
-        "correct": 37,
+        "accuracy": 0.7307692307692307,
+        "correct": 38,
         "family": "interaction",
-        "pickCount": 50,
-        "slateDayCount": 32
+        "pickCount": 52,
+        "slateDayCount": 33
       },
       "walkForward": {
         "accuracy": 0.6521739130434783,
@@ -25504,11 +25629,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "4cd0ae2bf89d88129e27",
       "untouchedHoldout": {
-        "accuracy": 0.7358490566037735,
-        "correct": 39,
+        "accuracy": 0.7272727272727273,
+        "correct": 40,
         "family": "interaction",
-        "pickCount": 53,
-        "slateDayCount": 33
+        "pickCount": 55,
+        "slateDayCount": 34
       },
       "walkForward": {
         "accuracy": 0.6470588235294118,
@@ -25539,11 +25664,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "13600969c993dbf1f4db",
       "untouchedHoldout": {
-        "accuracy": 0.7358490566037735,
-        "correct": 39,
+        "accuracy": 0.7272727272727273,
+        "correct": 40,
         "family": "interaction",
-        "pickCount": 53,
-        "slateDayCount": 33
+        "pickCount": 55,
+        "slateDayCount": 34
       },
       "walkForward": {
         "accuracy": 0.6470588235294118,
@@ -25574,11 +25699,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "1a15592c95f9824827a8",
       "untouchedHoldout": {
-        "accuracy": 0.7358490566037735,
-        "correct": 39,
+        "accuracy": 0.7272727272727273,
+        "correct": 40,
         "family": "interaction",
-        "pickCount": 53,
-        "slateDayCount": 33
+        "pickCount": 55,
+        "slateDayCount": 34
       },
       "walkForward": {
         "accuracy": 0.6470588235294118,
@@ -25609,11 +25734,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "98999a01dd6a5ca3475f",
       "untouchedHoldout": {
-        "accuracy": 0.6470588235294118,
-        "correct": 55,
+        "accuracy": 0.6363636363636364,
+        "correct": 56,
         "family": "interaction",
-        "pickCount": 85,
-        "slateDayCount": 47
+        "pickCount": 88,
+        "slateDayCount": 48
       },
       "walkForward": {
         "accuracy": 0.5135135135135135,
@@ -25644,11 +25769,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "cf86d42d531b2225daeb",
       "untouchedHoldout": {
-        "accuracy": 0.6,
-        "correct": 87,
+        "accuracy": 0.5866666666666667,
+        "correct": 88,
         "family": "interaction",
-        "pickCount": 145,
-        "slateDayCount": 60
+        "pickCount": 150,
+        "slateDayCount": 61
       },
       "walkForward": {
         "accuracy": 0.5493827160493827,
@@ -25679,11 +25804,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "502e47571d8f69c6115b",
       "untouchedHoldout": {
-        "accuracy": 0.4861111111111111,
-        "correct": 70,
+        "accuracy": 0.48299319727891155,
+        "correct": 71,
         "family": "interaction",
-        "pickCount": 144,
-        "slateDayCount": 61
+        "pickCount": 147,
+        "slateDayCount": 62
       },
       "walkForward": {
         "accuracy": 0.5363636363636364,
@@ -25714,11 +25839,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "d6dae3fbe9495e87e702",
       "untouchedHoldout": {
-        "accuracy": 0.6455696202531646,
+        "accuracy": 0.6375,
         "correct": 102,
         "family": "interaction",
-        "pickCount": 158,
-        "slateDayCount": 60
+        "pickCount": 160,
+        "slateDayCount": 61
       },
       "walkForward": {
         "accuracy": 0.5714285714285714,
@@ -25749,11 +25874,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "f3f4fb59a628b4d71140",
       "untouchedHoldout": {
-        "accuracy": 0.6046511627906976,
-        "correct": 286,
+        "accuracy": 0.5995850622406639,
+        "correct": 289,
         "family": "interaction",
-        "pickCount": 473,
-        "slateDayCount": 66
+        "pickCount": 482,
+        "slateDayCount": 67
       },
       "walkForward": {
         "accuracy": 0.5417789757412399,
@@ -25784,11 +25909,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "395a3af65bcc91ffad63",
       "untouchedHoldout": {
-        "accuracy": 0.6455696202531646,
+        "accuracy": 0.6375,
         "correct": 102,
         "family": "interaction",
-        "pickCount": 158,
-        "slateDayCount": 60
+        "pickCount": 160,
+        "slateDayCount": 61
       },
       "walkForward": {
         "accuracy": 0.5714285714285714,
@@ -25819,11 +25944,11 @@
       "selectionUsedUntouchedHoldoutLabels": false,
       "signalId": "9cc5422bd5b772311c10",
       "untouchedHoldout": {
-        "accuracy": 0.7012987012987013,
-        "correct": 54,
+        "accuracy": 0.7051282051282052,
+        "correct": 55,
         "family": "interaction",
-        "pickCount": 77,
-        "slateDayCount": 45
+        "pickCount": 78,
+        "slateDayCount": 46
       },
       "walkForward": {
         "accuracy": 0.6024096385542169,
@@ -25834,18 +25959,18 @@
       }
     }
   ],
-  "sourceSha": "0015d7a9f129f2e5c788a2312ab34c3e9fbc005d",
+  "sourceSha": "288c42222cb91f11d4e6d086f5b10cd8639586b5",
   "stalledStage": null,
-  "startedAtUtc": "2026-08-10T06:55:05.621635+00:00",
+  "startedAtUtc": "2026-08-10T09:01:31.056379+00:00",
   "state": {
-    "completeSlateCount": 335,
-    "currentDate": "2026-08-08",
-    "currentSlotIndex": 80,
-    "eligibleGameCount": 4155,
+    "completeSlateCount": 336,
+    "currentDate": "2026-08-09",
+    "currentSlotIndex": 40,
+    "eligibleGameCount": 4170,
     "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable",
-    "featureRematerializedSlateCount": 335,
+    "featureRematerializedSlateCount": 336,
     "phase": "BACKFILLING",
-    "trainingRecordCountLoaded": 4155
+    "trainingRecordCountLoaded": 4170
   },
   "storageReader": "immutable_complete_slate_artifacts_with_derived_row_eligibility",
   "uncertaintyInterval": "Wilson 95%",
