@@ -24,3 +24,11 @@ os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
 os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
 os.environ.setdefault("AWS_SESSION_TOKEN", "testing")
+
+# The runtime runner imports the v1.1 compatibility layer.  Import it during
+# collection as well so direct tests of the base module exercise the same stable
+# candidate and artifact identity semantics as production.
+try:
+    import mlb_v8_observational_audit_v1_1  # noqa: F401
+except Exception:
+    pass
