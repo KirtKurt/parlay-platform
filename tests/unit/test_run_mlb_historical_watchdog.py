@@ -11,7 +11,7 @@ from scripts import run_mlb_historical_watchdog as watchdog
 CEILING = "2026-12-31"
 
 
-def waiting_state(*, revision=10):
+def waiting_state(*, revision=10, wait_version=None):
     return {
         "phase": watchdog.WAITING_PHASE,
         "endDate": "2026-08-04",
@@ -19,6 +19,7 @@ def waiting_state(*, revision=10):
         "currentSlotIndex": 0,
         "networkRequestCount": 26320,
         "eligibleGameCount": 4114,
+        "targetSettledGames": 4405,
         "completeSlateCount": 332,
         "optimizationRound": 10,
         "revision": revision,
@@ -31,7 +32,7 @@ def waiting_state(*, revision=10):
         "featureRematerializationTotalSlateCount": 332,
         "rangeExtensionNextRetryDate": "2026-08-05",
         "settledHorizonWait": {
-            "version": watchdog.WAITING_CONTRACT_VERSION,
+            "version": wait_version or watchdog.WAITING_CONTRACT_VERSION,
             "authorizedThroughDate": "2026-08-04",
             "settledHorizonDate": "2026-08-04",
             "configuredCeilingDate": CEILING,
@@ -61,7 +62,7 @@ def test_template_boundary_is_read_as_deployment_ceiling(tmp_path):
     assert watchdog.canonical_end_date(template) == CEILING
 
 
-def test_healthy_wait_accepts_authorized_range_before_ceiling():
+def test_healthy_wait_accepts_current_contract():
     proof = watchdog.validate_transition(
         waiting_state(),
         waiting_state(revision=11),
@@ -71,10 +72,37 @@ def test_healthy_wait_accepts_authorized_range_before_ceiling():
 
     assert proof["phase"] == watchdog.WAITING_PHASE
     assert proof["waitingHealthy"] is True
+    assert proof["waitContractVersion"] == watchdog.WAITING_CONTRACT_VERSION
     assert proof["authorizedThroughDate"] == "2026-08-04"
     assert proof["configuredCeilingDate"] == CEILING
     assert proof["nextEligibleSlateDate"] == "2026-08-05"
+    assert proof["remainingEvidenceGames"] == 291
     assert proof["blockingError"] is False
+
+
+def test_healthy_wait_accepts_legacy_persisted_contract():
+    proof = watchdog.validate_waiting_state(
+        waiting_state(
+            wait_version=watchdog.LEGACY_WAITING_CONTRACT_VERSION
+        ),
+        expected_ceiling=CEILING,
+    )
+
+    assert (
+        proof["waitContractVersion"]
+        == watchdog.LEGACY_WAITING_CONTRACT_VERSION
+    )
+
+
+def test_waiting_state_fails_closed_on_unknown_contract():
+    state = waiting_state(wait_version="unknown")
+
+    with pytest.raises(
+        ValueError, match="settled_horizon_wait_version_mismatch"
+    ):
+        watchdog.validate_waiting_state(
+            state, expected_ceiling=CEILING
+        )
 
 
 def test_waiting_state_fails_closed_on_mismatched_ceiling():
@@ -94,7 +122,9 @@ def test_waiting_state_fails_closed_on_blocking_error():
     state = waiting_state()
     state["settledHorizonWait"]["blockingError"] = True
 
-    with pytest.raises(ValueError, match="settled_horizon_wait_is_blocking"):
+    with pytest.raises(
+        ValueError, match="settled_horizon_wait_is_blocking"
+    ):
         watchdog.validate_waiting_state(
             state, expected_ceiling=CEILING
         )
@@ -183,6 +213,46 @@ def test_authorized_range_may_not_exceed_configured_ceiling():
     with pytest.raises(
         ValueError,
         match="authorized_range_exceeds_configured_ceiling",
+    ):
+        watchdog.validate_common_state(
+            state, expected_ceiling=CEILING
+        )
+
+
+def test_false_data_range_exhaustion_before_ceiling_is_blocking():
+    state = active_state()
+    state["phase"] = "DATA_RANGE_EXHAUSTED"
+
+    with pytest.raises(
+        ValueError,
+        match="data_range_exhausted_before_configured_ceiling",
+    ):
+        watchdog.validate_common_state(
+            state, expected_ceiling=CEILING
+        )
+
+
+def test_data_range_exhaustion_at_configured_ceiling_is_valid_terminal():
+    state = active_state()
+    state["phase"] = "DATA_RANGE_EXHAUSTED"
+    state["endDate"] = CEILING
+
+    proof = watchdog.validate_common_state(
+        state, expected_ceiling=CEILING
+    )
+
+    assert proof["phase"] == "DATA_RANGE_EXHAUSTED"
+
+
+def test_rematerialization_must_cover_every_completed_slate():
+    state = active_state()
+    state["completeSlateCount"] = 337
+    state["featureRematerializedSlateCount"] = 335
+    state["featureRematerializationTotalSlateCount"] = 335
+
+    with pytest.raises(
+        ValueError,
+        match="feature_rematerialization_does_not_cover_completed_slates",
     ):
         watchdog.validate_common_state(
             state, expected_ceiling=CEILING
