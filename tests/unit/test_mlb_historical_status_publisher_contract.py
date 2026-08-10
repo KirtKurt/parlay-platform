@@ -17,7 +17,11 @@ def test_historical_status_publisher_is_race_safe_and_evidence_honest():
     assert "git pull --rebase origin main" not in source
     assert "for attempt in 1 2 3 4 5" in source
     assert "scripts/build_mlb_historical_status.py" in source
+    assert "scripts/enrich_mlb_historical_status_input.py" in source
     assert "aws lambda get-function-configuration" in source
+    assert "aws s3api get-object" in source
+    assert "--version-id" in source
+    assert "absolute challenger calibration metrics missing" in source
 
 
 def test_next_round_workflow_is_readiness_aware():

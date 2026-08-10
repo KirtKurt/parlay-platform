@@ -11,6 +11,7 @@ name: MLB Historical Status Snapshot
       - '.github/workflows/mlb-historical-v7-recovery.yml'
       - '.github/workflows/mlb-historical-next-round-catchup.yml'
       - 'scripts/build_mlb_historical_status.py'
+      - 'scripts/enrich_mlb_historical_status_input.py'
       - 'scripts/run_mlb_historical_watchdog.py'
       - 'hello_world/mlb_historical_optimizer_entrypoint.py'
       - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
@@ -53,12 +54,15 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --quiet 'pytest>=8,<9'
-          python -m py_compile scripts/build_mlb_historical_status.py
+          python -m py_compile \
+            scripts/build_mlb_historical_status.py \
+            scripts/enrich_mlb_historical_status_input.py
           python -m pytest -q \
             tests/unit/test_build_mlb_historical_status.py \
+            tests/unit/test_enrich_mlb_historical_status_input.py \
             tests/unit/test_mlb_historical_status_publisher_contract.py
 
-      - name: Read and validate canonical optimizer status
+      - name: Read canonical status and immutable challenger metrics
         run: |
           set -euo pipefail
           FUNCTION_NAME=$(aws cloudformation describe-stacks \
@@ -110,10 +114,61 @@ jobs:
             exit 1
           }
 
-          python scripts/build_mlb_historical_status.py \
+          mapfile -t artifact_pointer < <(python - <<'PY'
+          import json
+          value=json.load(open('/tmp/status.json'))
+          latest=((value.get('state') or {}).get('latestExperiment') or {})
+          artifact=latest.get('artifact') or {}
+          bucket=str(artifact.get('bucket') or '')
+          key=str(artifact.get('key') or '')
+          version=str(artifact.get('versionId') or '')
+          if not bucket or not key:
+              raise SystemExit('latest experiment immutable artifact pointer is missing')
+          print(bucket)
+          print(key)
+          print(version)
+          PY
+          )
+          test "${#artifact_pointer[@]}" -eq 3
+          if [ -n "${artifact_pointer[2]}" ]; then
+            aws s3api get-object \
+              --bucket "${artifact_pointer[0]}" \
+              --key "${artifact_pointer[1]}" \
+              --version-id "${artifact_pointer[2]}" \
+              /tmp/latest-experiment.json >/tmp/latest-experiment-meta.json
+          else
+            aws s3api get-object \
+              --bucket "${artifact_pointer[0]}" \
+              --key "${artifact_pointer[1]}" \
+              /tmp/latest-experiment.json >/tmp/latest-experiment-meta.json
+          fi
+
+          python scripts/enrich_mlb_historical_status_input.py \
             --status /tmp/status.json \
+            --experiment /tmp/latest-experiment.json \
+            --output /tmp/status-enriched.json
+
+          python scripts/build_mlb_historical_status.py \
+            --status /tmp/status-enriched.json \
             --function-configuration /tmp/function-configuration.json \
             --output /tmp/status-summary.json
+
+          python - <<'PY'
+          import json
+          value=json.load(open('/tmp/status-summary.json'))
+          metrics=value.get('latestChallengerMetrics') or {}
+          required=(
+              'walkForwardBrierScore',
+              'walkForwardLogLoss',
+              'untouchedHoldoutBrierScore',
+              'untouchedHoldoutLogLoss',
+          )
+          missing=[key for key in required if metrics.get(key) is None]
+          if missing:
+              raise SystemExit('absolute challenger calibration metrics missing: ' + ','.join(missing))
+          if metrics.get('absoluteScoresPublished') is not True:
+              raise SystemExit('absolute challenger calibration metrics are not certified')
+          PY
 
       - uses: actions/upload-artifact@v4
         with:
