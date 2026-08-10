@@ -31,7 +31,7 @@ def align_runtime_report(report: Mapping[str, Any]) -> Dict[str, Any]:
         raise ValueError("observational fitted model probability bounds are invalid")
 
     # The runtime verifier compares the bundle contract with the serialized
-    # fitted model.  Make both authorities explicit, including for model fakes
+    # fitted model. Make both authorities explicit, including for model fakes
     # and legacy residuals that relied on the fitted-model defaults.
     model["minProbability"] = lower
     model["maxProbability"] = upper
@@ -78,10 +78,16 @@ _base.VERSION = VERSION
 _core.build_candidate = build_candidate
 _base.build_candidate = build_candidate
 
-for _name in dir(_base):
+# Capture the compatibility source before exporting inherited symbols. The
+# inherited module itself exposes a private ``_base`` symbol; assigning that to
+# globals during iteration must not change the object used for subsequent reads.
+_export_source = _base
+for _name in dir(_export_source):
     if not _name.startswith("__"):
-        globals()[_name] = getattr(_base, _name)
+        globals()[_name] = getattr(_export_source, _name)
 
+# Restore this layer's active implementation after compatibility export.
+globals()["_base"] = _export_source
 globals()["VERSION"] = VERSION
 globals()["align_runtime_report"] = align_runtime_report
 globals()["build_candidate"] = build_candidate
