@@ -198,9 +198,7 @@ def test_cursor_beyond_settled_range_enters_nonblocking_wait(monkeypatch):
     assert handler.write_count == 1
 
 
-def test_waiting_state_with_persisted_none_omission_remains_idempotent(
-    monkeypatch,
-):
+def test_waiting_state_with_persisted_none_omission_remains_idempotent(monkeypatch):
     waiting = state()
     waiting.pop("lastError")
     waiting["phase"] = integrity.WAITING_PHASE
@@ -249,3 +247,98 @@ def test_waiting_state_resumes_when_horizon_advances(monkeypatch):
     assert handler.state["phase"] == "BACKFILLING"
     assert handler.state["endDate"] == "2026-07-28"
     assert "settledHorizonWait" not in handler.state
+
+
+def test_stale_top_level_end_date_is_repaired_from_fingerprinted_plan(monkeypatch):
+    stale = state()
+    stale.update(
+        {
+            "phase": "DATA_RANGE_EXHAUSTED",
+            "endDate": "2026-08-08",
+            "currentDate": "2026-08-09",
+            "eligibleGameCount": 4170,
+            "targetSettledGames": 4405,
+            "lastError": "configured historical range ended before the 1,000-train plus validation/audit evidence floor",
+            "plan": {
+                "endDate": "2026-08-09",
+                "plannedThroughDate": "2026-08-09",
+                "fingerprint": "authorized-plan-fingerprint",
+                "slates": [
+                    {"slateDateEt": "2026-08-08"},
+                    {"slateDateEt": "2026-08-09"},
+                ],
+            },
+        }
+    )
+    handler = Handler(stale)
+    base = Base(handler)
+    monkeypatch.setattr(
+        integrity.incremental_range_extension,
+        "settled_horizon",
+        lambda: date(2026, 8, 9),
+    )
+    integrity.install(handler, base)
+
+    base._append_authorized_range_extension()
+
+    assert handler.state["endDate"] == "2026-08-09"
+    assert handler.state["rangeExtensionStateRepair"]["priorEndDate"] == "2026-08-08"
+    assert handler.state["rangeExtensionStateRepair"]["authority"] == "existing_fingerprinted_plan_only"
+    assert handler.state["phase"] == integrity.WAITING_PHASE
+    assert handler.state["lastError"] is None
+    assert handler.state["settledHorizonWait"]["remainingEvidenceGames"] == 235
+
+
+def test_data_range_exhausted_at_current_settled_horizon_is_nonblocking_wait(monkeypatch):
+    exhausted = state()
+    exhausted.update(
+        {
+            "phase": "DATA_RANGE_EXHAUSTED",
+            "endDate": "2026-08-09",
+            "currentDate": "2026-08-09",
+            "eligibleGameCount": 4170,
+            "targetSettledGames": 4405,
+            "lastError": "configured historical range ended before the 1,000-train plus validation/audit evidence floor",
+        }
+    )
+    handler = Handler(exhausted)
+    base = Base(handler)
+    monkeypatch.setattr(
+        integrity.incremental_range_extension,
+        "settled_horizon",
+        lambda: date(2026, 8, 9),
+    )
+    integrity.install(handler, base)
+
+    base._append_authorized_range_extension()
+
+    assert handler.state["phase"] == integrity.WAITING_PHASE
+    assert handler.state["lastError"] is None
+    assert handler.state["rangeExtensionNextRetryDate"] == "2026-08-10"
+    assert handler.state["settledHorizonWait"]["blockingError"] is False
+    assert handler.state["settledHorizonWait"]["remainingEvidenceGames"] == 235
+
+
+def test_backfilling_with_slots_remaining_does_not_wait_early(monkeypatch):
+    active = state()
+    active.update(
+        {
+            "phase": "BACKFILLING",
+            "endDate": "2026-08-09",
+            "currentDate": "2026-08-09",
+            "currentSlotIndex": 20,
+        }
+    )
+    handler = Handler(active)
+    base = Base(handler)
+    monkeypatch.setattr(
+        integrity.incremental_range_extension,
+        "settled_horizon",
+        lambda: date(2026, 8, 9),
+    )
+    integrity.install(handler, base)
+
+    base._append_authorized_range_extension()
+
+    assert handler.state["phase"] == "BACKFILLING"
+    assert handler.write_count == 0
