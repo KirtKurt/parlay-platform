@@ -1,0 +1,207 @@
+name: MLB V8 Observational Audit
+
+"on":
+  workflow_run:
+    workflows: ["MLB V8 Autonomous Controller"]
+    types: [completed]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'hello_world/mlb_v8_observational_audit_v1.py'
+      - 'hello_world/mlb_v8_observational_audit_v1_1.py'
+      - 'hello_world/mlb_v8_observational_audit_v1_2.py'
+      - 'hello_world/mlb_v8_observational_audit_v1_3.py'
+      - 'scripts/run_mlb_v8_observational_audit.py'
+      - 'tests/unit/test_mlb_v8_observational_audit_v1.py'
+      - 'tests/unit/test_mlb_v8_observational_latch_v1.py'
+      - 'tests/unit/test_mlb_v8_observational_ddb_v1.py'
+      - 'tests/unit/test_run_mlb_v8_observational_audit.py'
+      - 'tests/conftest.py'
+      - '.github/workflows/mlb-v8-observational-audit.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: mlb-v8-observational-audit-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: hello_world:scripts
+  AWS_EC2_METADATA_DISABLED: 'true'
+  HISTORICAL_STACK: parlay-platform-mlb-historical-optimizer
+  SNAPSHOTS_TABLE: parlay_platform_snapshots
+  OBSERVATIONAL_REPORT: runtime_reports/mlb_v8_observational_audit_latest.json
+
+jobs:
+  contract-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact audit source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate observational contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'numpy>=1.26,<3' 'pytest>=8,<9'
+          python -m py_compile \
+            hello_world/mlb_v8_observational_audit_v1.py \
+            hello_world/mlb_v8_observational_audit_v1_1.py \
+            hello_world/mlb_v8_observational_audit_v1_2.py \
+            hello_world/mlb_v8_observational_audit_v1_3.py \
+            scripts/run_mlb_v8_observational_audit.py
+          python -m pytest -q \
+            tests/unit/test_mlb_v8_observational_audit_v1.py \
+            tests/unit/test_mlb_v8_observational_latch_v1.py \
+            tests/unit/test_mlb_v8_observational_ddb_v1.py \
+            tests/unit/test_run_mlb_v8_observational_audit.py \
+            tests/unit/test_mlb_v8_model_runtime.py \
+            tests/unit/test_mlb_v8_prospective_audit_v1.py
+
+  observational-audit:
+    needs: contract-tests
+    if: >-
+      ${{ github.event_name != 'pull_request' &&
+          (github.event_name != 'workflow_run' ||
+           (github.event.workflow_run.conclusion == 'success' &&
+            github.event.workflow_run.head_branch == 'main')) }}
+    permissions:
+      actions: read
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Download exact successful controller evidence
+        id: evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          run_id="$TRIGGER_RUN_ID"
+          if test -z "$run_id" || test "$run_id" = 'null'; then
+            run_id=$(gh run list \
+              --workflow 'MLB V8 Autonomous Controller' \
+              --branch main \
+              --status success \
+              --limit 1 \
+              --json databaseId \
+              --jq '.[0].databaseId')
+          fi
+          test -n "$run_id"
+          rm -rf /tmp/mlb-v8-controller-evidence
+          mkdir -p /tmp/mlb-v8-controller-evidence
+          gh run download "$run_id" \
+            --name "mlb-v8-autonomous-controller-$run_id" \
+            --dir /tmp/mlb-v8-controller-evidence
+          training_path=$(find /tmp/mlb-v8-controller-evidence \
+            -type f -name mlb_v8_autonomous_training_latest.json \
+            -print -quit)
+          test -n "$training_path"
+          test -s "$training_path"
+          python -m json.tool "$training_path" >/dev/null
+          test "$(jq -r '.ok' "$training_path")" = 'true'
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "training_path=$training_path" >> "$GITHUB_OUTPUT"
+
+      - name: Freeze and grade independent observational challenger
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python scripts/run_mlb_v8_observational_audit.py \
+            --region "${{ secrets.AWS_REGION }}" \
+            --stack-name "$HISTORICAL_STACK" \
+            --table-name "$SNAPSHOTS_TABLE" \
+            --training-report "${{ steps.evidence.outputs.training_path }}" \
+            --output "$OBSERVATIONAL_REPORT" \
+            2>&1 | tee /tmp/mlb-v8-observational.log
+
+      - name: Enforce non-promotable observational authority
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          value=json.loads(Path(os.environ['OBSERVATIONAL_REPORT']).read_text())
+          assert value.get('proofType') == 'MLB_V8_FROZEN_OBSERVATIONAL_AUDIT', value
+          assert value.get('observationalOnly') is True, value
+          assert value.get('promotionEligible') is False, value
+          assert value.get('promotionRequested') is False, value
+          assert value.get('automaticWagerAllowed') is False, value
+          assert value.get('productionAuthorityChanged') is False, value
+          assert value.get('candidateDigest'), value
+          assert value.get('modelDigest'), value
+          assert value.get('candidateArtifact'), value
+          assert value.get('auditArtifact'), value
+          assert int(value.get('pushes') or 0) == 0, value
+          assert int(value.get('voids') or 0) == 0, value
+          sample=int(value.get('sampleSize') or 0)
+          wins=int(value.get('wins') or 0)
+          losses=int(value.get('losses') or 0)
+          assert sample == wins + losses, value
+          if sample:
+              assert value.get('overallAccuracy') is not None, value
+          else:
+              assert value.get('overallAccuracy') is None, value
+          PY
+
+      - name: Upload exact observational evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v8-observational-audit-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_v8_observational_audit_latest.json
+            /tmp/mlb-v8-observational.log
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Publish monotonic observational latest state
+        if: success()
+        run: |
+          set -euo pipefail
+          tmpdir=$(mktemp -d)
+          cp "$OBSERVATIONAL_REPORT" "$tmpdir/observational.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+            git checkout -B mlb-v8-observational-state refs/remotes/origin/main
+            git reset --hard refs/remotes/origin/main
+            git clean -fd
+            mkdir -p runtime_reports
+            cp "$tmpdir/observational.json" "$OBSERVATIONAL_REPORT"
+            git add "$OBSERVATIONAL_REPORT"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB V8 observational audit state [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
