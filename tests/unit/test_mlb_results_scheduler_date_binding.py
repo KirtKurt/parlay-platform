@@ -59,7 +59,7 @@ def test_direct_event_slate_date_alias_binds_exact_canonical_settlement(monkeypa
     assert calls == [
         {
             "slate_date": "2026-08-04",
-            "days_from": 3,
+            "days_from": 0,
             "fetch_scores": True,
             "store": True,
         }
@@ -84,7 +84,7 @@ def test_canonical_date_precedence_is_stable_across_event_aliases():
     }
 
 
-def test_query_or_body_date_cannot_be_overwritten_by_top_level_legacy_alias():
+def test_query_date_and_top_level_legacy_alias_remain_deterministic():
     payload = subject._payload(
         {
             "queryStringParameters": {"date": "2026-08-06"},
@@ -94,3 +94,9 @@ def test_query_or_body_date_cannot_be_overwritten_by_top_level_legacy_alias():
 
     assert subject._settlement_args(payload)["slate_date"] == "2026-08-04"
     assert payload["date"] == "2026-08-06"
+
+
+def test_zero_days_from_is_not_replaced_by_default():
+    assert subject._settlement_args(
+        {"slate_date": "2026-08-04", "days_from": 0}
+    )["days_from"] == 0
