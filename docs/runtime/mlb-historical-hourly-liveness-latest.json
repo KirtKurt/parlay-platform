@@ -1,35 +1,37 @@
 {
   "after": {
-    "completeSlateCount": 335,
-    "currentDate": "2026-08-08",
-    "currentSlotIndex": 80,
-    "eligibleGameCount": 4155,
-    "lastError": "OrchestrationError:untouched audit dates were reused after label evaluation: 2026-07-20,2026-07-21,2026-07-22,2026-07-23,2026-07-24,2026-07-25,2026-07-26,2026-07-27,2026-07-28,2026-07-29,2026-07-30,2026-07-31,2026-08-01,2026-08-02,2026-08-03,2026-08-04,2026-08-05,2026-08-06,2026-08-07",
+    "completeSlateCount": 336,
+    "currentDate": "2026-08-09",
+    "currentSlotIndex": 0,
+    "eligibleGameCount": 4170,
+    "lastError": "configured historical range ended before the 1,000-train plus validation/audit evidence floor",
     "networkRequestCount": 26643,
-    "phase": "BACKFILLING",
-    "revision": 5999,
+    "phase": "DATA_RANGE_EXHAUSTED",
+    "revision": 6032,
     "stateUpdatedAtUtc": null,
-    "targetSettledGames": 4149,
-    "updatedAtUtc": "2026-08-10T06:12:52.868884+00:00"
+    "targetSettledGames": 4405,
+    "updatedAtUtc": "2026-08-10T08:41:53.068797+00:00"
   },
   "before": {
-    "completeSlateCount": 335,
-    "currentDate": "2026-08-08",
-    "currentSlotIndex": 80,
-    "eligibleGameCount": 4155,
-    "lastError": "OrchestrationError:untouched audit dates were reused after label evaluation: 2026-07-20,2026-07-21,2026-07-22,2026-07-23,2026-07-24,2026-07-25,2026-07-26,2026-07-27,2026-07-28,2026-07-29,2026-07-30,2026-07-31,2026-08-01,2026-08-02,2026-08-03,2026-08-04,2026-08-05,2026-08-06,2026-08-07",
+    "completeSlateCount": 336,
+    "currentDate": "2026-08-09",
+    "currentSlotIndex": 0,
+    "eligibleGameCount": 4170,
+    "lastError": "configured historical range ended before the 1,000-train plus validation/audit evidence floor",
     "networkRequestCount": 26643,
-    "phase": "BACKFILLING",
-    "revision": 5999,
+    "phase": "DATA_RANGE_EXHAUSTED",
+    "revision": 6032,
     "stateUpdatedAtUtc": null,
-    "targetSettledGames": 4149,
-    "updatedAtUtc": "2026-08-10T06:12:52.868884+00:00"
+    "targetSettledGames": 4405,
+    "updatedAtUtc": "2026-08-10T08:41:53.068797+00:00"
   },
-  "blockers": [],
-  "createdAtUtc": "2026-08-10T06:16:25.388001+00:00",
-  "heartbeatAtUtc": "2026-08-10T06:16:25.332350+00:00",
+  "blockers": [
+    "data_range_exhausted"
+  ],
+  "createdAtUtc": "2026-08-10T08:45:51.679005+00:00",
+  "heartbeatAtUtc": "2026-08-10T08:45:51.624946+00:00",
   "livenessPolicyVersion": "MLB-HISTORICAL-LIVENESS-POLICY-v2-waiting-healthy",
-  "livenessStatus": "HEALTHY_IDLE",
+  "livenessStatus": "BLOCKED",
   "movement": {
     "completeSlateDelta": 0,
     "dateChanged": false,
@@ -39,7 +41,7 @@
     "revisionDelta": 0,
     "slotChanged": false
   },
-  "ok": true,
+  "ok": false,
   "proofType": "MLB_HISTORICAL_HOURLY_LIVENESS_V1",
   "recoveryInvoked": false,
   "recoveryRequired": false,
@@ -56,11 +58,11 @@
     }
   ],
   "runAttempt": "1",
-  "runId": "31361326923",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/31361326923",
-  "sourceSha": "1230c922234c37644e33c548565858db40fab5aa",
+  "runId": "31371493015",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/31371493015",
+  "sourceSha": "cd2b1815cbc302d66a4928e60ade452009c8cbee",
   "sourceStateStale": false,
-  "sourceStateUpdatedAtUtc": "2026-08-10T06:12:52.868884+00:00",
-  "stateAgeMinutes": 3.541057766666667,
+  "sourceStateUpdatedAtUtc": "2026-08-10T08:41:53.068797+00:00",
+  "stateAgeMinutes": 3.975935816666667,
   "waitingHealthy": false
 }
