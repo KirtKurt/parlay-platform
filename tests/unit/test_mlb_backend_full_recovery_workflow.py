@@ -13,7 +13,7 @@ def test_backend_recovery_binds_clean_build_to_deployment_identity():
     manifest_path = (
         'runtime_reports/mlb_backend_recovery_code_manifest.json'
     )
-    deploy = 'sam deploy \\\n'
+    deploy = 'sam deploy'
     verify = 'python scripts/verify_mlb_deploy_identity.py'
 
     assert create_manifest in source
