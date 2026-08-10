@@ -62,15 +62,68 @@ jobs:
 
       - name: Verify and advance canonical historical runtime
         run: |
-          set -euo pipefail
-          python scripts/run_mlb_historical_watchdog.py \
-            --region "${{ secrets.AWS_REGION }}" \
-            --stack-name "$OPTIMIZER_STACK" \
-            --expected-handler "$EXPECTED_HANDLER" \
-            --expected-max-credits "$EXPECTED_MAX_CREDITS" \
-            --template mlb_historical_optimizer/template.yaml \
-            --published-status docs/runtime/mlb-historical-live-status.json \
-            --output "$WATCHDOG_REPORT"
+          set -u -o pipefail
+
+          run_watchdog() {
+            python scripts/run_mlb_historical_watchdog.py \
+              --region "${{ secrets.AWS_REGION }}" \
+              --stack-name "$OPTIMIZER_STACK" \
+              --expected-handler "$EXPECTED_HANDLER" \
+              --expected-max-credits "$EXPECTED_MAX_CREDITS" \
+              --template mlb_historical_optimizer/template.yaml \
+              --published-status docs/runtime/mlb-historical-live-status.json \
+              --output "$WATCHDOG_REPORT"
+          }
+
+          # An active optimizer can already own the lease and legitimately need more
+          # than the watchdog's immediate before/after probe to persist a material
+          # counter/cursor change. Retry only that exact liveness condition. All real
+          # configuration, quota, state-integrity, and provider failures still fail
+          # closed on the first attempt.
+          delays=(0 30 60 120)
+          watchdog_ok=false
+          for attempt in 1 2 3 4; do
+            delay="${delays[$((attempt-1))]}"
+            if [ "$delay" -gt 0 ]; then
+              sleep "$delay"
+            fi
+
+            set +e
+            run_watchdog
+            rc=$?
+            set -e
+
+            if [ "$rc" -eq 0 ]; then
+              watchdog_ok=true
+              break
+            fi
+
+            transient=false
+            if [ -s "$WATCHDOG_REPORT" ]; then
+              transient="$(python - <<'PY'
+          import json, os
+          try:
+              value=json.load(open(os.environ['WATCHDOG_REPORT']))
+          except Exception:
+              print('false')
+          else:
+              blockers=value.get('blockers') or []
+              print('true' if blockers == ['active_optimizer_did_not_make_substantive_progress'] else 'false')
+          PY
+              )"
+            fi
+
+            if [ "$transient" != "true" ]; then
+              exit "$rc"
+            fi
+
+            if [ "$attempt" -eq 4 ]; then
+              echo "Historical optimizer made no substantive progress after bounded liveness retries." >&2
+              exit "$rc"
+            fi
+          done
+
+          [ "$watchdog_ok" = true ]
           python -m json.tool "$WATCHDOG_REPORT" >/dev/null
           python - <<'PY'
           import json, os
