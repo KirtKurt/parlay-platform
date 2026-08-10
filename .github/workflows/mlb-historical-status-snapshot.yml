@@ -10,6 +10,8 @@ name: MLB Historical Status Snapshot
       - '.github/workflows/mlb-historical-watchdog.yml'
       - '.github/workflows/mlb-historical-v7-recovery.yml'
       - '.github/workflows/mlb-historical-next-round-catchup.yml'
+      - 'scripts/build_mlb_historical_status.py'
+      - 'scripts/run_mlb_historical_watchdog.py'
       - 'hello_world/mlb_historical_optimizer_entrypoint.py'
       - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
       - 'hello_world/mlb_historical_feature_rematerialization_v1.py'
@@ -21,6 +23,7 @@ permissions:
 
 env:
   OPTIMIZER_STACK: parlay-platform-mlb-historical-optimizer
+  PYTHONPATH: .
 
 concurrency:
   group: mlb-historical-status-snapshot
@@ -35,12 +38,27 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Read and validate compact optimizer status
+
+      - name: Validate the evidence-honest status renderer
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9'
+          python -m py_compile scripts/build_mlb_historical_status.py
+          python -m pytest -q \
+            tests/unit/test_build_mlb_historical_status.py \
+            tests/unit/test_mlb_historical_status_publisher_contract.py
+
+      - name: Read and validate canonical optimizer status
         run: |
           set -euo pipefail
           FUNCTION_NAME=$(aws cloudformation describe-stacks \
@@ -50,6 +68,11 @@ jobs:
             --output text)
           test -n "$FUNCTION_NAME"
           test "$FUNCTION_NAME" != None
+
+          aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --output json > /tmp/function-configuration.json
 
           status_ready=false
           for attempt in $(seq 1 24); do
@@ -75,93 +98,29 @@ jobs:
             case "$decision" in
               READY) status_ready=true; break ;;
               RETRY) sleep 15 ;;
-              FAIL) cat /tmp/status.json; echo '::error::Optimizer status returned an invalid response'; exit 1 ;;
+              FAIL)
+                cat /tmp/status.json
+                echo '::error::Optimizer status returned an invalid response'
+                exit 1
+                ;;
             esac
           done
-          test "$status_ready" = true || { echo '::error::Optimizer status remained lease-held for six minutes'; exit 1; }
-
-          python - <<'PY'
-          import json
-          from datetime import datetime, timezone
-
-          value = json.load(open('/tmp/status.json'))
-          if value.get('ok') is not True:
-              raise SystemExit(f"optimizer status failed: {value}")
-          state = value.get('state')
-          if not isinstance(state, dict):
-              raise SystemExit(f"optimizer status omitted state: {value}")
-          required=(
-              'phase','currentDate','currentSlotIndex','eligibleGameCount',
-              'completeSlateCount','optimizationRound','targetSettledGames','updatedAtUtc'
-          )
-          missing=[name for name in required if state.get(name) is None]
-          if missing:
-              raise SystemExit('optimizer status missing required fields: '+','.join(missing))
-
-          eligible=int(state.get('eligibleGameCount') or 0)
-          target=int(state.get('targetSettledGames') or 0)
-          latest=state.get('latestExperiment') or {}
-          gate=latest.get('promotionGate') or {}
-          start=str(state.get('freshAuditStartDate') or '')
-          completed=state.get('completedSlates') or []
-          provisional=[
-              row for row in completed
-              if isinstance(row,dict) and start and str(row.get('slateDateEt') or '') >= start
-          ]
-          summary = {
-              'checkedAt': datetime.now(timezone.utc).isoformat(),
-              'ok': True,
-              'phase': state.get('phase'),
-              'currentDate': state.get('currentDate'),
-              'currentSlotIndex': state.get('currentSlotIndex'),
-              'networkRequestCount': state.get('networkRequestCount'),
-              'creditsConsumed': state.get('creditsConsumed'),
-              'eligibleGameCount': eligible,
-              'completeSlateCount': state.get('completeSlateCount'),
-              'targetSettledGames': target,
-              'gamesUntilNextOptimization': max(0,target-eligible),
-              'nextOptimizationReady': eligible >= target,
-              'optimizationRound': state.get('optimizationRound'),
-              'optimizationCompletedAtUtc': state.get('optimizationCompletedAtUtc'),
-              'latestExperiment': latest,
-              'latestAccuracy': {
-                  'settledGameCount': gate.get('settledGameCount'),
-                  'walkForwardMeanDailyAccuracy': gate.get('walkForwardMeanDailyAccuracy'),
-                  'walkForwardMinimumDailyAccuracy': gate.get('walkForwardMinimumDailyAccuracy'),
-                  'untouchedHoldoutMeanDailyAccuracy': gate.get('untouchedHoldoutMeanDailyAccuracy'),
-                  'untouchedHoldoutMinimumDailyAccuracy': gate.get('untouchedHoldoutMinimumDailyAccuracy'),
-                  'promotionPassed': gate.get('passed') is True,
-              },
-              'accuracyTargetReached': gate.get('passed') is True,
-              'lastError': state.get('lastError'),
-              'lastErrorAtUtc': state.get('lastErrorAtUtc'),
-              'stateUpdatedAtUtc': state.get('updatedAtUtc'),
-              'revision': state.get('revision'),
-              'featureDatasetVersion': state.get('featureDatasetVersion'),
-              'featureRematerializationComplete': state.get('featureRematerializationComplete'),
-              'featureRematerializedSlateCount': state.get('featureRematerializedSlateCount'),
-              'featureRematerializationTotalSlateCount': state.get('featureRematerializationTotalSlateCount'),
-              'featureRematerializationErrors': state.get('featureRematerializationErrors'),
-              'freshAuditExpansionRequired': state.get('freshAuditExpansionRequired'),
-              'freshAuditCollectedDayCount': state.get('freshAuditCollectedDayCount'),
-              'freshAuditCollectedGameCount': state.get('freshAuditCollectedGameCount'),
-              'provisionalFreshAuditCollectedDayCount': len(provisional),
-              'provisionalFreshAuditCollectedGameCount': sum(int(row.get('eligibleGameCount') or 0) for row in provisional),
-              'freshAuditStartDate': state.get('freshAuditStartDate'),
-              'endDate': state.get('endDate'),
-              'lastQuota': state.get('lastQuota'),
-              'championValidation': value.get('championValidation'),
-              'cutoverValidation': value.get('cutoverValidation'),
-              'productionAuthority': value.get('productionAuthority'),
+          test "$status_ready" = true || {
+            echo '::error::Optimizer status remained lease-held for six minutes'
+            exit 1
           }
-          print(json.dumps(summary, indent=2, sort_keys=True))
-          json.dump(summary, open('/tmp/status-summary.json', 'w'), indent=2, sort_keys=True)
-          PY
+
+          python scripts/build_mlb_historical_status.py \
+            --status /tmp/status.json \
+            --function-configuration /tmp/function-configuration.json \
+            --output /tmp/status-summary.json
+
       - uses: actions/upload-artifact@v4
         with:
           name: mlb-historical-live-status-${{ github.run_id }}
           path: /tmp/status-summary.json
           retention-days: 30
+
       - name: Publish canonical live status safely
         run: |
           set -euo pipefail
@@ -177,7 +136,7 @@ jobs:
             if git diff --cached --quiet; then
               exit 0
             fi
-            git commit -m "chore: publish MLB historical live status"
+            git commit -m "chore: publish MLB historical live status [skip ci]"
             if git push origin HEAD:main; then
               exit 0
             fi
