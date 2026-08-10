@@ -26,8 +26,8 @@ os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
 os.environ.setdefault("AWS_SESSION_TOKEN", "testing")
 
 # Import the same compatibility layer used by the runtime runner so direct tests
-# of the base module exercise stable identities and the latched evidence window.
+# exercise stable identities, the latched evidence window, and DynamoDB-safe writes.
 try:
-    import mlb_v8_observational_audit_v1_2  # noqa: F401
+    import mlb_v8_observational_audit_v1_3  # noqa: F401
 except Exception:
     pass
