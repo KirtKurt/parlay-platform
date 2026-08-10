@@ -7,21 +7,16 @@ on:
       - "scripts/diagnose_mlb_trainer_deploy_health.py"
       - "tests/unit/test_diagnose_mlb_trainer_deploy_health.py"
       - ".github/workflows/mlb-trainer-deploy-health-diagnostic-once.yml"
-  push:
-    branches: [main]
-    paths:
-      - "scripts/diagnose_mlb_trainer_deploy_health.py"
-      - "tests/unit/test_diagnose_mlb_trainer_deploy_health.py"
-      - ".github/workflows/mlb-trainer-deploy-health-diagnostic-once.yml"
+  workflow_run:
+    workflows: ["Deploy SAM to AWS"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
   contents: write
 
-# Share the ordinary deployment lock so this proof observes the trainer only
-# after the exact-source SAM deployment attempt for the same main revision.
 concurrency:
-  group: parlay-platform-deploy
+  group: mlb-trainer-deploy-health-diagnostic
   cancel-in-progress: false
 
 env:
@@ -62,14 +57,20 @@ jobs:
           git diff --check
 
   diagnose:
-    if: github.event_name != 'pull_request'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.head_branch == 'main')
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      TARGET_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
-      - name: Checkout exact source
+      - name: Checkout exact deployed source
         uses: actions/checkout@v4
         with:
+          ref: ${{ env.TARGET_SOURCE_SHA }}
           fetch-depth: 0
 
       - name: Setup Python 3.11
@@ -184,7 +185,7 @@ jobs:
             --status-invocation /tmp/mlb-trainer-diagnostic-status-invocation.json \
             --configuration /tmp/mlb-trainer-diagnostic-configuration.json \
             --output "$CANDIDATE_PATH" \
-            --source-sha "$GITHUB_SHA" \
+            --source-sha "$TARGET_SOURCE_SHA" \
             --workflow-run-id "$GITHUB_RUN_ID"
 
       - name: Upload redacted trainer diagnostic
