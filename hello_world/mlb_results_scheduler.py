@@ -53,6 +53,7 @@ def _payload(event: Dict[str, Any]) -> Dict[str, Any]:
     payload.update(_parse_body(event))
     for key in (
         "slate_date_et",
+        "slate_date",
         "date",
         "days_from",
         "daysFrom",
@@ -74,9 +75,18 @@ def _bool(value: Any, default: bool = True) -> bool:
 
 
 def _settlement_args(payload: Dict[str, Any]) -> Dict[str, Any]:
+    days_from = payload.get("days_from")
+    if days_from is None:
+        days_from = payload.get("daysFrom")
+    if days_from is None:
+        days_from = 3
     return {
-        "slate_date": payload.get("slate_date_et") or payload.get("date"),
-        "days_from": int(payload.get("days_from") or payload.get("daysFrom") or 3),
+        "slate_date": (
+            payload.get("slate_date_et")
+            or payload.get("slate_date")
+            or payload.get("date")
+        ),
+        "days_from": int(days_from),
         "fetch_scores": _bool(payload.get("fetch_scores"), True),
     }
 
@@ -178,7 +188,7 @@ def lambda_handler(event, context):
 
         if method in {"GET", "POST"} and path in {"/v1/results/mlb/result-signals", "/v1/mlb/result-signals"}:
             if not slate_date:
-                return _resp(400, {"ok": False, "sport": "mlb", "error": "date or slate_date_et is required"})
+                return _resp(400, {"ok": False, "sport": "mlb", "error": "date, slate_date, or slate_date_et is required"})
             if method == "POST" or _bool(payload.get("build"), False):
                 return _resp(200, build_result_signals(slate_date, fetch_scores=_bool(payload.get("fetch_scores"), True), store=_bool(payload.get("store"), True)))
             return _resp(200, latest_result_signals(slate_date))

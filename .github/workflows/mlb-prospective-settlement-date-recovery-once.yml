@@ -1,0 +1,203 @@
+name: Verify MLB prospective settlement date recovery once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "hello_world/mlb_results_scheduler.py"
+      - "tests/unit/test_mlb_results_scheduler_date_binding.py"
+      - ".github/workflows/mlb-prospective-settlement-date-recovery-once.yml"
+  workflow_run:
+    workflows: ["Deploy SAM to AWS"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-prospective-settlement-date-recovery
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --quiet "boto3>=1.34,<2" "pytest>=8,<9" "PyYAML>=6,<7"
+      - name: Verify exact-date compatibility and recovery contract
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            hello_world/mlb_results_scheduler.py \
+            scripts/reconcile_mlb_prospective_backlog_v4.py \
+            scripts/reconcile_mlb_prospective_backlog_v5.py
+          python -m pytest -q \
+            tests/unit/test_mlb_results_scheduler_date_binding.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v4.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v5.py \
+            tests/unit/test_mlb_prospective_backlog_workflow.py
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          path = Path('.github/workflows/mlb-prospective-settlement-date-recovery-once.yml')
+          value = yaml.load(path.read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+          assert isinstance(value, dict)
+          assert value.get('name') == 'Verify MLB prospective settlement date recovery once'
+          assert {'verify', 'recover'} <= set(value.get('jobs') or {})
+          PY
+          git diff --check
+
+  recover:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       contains(github.event.workflow_run.head_commit.message, 'Fix MLB prospective settlement date binding'))
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TARGET_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SOURCE_SHA }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - run: python -m pip install --quiet "boto3>=1.34,<2"
+
+      - name: Reconcile exact-date terminal coverage and canonical settlement
+        run: |
+          set -euo pipefail
+          python scripts/reconcile_mlb_prospective_backlog_v5.py \
+            --stack-name parlay-platform-dev \
+            --region "${{ secrets.AWS_REGION }}" \
+            --max-slate-days 14 \
+            --output runtime_reports/mlb_prospective_settlement_date_recovery_latest.json
+
+      - name: Invoke trainer, selection capture, and bound status
+        env:
+          AWS_MAX_ATTEMPTS: "10"
+          AWS_RETRY_MODE: "standard"
+        run: |
+          set -euo pipefail
+          TRAINER_ARN=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id MLBMLTrainingFunction \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$TRAINER_ARN"
+          test "$TRAINER_ARN" != "None"
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"prospective_settlement_date_recovered_training"}' \
+            --response /tmp/mlb-settlement-date-training.json \
+            --invocation /tmp/mlb-settlement-date-training-invoke.json \
+            --retry-execution-lease \
+            --deadline-seconds 1800 \
+            --retry-delay-seconds 30
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --payload '{"sport":"mlb","mode":"selection_capture","run":"prospective_settlement_date_recovered_selection"}' \
+            --response /tmp/mlb-settlement-date-selection.json \
+            --invocation /tmp/mlb-settlement-date-selection-invoke.json \
+            --retry-execution-lease \
+            --deadline-seconds 1800 \
+            --retry-delay-seconds 30
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --status-training-result /tmp/mlb-settlement-date-training.json \
+            --status-selection-capture-result /tmp/mlb-settlement-date-selection.json \
+            --response /tmp/mlb-settlement-date-status.json \
+            --invocation /tmp/mlb-settlement-date-status-invoke.json
+
+      - name: Enforce exact-date recovery without changing authority
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          recovery = json.loads(Path('runtime_reports/mlb_prospective_settlement_date_recovery_latest.json').read_text())
+          training = json.loads(Path('/tmp/mlb-settlement-date-training.json').read_text())
+          selection = json.loads(Path('/tmp/mlb-settlement-date-selection.json').read_text())
+          status = json.loads(Path('/tmp/mlb-settlement-date-status.json').read_text())
+          latest = ((status.get('trainingHealth') or {}).get('latestRun') or {})
+          continuity = latest.get('canonicalSlateContinuity') or training.get('canonicalSlateContinuity') or {}
+          accepted = latest.get('acceptedRowCount', training.get('acceptedRowCount'))
+          try:
+              accepted = int(accepted)
+          except (TypeError, ValueError):
+              accepted = 0
+          blocked = str(continuity.get('blockedSlateDate') or '')
+          processed = str(continuity.get('processedThroughSlateDate') or '')
+          evidence = {
+              'ok': bool(
+                  recovery.get('ok') is True
+                  and training.get('ok') is True
+                  and selection.get('ok') is True
+                  and status.get('ok') is True
+                  and accepted > 0
+                  and (not blocked or blocked > '2026-08-04')
+                  and processed >= '2026-08-04'
+              ),
+              'sourceSha': '${{ env.TARGET_SOURCE_SHA }}',
+              'reconciledSlateCount': recovery.get('reconciledSlateCount'),
+              'firstSlateDateEt': recovery.get('firstSlateDateEt'),
+              'lastSlateDateEt': recovery.get('lastSlateDateEt'),
+              'acceptedRowCount': accepted,
+              'rejectedRowCount': latest.get('rejectedRowCount', training.get('rejectedRowCount')),
+              'status': latest.get('status', training.get('status')),
+              'canonicalSlateContinuity': continuity,
+              'trainingRunId': training.get('runId'),
+              'selectionCaptureRunId': selection.get('runId'),
+              'boundStatusOk': status.get('ok'),
+              'modelTrained': latest.get('modelTrained', training.get('modelTrained')),
+              'liveInferenceAuthority': latest.get('liveInferenceAuthority', training.get('liveInferenceAuthority')),
+              'productionAuthorityChanged': latest.get('productionAuthorityChanged', training.get('productionAuthorityChanged')),
+          }
+          Path('runtime_reports/mlb_prospective_settlement_date_recovery_proof_latest.json').write_text(
+              json.dumps(evidence, indent=2, sort_keys=True, default=str) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(evidence, indent=2, sort_keys=True, default=str))
+          if evidence['liveInferenceAuthority'] is True or evidence['productionAuthorityChanged'] is True:
+              raise SystemExit('Settlement-date repair unexpectedly changed production authority')
+          if not evidence['ok']:
+              raise SystemExit('MLB prospective settlement date recovery is not complete')
+          PY
+
+      - name: Upload exact recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-prospective-settlement-date-recovery-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 90
+          path: |
+            runtime_reports/mlb_prospective_settlement_date_recovery_latest.json
+            runtime_reports/mlb_prospective_settlement_date_recovery_proof_latest.json
+            /tmp/mlb-settlement-date-training.json
+            /tmp/mlb-settlement-date-training-invoke.json
+            /tmp/mlb-settlement-date-selection.json
+            /tmp/mlb-settlement-date-selection-invoke.json
+            /tmp/mlb-settlement-date-status.json
+            /tmp/mlb-settlement-date-status-invoke.json
