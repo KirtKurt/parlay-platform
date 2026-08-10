@@ -318,3 +318,19 @@ def test_real_v2_snapshot_validation_and_live_scoring_bridge_work_together():
     assert prepared["winnerOptimizer"]["fundamentalsApplied"] is True
     assert prepared["fundamentalsLayer"]["weatherMissing"] is True
     assert prepared["homeSignal"]["fundamentalsAdjustment"] > 0
+
+
+def test_selected_away_side_receives_the_inverse_fundamentals_edge(monkeypatch):
+    snapshot = _snapshot()
+    monkeypatch.setattr(bridge, "_snapshot_for_row", lambda row: (snapshot, ()))
+    row = _row()
+    row["predictedSide"] = "away"
+
+    prepared = bridge.apply_to_row(row)
+    scored = winner_stack.enhance_prediction(prepared)
+    fundamentals = scored["winnerStackV2"]["components"]["fundamentals"]
+
+    assert prepared["homeSignal"]["fundamentalsAdjustment"] > 0
+    assert prepared["awaySignal"]["fundamentalsAdjustment"] < 0
+    assert fundamentals["applied"] is True
+    assert fundamentals["edge"] < 0

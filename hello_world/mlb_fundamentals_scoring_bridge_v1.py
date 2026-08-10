@@ -6,6 +6,10 @@ from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional, Seque
 
 
 VERSION = "MLB-FUNDAMENTALS-SCORING-BRIDGE-v1-source-honest-partial-safe"
+SNAPSHOT_DETERMINISM_VERSION = (
+    "MLB-FUNDAMENTALS-SNAPSHOT-CAPTURE-TIME-v1-immutable-pregame-source"
+)
+DETERMINISTIC_MISSING_CAPTURE_TIME = "1970-01-01T00:00:00+00:00"
 
 # These groups are required before fundamentals may influence live direction or
 # confidence. Weather and park are intentionally not required for a side edge:
@@ -80,6 +84,60 @@ def _list_count(value: Any) -> Optional[int]:
     return None
 
 
+def deterministic_capture_time(row: Mapping[str, Any]) -> str:
+    """Return an immutable pregame timestamp for a derived snapshot.
+
+    A public read may execute the runtime wrappers more than once. Wall-clock
+    capture time would therefore change the signed snapshot fingerprint between
+    cached and uncached reads. Prefer the exact source pull bound to the row;
+    fall back only to other persisted pregame timestamps. Rows with no durable
+    timestamp remain deterministically incomplete rather than acquiring a new
+    timestamp every time they are read.
+    """
+
+    lock = row.get("slatePredictionLock")
+    lock = lock if isinstance(lock, Mapping) else {}
+    candidates = (
+        row.get("predictionSourcePullAt"),
+        lock.get("latestScoringPullAt"),
+        row.get("predictionPersistedAtUtc"),
+        row.get("predictionPersistedAt"),
+        row.get("persistedAtUtc"),
+        row.get("persistedAt"),
+        row.get("createdAtUtc"),
+    )
+    for candidate in candidates:
+        if candidate not in (None, ""):
+            return str(candidate)
+    return DETERMINISTIC_MISSING_CAPTURE_TIME
+
+
+def install_snapshot_determinism(snapshot_v2_module: Any) -> Any:
+    if getattr(
+        snapshot_v2_module,
+        "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_V1_INSTALLED",
+        False,
+    ):
+        return snapshot_v2_module
+
+    original_build = snapshot_v2_module.build
+
+    def deterministic_build(
+        row: Dict[str, Any], *, captured_at_utc: Optional[str] = None
+    ) -> Dict[str, Any]:
+        captured_at = captured_at_utc or deterministic_capture_time(row)
+        return original_build(row, captured_at_utc=captured_at)
+
+    snapshot_v2_module.build = deterministic_build
+    snapshot_v2_module.MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_VERSION = (
+        SNAPSHOT_DETERMINISM_VERSION
+    )
+    snapshot_v2_module._INQSI_MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_V1_INSTALLED = (
+        True
+    )
+    return snapshot_v2_module
+
+
 def _snapshot_for_row(row: MutableMapping[str, Any]) -> Tuple[Optional[Dict[str, Any]], Sequence[str]]:
     existing = row.get("fundamentalsSnapshotV2")
     if isinstance(existing, dict):
@@ -88,6 +146,7 @@ def _snapshot_for_row(row: MutableMapping[str, Any]) -> Tuple[Optional[Dict[str,
         try:
             import mlb_fundamentals_snapshot_v2 as snapshot_v2
 
+            install_snapshot_determinism(snapshot_v2)
             snapshot_v2.enhance_row(row)
             candidate = row.get("fundamentalsSnapshotV2")
             snapshot = candidate if isinstance(candidate, dict) else None

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 VERSION = "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest"
+DETERMINISTIC_MISSING_CAPTURE_TIME = "1970-01-01T00:00:00+00:00"
 
 REQUIRED_GROUPS = [
     "confirmed_probable_pitchers",
@@ -99,7 +99,7 @@ def build(row: Dict[str, Any]) -> Dict[str, Any]:
     source_at = row.get("predictionSourcePullAt") or (row.get("slatePredictionLock") or {}).get("latestScoringPullAt")
     return {
         "version": VERSION,
-        "createdAtUtc": datetime.now(timezone.utc).isoformat(),
+        "createdAtUtc": source_at or DETERMINISTIC_MISSING_CAPTURE_TIME,
         "asOfUtc": source_at,
         "gameId": row.get("gameId") or row.get("id"),
         "sourceStatuses": statuses,
@@ -158,13 +158,18 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _install_live_scoring_bridge(module: Any) -> None:
-    """Install the V2-to-winner-stack bridge without changing promotion policy."""
+    """Install the deterministic V2-to-winner-stack bridge safely."""
     try:
         import mlb_fundamentals_scoring_bridge_v1 as scoring_bridge
+        import mlb_fundamentals_snapshot_v2 as snapshot_v2
         import mlb_winner_stack_v2 as winner_stack
 
+        scoring_bridge.install_snapshot_determinism(snapshot_v2)
         scoring_bridge.install_winner_stack(winner_stack)
         module.MLB_FUNDAMENTALS_SCORING_BRIDGE_VERSION = scoring_bridge.VERSION
+        module.MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_VERSION = (
+            scoring_bridge.SNAPSHOT_DETERMINISM_VERSION
+        )
         module._INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED = bool(
             getattr(
                 winner_stack,
@@ -172,9 +177,17 @@ def _install_live_scoring_bridge(module: Any) -> None:
                 False,
             )
         )
+        module._INQSI_MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_V1_INSTALLED = bool(
+            getattr(
+                snapshot_v2,
+                "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_V1_INSTALLED",
+                False,
+            )
+        )
         module.MLB_FUNDAMENTALS_SCORING_BRIDGE_INSTALL_ERROR = None
     except Exception as exc:
         module._INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED = False
+        module._INQSI_MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_V1_INSTALLED = False
         module.MLB_FUNDAMENTALS_SCORING_BRIDGE_INSTALL_ERROR = (
             f"{type(exc).__name__}:{str(exc)[:240]}"
         )
