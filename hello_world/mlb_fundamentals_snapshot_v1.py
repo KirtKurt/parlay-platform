@@ -157,7 +157,33 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+def _install_live_scoring_bridge(module: Any) -> None:
+    """Install the V2-to-winner-stack bridge without changing promotion policy."""
+    try:
+        import mlb_fundamentals_scoring_bridge_v1 as scoring_bridge
+        import mlb_winner_stack_v2 as winner_stack
+
+        scoring_bridge.install_winner_stack(winner_stack)
+        module.MLB_FUNDAMENTALS_SCORING_BRIDGE_VERSION = scoring_bridge.VERSION
+        module._INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED = bool(
+            getattr(
+                winner_stack,
+                "_INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED",
+                False,
+            )
+        )
+        module.MLB_FUNDAMENTALS_SCORING_BRIDGE_INSTALL_ERROR = None
+    except Exception as exc:
+        module._INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED = False
+        module.MLB_FUNDAMENTALS_SCORING_BRIDGE_INSTALL_ERROR = (
+            f"{type(exc).__name__}:{str(exc)[:240]}"
+        )
+
+
 def apply(module: Any):
+    # Run this even when the legacy snapshot wrapper was installed earlier.
+    # Runtime patch ordering may import the winner stack after sitecustomize.
+    _install_live_scoring_bridge(module)
     if getattr(module, "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V1_APPLIED", False):
         return module
     original = module.predict_all
