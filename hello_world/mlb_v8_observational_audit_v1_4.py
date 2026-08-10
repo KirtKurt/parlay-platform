@@ -29,9 +29,16 @@ def align_runtime_report(report: Mapping[str, Any]) -> Dict[str, Any]:
     upper = float(model.get("maxProbability", 0.95))
     if not (0.0 < lower < upper < 1.0):
         raise ValueError("observational fitted model probability bounds are invalid")
+
+    # The runtime verifier compares the bundle contract with the serialized
+    # fitted model.  Make both authorities explicit, including for model fakes
+    # and legacy residuals that relied on the fitted-model defaults.
+    model["minProbability"] = lower
+    model["maxProbability"] = upper
     architecture["sourceTrainingProbabilityBounds"] = source_bounds
     architecture["probabilityBounds"] = [lower, upper]
     architecture["probabilityBoundsAuthority"] = "FITTED_OBSERVATIONAL_MODEL"
+    value["model"] = model
     value["architecture"] = architecture
     return value
 
