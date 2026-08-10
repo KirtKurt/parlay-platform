@@ -1,6 +1,6 @@
 # MLB V8 Hourly Numerical Status
 
-**Updated:** 2026-08-10T10:34:10.621148+00:00
+**Updated:** 2026-08-10T11:56:24.094083+00:00
 
 Accuracy is shown only when a source explicitly publishes it. This reporter never derives accuracy from wins and losses. Backfill, training, retrospective validation, prospective audit, shadow evaluation, and production promotion remain separate.
 
@@ -8,18 +8,18 @@ Accuracy is shown only when a source explicitly publishes it. This reporter neve
 
 | Metric | Current | Change |
 |---|---:|---:|
-| Historical eligible games | **4185** | **+15** |
-| Completed slates | **337** | **+1** |
+| Historical eligible games | **4185** | **0** |
+| Completed slates | **337** | **0** |
 | Historical date reached | **2026-08-09** | **—** |
 | Current historical cursor | **2026-08-10** | **—** |
 | Configured recovery target | **4405** | **0** |
 | Remaining games | **Unavailable — unavailable (source-reported; not recomputed)** | **—** |
 | Remaining slates | **Unavailable — unavailable (not calculated when omitted)** | **—** |
-| Optimizer revision | **6045** | **+9** |
-| Network requests | **26718** | **+75** |
-| Credits consumed | **267180** | **+750** |
+| Optimizer revision | **6045** | **0** |
+| Network requests | **26718** | **0** |
+| Credits consumed | **267180** | **0** |
 | Optimizer phase | **WAITING_FOR_SETTLED_HORIZON** | — |
-| Latest state timestamp | **2026-08-10T09:16:44.896912+00:00** (current) | — |
+| Latest state timestamp | **2026-08-10T09:16:44.896912+00:00** (stale) | — |
 
 Historical eligible games and settled trainer games are separate, **incomparable** populations unless a source explicitly defines otherwise.
 
@@ -27,12 +27,12 @@ Historical eligible games and settled trainer games are separate, **incomparable
 
 | Metric | Current | Change |
 |---|---:|---:|
-| Latest trainer workflow | **31375978838 / SUCCESS** | — |
+| Latest trainer workflow | **31384706439 / SUCCESS** | — |
 | Trainer report status | **SUCCESS** | — |
-| Trainer timestamp | **2026-08-10T09:48:01.878447+00:00** (current) | — |
-| Training rows | **3713** | **+23** |
+| Trainer timestamp | **2026-08-10T11:45:45.252387+00:00** (current) | — |
+| Training rows | **3713** | **0** |
 | Validation samples | **206** | **0** |
-| Walk-forward samples | **266** | **+7** |
+| Walk-forward samples | **266** | **0** |
 | Settled games | **Unavailable — unavailable** | **—** |
 | Prospective graded predictions | **Unavailable — unavailable_unverified (prospective V8 ledger only)** | **—** |
 | Records loaded | **4185** | — |
@@ -59,7 +59,7 @@ These are retrospective historical measurements, not prospective shadow-pick win
 | Metric | Value |
 |---|---:|
 | Status | **WAITING_FOR_RETROSPECTIVE_GATE** |
-| Timestamp | **2026-08-10T09:52:00.048391+00:00 (current)** |
+| Timestamp | **2026-08-10T11:49:14.024203+00:00 (current)** |
 | Sample size | **Unavailable** |
 | Wins | **Unavailable** |
 | Losses | **Unavailable** |
@@ -92,21 +92,21 @@ These are retrospective historical measurements, not prospective shadow-pick win
 | Metric | Value |
 |---|---:|
 | Status / authority | **V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY** |
-| Timestamp | **2026-08-10T09:44:31.976749+00:00 (current)** |
-| Processed games | **495** |
-| Eligible games | **495** |
+| Timestamp | **2026-08-10T11:43:37.222180+00:00 (current)** |
+| Processed games | **505** |
+| Eligible games | **505** |
 | New eligible games | **5** |
 | Ineligible games | **0** |
-| Remaining games | **3690** |
+| Remaining games | **3680** |
 | Provider calls | **36** |
-| Pointer revision | **167** |
+| Pointer revision | **169** |
 | Progress made | **Yes** |
 
 ## Artifacts and production promotion
 
 | Metric | Value |
 |---|---:|
-| Trainer artifacts | **1 / 167611 bytes** |
+| Trainer artifacts | **1 / 168211 bytes** |
 | Shadow artifacts | **Unavailable / Unavailable bytes** |
 | Deployment artifacts | **0 / 0 bytes** |
 | Latest deployment workflow | **31375399740 / SKIPPED** |
@@ -125,4 +125,4 @@ These are retrospective historical measurements, not prospective shadow-pick win
 
 A quality gate is not a runtime failure. Promotion remains separate from collection, backfill, training, validation, prospective auditing, and shadow evaluation.
 
-<!-- MLB_V8_HOURLY_STATE:{"completedSlateCount":337,"contextEligibleGames":495,"contextNewEligibleGames":5,"contextPointerRevision":167,"contextProcessedGames":495,"contextProviderCalls":36,"contextRemainingGames":3690,"creditsConsumed":267180,"deploymentArtifactCount":0,"gradedPredictions":null,"historicalCursorDate":"2026-08-10","historicalDateReached":"2026-08-09","historicalEligibleGames":4185,"historicalRemainingGames":null,"historicalRemainingSlates":null,"historicalTargetGames":4405,"learnedCandidateCount":96,"learnedEligibleCandidateCount":0,"learningSteps":63360,"networkRequests":26718,"optimizerRevision":6045,"prospectiveSample":null,"settledGames":null,"shadowArtifactCount":null,"shadowSample":null,"trainingArtifactCount":1,"trainingRows":3713,"validationSamples":206,"walkForwardSamples":266} -->
+<!-- MLB_V8_HOURLY_STATE:{"completedSlateCount":337,"contextEligibleGames":505,"contextNewEligibleGames":5,"contextPointerRevision":169,"contextProcessedGames":505,"contextProviderCalls":36,"contextRemainingGames":3680,"creditsConsumed":267180,"deploymentArtifactCount":0,"gradedPredictions":null,"historicalCursorDate":"2026-08-10","historicalDateReached":"2026-08-09","historicalEligibleGames":4185,"historicalRemainingGames":null,"historicalRemainingSlates":null,"historicalTargetGames":4405,"learnedCandidateCount":96,"learnedEligibleCandidateCount":0,"learningSteps":63360,"networkRequests":26718,"optimizerRevision":6045,"prospectiveSample":null,"settledGames":null,"shadowArtifactCount":null,"shadowSample":null,"trainingArtifactCount":1,"trainingRows":3713,"validationSamples":206,"walkForwardSamples":266} -->
