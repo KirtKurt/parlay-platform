@@ -136,6 +136,36 @@ def _proven_ledger_end(state: Mapping[str, Any], fallback: str) -> date:
     return max(candidates)
 
 
+def _waiting_proof_matches(
+    state: Mapping[str, Any],
+    *,
+    previous_end: date,
+    horizon: date,
+    configured_end: date,
+) -> bool:
+    """Return true when an existing settled-horizon proof is already sufficient.
+
+    Older proofs intentionally remain valid. Optional telemetry may be added when
+    entering a new wait, but it must not force a one-time rewrite of an otherwise
+    semantically identical waiting state.
+    """
+    if state.get("phase") != WAITING_PHASE:
+        return False
+    proof = state.get("settledHorizonWait") or {}
+    if not isinstance(proof, Mapping):
+        return False
+    expected_next = (previous_end + timedelta(days=1)).isoformat()
+    return bool(
+        str(proof.get("authorizedThroughDate") or "") == previous_end.isoformat()
+        and str(proof.get("settledHorizonDate") or "") == horizon.isoformat()
+        and str(proof.get("configuredCeilingDate") or "") == configured_end.isoformat()
+        and str(proof.get("nextEligibleSlateDate") or "") == expected_next
+        and proof.get("blockingError") is False
+        and str(state.get("rangeExtensionNextRetryDate") or "") == expected_next
+        and not state.get("lastError")
+    )
+
+
 def install(handler: Any, base: Any) -> None:
     """Install idempotent state writes and an honest settled-horizon phase."""
     if getattr(handler, "_INQSI_HISTORICAL_STATE_INTEGRITY_V1_INSTALLED", False):
@@ -170,7 +200,6 @@ def install(handler: Any, base: Any) -> None:
             if repaired_end > persisted_end:
                 repaired = copy.deepcopy(state)
                 repaired["endDate"] = repaired_end.isoformat()
-                repaired.setdefault("rangeExtensionStateRepair", {})
                 repaired["rangeExtensionStateRepair"] = {
                     "version": VERSION,
                     "priorEndDate": persisted_end.isoformat(),
@@ -219,6 +248,13 @@ def install(handler: Any, base: Any) -> None:
             and (phase == "DATA_RANGE_EXHAUSTED" or current > previous_end or phase == WAITING_PHASE)
         )
         if not should_wait:
+            return
+        if _waiting_proof_matches(
+            state,
+            previous_end=previous_end,
+            horizon=horizon,
+            configured_end=configured_end,
+        ):
             return
 
         waiting = copy.deepcopy(state)
