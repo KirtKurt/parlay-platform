@@ -4,7 +4,8 @@
 The configured historical end date is an authorized recovery ceiling. The durable
 optimizer state may end earlier while it waits for the next MLB slate to become
 provably settled. This verifier distinguishes that healthy bounded wait from a
-stall, quota block, corrupt state, or unproductive active phase.
+stall, quota block, corrupt state, stale range exhaustion, or unproductive active
+phase.
 """
 from __future__ import annotations
 
@@ -20,17 +21,21 @@ from typing import Any, Dict, Mapping
 import boto3
 
 
-VERSION = "MLB-HISTORICAL-WATCHDOG-v2-settled-horizon-aware"
+VERSION = "MLB-HISTORICAL-WATCHDOG-v3-current-wait-contract"
 WAITING_PHASE = "WAITING_FOR_SETTLED_HORIZON"
 WAITING_CONTRACT_VERSION = (
+    "MLB-HISTORICAL-STATE-INTEGRITY-v2-settled-horizon-ledger-aware"
+)
+LEGACY_WAITING_CONTRACT_VERSION = (
     "MLB-HISTORICAL-STATE-INTEGRITY-v1-settled-horizon-idempotent"
+)
+WAITING_CONTRACT_VERSIONS = frozenset(
+    {WAITING_CONTRACT_VERSION, LEGACY_WAITING_CONTRACT_VERSION}
 )
 ACTIVE_PHASES = frozenset(
     {"BACKFILLING", "OPTIMIZING", "REMATERIALIZING_FEATURES"}
 )
-TERMINAL_PHASES = frozenset(
-    {"PROMOTED", "DATA_RANGE_EXHAUSTED", "CANDIDATE_REJECTED"}
-)
+TERMINAL_PHASES = frozenset({"PROMOTED", "CANDIDATE_REJECTED"})
 PROGRESS_FIELDS = (
     "networkRequestCount",
     "eligibleGameCount",
@@ -114,19 +119,25 @@ def validate_common_state(
     state: Mapping[str, Any], *, expected_ceiling: str
 ) -> Dict[str, Any]:
     phase = str(state.get("phase") or "")
-    allowed = ACTIVE_PHASES | TERMINAL_PHASES | {WAITING_PHASE}
+    allowed = ACTIVE_PHASES | TERMINAL_PHASES | {WAITING_PHASE, "DATA_RANGE_EXHAUSTED"}
     if phase == "PAUSED_QUOTA":
         raise ValueError("historical_ingestion_blocked_by_quota")
     if phase not in allowed:
         raise ValueError(f"unexpected_historical_phase:{phase}")
+
     if state.get("featureRematerializationComplete") is not True:
         raise ValueError("feature_rematerialization_incomplete")
     rematerialized = _int(state.get("featureRematerializedSlateCount"))
     rematerialization_total = _int(
         state.get("featureRematerializationTotalSlateCount")
     )
+    completed = _int(state.get("completeSlateCount"))
     if rematerialized != rematerialization_total:
         raise ValueError("feature_rematerialization_counts_disagree")
+    if completed and (
+        rematerialized != completed or rematerialization_total != completed
+    ):
+        raise ValueError("feature_rematerialization_does_not_cover_completed_slates")
     if state.get("featureRematerializationErrors"):
         raise ValueError("feature_rematerialization_errors_remain")
     if state.get("lastError"):
@@ -138,6 +149,8 @@ def validate_common_state(
     )
     if authorized_through > ceiling:
         raise ValueError("authorized_range_exceeds_configured_ceiling")
+    if phase == "DATA_RANGE_EXHAUSTED" and authorized_through < ceiling:
+        raise ValueError("data_range_exhausted_before_configured_ceiling")
 
     quota = (state.get("lastQuota") or {}).get("x-requests-remaining")
     if isinstance(quota, int) and quota <= 100:
@@ -149,6 +162,7 @@ def validate_common_state(
         "configuredCeilingDate": ceiling.isoformat(),
         "authorizedThroughDate": authorized_through.isoformat(),
         "quotaRemaining": quota,
+        "completeSlateCount": completed,
         "featureRematerializedSlateCount": rematerialized,
         "featureRematerializationTotalSlateCount": rematerialization_total,
     }
@@ -165,7 +179,8 @@ def validate_waiting_state(
     wait = state.get("settledHorizonWait")
     if not isinstance(wait, Mapping):
         raise ValueError("settled_horizon_wait_proof_missing")
-    if wait.get("version") != WAITING_CONTRACT_VERSION:
+    wait_version = str(wait.get("version") or "")
+    if wait_version not in WAITING_CONTRACT_VERSIONS:
         raise ValueError("settled_horizon_wait_version_mismatch")
     if wait.get("blockingError") is not False:
         raise ValueError("settled_horizon_wait_is_blocking")
@@ -210,9 +225,17 @@ def validate_waiting_state(
     return {
         **common,
         "waitingHealthy": True,
+        "waitContractVersion": wait_version,
         "settledHorizonDate": settled.isoformat(),
         "nextEligibleSlateDate": next_eligible.isoformat(),
         "blockingError": False,
+        "eligibleGameCount": _int(state.get("eligibleGameCount")),
+        "targetSettledGames": _int(state.get("targetSettledGames")),
+        "remainingEvidenceGames": max(
+            0,
+            _int(state.get("targetSettledGames"))
+            - _int(state.get("eligibleGameCount")),
+        ),
     }
 
 
@@ -445,7 +468,7 @@ def run(
             function_name,
             {
                 "mode": "orchestrate",
-                "run": "github_watchdog_wait_idempotency_v2",
+                "run": "github_watchdog_wait_idempotency_v3",
             },
         )
         if second_resume.get("ok") is not True:
@@ -491,6 +514,7 @@ def run(
         "functionName": function_name,
         "runtimeConfiguration": {
             "handler": config.get("Handler"),
+            "deployGitSha": environment.get("INQSI_DEPLOY_GIT_SHA"),
             "configuredCeilingDate": expected_ceiling,
             "maximumCredits": environment.get(
                 "MLB_HISTORICAL_MAX_CREDITS"
