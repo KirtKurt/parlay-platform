@@ -1,13 +1,13 @@
 {
   "classification": "TRAINER_HEALTHY",
-  "createdAtUtc": "2026-08-10T21:08:30.694530+00:00",
+  "createdAtUtc": "2026-08-10T21:11:53.677323+00:00",
   "diagnosticOnly": true,
   "lambdaConfiguration": {
     "Architectures": [
       "x86_64"
     ],
-    "CodeSha256": "DWdupVD3tA7uo9zfp82qRPPsyz6IFZ4M8YHYJKlkZNk=",
-    "CodeSize": 1534530,
+    "CodeSha256": "VyBp2l1/C/BM+pGrIAwotG96buutwlxwNzyb0LSvza8=",
+    "CodeSize": 1537803,
     "Description": "",
     "EphemeralStorage": {
       "Size": 512
@@ -15,11 +15,11 @@
     "FunctionArn": "arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
     "FunctionName": "parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
     "Handler": "mlb_ml_aws_training_v1_compat.lambda_handler",
-    "LastModified": "2026-08-10T19:48:38.000+0000",
+    "LastModified": "2026-08-10T21:09:38.000+0000",
     "LastUpdateStatus": "Successful",
     "MemorySize": 2048,
     "PackageType": "Zip",
-    "RevisionId": "dfff6e60-0484-46d9-8084-213d76ec4a48",
+    "RevisionId": "70875ca9-9bcb-4812-b277-6d0581928091",
     "Runtime": "python3.11",
     "State": "Active",
     "Timeout": 900,
@@ -60,7 +60,7 @@
   "productionAuthorityChanged": false,
   "proofType": "MLB_TRAINER_DEPLOY_HEALTH_DIAGNOSTIC",
   "secretExposed": false,
-  "sourceSha": "af63759aecafee59e171de8256c1697dfd6d5d9a",
+  "sourceSha": "053b948960824d0431d7f68db528e5c096041239",
   "statusAfter": {
     "automaticPromotionEnabled": false,
     "experimentId": "mlb-v2-2026-08-03-future-prospective-r7",
@@ -72,33 +72,37 @@
       "prospectiveTestSealed": false,
       "revision": 0
     },
-    "ok": true,
+    "ok": false,
     "releaseCutoffUtc": "2026-08-03T04:00:00+00:00",
     "runtimeAuthorityActivationAvailable": false,
     "selectionCaptureHealth": {
-      "deploymentIdentityMatches": true,
-      "errors": [],
+      "deploymentIdentityMatches": false,
+      "errors": [
+        "latest_status_deployment_identity_mismatch"
+      ],
       "executionMode": "selection_capture",
       "latestRun": {
         "automaticPromotionEnabled": false,
         "championChanged": false,
-        "createdAtUtc": "2026-08-10T21:04:04.418690+00:00",
+        "createdAtUtc": "2026-08-10T21:11:03.613677+00:00",
         "deploymentIdentity": {
-          "gitSha": "61c0a6909e7b6247b19ef8f9ddb2c83dab40695c",
-          "templateSha256": "6173c1eb2889d2e16308cd66d21c57a52c4d310890b26b5f193e6d7304a388d1"
+          "gitSha": "d61c4dbc3c0b7abfc486c4e175273ff39a34db9d",
+          "templateSha256": "9e5519d55d5f7898e819cb68dca35edd2f07c87f1203427b3bd8b77789e8e5cb"
         },
         "executionMode": "selection_capture",
         "liveInferenceAuthority": false,
         "modelTrained": false,
         "ok": true,
-        "runId": "ab8d8f4be0d367191193c699",
+        "runId": "94c58df62fdd831dec1547d0",
         "status": "WAITING_FOR_PERSISTED_CHALLENGER"
       },
-      "ok": true
+      "ok": false
     },
     "trainingHealth": {
-      "deploymentIdentityMatches": true,
-      "errors": [],
+      "deploymentIdentityMatches": false,
+      "errors": [
+        "latest_status_deployment_identity_mismatch"
+      ],
       "executionMode": "training",
       "latestRun": {
         "acceptedRowCount": 0,
@@ -142,10 +146,10 @@
           "version": "MLB-ML-CANONICAL-SLATE-CONTINUITY-v2-exact-official-game-set"
         },
         "championChanged": false,
-        "createdAtUtc": "2026-08-10T21:08:28.981813+00:00",
+        "createdAtUtc": "2026-08-10T21:11:51.491694+00:00",
         "deploymentIdentity": {
-          "gitSha": "61c0a6909e7b6247b19ef8f9ddb2c83dab40695c",
-          "templateSha256": "6173c1eb2889d2e16308cd66d21c57a52c4d310890b26b5f193e6d7304a388d1"
+          "gitSha": "d61c4dbc3c0b7abfc486c4e175273ff39a34db9d",
+          "templateSha256": "9e5519d55d5f7898e819cb68dca35edd2f07c87f1203427b3bd8b77789e8e5cb"
         },
         "executionMode": "training",
         "liveInferenceAuthority": false,
@@ -223,10 +227,10 @@
         "rejectionReasonCounts": {
           "current_canonical_row_not_training_eligible": 8
         },
-        "runId": "7536fed9a5827cc3f60f7d26",
+        "runId": "ff3a7592aae0555982473712",
         "status": "WAITING_FOR_CANONICAL_SLATE_CONTINUITY"
       },
-      "ok": true
+      "ok": false
     },
     "v2InferenceConsumerInstalled": false,
     "version": "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow"
@@ -235,14 +239,14 @@
     "ExecutedVersion": "$LATEST",
     "StatusCode": 200,
     "parseError": null,
-    "redactedLogTail": "START RequestId: 8002573a-bc69-4321-bcfe-ea60dc0583a8 Version: $LATEST\nEND RequestId: 8002573a-bc69-4321-bcfe-ea60dc0583a8\nREPORT RequestId: 8002573a-bc69-4321-bcfe-ea60dc0583a8\tDuration: 92.92 ms\tBilled Duration: 93 ms\tMemory Size: 2048 MB\tMax Memory Used: 179 MB\t"
+    "redactedLogTail": "START RequestId: bd24c14d-7f1b-4ec6-9ac6-00b065cc2bbb Version: $LATEST\nEND RequestId: bd24c14d-7f1b-4ec6-9ac6-00b065cc2bbb\nREPORT RequestId: bd24c14d-7f1b-4ec6-9ac6-00b065cc2bbb\tDuration: 101.68 ms\tBilled Duration: 830 ms\tMemory Size: 2048 MB\tMax Memory Used: 113 MB\tInit Duration: 727.54 ms\t"
   },
   "statusResponseParseError": null,
   "trainingInvocation": {
     "ExecutedVersion": "$LATEST",
     "StatusCode": 200,
     "parseError": null,
-    "redactedLogTail": "START RequestId: e8f7b056-2d4b-4076-ae31-936f95d16f54 Version: $LATEST\nEND RequestId: e8f7b056-2d4b-4076-ae31-936f95d16f54\nREPORT RequestId: e8f7b056-2d4b-4076-ae31-936f95d16f54\tDuration: 47267.45 ms\tBilled Duration: 48072 ms\tMemory Size: 2048 MB\tMax Memory Used: 178 MB\tInit Duration: 803.95 ms\t"
+    "redactedLogTail": "START RequestId: fcde4f3f-076e-4ad8-816e-6ca65bb10ee9 Version: $LATEST\nEND RequestId: fcde4f3f-076e-4ad8-816e-6ca65bb10ee9\nREPORT RequestId: fcde4f3f-076e-4ad8-816e-6ca65bb10ee9\tDuration: 46317.57 ms\tBilled Duration: 46318 ms\tMemory Size: 2048 MB\tMax Memory Used: 177 MB\t"
   },
   "trainingResponse": {
     "acceptedRowCount": 0,
@@ -287,10 +291,10 @@
     },
     "championChanged": false,
     "continuityWaitCompatibilityVersion": "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v5-persisted-return",
-    "createdAtUtc": "2026-08-10T21:08:28.981813+00:00",
+    "createdAtUtc": "2026-08-10T21:11:51.491694+00:00",
     "deploymentIdentity": {
-      "gitSha": "61c0a6909e7b6247b19ef8f9ddb2c83dab40695c",
-      "templateSha256": "6173c1eb2889d2e16308cd66d21c57a52c4d310890b26b5f193e6d7304a388d1"
+      "gitSha": "d61c4dbc3c0b7abfc486c4e175273ff39a34db9d",
+      "templateSha256": "9e5519d55d5f7898e819cb68dca35edd2f07c87f1203427b3bd8b77789e8e5cb"
     },
     "executionMode": "training",
     "experimentId": "mlb-v2-2026-08-03-future-prospective-r7",
@@ -375,7 +379,7 @@
       "train": 300,
       "validation": 100
     },
-    "runId": "7536fed9a5827cc3f60f7d26",
+    "runId": "ff3a7592aae0555982473712",
     "selectionCaptureBeforeTraining": {
       "collisionPolicy": "separate_global_lease_domain",
       "healthEvaluatedByTraining": false,
@@ -392,5 +396,5 @@
   },
   "trainingResponseParseError": null,
   "version": "MLB-TRAINER-DEPLOY-DIAGNOSTIC-v1-redacted-fail-closed",
-  "workflowRunId": "31432337398"
+  "workflowRunId": "31432603263"
 }
