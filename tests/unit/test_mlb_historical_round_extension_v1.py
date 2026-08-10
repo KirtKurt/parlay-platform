@@ -73,7 +73,8 @@ def test_round_does_not_reuse_or_overlap_previous_audit_dates():
     value = handler._migrate_state(state)
 
     assert value["phase"] == "CANDIDATE_REJECTED"
-    assert value["freshAuditStartDate"] == "2026-04-12"
+    assert value["freshAuditStartDate"] == "2026-05-01"
+    assert value["freshAuditExpansionRequired"] is True
 
 
 def test_round_does_not_reopen_after_promotion_or_with_bad_features():
@@ -89,3 +90,84 @@ def test_round_does_not_reopen_after_promotion_or_with_bad_features():
         state.update(mutation)
         value = handler._migrate_state(state)
         assert value["phase"] == "CANDIDATE_REJECTED"
+
+
+def test_migrated_backfill_state_repairs_missing_fresh_audit_flags():
+    handler = _handler()
+    extension.install(handler)
+    state = {
+        "phase": "BACKFILLING",
+        "optimizationRound": 11,
+        "paidBackfillAuthorized": True,
+        "featureRematerializationComplete": True,
+        "featureRematerializationErrors": [],
+        "currentDate": "2026-08-08",
+        "endDate": "2026-08-08",
+        "eligibleGameCount": 4155,
+        "targetSettledGames": 4155,
+        "freshAuditExpansionRequired": False,
+        "freshAuditStartDate": None,
+        "evaluatedAuditWindows": [
+            {"dates": ["2026-07-20", "2026-08-07"]},
+        ],
+        "lastError": (
+            "OrchestrationError: untouched audit dates were reused after label evaluation: "
+            "2026-07-20,2026-08-07"
+        ),
+    }
+
+    value = handler._migrate_state(state)
+
+    assert value["phase"] == "BACKFILLING"
+    assert value["freshAuditExpansionRequired"] is True
+    assert value["freshAuditStartDate"] == "2026-08-08"
+    assert value["targetSettledGames"] == 4405
+    assert value["lastError"] is None
+    assert value["auditReuseRecovery"]["latestPreviouslyEvaluatedAuditDate"] == "2026-08-07"
+    assert value["auditReuseRecovery"]["strictlyLaterAuditRequired"] is True
+
+
+def test_optimizing_retry_is_forced_onto_strictly_later_holdout():
+    handler = _handler()
+    extension.install(handler)
+    state = {
+        "phase": "OPTIMIZING",
+        "optimizationRound": 11,
+        "currentDate": "2026-08-08",
+        "eligibleGameCount": 4155,
+        "targetSettledGames": 4405,
+        "freshAuditExpansionRequired": False,
+        "freshAuditStartDate": "2026-07-20",
+        "evaluatedAuditWindows": [
+            {"dates": ["2026-07-20", "2026-08-07"]},
+        ],
+    }
+
+    value = handler._migrate_state(state)
+
+    assert value["phase"] == "OPTIMIZING"
+    assert value["freshAuditExpansionRequired"] is True
+    assert value["freshAuditStartDate"] == "2026-08-08"
+    assert value["freshAuditCollectedDayCount"] == 0
+    assert value["freshAuditCollectedGameCount"] == 0
+
+
+def test_valid_existing_strictly_later_boundary_is_idempotent():
+    handler = _handler()
+    extension.install(handler)
+    state = {
+        "phase": "BACKFILLING",
+        "optimizationRound": 11,
+        "currentDate": "2026-08-08",
+        "eligibleGameCount": 4155,
+        "targetSettledGames": 4405,
+        "freshAuditExpansionRequired": True,
+        "freshAuditStartDate": "2026-08-08",
+        "evaluatedAuditWindows": [
+            {"dates": ["2026-07-20", "2026-08-07"]},
+        ],
+    }
+
+    value = handler._migrate_state(state)
+
+    assert value == state
