@@ -1,0 +1,236 @@
+name: Diagnose MLB trainer deploy health once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/diagnose_mlb_trainer_deploy_health.py"
+      - "tests/unit/test_diagnose_mlb_trainer_deploy_health.py"
+      - ".github/workflows/mlb-trainer-deploy-health-diagnostic-once.yml"
+  workflow_run:
+    workflows: ["Deploy SAM to AWS"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-trainer-deploy-health-diagnostic
+  cancel-in-progress: false
+
+env:
+  REPORT_PATH: runtime_reports/mlb_trainer_deploy_health_diagnostic_latest.json
+  CANDIDATE_PATH: /tmp/mlb-trainer-deploy-health-diagnostic.json
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install verification runtime
+        run: python -m pip install --quiet "pytest>=8,<9" "PyYAML>=6,<7"
+
+      - name: Verify redacted diagnostic contract
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/diagnose_mlb_trainer_deploy_health.py
+          python -m pytest -q tests/unit/test_diagnose_mlb_trainer_deploy_health.py
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          path = Path('.github/workflows/mlb-trainer-deploy-health-diagnostic-once.yml')
+          value = yaml.load(path.read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+          assert isinstance(value, dict)
+          assert value.get('name') == 'Diagnose MLB trainer deploy health once'
+          assert 'jobs' in value and {'verify', 'diagnose'} <= set(value['jobs'])
+          PY
+          git diff --check
+
+  diagnose:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.head_branch == 'main')
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TARGET_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Checkout exact deployed source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SOURCE_SHA }}
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Invoke deployed trainer and retain redacted failure evidence
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          rm -f \
+            /tmp/mlb-trainer-diagnostic-training.json \
+            /tmp/mlb-trainer-diagnostic-training-invocation.json \
+            /tmp/mlb-trainer-diagnostic-training.stderr \
+            /tmp/mlb-trainer-diagnostic-status.json \
+            /tmp/mlb-trainer-diagnostic-status-invocation.json \
+            /tmp/mlb-trainer-diagnostic-status.stderr \
+            /tmp/mlb-trainer-diagnostic-configuration.json \
+            "$CANDIDATE_PATH"
+
+          TRAINER_ARN=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --region "$AWS_REGION_VALUE" \
+            --query "Stacks[0].Outputs[?OutputKey=='MLBMLTrainingFunctionArn'].OutputValue" \
+            --output text)
+          test -n "$TRAINER_ARN"
+          test "$TRAINER_ARN" != "None"
+
+          aws lambda get-function-configuration \
+            --function-name "$TRAINER_ARN" \
+            --region "$AWS_REGION_VALUE" \
+            --output json > /tmp/mlb-trainer-diagnostic-configuration.json
+
+          set +e
+          aws lambda invoke \
+            --function-name "$TRAINER_ARN" \
+            --region "$AWS_REGION_VALUE" \
+            --cli-binary-format raw-in-base64-out \
+            --log-type Tail \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"aws_native_deploy_health_diagnostic"}' \
+            /tmp/mlb-trainer-diagnostic-training.json \
+            > /tmp/mlb-trainer-diagnostic-training-invocation.json \
+            2> /tmp/mlb-trainer-diagnostic-training.stderr
+          TRAINING_EXIT=$?
+
+          aws lambda invoke \
+            --function-name "$TRAINER_ARN" \
+            --region "$AWS_REGION_VALUE" \
+            --cli-binary-format raw-in-base64-out \
+            --log-type Tail \
+            --payload '{"sport":"mlb","mode":"status"}' \
+            /tmp/mlb-trainer-diagnostic-status.json \
+            > /tmp/mlb-trainer-diagnostic-status-invocation.json \
+            2> /tmp/mlb-trainer-diagnostic-status.stderr
+          STATUS_EXIT=$?
+          set -e
+
+          TRAINING_EXIT="$TRAINING_EXIT" STATUS_EXIT="$STATUS_EXIT" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          pairs = (
+              (
+                  Path('/tmp/mlb-trainer-diagnostic-training.json'),
+                  Path('/tmp/mlb-trainer-diagnostic-training-invocation.json'),
+                  Path('/tmp/mlb-trainer-diagnostic-training.stderr'),
+                  int(os.environ['TRAINING_EXIT']),
+              ),
+              (
+                  Path('/tmp/mlb-trainer-diagnostic-status.json'),
+                  Path('/tmp/mlb-trainer-diagnostic-status-invocation.json'),
+                  Path('/tmp/mlb-trainer-diagnostic-status.stderr'),
+                  int(os.environ['STATUS_EXIT']),
+              ),
+          )
+          for response_path, invocation_path, stderr_path, exit_code in pairs:
+              if not response_path.exists():
+                  response_path.write_text('{}\n', encoding='utf-8')
+              try:
+                  invocation = json.loads(invocation_path.read_text(encoding='utf-8'))
+                  if not isinstance(invocation, dict):
+                      invocation = {}
+              except Exception:
+                  invocation = {}
+              invocation['CliExitCode'] = exit_code
+              if exit_code:
+                  try:
+                      invocation['CliError'] = stderr_path.read_text(encoding='utf-8')[-2000:]
+                  except Exception:
+                      invocation['CliError'] = 'aws_cli_invoke_failed'
+              invocation_path.write_text(
+                  json.dumps(invocation, indent=2, sort_keys=True) + '\n',
+                  encoding='utf-8',
+              )
+          PY
+
+          python scripts/diagnose_mlb_trainer_deploy_health.py \
+            --training-response /tmp/mlb-trainer-diagnostic-training.json \
+            --training-invocation /tmp/mlb-trainer-diagnostic-training-invocation.json \
+            --status-response /tmp/mlb-trainer-diagnostic-status.json \
+            --status-invocation /tmp/mlb-trainer-diagnostic-status-invocation.json \
+            --configuration /tmp/mlb-trainer-diagnostic-configuration.json \
+            --output "$CANDIDATE_PATH" \
+            --source-sha "$TARGET_SOURCE_SHA" \
+            --workflow-run-id "$GITHUB_RUN_ID"
+
+      - name: Upload redacted trainer diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-trainer-deploy-health-${{ github.run_id }}
+          path: /tmp/mlb-trainer-deploy-health-diagnostic.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish redacted diagnostic evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s "$CANDIDATE_PATH"
+          python -m json.tool "$CANDIDATE_PATH" >/dev/null
+          cp "$CANDIDATE_PATH" /tmp/mlb-trainer-deploy-health-diagnostic-publish.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-trainer-deploy-health-diagnostic origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb-trainer-deploy-health-diagnostic-publish.json "$REPORT_PATH"
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB trainer deploy health diagnostic [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
+
+      - name: Enforce diagnostic safety
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          value = json.loads(Path(os.environ['CANDIDATE_PATH']).read_text(encoding='utf-8'))
+          assert value.get('proofType') == 'MLB_TRAINER_DEPLOY_HEALTH_DIAGNOSTIC', value
+          assert value.get('secretExposed') is False, value
+          assert value.get('diagnosticOnly') is True, value
+          assert value.get('modelOrPromotionGateChanged') is False, value
+          assert value.get('productionAuthorityChanged') is False, value
+          PY
