@@ -50,6 +50,23 @@ def test_fitted_model_bounds_replace_source_architecture_bounds_in_runtime_bundl
     assert aligned["architecture"]["probabilityBoundsAuthority"] == (
         "FITTED_OBSERVATIONAL_MODEL"
     )
+    assert aligned["model"]["minProbability"] == 0.05
+    assert aligned["model"]["maxProbability"] == 0.95
+    assert bundle["probabilityBounds"] == [0.05, 0.95]
+
+
+def test_missing_model_bounds_are_materialized_with_runtime_defaults():
+    report = _source_report()
+    report["model"].pop("minProbability")
+    report["model"].pop("maxProbability")
+
+    aligned = audit.align_runtime_report(report)
+    bundle = runtime.build_bundle(aligned)
+    runtime.verify_bundle(bundle)
+
+    assert aligned["model"]["minProbability"] == 0.05
+    assert aligned["model"]["maxProbability"] == 0.95
+    assert aligned["architecture"]["probabilityBounds"] == [0.05, 0.95]
     assert bundle["probabilityBounds"] == [0.05, 0.95]
 
 
