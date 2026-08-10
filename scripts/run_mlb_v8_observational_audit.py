@@ -2,7 +2,7 @@
 """Freeze and grade the best learned MLB V8 challenger observationally.
 
 This runner uses a separate pointer and artifact namespace from the guarded
-promotion prospective audit.  Its output is descriptive shadow evidence only.
+promotion prospective audit. Its output is descriptive shadow evidence only.
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
-import mlb_v8_observational_audit_v1_1 as observational
+import mlb_v8_observational_audit_v1_2 as observational
 import run_mlb_v8_prospective_audit as prospective_runner
 
 
@@ -100,6 +100,12 @@ def main() -> int:
                 "selectedPickAccuracy": value.get("selectedPickAccuracy"),
                 "calibrationEce": value.get("calibrationEce"),
                 "confidenceBands": value.get("confidenceBands"),
+                "candidateGenerationHeldForEvidence": value.get(
+                    "candidateGenerationHeldForEvidence"
+                ),
+                "pendingReplacementAvailable": value.get(
+                    "pendingReplacementAvailable"
+                ),
                 "promotionEligible": value.get("promotionEligible"),
                 "productionAuthorityChanged": value.get(
                     "productionAuthorityChanged"
