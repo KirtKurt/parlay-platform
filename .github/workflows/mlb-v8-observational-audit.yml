@@ -5,6 +5,10 @@ name: MLB V8 Observational Audit
     workflows: ["MLB V8 Autonomous Controller"]
     types: [completed]
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v8-observational-audit.yml'
   pull_request:
     paths:
       - 'hello_world/mlb_v8_observational_audit_v1.py'
@@ -71,6 +75,8 @@ jobs:
     needs: contract-tests
     if: >-
       ${{ github.event_name != 'pull_request' &&
+          (github.event_name != 'push' ||
+           contains(github.event.head_commit.message, '[run-observational-audit]')) &&
           (github.event_name != 'workflow_run' ||
            (github.event.workflow_run.conclusion == 'success' &&
             github.event.workflow_run.head_branch == 'main')) }}
