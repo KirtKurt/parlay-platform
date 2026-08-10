@@ -75,13 +75,18 @@ def _bool(value: Any, default: bool = True) -> bool:
 
 
 def _settlement_args(payload: Dict[str, Any]) -> Dict[str, Any]:
+    days_from = payload.get("days_from")
+    if days_from is None:
+        days_from = payload.get("daysFrom")
+    if days_from is None:
+        days_from = 3
     return {
         "slate_date": (
             payload.get("slate_date_et")
             or payload.get("slate_date")
             or payload.get("date")
         ),
-        "days_from": int(payload.get("days_from") or payload.get("daysFrom") or 3),
+        "days_from": int(days_from),
         "fetch_scores": _bool(payload.get("fetch_scores"), True),
     }
 
