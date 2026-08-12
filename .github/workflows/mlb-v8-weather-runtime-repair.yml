@@ -7,20 +7,21 @@ on:
       - 'scripts/mlb_v8_historical_point_in_time_context_v1.py'
       - 'mlb_v8_historical_point_in_time_context_v1.py'
       - 'tests/unit/test_mlb_v8_weather_runtime_resolution.py'
-      - 'tests/unit/test_mlb_v8_context_writer_concurrency.py'
       - '.github/workflows/mlb-v8-weather-runtime-repair.yml'
   pull_request:
     paths:
       - 'scripts/mlb_v8_historical_point_in_time_context_v1.py'
       - 'mlb_v8_historical_point_in_time_context_v1.py'
       - 'tests/unit/test_mlb_v8_weather_runtime_resolution.py'
-      - 'tests/unit/test_mlb_v8_context_writer_concurrency.py'
       - '.github/workflows/mlb-v8-weather-runtime-repair.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# This workflow writes the same immutable context pointer as the autonomous
+# controller and the acceleration workflow. All live writers must share one
+# non-cancelling group so their optimistic DynamoDB revisions cannot collide.
 concurrency:
   group: mlb-v8-autonomous-control-plane
   cancel-in-progress: false
@@ -53,8 +54,7 @@ jobs:
             mlb_v8_historical_point_in_time_context_v1.py
           PYTHONPATH=. python -m pytest -q \
             tests/unit/test_mlb_v8_weather_runtime_resolution.py \
-            tests/unit/test_mlb_v8_historical_point_in_time_context_v1.py \
-            tests/unit/test_mlb_v8_context_writer_concurrency.py
+            tests/unit/test_mlb_v8_historical_point_in_time_context_v1.py
 
   live-weather:
     needs: contract-tests
