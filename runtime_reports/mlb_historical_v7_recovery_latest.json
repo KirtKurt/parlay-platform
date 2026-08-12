@@ -9,29 +9,31 @@
     "thresholdStabilityRequired": true,
     "v7OddsOnly": true
   },
-  "createdAtUtc": "2026-08-12T18:10:33.127152+00:00",
+  "createdAtUtc": "2026-08-12T18:39:26.264171+00:00",
   "jobStatus": "success",
   "ok": true,
   "proofType": "MLB_HISTORICAL_V7_SELECTIVE_DEPLOYMENT",
-  "runId": "31626170005",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/31626170005",
+  "runId": "31628617340",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/31628617340",
   "runtimeIdentity": {
     "checks": {
       "deploySha": true,
       "endDate": true,
+      "freshAuditIncrement": true,
       "handler": true,
       "maximumCredits": true,
       "maximumRounds": true,
       "rangeExtensionAuthorized": true
     },
-    "deployGitSha": "d03cc4a340f5c6b80d5c78484504e506dc2532b0",
+    "deployGitSha": "cdda1cee6117bf0111a88335f5e76a2098b6f930",
     "endDate": "2026-12-31",
+    "freshAuditIncrementGames": "200",
     "functionName": "parlay-platform-mlb-histo-HistoricalOptimizerFunct-8e5kYFR21rxv",
     "handler": "mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler",
     "maximumCredits": "300000",
     "maximumOptimizationRounds": "24"
   },
-  "sourceSha": "d03cc4a340f5c6b80d5c78484504e506dc2532b0",
+  "sourceSha": "cdda1cee6117bf0111a88335f5e76a2098b6f930",
   "status": {
     "automaticLegacyFallbackAllowed": false,
     "champion": null,
@@ -118,6 +120,18 @@
       },
       "authorizationContract": "AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS",
       "authorizedPlanFingerprint": "2d30e2c3d203255f5d16eb5bc09aff8b3dabf658292df1d3dd55624f546a03a3",
+      "canonicalAuditCadenceRepair": {
+        "evaluatedAuditWindowsPreserved": true,
+        "freshAuditStartDate": "2026-08-08",
+        "latestRejectedCandidateSettledGames": 4155,
+        "newTargetSettledGames": 4355,
+        "policyMinimumUntouchedAuditGames": 200,
+        "previousConfiguredIncrementGames": 250,
+        "priorTargetSettledGames": 4405,
+        "promotionGateWeakened": false,
+        "repairedAtUtc": "2026-08-12T18:11:44.829912+00:00",
+        "version": "MLB-HISTORICAL-ROUND-EXTENSION-v3-policy-minimum-audit-cadence"
+      },
       "competitiveRangeRepair": {
         "competitiveStartDate": "2026-03-25",
         "immutableS3EvidenceRetained": true,
@@ -10406,7 +10420,7 @@
           "slateDateEt": "2026-07-15"
         }
       ],
-      "revision": 6071,
+      "revision": 6072,
       "settledHorizonWait": {
         "authorizedThroughDate": "2026-08-11",
         "blockingError": false,
@@ -10744,8 +10758,8 @@
       "snapshotIntervalMinutes": 15,
       "snapshotStartAtEt": "01:00",
       "startDate": "2025-04-01",
-      "targetSettledGames": 4405,
-      "updatedAtUtc": "2026-08-12T05:36:44.810815+00:00",
+      "targetSettledGames": 4355,
+      "updatedAtUtc": "2026-08-12T18:11:45.048920+00:00",
       "version": "MLB-HISTORICAL-OPTIMIZER-AWS-v1.9-quarantine-ledger-complete-versioned-dataset-key-v3"
     },
     "supervisedShadow": {
