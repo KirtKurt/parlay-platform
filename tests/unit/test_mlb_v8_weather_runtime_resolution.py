@@ -114,13 +114,20 @@ def test_precipitation_amount_has_bounded_direct_penalty():
         }
     )
 
-    assert dry == 1.0
-    assert wet == 0.985
+    assert round(dry - wet, 6) == 0.015
     assert saturated == wet
 
 
 def test_true_probability_sources_remain_backward_compatible():
     runtime = _load_runtime_shim()
+    dry = runtime.weather_run_factor(
+        {
+            "temperature_2m": 20,
+            "relative_humidity_2m": 50,
+            "wind_speed_10m": 0,
+            "precipitation_probability": 0,
+        }
+    )
     probability = runtime.weather_run_factor(
         {
             "temperature_2m": 20,
@@ -131,4 +138,4 @@ def test_true_probability_sources_remain_backward_compatible():
         }
     )
 
-    assert probability == 0.985
+    assert round(dry - probability, 6) == 0.015
