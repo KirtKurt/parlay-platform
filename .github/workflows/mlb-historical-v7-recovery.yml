@@ -16,6 +16,7 @@ name: MLB Historical V7 Selective Recovery
       - 'hello_world/mlb_historical_optimizer_handler.py'
       - 'tests/unit/test_mlb_historical_v7_selective_objective_v1.py'
       - 'tests/unit/test_mlb_historical_v7_selective_search_v2.py'
+      - 'tests/unit/test_mlb_historical_v7_recovery_workflow.py'
       - 'mlb_historical_optimizer/**'
       - '.github/workflows/mlb-historical-v7-recovery.yml'
 
@@ -86,7 +87,8 @@ jobs:
             tests/unit/test_mlb_historical_optimizer_template.py \
             tests/unit/test_mlb_historical_competitive_schedule_filter.py \
             tests/unit/test_mlb_historical_v7_selective_objective_v1.py \
-            tests/unit/test_mlb_historical_v7_selective_search_v2.py
+            tests/unit/test_mlb_historical_v7_selective_search_v2.py \
+            tests/unit/test_mlb_historical_v7_recovery_workflow.py
           grep -Fq 'Handler: mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler' mlb_historical_optimizer/template.yaml
           grep -Fq "Default: '2026-12-31'" mlb_historical_optimizer/template.yaml
           grep -Fq 'Default: 300000' mlb_historical_optimizer/template.yaml
@@ -137,7 +139,7 @@ jobs:
                 'HistoricalRequestsPerRun=20' \
                 "HistoricalMaxCandidates=${HISTORICAL_MAX_CANDIDATES}" \
                 "HistoricalMaxOptimizationRounds=${HISTORICAL_MAX_OPTIMIZATION_ROUNDS}" \
-                'HistoricalFreshAuditIncrementGames=250' \
+                'HistoricalFreshAuditIncrementGames=200' \
                 'HistoricalRangeExtensionAuthorized=true' \
                 "DeployGitSha=${GITHUB_SHA}"
 
@@ -155,6 +157,7 @@ jobs:
               'endDate':env.get('MLB_HISTORICAL_END_DATE') == '2026-12-31',
               'maximumCredits':env.get('MLB_HISTORICAL_MAX_CREDITS') == '300000',
               'maximumRounds':env.get('MLB_HISTORICAL_MAX_OPTIMIZATION_ROUNDS') == '24',
+              'freshAuditIncrement':env.get('MLB_HISTORICAL_FRESH_AUDIT_INCREMENT_GAMES') == '200',
               'rangeExtensionAuthorized':env.get('MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED') == 'true',
           }
           assert all(checks.values()), {'checks':checks,'environment':env}
@@ -165,6 +168,7 @@ jobs:
               'endDate':env.get('MLB_HISTORICAL_END_DATE'),
               'maximumCredits':env.get('MLB_HISTORICAL_MAX_CREDITS'),
               'maximumOptimizationRounds':env.get('MLB_HISTORICAL_MAX_OPTIMIZATION_ROUNDS'),
+              'freshAuditIncrementGames':env.get('MLB_HISTORICAL_FRESH_AUDIT_INCREMENT_GAMES'),
               'checks':checks,
           },indent=2,sort_keys=True)+'\n')
           PY
@@ -260,8 +264,13 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           for attempt in 1 2 3 4 5; do
-            git fetch origin main
-            git checkout -B historical-v7-selective-proof origin/main
+            # The generated proof is safe in /tmp. Clean before switching
+            # branches because main can advance during deployment verification.
+            git reset --hard HEAD
+            git clean -fd
+            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+            git checkout -B historical-v7-selective-proof refs/remotes/origin/main
+            git reset --hard refs/remotes/origin/main
             mkdir -p runtime_reports
             cp /tmp/mlb-historical-v7-selective-proof.json "$REPORT_PATH"
             git add "$REPORT_PATH"
