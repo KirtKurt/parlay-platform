@@ -3,8 +3,9 @@
 This patch never changes a candidate, promotion gate, historical evidence, or prior
 untouched-audit assignment. It repairs migrated/retried non-promoted states so any
 subsequent optimization must use dates strictly later than every previously
-label-evaluated untouched-audit date. It also preserves the bounded round-extension
-recovery for terminal rejected states when the deployment ceiling was raised.
+label-evaluated untouched-audit date. It also normalizes the canonical audit cadence
+to the promotion policy minimum and preserves the bounded round-extension recovery
+for terminal rejected states when the deployment ceiling was raised.
 """
 from __future__ import annotations
 
@@ -12,7 +13,22 @@ import copy
 from datetime import date, timedelta
 from typing import Any, Dict, Mapping
 
-VERSION = "MLB-HISTORICAL-ROUND-EXTENSION-v2-persisted-audit-history-guard"
+VERSION = "MLB-HISTORICAL-ROUND-EXTENSION-v3-policy-minimum-audit-cadence"
+MIN_CANONICAL_UNTOUCHED_AUDIT_GAMES = 200
+_PENDING_AUDIT_PHASES = {
+    "BACKFILLING",
+    "PAUSED_QUOTA",
+    "OPTIMIZING",
+    "WAITING_FOR_SETTLED_HORIZON",
+    "DATA_RANGE_EXHAUSTED",
+}
+
+
+def _integer(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _latest_evaluated_date(state: Mapping[str, Any]) -> str | None:
@@ -29,6 +45,17 @@ def _strictly_later_day(day: str) -> str | None:
         return (date.fromisoformat(day) + timedelta(days=1)).isoformat()
     except (TypeError, ValueError):
         return None
+
+
+def _policy_minimum_audit_games(handler: Any) -> int:
+    runtime = getattr(handler, "policy_runtime", None)
+    minimum = _integer(
+        getattr(runtime, "MIN_UNTOUCHED_AUDIT_GAMES", None),
+        MIN_CANONICAL_UNTOUCHED_AUDIT_GAMES,
+    )
+    if minimum < MIN_CANONICAL_UNTOUCHED_AUDIT_GAMES:
+        raise RuntimeError("canonical untouched-audit policy cannot be below 200 games")
+    return minimum
 
 
 def _repair_persisted_audit_boundary(handler: Any, value: Dict[str, Any]) -> Dict[str, Any]:
@@ -70,9 +97,12 @@ def _repair_persisted_audit_boundary(handler: Any, value: Dict[str, Any]) -> Dic
     repaired["freshAuditCollectedDayCount"] = 0
     repaired["freshAuditCollectedGameCount"] = 0
 
-    eligible = int(repaired.get("eligibleGameCount") or 0)
-    prior_target = int(repaired.get("targetSettledGames") or eligible)
-    increment = int(getattr(handler, "FRESH_AUDIT_INCREMENT_GAMES", 250) or 250)
+    eligible = _integer(repaired.get("eligibleGameCount"))
+    prior_target = _integer(repaired.get("targetSettledGames"), eligible)
+    increment = _integer(
+        getattr(handler, "FRESH_AUDIT_INCREMENT_GAMES", None),
+        MIN_CANONICAL_UNTOUCHED_AUDIT_GAMES,
+    )
     if phase in {"BACKFILLING", "PAUSED_QUOTA", "OPTIMIZING"} and prior_target <= eligible:
         repaired["targetSettledGames"] = eligible + increment
 
@@ -89,7 +119,75 @@ def _repair_persisted_audit_boundary(handler: Any, value: Dict[str, Any]) -> Dic
         "priorFreshAuditExpansionRequired": value.get("freshAuditExpansionRequired") is True,
         "priorFreshAuditStartDate": value.get("freshAuditStartDate"),
         "priorTargetSettledGames": prior_target,
-        "newTargetSettledGames": int(repaired.get("targetSettledGames") or prior_target),
+        "newTargetSettledGames": _integer(repaired.get("targetSettledGames"), prior_target),
+    }
+    return repaired
+
+
+def _repair_overprovisioned_pending_audit_target(
+    handler: Any,
+    value: Dict[str, Any],
+    configured_increment: int,
+    policy_increment: int,
+) -> Dict[str, Any]:
+    """Rebase only the exact, untouched legacy target onto the policy floor.
+
+    The repair is deliberately narrow. It applies only to a rejected candidate whose
+    persisted target equals ``candidate settled games + the former configured
+    increment``. Existing audit boundaries and every evaluated window are retained.
+    Any collected audit evidence, active authority, non-exact target, or overlapping
+    boundary makes the operation a no-op.
+    """
+
+    if configured_increment <= policy_increment:
+        return value
+    if value.get("champion") or value.get("productionCutover"):
+        return value
+    if str(value.get("phase") or "") not in _PENDING_AUDIT_PHASES:
+        return value
+    if value.get("freshAuditExpansionRequired") is not True:
+        return value
+    if _integer(value.get("freshAuditCollectedGameCount")) > 0:
+        return value
+    if _integer(value.get("freshAuditCollectedDayCount")) > 0:
+        return value
+
+    latest = value.get("latestExperiment") or {}
+    if not isinstance(latest, Mapping):
+        return value
+    gate = latest.get("promotionGate") or {}
+    if not isinstance(gate, Mapping):
+        return value
+    if latest.get("status") != "CANDIDATE_REJECTED" or gate.get("passed") is not False:
+        return value
+
+    settled_games = _integer(gate.get("settledGameCount"))
+    if settled_games <= 0:
+        return value
+    prior_target = _integer(value.get("targetSettledGames"))
+    expected_prior_target = settled_games + configured_increment
+    new_target = settled_games + policy_increment
+    if prior_target != expected_prior_target or new_target >= prior_target:
+        return value
+
+    latest_evaluated = _latest_evaluated_date(value)
+    fresh_start = str(value.get("freshAuditStartDate") or "")
+    if latest_evaluated and (not fresh_start or fresh_start <= latest_evaluated):
+        return value
+
+    repaired = copy.deepcopy(value)
+    repaired["targetSettledGames"] = new_target
+    repaired["canonicalAuditCadenceRepair"] = {
+        "version": VERSION,
+        "repairedAtUtc": handler._now_iso(),
+        "policyMinimumUntouchedAuditGames": policy_increment,
+        "previousConfiguredIncrementGames": configured_increment,
+        "latestRejectedCandidateSettledGames": settled_games,
+        "priorTargetSettledGames": prior_target,
+        "newTargetSettledGames": new_target,
+        "freshAuditStartDate": value.get("freshAuditStartDate"),
+        "evaluatedAuditWindowsPreserved": True,
+        "promotionGateWeakened": False,
     }
     return repaired
 
@@ -98,15 +196,35 @@ def install(handler: Any) -> None:
     if getattr(handler, "_INQSI_HISTORICAL_ROUND_EXTENSION_V1_INSTALLED", False):
         return
 
+    policy_increment = _policy_minimum_audit_games(handler)
+    configured_increment = _integer(
+        getattr(handler, "FRESH_AUDIT_INCREMENT_GAMES", None),
+        policy_increment,
+    )
+    if configured_increment < policy_increment:
+        raise RuntimeError(
+            "configured canonical untouched-audit increment is below the promotion policy"
+        )
+
+    # Normalize future rounds to the immutable policy floor. The migration wrapper
+    # below separately handles the one persisted target created by the former 250-
+    # game configuration, and only when its provenance is exact and untouched.
+    handler.FRESH_AUDIT_INCREMENT_GAMES = policy_increment
     original = handler._migrate_state
 
     def patched(state: Mapping[str, Any]) -> Dict[str, Any]:
         value = _repair_persisted_audit_boundary(handler, original(state))
+        value = _repair_overprovisioned_pending_audit_target(
+            handler,
+            value,
+            configured_increment,
+            policy_increment,
+        )
         if str(value.get("phase") or "") != "CANDIDATE_REJECTED":
             return value
 
-        round_number = int(value.get("optimizationRound") or 0)
-        maximum_rounds = int(getattr(handler, "MAX_OPTIMIZATION_ROUNDS", 0) or 0)
+        round_number = _integer(value.get("optimizationRound"))
+        maximum_rounds = _integer(getattr(handler, "MAX_OPTIMIZATION_ROUNDS", None))
         if round_number >= maximum_rounds:
             return value
         if value.get("paidBackfillAuthorized") is not True:
@@ -137,9 +255,12 @@ def install(handler: Any) -> None:
         if latest_evaluated and current_raw <= latest_evaluated:
             return value
 
-        eligible = int(value.get("eligibleGameCount") or 0)
-        prior_target = int(value.get("targetSettledGames") or eligible)
-        increment = int(getattr(handler, "FRESH_AUDIT_INCREMENT_GAMES", 250) or 250)
+        eligible = _integer(value.get("eligibleGameCount"))
+        prior_target = _integer(value.get("targetSettledGames"), eligible)
+        increment = _integer(
+            getattr(handler, "FRESH_AUDIT_INCREMENT_GAMES", None),
+            policy_increment,
+        )
         next_target = max(prior_target + increment, eligible + increment)
 
         recovered = copy.deepcopy(value)
@@ -163,6 +284,7 @@ def install(handler: Any) -> None:
             "latestPreviouslyEvaluatedAuditDate": latest_evaluated,
             "strictlyLaterAuditRequired": True,
             "priorCandidateAuthorityGranted": False,
+            "canonicalFreshAuditIncrementGames": increment,
         }
         return recovered
 
