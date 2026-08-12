@@ -355,6 +355,10 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           for attempt in 1 2 3 4 5; do
+            # The six generated reports are safe in /tmp. Clean before switching
+            # branches because main can advance during this long controller run.
+            git reset --hard HEAD
+            git clean -fd
             git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
             git checkout -B mlb-v8-autonomy-state refs/remotes/origin/main
             git reset --hard refs/remotes/origin/main
