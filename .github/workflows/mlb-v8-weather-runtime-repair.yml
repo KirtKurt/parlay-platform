@@ -1,0 +1,114 @@
+name: MLB V8 Weather Runtime Repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/mlb_v8_historical_point_in_time_context_v1.py'
+      - 'mlb_v8_historical_point_in_time_context_v1.py'
+      - 'tests/unit/test_mlb_v8_weather_runtime_resolution.py'
+      - '.github/workflows/mlb-v8-weather-runtime-repair.yml'
+  pull_request:
+    paths:
+      - 'scripts/mlb_v8_historical_point_in_time_context_v1.py'
+      - 'mlb_v8_historical_point_in_time_context_v1.py'
+      - 'tests/unit/test_mlb_v8_weather_runtime_resolution.py'
+      - '.github/workflows/mlb-v8-weather-runtime-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-v8-weather-runtime-repair
+  cancel-in-progress: false
+
+env:
+  PYTHONPATH: hello_world:scripts
+  AWS_EC2_METADATA_DISABLED: 'true'
+  HISTORICAL_STACK: parlay-platform-mlb-historical-optimizer
+  FUNDAMENTALS_STACK: parlay-platform-mlb-v8-fundamentals-shadow
+  SNAPSHOTS_TABLE: parlay_platform_snapshots
+  REPORT_PATH: /tmp/mlb-v8-weather-runtime-report.json
+
+jobs:
+  contract-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate deterministic weather runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'numpy>=1.26,<3' 'pytest>=8,<9'
+          python -m py_compile \
+            scripts/mlb_v8_historical_point_in_time_context_v1.py \
+            mlb_v8_historical_point_in_time_context_v1.py
+          PYTHONPATH=. python -m pytest -q \
+            tests/unit/test_mlb_v8_weather_runtime_resolution.py \
+            tests/unit/test_mlb_v8_historical_point_in_time_context_v1.py
+
+  live-weather:
+    needs: contract-tests
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Install runtime dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'numpy>=1.26,<3'
+      - name: Advance five games through repaired weather runtime
+        run: |
+          set -euo pipefail
+          python scripts/run_mlb_v8_historical_context_backfill_autonomous.py \
+            --region "${{ secrets.AWS_REGION }}" \
+            --table-name "$SNAPSHOTS_TABLE" \
+            --historical-stack "$HISTORICAL_STACK" \
+            --fundamentals-stack "$FUNDAMENTALS_STACK" \
+            --limit 5 \
+            --output "$REPORT_PATH" \
+            2>&1 | tee /tmp/mlb-v8-weather-runtime.log
+      - name: Enforce restored point-in-time weather coverage
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          value=json.loads(Path(os.environ['REPORT_PATH']).read_text())
+          weather=(value.get('domainCoverage') or {}).get('weather') or {}
+          assert value.get('ok') is True, value
+          assert int(value.get('newRecordCount') or 0) > 0, value
+          assert int(weather.get('evaluatedGameCount') or 0) > 0, value
+          assert int(weather.get('eligibleGameCount') or 0) > 0, value
+          assert float(weather.get('coverage') or 0.0) > 0.0, value
+          assert int(value.get('fullFeatureEligibleGameCount') or 0) > 0, value
+          assert not value.get('blockers'), value
+          PY
+      - name: Upload exact live weather evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v8-weather-runtime-${{ github.run_id }}
+          path: |
+            /tmp/mlb-v8-weather-runtime-report.json
+            /tmp/mlb-v8-weather-runtime.log
+          retention-days: 90
+          if-no-files-found: warn
