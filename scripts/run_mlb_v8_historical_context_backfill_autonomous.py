@@ -14,6 +14,7 @@ import mlb_v8_historical_point_in_time_context_v1 as context_source
 import run_mlb_v8_historical_context_backfill_entrypoint as official
 
 VERSION = "MLB-V8-HISTORICAL-CONTEXT-AUTONOMY-v2-projection-eligibility"
+CONTEXT_WRITER_CONCURRENCY_GROUP = "mlb-v8-autonomous-control-plane"
 PROJECTION_ELIGIBILITY_VERSION = (
     "MLB-V8-HISTORICAL-PROJECTION-ELIGIBILITY-v1-strictly-prior-verified"
 )
