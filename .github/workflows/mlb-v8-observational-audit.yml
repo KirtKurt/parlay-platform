@@ -9,6 +9,12 @@ name: MLB V8 Observational Audit
   push:
     branches: [main]
     paths:
+      - 'hello_world/mlb_v8_observational_audit_v1.py'
+      - 'hello_world/mlb_v8_observational_audit_v1_1.py'
+      - 'hello_world/mlb_v8_observational_audit_v1_2.py'
+      - 'hello_world/mlb_v8_observational_audit_v1_3.py'
+      - 'scripts/run_mlb_v8_observational_audit.py'
+      - 'tests/unit/test_mlb_v8_observational_candidate_compatibility.py'
       - '.github/workflows/mlb-v8-observational-audit.yml'
   pull_request:
     paths:
@@ -19,6 +25,7 @@ name: MLB V8 Observational Audit
       - 'scripts/run_mlb_v8_observational_audit.py'
       - 'tests/unit/test_mlb_v8_observational_audit_v1.py'
       - 'tests/unit/test_mlb_v8_observational_audit_workflow.py'
+      - 'tests/unit/test_mlb_v8_observational_candidate_compatibility.py'
       - 'tests/unit/test_mlb_v8_observational_latch_v1.py'
       - 'tests/unit/test_mlb_v8_observational_ddb_v1.py'
       - 'tests/unit/test_run_mlb_v8_observational_audit.py'
@@ -68,6 +75,7 @@ jobs:
           python -m pytest -q \
             tests/unit/test_mlb_v8_observational_audit_v1.py \
             tests/unit/test_mlb_v8_observational_audit_workflow.py \
+            tests/unit/test_mlb_v8_observational_candidate_compatibility.py \
             tests/unit/test_mlb_v8_observational_latch_v1.py \
             tests/unit/test_mlb_v8_observational_ddb_v1.py \
             tests/unit/test_run_mlb_v8_observational_audit.py \
@@ -176,6 +184,7 @@ jobs:
           assert value.get('automaticWagerAllowed') is False, value
           assert value.get('productionAuthorityChanged') is False, value
           assert value.get('candidateDigest'), value
+          assert value.get('candidateVersion'), value
           assert value.get('modelDigest'), value
           assert value.get('candidateArtifact'), value
           assert value.get('auditArtifact'), value
