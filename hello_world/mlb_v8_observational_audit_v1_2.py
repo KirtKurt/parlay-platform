@@ -71,7 +71,9 @@ def verify_candidate(candidate: Mapping[str, Any]) -> None:
         raise ValueError("observational corpus boundary is missing")
 
 
-_core.verify_candidate = verify_candidate
+_COMPATIBLE_VERIFY_CANDIDATE = verify_candidate
+_core.verify_candidate = _COMPATIBLE_VERIFY_CANDIDATE
+_stable.verify_candidate = _COMPATIBLE_VERIFY_CANDIDATE
 
 
 def _load_reusable_candidate(
@@ -240,5 +242,5 @@ for _name in dir(_stable):
 
 globals()["VERSION"] = VERSION
 globals()["LEGACY_CANDIDATE_VERSIONS"] = LEGACY_CANDIDATE_VERSIONS
-globals()["verify_candidate"] = verify_candidate
+globals()["verify_candidate"] = _COMPATIBLE_VERIFY_CANDIDATE
 globals()["advance"] = advance
