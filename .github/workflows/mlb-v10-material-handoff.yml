@@ -1,0 +1,155 @@
+name: MLB V10 Material State Handoff
+
+on:
+  workflow_run:
+    workflows: ["MLB Historical Hourly Liveness V1"]
+    types: [completed]
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/decide_mlb_v10_dispatch.py'
+      - 'tests/unit/test_decide_mlb_v10_dispatch.py'
+      - 'tests/unit/test_mlb_v10_material_handoff_workflow.py'
+      - '.github/workflows/mlb-v10-material-handoff.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: mlb-v10-material-state-handoff
+  cancel-in-progress: false
+
+env:
+  OPTIMIZER_STACK: parlay-platform-mlb-historical-optimizer
+  V10_REPORT_PATH: runtime_reports/mlb_v10_autonomous_signal_discovery_latest.json
+  V10_WORKFLOW: mlb-v10-autonomous-signal-discovery.yml
+  DECISION_PATH: /tmp/mlb-v10-material-handoff-decision.json
+
+jobs:
+  handoff:
+    if: >-
+      ${{ github.event_name != 'workflow_run' ||
+          (github.event.workflow_run.conclusion == 'success' &&
+           github.event.workflow_run.head_branch == 'main') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Validate material handoff policy
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9'
+          python -m py_compile scripts/decide_mlb_v10_dispatch.py
+          PYTHONPATH=. python -m pytest -q \
+            tests/unit/test_decide_mlb_v10_dispatch.py \
+            tests/unit/test_mlb_v10_material_handoff_workflow.py
+
+      - name: Read authoritative historical state
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=$(aws cloudformation describe-stacks \
+            --stack-name "$OPTIMIZER_STACK" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" \
+            --output text)
+          test -n "$FUNCTION_NAME" && test "$FUNCTION_NAME" != None
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --cli-read-timeout 900 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"mode":"status","run":"mlb_v10_material_handoff"}' \
+            /tmp/mlb-v10-historical-status.json \
+            >/tmp/mlb-v10-handoff-invoke-meta.json
+          python -m json.tool /tmp/mlb-v10-historical-status.json >/dev/null
+          test "$(jq -r '.ok' /tmp/mlb-v10-historical-status.json)" = 'true'
+
+      - name: Decide whether V10 is behind
+        id: decision
+        run: |
+          set -euo pipefail
+          python scripts/decide_mlb_v10_dispatch.py \
+            --historical-status /tmp/mlb-v10-historical-status.json \
+            --v10-report "$V10_REPORT_PATH" \
+            --output "$DECISION_PATH"
+          required=$(jq -r '.dispatchRequired' "$DECISION_PATH")
+          echo "dispatch_required=$required" >> "$GITHUB_OUTPUT"
+          echo "V10_DISPATCH_ISSUED=false" >> "$GITHUB_ENV"
+          echo "V10_ACTIVE_RUN_COUNT=0" >> "$GITHUB_ENV"
+
+      - name: Dispatch V10 when material state is ahead
+        if: steps.decision.outputs.dispatch_required == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          active=$(gh run list \
+            --workflow "$V10_WORKFLOW" \
+            --branch main \
+            --limit 20 \
+            --json status \
+            --jq '[.[] | select(.status == "queued" or .status == "in_progress")] | length')
+          echo "V10_ACTIVE_RUN_COUNT=$active" >> "$GITHUB_ENV"
+          if test "$active" -gt 0; then
+            echo "A V10 run is already active; a duplicate dispatch is unnecessary."
+            exit 0
+          fi
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/${V10_WORKFLOW}/dispatches" \
+            -f ref=main
+          echo "V10_DISPATCH_ISSUED=true" >> "$GITHUB_ENV"
+
+      - name: Record and enforce handoff result
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s "$DECISION_PATH"
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          path=Path(os.environ['DECISION_PATH'])
+          value=json.loads(path.read_text())
+          value['checkedAtUtc']=datetime.now(timezone.utc).isoformat()
+          value['sourceSha']=os.environ.get('GITHUB_SHA')
+          value['runId']=os.environ.get('GITHUB_RUN_ID')
+          value['dispatchIssued']=os.environ.get('V10_DISPATCH_ISSUED') == 'true'
+          value['activeV10RunCount']=int(os.environ.get('V10_ACTIVE_RUN_COUNT') or 0)
+          path.write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+          assert value.get('ok') is True, value
+          if value.get('dispatchRequired') is True:
+              assert value.get('dispatchIssued') is True or value.get('activeV10RunCount',0) > 0, value
+          PY
+
+      - name: Upload material handoff evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v10-material-handoff-${{ github.run_id }}
+          path: |
+            /tmp/mlb-v10-material-handoff-decision.json
+            /tmp/mlb-v10-historical-status.json
+            /tmp/mlb-v10-handoff-invoke-meta.json
+          retention-days: 90
+          if-no-files-found: warn
