@@ -9,12 +9,12 @@
     "thresholdStabilityRequired": true,
     "v7OddsOnly": true
   },
-  "createdAtUtc": "2026-08-10T08:41:50.123488+00:00",
+  "createdAtUtc": "2026-08-12T18:10:33.127152+00:00",
   "jobStatus": "success",
   "ok": true,
   "proofType": "MLB_HISTORICAL_V7_SELECTIVE_DEPLOYMENT",
-  "runId": "31371077891",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/31371077891",
+  "runId": "31626170005",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/31626170005",
   "runtimeIdentity": {
     "checks": {
       "deploySha": true,
@@ -24,14 +24,14 @@
       "maximumRounds": true,
       "rangeExtensionAuthorized": true
     },
-    "deployGitSha": "26ec7f49c52cf4ef431636ee64b1a9bcb0f6e788",
+    "deployGitSha": "d03cc4a340f5c6b80d5c78484504e506dc2532b0",
     "endDate": "2026-12-31",
     "functionName": "parlay-platform-mlb-histo-HistoricalOptimizerFunct-8e5kYFR21rxv",
     "handler": "mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler",
     "maximumCredits": "300000",
     "maximumOptimizationRounds": "24"
   },
-  "sourceSha": "26ec7f49c52cf4ef431636ee64b1a9bcb0f6e788",
+  "sourceSha": "d03cc4a340f5c6b80d5c78484504e506dc2532b0",
   "status": {
     "automaticLegacyFallbackAllowed": false,
     "champion": null,
@@ -105,8 +105,19 @@
       "ok": false
     },
     "state": {
+      "auditReuseRecovery": {
+        "freshAuditStartDate": "2026-08-08",
+        "latestPreviouslyEvaluatedAuditDate": "2026-08-07",
+        "newTargetSettledGames": 4405,
+        "priorFreshAuditExpansionRequired": true,
+        "priorFreshAuditStartDate": "2026-07-20",
+        "priorTargetSettledGames": 4149,
+        "recoveredAtUtc": "2026-08-10T08:41:45.740097+00:00",
+        "strictlyLaterAuditRequired": true,
+        "version": "MLB-HISTORICAL-ROUND-EXTENSION-v2-persisted-audit-history-guard"
+      },
       "authorizationContract": "AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS",
-      "authorizedPlanFingerprint": "b3a2387dfc71b053293060c1b74743c0068ea1645c499fa9f420b84db3777a1c",
+      "authorizedPlanFingerprint": "2d30e2c3d203255f5d16eb5bc09aff8b3dabf658292df1d3dd55624f546a03a3",
       "competitiveRangeRepair": {
         "competitiveStartDate": "2026-03-25",
         "immutableS3EvidenceRetained": true,
@@ -123,7 +134,7 @@
         "repairedAtUtc": "2026-07-26T10:07:46.108726+00:00",
         "version": "MLB-HISTORICAL-COMPETITIVE-RANGE-REPAIR-v1"
       },
-      "completeSlateCount": 335,
+      "completeSlateCount": 339,
       "completedSlates": [
         {
           "artifact": {
@@ -6154,16 +6165,88 @@
           "rematerializationVersion": "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v3-v8-event-id",
           "rematerializedAtUtc": "2026-08-08T05:16:51.848211+00:00",
           "slateDateEt": "2026-08-07"
+        },
+        {
+          "artifact": {
+            "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
+            "etag": "4abb6772afbc3a89f04c733ef5d6bf24",
+            "key": "mlb/historical-daily-v1/datasets-versioned/2026-08-08/3050e1b9fdea0a3556e81ddfbc1a9ceda634c6c5dabda4da1aa9558d28722ad7.json",
+            "sha256": "3050e1b9fdea0a3556e81ddfbc1a9ceda634c6c5dabda4da1aa9558d28722ad7",
+            "versionId": "SqA0A7d4XafAIPFKO_CM3.rDzASWIFQk"
+          },
+          "eligibleGameCount": 15,
+          "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable",
+          "fingerprint": "6cff6a6f15106c07415cf765d4d184130296595d8710308c1aaf8fe5b07215c5",
+          "officialGameCount": 15,
+          "paidHistoricalCallsMade": 0,
+          "quarantinedSnapshotCount": 0,
+          "rematerializationVersion": "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v3-v8-event-id",
+          "rematerializedAtUtc": "2026-08-10T08:46:51.087489+00:00",
+          "slateDateEt": "2026-08-08"
+        },
+        {
+          "artifact": {
+            "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
+            "etag": "b83043f8dfe22afd96a6a1964fdc878b",
+            "key": "mlb/historical-daily-v1/datasets-versioned/2026-08-09/5b8b4b7f5006e8777c7d21807a068761d4d1e750903c566669e836f9e21795f7.json",
+            "sha256": "5b8b4b7f5006e8777c7d21807a068761d4d1e750903c566669e836f9e21795f7",
+            "versionId": "u.Kai6tEb.K0L5BmbqPkuRiRyW__2NJ9"
+          },
+          "eligibleGameCount": 15,
+          "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable",
+          "fingerprint": "b5cb6a34cd1e14421b2c700410be4df9b6ff22cbed544fe0fa7cb862d0072d2a",
+          "officialGameCount": 15,
+          "paidHistoricalCallsMade": 0,
+          "quarantinedSnapshotCount": 0,
+          "rematerializationVersion": "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v3-v8-event-id",
+          "rematerializedAtUtc": "2026-08-10T09:11:50.790678+00:00",
+          "slateDateEt": "2026-08-09"
+        },
+        {
+          "artifact": {
+            "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
+            "etag": "c1f1eee5bdc5d9daf577280c588ed117",
+            "key": "mlb/historical-daily-v1/datasets-versioned/2026-08-10/795147039fbabf5ce4c540fc15ea3608f90e85a62ee690c3ae6a4b7692b03f98.json",
+            "sha256": "795147039fbabf5ce4c540fc15ea3608f90e85a62ee690c3ae6a4b7692b03f98",
+            "versionId": "3PUXeQWggp56VNKljz4n7MdpGU6OCEqd"
+          },
+          "eligibleGameCount": 10,
+          "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable",
+          "fingerprint": "8eb7d333a872f3374471e9827ee606e9f0f8641092501867aa146dcd9c97448d",
+          "officialGameCount": 10,
+          "paidHistoricalCallsMade": 0,
+          "quarantinedSnapshotCount": 0,
+          "rematerializationVersion": "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v3-v8-event-id",
+          "rematerializedAtUtc": "2026-08-11T05:29:20.269690+00:00",
+          "slateDateEt": "2026-08-10"
+        },
+        {
+          "artifact": {
+            "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
+            "etag": "f496d5a5e022140375e7314d2a7be40f",
+            "key": "mlb/historical-daily-v1/datasets-versioned/2026-08-11/1f349e81a11507c974f7c0f2b09febcd965de15e607b47c2595a647e43196f23.json",
+            "sha256": "1f349e81a11507c974f7c0f2b09febcd965de15e607b47c2595a647e43196f23",
+            "versionId": "4518h4Rap2jNxCrmeeXsL0FtZO8eoU62"
+          },
+          "eligibleGameCount": 15,
+          "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable",
+          "fingerprint": "d56c59d0a6179e40fc2f1e8cc07142befff01db20a5c2d7f9045e0ef6789ac6f",
+          "officialGameCount": 15,
+          "paidHistoricalCallsMade": 0,
+          "quarantinedSnapshotCount": 0,
+          "rematerializationVersion": "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v3-v8-event-id",
+          "rematerializedAtUtc": "2026-08-12T05:31:52.788438+00:00",
+          "slateDateEt": "2026-08-11"
         }
       ],
-      "creditsConsumed": 266430,
-      "currentDate": "2026-08-08",
-      "currentSlotIndex": 80,
+      "creditsConsumed": 268820,
+      "currentDate": "2026-08-12",
+      "currentSlotIndex": 0,
       "dailyAccuracyRequirement": 0.8,
       "dailyAccuracyTargetHigh": 0.9,
       "dataCollectionCompletedAtUtc": "2026-08-08T05:06:54.246910+00:00",
-      "eligibleGameCount": 4155,
-      "endDate": "2026-08-08",
+      "eligibleGameCount": 4210,
+      "endDate": "2026-08-11",
       "evaluatedAuditWindows": [
         {
           "dates": [
@@ -6606,38 +6689,38 @@
       ],
       "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable",
       "featureRematerializationComplete": true,
-      "featureRematerializationCompletedAtUtc": "2026-08-10T08:36:45.024175+00:00",
-      "featureRematerializationCursor": 335,
+      "featureRematerializationCompletedAtUtc": "2026-08-12T05:31:53.308955+00:00",
+      "featureRematerializationCursor": 339,
       "featureRematerializationErrors": [],
       "featureRematerializationPaidHistoricalCalls": 0,
       "featureRematerializationPreviousPhase": "BACKFILLING",
       "featureRematerializationStartedAtUtc": "2026-07-27T00:52:04.791900+00:00",
       "featureRematerializationTargetDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable",
       "featureRematerializationTargetVersion": "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v3-v8-event-id",
-      "featureRematerializationTotalSlateCount": 335,
+      "featureRematerializationTotalSlateCount": 339,
       "featureRematerializationVersion": "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v3-v8-event-id",
-      "featureRematerializedSlateCount": 335,
-      "freshAuditCollectedDayCount": 19,
-      "freshAuditCollectedGameCount": 256,
+      "featureRematerializedSlateCount": 339,
+      "freshAuditCollectedDayCount": 0,
+      "freshAuditCollectedGameCount": 0,
       "freshAuditExpansionRequired": true,
-      "freshAuditStartDate": "2026-07-20",
+      "freshAuditStartDate": "2026-08-08",
       "initializedAtUtc": "2026-07-24T07:37:42.029216+00:00",
       "lastCompletedFinalsArtifact": {
         "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
-        "etag": "c6a1d2e81af834e93702595c5f237d08",
-        "key": "mlb/historical-daily-v1/official-finals/2026-08-07.json",
-        "sha256": "665af8cfa5a96dcabc6ea2a8874ae1a8d9733a1b0dfb251a77e74fd44358073d",
-        "versionId": "DSpcOss4Xu2YZJohZfu9hhlwE.IzqM.2"
+        "etag": "279a8c0a20c6926296742d1eb7d077ac",
+        "key": "mlb/historical-daily-v1/official-finals/2026-08-11.json",
+        "sha256": "6a2182175541da6ef89aa04dbb9944ff27fbb54ca6d450cd0add61bfa5967ff6",
+        "versionId": "q7RW6Ndk.Btr821F32LcVIMMH3tPeiL6"
       },
       "lastCompletedQuarantineCount": 0,
       "lastErrorAtUtc": "2026-08-10T08:34:58.160924+00:00",
       "lastQuota": {
         "x-requests-last": 10,
-        "x-requests-remaining": 4926112,
-        "x-requests-used": 73888
+        "x-requests-remaining": 4899823,
+        "x-requests-used": 100177
       },
       "lastRejectedSlateError": "incomplete_full_slate_dataset",
-      "lastRematerializedSlateDate": "2026-08-07",
+      "lastRematerializedSlateDate": "2026-08-11",
       "latestExperiment": {
         "artifact": {
           "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
@@ -6706,7 +6789,7 @@
       "minimumTrainingGames": 1000,
       "minimumUntouchedAuditGames": 200,
       "minimumWalkForwardGames": 200,
-      "networkRequestCount": 26643,
+      "networkRequestCount": 26882,
       "optimizationCompletedAtUtc": "2026-08-08T05:14:32.575699+00:00",
       "optimizationRound": 11,
       "optimizationRoundLimitRecovery": {
@@ -6724,18 +6807,18 @@
       "paidBackfillAuthorized": true,
       "paidBackfillAuthorizedAtUtc": "2026-07-24T09:16:06.517614+00:00",
       "perGameLockMinutesBeforeCommence": 45,
-      "phase": "BACKFILLING",
+      "phase": "WAITING_FOR_SETTLED_HORIZON",
       "plan": {
         "completeDateRangeLedger": true,
         "createdAtUtc": "2026-07-24T09:16:05.582633+00:00",
-        "endDate": "2026-08-08",
+        "endDate": "2026-08-11",
         "enoughDateRange": true,
-        "estimatedCredits": 265160,
+        "estimatedCredits": 267550,
         "estimatedCreditsPerRequest": 10,
-        "fingerprint": "b3a2387dfc71b053293060c1b74743c0068ea1645c499fa9f420b84db3777a1c",
+        "fingerprint": "2d30e2c3d203255f5d16eb5bc09aff8b3dabf658292df1d3dd55624f546a03a3",
         "freshAuditIncrementGames": 250,
-        "historicalRequestCount": 26516,
-        "maximumAuthorizedOfficialGames": 4172,
+        "historicalRequestCount": 26755,
+        "maximumAuthorizedOfficialGames": 4212,
         "maximumCredits": 300000,
         "maximumOptimizationRounds": 6,
         "paidHistoricalCallsMadeByPlan": 0,
@@ -6745,17 +6828,17 @@
           "minimumWalkForwardGames": 200
         },
         "perGameFeatureCutoff": "each_game_t_minus_45",
-        "plannedCompleteSlateDays": 338,
-        "plannedOfficialGames": 4172,
-        "plannedThroughDate": "2026-08-08",
+        "plannedCompleteSlateDays": 341,
+        "plannedOfficialGames": 4212,
+        "plannedThroughDate": "2026-08-11",
         "planningErrorCount": 0,
         "providerQuotaAppearsSufficient": true,
-        "providerReportedRemainingCredits": 4926988,
+        "providerReportedRemainingCredits": 4900780,
         "quotaReserve": 100,
         "rangeExtension": {
-          "appendedEstimatedCredits": 810,
+          "appendedEstimatedCredits": 820,
           "appendedSlateCount": 1,
-          "authorizedAtUtc": "2026-08-09T04:46:44.728604+00:00",
+          "authorizedAtUtc": "2026-08-12T05:06:44.666378+00:00",
           "authorizedByDeployment": true,
           "competitiveGameTypes": [
             "D",
@@ -6767,13 +6850,13 @@
           "competitiveStartDate": "2026-03-25",
           "configuredCeilingDate": "2026-12-31",
           "deferredDateCount": 0,
-          "newEndDate": "2026-08-08",
-          "previousEndDate": "2026-08-07",
-          "settledHorizonDate": "2026-08-08",
+          "newEndDate": "2026-08-11",
+          "previousEndDate": "2026-08-10",
+          "settledHorizonDate": "2026-08-11",
           "version": "MLB-HISTORICAL-INCREMENTAL-RANGE-EXTENSION-v2-waiting-resume"
         },
         "rejectedDates": [],
-        "slateLedgerDigest": "7b7ede5c4c5b6fcf1e18ab32b02a566524906d688caf859ad7e653c3bd2d5e02",
+        "slateLedgerDigest": "740a4cd8a984954476b93e518abea87807f10d9c233b725bfe278645f200f622",
         "slates": [
           {
             "estimatedCredits": 820,
@@ -10154,6 +10237,36 @@
             "lastRequestUtc": "2026-08-09T01:00:00Z",
             "officialGameCount": 15,
             "slateDateEt": "2026-08-08"
+          },
+          {
+            "estimatedCredits": 750,
+            "firstGameStartUtc": "2026-08-09T16:15:00Z",
+            "firstRequestUtc": "2026-08-09T05:00:00Z",
+            "historicalRequestCount": 75,
+            "lastGameStartUtc": "2026-08-10T00:20:00Z",
+            "lastRequestUtc": "2026-08-09T23:30:00Z",
+            "officialGameCount": 15,
+            "slateDateEt": "2026-08-09"
+          },
+          {
+            "estimatedCredits": 820,
+            "firstGameStartUtc": "2026-08-10T23:07:00Z",
+            "firstRequestUtc": "2026-08-10T05:00:00Z",
+            "historicalRequestCount": 82,
+            "lastGameStartUtc": "2026-08-11T02:10:00Z",
+            "lastRequestUtc": "2026-08-11T01:15:00Z",
+            "officialGameCount": 10,
+            "slateDateEt": "2026-08-10"
+          },
+          {
+            "estimatedCredits": 820,
+            "firstGameStartUtc": "2026-08-11T22:40:00Z",
+            "firstRequestUtc": "2026-08-11T05:00:00Z",
+            "historicalRequestCount": 82,
+            "lastGameStartUtc": "2026-08-12T02:10:00Z",
+            "lastRequestUtc": "2026-08-12T01:15:00Z",
+            "officialGameCount": 15,
+            "slateDateEt": "2026-08-11"
           }
         ],
         "snapshotGridEndsAt": "last_game_t_minus_45",
@@ -10167,9 +10280,9 @@
       "quarantinedHistoricalSlotCount": 40,
       "quotaReserve": 100,
       "rangeExtension": {
-        "appendedEstimatedCredits": 810,
+        "appendedEstimatedCredits": 820,
         "appendedSlateCount": 1,
-        "authorizedAtUtc": "2026-08-09T04:46:44.728604+00:00",
+        "authorizedAtUtc": "2026-08-12T05:06:44.666378+00:00",
         "authorizedByDeployment": true,
         "competitiveGameTypes": [
           "D",
@@ -10181,12 +10294,13 @@
         "competitiveStartDate": "2026-03-25",
         "configuredCeilingDate": "2026-12-31",
         "deferredDateCount": 0,
-        "newEndDate": "2026-08-08",
-        "previousEndDate": "2026-08-07",
-        "settledHorizonDate": "2026-08-08",
+        "newEndDate": "2026-08-11",
+        "previousEndDate": "2026-08-10",
+        "settledHorizonDate": "2026-08-11",
         "version": "MLB-HISTORICAL-INCREMENTAL-RANGE-EXTENSION-v2-waiting-resume"
       },
       "rangeExtensionDeferredDates": [],
+      "rangeExtensionNextRetryDate": "2026-08-12",
       "rejectedSlates": [
         {
           "reason": "official_off_day",
@@ -10292,7 +10406,18 @@
           "slateDateEt": "2026-07-15"
         }
       ],
-      "revision": 6031,
+      "revision": 6071,
+      "settledHorizonWait": {
+        "authorizedThroughDate": "2026-08-11",
+        "blockingError": false,
+        "configuredCeilingDate": "2026-12-31",
+        "eligibleGameCount": 4210,
+        "nextEligibleSlateDate": "2026-08-12",
+        "remainingEvidenceGames": 195,
+        "settledHorizonDate": "2026-08-11",
+        "targetSettledGames": 4405,
+        "version": "MLB-HISTORICAL-STATE-INTEGRITY-v2-settled-horizon-ledger-aware"
+      },
       "skippedHistoricalSlots": [
         {
           "reason": "historical response is too stale for a 15-minute grid",
@@ -10619,8 +10744,8 @@
       "snapshotIntervalMinutes": 15,
       "snapshotStartAtEt": "01:00",
       "startDate": "2025-04-01",
-      "targetSettledGames": 4149,
-      "updatedAtUtc": "2026-08-10T08:36:45.194400+00:00",
+      "targetSettledGames": 4405,
+      "updatedAtUtc": "2026-08-12T05:36:44.810815+00:00",
       "version": "MLB-HISTORICAL-OPTIMIZER-AWS-v1.9-quarantine-ledger-complete-versioned-dataset-key-v3"
     },
     "supervisedShadow": {
@@ -10629,7 +10754,7 @@
       "calibrationTemperatureSearch": true,
       "candidateHandoffFailsClosed": true,
       "candidateHandoffRequiresCanonicalReevaluation": true,
-      "canonicalFreshAuditIncrementGames": 250,
+      "canonicalFreshAuditIncrementGames": 200,
       "datasetPatchVersion": "MLB-SUPERVISED-V8-DATASET-PATCH-v2-provider-event-id",
       "eliteSelectiveAccuracy": 0.8,
       "featureCount": 38,
@@ -10666,7 +10791,7 @@
       "settledHorizonWaitingPhase": "WAITING_FOR_SETTLED_HORIZON",
       "shadowRefitIncrementGames": 50,
       "shadowRefitsMayPromote": false,
-      "stateIntegrityVersion": "MLB-HISTORICAL-STATE-INTEGRITY-v2-canonical-ddb-material",
+      "stateIntegrityVersion": "MLB-HISTORICAL-STATE-INTEGRITY-v3-ledger-end-reconcile",
       "strictBinaryLabels": true,
       "thresholdFrozenBeforeUntouchedHoldout": true,
       "thresholdStabilityRequired": true,
