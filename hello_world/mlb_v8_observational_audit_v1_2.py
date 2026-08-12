@@ -88,7 +88,7 @@ def _load_reusable_candidate(
     if complete and not same_source:
         return None, {}, False
     candidate = _core._load_pointer_value(s3, artifact)
-    verify_candidate(candidate)
+    _core.verify_candidate(candidate)
     return candidate, copy.deepcopy(dict(artifact)), not same_source
 
 
