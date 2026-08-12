@@ -1,0 +1,67 @@
+name: Diagnose Open-Meteo Single Runs
+
+on:
+  push:
+    branches:
+      - agent/diagnose-open-meteo-weather
+    paths:
+      - '.github/workflows/diagnose-open-meteo-single-runs.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Compare deterministic precipitation fields
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint='https://single-runs-api.open-meteo.com/v1/forecast'
+          run_date=$(date -u -d 'yesterday' +%Y-%m-%d)
+          run_value="${run_date}T12:00"
+          common=(
+            --get "$endpoint"
+            --data-urlencode 'latitude=40.8296'
+            --data-urlencode 'longitude=-73.9262'
+            --data-urlencode "run=$run_value"
+            --data-urlencode 'models=ecmwf_ifs'
+            --data-urlencode 'timezone=UTC'
+            --data-urlencode 'forecast_days=10'
+          )
+
+          probability_vars='temperature_2m,relative_humidity_2m,precipitation_probability,wind_speed_10m,wind_direction_10m,wind_gusts_10m'
+          amount_vars='temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m'
+
+          probability_status=$(curl --silent --show-error \
+            --output /tmp/probability.json --write-out '%{http_code}' \
+            "${common[@]}" --data-urlencode "hourly=$probability_vars")
+          amount_status=$(curl --silent --show-error \
+            --output /tmp/amount.json --write-out '%{http_code}' \
+            "${common[@]}" --data-urlencode "hourly=$amount_vars")
+
+          echo "run=$run_value"
+          echo "probability_status=$probability_status"
+          cat /tmp/probability.json
+          echo
+          echo "amount_status=$amount_status"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for name in ('probability','amount'):
+              path=Path(f'/tmp/{name}.json')
+              try:
+                  value=json.loads(path.read_text())
+              except Exception:
+                  print(name, path.read_text()[:1000])
+                  continue
+              print(name, json.dumps({
+                  'reason': value.get('reason'),
+                  'error': value.get('error'),
+                  'hourlyKeys': sorted((value.get('hourly') or {}).keys()),
+              }, sort_keys=True))
+          PY
+
+          test "$amount_status" = '200'
