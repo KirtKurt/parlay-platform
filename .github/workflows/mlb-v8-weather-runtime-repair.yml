@@ -19,8 +19,11 @@ on:
 permissions:
   contents: read
 
+# This workflow writes the same immutable context pointer as the autonomous
+# controller and the acceleration workflow. All live writers must share one
+# non-cancelling group so their optimistic DynamoDB revisions cannot collide.
 concurrency:
-  group: mlb-v8-weather-runtime-repair
+  group: mlb-v8-autonomous-control-plane
   cancel-in-progress: false
 
 env:
