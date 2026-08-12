@@ -9,6 +9,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SHIM = ROOT / "scripts" / "mlb_v8_historical_point_in_time_context_v1.py"
+AUTONOMOUS_CONTEXT = (
+    ROOT / "scripts" / "run_mlb_v8_historical_context_backfill_autonomous.py"
+)
+SHARED_CONTEXT_WRITER_GROUP = "mlb-v8-autonomous-control-plane"
 
 
 def _load_runtime_shim():
@@ -19,6 +23,27 @@ def _load_runtime_shim():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_live_context_writers_share_one_non_cancelling_group():
+    controller = (
+        ROOT / ".github" / "workflows" / "mlb-v8-autonomous-controller.yml"
+    ).read_text()
+    acceleration = (
+        ROOT / ".github" / "workflows" / "mlb-v8-context-acceleration.yml"
+    ).read_text()
+    weather = (
+        ROOT / ".github" / "workflows" / "mlb-v8-weather-runtime-repair.yml"
+    ).read_text()
+    expected = f"group: {SHARED_CONTEXT_WRITER_GROUP}"
+
+    for source in (controller, acceleration, weather):
+        assert expected in source
+        assert "cancel-in-progress: false" in source
+    assert (
+        f'CONTEXT_WRITER_CONCURRENCY_GROUP = "{SHARED_CONTEXT_WRITER_GROUP}"'
+        in AUTONOMOUS_CONTEXT.read_text()
+    )
 
 
 def test_scripts_path_resolves_weather_runtime_shim_first():
