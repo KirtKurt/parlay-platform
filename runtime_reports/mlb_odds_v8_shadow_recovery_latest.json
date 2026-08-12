@@ -74,7 +74,7 @@
     "advancing": true,
     "authority": "SHADOW_ONLY",
     "blockers": [],
-    "createdAtUtc": "2026-08-12T23:03:04.411324+00:00",
+    "createdAtUtc": "2026-08-12T23:59:50.343862+00:00",
     "deploymentSourceSha": "957aa96aead8f90bbd83c3247e65a554c3bd9cfa",
     "identityChecks": {
       "fifteenMinuteRate": true,
@@ -87,8 +87,47 @@
       "stackScheduleEnabled": true,
       "v8Enabled": true
     },
-    "latestArtifactAgeSeconds": 754,
+    "latestArtifactAgeSeconds": 560,
     "latestScheduledArtifact": {
+      "collectedAtUtc": "2026-08-12T23:50:29.959199+00:00",
+      "contract": {
+        "alternatesEnabled": true,
+        "authority": "SHADOW_ONLY",
+        "enabled": true,
+        "eventRegions": [
+          "us",
+          "us2"
+        ],
+        "featuredMarkets": [
+          "h2h",
+          "spreads",
+          "totals"
+        ],
+        "featuredRegions": [
+          "us"
+        ],
+        "firstFiveEnabled": true,
+        "playerPropsEnabled": false,
+        "playerPropsRequireAuthoritativeTeamAttribution": true,
+        "productionV7Unchanged": true,
+        "promotionRequiresUntouchedAudit80Pct": true,
+        "teamPropsEnabled": true,
+        "version": "MLB-ODDS-MARKET-EXPANSION-v8.2-shadow-corrected"
+      },
+      "estimatedCredits": 29,
+      "eventEnrichmentErrorCount": 0,
+      "key": "mlb/odds-v8-shadow/20260812T2350299592380000/0d6b2491f348d0cce584098fee15fd76ae692cc5a806a5c28873f45019bb44e8.json",
+      "lastModifiedUtc": "2026-08-12T23:50:31+00:00",
+      "maximumCredits": 100,
+      "selectedEventCount": 2,
+      "selectedMarketRequestCount": 9,
+      "sha256": "0d6b2491f348d0cce584098fee15fd76ae692cc5a806a5c28873f45019bb44e8",
+      "withinBudget": true
+    },
+    "newArtifactCountSincePreviousProof": 4,
+    "objectCount": 1699,
+    "ok": true,
+    "previousScheduledArtifact": {
       "collectedAtUtc": "2026-08-12T22:50:29.847945+00:00",
       "contract": {
         "alternatesEnabled": true,
@@ -124,51 +163,12 @@
       "sha256": "d08d8d8cda91341af05cda1f2b72c0334fa66ddb51056e53a285db9020c6bd23",
       "withinBudget": true
     },
-    "newArtifactCountSincePreviousProof": 4,
-    "objectCount": 1695,
-    "ok": true,
-    "previousScheduledArtifact": {
-      "collectedAtUtc": "2026-08-12T21:50:29.620158+00:00",
-      "contract": {
-        "alternatesEnabled": true,
-        "authority": "SHADOW_ONLY",
-        "enabled": true,
-        "eventRegions": [
-          "us",
-          "us2"
-        ],
-        "featuredMarkets": [
-          "h2h",
-          "spreads",
-          "totals"
-        ],
-        "featuredRegions": [
-          "us"
-        ],
-        "firstFiveEnabled": true,
-        "playerPropsEnabled": false,
-        "playerPropsRequireAuthoritativeTeamAttribution": true,
-        "productionV7Unchanged": true,
-        "promotionRequiresUntouchedAudit80Pct": true,
-        "teamPropsEnabled": true,
-        "version": "MLB-ODDS-MARKET-EXPANSION-v8.2-shadow-corrected"
-      },
-      "estimatedCredits": 17,
-      "eventEnrichmentErrorCount": 0,
-      "key": "mlb/odds-v8-shadow/20260812T2150296202040000/0961f6f8c79bbb6269cf0180f367c14f4b0f860c1fe625653b22e670632dde74.json",
-      "lastModifiedUtc": "2026-08-12T21:50:30+00:00",
-      "maximumCredits": 100,
-      "selectedEventCount": 2,
-      "selectedMarketRequestCount": 6,
-      "sha256": "0961f6f8c79bbb6269cf0180f367c14f4b0f860c1fe625653b22e670632dde74",
-      "withinBudget": true
-    },
     "productionAuthorityChanged": false,
     "proofType": "MLB_ODDS_V8_SHADOW_CONTINUITY",
     "ruleName": "parlay-platform-mlb-odds--ShadowCollectorFunctionSh-HRpP1fiDGc6b",
     "ruleState": "ENABLED",
-    "runId": "31649396554",
-    "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/31649396554",
+    "runId": "31652865368",
+    "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/31652865368",
     "runtimeChecks": {
       "authorityUnchanged": true,
       "collectedAfterPrevious": true,
@@ -183,9 +183,9 @@
     },
     "scheduleExpression": "rate(15 minutes)",
     "scheduleStatus": "ENABLED_EVERY_15_MINUTES",
-    "scheduledCollectionCount": 1691
+    "scheduledCollectionCount": 1695
   },
-  "runtimeContinuityVerifiedAtUtc": "2026-08-12T23:03:04.411324+00:00",
+  "runtimeContinuityVerifiedAtUtc": "2026-08-12T23:59:50.343862+00:00",
   "scheduledCollection": {
     "baselineObjectCount": 4,
     "budget": {
