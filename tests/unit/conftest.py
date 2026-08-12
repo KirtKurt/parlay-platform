@@ -1,19 +1,43 @@
-"""Keep MLB acceptance fixtures aligned with the active prospective cutoff.
-
-The production experiment boundary is versioned in ``mlb_ml_experiment_v2``.
-The acceptance suite historically used a fixed July 22 clock and slate. Once
-that boundary moved to July 24, those literals made the fixture ask for final
-games before the release existed. This hook updates only that test module's
-synthetic clock and synthetic row identities; production code is not modified.
-"""
+"""Keep MLB acceptance fixtures aligned with active versioned boundaries."""
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _stable_public_authority_read_clock(request, monkeypatch):
+    """Freeze the clock only for the test that compares two complete reads.
+
+    The public payload intentionally exposes minute-distance telemetry. The test
+    validates read-scope/cache equivalence, not wall-clock progression, so both
+    calls must share one synthetic observation instant. Its local ``_install``
+    helper reloads the coverage module, requiring the clock patch after reload.
+    """
+
+    if not request.node.nodeid.endswith(
+        "test_mlb_public_per_game_authority.py::"
+        "test_persisted_reader_uses_one_read_scope_without_scoping_writer"
+    ):
+        return
+
+    module = request.module
+    original_install = module._install
+    observed_at = datetime(2026, 7, 17, 21, 0, tzinfo=timezone.utc)
+
+    def install_with_stable_clock(engine):
+        original_install(engine)
+        monkeypatch.setattr(module.coverage, "_now_utc", lambda: observed_at)
+
+    monkeypatch.setattr(module, "_install", install_with_stable_clock)
 
 
 def pytest_collection_modifyitems(session, config, items):
+    """Align the production-acceptance fixture with the release cutoff."""
+
     candidates = [
         module
         for name, module in sys.modules.items()
