@@ -25,7 +25,7 @@ def _learn_live_market_catalog(store: Store) -> list[str]:
     return sorted(keys)
 
 
-def run_historical_backfill(days_per_run: int | None = None):
+def run_historical_backfill(days_per_run: int | None = None, max_games_per_run: int | None = None):
     store = Store()
     _learn_live_market_catalog(store)
-    return _run(days_per_run=days_per_run)
+    return _run(days_per_run=days_per_run, max_games_per_run=max_games_per_run)
