@@ -37,7 +37,7 @@ Globals:
         MLB_AUTO_LOCK_MINUTES: '45'
         MLB_AUTO_MIN_OFFICIAL_PROBABILITY: '0.58'
         MLB_AUTO_HISTORICAL_DAYS_PER_RUN: '1'
-        MLB_AUTO_LLM_MODEL_IDS: 'us.anthropic.claude-opus-4-8,us.anthropic.claude-opus-4-7,us.anthropic.claude-opus-4-6-v1,us.anthropic.claude-sonnet-4-6,us.anthropic.claude-sonnet-4-5-20250929-v1:0,amazon.nova-premier-v1:0,amazon.nova-pro-v1:0,us.amazon.nova-2-lite-v1:0,amazon.nova-lite-v1:0,amazon.nova-micro-v1:0'
+        MLB_AUTO_LLM_MODEL_IDS: 'us.anthropic.claude-opus-4-6-v1,us.anthropic.claude-sonnet-4-6,us.anthropic.claude-sonnet-4-5-20250929-v1:0,amazon.nova-premier-v1:0,amazon.nova-pro-v1:0,us.amazon.nova-2-lite-v1:0,amazon.nova-lite-v1:0,amazon.nova-micro-v1:0'
         MLB_AUTO_LLM_MIN_EXAMPLES: '75'
         MLB_AUTO_LLM_INTERVAL_SECONDS: '14400'
         MLB_AUTO_LLM_MAX_FEATURES: '8'
@@ -160,31 +160,6 @@ Resources:
               Action:
                 - bedrock:CallWithBearerToken
                 - bedrock-mantle:CallWithBearerToken
-              Resource: '*'
-            - Sid: ManageExactOpusModelAccess
-              Effect: Allow
-              Action:
-                - bedrock:GetUseCaseForModelAccess
-                - bedrock:PutUseCaseForModelAccess
-                - bedrock:ListFoundationModelAgreementOffers
-                - bedrock:CreateFoundationModelAgreement
-                - bedrock:GetFoundationModelAvailability
-              Resource: '*'
-            - Sid: SubscribeExactOpusMarketplaceProducts
-              Effect: Allow
-              Action:
-                - aws-marketplace:Subscribe
-              Resource: '*'
-              Condition:
-                ForAnyValue:StringEquals:
-                  aws-marketplace:ProductId:
-                    - prod-bk5rjg4eo2pke
-                    - prod-d2ik6zgct5hxi
-            - Sid: CompleteMarketplaceModelAccessLifecycle
-              Effect: Allow
-              Action:
-                - aws-marketplace:Unsubscribe
-                - aws-marketplace:ViewSubscriptions
               Resource: '*'
       Events:
         StatusApi:
