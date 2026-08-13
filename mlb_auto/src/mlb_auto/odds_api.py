@@ -67,6 +67,12 @@ class OddsApiClient:
     def events(self) -> ApiResponse:
         return self._get(f'/sports/{SPORT}/events', dateFormat='iso')
 
+    def participants(self) -> ApiResponse:
+        return self._get(f'/sports/{SPORT}/participants')
+
+    def scores(self, days_from: int = 3) -> ApiResponse:
+        return self._get(f'/sports/{SPORT}/scores', daysFrom=days_from, dateFormat='iso')
+
     def featured_odds(self) -> ApiResponse:
         return self._get(
             f'/sports/{SPORT}/odds',
@@ -93,6 +99,29 @@ class OddsApiClient:
             markets=','.join(sorted(set(markets))),
             oddsFormat='american',
             dateFormat='iso',
+        )
+
+    def historical_featured_odds(self, snapshot_at_iso: str) -> ApiResponse:
+        return self._get(
+            f'/historical/sports/{SPORT}/odds',
+            regions=self.regions,
+            markets=','.join(FEATURED),
+            oddsFormat='american',
+            dateFormat='iso',
+            date=snapshot_at_iso,
+        )
+
+    def historical_event_odds(self, event_id: str, snapshot_at_iso: str, markets: Iterable[str]) -> ApiResponse:
+        markets = [m for m in markets if m]
+        if not markets:
+            return ApiResponse({}, None, None, 0)
+        return self._get(
+            f'/historical/sports/{SPORT}/events/{event_id}/odds',
+            regions=self.regions,
+            markets=','.join(sorted(set(markets))),
+            oddsFormat='american',
+            dateFormat='iso',
+            date=snapshot_at_iso,
         )
 
     @staticmethod
