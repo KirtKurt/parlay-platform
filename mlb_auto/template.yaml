@@ -1,0 +1,206 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Isolated autonomous MLB Auto game-winner platform modeled on Tennis lifecycle
+
+Parameters:
+  OddsApiKey:
+    Type: String
+    NoEcho: true
+  ScheduleState:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [ENABLED, DISABLED]
+  DeployGitSha:
+    Type: String
+    Default: unknown
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 180
+    MemorySize: 1024
+    Environment:
+      Variables:
+        MLB_AUTO_ODDS_API_KEY: !Ref OddsApiKey
+        MLB_AUTO_STATE_TABLE: !Ref StateTable
+        MLB_AUTO_SNAPSHOTS_TABLE: !Ref SnapshotsTable
+        MLB_AUTO_PREDICTIONS_TABLE: !Ref PredictionsTable
+        MLB_AUTO_LOCKS_TABLE: !Ref LocksTable
+        MLB_AUTO_OUTCOMES_TABLE: !Ref OutcomesTable
+        MLB_AUTO_MODELS_TABLE: !Ref ModelsTable
+        MLB_AUTO_ARCHIVE_BUCKET: !Ref ArchiveBucket
+        MLB_AUTO_DEPLOY_GIT_SHA: !Ref DeployGitSha
+        MLB_AUTO_MIN_TRAINING_EXAMPLES: '250'
+        MLB_AUTO_MIN_VALIDATION_EXAMPLES: '50'
+        MLB_AUTO_MIN_NEW_EXAMPLES: '25'
+        MLB_AUTO_LOCK_MINUTES: '45'
+        MLB_AUTO_MIN_OFFICIAL_PROBABILITY: '0.58'
+
+Resources:
+  StateTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+
+  SnapshotsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+
+  PredictionsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+
+  LocksTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+
+  OutcomesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+
+  ModelsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+
+  ArchiveBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VersioningConfiguration: {Status: Enabled}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  AutoApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+
+  AutoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: mlb_auto.handler.handler
+      Policies:
+        - DynamoDBCrudPolicy: {TableName: !Ref StateTable}
+        - DynamoDBCrudPolicy: {TableName: !Ref SnapshotsTable}
+        - DynamoDBCrudPolicy: {TableName: !Ref PredictionsTable}
+        - DynamoDBCrudPolicy: {TableName: !Ref LocksTable}
+        - DynamoDBCrudPolicy: {TableName: !Ref OutcomesTable}
+        - DynamoDBCrudPolicy: {TableName: !Ref ModelsTable}
+        - S3CrudPolicy: {BucketName: !Ref ArchiveBucket}
+      Events:
+        StatusApi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AutoApi
+            Path: /v1/mlb-auto/status
+            Method: GET
+        PredictionsApi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AutoApi
+            Path: /v1/mlb-auto/predictions
+            Method: GET
+        Heartbeat:
+          Type: Schedule
+          Properties:
+            Name: !Sub '${AWS::StackName}-heartbeat-5m'
+            Schedule: rate(5 minutes)
+            State: !Ref ScheduleState
+            Input: '{"action":"MLB_AUTO_HEARTBEAT"}'
+        LockCheck:
+          Type: Schedule
+          Properties:
+            Name: !Sub '${AWS::StackName}-lock-1m'
+            Schedule: rate(1 minute)
+            State: !Ref ScheduleState
+            Input: '{"action":"MLB_AUTO_LOCK"}'
+        Settlement:
+          Type: Schedule
+          Properties:
+            Name: !Sub '${AWS::StackName}-settle-1h'
+            Schedule: rate(1 hour)
+            State: !Ref ScheduleState
+            Input: '{"action":"MLB_AUTO_SETTLE"}'
+        Training:
+          Type: Schedule
+          Properties:
+            Name: !Sub '${AWS::StackName}-train-6h'
+            Schedule: rate(6 hours)
+            State: !Ref ScheduleState
+            Input: '{"action":"MLB_AUTO_TRAIN"}'
+        Repair:
+          Type: Schedule
+          Properties:
+            Name: !Sub '${AWS::StackName}-repair-15m'
+            Schedule: rate(15 minutes)
+            State: !Ref ScheduleState
+            Input: '{"action":"MLB_AUTO_REPAIR"}'
+
+Outputs:
+  ApiUrl:
+    Value: !Sub 'https://${AutoApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/prod'
+  FunctionName:
+    Value: !Ref AutoFunction
+  ArchiveBucketName:
+    Value: !Ref ArchiveBucket
