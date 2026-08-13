@@ -1,0 +1,266 @@
+name: Retire MLB V7-V10 Runtime
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/retire-mlb-v7-v10-now.yml'
+      - 'runtime_reports/mlb_v7_v10_retirement_latest.json'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: retire-mlb-v7-v10-runtime
+  cancel-in-progress: false
+
+env:
+  PROOF_PATH: runtime_reports/mlb_v7_v10_shutdown_proof_latest.json
+
+jobs:
+  shutdown:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Disable MLB V7-V10 GitHub and AWS execution surfaces
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          region = os.environ['AWS_REGION_VALUE']
+          proof_path = Path(os.environ['PROOF_PATH'])
+          workflow_files = [
+              'mlb-odds-pattern-v7-deploy.yml',
+              'mlb-v7-learning-integration-ci.yml',
+              'mlb-v7-settled-horizon-resume-deploy.yml',
+              'mlb-v7-settled-horizon-resume-proof-publish.yml',
+              'mlb-v7-v10-stall-recovery-bootstrap.yml',
+              'mlb-v7-v8-today-test-diagnostic-once.yml',
+              'mlb-v7-v8-today-test-once.yml',
+              'mlb-historical-v7-recovery.yml',
+              'mlb-r7-selection-capture-current-state.yml',
+              'mlb-r7-selection-capture-repair.yml',
+              'v7-v10-stall-fix-migration.yml',
+              'mlb-odds-market-v8-deploy.yml',
+              'mlb-odds-v8-shadow-ci.yml',
+              'mlb-odds-v8-shadow-deploy.yml',
+              'mlb-historical-surgical-recovery-v8.yml',
+              'mlb-historical-context-backfill.yml',
+              'mlb-v8-autonomous-controller.yml',
+              'mlb-v8-context-acceleration.yml',
+              'mlb-v8-first-five-backfill-plan.yml',
+              'mlb-v8-fundamentals-ci.yml',
+              'mlb-v8-fundamentals-deploy.yml',
+              'mlb-v8-historical-context-backfill.yml',
+              'mlb-v8-historical-first-five-probe-once.yml',
+              'mlb-v8-hourly-status.yml',
+              'mlb-v8-incremental-range-extension-deploy.yml',
+              'mlb-v8-incremental-range-extension-validation.yml',
+              'mlb-v8-latest-report-integrity.yml',
+              'mlb-v8-model-runtime-ci.yml',
+              'mlb-v8-observational-audit.yml',
+              'mlb-v8-range-extension-live-proof-once.yml',
+              'mlb-v8-repeat-runtime-proof.yml',
+              'mlb-v8-selection-guard-ci.yml',
+              'mlb-v8-shadow-realtime-72.yml',
+              'mlb-v8-shadow-recovery-validate.yml',
+              'mlb-v8-weather-runtime-repair.yml',
+              'mlb-supervised-shadow-v2-recurring.yml',
+              'mlb-historical-supervised-v9-shadow.yml',
+              'mlb-supervised-v9-install-once.yml',
+              'mlb-historical-direct-lambda-recovery-v9.yml',
+              'mlb-v9-event-id-direct-recovery-once.yml',
+              'mlb-v9-event-id-direct-recovery-trigger-once.yml',
+              'mlb-v9-event-id-install-once.yml',
+              'mlb-v9-pointer-reconcile-probe-once.yml',
+              'mlb-v9-r5-activation-proof-once.yml',
+              'mlb-v9-r5-activation-proof-retry-once.yml',
+              'mlb-v9-r5-cutover-repair-once.yml',
+              'mlb-v9-r5-source-publish-retry-once.yml',
+              'mlb-v9-trainer-diagnostic-once.yml',
+              'mlb-v9-trainer-status-probe-once.yml',
+              'mlb-v10-autonomous-signal-discovery.yml',
+              'mlb-v10-material-handoff.yml',
+              'mlb-historical-recovery-v10.yml',
+              'v10-pr-validation.yml',
+          ]
+          version_pattern = re.compile(r'(?:mlb.*v(?:7|8|9|10)(?:[^0-9]|$)|v(?:7|8|9|10).*mlb)', re.I)
+
+          def run(args, check=True):
+              p = subprocess.run(args, text=True, capture_output=True)
+              if check and p.returncode:
+                  raise RuntimeError(f"command failed ({p.returncode}): {' '.join(args)}\n{p.stderr}")
+              return p
+
+          def aws_json(*args):
+              p = run(['aws', *args, '--region', region, '--output', 'json'])
+              return json.loads(p.stdout or '{}')
+
+          github_states = []
+          github_errors = []
+          for workflow in workflow_files:
+              endpoint = f'repos/{repo}/actions/workflows/{workflow}'
+              before = run(['gh', 'api', endpoint], check=False)
+              if before.returncode:
+                  github_states.append({'workflow': workflow, 'state': 'ABSENT'})
+                  continue
+              disabled = run(['gh', 'api', '--method', 'PUT', f'{endpoint}/disable'], check=False)
+              if disabled.returncode:
+                  github_errors.append(f'github_disable_failed:{workflow}:{disabled.stderr.strip()}')
+                  continue
+              after = run(['gh', 'api', endpoint], check=False)
+              state = 'UNVERIFIED'
+              if not after.returncode:
+                  state = (json.loads(after.stdout or '{}').get('state') or 'UNVERIFIED')
+              github_states.append({'workflow': workflow, 'state': state})
+              if state != 'disabled_manually':
+                  github_errors.append(f'github_workflow_not_disabled:{workflow}:{state}')
+
+          disabled_rules = []
+          buses = [{'Name': 'default'}] + (aws_json('events', 'list-event-buses').get('EventBuses') or [])
+          seen_buses = set()
+          for bus in buses:
+              bus_name = str(bus.get('Name') or 'default')
+              if bus_name in seen_buses:
+                  continue
+              seen_buses.add(bus_name)
+              for rule in aws_json('events', 'list-rules', '--event-bus-name', bus_name).get('Rules') or []:
+                  name = str(rule.get('Name') or '')
+                  if not version_pattern.search(name):
+                      continue
+                  run(['aws', 'events', 'disable-rule', '--name', name, '--event-bus-name', bus_name, '--region', region])
+                  disabled_rules.append({'eventBus': bus_name, 'name': name})
+
+          deleted_schedules = []
+          for schedule in aws_json('scheduler', 'list-schedules').get('Schedules') or []:
+              name = str(schedule.get('Name') or '')
+              group = str(schedule.get('GroupName') or 'default')
+              if not version_pattern.search(name):
+                  continue
+              run(['aws', 'scheduler', 'delete-schedule', '--name', name, '--group-name', group, '--region', region])
+              deleted_schedules.append({'group': group, 'name': name})
+
+          disabled_functions = []
+          for function in aws_json('lambda', 'list-functions').get('Functions') or []:
+              name = str(function.get('FunctionName') or '')
+              if not version_pattern.search(name):
+                  continue
+              run(['aws', 'lambda', 'put-function-concurrency', '--function-name', name, '--reserved-concurrent-executions', '0', '--region', region])
+              disabled_functions.append(name)
+
+          stopped_executions = []
+          for machine in aws_json('stepfunctions', 'list-state-machines').get('stateMachines') or []:
+              name = str(machine.get('name') or '')
+              arn = str(machine.get('stateMachineArn') or '')
+              if not version_pattern.search(name):
+                  continue
+              for execution in aws_json('stepfunctions', 'list-executions', '--state-machine-arn', arn, '--status-filter', 'RUNNING').get('executions') or []:
+                  execution_arn = str(execution.get('executionArn') or '')
+                  run(['aws', 'stepfunctions', 'stop-execution', '--execution-arn', execution_arn, '--error', 'MLB_V7_V10_RETIRED', '--cause', 'Owner retired MLB V7 through V10 on 2026-08-13', '--region', region])
+                  stopped_executions.append(execution_arn)
+
+          disabled_alarms = []
+          for alarm in aws_json('cloudwatch', 'describe-alarms').get('MetricAlarms') or []:
+              name = str(alarm.get('AlarmName') or '')
+              if version_pattern.search(name):
+                  run(['aws', 'cloudwatch', 'disable-alarm-actions', '--alarm-names', name, '--region', region])
+                  disabled_alarms.append(name)
+
+          verification_errors = list(github_errors)
+          for item in disabled_rules:
+              state = aws_json('events', 'describe-rule', '--name', item['name'], '--event-bus-name', item['eventBus']).get('State')
+              if state != 'DISABLED':
+                  verification_errors.append(f"event_rule_not_disabled:{item['eventBus']}:{item['name']}:{state}")
+          for name in disabled_functions:
+              concurrency = aws_json('lambda', 'get-function-concurrency', '--function-name', name).get('ReservedConcurrentExecutions')
+              if concurrency != 0:
+                  verification_errors.append(f'lambda_concurrency_not_zero:{name}:{concurrency}')
+          for schedule in aws_json('scheduler', 'list-schedules').get('Schedules') or []:
+              if version_pattern.search(str(schedule.get('Name') or '')):
+                  verification_errors.append(f"scheduler_still_present:{schedule.get('GroupName')}:{schedule.get('Name')}")
+
+          proof = {
+              'proofType': 'MLB_V7_V10_RUNTIME_RETIREMENT',
+              'version': 'MLB-V7-V10-RETIREMENT-v1',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'sourceSha': os.environ.get('GITHUB_SHA'),
+              'runId': os.environ.get('GITHUB_RUN_ID'),
+              'status': 'RETIRED' if not verification_errors else 'RETIREMENT_INCOMPLETE',
+              'ok': not verification_errors,
+              'affectedAlgorithms': ['MLB_V7', 'MLB_V8', 'MLB_V9', 'MLB_V10'],
+              'reportingEnabled': False,
+              'scheduledExecutionEnabled': False,
+              'manualWorkflowDispatchEnabled': False,
+              'trainingEnabled': False,
+              'simulationEnabled': False,
+              'shadowEvaluationEnabled': False,
+              'promotionEnabled': False,
+              'productionAuthorityChanged': False,
+              'preservedSystems': ['MLB_AUTO', 'TENNIS', 'SOCCER'],
+              'githubWorkflowStates': github_states,
+              'disabledEventBridgeRules': disabled_rules,
+              'deletedEventBridgeSchedulerSchedules': deleted_schedules,
+              'disabledLambdaFunctions': disabled_functions,
+              'stoppedStepFunctionExecutions': stopped_executions,
+              'disabledCloudWatchAlarmActions': disabled_alarms,
+              'verificationErrors': verification_errors,
+          }
+          proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + '\n')
+          if verification_errors:
+              raise SystemExit(json.dumps(proof, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload shutdown proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v7-v10-retirement-${{ github.run_id }}
+          path: runtime_reports/mlb_v7_v10_shutdown_proof_latest.json
+          retention-days: 90
+
+      - name: Publish durable shutdown proof
+        run: |
+          set -euo pipefail
+          cp "$PROOF_PATH" /tmp/mlb-v7-v10-shutdown-proof.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-v7-v10-retirement-proof origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb-v7-v10-shutdown-proof.json "$PROOF_PATH"
+            git add "$PROOF_PATH"
+            git diff --cached --quiet && break
+            git commit -m 'Publish MLB V7-V10 shutdown proof [skip ci]'
+            git push origin HEAD:main && break
+            sleep $((attempt * 3))
+          done
+
+      - name: Disable retirement workflow after verified shutdown
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/retire-mlb-v7-v10-now.yml/disable"
