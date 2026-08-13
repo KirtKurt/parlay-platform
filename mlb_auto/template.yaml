@@ -139,7 +139,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: src/
-      Handler: mlb_auto.handler.handler
+      Handler: mlb_auto.autonomous_handler.handler
       Policies:
         - DynamoDBCrudPolicy: {TableName: !Ref StateTable}
         - DynamoDBCrudPolicy: {TableName: !Ref SnapshotsTable}
@@ -178,22 +178,22 @@ Resources:
         Settlement:
           Type: Schedule
           Properties:
-            Name: !Sub '${AWS::StackName}-settle-1h'
-            Schedule: rate(1 hour)
+            Name: !Sub '${AWS::StackName}-settle-30m'
+            Schedule: rate(30 minutes)
             State: !Ref ScheduleState
             Input: '{"action":"MLB_AUTO_SETTLE"}'
         Training:
           Type: Schedule
           Properties:
-            Name: !Sub '${AWS::StackName}-train-6h'
-            Schedule: rate(6 hours)
+            Name: !Sub '${AWS::StackName}-train-1h'
+            Schedule: rate(1 hour)
             State: !Ref ScheduleState
             Input: '{"action":"MLB_AUTO_TRAIN"}'
         Repair:
           Type: Schedule
           Properties:
-            Name: !Sub '${AWS::StackName}-repair-15m'
-            Schedule: rate(15 minutes)
+            Name: !Sub '${AWS::StackName}-repair-5m'
+            Schedule: rate(5 minutes)
             State: !Ref ScheduleState
             Input: '{"action":"MLB_AUTO_REPAIR"}'
 
