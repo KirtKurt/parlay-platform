@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
 
+from .odds_api import provider_safety_config
 from .storage import SoccerStore, plain
 
 
@@ -19,6 +20,7 @@ def _response(status: int, body: Mapping[str, Any]) -> dict[str, Any]:
 
 def status(store: SoccerStore) -> dict[str, Any]:
     state = store.ops.get_item(Key={"PK": "AUTONOMY", "SK": "STATE"}, ConsistentRead=True).get("Item")
+    provider_429_telemetry = store.provider_429_status()
     if not state:
         return {
             "ok": True,
@@ -27,8 +29,17 @@ def status(store: SoccerStore) -> dict[str, Any]:
             "automatic_prediction_allowed": False,
             "promotion_blocked": True,
             "reason": "AUTONOMOUS_CONTROLLER_HAS_NOT_COMPLETED_FIRST_CYCLE",
+            "shared_provider_safety": provider_safety_config(),
+            "distributed_rate_limit_state": store.rate_limit_status(),
+            "provider_429_telemetry": provider_429_telemetry,
         }
-    return {"ok": True, **plain(state)}
+    return {
+        "ok": True,
+        **plain(state),
+        "shared_provider_safety": provider_safety_config(),
+        "distributed_rate_limit_state": store.rate_limit_status(),
+        "provider_429_telemetry": provider_429_telemetry,
+    }
 
 
 def predictions(store: SoccerStore, limit: int = 100) -> dict[str, Any]:
@@ -155,6 +166,13 @@ def coverage(store: SoccerStore) -> dict[str, Any]:
             FilterExpression=Attr("entity_type").eq("SOCCER_SHARED_PROVIDER_QUOTA_GUARD"),
         )
     ]
+    rate_limit_blocks = [
+        row
+        for row in store.scan_all(
+            store.ops,
+            FilterExpression=Attr("entity_type").eq("SOCCER_DISTRIBUTED_RATE_LIMIT_BLOCK"),
+        )
+    ]
     cycle_coverage = _latest_cycle_coverage(coverage_plans, coverage_fetches)
     expected_pairs = cycle_coverage["expected_pairs"]
     returned_pairs = cycle_coverage["returned_pairs"]
@@ -184,6 +202,7 @@ def coverage(store: SoccerStore) -> dict[str, Any]:
             "collection_failures": len(collection_failures),
             "permanent_collection_failures": sum(bool(row.get("permanent")) for row in collection_failures),
             "quota_guard_blocks": len(quota_blocks),
+            "distributed_rate_limit_blocks": len(rate_limit_blocks),
             "coverage_complete": (
                 bool(expected_pairs)
                 and not missing_pairs
@@ -191,6 +210,9 @@ def coverage(store: SoccerStore) -> dict[str, Any]:
             ),
         },
         "historical_cursors": cursors,
+        "shared_provider_safety": provider_safety_config(),
+        "distributed_rate_limit_state": store.rate_limit_status(),
+        "provider_429_telemetry": store.provider_429_status(),
         "daily_collection_windows": daily_windows[:45],
         "collection_contract": {
             "match_day_timezone": "America/New_York",

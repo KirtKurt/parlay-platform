@@ -19,7 +19,7 @@ from .config import (
     HISTORICAL_FEATURED_START,
     SOCCER_MARKET_SEEDS,
 )
-from .odds_api import chunks
+from .odds_api import DEFAULT_MAX_ATTEMPTS, chunks
 from .storage import SoccerStore, ddb_safe, now_utc, plain
 
 
@@ -119,7 +119,12 @@ def run_featured(store: SoccerStore) -> dict[str, Any]:
         if not store.provider_budget_available(
             "historical_featured",
             observed_at,
-            estimated_cost=10 * len(FEATURED_GAME_MARKETS) * len(ALL_BOOKMAKER_REGIONS),
+            estimated_cost=(
+                DEFAULT_MAX_ATTEMPTS
+                * 10
+                * len(FEATURED_GAME_MARKETS)
+                * len(ALL_BOOKMAKER_REGIONS)
+            ),
         ):
             break
         if parse_utc(requested_at) >= now_utc() - timedelta(minutes=5):
@@ -177,7 +182,11 @@ def _load_additional_snapshot(store: SoccerStore, cursor: dict[str, Any], compet
         cursor["pending_event_index"] = 0
         return
     observed_at = iso_utc(now_utc())
-    if not store.provider_budget_available("historical_events", observed_at, estimated_cost=1):
+    if not store.provider_budget_available(
+        "historical_events",
+        observed_at,
+        estimated_cost=DEFAULT_MAX_ATTEMPTS,
+    ):
         cursor["quota_deferred_at"] = observed_at
         return
     response = client.historical_events(competition["sport_key"], requested_at)
@@ -244,7 +253,12 @@ def run_additional(store: SoccerStore) -> dict[str, Any]:
             if not store.provider_budget_available(
                 "historical_event_odds",
                 observed_at,
-                estimated_cost=10 * len(market_batch) * len(ALL_BOOKMAKER_REGIONS),
+                estimated_cost=(
+                    DEFAULT_MAX_ATTEMPTS
+                    * 10
+                    * len(market_batch)
+                    * len(ALL_BOOKMAKER_REGIONS)
+                ),
             ):
                 cursor["quota_deferred_at"] = observed_at
                 cursor["pending_event_index"] = index

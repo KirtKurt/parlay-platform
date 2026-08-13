@@ -143,15 +143,49 @@ fresh, digest-validated `LATEST` analysis.
   single merge commit whose message contains GitHub's native `[skip ci]`
   directive. Trigger-level suppression is required: merely skipping the main
   deploy job would still awaken its MLB `workflow_run` consumers. After that
-  no-CI merge, only `deploy-soccer-auto.yml` is dispatched manually.
+  no-CI merge, soccer deployment was dispatched through its isolated workflow;
+  the temporary marker-only push authorization below remains confined to that
+  same workflow.
 - The existing single Odds API credential is stored in the soccer stack's own
   secret. Costly calls fail closed until provider quota headers are known. An
   atomic soccer-only admission ledger prevents concurrent workers from racing
-  past soccer's allowance. The initial configuration leaves 80% of credits
-  untouched plus a 600-credit in-flight buffer; the percentage reserve is
-  explicitly configurable during manual deployment.
-- The new deployment workflow is manual-only during verification. Nothing in
-  this build deploys or changes production automatically.
+  past the currently observed shared-subscription balance. Coverage-first mode
+  is now the deployment default: the percentage reserve is 0%, while the
+  independent 2,000-credit in-flight race buffer remains enabled. The percentage
+  reserve remains explicitly configurable during manual deployment. A block at
+  that 0% boundary is recorded explicitly as `RACE_BUFFER_REACHED`, distinct
+  from a configured percentage-reserve block.
+- Shared-key protections remain active in coverage-first mode: the soccer SQS
+  worker is capped at six concurrent consumers, every paid call must pass the
+  atomic admission ledger, and provider HTTP 429 responses honor `Retry-After`
+  with bounded retries. Every 429 attempt also writes a 30-day, non-secret
+  diagnostic containing only its provider path, attempt number, retry delay,
+  and observation time. Status and coverage expose a bounded rolling 24-hour
+  count plus the latest rows. In addition, every soccer provider request attempt --
+  including free catalog/event calls, live markets, scores, outrights,
+  historical endpoints, and retry attempts -- must acquire an atomic lease in
+  `SoccerOpsTable` before network I/O. The default and maximum soccer rate is
+  three calls per second with burst capacity one. A single globally smoothed
+  `next_allowed_ms` pointer spaces leases by at least 334 milliseconds, avoiding
+  fixed-window boundary bursts and leaving normal request-rate capacity for the
+  separately deployed MLB and tennis systems. If the lease table is missing,
+  unavailable, too contended, or cannot grant a slot within eight seconds, the
+  request fails closed and records or logs a bounded diagnostic; it never calls
+  the provider without a lease. Paid-call admission conservatively reserves the
+  maximum four-attempt credit cost up front, while each actual retry must still
+  acquire its own distributed request permit. The status and coverage APIs expose the
+  effective 0% percentage reserve, 2,000-credit race buffer, three-RPS cap, and
+  burst-one policy without exposing the credential. MLB and tennis remain
+  outside this soccer-only stack and ledger; the Odds API subscription and
+  credential are still shared.
+- Historical raw backfill remains disabled by default during the initial
+  coverage-first activation. When explicitly enabled, its small resumable
+  per-cycle calls use the same distributed three-RPS limiter and shared-credit
+  admission controls. Historical odds rows remain training-ineligible until
+  joined to an authoritative final result; prices are never used as labels.
+- The deployment workflow has a temporary one-time push authorization scoped
+  only to `soccer_auto/.deploy-v1-once`; remove that trigger and marker after
+  the coverage-first deployment is verified.
 
 ## Deployment recovery
 

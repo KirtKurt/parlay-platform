@@ -60,6 +60,30 @@ class SharedProviderGuardTests(unittest.TestCase):
         store.ops = Ops(remaining, used)
         return store
 
+    def test_coverage_first_default_keeps_full_2000_credit_race_buffer(self) -> None:
+        store = self.store(2001, 2999)
+        with patch.dict("os.environ", {}, clear=True):
+            allowed = store.provider_budget_available(
+                "event_odds",
+                "2026-08-14T04:00:00Z",
+            )
+        self.assertTrue(allowed)
+        self.assertEqual(store.ops.admission["reserve_credits"], 0.0)
+        self.assertEqual(store.ops.admission["race_buffer_credits"], 2000)
+        self.assertEqual(store.ops.admission["spendable_credits"], 1)
+
+    def test_coverage_first_default_still_blocks_inside_race_buffer(self) -> None:
+        store = self.store(2000, 3000)
+        with patch.dict("os.environ", {}, clear=True):
+            allowed = store.provider_budget_available(
+                "event_odds",
+                "2026-08-14T04:00:00Z",
+            )
+        self.assertFalse(allowed)
+        self.assertEqual(store.ops.blocked[0]["reserve_percent"], 0.0)
+        self.assertEqual(store.ops.blocked[0]["race_buffer_credits"], 2000)
+        self.assertEqual(store.ops.blocked[0]["reason"], "RACE_BUFFER_REACHED")
+
     def test_soccer_stops_before_shared_subscription_reserve(self) -> None:
         store = self.store(80, 20)
         with patch.dict(

@@ -18,7 +18,13 @@ from .config import (
     PLAYER_PROP_COMPETITIONS,
     SOCCER_MARKET_SEEDS,
 )
-from .odds_api import ApiResponse, OddsApiClient, OddsApiError, chunks
+from .odds_api import (
+    DEFAULT_MAX_ATTEMPTS,
+    ApiResponse,
+    OddsApiClient,
+    OddsApiError,
+    chunks,
+)
 from .schedule import (
     COLLECTION_LEAD_HOURS,
     DAY_TIMEZONE,
@@ -379,7 +385,11 @@ def _discover_event(store: SoccerStore, client: OddsApiClient, job: Mapping[str,
     # credit per request. Query the complete current region catalog at once so
     # soccer receives the same bookmaker/market union without nine separate
     # calls competing with MLB and tennis for the shared subscription.
-    if not store.provider_budget_available("event_markets", observed_at, estimated_cost=1):
+    if not store.provider_budget_available(
+        "event_markets",
+        observed_at,
+        estimated_cost=DEFAULT_MAX_ATTEMPTS,
+    ):
         return {
             "event_key": event["event_key"],
             "deferred": True,
@@ -507,7 +517,11 @@ def _fetch_event(store: SoccerStore, client: OddsApiClient, job: Mapping[str, An
     window = _require_collection_window(store, event, request_observed_at)
     region_equivalents = max(1, (len(bookmakers) + 9) // 10) if bookmakers else max(1, len(regions))
     if not store.provider_budget_available(
-        "event_odds", request_observed_at, estimated_cost=max(1, len(markets)) * region_equivalents
+        "event_odds",
+        request_observed_at,
+        estimated_cost=(
+            DEFAULT_MAX_ATTEMPTS * max(1, len(markets)) * region_equivalents
+        ),
     ):
         return {"event_key": event["event_key"], "deferred": True, "reason": "SHARED_PROVIDER_QUOTA_RESERVE"}
     store.record_collection_window_call(event, window, request_observed_at)
@@ -648,7 +662,9 @@ def _fetch_outrights(store: SoccerStore, client: OddsApiClient, job: Mapping[str
     # Outrights are tournament-level products without a game-day kickoff and
     # are archived separately; they never enter game prediction training.
     if not store.provider_budget_available(
-        "outrights", observed_at, estimated_cost=len(ALL_BOOKMAKER_REGIONS)
+        "outrights",
+        observed_at,
+        estimated_cost=DEFAULT_MAX_ATTEMPTS * len(ALL_BOOKMAKER_REGIONS),
     ):
         return {"sport_key": sport_key, "deferred": True, "reason": "SHARED_PROVIDER_QUOTA_RESERVE"}
     try:

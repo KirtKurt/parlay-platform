@@ -11,6 +11,7 @@ from boto3.dynamodb.conditions import Attr, Key
 
 from .canonical import iso_utc
 from .llm_analyst import latest_validated_analysis
+from .odds_api import provider_safety_config
 from .storage import SoccerStore, ddb_safe, now_utc, plain
 
 
@@ -296,6 +297,9 @@ def run_cycle() -> dict[str, Any]:
         "model": model,
         "llm_analyst": llm,
         "latest_quota": _latest_quota(store),
+        "shared_provider_safety": provider_safety_config(),
+        "distributed_rate_limit_state": store.rate_limit_status(),
+        "provider_429_telemetry": store.provider_429_status(observed_at=observed),
         "updated_at": observed_at,
     }
     store.ops.put_item(Item=ddb_safe(state))

@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 from .canonical import digest, iso_utc, stable_event_key
 from .collector import _client
+from .odds_api import DEFAULT_MAX_ATTEMPTS
 from .storage import SoccerStore, ddb_safe, now_utc, plain
 
 
@@ -233,7 +234,11 @@ def settlement_handler(event: Mapping[str, Any] | None, context: Any) -> dict[st
                 (cadence_slot + 2) * SCORES_CADENCE_SECONDS,
             ):
                 continue
-            if not store.provider_budget_available("scores", observed_at, estimated_cost=2):
+            if not store.provider_budget_available(
+                "scores",
+                observed_at,
+                estimated_cost=DEFAULT_MAX_ATTEMPTS * 2,
+            ):
                 failures.append({"sport_key": sport_key, "error": "SHARED_PROVIDER_QUOTA_RESERVE"})
                 break
             try:

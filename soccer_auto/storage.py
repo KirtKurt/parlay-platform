@@ -363,6 +363,47 @@ class SoccerStore:
                 if not _is_conditional_failure(exc):
                     raise
 
+    def rate_limit_status(self) -> dict[str, Any] | None:
+        row = self.ops.get_item(
+            Key={"PK": "RATE_LIMIT", "SK": "ODDS_API_REQUESTS"},
+            ConsistentRead=True,
+        ).get("Item")
+        return plain(row) if row else None
+
+    def provider_429_status(
+        self,
+        *,
+        observed_at: str | datetime | None = None,
+        lookback_hours: int = 24,
+        row_limit: int = 20,
+        count_limit: int = 1000,
+    ) -> dict[str, Any]:
+        """Return bounded rolling provider-throttle evidence for health APIs."""
+        observed = parse_utc(observed_at or now_utc())
+        window_hours = max(1, int(lookback_hours))
+        cap = max(1, int(count_limit))
+        cutoff = observed - timedelta(hours=window_hours)
+        response = self.ops.query(
+            KeyConditionExpression=(
+                Key("PK").eq("PROVIDER_429")
+                & Key("SK").between(
+                    f"OBSERVED#{iso_utc(cutoff)}",
+                    f"OBSERVED#{iso_utc(observed)}\uffff",
+                )
+            ),
+            ScanIndexForward=False,
+            ConsistentRead=True,
+            Limit=cap,
+        )
+        rows = [plain(row) for row in response.get("Items") or []]
+        return {
+            "lookback_hours": window_hours,
+            "rolling_count": len(rows),
+            "count_is_lower_bound": bool(response.get("LastEvaluatedKey")),
+            "count_cap": cap,
+            "latest_rows": rows[: max(1, int(row_limit))],
+        }
+
     def provider_budget_available(
         self, operation: str, observed_at: str, estimated_cost: int = 1
     ) -> bool:
@@ -372,8 +413,9 @@ class SoccerStore:
         one provider response snapshot. This closes the local check-then-call
         race across concurrent Lambdas. The separate race buffer protects
         against already-admitted calls that were still in flight when a newer
-        response snapshot arrived; existing MLB/tennis calls remain outside
-        this stack and are protected by the much larger percentage reserve.
+        response snapshot arrived. Other sports remain outside this soccer
+        ledger, so the buffer is a bounded shared-key margin rather than an
+        ownership claim on their activity.
         """
         latest = plain(
             self.ops.get_item(
@@ -386,11 +428,11 @@ class SoccerStore:
         used = latest.get("used")
         reserve_percent = max(
             0.0,
-            min(100.0, float(os.getenv("SOCCER_AUTO_SHARED_QUOTA_RESERVE_PERCENT", "80"))),
+            min(100.0, float(os.getenv("SOCCER_AUTO_SHARED_QUOTA_RESERVE_PERCENT", "0"))),
         )
         configured_race_buffer = max(
             0,
-            int(os.getenv("SOCCER_AUTO_QUOTA_RACE_BUFFER_CREDITS", "600")),
+            int(os.getenv("SOCCER_AUTO_QUOTA_RACE_BUFFER_CREDITS", "2000")),
         )
         quota_known = remaining is not None and used is not None
         total = int(remaining) + int(used) if quota_known else 0
@@ -476,7 +518,11 @@ class SoccerStore:
             if not available and reason == "QUOTA_OBSERVATION_UNAVAILABLE":
                 reason = "ATOMIC_ADMISSION_CONTENTION"
         elif quota_known:
-            reason = "SHARED_SUBSCRIPTION_RESERVE_REACHED"
+            reason = (
+                "RACE_BUFFER_REACHED"
+                if reserve_percent == 0.0
+                else "SHARED_SUBSCRIPTION_RESERVE_REACHED"
+            )
         if not available:
             self.ops.put_item(
                 Item=ddb_safe(

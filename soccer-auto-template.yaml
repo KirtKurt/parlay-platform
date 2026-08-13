@@ -13,15 +13,21 @@ Parameters:
     AllowedValues: ['true', 'false']
   SharedQuotaReservePercent:
     Type: Number
-    Default: 80
+    Default: 0
     MinValue: 0
     MaxValue: 100
-    Description: Percent of the one all-sports subscription reserved from soccer_auto use
+    Description: Configurable percent of the one all-sports subscription reserved from soccer_auto use
   QuotaRaceBufferCredits:
     Type: Number
-    Default: 600
+    Default: 2000
     MinValue: 0
     Description: Extra credits held back for admitted calls still in flight across the shared key
+  SoccerOddsRequestsPerSecond:
+    Type: Number
+    Default: 3
+    MinValue: 1
+    MaxValue: 3
+    Description: Hard soccer-only request ceiling; the provider account documents 30 requests per second
   SoccerLlmModelId:
     Type: String
     Default: us.amazon.nova-2-lite-v1:0
@@ -62,6 +68,9 @@ Globals:
         SOCCER_AUTO_COLLECTION_LEAD_HOURS: '10'
         SOCCER_AUTO_SHARED_QUOTA_RESERVE_PERCENT: !Ref SharedQuotaReservePercent
         SOCCER_AUTO_QUOTA_RACE_BUFFER_CREDITS: !Ref QuotaRaceBufferCredits
+        SOCCER_AUTO_ODDS_RPS_CAP: !Ref SoccerOddsRequestsPerSecond
+        SOCCER_AUTO_ODDS_RATE_LIMIT_MAX_WAIT_SECONDS: '8'
+        SOCCER_AUTO_ODDS_RATE_LIMIT_MAX_CONTENTION_ATTEMPTS: '128'
         SOCCER_AUTO_SCORES_CADENCE_SECONDS: '300'
         SOCCER_AUTO_LLM_MODEL_ID: !Ref SoccerLlmModelId
         SOCCER_AUTO_LLM_ANALYSIS_MAX_AGE_HOURS: '36'

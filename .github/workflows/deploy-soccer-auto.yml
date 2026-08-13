@@ -1,9 +1,15 @@
 name: Deploy Isolated Soccer Auto
 
-# Manual-only after the verified initial activation. The main workflow ignores
-# all soccer-only paths, and deployment here cannot mutate MLB, tennis, or
-# legacy soccer resources.
+# This one-time push authorization is scoped to one soccer-only marker. Remove
+# the push trigger and marker after the deployment is verified. The main
+# workflow ignores all soccer-only paths, and this stack cannot mutate MLB,
+# tennis, or legacy soccer resources.
 on:
+  # One-time coverage-first activation trigger. Removed after the verified deploy.
+  push:
+    branches: [main]
+    paths:
+      - "soccer_auto/.deploy-v1-once"
   workflow_dispatch:
     inputs:
       enable_historical_backfill:
@@ -15,9 +21,9 @@ on:
       shared_quota_reserve_percent:
         description: Percent of shared all-sports credits soccer must leave untouched
         required: true
-        default: '80'
+        default: '0'
         type: choice
-        options: ['80', '60', '40', '20']
+        options: ['0', '20', '40', '60', '80']
 
 permissions:
   contents: read
@@ -104,7 +110,9 @@ jobs:
             --parameter-overrides \
               OddsApiKey="${{ secrets.ODDS_API_KEY }}" \
               EnableHistoricalBackfill="${{ inputs.enable_historical_backfill || 'false' }}" \
-              SharedQuotaReservePercent="${{ inputs.shared_quota_reserve_percent || '80' }}" \
+              SharedQuotaReservePercent="${{ inputs.shared_quota_reserve_percent || '0' }}" \
+              QuotaRaceBufferCredits="2000" \
+              SoccerOddsRequestsPerSecond="3" \
               SoccerLlmModelId="$soccer_llm_model_id" \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
@@ -153,9 +161,59 @@ jobs:
           # Catalog and events are quota-free provider calls. Together they
           # validate the existing all-sports key and populate the isolated
           # registry before any paid T-10 collection work is released.
+          status_url=$(aws cloudformation describe-stacks \
+            --stack-name "$stack_name" \
+            --region "$region" \
+            --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" \
+            --output text)
+          test -n "$status_url"
+          curl --fail --retry 10 --retry-all-errors --retry-delay 10 "$status_url" \
+            | tee /tmp/soccer-auto-status-before-provider-smoke.json
+          python - <<'PY'
+          import json
+          import pathlib
+
+          status = json.load(open('/tmp/soccer-auto-status-before-provider-smoke.json'))
+          telemetry = status['provider_429_telemetry']
+          pathlib.Path('/tmp/soccer-auto-429-baseline.txt').write_text(
+              str(telemetry['rolling_count'])
+          )
+          pathlib.Path('/tmp/soccer-auto-429-latest-baseline.txt').write_text(
+              str((telemetry['latest_rows'] or [{}])[0].get('SK') or '')
+          )
+          print('provider_429_baseline', telemetry)
+          PY
           invoke_and_assert_ok SoccerCatalogFunction '{"action":"deployment_catalog_smoke"}' catalog
           invoke_and_assert_ok SoccerInventoryFunction '{"action":"deployment_inventory_smoke"}' inventory
           invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_controller_smoke"}' controller_before_llm
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/controller_before_llm.json'))
+          safety = response['shared_provider_safety']
+          assert safety['shared_quota_reserve_percent'] == 0, safety
+          assert safety['quota_race_buffer_credits'] == 2000, safety
+          assert safety['soccer_request_limit_per_second'] == 3, safety
+          assert safety['burst_capacity'] == 1, safety
+          assert safety['minimum_spacing_ms'] == 334, safety
+          assert safety['distributed_lease'] is True, safety
+          assert safety['fail_closed'] is True, safety
+          limiter = response['distributed_rate_limit_state']
+          assert limiter, response
+          assert limiter['configured_rps'] == 3, limiter
+          assert limiter['minimum_spacing_ms'] == 334, limiter
+          assert limiter['burst_capacity'] == 1, limiter
+          assert limiter.get('updated_at'), limiter
+          telemetry = response['provider_429_telemetry']
+          baseline = int(open('/tmp/soccer-auto-429-baseline.txt').read())
+          latest_baseline = open('/tmp/soccer-auto-429-latest-baseline.txt').read()
+          latest = str((telemetry['latest_rows'] or [{}])[0].get('SK') or '')
+          assert telemetry['rolling_count'] == baseline, (baseline, telemetry)
+          assert latest == latest_baseline, (latest_baseline, telemetry)
+          print('soccer_shared_provider_safety', safety)
+          print('soccer_distributed_rate_limit_state', limiter)
+          print('provider_429_after_provider_smoke', telemetry)
+          PY
 
           # Exercise the narrow Bedrock analyst path. A fresh validated result
           # is reused; daily token quota exhaustion is recorded and deferred.
@@ -180,12 +238,6 @@ jobs:
           # open; invoking it here starts any already-due collection safely.
           invoke_and_assert_ok SoccerDispatchFunction '{"action":"deployment_dispatch_smoke"}' dispatch
 
-          status_url=$(aws cloudformation describe-stacks \
-            --stack-name "$stack_name" \
-            --region "$region" \
-            --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" \
-            --output text)
-          test -n "$status_url"
           curl --fail --retry 10 --retry-all-errors --retry-delay 10 "$status_url" | tee /tmp/soccer-auto-status.json
           python - <<'PY'
           import json
@@ -193,5 +245,10 @@ jobs:
           assert status['system']=='soccer_auto'
           assert status['authority'] in {'BOOTSTRAPPING','COLLECTING','SHADOW_LEARNING','AUTHORITATIVE','DEGRADED'}
           assert status.get('automatic_prediction_allowed', False) is False or status['authority']=='AUTHORITATIVE'
+          baseline = int(open('/tmp/soccer-auto-429-baseline.txt').read())
+          latest_baseline = open('/tmp/soccer-auto-429-latest-baseline.txt').read()
+          latest = str((status['provider_429_telemetry']['latest_rows'] or [{}])[0].get('SK') or '')
+          assert status['provider_429_telemetry']['rolling_count'] == baseline, status['provider_429_telemetry']
+          assert latest == latest_baseline, status['provider_429_telemetry']
           print(status)
           PY

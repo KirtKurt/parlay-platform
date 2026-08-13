@@ -129,6 +129,67 @@ class IsolationTests(unittest.TestCase):
         function_error_at = workflow.index('assert not metadata.get("FunctionError")')
         self.assertLess(print_at, function_error_at)
 
+    def test_coverage_first_defaults_keep_shared_key_safety_controls(self) -> None:
+        template = yaml.load(
+            (ROOT / "soccer-auto-template.yaml").read_text(),
+            Loader=CloudFormationLoader,
+        )
+        self.assertEqual(template["Parameters"]["SharedQuotaReservePercent"]["Default"], 0)
+        self.assertEqual(template["Parameters"]["QuotaRaceBufferCredits"]["Default"], 2000)
+        self.assertEqual(template["Parameters"]["SoccerOddsRequestsPerSecond"]["Default"], 3)
+        self.assertEqual(template["Parameters"]["SoccerOddsRequestsPerSecond"]["MaxValue"], 3)
+        self.assertEqual(template["Parameters"]["EnableHistoricalBackfill"]["Default"], "false")
+        queue_event = template["Resources"]["SoccerCollectionWorkerFunction"]["Properties"][
+            "Events"
+        ]["CollectionQueue"]["Properties"]
+        self.assertEqual(queue_event["BatchSize"], 1)
+        self.assertEqual(queue_event["ScalingConfig"]["MaximumConcurrency"], 6)
+
+        workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
+        self.assertIn("default: '0'", workflow)
+        self.assertIn("options: ['0', '20', '40', '60', '80']", workflow)
+        self.assertIn("inputs.shared_quota_reserve_percent || '0'", workflow)
+        self.assertIn('QuotaRaceBufferCredits="2000"', workflow)
+        self.assertIn('SoccerOddsRequestsPerSecond="3"', workflow)
+        self.assertIn("safety['soccer_request_limit_per_second'] == 3", workflow)
+        self.assertIn("safety['burst_capacity'] == 1", workflow)
+        self.assertIn("safety['minimum_spacing_ms'] == 334", workflow)
+        self.assertIn("safety['distributed_lease'] is True", workflow)
+        self.assertIn("safety['fail_closed'] is True", workflow)
+        storage = (ROOT / "soccer_auto/storage.py").read_text()
+        self.assertIn('SOCCER_AUTO_SHARED_QUOTA_RESERVE_PERCENT", "0"', storage)
+        self.assertIn('SOCCER_AUTO_QUOTA_RACE_BUFFER_CREDITS", "2000"', storage)
+        client = (ROOT / "soccer_auto/odds_api.py").read_text()
+        self.assertIn('SOCCER_AUTO_ODDS_RPS_CAP", "3"', client)
+        self.assertIn('"burst_capacity": 1', client)
+        self.assertIn("ConditionExpression=condition", client)
+        self.assertIn("self._limiter.acquire(operation=path, attempt=attempt)", client)
+        self.assertIn("exc.code == 429", client)
+        self.assertIn("_bounded_retry_after(exc.headers)", client)
+        self.assertIn("time.sleep(retry_after)", client)
+        api = (ROOT / "soccer_auto/api.py").read_text()
+        controller = (ROOT / "soccer_auto/autonomous_controller.py").read_text()
+        self.assertIn('"provider_429_telemetry"', api)
+        self.assertIn('"provider_429_telemetry"', controller)
+        self.assertIn("provider_429_status", api)
+        self.assertIn("provider_429_status", controller)
+        self.assertIn("provider_429_baseline", workflow)
+        self.assertIn("distributed_rate_limit_state", workflow)
+
+    def test_one_time_soccer_marker_is_the_only_push_deploy_path(self) -> None:
+        workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
+        trigger = workflow.split("permissions:", 1)[0]
+        self.assertIn("push:", trigger)
+        self.assertIn("branches: [main]", trigger)
+        self.assertEqual(trigger.count('"soccer_auto/.deploy-v1-once"'), 1)
+        self.assertNotIn("soccer-auto-template.yaml", trigger)
+        self.assertNotIn("tests/soccer_auto", trigger)
+        marker = ROOT / "soccer_auto/.deploy-v1-once"
+        self.assertEqual(
+            marker.read_text(),
+            "deploy soccer zero-reserve with distributed three-rps limiter\n",
+        )
+
     def test_lambda_memory_fits_the_production_account_ceiling(self) -> None:
         template = yaml.load(
             (ROOT / "soccer-auto-template.yaml").read_text(),

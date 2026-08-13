@@ -31,6 +31,7 @@ class FakeStore:
         self.inventory_writes = []
         self.coverage_fetches = []
         self.snapshot_writes = []
+        self.budget_admissions = []
 
     def get_event(self, event_key):
         return self.event
@@ -45,6 +46,7 @@ class FakeStore:
         self.calls.append((event, window, observed_at))
 
     def provider_budget_available(self, operation, observed_at, estimated_cost=1):
+        self.budget_admissions.append((operation, estimated_cost))
         return True
 
     def record_quota(self, *args, **kwargs):
@@ -202,6 +204,7 @@ class DeepGateTests(unittest.TestCase):
             result = _discover_event(store, client, {"event": row})
         self.assertEqual(client.market_calls, 1)
         self.assertEqual(len(store.calls), 1)
+        self.assertIn(("event_markets", 4), store.budget_admissions)
         self.assertGreaterEqual(result["market_scope"], 40)
         self.assertGreater(len(store.jobs), 0)
 
