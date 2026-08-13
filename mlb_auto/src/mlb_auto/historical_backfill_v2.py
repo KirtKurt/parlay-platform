@@ -21,7 +21,10 @@ def _learn_live_market_catalog(store: Store) -> list[str]:
     state = store.get_state('controller')
     keys.update(str(x) for x in (state.get('known_market_keys') or []) if x)
     if keys:
-        store.put_state('controller', {**state, 'known_market_keys': sorted(keys), 'known_market_key_count': len(keys)})
+        store.put_state('controller', {
+            'known_market_keys': sorted(keys),
+            'known_market_key_count': len(keys),
+        })
     return sorted(keys)
 
 
