@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -22,7 +21,7 @@ MIN_VALID = int(os.getenv('MLB_AUTO_MIN_VALIDATION_EXAMPLES', '50'))
 MIN_NEW = int(os.getenv('MLB_AUTO_MIN_NEW_EXAMPLES', '25'))
 MIN_OFFICIAL_PROB = float(os.getenv('MLB_AUTO_MIN_OFFICIAL_PROBABILITY', '0.58'))
 LOCK_MINUTES = int(os.getenv('MLB_AUTO_LOCK_MINUTES', '45'))
-PLATFORM_VERSION = 'MLB-AUTO-v1-tennis-lifecycle'
+PLATFORM_VERSION = 'MLB-AUTO-v1-autonomous-evolution'
 
 
 def _now() -> datetime:
@@ -51,10 +50,7 @@ def _response(payload: dict, status: int = 200):
 def _model_from_item(item: dict) -> Model | None:
     try:
         raw = item.get('model_json') or item.get('modelJson')
-        data = json.loads(raw) if isinstance(raw, str) else raw
-        if not data:
-            return None
-        return Model(float(data['intercept']), tuple(float(x) for x in data['weights']), tuple(data.get('feature_names') or ()))
+        return Model.loads(raw) if raw else None
     except Exception:
         return None
 
@@ -102,7 +98,6 @@ def _merge_detail(client: OddsApiClient, event: dict) -> tuple[dict, list[str], 
     additional = [k for k in keys if k not in ('h2h', 'spreads', 'totals')]
     if not additional:
         return event, keys, errors
-    # Chunk to keep request URLs bounded while still collecting every discovered useful market.
     detail = event
     for i in range(0, len(additional), 12):
         try:
@@ -121,16 +116,12 @@ def ingest(*, force_reason: str | None = None) -> dict:
     state = store.get_state('controller')
     events_response = client.events()
     events = [x for x in (events_response.data or []) if x.get('sport_key') in (None, 'baseball_mlb')]
-    last_pull = state.get('last_pull_at')
     decision = decide_pull(
-        now=now,
-        events=events,
-        last_pull_at=last_pull,
+        now=now, events=events, last_pull_at=state.get('last_pull_at'),
         volatility=float(state.get('market_volatility') or 0),
         missing_market_fraction=float(state.get('missing_market_fraction') or 0),
         recent_signal_change=float(state.get('recent_signal_change') or 0),
-        new_event_fraction=float(state.get('new_event_fraction') or 0),
-        force_reason=force_reason,
+        new_event_fraction=float(state.get('new_event_fraction') or 0), force_reason=force_reason,
     )
     if not decision.should_pull:
         store.put_state('controller', {**state, 'heartbeat_at': _iso(now), 'expected_interval_minutes': decision.next_interval_minutes, 'next_due_at': decision.next_due_at_utc, 'information_gain_score': decision.information_gain_score})
@@ -141,10 +132,8 @@ def ingest(*, force_reason: str | None = None) -> dict:
     event_map = {str(x.get('id')): x for x in events}
     predictions = []
     discovery_errors = []
-    market_key_total = 0
-    missing = 0
+    market_key_total = missing = 0
     volatility_values = []
-
     champion_item = store.get_model('CHAMPION')
     champion = _model_from_item(champion_item)
     champion_id = champion_item.get('model_id') if champion else None
@@ -170,27 +159,33 @@ def ingest(*, force_reason: str | None = None) -> dict:
         bootstrap = bootstrap_home_probability(features)
         home_prob = champion.predict(features) if champion else bootstrap
         away_prob = 1.0 - home_prob
-        home = str(base.get('home_team') or '')
-        away = str(base.get('away_team') or '')
+        home, away = str(base.get('home_team') or ''), str(base.get('away_team') or '')
         winner = home if home_prob >= .5 else away
         win_prob = max(home_prob, away_prob)
         price, price_book = _pick_price(base, winner)
         dec = american_decimal(price) if price is not None else None
         ev = (win_prob * dec - 1.0) if dec else None
         official = bool(champion and win_prob >= MIN_OFFICIAL_PROB and ev is not None and ev >= 0)
+        cutoff = start - timedelta(minutes=LOCK_MINUTES)
         row = {
             'sport': 'mlb_auto', 'provider_sport_key': 'baseball_mlb', 'slate_date': slate,
             'event_id': event_id, 'home_team': home, 'away_team': away, 'commence_time': _iso(start),
-            'source_pull_at': _iso(now), 'features': features, 'home_probability': home_prob,
-            'away_probability': away_prob, 'predicted_winner': winner, 'win_probability': win_prob,
+            'source_pull_at': _iso(now), 'lock_cutoff_at': _iso(cutoff), 'features': features,
+            'home_probability': home_prob, 'away_probability': away_prob,
+            'predicted_winner': winner, 'win_probability': win_prob,
             'american_odds': price, 'price_book': price_book, 'expected_value': ev,
             'prediction_mode': 'ML_CHAMPION' if champion else 'MARKET_BOOTSTRAP', 'model_id': champion_id,
             'official_pick': official, 'promotion_status': 'READY' if official else ('SHADOW_BOOTSTRAP' if not champion else 'MODEL_PASS'),
             'pull_count_for_event': len(history_plus), 'discovered_market_keys': discovered_keys,
             'market_discovery_errors': errors, 'platform_version': PLATFORM_VERSION,
+            'pre_lock_cutoff': now <= cutoff,
         }
         row['prediction_fingerprint'] = _prediction_fingerprint(row)
-        store.put_snapshot(slate, _iso(now), {'event_id': event_id, 'source_pull_at': _iso(now), 'event': detail, 'features': features, 'prediction_fingerprint': row['prediction_fingerprint']})
+        store.put_snapshot(slate, _iso(now), {
+            'event_id': event_id, 'source_pull_at': _iso(now), 'event': detail,
+            'features': features, 'prediction': row,
+            'prediction_fingerprint': row['prediction_fingerprint'],
+        })
         store.put_prediction(slate, event_id, row)
         predictions.append(row)
 
@@ -209,28 +204,55 @@ def ingest(*, force_reason: str | None = None) -> dict:
     return {'ok': True, 'action': 'INGEST', 'decision': decision.__dict__, 'event_count': len(events), 'prediction_count': len(predictions), 'champion_model_id': champion_id, 'errors': discovery_errors[:20]}
 
 
+def _precutoff_prediction(store: Store, slate: str, event_id: str, cutoff: datetime) -> dict | None:
+    candidates = []
+    for snapshot in store.query_snapshots(slate, event_id=event_id, limit=500):
+        prediction = snapshot.get('prediction') or {}
+        source = prediction.get('source_pull_at') or snapshot.get('source_pull_at')
+        try:
+            source_dt = _dt(source)
+        except Exception:
+            continue
+        if prediction and source_dt <= cutoff:
+            candidates.append((source_dt, prediction))
+    return max(candidates, key=lambda x: x[0])[1] if candidates else None
+
+
 def lock_due_games() -> dict:
     store = Store()
     now = _now()
     slates = {(now.astimezone(ET).date() + timedelta(days=d)).isoformat() for d in (-1, 0, 1)}
-    created, skipped, errors = 0, 0, []
+    created = skipped = 0
+    errors = []
     for slate in sorted(slates):
         existing = {str(x.get('SK')) for x in store.query_locks(slate)}
-        for row in store.query_predictions(slate):
-            event_id = str(row.get('event_id') or row.get('SK') or '')
+        for current in store.query_predictions(slate):
+            event_id = str(current.get('event_id') or current.get('SK') or '')
             if not event_id or event_id in existing:
                 continue
             try:
-                start = _dt(row['commence_time'])
+                start = _dt(current['commence_time'])
             except Exception:
                 skipped += 1
                 continue
-            seconds_to_start = (start - now).total_seconds()
-            if seconds_to_start > LOCK_MINUTES * 60 or seconds_to_start <= 0:
+            cutoff = start - timedelta(minutes=LOCK_MINUTES)
+            if now < cutoff or now >= start:
                 continue
-            # Freeze the exact last persisted pregame prediction; no rescoring here.
-            lock = dict(row)
-            lock.update({'locked_at': _iso(now), 'lock_minutes': LOCK_MINUTES, 'immutable': True, 'training_eligible': True})
+            prediction = _precutoff_prediction(store, slate, event_id, cutoff)
+            if not prediction:
+                skipped += 1
+                errors.append(f'{event_id}:NO_PERSISTED_PRE_CUTOFF_PREDICTION')
+                continue
+            source = _dt(prediction['source_pull_at'])
+            if source > cutoff:
+                errors.append(f'{event_id}:POST_CUTOFF_SOURCE_REJECTED')
+                continue
+            lock = dict(prediction)
+            lock.update({
+                'locked_at': _iso(now), 'lock_minutes': LOCK_MINUTES,
+                'lock_cutoff_at': _iso(cutoff), 'source_before_or_at_cutoff': True,
+                'immutable': True, 'training_eligible': True,
+            })
             try:
                 store.put_lock_once(slate, event_id, lock)
                 created += 1
@@ -244,10 +266,8 @@ def lock_due_games() -> dict:
 
 def settle() -> dict:
     store = Store()
-    client = OddsApiClient()
-    rows = client.scores(days_from=3).data or []
-    settled = 0
-    examined = 0
+    rows = OddsApiClient().scores(days_from=3).data or []
+    settled = examined = 0
     for game in rows:
         if not game.get('completed'):
             continue
@@ -255,26 +275,24 @@ def settle() -> dict:
         if not event_id:
             continue
         slate = _slate(game.get('commence_time'))
-        locks = {str(x.get('SK')): x for x in store.query_locks(slate)}
-        lock = locks.get(event_id)
-        if not lock or not lock.get('training_eligible'):
+        lock = {str(x.get('SK')): x for x in store.query_locks(slate)}.get(event_id)
+        if not lock or not lock.get('training_eligible') or not lock.get('source_before_or_at_cutoff'):
             continue
         examined += 1
         scores = {str(x.get('name')): int(x.get('score') or 0) for x in game.get('scores') or []}
-        home = str(lock.get('home_team') or '')
-        away = str(lock.get('away_team') or '')
+        home, away = str(lock.get('home_team') or ''), str(lock.get('away_team') or '')
         if home not in scores or away not in scores or scores[home] == scores[away]:
             continue
         label = 1 if scores[home] > scores[away] else 0
-        item = {
+        store.put_training_example(slate, event_id, {
             'sport': 'mlb_auto', 'provider_sport_key': 'baseball_mlb', 'event_id': event_id,
             'slate_date': slate, 'commence_time': lock.get('commence_time'), 'settled_at': _iso(),
             'home_team': home, 'away_team': away, 'home_score': scores[home], 'away_score': scores[away],
             'label_home_win': label, 'features': lock.get('features') or {}, 'locked_at': lock.get('locked_at'),
-            'prediction_fingerprint': lock.get('prediction_fingerprint'), 'source_pull_at': lock.get('source_pull_at'),
-            'official_pick': bool(lock.get('official_pick')), 'predicted_winner': lock.get('predicted_winner'),
-        }
-        store.put_training_example(slate, event_id, item)
+            'lock_cutoff_at': lock.get('lock_cutoff_at'), 'prediction_fingerprint': lock.get('prediction_fingerprint'),
+            'source_pull_at': lock.get('source_pull_at'), 'official_pick': bool(lock.get('official_pick')),
+            'predicted_winner': lock.get('predicted_winner'),
+        })
         settled += 1
     current = store.get_state('controller')
     store.put_state('controller', {**current, 'last_settlement_at': _iso(), 'last_settlement_count': settled})
@@ -313,78 +331,75 @@ def repair() -> dict:
     now = _now()
     try:
         last = _dt(state.get('last_pull_at')) if state.get('last_pull_at') else None
-        minutes = ((now - last).total_seconds() / 60) if last else 10_000
+        minutes = ((now-last).total_seconds()/60) if last else 10_000
     except Exception:
         minutes = 10_000
     examples = store.query_training_examples(limit=5000)
     champion_item = store.get_model('CHAMPION')
-    repair_state = {
-        **state,
-        'minutes_since_last_pull': minutes,
-        'new_training_examples': max(0, len(examples) - int(state.get('last_training_count') or 0)),
-        'min_new_examples': MIN_NEW,
-        'champion_corrupt': bool(champion_item and not _model_from_item(champion_item)),
-    }
-    actions = diagnose(repair_state, now)
-    results = []
-    for action in actions:
+    repair_state = {**state, 'minutes_since_last_pull': minutes,
+                    'new_training_examples': max(0,len(examples)-int(state.get('last_training_count') or 0)),
+                    'min_new_examples': MIN_NEW, 'champion_corrupt': bool(champion_item and not _model_from_item(champion_item))}
+    results=[]
+    for action in diagnose(repair_state,now):
         validate_self_repair(action)
-        if action.action in ('FORCE_INGEST', 'REDISCOVER_EVENT_MARKETS'):
-            results.append({'action': action.action, 'result': ingest(force_reason=action.reason)})
-        elif action.action == 'RUN_SETTLEMENT':
-            results.append({'action': action.action, 'result': settle()})
-        elif action.action in ('RUN_TRAINING', 'RETRY_TRAINING_WITH_LAST_GOOD_DATA'):
-            results.append({'action': action.action, 'result': train()})
-        elif action.action == 'QUARANTINE_CHAMPION_AND_FALLBACK':
-            store.put_model('QUARANTINED_CHAMPION', {**champion_item, 'quarantined_at': _iso(), 'reason': action.reason})
-            store.models.delete_item(Key={'PK': 'MLB_AUTO#MODEL_REGISTRY', 'SK': 'CHAMPION'})
-            results.append({'action': action.action, 'result': {'ok': True, 'fallback': 'MARKET_BOOTSTRAP'}})
-    store.put_state('repair', {'last_repair_at': _iso(), 'action_count': len(results), 'actions': [x['action'] for x in results]})
-    return {'ok': True, 'actions': results}
+        if action.action in ('FORCE_INGEST','REDISCOVER_EVENT_MARKETS'):
+            results.append({'action':action.action,'result':ingest(force_reason=action.reason)})
+        elif action.action=='RUN_SETTLEMENT':
+            results.append({'action':action.action,'result':settle()})
+        elif action.action in ('RUN_TRAINING','RETRY_TRAINING_WITH_LAST_GOOD_DATA'):
+            results.append({'action':action.action,'result':train()})
+        elif action.action=='QUARANTINE_CHAMPION_AND_FALLBACK':
+            store.put_model('QUARANTINED_CHAMPION',{**champion_item,'quarantined_at':_iso(),'reason':action.reason})
+            store.models.delete_item(Key={'PK':'MLB_AUTO#MODEL_REGISTRY','SK':'CHAMPION'})
+            results.append({'action':action.action,'result':{'ok':True,'fallback':'MARKET_BOOTSTRAP'}})
+    store.put_state('repair',{'last_repair_at':_iso(),'action_count':len(results),'actions':[x['action'] for x in results]})
+    return {'ok':True,'actions':results}
 
 
 def status() -> dict:
-    store = Store()
-    state = store.get_state('controller')
-    repair_state = store.get_state('repair')
-    champion = store.get_model('CHAMPION')
-    examples = store.query_training_examples(limit=5000)
-    today = datetime.now(ET).date().isoformat()
-    predictions = store.query_predictions(today)
-    locks = store.query_locks(today)
+    store=Store()
+    state=store.get_state('controller')
+    repair_state=store.get_state('repair')
+    champion=store.get_model('CHAMPION')
+    examples=store.query_training_examples(limit=5000)
+    today=datetime.now(ET).date().isoformat()
+    predictions=store.query_predictions(today)
+    locks=store.query_locks(today)
     return {
-        'ok': True, 'sport': 'mlb_auto', 'provider_sport_key': 'baseball_mlb', 'platform_version': PLATFORM_VERSION,
-        'autonomous': True, 'cost_throttling': False, 'heartbeat_minutes': 5, 'lock_check_minutes': 1,
-        'prediction_mode': 'ML_CHAMPION' if _model_from_item(champion) else 'MARKET_BOOTSTRAP',
-        'champion_model_id': champion.get('model_id'), 'training_examples': len(examples), 'minimum_training_examples': MIN_TRAIN,
-        'today_prediction_count': len(predictions), 'today_official_pick_count': sum(1 for x in predictions if x.get('official_pick')),
-        'today_locked_count': len(locks), 'controller': state, 'repair': repair_state,
-        'protected_systems': ['parlay-platform-dev', 'parlay-platform-tennis-ml-prod'],
+        'ok':True,'sport':'mlb_auto','provider_sport_key':'baseball_mlb','platform_version':PLATFORM_VERSION,
+        'autonomous':True,'cost_throttling':False,'heartbeat_minutes':5,'lock_check_minutes':1,
+        'prediction_mode':'ML_CHAMPION' if _model_from_item(champion) else 'MARKET_BOOTSTRAP',
+        'champion_model_id':champion.get('model_id'),'training_examples':len(examples),
+        'minimum_training_examples':MIN_TRAIN,'today_prediction_count':len(predictions),
+        'today_official_pick_count':sum(1 for x in predictions if x.get('official_pick')),
+        'today_locked_count':len(locks),'controller':state,'repair':repair_state,
+        'isolation_policy':'protected stacks are fingerprinted externally; runtime has no cross-stack identifiers',
     }
 
 
-def handler(event, context):
-    event = event or {}
-    action = str(event.get('action') or event.get('detail-type') or '').upper()
+def handler(event,context):
+    event=event or {}
+    action=str(event.get('action') or event.get('detail-type') or '').upper()
     if event.get('requestContext'):
-        path = str((event.get('rawPath') or ''))
+        path=str(event.get('rawPath') or '')
         if path.endswith('/status'):
             return _response(status())
         if path.endswith('/predictions'):
-            date = ((event.get('queryStringParameters') or {}).get('date') or datetime.now(ET).date().isoformat())
-            rows = Store().query_predictions(date)
-            return _response({'ok': True, 'sport': 'mlb_auto', 'slate_date': date, 'count': len(rows), 'official_pick_count': sum(1 for x in rows if x.get('official_pick')), 'predictions': rows})
-        return _response({'ok': False, 'error': 'NOT_FOUND'}, 404)
-    if action in ('INGEST', 'HEARTBEAT', 'MLB_AUTO_HEARTBEAT'):
+            date=((event.get('queryStringParameters') or {}).get('date') or datetime.now(ET).date().isoformat())
+            rows=Store().query_predictions(date)
+            return _response({'ok':True,'sport':'mlb_auto','slate_date':date,'count':len(rows),
+                              'official_pick_count':sum(1 for x in rows if x.get('official_pick')),'predictions':rows})
+        return _response({'ok':False,'error':'NOT_FOUND'},404)
+    if action in ('INGEST','HEARTBEAT','MLB_AUTO_HEARTBEAT'):
         return ingest()
-    if action in ('LOCK', 'MLB_AUTO_LOCK'):
+    if action in ('LOCK','MLB_AUTO_LOCK'):
         return lock_due_games()
-    if action in ('SETTLE', 'MLB_AUTO_SETTLE'):
+    if action in ('SETTLE','MLB_AUTO_SETTLE'):
         return settle()
-    if action in ('TRAIN', 'MLB_AUTO_TRAIN'):
+    if action in ('TRAIN','MLB_AUTO_TRAIN'):
         return train()
-    if action in ('REPAIR', 'MLB_AUTO_REPAIR'):
+    if action in ('REPAIR','MLB_AUTO_REPAIR'):
         return repair()
-    if action == 'STATUS':
+    if action=='STATUS':
         return status()
-    return {'ok': False, 'error': 'UNKNOWN_ACTION', 'action': action}
+    return {'ok':False,'error':'UNKNOWN_ACTION','action':action}
