@@ -1,5 +1,24 @@
 from __future__ import annotations
 
+import os
+
+# Bedrock's current Opus model cards use direct foundation-model IDs for the
+# in-region us-east-1 Converse examples. Prepend those IDs ahead of any
+# cross-region profiles supplied by infrastructure, while retaining all
+# configured fallbacks.
+_direct_opus_ids = (
+    'anthropic.claude-opus-4-8',
+    'anthropic.claude-opus-4-7',
+)
+_configured_llm_ids = tuple(
+    value.strip()
+    for value in os.getenv('MLB_AUTO_LLM_MODEL_IDS', '').split(',')
+    if value.strip()
+)
+os.environ['MLB_AUTO_LLM_MODEL_IDS'] = ','.join(
+    dict.fromkeys((*_direct_opus_ids, *_configured_llm_ids))
+)
+
 from . import handler as base
 from .autonomous_markets import (
     cached_market_inventory as _cached_inventory,
@@ -66,8 +85,22 @@ def _cached_market_inventory(max_age_seconds: int = 21600) -> dict | None:
     return _cached_inventory(Store, OpenEndedOddsApiClient, max_age_seconds)
 
 
+def _canonical_opus_id(runtime_model_id: str | None) -> str | None:
+    value = str(runtime_model_id or '')
+    if 'claude-opus-4-8' in value:
+        return 'us.anthropic.claude-opus-4-8'
+    if 'claude-opus-4-7' in value:
+        return 'us.anthropic.claude-opus-4-7'
+    return runtime_model_id
+
+
 def autonomous_research(*, force: bool = False) -> dict:
-    return _run_research(Store=Store, force=force)
+    result = _run_research(Store=Store, force=force)
+    if isinstance(result, dict) and result.get('llm_model_id'):
+        runtime_model_id = str(result['llm_model_id'])
+        result['llm_runtime_model_id'] = runtime_model_id
+        result['llm_model_id'] = _canonical_opus_id(runtime_model_id)
+    return result
 
 
 def autonomous_model_access() -> dict:

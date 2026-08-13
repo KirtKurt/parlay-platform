@@ -58,11 +58,14 @@ class FakeBedrock:
 
 
 class FakeRuntime:
-    def __init__(self):
+    def __init__(self, denied=None):
         self.calls = []
+        self.denied = set(denied or [])
 
     def converse(self, **kwargs):
         self.calls.append(kwargs)
+        if kwargs['modelId'] in self.denied:
+            raise FakeAwsError('AccessDeniedException', 'not available for account')
         return {
             'output': {
                 'message': {
@@ -79,13 +82,17 @@ def test_exact_opus_models_and_marketplace_products_are_scoped_to_mlb_auto():
         'us.anthropic.claude-opus-4-8',
         'us.anthropic.claude-opus-4-7',
     ]
+    assert [row['runtime_model_ids'][0] for row in OPUS_MODELS] == [
+        'anthropic.claude-opus-4-8',
+        'anthropic.claude-opus-4-7',
+    ]
     assert [row['marketplace_product_id'] for row in OPUS_MODELS] == [
         'prod-bk5rjg4eo2pke',
         'prod-d2ik6zgct5hxi',
     ]
 
 
-def test_enablement_creates_both_agreements_and_proves_both_invocations():
+def test_enablement_creates_agreements_and_uses_documented_direct_ids_first():
     store = FakeStore()
     bedrock = FakeBedrock()
     runtime = FakeRuntime()
@@ -104,13 +111,18 @@ def test_enablement_creates_both_agreements_and_proves_both_invocations():
     assert result['all_models_ready'] is True
     assert result['all_invocations_ok'] is True
     assert result['access_policy'] == 'OPUS_4_8_AND_4_7_REQUIRED'
+    assert result['runtime_id_policy'] == 'DIRECT_FOUNDATION_THEN_US_THEN_GLOBAL'
+    assert result['selected_runtime_model_ids'] == [
+        'anthropic.claude-opus-4-8',
+        'anthropic.claude-opus-4-7',
+    ]
     assert bedrock.agreements == {
         'anthropic.claude-opus-4-8',
         'anthropic.claude-opus-4-7',
     }
     assert [call['modelId'] for call in runtime.calls] == [
-        'us.anthropic.claude-opus-4-8',
-        'us.anthropic.claude-opus-4-7',
+        'anthropic.claude-opus-4-8',
+        'anthropic.claude-opus-4-7',
     ]
     assert 'additionalModelRequestFields' not in runtime.calls[0]
     assert runtime.calls[1]['additionalModelRequestFields'] == {
@@ -119,6 +131,36 @@ def test_enablement_creates_both_agreements_and_proves_both_invocations():
     }
     assert store.states[-1][0] == 'llm_model_access'
     assert store.states[-1][1]['last_attempt_ok'] is True
+
+
+def test_runtime_probe_falls_back_from_direct_to_us_profile_when_needed():
+    store = FakeStore()
+    bedrock = FakeBedrock()
+    runtime = FakeRuntime(denied={
+        'anthropic.claude-opus-4-8',
+        'anthropic.claude-opus-4-7',
+    })
+
+    result = ensure_opus_access(
+        Store=lambda: store,
+        bedrock_client=bedrock,
+        runtime_client=runtime,
+        sleep=lambda _: None,
+        poll_attempts=1,
+        poll_seconds=0,
+    )
+
+    assert result['ok'] is True
+    assert result['selected_runtime_model_ids'] == [
+        'us.anthropic.claude-opus-4-8',
+        'us.anthropic.claude-opus-4-7',
+    ]
+    assert [call['modelId'] for call in runtime.calls] == [
+        'anthropic.claude-opus-4-8',
+        'us.anthropic.claude-opus-4-8',
+        'anthropic.claude-opus-4-7',
+        'us.anthropic.claude-opus-4-7',
+    ]
 
 
 def test_missing_anthropic_use_case_is_submitted_as_internal_mlb_auto_rd():
