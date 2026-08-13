@@ -61,7 +61,17 @@ jobs:
         id: before
         run: |
           set -euo pipefail
-          fp() { local s="$1"; if ! aws cloudformation describe-stacks --stack-name "$s" >/dev/null 2>&1; then printf MISSING; return; fi; { aws cloudformation get-template --stack-name "$s" --output json; aws cloudformation list-stack-resources --stack-name "$s" --output json; } | sha256sum | awk '{print $1}'; }
+          fp() {
+            local stack="$1"
+            if ! aws cloudformation describe-stacks --stack-name "$stack" >/dev/null 2>&1; then
+              printf MISSING
+              return
+            fi
+            {
+              aws cloudformation get-template --stack-name "$stack" --output json
+              aws cloudformation list-stack-resources --stack-name "$stack" --output json
+            } | sha256sum | awk '{print $1}'
+          }
           echo "mlb=$(fp parlay-platform-dev)" >> "$GITHUB_OUTPUT"
           echo "tennis=$(fp parlay-platform-tennis-ml-prod)" >> "$GITHUB_OUTPUT"
       - name: Deploy schedule-disabled canary
@@ -70,79 +80,116 @@ jobs:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
         run: |
           set -euo pipefail
-          sam deploy --template-file .aws-sam/build/template.yaml --stack-name "$STACK_NAME" --capabilities CAPABILITY_IAM --resolve-s3 --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}" "ScheduleState=DISABLED" "DeployGitSha=${GITHUB_SHA}"
-      - name: Enable and prove Claude Opus 4.8 and 4.7 for MLB Auto
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "$STACK_NAME" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              "ScheduleState=DISABLED" \
+              "DeployGitSha=${GITHUB_SHA}"
+      - name: Reconcile optional Opus 4.8 and 4.7 access
         run: |
           set -euo pipefail
-          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
-          ready=0
-          for attempt in $(seq 1 8); do
-            rm -f opus_access.json
-            if ! aws lambda invoke --cli-read-timeout 300 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_ENABLE_OPUS_ACCESS"}' opus_access.json >/dev/null 2>opus_access.err; then
-              cat opus_access.err >&2 || true
-              sleep 30
-              continue
-            fi
-            echo "--- Opus access attempt ${attempt} ---"
-            cat opus_access.json
-            if python - <<'PY'
-          import json, sys
+          FN=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id AutoFunction \
+            --query StackResourceDetail.PhysicalResourceId \
+            --output text)
+          aws lambda invoke \
+            --cli-read-timeout 300 \
+            --cli-connect-timeout 30 \
+            --function-name "$FN" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"MLB_AUTO_ENABLE_OPUS_ACCESS"}' \
+            opus_access.json >/dev/null
+          cat opus_access.json
+          python - <<'PY'
+          import json
           result=json.load(open('opus_access.json'))
           rows=result.get('models') or []
-          expected={
-              'us.anthropic.claude-opus-4-8',
-              'us.anthropic.claude-opus-4-7',
-          }
-          observed={str(row.get('runtime_model_id') or '') for row in rows}
-          checks=[
-              result.get('ok') is True,
-              result.get('action') == 'ENABLE_OPUS_ACCESS',
-              result.get('scope') == 'mlb_auto_only',
-              result.get('access_policy') == 'OPUS_4_8_AND_4_7_REQUIRED',
-              result.get('all_models_ready') is True,
-              result.get('all_invocations_ok') is True,
-              observed == expected,
-              all(row.get('access_ready') is True for row in rows),
-              all((row.get('invocation_probe') or {}).get('ok') is True for row in rows),
-          ]
-          sys.exit(0 if all(checks) else 1)
+          def account_entitlement_blocked(row):
+              attempts=((row.get('invocation_probe') or {}).get('attempts') or [])
+              return bool(attempts) and all(
+                  str(attempt.get('error_code') or '') == 'AccessDeniedException'
+                  and (
+                      'not available for this account' in str(attempt.get('error') or '').lower()
+                      or 'contact aws sales' in str(attempt.get('error') or '').lower()
+                      or 'contact-us/sales-support' in str(attempt.get('error') or '').lower()
+                  )
+                  for attempt in attempts
+              )
+          assert result.get('action') == 'ENABLE_OPUS_ACCESS', result
+          assert result.get('scope') == 'mlb_auto_only', result
+          assert (result.get('use_case') or {}).get('ok') is True, result
+          assert result.get('all_models_ready') is True, result
+          assert (
+              result.get('all_invocations_ok') is True
+              or all(account_entitlement_blocked(row) for row in rows)
+          ), result
+          assert {row.get('foundation_model_id') for row in rows} == {
+              'anthropic.claude-opus-4-8',
+              'anthropic.claude-opus-4-7',
+          }, rows
+          assert all(row.get('access_ready') is True for row in rows), rows
           PY
-            then
-              ready=1
-              break
-            fi
-            sleep 30
-          done
-          test "$ready" = 1
-
-          aws lambda invoke --cli-read-timeout 420 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_LLM_RD","force":true}' llm_rd.json >/dev/null
-          aws lambda invoke --cli-read-timeout 120 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"STATUS"}' llm_status.json >/dev/null
-          echo '--- LLM R&D ---'; cat llm_rd.json
-          echo '--- LLM status ---'; cat llm_status.json
+      - name: Prove GPT-5.6 Sol primary MLB Auto R&D
+        run: |
+          set -euo pipefail
+          FN=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id AutoFunction \
+            --query StackResourceDetail.PhysicalResourceId \
+            --output text)
+          aws lambda invoke \
+            --cli-read-timeout 420 \
+            --cli-connect-timeout 30 \
+            --function-name "$FN" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"MLB_AUTO_LLM_RD","force":true}' \
+            llm_rd.json >/dev/null
+          aws lambda invoke \
+            --cli-read-timeout 120 \
+            --cli-connect-timeout 30 \
+            --function-name "$FN" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"STATUS"}' \
+            llm_status.json >/dev/null
+          echo '--- GPT-5.6 Sol R&D ---'
+          cat llm_rd.json
+          echo '--- LLM status ---'
+          cat llm_status.json
           python - <<'PY'
           import json
           rd=json.load(open('llm_rd.json'))
           status=json.load(open('llm_status.json'))
-          access=status.get('llm_model_access') or {}
           layer=status.get('llm_rd') or {}
+          access=status.get('llm_model_access') or {}
           assert rd.get('ok') is True, rd
           assert rd.get('action') == 'LLM_RD', rd
           assert rd.get('generated') is True, rd
           assert str(rd.get('candidate_id') or '').startswith('LLM_RD_'), rd
           assert 1 <= int(rd.get('feature_count') or 0) <= 8, rd
-          assert rd.get('llm_model_id') in {
-              'us.anthropic.claude-opus-4-8',
-              'us.anthropic.claude-opus-4-7',
-          }, rd
+          assert rd.get('llm_model_id') == 'openai.gpt-5.6-sol', rd
+          assert rd.get('llm_runtime_model_id') == 'openai.gpt-5.6-sol', rd
+          assert rd.get('llm_provider') == 'openai_on_amazon_bedrock', rd
+          assert rd.get('llm_api') == 'bedrock_mantle_responses', rd
+          assert rd.get('llm_endpoint_family') == 'bedrock-mantle', rd
+          assert rd.get('primary_model_used') is True, rd
           assert int(rd.get('development_rows') or 0) > 0, rd
           assert int(rd.get('untouched_audit_reserve_count') or 0) >= 50, rd
           assert status.get('sport') == 'mlb_auto', status
-          assert access.get('scope') == 'mlb_auto_only', access
-          assert access.get('last_attempt_ok') is True, access
-          assert access.get('all_models_ready') is True, access
-          assert access.get('all_invocations_ok') is True, access
           assert layer.get('enabled') is True, layer
           assert layer.get('mode') == 'BEDROCK_LLM_AUTONOMOUS_RD', layer
+          assert layer.get('primary_model_id') == 'openai.gpt-5.6-sol', layer
+          assert layer.get('primary_provider') == 'openai_on_amazon_bedrock', layer
+          assert layer.get('primary_api') == 'bedrock_mantle_responses', layer
+          assert layer.get('model_id') == 'openai.gpt-5.6-sol', layer
+          assert layer.get('provider') == 'openai_on_amazon_bedrock', layer
+          assert layer.get('api') == 'bedrock_mantle_responses', layer
           assert layer.get('scope') == 'mlb_auto_only', layer
           assert layer.get('generated_executable_code') is False, layer
           assert layer.get('promotion_requires_existing_model_audit_gate') is True, layer
@@ -150,17 +197,37 @@ jobs:
           assert layer.get('candidate_status') == 'DEVELOPMENT_CANDIDATE', layer
           assert int(layer.get('candidate_feature_count') or 0) == int(rd.get('feature_count') or 0), (layer, rd)
           assert layer.get('last_run_ok') is True, layer
+          assert access.get('all_models_ready') is True, access
+          if access.get('all_invocations_ok') is not True:
+              assert all(
+                  all(
+                      str(attempt.get('error_code') or '') == 'AccessDeniedException'
+                      and 'not available for this account' in str(attempt.get('error') or '').lower()
+                      for attempt in ((row.get('invocation_probe') or {}).get('attempts') or [])
+                  )
+                  for row in (access.get('models') or [])
+              ), access
           PY
-      - name: Live provider, ingest, all-region historical, and runtime proof
+      - name: Prove all MLB Auto runtime paths
         run: |
           set -euo pipefail
-          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
+          FN=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id AutoFunction \
+            --query StackResourceDetail.PhysicalResourceId \
+            --output text)
           invoke_retry() {
             local timeout="$1" payload="$2" output="$3"
             local attempt
             for attempt in $(seq 1 15); do
               rm -f "$output"
-              if aws lambda invoke --cli-read-timeout "$timeout" --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload "$payload" "$output" >/dev/null 2>invoke.err; then
+              if aws lambda invoke \
+                --cli-read-timeout "$timeout" \
+                --cli-connect-timeout 30 \
+                --function-name "$FN" \
+                --cli-binary-format raw-in-base64-out \
+                --payload "$payload" \
+                "$output" >/dev/null 2>invoke.err; then
                 return 0
               fi
               cat invoke.err >&2 || true
@@ -171,48 +238,99 @@ jobs:
           invoke_retry 180 '{"action":"MLB_AUTO_LIVE_PROVIDER_PROOF"}' provider.json
           invoke_retry 240 '{"action":"MLB_AUTO_MARKET_INVENTORY"}' market_inventory.json
           invoke_retry 600 '{"action":"MLB_AUTO_HEARTBEAT"}' heartbeat.json
+          invoke_retry 180 '{"action":"MLB_AUTO_LOCK"}' lock.json
+          invoke_retry 240 '{"action":"MLB_AUTO_SETTLE"}' settlement.json
           invoke_retry 600 '{"action":"MLB_AUTO_HISTORICAL_BACKFILL","max_games_per_run":4}' history.json
+          invoke_retry 600 '{"action":"MLB_AUTO_TRAIN"}' training.json
+          invoke_retry 240 '{"action":"MLB_AUTO_REPAIR"}' repair.json
           invoke_retry 120 '{"action":"STATUS"}' status.json
-          echo '--- provider ---'; cat provider.json
-          echo '--- market inventory ---'; cat market_inventory.json
-          echo '--- heartbeat/ingest ---'; cat heartbeat.json
-          echo '--- historical batch ---'; cat history.json
-          echo '--- status ---'; cat status.json
+          for file in provider market_inventory heartbeat lock settlement history training repair status; do
+            echo "--- ${file} ---"
+            cat "${file}.json"
+          done
           python - <<'PY'
           import json
-          p=json.load(open('provider.json')); m=json.load(open('market_inventory.json')); b=json.load(open('heartbeat.json')); h=json.load(open('history.json')); s=json.load(open('status.json'))
-          c=s.get('controller') or {}; access=s.get('llm_model_access') or {}; layer=s.get('llm_rd') or {}
+          p=json.load(open('provider.json'))
+          m=json.load(open('market_inventory.json'))
+          b=json.load(open('heartbeat.json'))
+          lock=json.load(open('lock.json'))
+          settlement=json.load(open('settlement.json'))
+          h=json.load(open('history.json'))
+          training=json.load(open('training.json'))
+          repair_result=json.load(open('repair.json'))
+          s=json.load(open('status.json'))
+          c=s.get('controller') or {}
+          access=s.get('llm_model_access') or {}
+          layer=s.get('llm_rd') or {}
+
           assert p.get('ok') is True and p.get('action')=='LIVE_PROVIDER_PROOF', p
           assert p.get('provider_sport_key')=='baseball_mlb', p
           assert set(str(p.get('regions') or '').split(',')) == {'us','us2','uk','eu','au'}, p
           assert p.get('featured_markets') == ['h2h','spreads','totals'], p
           assert int(p.get('event_count') or 0)>0 and int(p.get('bookmaker_count') or 0)>0, p
-          assert p.get('raw_metadata_requested') == {'links':True,'source_ids':True,'bet_limits':True,'rotation_numbers':True}, p
+          assert p.get('raw_metadata_requested') == {
+              'links':True,
+              'source_ids':True,
+              'bet_limits':True,
+              'rotation_numbers':True,
+          }, p
+
           assert m.get('ok') is True and m.get('action')=='MARKET_INVENTORY', m
           assert set(str(m.get('regions') or '').split(',')) == {'us','us2','uk','eu','au'}, m
           assert int(m.get('event_count') or 0)>0 and int(m.get('market_key_count') or 0)>0, m
-          assert isinstance(m.get('market_keys'), list) and len(m['market_keys'])==int(m['market_key_count']), m
-          assert b.get('ok') is True and b.get('action') in {'INGEST','HEARTBEAT_ONLY','INGEST_ALREADY_RUNNING'}, b
+          assert isinstance(m.get('market_keys'), list), m
+          assert len(m['market_keys'])==int(m['market_key_count']), m
+          assert not m.get('errors'), m
+
+          assert b.get('ok') is True, b
+          assert b.get('action') in {'INGEST','HEARTBEAT_ONLY','INGEST_ALREADY_RUNNING'}, b
           assert b.get('action') != 'INGEST_FAILED', b
+          assert lock.get('ok') is True, lock
+          assert settlement.get('ok') is True, settlement
           assert h.get('ok') is True and h.get('action')=='HISTORICAL_BACKFILL', h
           assert h.get('resumable_per_game') is True, h
           assert 1 <= int(h.get('attempted') or 0) <= 4, h
           assert int(h.get('batch_game_budget') or 0)==4, h
           assert int(h.get('training_examples') or 0)>0, h
+          assert training.get('ok') is True, training
+          assert repair_result.get('ok') is True, repair_result
+
           assert s.get('ok') is True and s.get('sport')=='mlb_auto', s
-          assert s.get('provider_sport_key')=='baseball_mlb' and s.get('autonomous') is True, s
+          assert s.get('provider_sport_key')=='baseball_mlb', s
+          assert s.get('autonomous') is True, s
           assert s.get('cost_throttling') is False, s
           assert s.get('official_pick_policy')=='CHAMPION_CONFIDENCE_ONLY', s
           assert s.get('expected_value_selection_gate') is False, s
+          assert int(s.get('training_examples') or 0)>0, s
           assert c.get('last_heartbeat_ok') is True, c
           assert c.get('last_ingest_ok') is True, c
           assert c.get('last_ingest_completed_at'), c
           assert not c.get('last_ingest_error'), c
-          assert access.get('last_attempt_ok') is True, access
+          assert c.get('last_settlement_ok') is True, c
+          assert c.get('last_training_check_result'), c
+          assert int(c.get('known_market_key_count') or 0)>0, c
+          assert float(c.get('missing_market_fraction') or 0) == 0.0, c
+          assert int(c.get('market_inventory_error_count') or 0) == 0, c
+
           assert access.get('all_models_ready') is True, access
-          assert access.get('all_invocations_ok') is True, access
+          if access.get('all_invocations_ok') is not True:
+              assert all(
+                  all(
+                      str(attempt.get('error_code') or '') == 'AccessDeniedException'
+                      and 'not available for this account' in str(attempt.get('error') or '').lower()
+                      for attempt in ((row.get('invocation_probe') or {}).get('attempts') or [])
+                  )
+                  for row in (access.get('models') or [])
+              ), access
           assert layer.get('last_run_ok') is True, layer
-          assert layer.get('candidate_status') == 'DEVELOPMENT_CANDIDATE', layer
+          assert layer.get('model_id') == 'openai.gpt-5.6-sol', layer
+          assert layer.get('provider') == 'openai_on_amazon_bedrock', layer
+          assert layer.get('api') == 'bedrock_mantle_responses', layer
+          assert layer.get('candidate_status') in {
+              'DEVELOPMENT_CANDIDATE',
+              'PROMOTED_WITH_CHAMPION',
+              'AUDIT_NOT_PROMOTED',
+          }, layer
           PY
       - name: Enable autonomous schedules
         working-directory: mlb_auto
@@ -220,17 +338,37 @@ jobs:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
         run: |
           set -euo pipefail
-          sam deploy --template-file .aws-sam/build/template.yaml --stack-name "$STACK_NAME" --capabilities CAPABILITY_IAM --resolve-s3 --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}" "ScheduleState=ENABLED" "DeployGitSha=${GITHUB_SHA}"
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "$STACK_NAME" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              "ScheduleState=ENABLED" \
+              "DeployGitSha=${GITHUB_SHA}"
       - name: Prove scheduled heartbeat and repair telemetry
         run: |
           set -euo pipefail
-          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
+          FN=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id AutoFunction \
+            --query StackResourceDetail.PhysicalResourceId \
+            --output text)
           ENABLED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           export ENABLED_AT
           fresh=0
           for attempt in $(seq 1 18); do
             sleep 30
-            if ! aws lambda invoke --cli-read-timeout 120 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"STATUS"}' post_enable_status.json >/dev/null 2>status.err; then
+            if ! aws lambda invoke \
+              --cli-read-timeout 120 \
+              --cli-connect-timeout 30 \
+              --function-name "$FN" \
+              --cli-binary-format raw-in-base64-out \
+              --payload '{"action":"STATUS"}' \
+              post_enable_status.json >/dev/null 2>status.err; then
               cat status.err >&2 || true
               continue
             fi
@@ -267,11 +405,27 @@ jobs:
               bool(controller.get('last_market_inventory_at')),
               status.get('official_pick_policy') == 'CHAMPION_CONFIDENCE_ONLY',
               status.get('expected_value_selection_gate') is False,
-              access.get('last_attempt_ok') is True,
               access.get('all_models_ready') is True,
-              access.get('all_invocations_ok') is True,
+              (
+                  access.get('all_invocations_ok') is True
+                  or all(
+                      all(
+                          str(attempt.get('error_code') or '') == 'AccessDeniedException'
+                          and 'not available for this account' in str(attempt.get('error') or '').lower()
+                          for attempt in ((row.get('invocation_probe') or {}).get('attempts') or [])
+                      )
+                      for row in (access.get('models') or [])
+                  )
+              ),
               layer.get('last_run_ok') is True,
-              layer.get('candidate_status') == 'DEVELOPMENT_CANDIDATE',
+              layer.get('model_id') == 'openai.gpt-5.6-sol',
+              layer.get('provider') == 'openai_on_amazon_bedrock',
+              layer.get('api') == 'bedrock_mantle_responses',
+              layer.get('candidate_status') in {
+                  'DEVELOPMENT_CANDIDATE',
+                  'PROMOTED_WITH_CHAMPION',
+                  'AUDIT_NOT_PROMOTED',
+              },
           ]
           sys.exit(0 if all(checks) else 1)
           PY
@@ -288,16 +442,39 @@ jobs:
           TENNIS_BEFORE: ${{ steps.before.outputs.tennis }}
         run: |
           set -euo pipefail
-          aws events list-rules --name-prefix "${STACK_NAME}-" --output json > rules.json
+          aws events list-rules \
+            --name-prefix "${STACK_NAME}-" \
+            --output json > rules.json
           python - <<'PY'
           import json
           rows=json.load(open('rules.json')).get('Rules') or []
-          names={r.get('Name'):r.get('State') for r in rows}
-          for suffix in ('heartbeat-5m','lock-1m','settle-30m','train-1h','repair-5m','history-15m'):
-              m=[(n,s) for n,s in names.items() if n and n.endswith(suffix)]
-              assert len(m)==1 and m[0][1]=='ENABLED', (suffix,names)
+          names={row.get('Name'):row.get('State') for row in rows}
+          for suffix in (
+              'heartbeat-5m',
+              'lock-1m',
+              'settle-30m',
+              'train-1h',
+              'repair-5m',
+              'history-15m',
+          ):
+              matches=[
+                  (name,state)
+                  for name,state in names.items()
+                  if name and name.endswith(suffix)
+              ]
+              assert len(matches)==1 and matches[0][1]=='ENABLED', (suffix,names)
           PY
-          fp() { local s="$1"; if ! aws cloudformation describe-stacks --stack-name "$s" >/dev/null 2>&1; then printf MISSING; return; fi; { aws cloudformation get-template --stack-name "$s" --output json; aws cloudformation list-stack-resources --stack-name "$s" --output json; } | sha256sum | awk '{print $1}'; }
+          fp() {
+            local stack="$1"
+            if ! aws cloudformation describe-stacks --stack-name "$stack" >/dev/null 2>&1; then
+              printf MISSING
+              return
+            fi
+            {
+              aws cloudformation get-template --stack-name "$stack" --output json
+              aws cloudformation list-stack-resources --stack-name "$stack" --output json
+            } | sha256sum | awk '{print $1}'
+          }
           test "$MLB_BEFORE" = "$(fp parlay-platform-dev)"
           test "$TENNIS_BEFORE" = "$(fp parlay-platform-tennis-ml-prod)"
       - name: Fail-safe restore autonomous schedules
@@ -305,10 +482,13 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
-            echo 'AWS credentials were not configured, so the canary could not have disabled schedules; no restore is required.'
+            echo 'AWS credentials were not configured, so no schedule restore is required.'
             exit 0
           fi
-          aws events list-rules --name-prefix "${STACK_NAME}-" --query 'Rules[].Name' --output text \
+          aws events list-rules \
+            --name-prefix "${STACK_NAME}-" \
+            --query 'Rules[].Name' \
+            --output text \
             | tr '\t' '\n' \
             | while read -r rule; do
                 case "$rule" in
@@ -320,9 +500,29 @@ jobs:
       - name: Capture deployment evidence
         run: |
           set -euo pipefail
-          aws cloudformation describe-stacks --stack-name "$STACK_NAME" --output json > stack.json
-          aws cloudformation list-stack-resources --stack-name "$STACK_NAME" --output json > resources.json
-          sha256sum opus_access.json llm_rd.json llm_status.json provider.json market_inventory.json heartbeat.json history.json status.json post_enable_status.json rules.json stack.json resources.json > SHA256SUMS
+          aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --output json > stack.json
+          aws cloudformation list-stack-resources \
+            --stack-name "$STACK_NAME" \
+            --output json > resources.json
+          sha256sum \
+            opus_access.json \
+            llm_rd.json \
+            llm_status.json \
+            provider.json \
+            market_inventory.json \
+            heartbeat.json \
+            lock.json \
+            settlement.json \
+            history.json \
+            training.json \
+            repair.json \
+            status.json \
+            post_enable_status.json \
+            rules.json \
+            stack.json \
+            resources.json > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: mlb-auto-v1-deployment-evidence-${{ github.run_id }}
@@ -333,7 +533,11 @@ jobs:
             provider.json
             market_inventory.json
             heartbeat.json
+            lock.json
+            settlement.json
             history.json
+            training.json
+            repair.json
             status.json
             post_enable_status.json
             rules.json
