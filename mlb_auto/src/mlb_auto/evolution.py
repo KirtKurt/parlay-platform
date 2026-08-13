@@ -8,9 +8,20 @@ from typing import Any, Mapping, Sequence
 from .ml import Model, train_logistic, chronological_split, log_loss, brier_score, calibration_error
 
 BLOCKED_NAMES = {
-    'label','winner','home_won','result','score_home','score_away','settled','completed',
-    'postgame','final','outcome','outcomes','actual_winner','game_result'
+    'home_won', 'outcome', 'outcomes', 'actual_winner', 'game_result'
 }
+BLOCKED_TOKENS = {
+    'label', 'winner', 'result', 'score', 'settled', 'completed',
+    'postgame', 'final',
+}
+
+
+def _blocked_feature_name(name: str) -> bool:
+    normalized = str(name or '').lower().replace('-', '_')
+    tokens = {token for token in normalized.split('_') if token}
+    if tokens & BLOCKED_TOKENS:
+        return True
+    return any(blocked == normalized or normalized.startswith(blocked + '_') for blocked in BLOCKED_NAMES)
 
 
 def _numeric(v: Any) -> float | None:
@@ -29,8 +40,7 @@ def candidate_numeric_features(rows: Sequence[Mapping[str, Any]], min_coverage: 
     counts: dict[str,int]={}
     for row in rows:
         for k,v in row.items():
-            lk=str(k).lower()
-            if any(b == lk or lk.startswith(b+'_') for b in BLOCKED_NAMES):
+            if _blocked_feature_name(str(k)):
                 continue
             if _numeric(v) is not None:
                 counts[str(k)]=counts.get(str(k),0)+1

@@ -64,6 +64,11 @@ def moneyline_consensus(event: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def is_period_market(key: str) -> bool:
+    value = str(key or '').lower()
+    return value.startswith(('first_', 'innings')) or '_inning' in value or '_innings' in value
+
+
 def market_depth_features(event_detail: Mapping[str, Any]) -> dict[str, float]:
     """Count safe information without guessing player-to-team attribution."""
     books = event_detail.get('bookmakers') or []
@@ -80,7 +85,7 @@ def market_depth_features(event_detail: Mapping[str, Any]) -> dict[str, float]:
             outcome_count += len(market.get('outcomes') or [])
             if key.startswith(('pitcher_', 'batter_')):
                 player_prop_keys.add(key)
-            if key.startswith(('first_', 'innings')):
+            if is_period_market(key):
                 period_keys.add(key)
     return {
         'market_key_count': float(len(market_keys)),
