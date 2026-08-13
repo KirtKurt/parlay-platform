@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json, os, re
+import json, os, re, time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
@@ -15,8 +15,9 @@ MLB_STATS_BASE = 'https://statsapi.mlb.com/api/v1'
 SNAPSHOT_OFFSETS_MINUTES = (600, 360, 180, 90, 45)
 EARLIEST_HISTORY = date(2020, 6, 30)
 EARLIEST_ADDITIONAL = datetime(2023, 5, 3, 5, 30, tzinfo=timezone.utc)
-DAYS_PER_RUN = int(os.getenv('MLB_AUTO_HISTORICAL_DAYS_PER_RUN', '1'))
-MAX_GAMES_PER_RUN = max(1, int(os.getenv('MLB_AUTO_HISTORICAL_MAX_GAMES_PER_RUN', '1')))
+DAYS_PER_RUN = int(os.getenv('MLB_AUTO_HISTORICAL_DAYS_PER_RUN', '2'))
+MAX_GAMES_PER_RUN = max(1, int(os.getenv('MLB_AUTO_HISTORICAL_MAX_GAMES_PER_RUN', '4')))
+TIME_BUDGET_SECONDS = max(60, min(480, int(os.getenv('MLB_AUTO_HISTORICAL_TIME_BUDGET_SECONDS', '420'))))
 
 
 def _dt(v: Any) -> datetime:
@@ -34,7 +35,11 @@ def _unwrap(v: Any) -> Any:
 
 def _norm(v: Any) -> str:
     s = re.sub(r'[^a-z0-9]+', '', str(v or '').lower())
-    return {'oaklandathletics': 'athletics'}.get(s, s)
+    aliases = {
+        'oaklandathletics': 'athletics',
+        'theathletics': 'athletics',
+    }
+    return aliases.get(s, s)
 
 
 def _stats_get(path: str, **params) -> Any:
@@ -73,7 +78,7 @@ def _find(rows: Any, game: dict[str, Any]) -> dict[str, Any] | None:
             delta = abs((_dt(e['commence_time']) - target).total_seconds())
         except Exception:
             continue
-        if delta <= 6 * 3600:
+        if delta <= 12 * 3600:
             cand.append((delta, e))
     return min(cand, key=lambda x: x[0])[1] if cand else None
 
@@ -106,9 +111,11 @@ def build_example(client: OddsApiClient, game: dict[str, Any], market_keys: list
                 chosen = (e, at)
         except Exception as exc:
             errors.append(f'{mins}:{type(exc).__name__}')
-    if not chosen or not history:
-        return None, {'reason': 'NO_T45', 'errors': errors}
+    if not chosen:
+        return None, {'reason': 'NO_T45', 'history_points': len(history), 'errors': errors}
     event, at = chosen
+    if not history:
+        return None, {'reason': 'NO_HISTORY', 'history_points': 0, 'errors': errors}
     detail, more = _detail(client, event, at, market_keys)
     errors += more
     features = build_feature_vector(event=event, detail=detail, home_probability_history=history,
@@ -124,17 +131,19 @@ def build_example(client: OddsApiClient, game: dict[str, Any], market_keys: list
         'features': features, 'source_pull_at': _iso(at), 'lock_cutoff_at': _iso(start - timedelta(minutes=45)),
         'source_before_or_at_cutoff': True, 'training_eligible': True,
         'snapshot_offsets_minutes': list(SNAPSHOT_OFFSETS_MINUTES), 'historical_market_errors': errors[:50]
-    }, {'event_id': str(event['id']), 'history_points': len(history), 'errors': errors}
+    }, {'event_id': str(event['id']), 'history_points': len(history), 'reason': 'OK', 'errors': errors}
 
 
 def _persist_progress(store: Store, *, cursor: date, game_index: int, added: int, attempted: int,
-                      prior_games: int, prior_days: int, day_complete: bool = False) -> None:
+                      prior_games: int, prior_days: int, day_complete: bool = False,
+                      failure_reasons: dict[str, int] | None = None) -> None:
     store.put_state('historical_backfill', {
         'cursor_date': cursor.isoformat(),
         'game_index': int(game_index),
         'last_run_at': datetime.now(timezone.utc).isoformat(),
         'last_run_added': int(added),
         'last_run_attempted': int(attempted),
+        'last_run_failure_reasons': dict(failure_reasons or {}),
         'total_games_processed': int(prior_games + attempted),
         'total_days_processed': int(prior_days + (1 if day_complete else 0)),
         'autonomous': True,
@@ -144,25 +153,24 @@ def _persist_progress(store: Store, *, cursor: date, game_index: int, added: int
 
 
 def run_historical_backfill(days_per_run: int | None = None, max_games_per_run: int | None = None) -> dict[str, Any]:
-    """Process a bounded, resumable historical batch.
-
-    The cursor is persisted after every attempted game.  A retry therefore resumes at
-    the next game instead of replaying an entire slate, keeping each Lambda invocation
-    bounded while still crawling the complete history autonomously over repeated runs.
-    """
+    """Process a time-bounded, resumable historical batch and skip unavailable games."""
     store, client = Store(), OddsApiClient()
     ctl, state = store.get_state('controller'), store.get_state('historical_backfill')
     market_keys = sorted({str(x) for x in (ctl.get('known_market_keys') or []) if str(x)})
     cursor = date.fromisoformat(state['cursor_date']) if state.get('cursor_date') else datetime.now(timezone.utc).date() - timedelta(days=1)
     game_index = max(0, int(state.get('game_index') or 0))
-    day_limit = max(1, min(7, int(days_per_run or DAYS_PER_RUN)))
-    game_budget = max(1, min(8, int(max_games_per_run or MAX_GAMES_PER_RUN)))
+    day_limit = max(1, min(14, int(days_per_run or DAYS_PER_RUN)))
+    game_budget = max(1, min(12, int(max_games_per_run or MAX_GAMES_PER_RUN)))
     added = attempted = completed_days = 0
     reports: list[dict[str, Any]] = []
+    failures: dict[str, int] = {}
     prior_days = int(state.get('total_days_processed') or 0)
     prior_games = int(state.get('total_games_processed') or 0)
+    started = time.monotonic()
 
     while cursor >= EARLIEST_HISTORY and attempted < game_budget and completed_days < day_limit:
+        if attempted and time.monotonic() - started >= TIME_BUDGET_SECONDS:
+            break
         games = final_games(cursor)
         if game_index >= len(games):
             store.archive_json(f'mlb_auto/historical/{cursor.isoformat()}.json', {
@@ -174,21 +182,30 @@ def run_historical_backfill(days_per_run: int | None = None, max_games_per_run: 
             game_index = 0
             completed_days += 1
             _persist_progress(store, cursor=cursor, game_index=0, added=added, attempted=attempted,
-                              prior_games=prior_games, prior_days=prior_days, day_complete=True)
+                              prior_games=prior_games, prior_days=prior_days, day_complete=True,
+                              failure_reasons=failures)
             prior_days += 1
             continue
 
         game = games[game_index]
-        row, audit = build_example(client, game, market_keys)
+        try:
+            row, audit = build_example(client, game, market_keys)
+        except Exception as exc:
+            row, audit = None, {'reason': f'BUILD_{type(exc).__name__}', 'errors': [str(exc)[:200]]}
         attempted += 1
+        reason = str((audit or {}).get('reason') or ('OK' if row else 'UNKNOWN'))
         if row:
             store.put_training_example(row['slate_date'], row['event_id'], row)
             added += 1
+        else:
+            failures[reason] = failures.get(reason, 0) + 1
         store.archive_json(
             f"mlb_auto/historical/{cursor.isoformat()}/{game_index:03d}-{game.get('game_pk') or 'unknown'}.json",
             {'date': cursor.isoformat(), 'game_index': game_index, 'game': game, 'added': bool(row), 'audit': audit},
         )
-        reports.append({'date': cursor.isoformat(), 'game_index': game_index, 'game_pk': game.get('game_pk'), 'added': bool(row)})
+        reports.append({'date': cursor.isoformat(), 'game_index': game_index, 'game_pk': game.get('game_pk'),
+                        'home_team': game.get('home_team'), 'away_team': game.get('away_team'),
+                        'added': bool(row), 'reason': reason, 'audit': audit})
         game_index += 1
         if game_index >= len(games):
             cursor -= timedelta(days=1)
@@ -198,7 +215,8 @@ def run_historical_backfill(days_per_run: int | None = None, max_games_per_run: 
         else:
             day_complete = False
         _persist_progress(store, cursor=cursor, game_index=game_index, added=added, attempted=attempted,
-                          prior_games=prior_games, prior_days=prior_days, day_complete=day_complete)
+                          prior_games=prior_games, prior_days=prior_days, day_complete=day_complete,
+                          failure_reasons=failures)
         if day_complete:
             prior_days += 1
 
@@ -212,7 +230,10 @@ def run_historical_backfill(days_per_run: int | None = None, max_games_per_run: 
         'next_cursor_date': cursor.isoformat(),
         'next_game_index': game_index,
         'batch_game_budget': game_budget,
+        'time_budget_seconds': TIME_BUDGET_SECONDS,
+        'elapsed_seconds': round(time.monotonic() - started, 3),
         'resumable_per_game': True,
+        'failure_reasons': failures,
         'days': reports,
         'known_market_key_count': len(market_keys),
     }
