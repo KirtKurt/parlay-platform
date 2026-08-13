@@ -17,3 +17,15 @@ def test_mlb_auto_model_chain_uses_configured_fallbacks_only():
     assert 'us.anthropic.claude-sonnet-4-6' in template
     assert 'amazon.nova-pro-v1:0' in template
     assert 'amazon.nova-micro-v1:0' in template
+
+
+def test_mlb_auto_can_invoke_only_its_default_mantle_project():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / 'template.yaml').read_text()
+
+    assert 'bedrock-mantle:CreateInference' in template
+    assert "arn:${AWS::Partition}:bedrock-mantle:${AWS::Region}:${AWS::AccountId}:project/default" in template
+    assert 'bedrock:PutUseCaseForModelAccess' not in template
+    assert 'bedrock:CreateFoundationModelAgreement' not in template
+    assert 'aws-marketplace:Subscribe' not in template
+    assert 'aws-marketplace:Unsubscribe' not in template

@@ -161,6 +161,11 @@ Resources:
                 - bedrock:CallWithBearerToken
                 - bedrock-mantle:CallWithBearerToken
               Resource: '*'
+            - Sid: InvokeBedrockMantleDefaultProject
+              Effect: Allow
+              Action:
+                - bedrock-mantle:CreateInference
+              Resource: !Sub 'arn:${AWS::Partition}:bedrock-mantle:${AWS::Region}:${AWS::AccountId}:project/default'
       Events:
         StatusApi:
           Type: HttpApi
