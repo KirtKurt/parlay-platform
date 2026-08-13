@@ -288,7 +288,7 @@ def status_payload(*, Store):
     current = _state(Store())
     usage = dict(current.get('llm_usage') or {})
     return {
-        'enabled':True,'mode':'BEDROCK_MULTI_ENDPOINT_LLM_AUTONOMOUS_RD',
+        'enabled':True,'mode':'BEDROCK_LLM_AUTONOMOUS_RD',
         'model_id':current.get('llm_model_id'),
         'endpoint_family':usage.get('endpoint_family'),
         'configured_model_ids':current.get('configured_model_ids') or list(MODEL_IDS),
