@@ -123,6 +123,12 @@ class IsolationTests(unittest.TestCase):
         self.assertNotIn("tennis", serialized.lower())
         self.assertNotIn("mlb", serialized.lower())
 
+    def test_runtime_smoke_prints_lambda_error_payload_before_asserting(self) -> None:
+        workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
+        print_at = workflow.index("print(name, response)")
+        function_error_at = workflow.index('assert not metadata.get("FunctionError")')
+        self.assertLess(print_at, function_error_at)
+
     def test_lambda_memory_fits_the_production_account_ceiling(self) -> None:
         template = yaml.load(
             (ROOT / "soccer-auto-template.yaml").read_text(),

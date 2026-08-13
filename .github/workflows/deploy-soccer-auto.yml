@@ -151,9 +151,9 @@ jobs:
           name = sys.argv[1]
           metadata = json.loads(pathlib.Path(f"/tmp/{name}-meta.json").read_text())
           response = json.loads(pathlib.Path(f"/tmp/{name}.json").read_text())
+          print(name, response)
           assert not metadata.get("FunctionError"), metadata
           assert response.get("ok") is True, response
-          print(name, response)
           PY
           }
 
