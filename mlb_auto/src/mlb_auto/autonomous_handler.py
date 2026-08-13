@@ -119,6 +119,38 @@ def discover_market_inventory() -> dict:
     }
 
 
+def _cached_market_inventory(max_age_seconds: int = 21600) -> dict | None:
+    store = Store()
+    state = store.get_state('controller')
+    keys = sorted({str(x) for x in (state.get('known_market_keys') or []) if str(x)})
+    stamp = state.get('last_market_inventory_at')
+    if not keys or not stamp:
+        return None
+    try:
+        when = datetime.fromisoformat(str(stamp).replace('Z', '+00:00'))
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - when.astimezone(timezone.utc)).total_seconds()
+    except Exception:
+        return None
+    if age > max_age_seconds:
+        return None
+    client = OpenEndedOddsApiClient()
+    return {
+        'ok': True,
+        'action': 'MARKET_INVENTORY_CACHE',
+        'provider_sport_key': 'baseball_mlb',
+        'regions': client.regions,
+        'event_count': int(state.get('market_inventory_event_count') or 0),
+        'market_key_count': len(keys),
+        'market_keys': keys,
+        'categories': _market_categories(keys),
+        'errors': [],
+        'cached': True,
+        'age_seconds': max(0, int(age)),
+    }
+
+
 def autonomous_train() -> dict:
     store = Store()
     examples = store.query_training_examples(limit=5000)
@@ -175,9 +207,9 @@ def autonomous_train() -> dict:
     }
 
 
-def autonomous_backfill() -> dict:
-    inventory = discover_market_inventory()
-    result = run_historical_backfill()
+def autonomous_backfill(max_games_per_run: int | None = None) -> dict:
+    inventory = _cached_market_inventory() or discover_market_inventory()
+    result = run_historical_backfill(max_games_per_run=max_games_per_run)
     result['market_inventory'] = {
         'ok': inventory.get('ok'),
         'regions': inventory.get('regions'),
@@ -186,6 +218,7 @@ def autonomous_backfill() -> dict:
         'market_keys': inventory.get('market_keys'),
         'categories': inventory.get('categories'),
         'errors': inventory.get('errors'),
+        'cached': bool(inventory.get('cached')),
     }
     if int(result.get('training_examples') or 0) >= base.MIN_TRAIN:
         result['training'] = autonomous_train()
@@ -209,7 +242,7 @@ def handler(event, context):
     if action in ('MARKET_INVENTORY', 'MLB_AUTO_MARKET_INVENTORY'):
         return discover_market_inventory()
     if action in ('HISTORICAL_BACKFILL', 'MLB_AUTO_HISTORICAL_BACKFILL'):
-        return autonomous_backfill()
+        return autonomous_backfill(max_games_per_run=event.get('max_games_per_run'))
     if action in ('REPAIR', 'MLB_AUTO_REPAIR'):
         original_train = base.train
         try:
