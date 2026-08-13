@@ -37,6 +37,34 @@ def _market_categories(keys: list[str]) -> dict[str, list[str]]:
     return cats
 
 
+def live_provider_proof() -> dict:
+    client = OpenEndedOddsApiClient()
+    response = client.featured_odds()
+    events = [x for x in (response.data or []) if x.get('sport_key') == 'baseball_mlb']
+    bookmakers = sorted({str(b.get('key')) for e in events for b in (e.get('bookmakers') or []) if b.get('key')})
+    return {
+        'ok': bool(events),
+        'action': 'LIVE_PROVIDER_PROOF',
+        'provider_sport_key': 'baseball_mlb',
+        'regions': client.regions,
+        'featured_markets': ['h2h', 'spreads', 'totals'],
+        'event_count': len(events),
+        'bookmaker_count': len(bookmakers),
+        'bookmakers': bookmakers,
+        'quota_headers_observed': {
+            'remaining_present': response.remaining is not None,
+            'used_present': response.used is not None,
+            'last_cost_present': response.cost is not None,
+        },
+        'raw_metadata_requested': {
+            'links': True,
+            'source_ids': True,
+            'bet_limits': True,
+            'rotation_numbers': True,
+        },
+    }
+
+
 def discover_market_inventory() -> dict:
     store = Store()
     client = OpenEndedOddsApiClient()
@@ -176,6 +204,8 @@ def handler(event, context):
     action = str(event.get('action') or event.get('detail-type') or '').upper()
     if action in ('TRAIN', 'MLB_AUTO_TRAIN'):
         return autonomous_train()
+    if action in ('LIVE_PROVIDER_PROOF', 'MLB_AUTO_LIVE_PROVIDER_PROOF'):
+        return live_provider_proof()
     if action in ('MARKET_INVENTORY', 'MLB_AUTO_MARKET_INVENTORY'):
         return discover_market_inventory()
     if action in ('HISTORICAL_BACKFILL', 'MLB_AUTO_HISTORICAL_BACKFILL'):
