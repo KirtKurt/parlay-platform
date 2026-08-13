@@ -43,6 +43,11 @@ concurrency:
 
 jobs:
   remove-and-verify:
+    # This one-time writer must never run for an unrelated PR that merely
+    # adjusts the shared deployment workflow's path isolation.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.head_ref == 'agent/mlb-remove-bbd-and-fix-blockers-20260802'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

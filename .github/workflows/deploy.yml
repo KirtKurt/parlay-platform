@@ -5,6 +5,15 @@ on:
     branches: [main]
     paths-ignore:
       - "runtime_reports/**"
+      # After its initial [skip ci] merge, soccer_auto is a separate stack.
+      # Soccer-only changes must never redeploy or re-attest the existing
+      # MLB/legacy application stack. Do not ignore this workflow's own path:
+      # future deploy.yml-only repairs must retain their original trigger.
+      - "soccer_auto/**"
+      - "soccer-auto-template.yaml"
+      - "tests/soccer_auto/**"
+      - "docs/SOCCER_AUTO.md"
+      - ".github/workflows/deploy-soccer-auto.yml"
   workflow_dispatch:
 
 permissions:

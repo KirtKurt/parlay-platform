@@ -1,0 +1,198 @@
+from __future__ import annotations
+
+import ast
+import pathlib
+import unittest
+
+import yaml
+
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+
+class CloudFormationLoader(yaml.SafeLoader):
+    pass
+
+
+def _construct_tag(loader, tag_suffix, node):
+    if isinstance(node, yaml.ScalarNode):
+        return loader.construct_scalar(node)
+    if isinstance(node, yaml.SequenceNode):
+        return loader.construct_sequence(node)
+    return loader.construct_mapping(node)
+
+
+CloudFormationLoader.add_multi_constructor("!", _construct_tag)
+
+
+class IsolationTests(unittest.TestCase):
+    def test_source_never_imports_existing_sport_algorithms(self) -> None:
+        forbidden = {"hello_world", "tennis_learning"}
+        for path in (ROOT / "soccer_auto").glob("*.py"):
+            tree = ast.parse(path.read_text())
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    roots = {alias.name.split(".")[0] for alias in node.names}
+                elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                    roots = {node.module.split(".")[0]}
+                else:
+                    continue
+                self.assertFalse(roots & forbidden, f"{path.name} crosses a sport boundary")
+
+    def test_template_has_only_soccer_owned_resources(self) -> None:
+        text = (ROOT / "soccer-auto-template.yaml").read_text()
+        template = yaml.load(text, Loader=CloudFormationLoader)
+        self.assertNotIn("ImportValue", text)
+        self.assertNotIn("parlay_platform_", text)
+        self.assertNotIn("inqis_tennis", text)
+        self.assertTrue(all(name.startswith("Soccer") for name in template["Resources"]))
+        function_handlers = {
+            value["Properties"]["Handler"]
+            for value in template["Resources"].values()
+            if value.get("Type") == "AWS::Serverless::Function"
+        }
+        self.assertIn("soccer_auto.collector.inventory_handler", function_handlers)
+        self.assertIn("soccer_auto.llm_analyst.llm_analyst_handler", function_handlers)
+        self.assertNotIn("ReservedConcurrentExecutions", text)
+        for name, resource in template["Resources"].items():
+            if resource.get("Type") != "AWS::DynamoDB::Table":
+                continue
+            properties = resource["Properties"]
+            defined = {row["AttributeName"] for row in properties.get("AttributeDefinitions", [])}
+            used = {row["AttributeName"] for row in properties.get("KeySchema", [])}
+            for index in properties.get("GlobalSecondaryIndexes", []):
+                used.update(row["AttributeName"] for row in index.get("KeySchema", []))
+            self.assertEqual(defined, used, f"{name} has invalid DynamoDB attribute definitions")
+
+    def test_future_soccer_only_paths_cannot_trigger_main_deploy(self) -> None:
+        workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
+        for path in (
+            '"soccer_auto/**"',
+            '"soccer-auto-template.yaml"',
+            '"tests/soccer_auto/**"',
+            '"docs/SOCCER_AUTO.md"',
+            '".github/workflows/deploy-soccer-auto.yml"',
+        ):
+            self.assertIn(path, workflow)
+        for path in (
+            '".github/workflows/deploy.yml"',
+            '".github/workflows/mlb-remove-bbd-active-runtime-once.yml"',
+            '".github/workflows/v7-v10-stall-fix-migration.yml"',
+        ):
+            self.assertNotIn(path, workflow.split("workflow_dispatch:", 1)[0])
+        self.assertIn("initial [skip ci] merge", workflow)
+
+    def test_initial_release_documents_trigger_level_suppression(self) -> None:
+        documentation = (ROOT / "docs/SOCCER_AUTO.md").read_text()
+        self.assertIn("`[skip ci]`", documentation)
+        self.assertIn("`workflow_run`", documentation)
+        self.assertIn("single merge commit", documentation)
+
+    def test_write_capable_mlb_pr_jobs_ignore_soccer_branch(self) -> None:
+        guarded = {
+            "mlb-remove-bbd-active-runtime-once.yml":
+                "agent/mlb-remove-bbd-and-fix-blockers-20260802",
+            "v7-v10-stall-fix-migration.yml": "agent/fix-v7-v10-stalls-20260804",
+        }
+        for name, authorized_branch in guarded.items():
+            source = (ROOT / ".github/workflows" / name).read_text()
+            self.assertIn("github.event_name != 'pull_request'", source)
+            self.assertIn(f"github.head_ref == '{authorized_branch}'", source)
+
+    def test_llm_has_no_prediction_or_promotion_write_authority(self) -> None:
+        source = (ROOT / "soccer_auto/llm_analyst.py").read_text()
+        template = yaml.load(
+            (ROOT / "soccer-auto-template.yaml").read_text(),
+            Loader=CloudFormationLoader,
+        )
+        self.assertNotIn("put_prediction(", source)
+        self.assertNotIn("promote_candidate(", source)
+        self.assertNotIn("put_settlement(", source)
+        llm_function = template["Resources"]["SoccerLlmAnalystFunction"]
+        self.assertEqual(llm_function["Properties"]["Role"], "SoccerLlmAnalystRole.Arn")
+        runtime_role = template["Resources"]["SoccerAutoRuntimeRole"]
+        self.assertNotIn("bedrock:InvokeModel", str(runtime_role))
+        analyst_role = template["Resources"]["SoccerLlmAnalystRole"]
+        analyst_policy = str(analyst_role)
+        for table in ("SoccerPredictionsTable", "SoccerSettlementsTable", "SoccerLocksTable"):
+            self.assertNotIn(table, analyst_policy)
+        self.assertIn("dynamodb:LeadingKeys", analyst_policy)
+        self.assertIn("LLM_ANALYSIS", analyst_policy)
+        api_function = template["Resources"]["SoccerApiFunction"]
+        self.assertEqual(api_function["Properties"]["Role"], "SoccerReadApiRole.Arn")
+        api_policy = str(template["Resources"]["SoccerReadApiRole"])
+        for action in ("dynamodb:PutItem", "sqs:SendMessage", "secretsmanager:GetSecretValue"):
+            self.assertNotIn(action, api_policy)
+
+    def test_nova_2_uses_cris_profile_and_narrow_underlying_model_authority(self) -> None:
+        template = yaml.load(
+            (ROOT / "soccer-auto-template.yaml").read_text(),
+            Loader=CloudFormationLoader,
+        )
+        parameter = template["Parameters"]["SoccerLlmModelId"]
+        self.assertEqual(parameter["Default"], "us.amazon.nova-2-lite-v1:0")
+        self.assertEqual(parameter["AllowedValues"], ["us.amazon.nova-2-lite-v1:0"])
+        policy = str(template["Resources"]["SoccerLlmAnalystRole"])
+        self.assertIn("inference-profile/${SoccerLlmModelId}", policy)
+        self.assertIn(
+            "foundation-model/amazon.nova-2-lite-v1:0",
+            policy,
+        )
+        self.assertIn("bedrock:InferenceProfileArn", policy)
+        self.assertNotIn("bedrock:*::foundation-model", policy)
+        self.assertNotIn("foundation-model/${SoccerLlmModelId}", policy)
+        workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
+        self.assertIn("SoccerLlmModelId=\"$soccer_llm_model_id\"", workflow)
+        self.assertIn("bedrock_cris_smoke", workflow)
+        self.assertIn("us-east-1|us-east-2|us-west-1|us-west-2", workflow)
+
+    def test_controller_observes_every_scheduled_component_fail_closed(self) -> None:
+        template = yaml.load(
+            (ROOT / "soccer-auto-template.yaml").read_text(),
+            Loader=CloudFormationLoader,
+        )
+        resources = template["Resources"]
+        controller = resources["SoccerControllerFunction"]
+        variables = controller["Properties"]["Environment"]["Variables"]
+        expected_functions = {
+            "SOCCER_AUTO_INVENTORY_FUNCTION": "SoccerInventoryFunction",
+            "SOCCER_AUTO_DISPATCH_FUNCTION": "SoccerDispatchFunction",
+            "SOCCER_AUTO_FREEZE_FUNCTION": "SoccerFreezeFunction",
+            "SOCCER_AUTO_SETTLEMENT_FUNCTION": "SoccerSettlementFunction",
+            "SOCCER_AUTO_TRAINER_FUNCTION": "SoccerTrainerFunction",
+            "SOCCER_AUTO_LLM_ANALYST_FUNCTION": "SoccerLlmAnalystFunction",
+        }
+        self.assertEqual(variables, expected_functions)
+        self.assertIn(
+            "cloudwatch:GetMetricStatistics",
+            str(resources["SoccerAutoRuntimeRole"]),
+        )
+        self.assertIn("dynamodb:Scan", str(resources["SoccerLlmAnalystRole"]))
+
+        for component, function_id in (
+            ("Inventory", "SoccerInventoryFunction"),
+            ("Dispatch", "SoccerDispatchFunction"),
+            ("Freeze", "SoccerFreezeFunction"),
+            ("Settlement", "SoccerSettlementFunction"),
+            ("Trainer", "SoccerTrainerFunction"),
+            ("LlmAnalyst", "SoccerLlmAnalystFunction"),
+        ):
+            alarm = resources[f"Soccer{component}LivenessAlarm"]
+            self.assertEqual(alarm["Type"], "AWS::CloudWatch::Alarm")
+            properties = alarm["Properties"]
+            self.assertEqual(properties["MetricName"], "Invocations")
+            self.assertEqual(properties["TreatMissingData"], "breaching")
+            self.assertEqual(properties["ComparisonOperator"], "LessThanThreshold")
+            self.assertEqual(properties["Dimensions"][0]["Value"], function_id)
+            self.assertEqual(properties["AlarmActions"], ["SoccerAutoAlarmTopic"])
+            error_alarm = resources[f"Soccer{component}ErrorAlarm"]
+            error_properties = error_alarm["Properties"]
+            self.assertEqual(error_properties["MetricName"], "Errors")
+            self.assertEqual(error_properties["TreatMissingData"], "notBreaching")
+            self.assertEqual(error_properties["ComparisonOperator"], "GreaterThanThreshold")
+            self.assertEqual(error_properties["Dimensions"][0]["Value"], function_id)
+            self.assertEqual(error_properties["AlarmActions"], ["SoccerAutoAlarmTopic"])
+
+
+if __name__ == "__main__":
+    unittest.main()

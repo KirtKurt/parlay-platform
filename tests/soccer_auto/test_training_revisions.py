@@ -1,0 +1,95 @@
+from __future__ import annotations
+
+import unittest
+
+from tests.soccer_auto.aws_stubs import install_if_needed
+
+install_if_needed()
+
+from soccer_auto.market_features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION  # noqa: E402
+from soccer_auto.settlement import build_settlement  # noqa: E402
+from soccer_auto.trainer import training_rows  # noqa: E402
+
+
+EVENT_KEY = "EVENT#soccer_test#event-id"
+COMMENCE = "2026-08-14T14:00:00Z"
+
+
+class ScanStore:
+    def __init__(self, locks, settlements):
+        self.locks = locks
+        self.settlements = settlements
+
+    def scan_all(self, table):
+        yield from table
+
+
+def lock_row(revision: int):
+    return {
+        "PK": EVENT_KEY,
+        "SK": f"LOCK#T45#REV#{revision}#TARGET#result_1x2",
+        "entity_type": "SOCCER_FROZEN_FEATURE_LOCK",
+        "event_key": EVENT_KEY,
+        "sport_key": "soccer_test",
+        "commence_time": COMMENCE,
+        "schedule_revision": revision,
+        "training_eligible": True,
+        "feature_schema_version": FEATURE_SCHEMA_VERSION,
+        "feature_hash": "feature-hash",
+        "frozen_features": {
+            "feature_names": list(FEATURE_NAMES),
+            "values": [0.0] * len(FEATURE_NAMES),
+            "market_prior": [0.34, 0.33, 0.33],
+        },
+    }
+
+
+def settlement_row(revision: int):
+    return {
+        "PK": EVENT_KEY,
+        "SK": "FINAL#v1",
+        "entity_type": "SOCCER_FINAL_SETTLEMENT",
+        "event_key": EVENT_KEY,
+        "commence_time": COMMENCE,
+        "schedule_revision": revision,
+        "training_eligible_1x2": True,
+        "result_1x2": "home",
+    }
+
+
+class TrainingRevisionTests(unittest.TestCase):
+    def test_stale_schedule_revision_is_excluded_from_training(self):
+        rows, excluded = training_rows(ScanStore([lock_row(2)], [settlement_row(3)]))
+        self.assertEqual(rows, [])
+        self.assertEqual(excluded["schedule_mismatch"], 1)
+
+    def test_exact_schedule_revision_remains_trainable(self):
+        rows, excluded = training_rows(ScanStore([lock_row(3)], [settlement_row(3)]))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(excluded["schedule_mismatch"], 0)
+
+    def test_settlement_identity_and_digest_include_schedule_revision(self):
+        base = {
+            "id": "event-id",
+            "sport_key": "soccer_test",
+            "commence_time": COMMENCE,
+            "home_team": "Home",
+            "away_team": "Away",
+            "completed": True,
+            "scores": [
+                {"name": "Home", "score": "2"},
+                {"name": "Away", "score": "1"},
+            ],
+        }
+        first = build_settlement(
+            {**base, "schedule_revision": 3}, observed_at="2026-08-14T16:00:00Z"
+        )
+        revised = build_settlement(
+            {**base, "schedule_revision": 4}, observed_at="2026-08-14T16:00:00Z"
+        )
+        self.assertEqual(first["schedule_revision"], 3)
+        self.assertNotEqual(first["settlement_digest"], revised["settlement_digest"])
+
+
+if __name__ == "__main__":
+    unittest.main()

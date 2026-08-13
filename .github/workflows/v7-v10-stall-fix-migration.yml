@@ -39,6 +39,11 @@ concurrency:
 
 jobs:
   migrate-and-verify:
+    # Restrict this write-capable migration to its dedicated repair branch.
+    # A soccer isolation PR may also change deploy.yml and must be a no-op here.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.head_ref == 'agent/fix-v7-v10-stalls-20260804'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
