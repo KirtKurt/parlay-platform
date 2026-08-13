@@ -5,6 +5,7 @@ import os
 import time
 from dataclasses import dataclass
 from typing import Any, Iterable
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -25,12 +26,36 @@ class ApiResponse:
     cost: int | None
 
 
+class OddsApiHttpError(RuntimeError):
+    def __init__(self, status: int, provider_code: str, message: str):
+        self.status = int(status)
+        self.provider_code = str(provider_code or 'UNKNOWN')
+        self.provider_message = str(message or '')[:500]
+        super().__init__(f'ODDS_API_HTTP_{self.status}:{self.provider_code}:{self.provider_message}')
+
+
 def _int_header(headers, name: str) -> int | None:
     try:
         value = headers.get(name)
         return None if value is None else int(value)
     except Exception:
         return None
+
+
+def _http_error(exc: HTTPError) -> OddsApiHttpError:
+    body = ''
+    try:
+        body = exc.read().decode('utf-8', errors='replace')
+    except Exception:
+        pass
+    code, message = 'UNKNOWN', body[:500]
+    try:
+        payload = json.loads(body or '{}')
+        code = str(payload.get('error_code') or payload.get('code') or 'UNKNOWN')
+        message = str(payload.get('message') or payload.get('error') or body)[:500]
+    except Exception:
+        pass
+    return OddsApiHttpError(exc.code, code, message)
 
 
 class OddsApiClient:
@@ -52,11 +77,17 @@ class OddsApiClient:
                 with urlopen(req, timeout=self.timeout) as resp:
                     payload = json.loads(resp.read().decode('utf-8'))
                     return ApiResponse(payload, _int_header(resp.headers, 'x-requests-remaining'), _int_header(resp.headers, 'x-requests-used'), _int_header(resp.headers, 'x-requests-last'))
+            except HTTPError as exc:
+                err = _http_error(exc)
+                # Deterministic client/account errors do not improve with exponential retries.
+                if 400 <= err.status < 500 and err.status != 429:
+                    raise err from exc
+                last = err
             except Exception as exc:
                 last = exc
-                if attempt == 3:
-                    raise
-                time.sleep(2 ** attempt)
+            if attempt == 3:
+                raise last
+            time.sleep(2 ** attempt)
         raise last
 
     def events(self) -> ApiResponse:
