@@ -1,0 +1,1 @@
+MLB Auto LLM R&D fallback hardening: Nova Micro -> US Nova 2 Lite -> Nova Lite; reduced output token budget; successful model and fallback errors persisted. This file is scoped to mlb_auto only.
