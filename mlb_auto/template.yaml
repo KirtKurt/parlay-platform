@@ -37,6 +37,10 @@ Globals:
         MLB_AUTO_LOCK_MINUTES: '45'
         MLB_AUTO_MIN_OFFICIAL_PROBABILITY: '0.58'
         MLB_AUTO_HISTORICAL_DAYS_PER_RUN: '1'
+        MLB_AUTO_LLM_MODEL_ID: 'amazon.nova-lite-v1:0'
+        MLB_AUTO_LLM_MIN_EXAMPLES: '75'
+        MLB_AUTO_LLM_INTERVAL_SECONDS: '14400'
+        MLB_AUTO_LLM_MAX_FEATURES: '8'
 
 Resources:
   StateTable:
@@ -142,6 +146,10 @@ Resources:
         - DynamoDBCrudPolicy: {TableName: !Ref OutcomesTable}
         - DynamoDBCrudPolicy: {TableName: !Ref ModelsTable}
         - S3CrudPolicy: {BucketName: !Ref ArchiveBucket}
+        - Statement:
+            - Effect: Allow
+              Action: [bedrock:InvokeModel]
+              Resource: '*'
       Events:
         StatusApi:
           Type: HttpApi
