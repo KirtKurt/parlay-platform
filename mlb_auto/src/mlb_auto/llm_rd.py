@@ -12,16 +12,50 @@ import boto3
 from .mantle_client import invoke_anthropic
 
 STATE_KEY = 'llm_rd'
+ACCOUNT_MODEL_POLICY = 'ACCOUNT_SAFE_AMAZON_GEO_FALLBACK_V1'
 DEFAULT_MODELS = (
-    'amazon.nova-micro-v1:0',
+    'us.amazon.nova-premier-v1:0',
+    'us.amazon.nova-pro-v1:0',
     'us.amazon.nova-2-lite-v1:0',
-    'amazon.nova-lite-v1:0',
+    'us.amazon.nova-lite-v1:0',
+    'us.amazon.nova-micro-v1:0',
 )
-MODEL_IDS = tuple(
+_PROFILE_ALIASES = {
+    'amazon.nova-premier-v1:0': 'us.amazon.nova-premier-v1:0',
+    'amazon.nova-pro-v1:0': 'us.amazon.nova-pro-v1:0',
+    'amazon.nova-2-lite-v1:0': 'us.amazon.nova-2-lite-v1:0',
+    'amazon.nova-lite-v1:0': 'us.amazon.nova-lite-v1:0',
+    'amazon.nova-micro-v1:0': 'us.amazon.nova-micro-v1:0',
+}
+_ALLOW_MARKETPLACE_MODELS = str(
+    os.getenv('MLB_AUTO_LLM_ALLOW_MARKETPLACE_MODELS', 'false')
+).strip().lower() in {'1', 'true', 'yes', 'on'}
+RAW_MODEL_IDS = tuple(
     x.strip() for x in os.getenv(
         'MLB_AUTO_LLM_MODEL_IDS', ','.join(DEFAULT_MODELS),
     ).split(',') if x.strip()
 )
+
+
+def _account_safe_models(values):
+    selected = []
+    excluded = []
+    for raw in values:
+        model_id = str(raw).strip()
+        if not model_id:
+            continue
+        if 'anthropic.claude-' in model_id and not _ALLOW_MARKETPLACE_MODELS:
+            excluded.append(model_id)
+            continue
+        model_id = _PROFILE_ALIASES.get(model_id, model_id)
+        if model_id not in selected:
+            selected.append(model_id)
+    if not selected:
+        selected.extend(DEFAULT_MODELS)
+    return tuple(selected), tuple(excluded)
+
+
+MODEL_IDS, ACCOUNT_EXCLUDED_MODEL_IDS = _account_safe_models(RAW_MODEL_IDS)
 MIN_EXAMPLES = int(os.getenv('MLB_AUTO_LLM_MIN_EXAMPLES', '75'))
 INTERVAL_SECONDS = int(os.getenv('MLB_AUTO_LLM_INTERVAL_SECONDS', '14400'))
 MAX_FEATURES = int(os.getenv('MLB_AUTO_LLM_MAX_FEATURES', '8'))
@@ -33,6 +67,12 @@ SYSTEM_TEXT = (
     'pregame feature names and allowed numeric operations. Never use outcomes, scores, '
     'postgame data, external actions, executable code, or changes to validation rules.'
 )
+
+
+class ModelProviderUnavailableError(RuntimeError):
+    def __init__(self, errors):
+        self.errors = tuple(str(error) for error in errors)
+        super().__init__('MODEL_PROVIDER_UNAVAILABLE|' + '|'.join(self.errors))
 
 
 def _iso():
@@ -128,9 +168,37 @@ def _extract(text):
         raise
 
 
+def _retryable_provider_unavailable(exc):
+    text = f'{type(exc).__name__}:{exc}'.lower()
+    quota_or_capacity = any(marker in text for marker in (
+        'throttlingexception',
+        'too many tokens per day',
+        'quota exceeded',
+        'rate exceeded',
+        'too many requests',
+        'http_429',
+        'serviceunavailableexception',
+        'modelnotreadyexception',
+        'temporarily unavailable',
+        'http_503',
+    ))
+    account_access = (
+        'accessdeniedexception' in text
+        and any(marker in text for marker in (
+            'model access is denied',
+            'aws marketplace',
+            'aws-marketplace',
+            'subscription',
+            'first time use',
+        ))
+    )
+    return quota_or_capacity or account_access
+
+
 def _invoke(prompt, client=None):
     bedrock = client or boto3.client('bedrock-runtime')
     errors = []
+    retryable_unavailable = []
     system = [{'text': SYSTEM_TEXT}]
     messages = [{'role':'user','content':[{'text':prompt}]}]
     for model_id in MODEL_IDS:
@@ -155,9 +223,14 @@ def _invoke(prompt, client=None):
             text = ''.join(str(x.get('text') or '') for x in parts if isinstance(x, dict))
             usage = dict(response.get('usage') or {})
             usage['endpoint_family'] = 'bedrock-runtime-converse'
+            usage['runtime_model_id'] = model_id
+            usage['account_model_policy'] = ACCOUNT_MODEL_POLICY
             return _extract(text), usage, model_id, errors
         except Exception as exc:
             errors.append(f'{model_id}:{type(exc).__name__}:{str(exc)[:800]}')
+            retryable_unavailable.append(_retryable_provider_unavailable(exc))
+    if errors and all(retryable_unavailable):
+        raise ModelProviderUnavailableError(errors)
     raise RuntimeError('ALL_BEDROCK_ENDPOINTS_FAILED|' + '|'.join(errors))
 
 
@@ -182,18 +255,34 @@ def _due(current):
 def run_research(*, Store, force=False, bedrock_client=None):
     store = Store(); current = _state(store)
     if not force and not _due(current):
-        return {'ok':True,'action':'LLM_RD_NOT_DUE'}
+        return {
+            'ok':True,'action':'LLM_RD_NOT_DUE','generated':False,
+            'reason':'NOT_DUE','degraded':bool(current.get('degraded')),
+        }
     examples = store.query_training_examples(limit=5000)
     examples.sort(key=lambda x:(str(x.get('commence_time') or ''),str(x.get('SK') or '')))
     count = len(examples); now = _iso()
+    common = {
+        'training_example_count':count,
+        'configured_model_ids':list(MODEL_IDS),
+        'raw_configured_model_ids':list(RAW_MODEL_IDS),
+        'account_excluded_model_ids':list(ACCOUNT_EXCLUDED_MODEL_IDS),
+        'account_model_policy':ACCOUNT_MODEL_POLICY,
+        'max_output_tokens':MAX_OUTPUT_TOKENS,
+    }
     if count < MIN_EXAMPLES:
         store.put_state(STATE_KEY, {
+            **common,
             'last_run_at':now, 'last_run_ok':True,
-            'last_result':'INSUFFICIENT_EXAMPLES', 'training_example_count':count,
+            'last_invocation_ok':None, 'provider_available':None,
+            'degraded':False, 'retryable':False,
+            'last_result':'INSUFFICIENT_EXAMPLES', 'last_error':'',
+            'model_fallback_errors':[],
         })
         return {
             'ok':True,'action':'LLM_RD','generated':False,
             'reason':'INSUFFICIENT_EXAMPLES','count':count,'minimum':MIN_EXAMPLES,
+            'degraded':False,
         }
     reserve = max(50, int(os.getenv('MLB_AUTO_MIN_VALIDATION_EXAMPLES','50')))
     development = examples[:-reserve]
@@ -218,18 +307,22 @@ def run_research(*, Store, force=False, bedrock_client=None):
         candidate_id = 'LLM_RD_' + hashlib.sha256(json.dumps(clean,sort_keys=True).encode()).hexdigest()[:16]
         clean.update({'candidate_id':candidate_id,'created_at':now})
         store.put_state(STATE_KEY, {
-            'last_run_at':now, 'last_run_ok':True, 'last_result':'CANDIDATE_GENERATED',
+            **common,
+            'last_run_at':now, 'last_run_ok':True,
+            'last_invocation_ok':True, 'provider_available':True,
+            'degraded':False, 'retryable':False,
+            'last_result':'CANDIDATE_GENERATED',
             'last_error':'', 'llm_model_id':model_id, 'candidate_id':candidate_id,
             'candidate_status':'DEVELOPMENT_CANDIDATE', 'candidate_program':clean,
-            'training_example_count':count, 'research_development_count':len(development),
+            'research_development_count':len(development),
             'untouched_audit_reserve_count':reserve, 'llm_usage':usage,
-            'model_fallback_errors':prior_errors, 'configured_model_ids':list(MODEL_IDS),
-            'max_output_tokens':MAX_OUTPUT_TOKENS,
+            'model_fallback_errors':prior_errors,
         })
         store.archive_json(f'mlb_auto/llm-rd/{candidate_id}.json', {
             'candidate':clean, 'development_rows':len(development),
             'untouched_audit_reserve_count':reserve, 'model_id':model_id,
             'usage':usage, 'fallback_errors':prior_errors,
+            'account_model_policy':ACCOUNT_MODEL_POLICY,
         })
         return {
             'ok':True,'action':'LLM_RD','generated':True,'candidate_id':candidate_id,
@@ -237,15 +330,39 @@ def run_research(*, Store, force=False, bedrock_client=None):
             'endpoint_family':usage.get('endpoint_family'),
             'development_rows':len(development),'untouched_audit_reserve_count':reserve,
             'fallbacks_attempted':len(prior_errors),
+            'provider_available':True,'provider_invocation_ok':True,'degraded':False,
+        }
+    except ModelProviderUnavailableError as exc:
+        error = f'{type(exc).__name__}:{str(exc)[:1800]}'
+        store.put_state(STATE_KEY, {
+            **common,
+            'last_run_at':now, 'last_run_ok':True,
+            'last_invocation_ok':False, 'provider_available':False,
+            'degraded':True, 'retryable':True,
+            'last_result':'MODEL_PROVIDER_UNAVAILABLE',
+            'last_error':error, 'model_fallback_errors':list(exc.errors),
+        })
+        return {
+            'ok':True,'action':'LLM_RD','generated':False,
+            'reason':'MODEL_PROVIDER_UNAVAILABLE','degraded':True,
+            'provider_available':False,'provider_invocation_ok':False,
+            'retryable':True,'fallbacks_attempted':len(exc.errors),
+            'error':error,
         }
     except Exception as exc:
         error = f'{type(exc).__name__}:{str(exc)[:1800]}'
         store.put_state(STATE_KEY, {
-            'last_run_at':now,'last_run_ok':False,'last_result':'LLM_RD_FAILED',
-            'last_error':error,'training_example_count':count,
-            'configured_model_ids':list(MODEL_IDS),'max_output_tokens':MAX_OUTPUT_TOKENS,
+            **common,
+            'last_run_at':now,'last_run_ok':False,
+            'last_invocation_ok':False,'provider_available':None,
+            'degraded':False,'retryable':False,
+            'last_result':'LLM_RD_FAILED',
+            'last_error':error,
         })
-        return {'ok':False,'action':'LLM_RD','generated':False,'error':error}
+        return {
+            'ok':False,'action':'LLM_RD','generated':False,
+            'reason':'LLM_RD_FAILED','degraded':False,'error':error,
+        }
 
 
 def research_discoverer(*, Store, discover_challenger):
@@ -292,7 +409,14 @@ def status_payload(*, Store):
         'model_id':current.get('llm_model_id'),
         'endpoint_family':usage.get('endpoint_family'),
         'configured_model_ids':current.get('configured_model_ids') or list(MODEL_IDS),
+        'raw_configured_model_ids':current.get('raw_configured_model_ids') or list(RAW_MODEL_IDS),
+        'account_excluded_model_ids':current.get('account_excluded_model_ids') or list(ACCOUNT_EXCLUDED_MODEL_IDS),
+        'account_model_policy':current.get('account_model_policy') or ACCOUNT_MODEL_POLICY,
         'last_run_at':current.get('last_run_at'),'last_run_ok':current.get('last_run_ok'),
+        'last_invocation_ok':current.get('last_invocation_ok'),
+        'provider_available':current.get('provider_available'),
+        'degraded':bool(current.get('degraded')),
+        'retryable':bool(current.get('retryable')),
         'last_result':current.get('last_result'),'last_error':current.get('last_error'),
         'candidate_id':current.get('candidate_id'),'candidate_status':current.get('candidate_status'),
         'active_program_id':current.get('active_program_id'),

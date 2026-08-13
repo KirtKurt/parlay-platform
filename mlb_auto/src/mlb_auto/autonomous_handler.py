@@ -110,14 +110,19 @@ def _model_access_status(rd: dict) -> dict:
     selected = rd.get('model_id')
     if selected not in configured:
         selected = None
+    provider_available = rd.get('provider_available')
+    provider_degraded = bool(rd.get('degraded'))
     verified_by_last_run = bool(
         selected
         and rd.get('last_run_ok') is True
+        and rd.get('last_invocation_ok') is True
         and rd.get('last_result') == 'CANDIDATE_GENERATED'
     )
     verification_state = (
         'VERIFIED_BY_RESEARCH'
         if verified_by_last_run
+        else 'PROVIDER_UNAVAILABLE_RETRYABLE'
+        if provider_available is False and provider_degraded
         else 'PREVIOUSLY_SELECTED'
         if selected
         else 'NOT_YET_INVOKED'
@@ -126,10 +131,16 @@ def _model_access_status(rd: dict) -> dict:
         'scope': 'mlb_auto_only',
         'mode': 'CONFIGURATION_DRIVEN_FALLBACK',
         'configured_model_ids': configured,
+        'account_model_policy': rd.get('account_model_policy'),
+        'account_excluded_model_ids': rd.get('account_excluded_model_ids') or [],
         'selected_model_id': selected,
         'selection_policy': 'FIRST_INVOKABLE_CONFIGURED_MODEL',
         'verification_state': verification_state,
         'model_access_verified_by_last_research_run': verified_by_last_run,
+        'provider_available': provider_available,
+        'provider_degraded': provider_degraded,
+        'last_invocation_ok': rd.get('last_invocation_ok'),
+        'retryable': bool(rd.get('retryable')),
         'exact_model_requirement': False,
         'required_exact_model_ids': [],
         'runtime_account_enrollment_managed': False,

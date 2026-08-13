@@ -85,6 +85,7 @@ jobs:
           rd=json.load(open('llm_rd.json'))
           status=json.load(open('llm_status.json'))
           layer=status.get('llm_rd') or {}
+          access=status.get('llm_model_access') or {}
           configured=list(layer.get('configured_model_ids') or [])
           assert rd.get('ok') is True, rd
           assert rd.get('action') in {'LLM_RD','LLM_RD_NOT_DUE'}, rd
@@ -94,6 +95,12 @@ jobs:
           assert layer.get('scope') == 'mlb_auto_only', layer
           assert layer.get('generated_executable_code') is False, layer
           assert layer.get('promotion_requires_existing_model_audit_gate') is True, layer
+          assert layer.get('account_model_policy') == 'ACCOUNT_SAFE_AMAZON_GEO_FALLBACK_V1', layer
+          assert configured and all(model.startswith('us.amazon.') for model in configured), configured
+          assert all('anthropic.claude-' not in model for model in configured), configured
+          assert access.get('exact_model_requirement') is False, access
+          assert access.get('runtime_account_enrollment_managed') is False, access
+          assert access.get('account_mutation_attempted') is False, access
 
           if rd.get('generated') is True:
               assert str(rd.get('candidate_id') or '').startswith('LLM_RD_'), rd
@@ -101,16 +108,38 @@ jobs:
               assert rd.get('llm_model_id') in configured, (rd, configured)
               assert int(rd.get('development_rows') or 0) > 0, rd
               assert int(rd.get('untouched_audit_reserve_count') or 0) >= 50, rd
+              assert rd.get('provider_available') is True, rd
+              assert rd.get('provider_invocation_ok') is True, rd
+              assert rd.get('degraded') is False, rd
               assert layer.get('candidate_id') == rd.get('candidate_id'), (layer, rd)
               assert layer.get('candidate_status') == 'DEVELOPMENT_CANDIDATE', layer
               assert int(layer.get('candidate_feature_count') or 0) == int(rd.get('feature_count') or 0), (layer, rd)
               assert layer.get('last_run_ok') is True, layer
+              assert layer.get('last_invocation_ok') is True, layer
+              assert layer.get('provider_available') is True, layer
+              assert layer.get('degraded') is False, layer
+              assert access.get('model_access_verified_by_last_research_run') is True, access
           else:
-              assert rd.get('reason') in {'INSUFFICIENT_EXAMPLES','NOT_DUE'}, rd
+              assert rd.get('reason') in {'INSUFFICIENT_EXAMPLES','NOT_DUE','MODEL_PROVIDER_UNAVAILABLE'}, rd
               if rd.get('reason') == 'INSUFFICIENT_EXAMPLES':
                   assert int(rd.get('count') or 0) < int(rd.get('minimum') or 0), rd
                   assert layer.get('last_result') == 'INSUFFICIENT_EXAMPLES', layer
                   assert layer.get('last_run_ok') is True, layer
+                  assert layer.get('degraded') is False, layer
+              elif rd.get('reason') == 'MODEL_PROVIDER_UNAVAILABLE':
+                  assert rd.get('degraded') is True, rd
+                  assert rd.get('provider_available') is False, rd
+                  assert rd.get('provider_invocation_ok') is False, rd
+                  assert rd.get('retryable') is True, rd
+                  assert int(rd.get('fallbacks_attempted') or 0) == len(configured), (rd, configured)
+                  assert layer.get('last_result') == 'MODEL_PROVIDER_UNAVAILABLE', layer
+                  assert layer.get('last_run_ok') is True, layer
+                  assert layer.get('last_invocation_ok') is False, layer
+                  assert layer.get('provider_available') is False, layer
+                  assert layer.get('degraded') is True, layer
+                  assert layer.get('retryable') is True, layer
+                  assert access.get('verification_state') == 'PROVIDER_UNAVAILABLE_RETRYABLE', access
+                  assert access.get('model_access_verified_by_last_research_run') is False, access
           PY
       - name: Live provider, ingest, all-region historical, and runtime proof
         run: |
@@ -142,7 +171,7 @@ jobs:
           python - <<'PY'
           import json
           p=json.load(open('provider.json')); m=json.load(open('market_inventory.json')); b=json.load(open('heartbeat.json')); h=json.load(open('history.json')); s=json.load(open('status.json'))
-          c=s.get('controller') or {}; layer=s.get('llm_rd') or {}
+          c=s.get('controller') or {}; layer=s.get('llm_rd') or {}; access=s.get('llm_model_access') or {}
           assert p.get('ok') is True and p.get('action')=='LIVE_PROVIDER_PROOF', p
           assert p.get('provider_sport_key')=='baseball_mlb', p
           assert set(str(p.get('regions') or '').split(',')) == {'us','us2','uk','eu','au'}, p
@@ -170,7 +199,13 @@ jobs:
           assert c.get('last_ingest_completed_at'), c
           assert not c.get('last_ingest_error'), c
           assert layer.get('last_run_ok') is True, layer
-          assert layer.get('last_result') in {'CANDIDATE_GENERATED','INSUFFICIENT_EXAMPLES'}, layer
+          assert layer.get('last_result') in {'CANDIDATE_GENERATED','INSUFFICIENT_EXAMPLES','MODEL_PROVIDER_UNAVAILABLE'}, layer
+          if layer.get('last_result') == 'MODEL_PROVIDER_UNAVAILABLE':
+              assert layer.get('last_invocation_ok') is False, layer
+              assert layer.get('provider_available') is False, layer
+              assert layer.get('degraded') is True, layer
+              assert layer.get('retryable') is True, layer
+              assert access.get('model_access_verified_by_last_research_run') is False, access
           if layer.get('candidate_id'):
               assert layer.get('candidate_status') in {
                   'DEVELOPMENT_CANDIDATE','AUDIT_NOT_PROMOTED','PROMOTED_WITH_CHAMPION',
@@ -212,9 +247,24 @@ jobs:
           controller=status.get('controller') or {}
           repair=status.get('repair') or {}
           layer=status.get('llm_rd') or {}
+          access=status.get('llm_model_access') or {}
           since=parse(os.environ['ENABLED_AT'])
           heartbeat=parse(controller.get('heartbeat_at'))
           repaired=parse(repair.get('last_repair_at'))
+          llm_state_ok=(
+              layer.get('last_run_ok') is True
+              and layer.get('last_result') in {
+                  'CANDIDATE_GENERATED','INSUFFICIENT_EXAMPLES','MODEL_PROVIDER_UNAVAILABLE',
+              }
+          )
+          if layer.get('last_result') == 'MODEL_PROVIDER_UNAVAILABLE':
+              llm_state_ok = llm_state_ok and all((
+                  layer.get('last_invocation_ok') is False,
+                  layer.get('provider_available') is False,
+                  layer.get('degraded') is True,
+                  layer.get('retryable') is True,
+                  access.get('model_access_verified_by_last_research_run') is False,
+              ))
           checks=[
               status.get('ok') is True,
               heartbeat is not None and heartbeat >= since,
@@ -228,8 +278,7 @@ jobs:
               bool(controller.get('last_market_inventory_at')),
               status.get('official_pick_policy') == 'CHAMPION_CONFIDENCE_ONLY',
               status.get('expected_value_selection_gate') is False,
-              layer.get('last_run_ok') is True,
-              layer.get('last_result') in {'CANDIDATE_GENERATED','INSUFFICIENT_EXAMPLES'},
+              llm_state_ok,
               not layer.get('candidate_id') or layer.get('candidate_status') in {
                   'DEVELOPMENT_CANDIDATE','AUDIT_NOT_PROMOTED','PROMOTED_WITH_CHAMPION',
               },
