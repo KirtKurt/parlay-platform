@@ -1,16 +1,9 @@
 name: Deploy Isolated Soccer Auto
 
-# Deliberately manual during initial build/verification. Publish the initial
-# isolation change as one merge commit containing [skip ci]; this suppresses
-# the main deploy and its MLB workflow_run consumers at the event source. After
-# that merge, the main workflow ignores all soccer-only paths, and activation
-# here cannot touch MLB, tennis, or legacy soccer resources.
+# Manual-only after the verified initial activation. The main workflow ignores
+# all soccer-only paths, and deployment here cannot mutate MLB, tennis, or
+# legacy soccer resources.
 on:
-  # One-time initial activation trigger. Removed after the verified deploy.
-  push:
-    branches: [main]
-    paths:
-      - "soccer_auto/.deploy-v1-once"
   workflow_dispatch:
     inputs:
       enable_historical_backfill:
