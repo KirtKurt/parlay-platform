@@ -16,6 +16,18 @@ DEFAULT_FEATURES = (
 )
 
 
+def _feature_value(row: Mapping[str, float], name: str) -> float:
+    """Materialize autonomous interaction features identically in training and inference."""
+    if name.endswith('__sq'):
+        base = name[:-4]
+        v = float(row.get(base, 0.0))
+        return v * v
+    if '__x__' in name:
+        left, right = name.split('__x__', 1)
+        return float(row.get(left, 0.0)) * float(row.get(right, 0.0))
+    return float(row.get(name, 0.0))
+
+
 @dataclass(frozen=True)
 class Model:
     intercept: float
@@ -25,7 +37,7 @@ class Model:
     metadata: dict | None = None
 
     def predict(self, row: Mapping[str, float]) -> float:
-        z = self.intercept + sum(w * float(row.get(n, 0.0)) for w, n in zip(self.weights, self.feature_names))
+        z = self.intercept + sum(w * _feature_value(row, n) for w, n in zip(self.weights, self.feature_names))
         z = max(-30., min(30., z))
         return 1 / (1 + math.exp(-z))
 
@@ -60,7 +72,7 @@ def train_logistic(rows: Sequence[Mapping[str, float]], labels: Sequence[int], *
         gb = 0.0
         gw = [0.0] * len(w)
         for row, y in zip(rows, labels):
-            x = [float(row.get(n, 0.0)) for n in names]
+            x = [_feature_value(row, n) for n in names]
             z = max(-30., min(30., b + sum(a * c for a, c in zip(w, x))))
             p = 1 / (1 + math.exp(-z))
             e = p - int(y)
