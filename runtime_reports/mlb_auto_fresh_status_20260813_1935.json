@@ -1,0 +1,94 @@
+{
+  "ages_minutes": {
+    "last_historical_backfill": 4.81,
+    "last_ingest": 0.27,
+    "last_pull": 10.27,
+    "last_repair": 0.35,
+    "last_training_check": 4.8
+  },
+  "alarms": [],
+  "checked_at_et": "2026-08-13T19:35:17.874003-04:00",
+  "checked_at_utc": "2026-08-13T23:35:17.874003+00:00",
+  "controller": {
+    "event_count": 13,
+    "known_market_key_count": 101,
+    "last_ingest_completed_at": "2026-08-13T23:35:01.573140+00:00",
+    "last_ingest_error": "",
+    "last_ingest_ok": true,
+    "last_pull_at": "2026-08-13T23:25:01.568508+00:00",
+    "last_settlement_at": "2026-08-13T23:29:45.215784+00:00",
+    "last_settlement_count": 6,
+    "last_settlement_ok": true,
+    "market_inventory_error_count": 0,
+    "missing_market_fraction": 0,
+    "odds_regions": "us,us2,uk,eu,au",
+    "prediction_count": 13
+  },
+  "function": {
+    "last_modified": "2026-08-13T21:07:12.000+0000",
+    "last_update_status": "Successful",
+    "memory_mb": 1536,
+    "state": "Active",
+    "timeout_seconds": 600
+  },
+  "historical_backfill": {
+    "cursor_date": "2026-07-19",
+    "game_index": 12,
+    "last_run_added": 4,
+    "last_run_at": "2026-08-13T23:30:29.181912+00:00",
+    "last_run_attempted": 4,
+    "last_run_failure_reasons": {},
+    "resumable_per_game": true,
+    "total_days_processed": 24,
+    "total_games_processed": 283
+  },
+  "lambda_120m": {
+    "errors": 0,
+    "invocations": 188,
+    "max_duration_seconds": 83.01,
+    "throttles": 0
+  },
+  "llm_rd": {
+    "active_program_id": null,
+    "candidate_id": null,
+    "candidate_status": null,
+    "degraded": true,
+    "last_error": "ModelProviderUnavailableError:MODEL_PROVIDER_UNAVAILABLE|Amazon Nova configured providers were temporarily throttled by Bedrock token limits.",
+    "last_invocation_ok": false,
+    "last_result": "MODEL_PROVIDER_UNAVAILABLE",
+    "last_run_at": "2026-08-13T21:07:25.881763+00:00",
+    "last_run_ok": true,
+    "model_id": null,
+    "provider_available": false,
+    "retryable": true
+  },
+  "overall_healthy": true,
+  "repair": {
+    "action_count": 0,
+    "actions": [],
+    "last_repair_at": "2026-08-13T23:34:56.723628+00:00",
+    "last_repair_error": "",
+    "last_repair_ok": true
+  },
+  "schedules": [
+    {"count": 1, "expression": "rate(5 minutes)", "state": "ENABLED", "suffix": "heartbeat-5m"},
+    {"count": 1, "expression": "rate(1 minute)", "state": "ENABLED", "suffix": "lock-1m"},
+    {"count": 1, "expression": "rate(30 minutes)", "state": "ENABLED", "suffix": "settle-30m"},
+    {"count": 1, "expression": "rate(1 hour)", "state": "ENABLED", "suffix": "train-1h"},
+    {"count": 1, "expression": "rate(5 minutes)", "state": "ENABLED", "suffix": "repair-5m"},
+    {"count": 1, "expression": "rate(15 minutes)", "state": "ENABLED", "suffix": "history-15m"}
+  ],
+  "stack_status": "UPDATE_COMPLETE",
+  "today": {"locked": 7, "official_picks": 0, "predictions": 9},
+  "training": {
+    "champion_model_id": null,
+    "examples": 280,
+    "last_check_at": "2026-08-13T23:30:29.684382+00:00",
+    "last_check_count": 280,
+    "last_check_result": "NO_NEW_EVIDENCE",
+    "minimum": 250,
+    "prediction_mode": "MARKET_BOOTSTRAP",
+    "remaining": 0,
+    "threshold_reached": true
+  }
+}
