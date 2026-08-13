@@ -64,3 +64,19 @@ def test_historical_example_is_point_in_time_and_t45_locked():
     source = datetime.fromisoformat(row['source_pull_at'])
     assert (start - source).total_seconds() == 45 * 60
     assert audit['history_points'] == 5
+
+
+def test_v2_wrapper_forwards_bounded_game_budget(monkeypatch):
+    import mlb_auto.historical_backfill_v2 as v2
+
+    class FakeStore:
+        def query_predictions(self, slate): return []
+        def get_state(self, name='controller'): return {}
+        def put_state(self, name, item): pass
+
+    seen = {}
+    monkeypatch.setattr(v2, 'Store', FakeStore)
+    monkeypatch.setattr(v2, '_run', lambda **kw: seen.update(kw) or {'ok': True})
+    out = v2.run_historical_backfill(days_per_run=1, max_games_per_run=1)
+    assert out == {'ok': True}
+    assert seen == {'days_per_run': 1, 'max_games_per_run': 1}
