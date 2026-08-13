@@ -71,26 +71,36 @@ jobs:
         run: |
           set -euo pipefail
           sam deploy --template-file .aws-sam/build/template.yaml --stack-name "$STACK_NAME" --capabilities CAPABILITY_IAM --resolve-s3 --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}" "ScheduleState=DISABLED" "DeployGitSha=${GITHUB_SHA}"
-      - name: Live provider, historical, and runtime proof
+      - name: Live provider, all-region market, historical, and runtime proof
         run: |
           set -euo pipefail
           FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
           aws lambda invoke --cli-read-timeout 900 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_HEARTBEAT"}' ingest.json >/dev/null
+          aws lambda invoke --cli-read-timeout 900 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_MARKET_INVENTORY"}' market_inventory.json >/dev/null
           aws lambda invoke --cli-read-timeout 900 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_HISTORICAL_BACKFILL"}' history.json >/dev/null
           aws lambda invoke --cli-read-timeout 120 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"STATUS"}' status.json >/dev/null
-          cat ingest.json; cat history.json; cat status.json
+          cat ingest.json; cat market_inventory.json; cat history.json; cat status.json
           python - <<'PY'
           import json
-          i=json.load(open('ingest.json')); h=json.load(open('history.json')); s=json.load(open('status.json'))
+          i=json.load(open('ingest.json')); m=json.load(open('market_inventory.json')); h=json.load(open('history.json')); s=json.load(open('status.json'))
           assert i.get('ok') is True, i
           assert i.get('action') in ('INGEST','HEARTBEAT_ONLY'), i
           if i.get('action')=='INGEST':
               assert int(i.get('event_count') or 0)>0, i
               assert int(i.get('prediction_count') or 0)>0, i
+          assert m.get('ok') is True and m.get('action')=='MARKET_INVENTORY', m
+          assert m.get('provider_sport_key')=='baseball_mlb', m
+          assert set(str(m.get('regions') or '').split(',')) == {'us','us2','uk','eu','au'}, m
+          assert int(m.get('event_count') or 0)>0, m
+          assert int(m.get('market_key_count') or 0)>0, m
+          assert isinstance(m.get('market_keys'), list) and len(m['market_keys'])==int(m['market_key_count']), m
           assert h.get('ok') is True and h.get('action')=='HISTORICAL_BACKFILL', h
           assert int(h.get('attempted') or 0)>0, h
           assert int(h.get('added') or 0)>0, h
           assert int(h.get('training_examples') or 0)>0, h
+          hi=h.get('market_inventory') or {}
+          assert set(str(hi.get('regions') or '').split(',')) == {'us','us2','uk','eu','au'}, hi
+          assert int(hi.get('market_key_count') or 0)>0, hi
           assert s.get('ok') is True and s.get('sport')=='mlb_auto', s
           assert s.get('provider_sport_key')=='baseball_mlb' and s.get('autonomous') is True, s
           assert s.get('cost_throttling') is False, s
@@ -125,12 +135,13 @@ jobs:
           set -euo pipefail
           aws cloudformation describe-stacks --stack-name "$STACK_NAME" --output json > stack.json
           aws cloudformation list-stack-resources --stack-name "$STACK_NAME" --output json > resources.json
-          sha256sum ingest.json history.json status.json rules.json stack.json resources.json > SHA256SUMS
+          sha256sum ingest.json market_inventory.json history.json status.json rules.json stack.json resources.json > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: mlb-auto-v1-deployment-evidence-${{ github.run_id }}
           path: |
             ingest.json
+            market_inventory.json
             history.json
             status.json
             rules.json
