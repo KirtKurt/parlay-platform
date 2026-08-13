@@ -75,9 +75,9 @@ jobs:
         run: |
           set -euo pipefail
           FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
-          aws lambda invoke --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_HEARTBEAT"}' ingest.json >/dev/null
-          aws lambda invoke --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_HISTORICAL_BACKFILL"}' history.json >/dev/null
-          aws lambda invoke --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"STATUS"}' status.json >/dev/null
+          aws lambda invoke --cli-read-timeout 900 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_HEARTBEAT"}' ingest.json >/dev/null
+          aws lambda invoke --cli-read-timeout 900 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_HISTORICAL_BACKFILL"}' history.json >/dev/null
+          aws lambda invoke --cli-read-timeout 120 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"STATUS"}' status.json >/dev/null
           cat ingest.json; cat history.json; cat status.json
           python - <<'PY'
           import json
