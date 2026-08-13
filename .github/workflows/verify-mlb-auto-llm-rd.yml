@@ -1,0 +1,105 @@
+name: Verify MLB Auto LLM R&D operation
+
+on:
+  push:
+    branches: [agent/mlb-auto-tennis-lifecycle-v1]
+    paths: ['.github/workflows/verify-mlb-auto-llm-rd.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-auto-v1-isolated-deploy
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-mlb-auto-prod
+
+jobs:
+  prove-llm-rd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Fingerprint protected stacks
+        id: before
+        run: |
+          set -euo pipefail
+          fp() {
+            local s="$1"
+            if ! aws cloudformation describe-stacks --stack-name "$s" >/dev/null 2>&1; then printf MISSING; return; fi
+            { aws cloudformation get-template --stack-name "$s" --output json; aws cloudformation list-stack-resources --stack-name "$s" --output json; } | sha256sum | awk '{print $1}'
+          }
+          echo "mlb=$(fp parlay-platform-dev)" >> "$GITHUB_OUTPUT"
+          echo "tennis=$(fp parlay-platform-tennis-ml-prod)" >> "$GITHUB_OUTPUT"
+
+      - name: Force real Bedrock MLB Auto research invocation
+        run: |
+          set -euo pipefail
+          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
+          aws lambda invoke --cli-read-timeout 300 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_LLM_RD","force":true}' llm_rd.json >/dev/null
+          aws lambda invoke --cli-read-timeout 120 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"STATUS"}' status.json >/dev/null
+          echo '--- LLM R&D ---'; cat llm_rd.json
+          echo '--- STATUS ---'; cat status.json
+          python - <<'PY'
+          import json
+          rd=json.load(open('llm_rd.json'))
+          status=json.load(open('status.json'))
+          layer=status.get('llm_rd') or {}
+          assert rd.get('ok') is True, rd
+          assert rd.get('action') == 'LLM_RD', rd
+          assert rd.get('generated') is True, rd
+          assert str(rd.get('candidate_id') or '').startswith('LLM_RD_'), rd
+          assert 1 <= int(rd.get('feature_count') or 0) <= 8, rd
+          assert rd.get('llm_model_id'), rd
+          assert int(rd.get('development_rows') or 0) > 0, rd
+          assert int(rd.get('untouched_audit_reserve_count') or 0) >= 50, rd
+          assert status.get('sport') == 'mlb_auto', status
+          assert layer.get('enabled') is True, layer
+          assert layer.get('mode') == 'BEDROCK_LLM_AUTONOMOUS_RD', layer
+          assert layer.get('scope') == 'mlb_auto_only', layer
+          assert layer.get('generated_executable_code') is False, layer
+          assert layer.get('promotion_requires_existing_model_audit_gate') is True, layer
+          assert layer.get('candidate_id') == rd.get('candidate_id'), (layer, rd)
+          assert layer.get('candidate_status') == 'DEVELOPMENT_CANDIDATE', layer
+          assert int(layer.get('candidate_feature_count') or 0) == int(rd.get('feature_count') or 0), (layer, rd)
+          assert layer.get('last_run_ok') is True, layer
+          PY
+
+      - name: Verify schedules and protected algorithms remain unchanged
+        env:
+          MLB_BEFORE: ${{ steps.before.outputs.mlb }}
+          TENNIS_BEFORE: ${{ steps.before.outputs.tennis }}
+        run: |
+          set -euo pipefail
+          aws events list-rules --name-prefix "${STACK_NAME}-" --output json > rules.json
+          python - <<'PY'
+          import json
+          rows=json.load(open('rules.json')).get('Rules') or []
+          names={r.get('Name'):r.get('State') for r in rows}
+          for suffix in ('heartbeat-5m','lock-1m','settle-30m','train-1h','repair-5m','history-15m'):
+              matches=[(n,s) for n,s in names.items() if n and n.endswith(suffix)]
+              assert len(matches)==1 and matches[0][1]=='ENABLED', (suffix,names)
+          PY
+          fp() {
+            local s="$1"
+            if ! aws cloudformation describe-stacks --stack-name "$s" >/dev/null 2>&1; then printf MISSING; return; fi
+            { aws cloudformation get-template --stack-name "$s" --output json; aws cloudformation list-stack-resources --stack-name "$s" --output json; } | sha256sum | awk '{print $1}'
+          }
+          test "$MLB_BEFORE" = "$(fp parlay-platform-dev)"
+          test "$TENNIS_BEFORE" = "$(fp parlay-platform-tennis-ml-prod)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlb-auto-llm-rd-proof-${{ github.run_id }}
+          path: |
+            llm_rd.json
+            status.json
+            rules.json
+          retention-days: 30
