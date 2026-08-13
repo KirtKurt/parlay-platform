@@ -104,6 +104,8 @@ jobs:
           assert s.get('ok') is True and s.get('sport')=='mlb_auto', s
           assert s.get('provider_sport_key')=='baseball_mlb' and s.get('autonomous') is True, s
           assert s.get('cost_throttling') is False, s
+          assert s.get('official_pick_policy')=='CHAMPION_CONFIDENCE_ONLY', s
+          assert s.get('expected_value_selection_gate') is False, s
           PY
       - name: Enable autonomous schedules
         working-directory: mlb_auto
@@ -112,6 +114,52 @@ jobs:
         run: |
           set -euo pipefail
           sam deploy --template-file .aws-sam/build/template.yaml --stack-name "$STACK_NAME" --capabilities CAPABILITY_IAM --resolve-s3 --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}" "ScheduleState=ENABLED" "DeployGitSha=${GITHUB_SHA}"
+      - name: Prove scheduled heartbeat and repair telemetry
+        run: |
+          set -euo pipefail
+          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
+          ENABLED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          export ENABLED_AT
+          fresh=0
+          for attempt in $(seq 1 18); do
+            sleep 30
+            aws lambda invoke --cli-read-timeout 120 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"STATUS"}' post_enable_status.json >/dev/null
+            if python - <<'PY'
+          import json, os, sys
+          from datetime import datetime, timezone
+
+          def parse(value):
+              if not value:
+                  return None
+              dt=datetime.fromisoformat(str(value).replace('Z','+00:00'))
+              if dt.tzinfo is None:
+                  dt=dt.replace(tzinfo=timezone.utc)
+              return dt.astimezone(timezone.utc)
+
+          status=json.load(open('post_enable_status.json'))
+          controller=status.get('controller') or {}
+          repair=status.get('repair') or {}
+          since=parse(os.environ['ENABLED_AT'])
+          heartbeat=parse(controller.get('heartbeat_at'))
+          repaired=parse(repair.get('last_repair_at'))
+          checks=[
+              status.get('ok') is True,
+              heartbeat is not None and heartbeat >= since,
+              repaired is not None and repaired >= since,
+              int(controller.get('known_market_key_count') or 0) > 0,
+              bool(controller.get('last_market_inventory_at')),
+              status.get('official_pick_policy') == 'CHAMPION_CONFIDENCE_ONLY',
+              status.get('expected_value_selection_gate') is False,
+          ]
+          sys.exit(0 if all(checks) else 1)
+          PY
+            then
+              fresh=1
+              break
+            fi
+          done
+          cat post_enable_status.json
+          test "$fresh" = 1
       - name: Verify schedules and protected stacks
         env:
           MLB_BEFORE: ${{ steps.before.outputs.mlb }}
@@ -135,7 +183,7 @@ jobs:
           set -euo pipefail
           aws cloudformation describe-stacks --stack-name "$STACK_NAME" --output json > stack.json
           aws cloudformation list-stack-resources --stack-name "$STACK_NAME" --output json > resources.json
-          sha256sum provider.json market_inventory.json history.json status.json rules.json stack.json resources.json > SHA256SUMS
+          sha256sum provider.json market_inventory.json history.json status.json post_enable_status.json rules.json stack.json resources.json > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: mlb-auto-v1-deployment-evidence-${{ github.run_id }}
@@ -144,6 +192,7 @@ jobs:
             market_inventory.json
             history.json
             status.json
+            post_enable_status.json
             rules.json
             stack.json
             resources.json
