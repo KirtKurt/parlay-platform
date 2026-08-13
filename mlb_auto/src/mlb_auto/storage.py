@@ -6,7 +6,8 @@ from decimal import Decimal
 from typing import Any
 
 import boto3
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Attr, Key
+from botocore.exceptions import ClientError
 
 
 def safe(value: Any):
@@ -43,11 +44,84 @@ class Store:
         self.s3 = boto3.client('s3')
         self.bucket = os.environ['MLB_AUTO_ARCHIVE_BUCKET']
 
+    @staticmethod
+    def _query_all(table, *, limit: int | None = None, **kwargs):
+        """Read every DynamoDB query page, subject only to an explicit caller limit."""
+        maximum = None if limit is None else max(1, int(limit))
+        rows: list[dict[str, Any]] = []
+        exclusive_start_key = None
+        while maximum is None or len(rows) < maximum:
+            request = dict(kwargs)
+            # DynamoDB Limit is evaluated rows, not returned rows when a filter is used.
+            # Continue following LastEvaluatedKey until enough returned rows exist.
+            request['Limit'] = min(1000, maximum - len(rows)) if maximum is not None else 1000
+            if exclusive_start_key:
+                request['ExclusiveStartKey'] = exclusive_start_key
+            page = table.query(**request)
+            rows.extend(page.get('Items') or [])
+            exclusive_start_key = page.get('LastEvaluatedKey')
+            if not exclusive_start_key:
+                break
+        return rows if maximum is None else rows[:maximum]
+
+    @staticmethod
+    def _update_fields(table, key: dict[str, str], fields: dict[str, Any]):
+        payload = {str(k): safe(v) for k, v in fields.items() if str(k) not in ('PK', 'SK')}
+        if not payload:
+            return {}
+        names: dict[str, str] = {}
+        values: dict[str, Any] = {}
+        assignments: list[str] = []
+        for index, (name, value) in enumerate(payload.items()):
+            name_token = f'#f{index}'
+            value_token = f':v{index}'
+            names[name_token] = name
+            values[value_token] = value
+            assignments.append(f'{name_token} = {value_token}')
+        response = table.update_item(
+            Key=key,
+            UpdateExpression='SET ' + ', '.join(assignments),
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
+            ReturnValues='ALL_NEW',
+        )
+        return plain(response.get('Attributes') or {})
+
     def get_state(self, name='controller'):
         return plain(self.state.get_item(Key={'PK': 'MLB_AUTO#STATE', 'SK': name}, ConsistentRead=True).get('Item') or {})
 
-    def put_state(self, name, item):
-        self.state.put_item(Item=safe({'PK': 'MLB_AUTO#STATE', 'SK': name, **item}))
+    def put_state(self, name, item, *, monotonic_fields: tuple[str, ...] = ()):
+        """Atomically update only supplied state fields.
+
+        State schedules run concurrently. Full-item put operations allowed a slower invocation
+        to erase newer heartbeat, inventory, settlement, or training telemetry. Known timestamp
+        fields are guarded automatically so a late completion cannot move them backward.
+        """
+        key = {'PK': 'MLB_AUTO#STATE', 'SK': name}
+        fields = {str(k): v for k, v in item.items() if str(k) not in ('PK', 'SK')}
+        automatically_monotonic = {
+            'heartbeat_at', 'last_pull_at', 'last_settlement_at', 'last_training_at',
+            'last_training_attempt_at', 'last_repair_at', 'last_market_inventory_at',
+            'last_run_at',
+        }
+        guarded_fields = tuple(dict.fromkeys((*monotonic_fields, *(automatically_monotonic & fields.keys()))))
+        for field in guarded_fields:
+            if field not in fields:
+                continue
+            value = safe(fields.pop(field))
+            try:
+                self.state.update_item(
+                    Key=key,
+                    UpdateExpression='SET #field = :value',
+                    ConditionExpression='attribute_not_exists(#field) OR #field <= :value',
+                    ExpressionAttributeNames={'#field': field},
+                    ExpressionAttributeValues={':value': value},
+                )
+            except ClientError as exc:
+                code = str((exc.response.get('Error') or {}).get('Code') or '')
+                if code != 'ConditionalCheckFailedException':
+                    raise
+        return self._update_fields(self.state, key, fields)
 
     def put_snapshot(self, slate, at, item):
         event_id = str(item.get('event_id') or item.get('eventId') or '')
@@ -55,9 +129,17 @@ class Store:
         self.snapshots.put_item(Item=safe({'PK': f'MLB_AUTO#SNAPSHOTS#{slate}', 'SK': sk, **item}))
 
     def query_snapshots(self, slate, event_id=None, limit=500):
-        rows = self.snapshots.query(KeyConditionExpression=Key('PK').eq(f'MLB_AUTO#SNAPSHOTS#{slate}'), ScanIndexForward=True, Limit=limit).get('Items') or []
+        kwargs: dict[str, Any] = {
+            'KeyConditionExpression': Key('PK').eq(f'MLB_AUTO#SNAPSHOTS#{slate}'),
+            'ScanIndexForward': True,
+        }
+        if event_id is not None:
+            kwargs['FilterExpression'] = Attr('event_id').eq(str(event_id))
+        rows = self._query_all(self.snapshots, limit=limit, **kwargs)
         rows = [plain(x) for x in rows]
-        return [x for x in rows if str(x.get('event_id') or '') == str(event_id)] if event_id else rows
+        if event_id is not None:
+            rows = [x for x in rows if str(x.get('event_id') or '') == str(event_id)]
+        return rows[:max(1, int(limit))]
 
     def put_prediction(self, slate, event_id, item):
         self.predictions.put_item(Item=safe({'PK': f'MLB_AUTO#PREDICTIONS#{slate}', 'SK': event_id, **item}))
@@ -66,18 +148,31 @@ class Store:
         return plain(self.predictions.get_item(Key={'PK': f'MLB_AUTO#PREDICTIONS#{slate}', 'SK': event_id}, ConsistentRead=True).get('Item') or {})
 
     def query_predictions(self, slate):
-        rows = self.predictions.query(KeyConditionExpression=Key('PK').eq(f'MLB_AUTO#PREDICTIONS#{slate}'), ScanIndexForward=True).get('Items') or []
+        rows = self._query_all(
+            self.predictions,
+            KeyConditionExpression=Key('PK').eq(f'MLB_AUTO#PREDICTIONS#{slate}'),
+            ScanIndexForward=True,
+        )
         return [plain(x) for x in rows]
 
     def query_locks(self, slate):
-        rows = self.locks.query(KeyConditionExpression=Key('PK').eq(f'MLB_AUTO#LOCKS#{slate}'), ScanIndexForward=True).get('Items') or []
+        rows = self._query_all(
+            self.locks,
+            KeyConditionExpression=Key('PK').eq(f'MLB_AUTO#LOCKS#{slate}'),
+            ScanIndexForward=True,
+        )
         return [plain(x) for x in rows]
 
     def put_training_example(self, slate, event_id, item):
         self.outcomes.put_item(Item=safe({'PK': 'MLB_AUTO#TRAINING_EXAMPLES', 'SK': f'{slate}#{event_id}', **item}))
 
     def query_training_examples(self, limit=5000):
-        rows = self.outcomes.query(KeyConditionExpression=Key('PK').eq('MLB_AUTO#TRAINING_EXAMPLES'), ScanIndexForward=True, Limit=limit).get('Items') or []
+        rows = self._query_all(
+            self.outcomes,
+            limit=limit,
+            KeyConditionExpression=Key('PK').eq('MLB_AUTO#TRAINING_EXAMPLES'),
+            ScanIndexForward=True,
+        )
         return [plain(x) for x in rows]
 
     def put_model(self, sk, item):
