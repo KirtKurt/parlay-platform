@@ -524,7 +524,7 @@ Resources:
       Handler: soccer_auto.trainer.trainer_handler
       Role: !GetAtt SoccerAutoRuntimeRole.Arn
       Timeout: 900
-      MemorySize: 4096
+      MemorySize: 3008
       Events:
         TrainEverySixHours:
           Type: Schedule

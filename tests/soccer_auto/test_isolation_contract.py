@@ -99,6 +99,25 @@ class IsolationTests(unittest.TestCase):
         self.assertNotIn("delete-bucket", workflow)
         self.assertNotIn("delete-secret", workflow)
 
+    def test_lambda_memory_fits_the_production_account_ceiling(self) -> None:
+        template = yaml.load(
+            (ROOT / "soccer-auto-template.yaml").read_text(),
+            Loader=CloudFormationLoader,
+        )
+        functions = {
+            name: resource
+            for name, resource in template["Resources"].items()
+            if resource.get("Type") == "AWS::Serverless::Function"
+        }
+        self.assertTrue(functions)
+        for name, resource in functions.items():
+            memory = int(resource["Properties"].get("MemorySize", 128))
+            self.assertLessEqual(memory, 3008, f"{name} exceeds the production Lambda ceiling")
+        self.assertEqual(
+            functions["SoccerTrainerFunction"]["Properties"]["MemorySize"],
+            3008,
+        )
+
     def test_future_soccer_only_paths_cannot_trigger_main_deploy(self) -> None:
         workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
         for path in (
