@@ -13,23 +13,33 @@ A new MLB game-winner platform modeled on the autonomous Tennis lifecycle while 
 
 ## Autonomous cadence
 
-EventBridge heartbeat: every **5 minutes**. The heartbeat does not imply an Odds API charge. `schedule_controller.decide_pull` chooses the actual API cadence:
+EventBridge wakes the controller every **5 minutes**. The controller autonomously decides whether a fresh Odds API collection is valuable enough to run. **API cost, quota conservation, or remaining credits are not decision inputs.**
 
-- >24h to first pitch: 60m
-- 12–24h: 30m
-- 6–12h: 15m
-- 2–6h: 10m
-- <=2h: 5m
-- increased volatility / missing market coverage: accelerate to 5–10m
-- repeated empty responses / low quota: back off to 30–60m
+Pull urgency is driven by:
 
-The controller can force immediate pulls for stale data, missing coverage, repair actions, or material schedule changes.
+- time remaining to the next MLB first pitch;
+- observed line/probability volatility;
+- newly listed or materially changed games;
+- missing market coverage;
+- recent signal changes;
+- stale or incomplete snapshots;
+- repair requests from the system itself.
+
+The operating intervals are 5/10/15/30/60 minutes, selected from information value. As first pitch approaches or markets move materially, the system naturally converges toward 5-minute collection. It may force an immediate pull whenever state is stale, coverage changes, or repair is required.
+
+There is no fixed daily start clock. The controller discovers the MLB slate continuously and chooses when useful collection should begin and how frequently it should continue.
 
 ## Odds API coverage
 
-The system consumes the official `baseball_mlb` events/odds APIs. Featured `h2h`, `spreads`, and `totals` are collected slate-wide. For every event, `/events/{id}/markets` is used to discover deeper markets, and useful supported markets are queried per event. Raw event-market payloads are preserved even when they cannot safely become team-attributed model features.
+The system consumes the official `baseball_mlb` events/odds APIs. Featured `h2h`, `spreads`, and `totals` are collected slate-wide. For every event, `/events/{id}/markets` is used to discover deeper markets, and useful supported markets are queried per event. Scores, participants, and available historical snapshots are also supported. Raw event-market payloads are preserved even when they cannot safely become team-attributed model features.
 
-Game-winner ML may use full-game market probabilities, movement, bookmaker disagreement, period/innings market depth, team-total/alternate-line availability, and safely attributable prop depth. Player props are never guessed onto a team.
+Game-winner ML may use full-game market probabilities, movement, bookmaker disagreement, period/innings market depth, team-total/alternate-line availability, safely attributable pitcher/batter market information, market breadth, and temporal behavior. Player props are never guessed onto a team.
+
+## Model readiness and picks
+
+The system does not have a required number of daily picks and does not force a selection. It evaluates every MLB game. Until a Tennis-style challenger has enough clean chronological evidence to pass calibration/generalization gates, predictions remain bootstrap/shadow. Once a champion is qualified, it becomes the probability authority automatically. A game is surfaced as a pick only when the current champion's confidence/readiness policy supports it; otherwise the correct output is PASS/NO PLAY.
+
+Training volume, validation quality, calibration, feature stability, and challenger-vs-champion evidence determine readiness. API spending does not.
 
 ## Autonomous ML + repair
 
