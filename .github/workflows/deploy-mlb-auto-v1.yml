@@ -212,6 +212,10 @@ jobs:
         if: ${{ failure() || cancelled() }}
         run: |
           set -euo pipefail
+          if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+            echo 'AWS credentials were not configured, so the canary could not have disabled schedules; no restore is required.'
+            exit 0
+          fi
           aws events list-rules --name-prefix "${STACK_NAME}-" --query 'Rules[].Name' --output text \
             | tr '\t' '\n' \
             | while read -r rule; do
