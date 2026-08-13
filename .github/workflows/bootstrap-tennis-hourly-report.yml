@@ -1,0 +1,37 @@
+name: Bootstrap Tennis Hourly Report
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/bootstrap-tennis-hourly-report.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: bootstrap-tennis-hourly-report
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Dispatch first hourly Tennis report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            if gh workflow run tennis-hourly-production-report.yml \
+              --repo "$GITHUB_REPOSITORY" --ref main; then
+              echo 'First Tennis hourly report dispatched.'
+              exit 0
+            fi
+            echo "Workflow registration not ready on attempt $attempt; retrying."
+            sleep 10
+          done
+          exit 1
