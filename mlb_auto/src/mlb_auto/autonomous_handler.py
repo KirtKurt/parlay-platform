@@ -19,6 +19,7 @@ from .llm_rd import (
     status_payload as _rd_status,
 )
 from .ml import promote_challenger
+from .model_access import ensure_opus_access as _ensure_opus_access
 from .provider_open import OpenEndedOddsApiClient
 from .runtime_hardening import install as _install_runtime_hardening
 from .storage import Store
@@ -69,6 +70,10 @@ def autonomous_research(*, force: bool = False) -> dict:
     return _run_research(Store=Store, force=force)
 
 
+def autonomous_model_access() -> dict:
+    return _ensure_opus_access(Store=Store)
+
+
 def autonomous_train() -> dict:
     discover = _research_discoverer(Store=Store, discover_challenger=discover_challenger)
     result = _run_training(
@@ -105,6 +110,7 @@ def _status_with_rd() -> dict:
     result = base.status()
     if isinstance(result, dict):
         result['llm_rd'] = _rd_status(Store=Store)
+        result['llm_model_access'] = Store().get_state('llm_model_access')
     return result
 
 
@@ -115,6 +121,8 @@ def handler(event, context):
         return autonomous_train()
     if action in ('LLM_RD', 'MLB_AUTO_LLM_RD'):
         return autonomous_research(force=bool(event.get('force', True)))
+    if action in ('ENABLE_OPUS_ACCESS', 'MLB_AUTO_ENABLE_OPUS_ACCESS'):
+        return autonomous_model_access()
     if action in ('LIVE_PROVIDER_PROOF', 'MLB_AUTO_LIVE_PROVIDER_PROOF'):
         return live_provider_proof()
     if action in ('MARKET_INVENTORY', 'MLB_AUTO_MARKET_INVENTORY'):
