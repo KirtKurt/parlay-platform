@@ -1,0 +1,195 @@
+name: Hotfix Tennis lock timeout
+
+on:
+  push:
+    branches: [agent/diagnose-tennis-lock-alarm-20260813]
+    paths:
+      - 'ops/tennis_lock_timeout_hotfix.py'
+      - '.github/workflows/hotfix-tennis-lock-timeout.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tennis-prod-lock-hotfix
+  cancel-in-progress: false
+
+env:
+  FUNCTION_NAME: parlay-platform-tennis-ml-prod-tennis-lock
+  RULE_NAME: parlay-platform-tennis-ml-prod-tennis-lock-every-minute
+  ALARM_NAME: parlay-platform-tennis-ml-prod-tennis-lock-errors
+
+jobs:
+  hotfix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Backup exact running package and target configuration
+        run: |
+          set -euo pipefail
+          aws lambda get-function --function-name "$FUNCTION_NAME" --output json > function-before.json
+          URL=$(python -c "import json; print(json.load(open('function-before.json'))['Code']['Location'])")
+          curl --fail --silent --show-error "$URL" -o before.zip
+          aws events list-targets-by-rule --rule "$RULE_NAME" --output json > targets-before.json
+          python - <<'PY'
+          import json
+          obj=json.load(open('targets-before.json'))
+          targets=obj.get('Targets') or []
+          assert len(targets)==1, targets
+          json.dump(targets,open('targets-original-array.json','w'))
+          fixed=[]
+          for target in targets:
+              row=dict(target)
+              row['RetryPolicy']={'MaximumRetryAttempts':0,'MaximumEventAgeInSeconds':60}
+              fixed.append(row)
+          json.dump(fixed,open('targets-fixed-array.json','w'))
+          PY
+
+      - name: Stop new schedules and drain pre-hotfix invocations
+        run: |
+          set -euo pipefail
+          aws events disable-rule --name "$RULE_NAME"
+          sleep 130
+
+      - name: Patch only the deployed Tennis lock handler
+        run: |
+          set -euo pipefail
+          rm -rf work && mkdir work
+          unzip -q before.zip -d work
+          test -f work/tennis_lock_handler.py
+          cp work/tennis_lock_handler.py handler-before.py
+          python ops/tennis_lock_timeout_hotfix.py
+          python -m py_compile work/tennis_lock_handler.py
+          grep -q 'v5.1-tminus45-no-rescore-cached-reads' work/tennis_lock_handler.py
+          diff -u handler-before.py work/tennis_lock_handler.py > handler.diff || true
+          cd work && zip -qr ../after.zip .
+
+      - name: Deploy optimized handler and suppress stale EventBridge retries
+        run: |
+          set -euo pipefail
+          rollback() {
+            set +e
+            echo '::warning::Rolling Tennis lock function back to exact pre-hotfix package'
+            aws events disable-rule --name "$RULE_NAME"
+            aws lambda update-function-code --function-name "$FUNCTION_NAME" --zip-file fileb://before.zip >/dev/null
+            aws lambda wait function-updated --function-name "$FUNCTION_NAME"
+            aws events put-targets --rule "$RULE_NAME" --targets file://targets-original-array.json >/dev/null
+            aws events enable-rule --name "$RULE_NAME"
+          }
+          trap rollback ERR
+          aws lambda update-function-code --function-name "$FUNCTION_NAME" --zip-file fileb://after.zip > update.json
+          aws lambda wait function-updated --function-name "$FUNCTION_NAME"
+          aws events put-targets --rule "$RULE_NAME" --targets file://targets-fixed-array.json > target-update.json
+
+          START=$(date +%s)
+          aws lambda invoke --cli-read-timeout 150 --cli-connect-timeout 20 \
+            --function-name "$FUNCTION_NAME" --cli-binary-format raw-in-base64-out \
+            --payload '{"run":"scheduled_tennis_lock","hotfix_probe":1}' probe1.json > probe1-meta.json
+          FIRST=$(( $(date +%s) - START ))
+          START=$(date +%s)
+          aws lambda invoke --cli-read-timeout 90 --cli-connect-timeout 20 \
+            --function-name "$FUNCTION_NAME" --cli-binary-format raw-in-base64-out \
+            --payload '{"run":"scheduled_tennis_lock","hotfix_probe":2}' probe2.json > probe2-meta.json
+          SECOND=$(( $(date +%s) - START ))
+          FIRST="$FIRST" SECOND="$SECOND" python - <<'PY'
+          import json,os
+          for n in (1,2):
+              meta=json.load(open(f'probe{n}-meta.json'))
+              payload=json.load(open(f'probe{n}.json'))
+              assert not meta.get('FunctionError'), (meta,payload)
+              assert payload.get('ok') is True, payload
+          first=int(os.environ['FIRST']); second=int(os.environ['SECOND'])
+          print({'first_probe_seconds':first,'steady_state_probe_seconds':second})
+          assert first < 120, first
+          assert second < 45, second
+          PY
+          aws events enable-rule --name "$RULE_NAME"
+          trap - ERR
+
+      - name: Prove autonomous schedule remains healthy and alarm recovers
+        run: |
+          set -euo pipefail
+          VERIFIED_FROM=$(date -u +%s)
+          sleep 210
+          START_MS=$(( VERIFIED_FROM * 1000 ))
+          aws logs filter-log-events --log-group-name "/aws/lambda/$FUNCTION_NAME" --start-time "$START_MS" --output json > post-hotfix-logs.json
+          python - <<'PY'
+          import json,re
+          events=json.load(open('post-hotfix-logs.json')).get('events') or []
+          messages=[str(e.get('message') or '') for e in events]
+          timeouts=[m for m in messages if 'Status: timeout' in m or 'Task timed out' in m]
+          errors=[m for m in messages if '\tERROR\t' in m or 'Runtime.ExitError' in m]
+          durations=[]
+          for m in messages:
+              hit=re.search(r'Duration: ([0-9.]+) ms',m)
+              if hit: durations.append(float(hit.group(1)))
+          print({'events':len(events),'reports':len(durations),'timeouts':len(timeouts),'runtime_errors':len(errors),'max_duration_ms':max(durations) if durations else None})
+          assert len(timeouts)==0, timeouts[-5:]
+          assert len(errors)==0, errors[-5:]
+          assert durations, 'no scheduled REPORT records observed'
+          assert max(durations) < 60000, max(durations)
+          PY
+
+          # CloudWatch's 5-minute alarm may require a full evaluation boundary.
+          for i in $(seq 1 8); do
+            STATE=$(aws cloudwatch describe-alarms --alarm-names "$ALARM_NAME" --query 'MetricAlarms[0].StateValue' --output text)
+            echo "alarm_state=$STATE attempt=$i"
+            if [ "$STATE" = "OK" ]; then break; fi
+            sleep 30
+          done
+          aws cloudwatch describe-alarms --alarm-names "$ALARM_NAME" --output json > alarm-after.json
+          python - <<'PY'
+          import json
+          alarm=json.load(open('alarm-after.json'))['MetricAlarms'][0]
+          assert alarm['StateValue']=='OK', alarm.get('StateReason')
+          print({'alarm_state':alarm['StateValue'],'reason':alarm.get('StateReason')})
+          PY
+
+      - name: Verify only Tennis lock runtime changed
+        run: |
+          set -euo pipefail
+          aws events describe-rule --name "$RULE_NAME" --output json > rule-after.json
+          aws events list-targets-by-rule --rule "$RULE_NAME" --output json > targets-after.json
+          aws lambda get-function-configuration --function-name "$FUNCTION_NAME" --output json > function-after.json
+          python - <<'PY'
+          import json
+          rule=json.load(open('rule-after.json'))
+          target=(json.load(open('targets-after.json')).get('Targets') or [])[0]
+          cfg=json.load(open('function-after.json'))
+          assert rule['State']=='ENABLED', rule
+          assert rule['ScheduleExpression']=='rate(1 minute)', rule
+          assert target.get('RetryPolicy')=={'MaximumEventAgeInSeconds':60,'MaximumRetryAttempts':0}, target
+          assert cfg['FunctionName']=='parlay-platform-tennis-ml-prod-tennis-lock', cfg
+          assert cfg['State']=='Active', cfg
+          print({'function':cfg['FunctionName'],'state':cfg['State'],'schedule':rule['ScheduleExpression'],'retryPolicy':target['RetryPolicy']})
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tennis-lock-hotfix-evidence-${{ github.run_id }}
+          path: |
+            function-before.json
+            handler-before.py
+            handler.diff
+            probe1.json
+            probe1-meta.json
+            probe2.json
+            probe2-meta.json
+            update.json
+            targets-before.json
+            targets-after.json
+            target-update.json
+            post-hotfix-logs.json
+            alarm-after.json
+            rule-after.json
+            function-after.json
+          retention-days: 30
