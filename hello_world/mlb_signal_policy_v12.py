@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-VERSION = "MLB-SIGNAL-POLICY-v1.12-large-move-medium-late-movement-gate"
+VERSION = "MLB-SIGNAL-POLICY-v1.13-large-move-medium-full-acceleration-gate"
 REQUIRED_MINUTES_BEFORE_GAME = 45
 DAILY_SLATE_DISPLAY_RULE = "show_one_required_winner_prediction_for_every_game_45_minutes_before_first_game_of_day"
 
@@ -93,6 +93,7 @@ def _signal_risk_gate_reasons(row: Dict[str, Any]) -> List[str]:
     h180 = _temporal_horizon(sig, "180m")
     hfull = _temporal_horizon(sig, "full")
     opp_h180 = _temporal_horizon(opp, "180m")
+    opp_hfull = _temporal_horizon(opp, "full")
     curve = _market_curve(sig)
     opp_curve = _market_curve(opp)
     rev60 = _i(h60.get("reversalCount"), 0)
@@ -105,6 +106,9 @@ def _signal_risk_gate_reasons(row: Dict[str, Any]) -> List[str]:
     delta_side_gap = delta - opp_delta
     acceleration_180_side_gap = _f(h180.get("accelerationPpHr2"), 0.0) - _f(
         opp_h180.get("accelerationPpHr2"), 0.0
+    )
+    acceleration_full_side_gap = _f(hfull.get("accelerationPpHr2"), 0.0) - _f(
+        opp_hfull.get("accelerationPpHr2"), 0.0
     )
     late_movement_side_gap = _f(curve.get("lateMovement"), 0.0) - _f(
         opp_curve.get("lateMovement"), 0.0
@@ -120,6 +124,12 @@ def _signal_risk_gate_reasons(row: Dict[str, Any]) -> List[str]:
         and late_movement_side_gap > 0.0
         and _research_magnitude_bucket(delta_side_gap) == "large"
         and _research_magnitude_bucket(late_movement_side_gap) == "medium"
+    )
+    large_move_medium_full_acceleration_pattern = bool(
+        delta_side_gap > 0.0
+        and acceleration_full_side_gap > 0.0
+        and _research_magnitude_bucket(delta_side_gap) == "large"
+        and _research_magnitude_bucket(acceleration_full_side_gap) == "medium"
     )
 
     reasons: List[str] = []
@@ -139,6 +149,8 @@ def _signal_risk_gate_reasons(row: Dict[str, Any]) -> List[str]:
         reasons.append("large_move_extreme_180m_acceleration_without_confirmation")
     if large_move_medium_late_movement_pattern and not independently_confirmed:
         reasons.append("large_move_medium_late_movement_without_confirmation")
+    if large_move_medium_full_acceleration_pattern and not independently_confirmed:
+        reasons.append("large_move_medium_full_acceleration_without_confirmation")
     return sorted(set(reasons))
 
 
@@ -200,6 +212,8 @@ def _components(row: Dict[str, Any]) -> List[Dict[str, Any]]:
         add("large_move_extreme_180m_acceleration_penalty", -6.0)
     if "large_move_medium_late_movement_without_confirmation" in risk_gate_reasons:
         add("large_move_medium_late_movement_penalty", -6.0)
+    if "large_move_medium_full_acceleration_without_confirmation" in risk_gate_reasons:
+        add("large_move_medium_full_acceleration_penalty", -6.0)
 
     if gap < 0.05:
         add("compressed_market_penalty", -6.0)
