@@ -75,6 +75,11 @@ def _prediction_fingerprint(row: dict) -> str:
     return hashlib.sha256(json.dumps(stable, sort_keys=True, default=str).encode()).hexdigest()
 
 
+def _qualifies_official_pick(champion: Model | None, win_probability: float) -> bool:
+    """Use trained-model confidence only; price and expected value are observational."""
+    return bool(champion and float(win_probability) >= MIN_OFFICIAL_PROB)
+
+
 def _latest_home_history(store: Store, slate: str, event_id: str) -> list[float]:
     rows = store.query_snapshots(slate, event_id=event_id, limit=500)
     vals = []
@@ -124,7 +129,13 @@ def ingest(*, force_reason: str | None = None) -> dict:
         new_event_fraction=float(state.get('new_event_fraction') or 0), force_reason=force_reason,
     )
     if not decision.should_pull:
-        store.put_state('controller', {**state, 'heartbeat_at': _iso(now), 'expected_interval_minutes': decision.next_interval_minutes, 'next_due_at': decision.next_due_at_utc, 'information_gain_score': decision.information_gain_score})
+        store.put_state('controller', {
+            'heartbeat_at': _iso(now),
+            'expected_interval_minutes': decision.next_interval_minutes,
+            'next_due_at': decision.next_due_at_utc,
+            'information_gain_score': decision.information_gain_score,
+            'last_heartbeat_ok': True,
+        })
         return {'ok': True, 'action': 'HEARTBEAT_ONLY', 'decision': decision.__dict__, 'event_count': len(events)}
 
     featured_response = client.featured_odds()
@@ -165,7 +176,7 @@ def ingest(*, force_reason: str | None = None) -> dict:
         price, price_book = _pick_price(base, winner)
         dec = american_decimal(price) if price is not None else None
         ev = (win_prob * dec - 1.0) if dec else None
-        official = bool(champion and win_prob >= MIN_OFFICIAL_PROB and ev is not None and ev >= 0)
+        official = _qualifies_official_pick(champion, win_prob)
         cutoff = start - timedelta(minutes=LOCK_MINUTES)
         row = {
             'sport': 'mlb_auto', 'provider_sport_key': 'baseball_mlb', 'slate_date': slate,
@@ -174,6 +185,8 @@ def ingest(*, force_reason: str | None = None) -> dict:
             'home_probability': home_prob, 'away_probability': away_prob,
             'predicted_winner': winner, 'win_probability': win_prob,
             'american_odds': price, 'price_book': price_book, 'expected_value': ev,
+            'expected_value_observational_only': True,
+            'official_pick_policy': 'CHAMPION_CONFIDENCE_ONLY',
             'prediction_mode': 'ML_CHAMPION' if champion else 'MARKET_BOOTSTRAP', 'model_id': champion_id,
             'official_pick': official, 'promotion_status': 'READY' if official else ('SHADOW_BOOTSTRAP' if not champion else 'MODEL_PASS'),
             'pull_count_for_event': len(history_plus), 'discovered_market_keys': discovered_keys,
@@ -197,6 +210,7 @@ def ingest(*, force_reason: str | None = None) -> dict:
         'market_key_total': market_key_total, 'missing_market_fraction': fraction_missing,
         'market_volatility': max(volatility_values) if volatility_values else 0.0,
         'discovery_error_count': len(discovery_errors), 'last_ingest_ok': True,
+        'last_heartbeat_ok': True,
         'prediction_mode': 'ML_CHAMPION' if champion else 'MARKET_BOOTSTRAP',
     }
     store.put_state('controller', next_state)
@@ -294,8 +308,12 @@ def settle() -> dict:
             'predicted_winner': lock.get('predicted_winner'),
         })
         settled += 1
-    current = store.get_state('controller')
-    store.put_state('controller', {**current, 'last_settlement_at': _iso(), 'last_settlement_count': settled})
+    settlement_at = _iso()
+    store.put_state('controller', {
+        'last_settlement_at': settlement_at,
+        'last_settlement_count': settled,
+        'last_settlement_ok': True,
+    })
     return {'ok': True, 'completed_scores_seen': len(rows), 'eligible_locks_examined': examined, 'settled': settled}
 
 
@@ -320,8 +338,17 @@ def train() -> dict:
     promoted = bool(gate.get('promote'))
     if promoted:
         store.put_model('CHAMPION', artifact)
-    state = store.get_state('controller')
-    store.put_state('controller', {**state, 'last_training_at': _iso(), 'last_training_count': len(examples), 'champion_model_id': model_id if promoted else incumbent_item.get('model_id'), 'last_training_gate': gate})
+    training_at = _iso()
+    store.put_state('controller', {
+        'last_training_at': training_at,
+        'last_training_count': len(examples),
+        'last_training_attempt_at': training_at,
+        'last_training_attempt_count': len(examples),
+        'last_training_attempt_git_sha': os.getenv('MLB_AUTO_DEPLOY_GIT_SHA', 'unknown'),
+        'last_training_attempt_result': 'PROMOTED' if promoted else 'NOT_PROMOTED',
+        'champion_model_id': model_id if promoted else incumbent_item.get('model_id'),
+        'last_training_gate': gate,
+    })
     return {'ok': True, 'trained': True, 'model_id': model_id, 'promoted': promoted, 'gate': gate, 'examples': len(examples)}
 
 
@@ -336,9 +363,15 @@ def repair() -> dict:
         minutes = 10_000
     examples = store.query_training_examples(limit=5000)
     champion_item = store.get_model('CHAMPION')
-    repair_state = {**state, 'minutes_since_last_pull': minutes,
-                    'new_training_examples': max(0,len(examples)-int(state.get('last_training_count') or 0)),
-                    'min_new_examples': MIN_NEW, 'champion_corrupt': bool(champion_item and not _model_from_item(champion_item))}
+    repair_state = {
+        **state,
+        'minutes_since_last_pull': minutes,
+        'new_training_examples': max(0, len(examples) - int(
+            state.get('last_training_attempt_count') or state.get('last_training_count') or 0
+        )),
+        'min_new_examples': MIN_NEW,
+        'champion_corrupt': bool(champion_item and not _model_from_item(champion_item)),
+    }
     results=[]
     for action in diagnose(repair_state,now):
         validate_self_repair(action)
@@ -352,7 +385,13 @@ def repair() -> dict:
             store.put_model('QUARANTINED_CHAMPION',{**champion_item,'quarantined_at':_iso(),'reason':action.reason})
             store.models.delete_item(Key={'PK':'MLB_AUTO#MODEL_REGISTRY','SK':'CHAMPION'})
             results.append({'action':action.action,'result':{'ok':True,'fallback':'MARKET_BOOTSTRAP'}})
-    store.put_state('repair',{'last_repair_at':_iso(),'action_count':len(results),'actions':[x['action'] for x in results]})
+    repair_at = _iso()
+    store.put_state('repair', {
+        'last_repair_at': repair_at,
+        'action_count': len(results),
+        'actions': [x['action'] for x in results],
+        'last_repair_ok': True,
+    })
     return {'ok':True,'actions':results}
 
 
@@ -368,6 +407,9 @@ def status() -> dict:
     return {
         'ok':True,'sport':'mlb_auto','provider_sport_key':'baseball_mlb','platform_version':PLATFORM_VERSION,
         'autonomous':True,'cost_throttling':False,'heartbeat_minutes':5,'lock_check_minutes':1,
+        'official_pick_policy':'CHAMPION_CONFIDENCE_ONLY',
+        'expected_value_selection_gate':False,
+        'minimum_official_probability':MIN_OFFICIAL_PROB,
         'prediction_mode':'ML_CHAMPION' if _model_from_item(champion) else 'MARKET_BOOTSTRAP',
         'champion_model_id':champion.get('model_id'),'training_examples':len(examples),
         'minimum_training_examples':MIN_TRAIN,'today_prediction_count':len(predictions),
