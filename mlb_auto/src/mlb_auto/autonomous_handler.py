@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from . import handler as base
 from .evolution import discover_challenger
+from .historical_backfill import run_historical_backfill
 from .ml import chronological_split, promote_challenger
 from .provider_open import OpenEndedOddsApiClient
 from .storage import Store
@@ -69,11 +70,27 @@ def autonomous_train() -> dict:
     }
 
 
+def autonomous_backfill() -> dict:
+    result = run_historical_backfill()
+    if int(result.get('training_examples') or 0) >= base.MIN_TRAIN:
+        result['training'] = autonomous_train()
+    else:
+        result['training'] = {
+            'trained': False,
+            'reason': 'INSUFFICIENT_EXAMPLES',
+            'count': int(result.get('training_examples') or 0),
+            'minimum': base.MIN_TRAIN,
+        }
+    return result
+
+
 def handler(event, context):
     event = event or {}
     action = str(event.get('action') or event.get('detail-type') or '').upper()
     if action in ('TRAIN', 'MLB_AUTO_TRAIN'):
         return autonomous_train()
+    if action in ('HISTORICAL_BACKFILL', 'MLB_AUTO_HISTORICAL_BACKFILL'):
+        return autonomous_backfill()
     # Repair must route its training action through the evolutionary trainer too.
     if action in ('REPAIR', 'MLB_AUTO_REPAIR'):
         original_train = base.train
