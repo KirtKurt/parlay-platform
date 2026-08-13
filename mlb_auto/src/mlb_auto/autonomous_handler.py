@@ -106,16 +106,30 @@ def autonomous_backfill(max_games_per_run: int | None = None) -> dict:
 
 
 def _model_access_status(rd: dict) -> dict:
+    configured = list(_configured_rd_models)
     selected = rd.get('model_id')
-    invocation_verified = bool(selected and rd.get('last_run_ok') is True)
+    if selected not in configured:
+        selected = None
+    verified_by_last_run = bool(
+        selected
+        and rd.get('last_run_ok') is True
+        and rd.get('last_result') == 'CANDIDATE_GENERATED'
+    )
+    verification_state = (
+        'VERIFIED_BY_RESEARCH'
+        if verified_by_last_run
+        else 'PREVIOUSLY_SELECTED'
+        if selected
+        else 'NOT_YET_INVOKED'
+    )
     return {
         'scope': 'mlb_auto_only',
         'mode': 'CONFIGURATION_DRIVEN_FALLBACK',
-        'configured_model_ids': rd.get('configured_model_ids') or list(_configured_rd_models),
+        'configured_model_ids': configured,
         'selected_model_id': selected,
         'selection_policy': 'FIRST_INVOKABLE_CONFIGURED_MODEL',
-        'verification_state': 'INVOKED' if selected else 'NOT_YET_INVOKED',
-        'model_access_verified_by_last_research_run': invocation_verified,
+        'verification_state': verification_state,
+        'model_access_verified_by_last_research_run': verified_by_last_run,
         'exact_model_requirement': False,
         'required_exact_model_ids': [],
         'runtime_account_enrollment_managed': False,
