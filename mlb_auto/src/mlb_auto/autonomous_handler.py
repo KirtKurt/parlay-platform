@@ -12,6 +12,7 @@ from .evolution import discover_challenger
 from .historical_backfill_v2 import run_historical_backfill
 from .ml import promote_challenger
 from .provider_open import OpenEndedOddsApiClient
+from .runtime_hardening import install as _install_runtime_hardening
 from .storage import Store
 from .threshold_policy import qualifies as _qualifies_threshold
 from .training_integrity import run as _run_training
@@ -20,6 +21,7 @@ base.OddsApiClient = OpenEndedOddsApiClient
 base._qualifies_official_pick = lambda champion, win_probability: _qualifies_threshold(
     champion, win_probability, base.MIN_OFFICIAL_PROB,
 )
+_install_runtime_hardening(base, Store)
 
 
 def _is_period_market(key: str) -> bool:
