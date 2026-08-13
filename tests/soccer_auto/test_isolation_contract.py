@@ -176,19 +176,12 @@ class IsolationTests(unittest.TestCase):
         self.assertIn("provider_429_baseline", workflow)
         self.assertIn("distributed_rate_limit_state", workflow)
 
-    def test_one_time_soccer_marker_is_the_only_push_deploy_path(self) -> None:
+    def test_verified_soccer_deployment_is_manual_only(self) -> None:
         workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
         trigger = workflow.split("permissions:", 1)[0]
-        self.assertIn("push:", trigger)
-        self.assertIn("branches: [main]", trigger)
-        self.assertEqual(trigger.count('"soccer_auto/.deploy-v1-once"'), 1)
-        self.assertNotIn("soccer-auto-template.yaml", trigger)
-        self.assertNotIn("tests/soccer_auto", trigger)
-        marker = ROOT / "soccer_auto/.deploy-v1-once"
-        self.assertEqual(
-            marker.read_text(),
-            "deploy soccer zero-reserve with distributed three-rps limiter\n",
-        )
+        self.assertIn("workflow_dispatch:", trigger)
+        self.assertNotIn("push:", trigger)
+        self.assertFalse((ROOT / "soccer_auto/.deploy-v1-once").exists())
 
     def test_lambda_memory_fits_the_production_account_ceiling(self) -> None:
         template = yaml.load(

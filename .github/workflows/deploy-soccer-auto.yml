@@ -1,15 +1,9 @@
 name: Deploy Isolated Soccer Auto
 
-# This one-time push authorization is scoped to one soccer-only marker. Remove
-# the push trigger and marker after the deployment is verified. The main
-# workflow ignores all soccer-only paths, and this stack cannot mutate MLB,
-# tennis, or legacy soccer resources.
+# Manual-only after the verified coverage-first activation. The main workflow
+# ignores all soccer-only paths, and this stack cannot mutate MLB, tennis, or
+# legacy soccer resources.
 on:
-  # One-time coverage-first activation trigger. Removed after the verified deploy.
-  push:
-    branches: [main]
-    paths:
-      - "soccer_auto/.deploy-v1-once"
   workflow_dispatch:
     inputs:
       enable_historical_backfill:

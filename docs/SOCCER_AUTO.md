@@ -183,9 +183,9 @@ fresh, digest-validated `LATEST` analysis.
   per-cycle calls use the same distributed three-RPS limiter and shared-credit
   admission controls. Historical odds rows remain training-ineligible until
   joined to an authoritative final result; prices are never used as labels.
-- The deployment workflow has a temporary one-time push authorization scoped
-  only to `soccer_auto/.deploy-v1-once`; remove that trigger and marker after
-  the coverage-first deployment is verified.
+- The deployment workflow is manual-only after the verified coverage-first
+  activation. Future source changes cannot deploy this stack merely by being
+  pushed to `main`.
 
 ## Deployment recovery
 
