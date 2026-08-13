@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import pathlib
 import unittest
 
@@ -92,12 +93,35 @@ class IsolationTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
         self.assertIn('stack_name=parlay-platform-soccer-auto', workflow)
         self.assertIn('stack_status" == "ROLLBACK_COMPLETE', workflow)
+        self.assertIn('stack_status" == "ROLLBACK_FAILED', workflow)
         self.assertIn("list-stack-resources", workflow)
         self.assertIn("ResourceStatus==`DELETE_SKIPPED`", workflow)
         self.assertIn("wait stack-delete-complete", workflow)
         self.assertNotIn("delete-table", workflow)
         self.assertNotIn("delete-bucket", workflow)
         self.assertNotIn("delete-secret", workflow)
+
+    def test_deploy_policy_covers_only_soccer_queue_topic_and_dashboard_lifecycle(self) -> None:
+        policy = json.loads((ROOT / "soccer_auto/deploy_iam_policy.json").read_text())
+        statements = {row["Sid"]: row for row in policy["Statement"]}
+        dashboard = statements["SoccerAutoDashboardLifecycleOnly"]
+        self.assertEqual(
+            set(dashboard["Action"]),
+            {
+                "cloudwatch:PutDashboard",
+                "cloudwatch:GetDashboard",
+                "cloudwatch:DeleteDashboards",
+            },
+        )
+        self.assertEqual(
+            dashboard["Resource"],
+            "arn:aws:cloudwatch::735707987003:dashboard/SoccerAutoDashboard-*",
+        )
+        serialized = json.dumps(policy)
+        self.assertNotIn('"Resource": "*"', serialized)
+        self.assertNotIn("parlay_platform_", serialized)
+        self.assertNotIn("tennis", serialized.lower())
+        self.assertNotIn("mlb", serialized.lower())
 
     def test_lambda_memory_fits_the_production_account_ceiling(self) -> None:
         template = yaml.load(

@@ -77,7 +77,7 @@ jobs:
             --query 'Stacks[0].StackStatus' \
             --output text 2>/dev/null || true)
 
-          if [[ "$stack_status" == "ROLLBACK_COMPLETE" ]]; then
+          if [[ "$stack_status" == "ROLLBACK_COMPLETE" || "$stack_status" == "ROLLBACK_FAILED" ]]; then
             aws cloudformation list-stack-resources \
               --stack-name "$stack_name" \
               --region "$region" \

@@ -43,6 +43,16 @@
           "aws:RequestedRegion": "us-east-1"
         }
       }
+    },
+    {
+      "Sid": "SoccerAutoDashboardLifecycleOnly",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:PutDashboard",
+        "cloudwatch:GetDashboard",
+        "cloudwatch:DeleteDashboards"
+      ],
+      "Resource": "arn:aws:cloudwatch::735707987003:dashboard/SoccerAutoDashboard-*"
     }
   ]
 }

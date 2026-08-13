@@ -150,10 +150,11 @@ foundation-model resources.
 The deploy identity must be allowed to provision every isolated resource in
 this stack. In particular, the initial account policy must include the full
 CloudFormation lifecycle for the two soccer-prefixed SQS queues and the
-soccer-prefixed SNS alarm topic; omitting queue creation or topic readback
-causes stack creation to fail before runtime activation.
+soccer-prefixed SNS alarm topic, plus create/read/delete access to the
+soccer-prefixed CloudWatch dashboard; omitting any of those lifecycle actions
+causes stack creation or rollback to fail before runtime activation.
 
-If an initial creation reaches `ROLLBACK_COMPLETE`, the next soccer deployment
+If an initial creation reaches `ROLLBACK_COMPLETE` or `ROLLBACK_FAILED`, the next soccer deployment
 records the exact `DELETE_SKIPPED` physical IDs in its GitHub Actions summary,
 deletes only the failed `parlay-platform-soccer-auto` stack record, and then
 recreates it. Durable tables, buckets, and the copied Odds API secret use
