@@ -24,67 +24,63 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Read alarm, Lambda configuration, recent metrics, and exact error logs
+      - name: Inspect exact deployed runtime and triggers
         run: |
           set -euo pipefail
           aws cloudwatch describe-alarms --alarm-names "$ALARM_NAME" --output json > alarm.json
+          aws lambda get-function --function-name "$FUNCTION_NAME" --output json > function.json
           aws lambda get-function-configuration --function-name "$FUNCTION_NAME" --output json > lambda.json
-          NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          START=$(date -u -d '6 hours ago' +%Y-%m-%dT%H:%M:%SZ)
-          aws cloudwatch get-metric-statistics --namespace AWS/Lambda --metric-name Errors \
-            --dimensions Name=FunctionName,Value="$FUNCTION_NAME" --statistics Sum --period 300 \
-            --start-time "$START" --end-time "$NOW" --output json > errors.json
-          aws cloudwatch get-metric-statistics --namespace AWS/Lambda --metric-name Invocations \
-            --dimensions Name=FunctionName,Value="$FUNCTION_NAME" --statistics Sum --period 300 \
-            --start-time "$START" --end-time "$NOW" --output json > invocations.json
-          LOG_GROUP="/aws/lambda/$FUNCTION_NAME"
-          START_MS=$(date -u -d '2026-08-13 16:50:00 UTC' +%s%3N)
-          END_MS=$(date -u -d '2026-08-13 17:10:00 UTC' +%s%3N)
-          aws logs filter-log-events --log-group-name "$LOG_GROUP" --start-time "$START_MS" --end-time "$END_MS" --output json > exact-window.json
-          RECENT_MS=$(date -u -d '90 minutes ago' +%s%3N)
-          aws logs filter-log-events --log-group-name "$LOG_GROUP" --start-time "$RECENT_MS" --output json > recent-window.json
+          ARN=$(python -c "import json; print(json.load(open('lambda.json'))['FunctionArn'])")
+          aws lambda list-tags --resource "$ARN" --output json > tags.json
+          aws lambda get-policy --function-name "$FUNCTION_NAME" --output json > policy.json || echo '{}' > policy.json
+          aws events list-rule-names-by-target --target-arn "$ARN" --output json > target-rules.json
+          mkdir -p deployed
+          CODE_URL=$(python -c "import json; print(json.load(open('function.json'))['Code']['Location'])")
+          curl --fail --silent --show-error "$CODE_URL" -o deployed.zip
+          unzip -q deployed.zip -d deployed
+          find deployed -maxdepth 3 -type f | sort > deployed-files.txt
           python - <<'PY'
-          import json
-          alarm=json.load(open('alarm.json'))['MetricAlarms'][0]
-          cfg=json.load(open('lambda.json'))
-          exact=json.load(open('exact-window.json')).get('events',[])
-          recent=json.load(open('recent-window.json')).get('events',[])
-          errs=sorted(json.load(open('errors.json')).get('Datapoints',[]), key=lambda x:x.get('Timestamp',''))
-          inv=sorted(json.load(open('invocations.json')).get('Datapoints',[]), key=lambda x:x.get('Timestamp',''))
-          def important(events):
-              rows=[]
-              for e in events:
-                  m=str(e.get('message','')).strip()
-                  if any(x in m for x in ('ERROR','Error','Exception','Task timed out','Runtime.ExitError','REPORT RequestId')):
-                      rows.append({'timestamp':e.get('timestamp'),'message':m[:4000]})
-              return rows
-          out={
-              'alarm_state':alarm.get('StateValue'),
-              'alarm_reason':alarm.get('StateReason'),
-              'alarm_updated':alarm.get('StateUpdatedTimestamp'),
-              'lambda_last_modified':cfg.get('LastModified'),
-              'lambda_timeout':cfg.get('Timeout'),
-              'lambda_memory_mb':cfg.get('MemorySize'),
-              'lambda_state':cfg.get('State'),
-              'error_datapoints':errs,
-              'invocation_datapoints':inv,
-              'exact_window_important':important(exact),
-              'recent_window_important':important(recent),
-              'recent_log_event_count':len(recent),
-          }
-          print(json.dumps(out, indent=2, default=str))
-          open('diagnostic.json','w').write(json.dumps(out, indent=2, default=str))
+          import json, os
+          tags=json.load(open('tags.json')).get('Tags') or {}
+          rules=json.load(open('target-rules.json')).get('RuleNames') or []
+          print('TAGS', json.dumps(tags,indent=2))
+          print('RULES', rules)
+          for rule in rules:
+              os.system(f"aws events describe-rule --name '{rule}' --output json > 'rule-{rule}.json'")
+              os.system(f"aws events list-targets-by-rule --rule '{rule}' --output json > 'targets-{rule}.json'")
+          print('FILES')
+          print(open('deployed-files.txt').read())
           PY
+          STACK=$(python - <<'PY'
+          import json
+          t=json.load(open('tags.json')).get('Tags') or {}
+          print(t.get('aws:cloudformation:stack-name') or t.get('aws:cloudformation:stack-id','').split('/')[-2] if t.get('aws:cloudformation:stack-id') else '')
+          PY
+          )
+          if [ -n "$STACK" ]; then
+            aws cloudformation get-template --stack-name "$STACK" --output json > stack-template.json
+            aws cloudformation list-stack-resources --stack-name "$STACK" --output json > stack-resources.json
+          else
+            echo '{}' > stack-template.json
+            echo '{}' > stack-resources.json
+          fi
+          echo '--- handler candidates ---'
+          grep -RIn --exclude='*.pyc' -E 'def (lambda_handler|handler)|lock|requests\.|urllib|httpx|boto3' deployed | head -300 || true
 
       - uses: actions/upload-artifact@v4
         with:
-          name: tennis-lock-alarm-diagnostic-${{ github.run_id }}
+          name: tennis-lock-runtime-diagnostic-${{ github.run_id }}
           path: |
             alarm.json
+            function.json
             lambda.json
-            errors.json
-            invocations.json
-            exact-window.json
-            recent-window.json
-            diagnostic.json
+            tags.json
+            policy.json
+            target-rules.json
+            rule-*.json
+            targets-*.json
+            stack-template.json
+            stack-resources.json
+            deployed-files.txt
+            deployed/
           retention-days: 14
