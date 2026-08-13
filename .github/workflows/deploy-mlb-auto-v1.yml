@@ -37,6 +37,7 @@ jobs:
       - name: Validate MLB Auto implementation
         working-directory: mlb_auto
         env:
+          PYTHONPATH: src
           AWS_EC2_METADATA_DISABLED: 'true'
           AWS_DEFAULT_REGION: us-east-1
         run: |
