@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: mlb-auto-v1-isolated-deploy
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   STACK_NAME: parlay-platform-mlb-auto-prod
@@ -178,6 +178,19 @@ jobs:
           fp() { local s="$1"; if ! aws cloudformation describe-stacks --stack-name "$s" >/dev/null 2>&1; then printf MISSING; return; fi; { aws cloudformation get-template --stack-name "$s" --output json; aws cloudformation list-stack-resources --stack-name "$s" --output json; } | sha256sum | awk '{print $1}'; }
           test "$MLB_BEFORE" = "$(fp parlay-platform-dev)"
           test "$TENNIS_BEFORE" = "$(fp parlay-platform-tennis-ml-prod)"
+      - name: Fail-safe restore autonomous schedules
+        if: ${{ failure() || cancelled() }}
+        run: |
+          set -euo pipefail
+          aws events list-rules --name-prefix "${STACK_NAME}-" --query 'Rules[].Name' --output text \
+            | tr '\t' '\n' \
+            | while read -r rule; do
+                case "$rule" in
+                  *-heartbeat-5m|*-lock-1m|*-settle-30m|*-train-1h|*-repair-5m|*-history-15m)
+                    aws events enable-rule --name "$rule"
+                    ;;
+                esac
+              done
       - name: Capture deployment evidence
         run: |
           set -euo pipefail
