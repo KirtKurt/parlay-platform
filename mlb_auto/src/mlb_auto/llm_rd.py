@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 
 import boto3
 
+from .mantle_client import invoke_anthropic
+
 STATE_KEY = 'llm_rd'
 DEFAULT_MODELS = (
     'amazon.nova-micro-v1:0',
@@ -26,6 +28,11 @@ MAX_FEATURES = int(os.getenv('MLB_AUTO_LLM_MAX_FEATURES', '8'))
 MAX_OUTPUT_TOKENS = int(os.getenv('MLB_AUTO_LLM_MAX_OUTPUT_TOKENS', '900'))
 OPS = {'difference','sum','product','ratio','abs_difference','log1p_abs','sqrt_product','tanh_product'}
 FORBIDDEN = ('label','winner','result','score','settled','completed','postgame','final_','outcome','actual_')
+SYSTEM_TEXT = (
+    'MLB Auto R&D only. Return compact JSON only. Use only supplied point-in-time '
+    'pregame feature names and allowed numeric operations. Never use outcomes, scores, '
+    'postgame data, external actions, executable code, or changes to validation rules.'
+)
 
 
 def _iso():
@@ -111,33 +118,47 @@ def _extract(text):
         raw = raw.strip('`')
         if raw.startswith('json'):
             raw = raw[4:].strip()
-    return json.loads(raw)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        start = raw.find('{')
+        end = raw.rfind('}')
+        if start >= 0 and end > start:
+            return json.loads(raw[start:end + 1])
+        raise
 
 
 def _invoke(prompt, client=None):
     bedrock = client or boto3.client('bedrock-runtime')
     errors = []
-    system = [{
-        'text': 'MLB Auto R&D only. Return compact JSON only. Use only supplied pregame feature names and allowed operations. Never use outcomes, scores, postgame data, external actions, executable code, or changes to validation rules.'
-    }]
+    system = [{'text': SYSTEM_TEXT}]
     messages = [{'role':'user','content':[{'text':prompt}]}]
     for model_id in MODEL_IDS:
         try:
+            if 'anthropic.claude-' in str(model_id):
+                proposal, usage = invoke_anthropic(
+                    str(model_id),
+                    prompt,
+                    max_tokens=max(512, min(8000, MAX_OUTPUT_TOKENS)),
+                    system_prompt=SYSTEM_TEXT,
+                )
+                return proposal, usage, model_id, errors
             response = bedrock.converse(
                 modelId=model_id,
                 system=system,
                 messages=messages,
                 inferenceConfig={
                     'maxTokens': max(300, min(1500, MAX_OUTPUT_TOKENS)),
-                    'temperature': 0.1,
                 },
             )
             parts = (((response.get('output') or {}).get('message') or {}).get('content') or [])
             text = ''.join(str(x.get('text') or '') for x in parts if isinstance(x, dict))
-            return _extract(text), response.get('usage') or {}, model_id, errors
+            usage = dict(response.get('usage') or {})
+            usage['endpoint_family'] = 'bedrock-runtime-converse'
+            return _extract(text), usage, model_id, errors
         except Exception as exc:
-            errors.append(f'{model_id}:{type(exc).__name__}:{str(exc)[:300]}')
-    raise RuntimeError('ALL_BEDROCK_MODELS_FAILED|' + '|'.join(errors))
+            errors.append(f'{model_id}:{type(exc).__name__}:{str(exc)[:800]}')
+    raise RuntimeError('ALL_BEDROCK_ENDPOINTS_FAILED|' + '|'.join(errors))
 
 
 def _state(store):
@@ -213,11 +234,12 @@ def run_research(*, Store, force=False, bedrock_client=None):
         return {
             'ok':True,'action':'LLM_RD','generated':True,'candidate_id':candidate_id,
             'feature_count':len(clean['features']),'llm_model_id':model_id,
+            'endpoint_family':usage.get('endpoint_family'),
             'development_rows':len(development),'untouched_audit_reserve_count':reserve,
             'fallbacks_attempted':len(prior_errors),
         }
     except Exception as exc:
-        error = f'{type(exc).__name__}:{str(exc)[:1200]}'
+        error = f'{type(exc).__name__}:{str(exc)[:1800]}'
         store.put_state(STATE_KEY, {
             'last_run_at':now,'last_run_ok':False,'last_result':'LLM_RD_FAILED',
             'last_error':error,'training_example_count':count,
@@ -264,9 +286,11 @@ def record_training_result(*, Store, result):
 
 def status_payload(*, Store):
     current = _state(Store())
+    usage = dict(current.get('llm_usage') or {})
     return {
-        'enabled':True,'mode':'BEDROCK_LLM_AUTONOMOUS_RD',
+        'enabled':True,'mode':'BEDROCK_MULTI_ENDPOINT_LLM_AUTONOMOUS_RD',
         'model_id':current.get('llm_model_id'),
+        'endpoint_family':usage.get('endpoint_family'),
         'configured_model_ids':current.get('configured_model_ids') or list(MODEL_IDS),
         'last_run_at':current.get('last_run_at'),'last_run_ok':current.get('last_run_ok'),
         'last_result':current.get('last_result'),'last_error':current.get('last_error'),
