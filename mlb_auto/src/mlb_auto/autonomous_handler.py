@@ -13,9 +13,13 @@ from .historical_backfill_v2 import run_historical_backfill
 from .ml import promote_challenger
 from .provider_open import OpenEndedOddsApiClient
 from .storage import Store
+from .threshold_policy import qualifies as _qualifies_threshold
 from .training_integrity import run as _run_training
 
 base.OddsApiClient = OpenEndedOddsApiClient
+base._qualifies_official_pick = lambda champion, win_probability: _qualifies_threshold(
+    champion, win_probability, base.MIN_OFFICIAL_PROB,
+)
 
 
 def _is_period_market(key: str) -> bool:

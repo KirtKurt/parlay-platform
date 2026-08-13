@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 
+from .threshold_policy import attach_learned_threshold, evaluate_model_threshold
+
 
 def evaluate(context, base, discover_challenger, promote_challenger):
     rows, labels = context['rows'], context['labels']
@@ -23,18 +25,30 @@ def evaluate(context, base, discover_challenger, promote_challenger):
         search_rows, search_labels,
         min_train=inner_train, min_validation=inner_validation,
     )
-    challenger = discovered.model
+    challenger, threshold_metrics = attach_learned_threshold(
+        discovered.model,
+        search_rows[-inner_validation:],
+        search_labels[-inner_validation:],
+        base.MIN_OFFICIAL_PROB,
+    )
     incumbent_item = context['store'].get_model('CHAMPION')
     incumbent = base._model_from_item(incumbent_item)
     gate = promote_challenger(
         challenger=challenger, incumbent=incumbent,
         validation_rows=audit_rows, validation_labels=audit_labels,
     )
+    gate = {
+        **dict(gate or {}),
+        'officialPickAudit': evaluate_model_threshold(
+            challenger, audit_rows, audit_labels, base.MIN_OFFICIAL_PROB,
+        ),
+    }
     manifest = {
         **dict(discovered.search_manifest or {}),
         'searchPopulationRows': len(search_rows),
         'untouchedAuditRows': len(audit_rows),
         'validationPolicy': 'nested_chronological_search_plus_untouched_audit_v1',
+        'officialPickThresholdPolicy': threshold_metrics,
     }
     model_id = (
         f'MLB_AUTO_{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}_'
@@ -50,6 +64,9 @@ def evaluate(context, base, discover_challenger, promote_challenger):
         'selected_features': list(discovered.feature_names),
         'discovery_metrics': discovered.metrics,
         'untouched_chronological_audit': True,
+        'official_probability_threshold': threshold_metrics.get('threshold'),
+        'official_threshold_source': threshold_metrics.get('threshold_source'),
+        'expected_value_selection_gate': False,
     }
     return {
         'challenger': challenger, 'incumbent_item': incumbent_item,
