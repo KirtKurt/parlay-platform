@@ -14,6 +14,83 @@ from .storage import Store
 base.OddsApiClient = OpenEndedOddsApiClient
 
 
+def _market_categories(keys: list[str]) -> dict[str, list[str]]:
+    cats = {
+        'featured': [], 'period': [], 'alternate': [], 'team_total': [],
+        'pitcher': [], 'batter': [], 'other': [],
+    }
+    for key in sorted(set(keys)):
+        if key in ('h2h', 'spreads', 'totals'):
+            cats['featured'].append(key)
+        elif key.startswith(('first_', 'innings')):
+            cats['period'].append(key)
+        elif key.startswith('pitcher_'):
+            cats['pitcher'].append(key)
+        elif key.startswith('batter_'):
+            cats['batter'].append(key)
+        elif 'team_totals' in key:
+            cats['team_total'].append(key)
+        elif key.startswith('alternate_') or key.endswith('_alternate'):
+            cats['alternate'].append(key)
+        else:
+            cats['other'].append(key)
+    return cats
+
+
+def discover_market_inventory() -> dict:
+    store = Store()
+    client = OpenEndedOddsApiClient()
+    events = client.events().data or []
+    event_rows = []
+    all_keys: set[str] = set()
+    errors: list[str] = []
+    for event in events:
+        if event.get('sport_key') not in (None, 'baseball_mlb'):
+            continue
+        event_id = str(event.get('id') or '')
+        if not event_id:
+            continue
+        try:
+            payload = client.event_markets(event_id).data
+            keys = client.useful_markets(payload)
+            all_keys.update(keys)
+            event_rows.append({
+                'event_id': event_id,
+                'commence_time': event.get('commence_time'),
+                'home_team': event.get('home_team'),
+                'away_team': event.get('away_team'),
+                'market_keys': keys,
+                'market_key_count': len(keys),
+            })
+        except Exception as exc:
+            errors.append(f'{event_id}:{type(exc).__name__}')
+    keys = sorted(all_keys)
+    categories = _market_categories(keys)
+    state = store.get_state('controller')
+    store.put_state('controller', {
+        **state,
+        'known_market_keys': keys,
+        'known_market_key_count': len(keys),
+        'odds_regions': client.regions,
+        'last_market_inventory_at': base._iso(),
+        'market_inventory_event_count': len(event_rows),
+        'market_inventory_error_count': len(errors),
+        'market_category_counts': {k: len(v) for k, v in categories.items()},
+    })
+    return {
+        'ok': len(event_rows) > 0,
+        'action': 'MARKET_INVENTORY',
+        'provider_sport_key': 'baseball_mlb',
+        'regions': client.regions,
+        'event_count': len(event_rows),
+        'market_key_count': len(keys),
+        'market_keys': keys,
+        'categories': categories,
+        'events': event_rows,
+        'errors': errors,
+    }
+
+
 def autonomous_train() -> dict:
     store = Store()
     examples = store.query_training_examples(limit=5000)
@@ -71,7 +148,17 @@ def autonomous_train() -> dict:
 
 
 def autonomous_backfill() -> dict:
+    inventory = discover_market_inventory()
     result = run_historical_backfill()
+    result['market_inventory'] = {
+        'ok': inventory.get('ok'),
+        'regions': inventory.get('regions'),
+        'event_count': inventory.get('event_count'),
+        'market_key_count': inventory.get('market_key_count'),
+        'market_keys': inventory.get('market_keys'),
+        'categories': inventory.get('categories'),
+        'errors': inventory.get('errors'),
+    }
     if int(result.get('training_examples') or 0) >= base.MIN_TRAIN:
         result['training'] = autonomous_train()
     else:
@@ -89,6 +176,8 @@ def handler(event, context):
     action = str(event.get('action') or event.get('detail-type') or '').upper()
     if action in ('TRAIN', 'MLB_AUTO_TRAIN'):
         return autonomous_train()
+    if action in ('MARKET_INVENTORY', 'MLB_AUTO_MARKET_INVENTORY'):
+        return discover_market_inventory()
     if action in ('HISTORICAL_BACKFILL', 'MLB_AUTO_HISTORICAL_BACKFILL'):
         return autonomous_backfill()
     if action in ('REPAIR', 'MLB_AUTO_REPAIR'):
