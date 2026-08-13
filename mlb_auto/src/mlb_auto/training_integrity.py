@@ -9,7 +9,12 @@ from .training_search import evaluate
 def run(*, Store, base, discover_challenger, promote_challenger) -> dict:
     lease_store = Store()
     token = None
-    if hasattr(lease_store, 'state'):
+    state_table = getattr(lease_store, 'state', None)
+    lease_capable = (
+        callable(getattr(state_table, 'update_item', None))
+        and callable(getattr(state_table, 'delete_item', None))
+    )
+    if lease_capable:
         token = acquire_named_lease(lease_store, 'training', TRAINING_LEASE_SECONDS)
         if token is None:
             lease_store.put_state('controller', {
