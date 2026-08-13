@@ -1,0 +1,237 @@
+name: Tennis Hourly Production Report
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Initial report was issued at 18:47 ET; continue at the same minute every hour.
+    - cron: '47 * * * *'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: tennis-hourly-production-report
+  cancel-in-progress: false
+
+env:
+  REPORT_ISSUE: '515'
+  TENNIS_STACK: parlay-platform-tennis-learning
+  TENNIS_LOCK_FUNCTION: parlay-platform-tennis-ml-prod-tennis-lock
+  TENNIS_LOCK_ALARM: parlay-platform-tennis-ml-prod-tennis-lock-errors
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Query live Tennis production state
+        id: report
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -u
+          rm -f status.json stack.json alarm.json errors.json invocations.json duration.json throttles.json query_errors.txt
+          touch query_errors.txt
+
+          if ! aws cloudformation describe-stacks \
+            --stack-name "$TENNIS_STACK" --region "$REGION" \
+            --output json > stack.json 2>stack.err; then
+            echo "stack_query: $(cat stack.err)" >> query_errors.txt
+            printf '{"Stacks":[]}' > stack.json
+          fi
+
+          status_endpoint=$(python - <<'PY'
+          import json
+          try:
+              stacks=json.load(open('stack.json')).get('Stacks') or []
+              outputs=(stacks[0].get('Outputs') or []) if stacks else []
+              print(next((str(x.get('OutputValue') or '') for x in outputs if x.get('OutputKey')=='TennisAutonomyStatusApi'), ''))
+          except Exception:
+              print('')
+          PY
+          )
+
+          if [ -n "$status_endpoint" ]; then
+            if ! curl -fsS --retry 3 --retry-all-errors --retry-delay 5 --max-time 90 \
+              "$status_endpoint" -o status.json 2>status.err; then
+              echo "status_query: $(cat status.err)" >> query_errors.txt
+              printf '{}' > status.json
+            fi
+          else
+            echo 'status_query: TennisAutonomyStatusApi output missing' >> query_errors.txt
+            printf '{}' > status.json
+          fi
+
+          if ! aws cloudwatch describe-alarms \
+            --alarm-names "$TENNIS_LOCK_ALARM" --region "$REGION" \
+            --output json > alarm.json 2>alarm.err; then
+            echo "alarm_query: $(cat alarm.err)" >> query_errors.txt
+            printf '{"MetricAlarms":[]}' > alarm.json
+          fi
+
+          end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          start=$(date -u -d '65 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          metric() {
+            local name="$1" stat="$2" output="$3"
+            if ! aws cloudwatch get-metric-statistics \
+              --namespace AWS/Lambda --metric-name "$name" \
+              --dimensions Name=FunctionName,Value="$TENNIS_LOCK_FUNCTION" \
+              --statistics "$stat" --period 300 \
+              --start-time "$start" --end-time "$end" \
+              --region "$REGION" --output json > "$output" 2>metric.err; then
+              echo "metric_${name}: $(cat metric.err)" >> query_errors.txt
+              printf '{"Datapoints":[]}' > "$output"
+            fi
+          }
+          metric Errors Sum errors.json
+          metric Invocations Sum invocations.json
+          metric Duration Maximum duration.json
+          metric Throttles Sum throttles.json
+
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          ET=ZoneInfo('America/New_York')
+
+          def load(path, default):
+              try:
+                  return json.loads(Path(path).read_text())
+              except Exception:
+                  return default
+
+          def parse_time(value):
+              if not value:
+                  return None
+              try:
+                  dt=datetime.fromisoformat(str(value).replace('Z','+00:00'))
+                  if dt.tzinfo is None:
+                      dt=dt.replace(tzinfo=timezone.utc)
+                  return dt.astimezone(timezone.utc)
+              except Exception:
+                  return None
+
+          def metric_sum(path):
+              data=load(path, {})
+              return sum(float(x.get('Sum') or 0) for x in (data.get('Datapoints') or []))
+
+          def metric_max(path):
+              data=load(path, {})
+              vals=[float(x.get('Maximum') or 0) for x in (data.get('Datapoints') or [])]
+              return max(vals) if vals else None
+
+          now=datetime.now(timezone.utc)
+          status=load('status.json', {})
+          stack=load('stack.json', {})
+          alarm=load('alarm.json', {})
+          query_errors=[x.strip() for x in Path('query_errors.txt').read_text().splitlines() if x.strip()]
+
+          stacks=stack.get('Stacks') or []
+          stack_status=(stacks[0].get('StackStatus') if stacks else None)
+          alarms=alarm.get('MetricAlarms') or []
+          alarm_row=alarms[0] if alarms else {}
+          alarm_state=alarm_row.get('StateValue') or 'UNKNOWN'
+          alarm_reason=alarm_row.get('StateReason')
+          alarm_updated=parse_time(alarm_row.get('StateUpdatedTimestamp'))
+
+          last_cycle=parse_time(status.get('last_cycle_at'))
+          age_minutes=(now-last_cycle).total_seconds()/60 if last_cycle else None
+          failures=int(status.get('consecutive_failures') or 0)
+          authority=str(status.get('authority') or 'UNKNOWN')
+          last_error=status.get('last_error')
+          last_warning=status.get('last_warning')
+          training=int(status.get('training_samples') or 0)
+          audits=int(status.get('live_audit_count') or 0)
+          accuracy=(float(status['live_accuracy']) if status.get('live_accuracy') is not None else None)
+          brier=(float(status['live_brier']) if status.get('live_brier') is not None else None)
+          automatic=bool(status.get('automatic_prediction_allowed', False))
+
+          gates={
+              'training samples ≥100': training >= 100,
+              'live audits ≥30': audits >= 30,
+              'live accuracy ≥55%': accuracy is not None and accuracy >= .55,
+              'Brier ≤0.25': brier is not None and brier <= .25,
+              'circuit breaker clear': failures < 3 and authority != 'DEGRADED',
+          }
+          cycle_fresh=age_minutes is not None and age_minutes <= 25
+          healthy=all((
+              not query_errors,
+              stack_status == 'UPDATE_COMPLETE',
+              cycle_fresh,
+              failures < 3,
+              authority != 'DEGRADED',
+              not last_error,
+              alarm_state == 'OK',
+          ))
+
+          errors=metric_sum('errors.json')
+          invocations=metric_sum('invocations.json')
+          throttles=metric_sum('throttles.json')
+          max_duration=metric_max('duration.json')
+          checked=now.astimezone(ET).strftime('%Y-%m-%d %I:%M:%S %p ET')
+          cycle_text=last_cycle.astimezone(ET).strftime('%Y-%m-%d %I:%M:%S %p ET') if last_cycle else 'unavailable'
+          alarm_time=alarm_updated.astimezone(ET).strftime('%Y-%m-%d %I:%M:%S %p ET') if alarm_updated else 'unavailable'
+          accuracy_text=f'{accuracy:.4%}' if accuracy is not None else 'unavailable'
+          brier_text=f'{brier:.8f}' if brier is not None else 'unavailable'
+          duration_text=f'{max_duration/1000:.3f} seconds' if max_duration is not None else 'no datapoint'
+          gate_text='; '.join(f'{name}: {"PASS" if passed else "FAIL"}' for name,passed in gates.items())
+
+          lines=[
+              f'## Tennis hourly production report — {checked}',
+              '',
+              f'**Overall status: {"HEALTHY" if healthy else "ATTENTION REQUIRED"}**',
+              '',
+              f'- Authority: `{authority}`',
+              f'- Automatic prediction: `{"ALLOWED" if automatic else "BLOCKED"}`',
+              f'- Model version: `{status.get("model_version")}`',
+              f'- Training samples: **{training}**',
+              f'- Live audit count: **{audits}**',
+              f'- Live accuracy: **{accuracy_text}**',
+              f'- Live Brier score: **{brier_text}**',
+              f'- Last autonomous cycle: **{cycle_text}** ({age_minutes:.2f} minutes old)' if age_minutes is not None else '- Last autonomous cycle: unavailable',
+              f'- Consecutive failures: **{failures}**',
+              f'- Stack status: `{stack_status or "UNKNOWN"}`',
+              f'- Lock-error alarm: `{alarm_state}` (last state change: {alarm_time})',
+              f'- Lock Lambda, trailing 65 minutes: **{int(invocations)} invocations, {int(errors)} errors, {int(throttles)} throttles**',
+              f'- Maximum lock duration, trailing 65 minutes: **{duration_text}**',
+              f'- Promotion gates: {gate_text}',
+              f'- Last error: `{last_error or "none"}`',
+              f'- Last warning: `{last_warning or "none"}`',
+          ]
+          if alarm_state != 'OK' and alarm_reason:
+              lines.append(f'- Alarm reason: `{str(alarm_reason)[:1000]}`')
+          if query_errors:
+              lines.append('- Report-query errors: `' + ' | '.join(query_errors)[:1500] + '`')
+          lines.extend([
+              '',
+              '_Reporting-only workflow; no Tennis model, runtime, or other algorithm was modified._',
+          ])
+          Path('report.md').write_text('\n'.join(lines)+'\n')
+          print(Path('report.md').read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as handle:
+              handle.write(f'healthy={"true" if healthy else "false"}\n')
+          PY
+
+      - name: Publish report to monitoring issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "$REPORT_ISSUE" --repo "$GITHUB_REPOSITORY" --body-file report.md
+
+      - name: Flag unhealthy Tennis state
+        if: steps.report.outputs.healthy != 'true'
+        run: |
+          echo 'Tennis hourly report detected an unhealthy or unverifiable production state.'
+          exit 1
