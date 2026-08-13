@@ -4,6 +4,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Iterable
 from urllib.error import HTTPError
 from urllib.parse import urlencode
@@ -58,12 +59,23 @@ def _http_error(exc: HTTPError) -> OddsApiHttpError:
     return OddsApiHttpError(exc.code, code, message)
 
 
+def _historical_timestamp(value: str) -> str:
+    """Normalize Odds API historical timestamps to strict UTC RFC3339 with Z."""
+    raw = str(value or '').strip()
+    dt = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    dt = dt.astimezone(timezone.utc)
+    # The historical API rejects +00:00 in this account path; use canonical Z.
+    return dt.isoformat(timespec='seconds').replace('+00:00', 'Z')
+
+
 class OddsApiClient:
-    def __init__(self, api_key: str | None = None, regions: str = 'us,us2', timeout: int = 30):
+    def __init__(self, api_key: str | None = None, regions: str | None = None, timeout: int = 30):
         self.api_key = api_key or os.getenv('MLB_AUTO_ODDS_API_KEY') or os.getenv('ODDS_API_KEY')
         if not self.api_key:
             raise RuntimeError('MLB_AUTO_ODDS_API_KEY_REQUIRED')
-        self.regions = regions
+        self.regions = regions or os.getenv('MLB_AUTO_ODDS_REGIONS') or 'us,us2'
         self.timeout = timeout
 
     def _get(self, path: str, **params) -> ApiResponse:
@@ -79,7 +91,6 @@ class OddsApiClient:
                     return ApiResponse(payload, _int_header(resp.headers, 'x-requests-remaining'), _int_header(resp.headers, 'x-requests-used'), _int_header(resp.headers, 'x-requests-last'))
             except HTTPError as exc:
                 err = _http_error(exc)
-                # Deterministic client/account errors do not improve with exponential retries.
                 if 400 <= err.status < 500 and err.status != 429:
                     raise err from exc
                 last = err
@@ -122,7 +133,7 @@ class OddsApiClient:
     def historical_featured_odds(self, snapshot_at_iso: str) -> ApiResponse:
         return self._get(
             f'/historical/sports/{SPORT}/odds', regions=self.regions, markets=','.join(FEATURED),
-            oddsFormat='american', dateFormat='iso', date=snapshot_at_iso,
+            oddsFormat='american', dateFormat='iso', date=_historical_timestamp(snapshot_at_iso),
             includeLinks='true', includeSids='true', includeBetLimits='true', includeRotationNumbers='true',
         )
 
@@ -132,8 +143,9 @@ class OddsApiClient:
             return ApiResponse({}, None, None, 0)
         return self._get(
             f'/historical/sports/{SPORT}/events/{event_id}/odds', regions=self.regions,
-            markets=','.join(sorted(set(markets))), oddsFormat='american', dateFormat='iso', date=snapshot_at_iso,
-            includeLinks='true', includeSids='true', includeBetLimits='true', includeMultipliers='true',
+            markets=','.join(sorted(set(markets))), oddsFormat='american', dateFormat='iso',
+            date=_historical_timestamp(snapshot_at_iso), includeLinks='true', includeSids='true',
+            includeBetLimits='true', includeMultipliers='true',
         )
 
     @staticmethod
