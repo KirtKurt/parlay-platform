@@ -66,6 +66,38 @@ jobs:
           aws sts get-caller-identity
       - name: Build isolated artifact
         run: sam build --no-cached --template-file soccer-auto-template.yaml
+      - name: Recover an unsuccessful first creation
+        run: |
+          set -euo pipefail
+          stack_name=parlay-platform-soccer-auto
+          region='${{ secrets.AWS_REGION }}'
+          stack_status=$(aws cloudformation describe-stacks \
+            --stack-name "$stack_name" \
+            --region "$region" \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || true)
+
+          if [[ "$stack_status" == "ROLLBACK_COMPLETE" ]]; then
+            aws cloudformation list-stack-resources \
+              --stack-name "$stack_name" \
+              --region "$region" \
+              --query 'StackResourceSummaries[?ResourceStatus==`DELETE_SKIPPED`].[LogicalResourceId,PhysicalResourceId,ResourceType]' \
+              --output json | tee /tmp/soccer-auto-retained-first-attempt.json
+            {
+              echo '### Retained resources from unsuccessful first creation'
+              echo '```json'
+              cat /tmp/soccer-auto-retained-first-attempt.json
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            aws cloudformation delete-stack --stack-name "$stack_name" --region "$region"
+            aws cloudformation wait stack-delete-complete --stack-name "$stack_name" --region "$region"
+          elif [[ "$stack_status" == *"_IN_PROGRESS" ]]; then
+            echo "::error::Soccer stack is busy in state $stack_status"
+            exit 1
+          elif [[ "$stack_status" == *"_FAILED" ]]; then
+            echo "::error::Soccer stack requires operator review in state $stack_status"
+            exit 1
+          fi
       - name: Deploy isolated soccer_auto stack
         run: |
           set -euo pipefail

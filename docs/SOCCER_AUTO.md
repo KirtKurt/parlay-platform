@@ -145,6 +145,22 @@ foundation-model resources.
 - The new deployment workflow is manual-only during verification. Nothing in
   this build deploys or changes production automatically.
 
+## Deployment recovery
+
+The deploy identity must be allowed to provision every isolated resource in
+this stack. In particular, the initial account policy must include the full
+CloudFormation lifecycle for the two soccer-prefixed SQS queues and the
+soccer-prefixed SNS alarm topic; omitting queue creation or topic readback
+causes stack creation to fail before runtime activation.
+
+If an initial creation reaches `ROLLBACK_COMPLETE`, the next soccer deployment
+records the exact `DELETE_SKIPPED` physical IDs in its GitHub Actions summary,
+deletes only the failed `parlay-platform-soccer-auto` stack record, and then
+recreates it. Durable tables, buckets, and the copied Odds API secret use
+`RetainExceptOnCreate`: empty resources are removed on a failed initial create,
+while established production data remains retained on a later stack deletion
+or replacement.
+
 ## Read API
 
 - `GET /v1/soccer-auto/status`

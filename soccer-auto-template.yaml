@@ -69,7 +69,7 @@ Globals:
 Resources:
   SoccerOddsApiSecret:
     Type: AWS::SecretsManager::Secret
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       Description: Isolated storage of the existing all-sports Odds API credential for soccer_auto
@@ -77,7 +77,7 @@ Resources:
 
   SoccerRawBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       VersioningConfiguration: {Status: Enabled}
@@ -92,7 +92,7 @@ Resources:
 
   SoccerArtifactBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       VersioningConfiguration: {Status: Enabled}
@@ -107,7 +107,7 @@ Resources:
 
   SoccerRegistryTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BillingMode: PAY_PER_REQUEST
@@ -122,7 +122,7 @@ Resources:
 
   SoccerEventsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BillingMode: PAY_PER_REQUEST
@@ -145,7 +145,7 @@ Resources:
 
   SoccerSnapshotSlotsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BillingMode: PAY_PER_REQUEST
@@ -160,7 +160,7 @@ Resources:
 
   SoccerLocksTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BillingMode: PAY_PER_REQUEST
@@ -175,7 +175,7 @@ Resources:
 
   SoccerSettlementsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BillingMode: PAY_PER_REQUEST
@@ -190,7 +190,7 @@ Resources:
 
   SoccerPredictionsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BillingMode: PAY_PER_REQUEST
@@ -220,7 +220,7 @@ Resources:
 
   SoccerModelsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BillingMode: PAY_PER_REQUEST
@@ -235,7 +235,7 @@ Resources:
 
   SoccerOpsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BillingMode: PAY_PER_REQUEST

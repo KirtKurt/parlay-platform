@@ -64,6 +64,41 @@ class IsolationTests(unittest.TestCase):
                 used.update(row["AttributeName"] for row in index.get("KeySchema", []))
             self.assertEqual(defined, used, f"{name} has invalid DynamoDB attribute definitions")
 
+    def test_durable_resources_survive_established_stack_deletion_not_create_rollback(self) -> None:
+        template = yaml.load(
+            (ROOT / "soccer-auto-template.yaml").read_text(),
+            Loader=CloudFormationLoader,
+        )
+        durable_types = {
+            "AWS::DynamoDB::Table",
+            "AWS::S3::Bucket",
+            "AWS::SecretsManager::Secret",
+        }
+        durable = {
+            name: resource
+            for name, resource in template["Resources"].items()
+            if resource.get("Type") in durable_types
+        }
+        self.assertEqual(len(durable), 11)
+        for name, resource in durable.items():
+            self.assertEqual(
+                resource.get("DeletionPolicy"),
+                "RetainExceptOnCreate",
+                f"{name} can orphan empty state after an initial create rollback",
+            )
+            self.assertEqual(resource.get("UpdateReplacePolicy"), "Retain")
+
+    def test_deploy_workflow_recovers_only_the_exact_failed_soccer_stack(self) -> None:
+        workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
+        self.assertIn('stack_name=parlay-platform-soccer-auto', workflow)
+        self.assertIn('stack_status" == "ROLLBACK_COMPLETE', workflow)
+        self.assertIn("list-stack-resources", workflow)
+        self.assertIn("ResourceStatus==`DELETE_SKIPPED`", workflow)
+        self.assertIn("wait stack-delete-complete", workflow)
+        self.assertNotIn("delete-table", workflow)
+        self.assertNotIn("delete-bucket", workflow)
+        self.assertNotIn("delete-secret", workflow)
+
     def test_future_soccer_only_paths_cannot_trigger_main_deploy(self) -> None:
         workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
         for path in (
