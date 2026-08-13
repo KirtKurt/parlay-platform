@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from .odds_api import OddsApiClient
@@ -10,7 +11,13 @@ class OpenEndedOddsApiClient(OddsApiClient):
 
     The immutable audit layer stores raw payloads. Training eligibility is decided later
     by pregame/leakage-safe feature engineering, not by a hard-coded market allowlist.
+    MLB Auto intentionally uses every configured provider region; there is no cost-based
+    throttling or market suppression.
     """
+
+    def __init__(self, api_key: str | None = None, regions: str | None = None, timeout: int = 30):
+        configured = regions or os.getenv('MLB_AUTO_ODDS_REGIONS') or 'us,us2,uk,eu,au'
+        super().__init__(api_key=api_key, regions=configured, timeout=timeout)
 
     @staticmethod
     def useful_markets(market_payload: Any) -> list[str]:
