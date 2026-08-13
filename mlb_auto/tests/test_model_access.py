@@ -46,6 +46,21 @@ def test_runtime_does_not_receive_account_enrollment_permissions():
     assert 'aws-marketplace:Unsubscribe' not in template
 
 
+def test_provider_unavailability_classifier_is_narrow():
+    assert llm_rd._retryable_provider_unavailable(RuntimeError(
+        'ThrottlingException: Too many tokens per day'
+    ))
+    assert llm_rd._retryable_provider_unavailable(RuntimeError(
+        'ServiceUnavailableException: temporarily unavailable'
+    ))
+    assert not llm_rd._retryable_provider_unavailable(RuntimeError(
+        'ValidationException: model ID requires an inference profile'
+    ))
+    assert not llm_rd._retryable_provider_unavailable(RuntimeError(
+        'HTTP_404: model not found'
+    ))
+
+
 class FakeStore:
     state = {}
 
