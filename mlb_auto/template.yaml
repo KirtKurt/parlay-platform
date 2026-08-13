@@ -37,11 +37,12 @@ Globals:
         MLB_AUTO_LOCK_MINUTES: '45'
         MLB_AUTO_MIN_OFFICIAL_PROBABILITY: '0.58'
         MLB_AUTO_HISTORICAL_DAYS_PER_RUN: '1'
-        MLB_AUTO_LLM_MODEL_IDS: 'us.anthropic.claude-opus-4-8,us.anthropic.claude-opus-4-7,us.anthropic.claude-opus-4-6-v1,us.anthropic.claude-sonnet-4-6,us.anthropic.claude-sonnet-4-5-20250929-v1:0,amazon.nova-premier-v1:0,amazon.nova-pro-v1:0,us.amazon.nova-2-lite-v1:0,amazon.nova-lite-v1:0,amazon.nova-micro-v1:0'
+        MLB_AUTO_LLM_MODEL_IDS: 'openai.gpt-5.6-sol,anthropic.claude-opus-4-8,anthropic.claude-opus-4-7,anthropic.claude-opus-4-6-v1,anthropic.claude-sonnet-4-6-v1,amazon.nova-premier-v1:0,amazon.nova-pro-v1:0,us.amazon.nova-2-lite-v1:0,amazon.nova-lite-v1:0,amazon.nova-micro-v1:0'
         MLB_AUTO_LLM_MIN_EXAMPLES: '75'
         MLB_AUTO_LLM_INTERVAL_SECONDS: '14400'
         MLB_AUTO_LLM_MAX_FEATURES: '8'
         MLB_AUTO_LLM_MAX_OUTPUT_TOKENS: '2200'
+        MLB_AUTO_LLM_HTTP_TIMEOUT_SECONDS: '120'
 
 Resources:
   StateTable:
@@ -64,7 +65,7 @@ Resources:
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - {AttributeName: PK, AttributeType: S}
-        - {AttributeName: SK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: RANGE}
       KeySchema:
         - {AttributeName: PK, KeyType: HASH}
         - {AttributeName: SK, KeyType: RANGE}
@@ -138,7 +139,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: src/
-      Handler: mlb_auto.autonomous_handler.handler
+      Handler: mlb_auto.autonomous_handler_v2.handler
       Policies:
         - DynamoDBCrudPolicy: {TableName: !Ref StateTable}
         - DynamoDBCrudPolicy: {TableName: !Ref SnapshotsTable}
@@ -148,8 +149,33 @@ Resources:
         - DynamoDBCrudPolicy: {TableName: !Ref ModelsTable}
         - S3CrudPolicy: {BucketName: !Ref ArchiveBucket}
         - Statement:
-            - Effect: Allow
-              Action: [bedrock:InvokeModel]
+            - Sid: InvokeBedrockRuntime
+              Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource: '*'
+            - Sid: UseBedrockShortTermBearerTokens
+              Effect: Allow
+              Action:
+                - bedrock:CallWithBearerToken
+                - bedrock-mantle:CallWithBearerToken
+              Resource: '*'
+            - Sid: SubscribeSelectedAnthropicModels
+              Effect: Allow
+              Action:
+                - aws-marketplace:Subscribe
+              Resource: '*'
+              Condition:
+                StringEquals:
+                  'aws-marketplace:ProductId':
+                    - prod-bk5rjg4eo2pke
+                    - prod-d2ik6zgct5hxi
+            - Sid: ViewAndMaintainMarketplaceSubscriptions
+              Effect: Allow
+              Action:
+                - aws-marketplace:ViewSubscriptions
+                - aws-marketplace:Unsubscribe
               Resource: '*'
       Events:
         StatusApi:
