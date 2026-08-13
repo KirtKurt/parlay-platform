@@ -1,0 +1,191 @@
+name: Cancel In-Flight MLB V7-V10 Runs
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cancel-mlb-v7-v10-inflight-now.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: cancel-mlb-v7-v10-inflight
+  cancel-in-progress: false
+
+env:
+  PROOF_PATH: runtime_reports/mlb_v7_v10_inflight_cancel_proof_latest.json
+
+jobs:
+  cancel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cancel queued and running MLB V7-V10 workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import time
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          current_run = int(os.environ['GITHUB_RUN_ID'])
+          proof_path = Path(os.environ['PROOF_PATH'])
+          target = {
+              'mlb-odds-pattern-v7-deploy.yml',
+              'mlb-v7-learning-integration-ci.yml',
+              'mlb-v7-settled-horizon-resume-deploy.yml',
+              'mlb-v7-settled-horizon-resume-proof-publish.yml',
+              'mlb-v7-v10-stall-recovery-bootstrap.yml',
+              'mlb-v7-v8-today-test-diagnostic-once.yml',
+              'mlb-v7-v8-today-test-once.yml',
+              'mlb-historical-v7-recovery.yml',
+              'mlb-r7-selection-capture-current-state.yml',
+              'mlb-r7-selection-capture-repair.yml',
+              'v7-v10-stall-fix-migration.yml',
+              'mlb-odds-market-v8-deploy.yml',
+              'mlb-odds-v8-shadow-ci.yml',
+              'mlb-odds-v8-shadow-deploy.yml',
+              'mlb-historical-surgical-recovery-v8.yml',
+              'mlb-historical-context-backfill.yml',
+              'mlb-v8-autonomous-controller.yml',
+              'mlb-v8-context-acceleration.yml',
+              'mlb-v8-first-five-backfill-plan.yml',
+              'mlb-v8-fundamentals-ci.yml',
+              'mlb-v8-fundamentals-deploy.yml',
+              'mlb-v8-historical-context-backfill.yml',
+              'mlb-v8-historical-first-five-probe-once.yml',
+              'mlb-v8-hourly-status.yml',
+              'mlb-v8-incremental-range-extension-deploy.yml',
+              'mlb-v8-incremental-range-extension-validation.yml',
+              'mlb-v8-latest-report-integrity.yml',
+              'mlb-v8-model-runtime-ci.yml',
+              'mlb-v8-observational-audit.yml',
+              'mlb-v8-range-extension-live-proof-once.yml',
+              'mlb-v8-repeat-runtime-proof.yml',
+              'mlb-v8-selection-guard-ci.yml',
+              'mlb-v8-shadow-realtime-72.yml',
+              'mlb-v8-shadow-recovery-validate.yml',
+              'mlb-v8-weather-runtime-repair.yml',
+              'mlb-supervised-shadow-v2-recurring.yml',
+              'mlb-historical-supervised-v9-shadow.yml',
+              'mlb-supervised-v9-install-once.yml',
+              'mlb-historical-direct-lambda-recovery-v9.yml',
+              'mlb-v9-event-id-direct-recovery-once.yml',
+              'mlb-v9-event-id-direct-recovery-trigger-once.yml',
+              'mlb-v9-event-id-install-once.yml',
+              'mlb-v9-pointer-reconcile-probe-once.yml',
+              'mlb-v9-r5-activation-proof-once.yml',
+              'mlb-v9-r5-activation-proof-retry-once.yml',
+              'mlb-v9-r5-cutover-repair-once.yml',
+              'mlb-v9-r5-source-publish-retry-once.yml',
+              'mlb-v9-trainer-diagnostic-once.yml',
+              'mlb-v9-trainer-status-probe-once.yml',
+              'mlb-v10-autonomous-signal-discovery.yml',
+              'mlb-v10-material-handoff.yml',
+              'mlb-historical-recovery-v10.yml',
+              'v10-pr-validation.yml',
+          }
+
+          def gh_json(*args, check=True):
+              proc = subprocess.run(['gh', *args], text=True, capture_output=True)
+              if check and proc.returncode:
+                  raise RuntimeError(proc.stderr)
+              if proc.returncode or not proc.stdout.strip():
+                  return None
+              return json.loads(proc.stdout)
+
+          candidates = {}
+          for status in ('in_progress', 'queued', 'waiting', 'pending', 'requested'):
+              data = gh_json('api', '--method', 'GET', f'repos/{repo}/actions/runs', '-f', f'status={status}', '-f', 'per_page=100') or {}
+              for run in data.get('workflow_runs') or []:
+                  path = str(run.get('path') or '').split('/')[-1]
+                  run_id = int(run.get('id') or 0)
+                  if run_id and run_id != current_run and path in target:
+                      candidates[run_id] = {
+                          'runId': run_id,
+                          'workflow': path,
+                          'name': run.get('name'),
+                          'initialStatus': run.get('status'),
+                          'createdAt': run.get('created_at'),
+                      }
+
+          for run_id, item in candidates.items():
+              proc = subprocess.run(['gh', 'api', '--method', 'POST', f'repos/{repo}/actions/runs/{run_id}/cancel'], text=True, capture_output=True)
+              item['cancelRequestReturnCode'] = proc.returncode
+              item['cancelRequestError'] = proc.stderr.strip() or None
+
+          remaining = []
+          for _ in range(15):
+              remaining = []
+              for run_id, item in candidates.items():
+                  current = gh_json('api', f'repos/{repo}/actions/runs/{run_id}', check=False) or {}
+                  item['finalStatus'] = current.get('status')
+                  item['finalConclusion'] = current.get('conclusion')
+                  if current.get('status') != 'completed':
+                      remaining.append(run_id)
+              if not remaining:
+                  break
+              time.sleep(2)
+
+          proof = {
+              'proofType': 'MLB_V7_V10_INFLIGHT_CANCELLATION',
+              'version': 'MLB-V7-V10-INFLIGHT-CANCEL-v1',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'sourceSha': os.environ.get('GITHUB_SHA'),
+              'runId': str(current_run),
+              'ok': not remaining,
+              'status': 'NO_INFLIGHT_V7_V10_RUNS' if not remaining else 'INFLIGHT_CANCELLATION_INCOMPLETE',
+              'targetedRuns': list(candidates.values()),
+              'remainingRunIds': remaining,
+              'preservedSystems': ['MLB_AUTO', 'TENNIS', 'SOCCER'],
+          }
+          proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + '\n')
+          if remaining:
+              raise SystemExit(json.dumps(proof, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload cancellation proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v7-v10-inflight-cancel-${{ github.run_id }}
+          path: runtime_reports/mlb_v7_v10_inflight_cancel_proof_latest.json
+          retention-days: 90
+
+      - name: Publish durable cancellation proof
+        run: |
+          set -euo pipefail
+          cp "$PROOF_PATH" /tmp/mlb-v7-v10-inflight-cancel-proof.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-v7-v10-inflight-cancel-proof origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb-v7-v10-inflight-cancel-proof.json "$PROOF_PATH"
+            git add "$PROOF_PATH"
+            git diff --cached --quiet && break
+            git commit -m 'Publish MLB V7-V10 in-flight cancellation proof [skip ci]'
+            git push origin HEAD:main && break
+            sleep $((attempt * 3))
+          done
+
+      - name: Disable cancellation workflow
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/cancel-mlb-v7-v10-inflight-now.yml/disable"
