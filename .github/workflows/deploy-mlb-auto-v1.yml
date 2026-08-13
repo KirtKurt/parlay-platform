@@ -71,21 +71,37 @@ jobs:
         run: |
           set -euo pipefail
           sam deploy --template-file .aws-sam/build/template.yaml --stack-name "$STACK_NAME" --capabilities CAPABILITY_IAM --resolve-s3 --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}" "ScheduleState=DISABLED" "DeployGitSha=${GITHUB_SHA}"
-      - name: Live provider, all-region market, historical, and runtime proof
+      - name: Live provider, ingest, all-region historical, and runtime proof
         run: |
           set -euo pipefail
           FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
-          aws lambda invoke --cli-read-timeout 180 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_LIVE_PROVIDER_PROOF"}' provider.json >/dev/null
-          aws lambda invoke --cli-read-timeout 240 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_MARKET_INVENTORY"}' market_inventory.json >/dev/null
-          aws lambda invoke --cli-read-timeout 600 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_HISTORICAL_BACKFILL","max_games_per_run":4}' history.json >/dev/null
-          aws lambda invoke --cli-read-timeout 120 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"STATUS"}' status.json >/dev/null
+          invoke_retry() {
+            local timeout="$1" payload="$2" output="$3"
+            local attempt
+            for attempt in $(seq 1 15); do
+              rm -f "$output"
+              if aws lambda invoke --cli-read-timeout "$timeout" --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload "$payload" "$output" >/dev/null 2>invoke.err; then
+                return 0
+              fi
+              cat invoke.err >&2 || true
+              sleep $((attempt < 6 ? attempt * 5 : 30))
+            done
+            return 1
+          }
+          invoke_retry 180 '{"action":"MLB_AUTO_LIVE_PROVIDER_PROOF"}' provider.json
+          invoke_retry 240 '{"action":"MLB_AUTO_MARKET_INVENTORY"}' market_inventory.json
+          invoke_retry 600 '{"action":"MLB_AUTO_HEARTBEAT"}' heartbeat.json
+          invoke_retry 600 '{"action":"MLB_AUTO_HISTORICAL_BACKFILL","max_games_per_run":4}' history.json
+          invoke_retry 120 '{"action":"STATUS"}' status.json
           echo '--- provider ---'; cat provider.json
           echo '--- market inventory ---'; cat market_inventory.json
+          echo '--- heartbeat/ingest ---'; cat heartbeat.json
           echo '--- historical batch ---'; cat history.json
           echo '--- status ---'; cat status.json
           python - <<'PY'
           import json
-          p=json.load(open('provider.json')); m=json.load(open('market_inventory.json')); h=json.load(open('history.json')); s=json.load(open('status.json'))
+          p=json.load(open('provider.json')); m=json.load(open('market_inventory.json')); b=json.load(open('heartbeat.json')); h=json.load(open('history.json')); s=json.load(open('status.json'))
+          c=s.get('controller') or {}
           assert p.get('ok') is True and p.get('action')=='LIVE_PROVIDER_PROOF', p
           assert p.get('provider_sport_key')=='baseball_mlb', p
           assert set(str(p.get('regions') or '').split(',')) == {'us','us2','uk','eu','au'}, p
@@ -96,6 +112,8 @@ jobs:
           assert set(str(m.get('regions') or '').split(',')) == {'us','us2','uk','eu','au'}, m
           assert int(m.get('event_count') or 0)>0 and int(m.get('market_key_count') or 0)>0, m
           assert isinstance(m.get('market_keys'), list) and len(m['market_keys'])==int(m['market_key_count']), m
+          assert b.get('ok') is True and b.get('action') in {'INGEST','HEARTBEAT_ONLY','INGEST_ALREADY_RUNNING'}, b
+          assert b.get('action') != 'INGEST_FAILED', b
           assert h.get('ok') is True and h.get('action')=='HISTORICAL_BACKFILL', h
           assert h.get('resumable_per_game') is True, h
           assert 1 <= int(h.get('attempted') or 0) <= 4, h
@@ -106,6 +124,10 @@ jobs:
           assert s.get('cost_throttling') is False, s
           assert s.get('official_pick_policy')=='CHAMPION_CONFIDENCE_ONLY', s
           assert s.get('expected_value_selection_gate') is False, s
+          assert c.get('last_heartbeat_ok') is True, c
+          assert c.get('last_ingest_ok') is True, c
+          assert c.get('last_ingest_completed_at'), c
+          assert not c.get('last_ingest_error'), c
           PY
       - name: Enable autonomous schedules
         working-directory: mlb_auto
@@ -123,7 +145,10 @@ jobs:
           fresh=0
           for attempt in $(seq 1 18); do
             sleep 30
-            aws lambda invoke --cli-read-timeout 120 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"STATUS"}' post_enable_status.json >/dev/null
+            if ! aws lambda invoke --cli-read-timeout 120 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"STATUS"}' post_enable_status.json >/dev/null 2>status.err; then
+              cat status.err >&2 || true
+              continue
+            fi
             if python - <<'PY'
           import json, os, sys
           from datetime import datetime, timezone
@@ -146,6 +171,11 @@ jobs:
               status.get('ok') is True,
               heartbeat is not None and heartbeat >= since,
               repaired is not None and repaired >= since,
+              controller.get('last_heartbeat_ok') is True,
+              controller.get('last_ingest_ok') is True,
+              repair.get('last_repair_ok') is True,
+              not controller.get('last_ingest_error'),
+              not repair.get('last_repair_error'),
               int(controller.get('known_market_key_count') or 0) > 0,
               bool(controller.get('last_market_inventory_at')),
               status.get('official_pick_policy') == 'CHAMPION_CONFIDENCE_ONLY',
@@ -158,7 +188,7 @@ jobs:
               break
             fi
           done
-          cat post_enable_status.json
+          cat post_enable_status.json || true
           test "$fresh" = 1
       - name: Verify schedules and protected stacks
         env:
@@ -196,13 +226,14 @@ jobs:
           set -euo pipefail
           aws cloudformation describe-stacks --stack-name "$STACK_NAME" --output json > stack.json
           aws cloudformation list-stack-resources --stack-name "$STACK_NAME" --output json > resources.json
-          sha256sum provider.json market_inventory.json history.json status.json post_enable_status.json rules.json stack.json resources.json > SHA256SUMS
+          sha256sum provider.json market_inventory.json heartbeat.json history.json status.json post_enable_status.json rules.json stack.json resources.json > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: mlb-auto-v1-deployment-evidence-${{ github.run_id }}
           path: |
             provider.json
             market_inventory.json
+            heartbeat.json
             history.json
             status.json
             post_enable_status.json
