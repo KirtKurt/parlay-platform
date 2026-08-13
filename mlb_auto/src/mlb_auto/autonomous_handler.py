@@ -14,6 +14,16 @@ from .storage import Store
 base.OddsApiClient = OpenEndedOddsApiClient
 
 
+def _is_period_market(key: str) -> bool:
+    """Classify provider period/inning markets without changing ingestion eligibility."""
+    value = str(key or '').lower()
+    return (
+        value.startswith(('first_', 'innings'))
+        or '_inning' in value
+        or '_innings' in value
+    )
+
+
 def _market_categories(keys: list[str]) -> dict[str, list[str]]:
     cats = {
         'featured': [], 'period': [], 'alternate': [], 'team_total': [],
@@ -22,7 +32,7 @@ def _market_categories(keys: list[str]) -> dict[str, list[str]]:
     for key in sorted(set(keys)):
         if key in ('h2h', 'spreads', 'totals'):
             cats['featured'].append(key)
-        elif key.startswith(('first_', 'innings')):
+        elif _is_period_market(key):
             cats['period'].append(key)
         elif key.startswith('pitcher_'):
             cats['pitcher'].append(key)
