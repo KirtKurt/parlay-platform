@@ -151,22 +151,52 @@ Resources:
           Properties: {ApiId: !Ref AutoApi, Path: /v1/mlb-auto/predictions, Method: GET}
         Heartbeat:
           Type: Schedule
-          Properties: {Name: !Sub '${AWS::StackName}-heartbeat-5m', Schedule: rate(5 minutes), State: !Ref ScheduleState, Input: '{"action":"MLB_AUTO_HEARTBEAT"}'}
+          Properties:
+            Name: !Sub '${AWS::StackName}-heartbeat-5m'
+            Schedule: rate(5 minutes)
+            State: !Ref ScheduleState
+            Input: '{"action":"MLB_AUTO_HEARTBEAT"}'
+            RetryPolicy: {MaximumRetryAttempts: 1, MaximumEventAgeInSeconds: 300}
         LockCheck:
           Type: Schedule
-          Properties: {Name: !Sub '${AWS::StackName}-lock-1m', Schedule: rate(1 minute), State: !Ref ScheduleState, Input: '{"action":"MLB_AUTO_LOCK"}'}
+          Properties:
+            Name: !Sub '${AWS::StackName}-lock-1m'
+            Schedule: rate(1 minute)
+            State: !Ref ScheduleState
+            Input: '{"action":"MLB_AUTO_LOCK"}'
+            RetryPolicy: {MaximumRetryAttempts: 1, MaximumEventAgeInSeconds: 60}
         Settlement:
           Type: Schedule
-          Properties: {Name: !Sub '${AWS::StackName}-settle-30m', Schedule: rate(30 minutes), State: !Ref ScheduleState, Input: '{"action":"MLB_AUTO_SETTLE"}'}
+          Properties:
+            Name: !Sub '${AWS::StackName}-settle-30m'
+            Schedule: rate(30 minutes)
+            State: !Ref ScheduleState
+            Input: '{"action":"MLB_AUTO_SETTLE"}'
+            RetryPolicy: {MaximumRetryAttempts: 1, MaximumEventAgeInSeconds: 1800}
         Training:
           Type: Schedule
-          Properties: {Name: !Sub '${AWS::StackName}-train-1h', Schedule: rate(1 hour), State: !Ref ScheduleState, Input: '{"action":"MLB_AUTO_TRAIN"}'}
+          Properties:
+            Name: !Sub '${AWS::StackName}-train-1h'
+            Schedule: rate(1 hour)
+            State: !Ref ScheduleState
+            Input: '{"action":"MLB_AUTO_TRAIN"}'
+            RetryPolicy: {MaximumRetryAttempts: 1, MaximumEventAgeInSeconds: 3600}
         Repair:
           Type: Schedule
-          Properties: {Name: !Sub '${AWS::StackName}-repair-5m', Schedule: rate(5 minutes), State: !Ref ScheduleState, Input: '{"action":"MLB_AUTO_REPAIR"}'}
+          Properties:
+            Name: !Sub '${AWS::StackName}-repair-5m'
+            Schedule: rate(5 minutes)
+            State: !Ref ScheduleState
+            Input: '{"action":"MLB_AUTO_REPAIR"}'
+            RetryPolicy: {MaximumRetryAttempts: 1, MaximumEventAgeInSeconds: 300}
         HistoricalBackfill:
           Type: Schedule
-          Properties: {Name: !Sub '${AWS::StackName}-history-15m', Schedule: rate(15 minutes), State: !Ref ScheduleState, Input: '{"action":"MLB_AUTO_HISTORICAL_BACKFILL"}'}
+          Properties:
+            Name: !Sub '${AWS::StackName}-history-15m'
+            Schedule: rate(15 minutes)
+            State: !Ref ScheduleState
+            Input: '{"action":"MLB_AUTO_HISTORICAL_BACKFILL"}'
+            RetryPolicy: {MaximumRetryAttempts: 1, MaximumEventAgeInSeconds: 900}
 
 Outputs:
   ApiUrl:

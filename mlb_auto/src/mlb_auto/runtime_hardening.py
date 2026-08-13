@@ -3,23 +3,23 @@ from __future__ import annotations
 import re
 import time
 import uuid
-from typing import Any
 
 from botocore.exceptions import ClientError
 
 INGEST_LEASE_SECONDS = 540
+TRAINING_LEASE_SECONDS = 570
 
 
 def _error(exc: Exception) -> str:
     return f'{type(exc).__name__}:{str(exc)[:500]}'
 
 
-def _acquire_ingest_lease(store, ttl_seconds: int = INGEST_LEASE_SECONDS) -> str | None:
+def acquire_named_lease(store, name: str, ttl_seconds: int) -> str | None:
     now = int(time.time())
     token = uuid.uuid4().hex
     try:
         store.state.update_item(
-            Key={'PK': 'MLB_AUTO#STATE', 'SK': 'lease#ingest'},
+            Key={'PK': 'MLB_AUTO#STATE', 'SK': f'lease#{name}'},
             UpdateExpression='SET #owner = :owner, #expires = :expires',
             ConditionExpression='attribute_not_exists(#expires) OR #expires < :now',
             ExpressionAttributeNames={'#owner': 'owner', '#expires': 'expires_at_epoch'},
@@ -37,10 +37,10 @@ def _acquire_ingest_lease(store, ttl_seconds: int = INGEST_LEASE_SECONDS) -> str
     return token
 
 
-def _release_ingest_lease(store, token: str) -> None:
+def release_named_lease(store, name: str, token: str) -> None:
     try:
         store.state.delete_item(
-            Key={'PK': 'MLB_AUTO#STATE', 'SK': 'lease#ingest'},
+            Key={'PK': 'MLB_AUTO#STATE', 'SK': f'lease#{name}'},
             ConditionExpression='#owner = :owner',
             ExpressionAttributeNames={'#owner': 'owner'},
             ExpressionAttributeValues={':owner': token},
@@ -73,7 +73,6 @@ def _compact_snapshot_writer(Store):
 
 
 def install(base, Store) -> None:
-    """Install runtime guards once on the isolated MLB Auto entrypoint."""
     if getattr(base, '_mlb_auto_runtime_hardening_installed', False):
         return
 
@@ -91,7 +90,7 @@ def install(base, Store) -> None:
             'last_heartbeat_result': 'INVOKED',
         })
 
-        token = _acquire_ingest_lease(telemetry)
+        token = acquire_named_lease(telemetry, 'ingest', INGEST_LEASE_SECONDS)
         if token is None:
             telemetry.put_state('controller', {
                 'last_heartbeat_ok': True,
@@ -132,7 +131,7 @@ def install(base, Store) -> None:
             })
             return {'ok': False, 'action': 'INGEST_FAILED', 'error': error}
         finally:
-            _release_ingest_lease(telemetry, token)
+            release_named_lease(telemetry, 'ingest', token)
 
     def guarded_repair():
         telemetry = Store()
