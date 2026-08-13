@@ -13,6 +13,14 @@ SYSTEM_PROMPT = (
     'executable code, or changes to locking, validation, isolation, or promotion rules.'
 )
 
+# Bedrock Runtime inference-profile IDs are not always identical to the model
+# value accepted by the Anthropic-compatible Bedrock Mantle endpoint. Keep the
+# translation explicit so account configuration and provider routing remain
+# independently auditable.
+_MANTLE_MODEL_ALIASES = {
+    'anthropic.claude-sonnet-4-6': 'anthropic.claude-sonnet-4-6-v1',
+}
+
 
 def _region() -> str:
     return os.getenv('AWS_REGION') or os.getenv('AWS_DEFAULT_REGION') or 'us-east-1'
@@ -26,11 +34,16 @@ def _token(provider: Callable[[], str] | None = None) -> str:
 
 
 def _foundation_id(model_id: str) -> str:
-    value = str(model_id)
+    value = str(model_id).strip()
     for prefix in ('global.', 'us.', 'eu.', 'jp.', 'au.'):
         if value.startswith(prefix):
             return value[len(prefix):]
     return value
+
+
+def _mantle_model_id(model_id: str) -> str:
+    foundation_id = _foundation_id(model_id)
+    return _MANTLE_MODEL_ALIASES.get(foundation_id, foundation_id)
 
 
 def _json(text: Any) -> dict:
@@ -59,15 +72,13 @@ def invoke_anthropic(
     post=None,
 ) -> tuple[dict, dict]:
     foundation_id = _foundation_id(model_id)
+    mantle_model_id = _mantle_model_id(model_id)
     payload: dict[str, Any] = {
-        'model': foundation_id,
+        'model': mantle_model_id,
         'max_tokens': max(256, min(8000, int(max_tokens))),
         'system': system_prompt,
         'messages': [{'role': 'user', 'content': prompt}],
     }
-    if foundation_id == 'anthropic.claude-opus-4-7':
-        payload['thinking'] = {'type': 'adaptive'}
-        payload['output_config'] = {'effort': 'low'}
 
     timeout = max(30, min(300, int(os.getenv('MLB_AUTO_LLM_HTTP_TIMEOUT_SECONDS', '180'))))
     headers = {
@@ -104,6 +115,7 @@ def invoke_anthropic(
     usage.update({
         'endpoint_family': 'bedrock-mantle-anthropic',
         'foundation_model_id': foundation_id,
+        'mantle_model_id': mantle_model_id,
         'configured_model_id': str(model_id),
     })
     return _json(text), usage
