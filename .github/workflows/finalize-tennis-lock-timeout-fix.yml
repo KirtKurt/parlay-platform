@@ -1,0 +1,115 @@
+name: Finalize Tennis lock timeout fix
+
+on:
+  push:
+    branches: [agent/diagnose-tennis-lock-alarm-20260813]
+    paths: ['.github/workflows/finalize-tennis-lock-timeout-fix.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FUNCTION_NAME: parlay-platform-tennis-ml-prod-tennis-lock
+  RULE_NAME: parlay-platform-tennis-ml-prod-tennis-lock-every-minute
+  ALARM_NAME: parlay-platform-tennis-ml-prod-tennis-lock-errors
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Disable Lambda asynchronous retry amplification
+        run: |
+          set -euo pipefail
+          aws lambda put-function-event-invoke-config \
+            --function-name "$FUNCTION_NAME" \
+            --maximum-retry-attempts 0 \
+            --maximum-event-age-in-seconds 60 > async-config.json
+          aws lambda get-function-event-invoke-config --function-name "$FUNCTION_NAME" > async-config-after.json
+          python - <<'PY'
+          import json
+          cfg=json.load(open('async-config-after.json'))
+          assert cfg['MaximumRetryAttempts']==0, cfg
+          assert cfg['MaximumEventAgeInSeconds']==60, cfg
+          print({'MaximumRetryAttempts':cfg['MaximumRetryAttempts'],'MaximumEventAgeInSeconds':cfg['MaximumEventAgeInSeconds']})
+          PY
+
+      - name: Verify live code, rule, and target hardening
+        run: |
+          set -euo pipefail
+          aws lambda get-function --function-name "$FUNCTION_NAME" > function.json
+          URL=$(python -c "import json; print(json.load(open('function.json'))['Code']['Location'])")
+          curl --fail --silent --show-error "$URL" -o live.zip
+          unzip -p live.zip tennis_lock_handler.py > live-handler.py
+          grep -q 'v5.2-tminus45-no-rescore-keyed-reads' live-handler.py
+          aws events describe-rule --name "$RULE_NAME" > rule.json
+          aws events list-targets-by-rule --rule "$RULE_NAME" > targets.json
+          python - <<'PY'
+          import json
+          rule=json.load(open('rule.json'))
+          target=(json.load(open('targets.json')).get('Targets') or [])[0]
+          assert rule['State']=='ENABLED', rule
+          assert rule['ScheduleExpression']=='rate(1 minute)', rule
+          assert target.get('RetryPolicy')=={'MaximumEventAgeInSeconds':60,'MaximumRetryAttempts':0}, target
+          print({'rule':rule['State'],'schedule':rule['ScheduleExpression'],'eventbridgeRetry':target['RetryPolicy']})
+          PY
+
+      - name: Observe clean autonomous window and alarm recovery
+        run: |
+          set -euo pipefail
+          START=$(date -u +%s)
+          sleep 330
+          START_MS=$((START * 1000))
+          aws logs filter-log-events --log-group-name "/aws/lambda/$FUNCTION_NAME" --start-time "$START_MS" --output json > clean-window.json
+          python - <<'PY'
+          import json,re
+          events=json.load(open('clean-window.json')).get('events') or []
+          messages=[str(e.get('message') or '') for e in events]
+          timeouts=[m for m in messages if 'Status: timeout' in m or 'Task timed out' in m]
+          errors=[m for m in messages if '\tERROR\t' in m or 'Runtime.ExitError' in m]
+          durations=[]
+          for m in messages:
+              hit=re.search(r'Duration: ([0-9.]+) ms',m)
+              if hit and 'Status: timeout' not in m:
+                  durations.append(float(hit.group(1)))
+          print({'events':len(events),'successful_reports':len(durations),'timeouts':len(timeouts),'runtime_errors':len(errors),'max_success_ms':max(durations) if durations else None})
+          assert not timeouts, timeouts[-5:]
+          assert not errors, errors[-5:]
+          assert len(durations) >= 4, durations
+          assert max(durations) < 30000, max(durations)
+          PY
+          for i in $(seq 1 8); do
+            STATE=$(aws cloudwatch describe-alarms --alarm-names "$ALARM_NAME" --query 'MetricAlarms[0].StateValue' --output text)
+            echo "alarm=$STATE attempt=$i"
+            if [ "$STATE" = "OK" ]; then break; fi
+            sleep 30
+          done
+          aws cloudwatch describe-alarms --alarm-names "$ALARM_NAME" > alarm-final.json
+          python - <<'PY'
+          import json
+          alarm=json.load(open('alarm-final.json'))['MetricAlarms'][0]
+          assert alarm['StateValue']=='OK', alarm.get('StateReason')
+          print({'alarm':alarm['StateValue'],'reason':alarm.get('StateReason')})
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tennis-lock-final-evidence-${{ github.run_id }}
+          path: |
+            async-config.json
+            async-config-after.json
+            function.json
+            live-handler.py
+            rule.json
+            targets.json
+            clean-window.json
+            alarm-final.json
+          retention-days: 30
