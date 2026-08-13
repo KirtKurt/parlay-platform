@@ -77,8 +77,12 @@ jobs:
           FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
           aws lambda invoke --cli-read-timeout 180 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_LIVE_PROVIDER_PROOF"}' provider.json >/dev/null
           aws lambda invoke --cli-read-timeout 240 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_MARKET_INVENTORY"}' market_inventory.json >/dev/null
-          aws lambda invoke --cli-read-timeout 600 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_HISTORICAL_BACKFILL","max_games_per_run":1}' history.json >/dev/null
+          aws lambda invoke --cli-read-timeout 600 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_HISTORICAL_BACKFILL","max_games_per_run":4}' history.json >/dev/null
           aws lambda invoke --cli-read-timeout 120 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"STATUS"}' status.json >/dev/null
+          echo '--- provider ---'; cat provider.json
+          echo '--- market inventory ---'; cat market_inventory.json
+          echo '--- historical batch ---'; cat history.json
+          echo '--- status ---'; cat status.json
           python - <<'PY'
           import json
           p=json.load(open('provider.json')); m=json.load(open('market_inventory.json')); h=json.load(open('history.json')); s=json.load(open('status.json'))
@@ -94,14 +98,13 @@ jobs:
           assert isinstance(m.get('market_keys'), list) and len(m['market_keys'])==int(m['market_key_count']), m
           assert h.get('ok') is True and h.get('action')=='HISTORICAL_BACKFILL', h
           assert h.get('resumable_per_game') is True, h
-          assert int(h.get('attempted') or 0)==1, h
-          assert int(h.get('batch_game_budget') or 0)==1, h
+          assert 1 <= int(h.get('attempted') or 0) <= 4, h
+          assert int(h.get('batch_game_budget') or 0)==4, h
           assert int(h.get('training_examples') or 0)>0, h
           assert s.get('ok') is True and s.get('sport')=='mlb_auto', s
           assert s.get('provider_sport_key')=='baseball_mlb' and s.get('autonomous') is True, s
           assert s.get('cost_throttling') is False, s
           PY
-          cat provider.json; cat market_inventory.json; cat history.json; cat status.json
       - name: Enable autonomous schedules
         working-directory: mlb_auto
         env:
