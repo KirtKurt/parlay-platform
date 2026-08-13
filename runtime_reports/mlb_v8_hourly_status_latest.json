@@ -37,10 +37,10 @@
       "status": "UNAVAILABLE"
     },
     "trainingArtifacts": {
-      "bytes": 165175,
+      "bytes": 165170,
       "count": 1,
       "names": [
-        "mlb-v8-autonomous-controller-31652564742"
+        "mlb-v8-autonomous-controller-31667812288"
       ],
       "status": "AVAILABLE"
     }
@@ -52,14 +52,14 @@
     "normalOperationManualInterventionRequired": false,
     "promotionRequested": false
   },
-  "createdAtUtc": "2026-08-13T02:41:09.588127+00:00",
+  "createdAtUtc": "2026-08-13T05:00:27.591182+00:00",
   "freshness": {
-    "context": "STALE",
-    "historical": "STALE",
-    "promotion": "STALE",
-    "prospective": "STALE",
+    "context": "CURRENT",
+    "historical": "CURRENT",
+    "promotion": "CURRENT",
+    "prospective": "CURRENT",
     "shadow": "STALE",
-    "training": "STALE",
+    "training": "CURRENT",
     "validation": "STALE"
   },
   "historicalBackfill": {
@@ -123,10 +123,10 @@
       },
       "revision": {
         "comparable": true,
-        "delta": 0,
+        "delta": 2,
         "note": null,
         "status": "AVAILABLE",
-        "value": 6072
+        "value": 6074
       },
       "targetGames": {
         "comparable": true,
@@ -136,22 +136,22 @@
         "value": 4355
       }
     },
-    "phase": "WAITING_FOR_SETTLED_HORIZON",
+    "phase": "DATA_RANGE_EXHAUSTED",
     "runtimeBlockers": [],
-    "stateTimestamp": "2026-08-12T18:11:45.048920+00:00"
+    "stateTimestamp": "2026-08-13T04:01:44.956636+00:00"
   },
   "historicalContext": {
     "blockers": [],
-    "eligibleGameCount": 785,
+    "eligibleGameCount": 795,
     "ineligibleGameCount": 0,
     "newEligibleGameCount": 5,
-    "pointerRevision": 225,
-    "processedGameCount": 785,
+    "pointerRevision": 227,
+    "processedGameCount": 795,
     "progressMade": true,
     "providerCallsMade": 36,
-    "remainingGameCount": 3425,
+    "remainingGameCount": 3415,
     "status": "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY",
-    "timestamp": "2026-08-12T23:54:47.581822+00:00"
+    "timestamp": "2026-08-13T04:41:59.629378+00:00"
   },
   "issueNumber": 458,
   "ok": true,
@@ -170,7 +170,7 @@
     "sourceReportedOverallAccuracy": null,
     "sourceReportedSelectedPickAccuracy": null,
     "status": "WAITING_FOR_RETROSPECTIVE_GATE",
-    "timestamp": "2026-08-13T00:01:29.729296+00:00",
+    "timestamp": "2026-08-13T04:49:02.129428+00:00",
     "voids": null,
     "wins": null
   },
@@ -203,12 +203,12 @@
     "pushesAndVoidsExcludedFromDerivedAccuracy": true
   },
   "sourceTimestamps": {
-    "context": "2026-08-12T23:54:47.581822+00:00",
-    "historical": "2026-08-12T18:11:45.048920+00:00",
-    "promotion": "2026-08-13T00:01:31.906118+00:00",
-    "prospective": "2026-08-13T00:01:29.729296+00:00",
+    "context": "2026-08-13T04:41:59.629378+00:00",
+    "historical": "2026-08-13T04:01:44.956636+00:00",
+    "promotion": "2026-08-13T04:49:04.384895+00:00",
+    "prospective": "2026-08-13T04:49:02.129428+00:00",
     "shadow": "2026-08-05T04:38:10.928628+00:00",
-    "training": "2026-08-12T23:56:50.219002+00:00",
+    "training": "2026-08-13T04:44:12.761425+00:00",
     "validation": "2026-08-05T03:24:01.722516+00:00"
   },
   "sources": {
@@ -230,7 +230,7 @@
     "liveSource": {
       "fallbackClearlyLabeled": true,
       "liveAwsStatusRetrieved": true,
-      "retrievedAtUtc": "2026-08-13T02:41:07.043386+00:00",
+      "retrievedAtUtc": "2026-08-13T05:00:24.646031+00:00",
       "source": "AWS_LAMBDA_STATUS"
     },
     "promotion": {
@@ -266,12 +266,12 @@
   },
   "state": {
     "completedSlateCount": 339,
-    "contextEligibleGames": 785,
+    "contextEligibleGames": 795,
     "contextNewEligibleGames": 5,
-    "contextPointerRevision": 225,
-    "contextProcessedGames": 785,
+    "contextPointerRevision": 227,
+    "contextProcessedGames": 795,
     "contextProviderCalls": 36,
-    "contextRemainingGames": 3425,
+    "contextRemainingGames": 3415,
     "creditsConsumed": 268820,
     "deploymentArtifactCount": null,
     "gradedPredictions": null,
@@ -285,7 +285,7 @@
     "learnedEligibleCandidateCount": 1,
     "learningSteps": 63360,
     "networkRequests": 26882,
-    "optimizerRevision": 6072,
+    "optimizerRevision": 6074,
     "prospectiveSample": null,
     "settledGames": null,
     "shadowArtifactCount": null,
@@ -341,7 +341,7 @@
     "promotionGatePassed": false,
     "recordCountLoaded": 4210,
     "reportStatus": "SUCCESS",
-    "reportTimestamp": "2026-08-12T23:56:50.219002+00:00",
+    "reportTimestamp": "2026-08-13T04:44:12.761425+00:00",
     "retrospectiveValidation": {
       "selectedOutOfFold": {
         "accuracy": null,
@@ -369,11 +369,11 @@
     "totalOptimizationSteps": 63360,
     "workflow": {
       "conclusion": "SUCCESS",
-      "headSha": "82af2c8f206068631e3b01a58044958a384ab9dd",
+      "headSha": "33bd5721aa642eae521b45fda97d579d1a7210cb",
       "name": "MLB V8 Autonomous Controller",
-      "runId": 31652564742,
+      "runId": 31667812288,
       "status": "COMPLETED",
-      "timestamp": "2026-08-13T00:01:42+00:00"
+      "timestamp": "2026-08-13T04:49:14+00:00"
     }
   },
   "version": "MLB-V8-HOURLY-STATUS-v1-source-honest"
