@@ -69,7 +69,11 @@ class OddsApiClient:
         return self._get(f'/sports/{SPORT}/scores', daysFrom=days_from, dateFormat='iso')
 
     def featured_odds(self) -> ApiResponse:
-        return self._get(f'/sports/{SPORT}/odds', regions=self.regions, markets=','.join(FEATURED), oddsFormat='american', dateFormat='iso')
+        return self._get(
+            f'/sports/{SPORT}/odds', regions=self.regions, markets=','.join(FEATURED),
+            oddsFormat='american', dateFormat='iso', includeLinks='true', includeSids='true',
+            includeBetLimits='true', includeRotationNumbers='true',
+        )
 
     def event_markets(self, event_id: str) -> ApiResponse:
         return self._get(f'/sports/{SPORT}/events/{event_id}/markets', regions=self.regions, dateFormat='iso')
@@ -78,16 +82,28 @@ class OddsApiClient:
         markets = [m for m in markets if m]
         if not markets:
             return ApiResponse({}, None, None, 0)
-        return self._get(f'/sports/{SPORT}/events/{event_id}/odds', regions=self.regions, markets=','.join(sorted(set(markets))), oddsFormat='american', dateFormat='iso')
+        return self._get(
+            f'/sports/{SPORT}/events/{event_id}/odds', regions=self.regions,
+            markets=','.join(sorted(set(markets))), oddsFormat='american', dateFormat='iso',
+            includeLinks='true', includeSids='true', includeBetLimits='true', includeMultipliers='true',
+        )
 
     def historical_featured_odds(self, snapshot_at_iso: str) -> ApiResponse:
-        return self._get(f'/historical/sports/{SPORT}/odds', regions=self.regions, markets=','.join(FEATURED), oddsFormat='american', dateFormat='iso', date=snapshot_at_iso)
+        return self._get(
+            f'/historical/sports/{SPORT}/odds', regions=self.regions, markets=','.join(FEATURED),
+            oddsFormat='american', dateFormat='iso', date=snapshot_at_iso,
+            includeLinks='true', includeSids='true', includeBetLimits='true', includeRotationNumbers='true',
+        )
 
     def historical_event_odds(self, event_id: str, snapshot_at_iso: str, markets: Iterable[str]) -> ApiResponse:
         markets = [m for m in markets if m]
         if not markets:
             return ApiResponse({}, None, None, 0)
-        return self._get(f'/historical/sports/{SPORT}/events/{event_id}/odds', regions=self.regions, markets=','.join(sorted(set(markets))), oddsFormat='american', dateFormat='iso', date=snapshot_at_iso)
+        return self._get(
+            f'/historical/sports/{SPORT}/events/{event_id}/odds', regions=self.regions,
+            markets=','.join(sorted(set(markets))), oddsFormat='american', dateFormat='iso', date=snapshot_at_iso,
+            includeLinks='true', includeSids='true', includeBetLimits='true', includeMultipliers='true',
+        )
 
     @staticmethod
     def useful_markets(market_payload: Any) -> list[str]:
