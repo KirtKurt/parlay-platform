@@ -99,7 +99,7 @@ player, card, corner, first-half, or qualification props.
 
 ## LLM boundary
 
-The daily LLM analyst uses Amazon Bedrock Nova 2 Lite through the US
+The LLM analyst runs every six hours and uses Amazon Bedrock Nova 2 Lite through the US
 cross-Region inference profile (`us.amazon.nova-2-lite-v1:0`). It receives only isolated
 soccer coverage summaries, immutable feature-schema metadata, and model reports.
 It may propose a small bounded hyperparameter search and diagnostics.
@@ -112,6 +112,14 @@ the sole authority for accepting an LLM-proposed experiment. Its dedicated IAM
 role can read only soccer diagnostics, write only the `LLM_ANALYSIS` operations
 partition, and invoke only that inference profile and its underlying Nova 2 Lite
 foundation-model resources.
+
+A fresh validated analysis is reused without another model call. If Bedrock
+returns its specific daily-token quota throttle, the analyst records a bounded
+30-day `LAST_ATTEMPT` audit row, reports `DEFERRED_QUOTA`, and retries on the next
+six-hour schedule. It does not replace `LATEST`, train, predict, or promote while
+deferred. Every other Bedrock or response-validation error remains fail-closed,
+and the controller blocks authority whenever the configured analyst lacks a
+fresh, digest-validated `LATEST` analysis.
 
 ## Non-interference controls
 

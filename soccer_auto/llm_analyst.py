@@ -13,6 +13,7 @@ from datetime import timedelta
 from typing import Any, Mapping, Sequence
 
 import boto3
+from botocore.exceptions import ClientError
 
 from .canonical import canonical_json, digest, iso_utc, parse_utc
 from .market_features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION
@@ -23,6 +24,8 @@ ANALYSIS_VERSION = "soccer-auto-llm-analyst-v1"
 MODEL_ID = os.getenv("SOCCER_AUTO_LLM_MODEL_ID", "").strip()
 MAX_TRIALS = 2
 ANALYSIS_MAX_AGE_HOURS = int(os.getenv("SOCCER_AUTO_LLM_ANALYSIS_MAX_AGE_HOURS", "36"))
+DAILY_TOKEN_RETRY_HOURS = 6
+ATTEMPT_RETENTION_DAYS = 30
 DIAGNOSTIC_SCAN_PAGE_LIMIT = int(os.getenv("SOCCER_AUTO_LLM_DIAGNOSTIC_SCAN_PAGE_LIMIT", "20"))
 DIAGNOSTIC_ROW_LIMIT = int(os.getenv("SOCCER_AUTO_LLM_DIAGNOSTIC_ROW_LIMIT", "2000"))
 BASELINE_TRIALS: tuple[dict[str, Any], ...] = (
@@ -310,22 +313,59 @@ def _analysis_is_fresh(row: Mapping[str, Any], observed_at: Any | None = None) -
         return False
 
 
-def latest_llm_trials(store: SoccerStore) -> tuple[list[dict[str, Any]], str | None]:
+def latest_validated_analysis(
+    store: SoccerStore,
+    observed_at: Any | None = None,
+) -> dict[str, Any] | None:
     row = store.ops.get_item(Key={"PK": "LLM_ANALYSIS", "SK": "LATEST"}, ConsistentRead=True).get("Item")
     if not row:
-        return [], None
+        return None
     row = plain(row)
     if row.get("validation_status") != "VALIDATED" or row.get("analysis_version") != ANALYSIS_VERSION:
-        return [], None
-    if not _analysis_is_fresh(row):
-        return [], None
+        return None
+    if not _analysis_is_fresh(row, observed_at):
+        return None
     validated = validate_analysis(row)
     if validated["analysis_digest"] != row.get("analysis_digest"):
+        return None
+    return {**row, **validated}
+
+
+def latest_llm_trials(store: SoccerStore) -> tuple[list[dict[str, Any]], str | None]:
+    row = latest_validated_analysis(store)
+    if row is None:
         return [], None
     return [
         {key: trial[key] for key in ("learning_rate", "l2", "epochs")}
-        for trial in validated["recommended_trials"]
+        for trial in row["recommended_trials"]
     ], str(row.get("analysis_digest") or "") or None
+
+
+def _record_llm_attempt(
+    store: SoccerStore,
+    *,
+    observed: Any,
+    status: str,
+    reason: str | None = None,
+    retry_after: str | None = None,
+    analysis_digest: str | None = None,
+) -> None:
+    item = {
+        "PK": "LLM_ANALYSIS",
+        "SK": "LAST_ATTEMPT",
+        "entity_type": "SOCCER_LLM_ATTEMPT",
+        "status": status,
+        "model_id": MODEL_ID,
+        "observed_at": iso_utc(observed),
+        "expires_at": int((observed + timedelta(days=ATTEMPT_RETENTION_DAYS)).timestamp()),
+    }
+    if reason:
+        item["reason"] = reason
+    if retry_after:
+        item["retry_after"] = retry_after
+    if analysis_digest:
+        item["analysis_digest"] = analysis_digest
+    store.ops.put_item(Item=ddb_safe(item))
 
 
 def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, Any]:
@@ -337,13 +377,49 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
             "reason": "SOCCER_AUTO_LLM_MODEL_ID_NOT_CONFIGURED",
         }
     store = SoccerStore()
+    latest = latest_validated_analysis(store)
+    if latest is not None:
+        return {
+            "ok": True,
+            "system": "soccer_auto",
+            "component": "llm_analyst",
+            "status": "FRESH_ANALYSIS_REUSED",
+            "analysis_digest": latest["analysis_digest"],
+            "validated_trials": len(latest["recommended_trials"]),
+            "model_id": MODEL_ID,
+            "expires_at": latest.get("expires_at"),
+        }
     analysis_context = _context(store)
-    response = boto3.client("bedrock-runtime").converse(
-        modelId=MODEL_ID,
-        system=[{"text": SYSTEM_PROMPT}],
-        messages=[{"role": "user", "content": [{"text": _prompt(analysis_context)}]}],
-        inferenceConfig={"maxTokens": 1800, "temperature": 0.1, "topP": 0.9},
-    )
+    try:
+        response = boto3.client("bedrock-runtime").converse(
+            modelId=MODEL_ID,
+            system=[{"text": SYSTEM_PROMPT}],
+            messages=[{"role": "user", "content": [{"text": _prompt(analysis_context)}]}],
+            inferenceConfig={"maxTokens": 1800, "temperature": 0.1, "topP": 0.9},
+        )
+    except ClientError as exc:
+        error = exc.response.get("Error") or {}
+        message = str(error.get("Message") or "")
+        if error.get("Code") != "ThrottlingException" or "tokens per day" not in message.lower():
+            raise
+        observed = now_utc()
+        retry_after = iso_utc(observed + timedelta(hours=DAILY_TOKEN_RETRY_HOURS))
+        _record_llm_attempt(
+            store,
+            observed=observed,
+            status="DEFERRED_QUOTA",
+            reason="BEDROCK_DAILY_TOKEN_QUOTA",
+            retry_after=retry_after,
+        )
+        return {
+            "ok": True,
+            "system": "soccer_auto",
+            "component": "llm_analyst",
+            "status": "DEFERRED_QUOTA",
+            "reason": "BEDROCK_DAILY_TOKEN_QUOTA",
+            "model_id": MODEL_ID,
+            "retry_after": retry_after,
+        }
     validated = validate_analysis(_extract_json_text(response))
     observed = now_utc()
     observed_at = iso_utc(observed)
@@ -361,10 +437,17 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
     store.ops.put_item(Item=ddb_safe(row), ConditionExpression="attribute_not_exists(SK)")
     latest = {**row, "SK": "LATEST", "source_sk": row["SK"]}
     store.ops.put_item(Item=ddb_safe(latest))
+    _record_llm_attempt(
+        store,
+        observed=observed,
+        status="ANALYZED",
+        analysis_digest=validated["analysis_digest"],
+    )
     return {
         "ok": True,
         "system": "soccer_auto",
         "component": "llm_analyst",
+        "status": "ANALYZED",
         "analysis_digest": validated["analysis_digest"],
         "validated_trials": len(validated["recommended_trials"]),
         "model_id": MODEL_ID,

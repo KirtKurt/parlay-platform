@@ -10,6 +10,7 @@ import boto3
 from boto3.dynamodb.conditions import Attr, Key
 
 from .canonical import iso_utc
+from .llm_analyst import latest_validated_analysis
 from .storage import SoccerStore, ddb_safe, now_utc, plain
 
 
@@ -24,7 +25,7 @@ COMPONENT_LIVENESS: Mapping[str, tuple[str, int]] = {
     "freeze": ("SOCCER_AUTO_FREEZE_FUNCTION", 10),
     "settlement": ("SOCCER_AUTO_SETTLEMENT_FUNCTION", 20),
     "trainer": ("SOCCER_AUTO_TRAINER_FUNCTION", 780),
-    "llm_analyst": ("SOCCER_AUTO_LLM_ANALYST_FUNCTION", 2940),
+    "llm_analyst": ("SOCCER_AUTO_LLM_ANALYST_FUNCTION", 420),
 }
 
 
@@ -88,29 +89,21 @@ def _model_state(store: SoccerStore) -> dict[str, Any]:
 
 
 def _llm_state(store: SoccerStore, observed: datetime) -> dict[str, Any]:
-    row = store.ops.get_item(
-        Key={"PK": "LLM_ANALYSIS", "SK": "LATEST"}, ConsistentRead=True
-    ).get("Item")
-    if not row:
+    row = latest_validated_analysis(store, observed)
+    if row is None:
         return {
             "configured": bool(os.getenv("SOCCER_AUTO_LLM_MODEL_ID")),
             "analyses": 0,
             "fresh": False,
         }
-    row = plain(row)
-    expires_at = row.get("expires_at")
-    try:
-        fresh = bool(expires_at is not None and observed.timestamp() < int(expires_at))
-    except (TypeError, ValueError):
-        fresh = False
     return {
         "configured": bool(os.getenv("SOCCER_AUTO_LLM_MODEL_ID")),
         "analyses": 1,
-        "fresh": fresh,
+        "fresh": True,
         "analysis_digest": row.get("analysis_digest"),
         "validated_trials": len(row.get("recommended_trials") or []),
         "created_at": row.get("created_at"),
-        "expires_at": expires_at,
+        "expires_at": row.get("expires_at"),
     }
 
 
@@ -202,9 +195,12 @@ def authority_state(
     counts: Mapping[str, int],
     consecutive_failures: int,
     liveness_failed: bool,
+    validated_llm_missing: bool,
 ) -> tuple[str, str]:
     if liveness_failed:
         return "DEGRADED", "SCHEDULED_COMPONENT_LIVENESS_FAILED"
+    if validated_llm_missing:
+        return "DEGRADED", "FRESH_VALIDATED_LLM_ANALYSIS_MISSING"
     if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
         return "DEGRADED", "FAILURE_CIRCUIT_BREAKER"
     if model.get("automatic_prediction_allowed"):
@@ -253,6 +249,11 @@ def run_cycle() -> dict[str, Any]:
     if settlement_conflicts:
         failures.append("immutable_settlement_conflicts_present")
 
+    llm = _llm_state(store, observed)
+    validated_llm_missing = bool(llm["configured"] and not llm["fresh"])
+    if validated_llm_missing:
+        failures.append("llm_analyst:fresh_validated_analysis_missing")
+
     consecutive_failures = int(previous.get("consecutive_failures") or 0) + 1 if failures else 0
     counts = {
         "competitions": len(store.list_competitions()),
@@ -264,13 +265,13 @@ def run_cycle() -> dict[str, Any]:
         "models": _bounded_count(store.models),
     }
     model = _model_state(store)
-    llm = _llm_state(store, observed)
     liveness_failed = any(not row["healthy"] for row in liveness.values())
     authority, reason = authority_state(
         model=model,
         counts=counts,
         consecutive_failures=consecutive_failures,
         liveness_failed=liveness_failed,
+        validated_llm_missing=validated_llm_missing,
     )
     observed_at = iso_utc(observed)
     state = {

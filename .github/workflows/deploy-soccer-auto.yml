@@ -164,8 +164,8 @@ jobs:
           invoke_and_assert_ok SoccerInventoryFunction '{"action":"deployment_inventory_smoke"}' inventory
           invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_controller_smoke"}' controller_before_llm
 
-          # This proves that the Bedrock permission was retained on the narrow
-          # soccer analyst role and that the configured model is invocable.
+          # Exercise the narrow Bedrock analyst path. A fresh validated result
+          # is reused; daily token quota exhaustion is recorded and deferred.
           invoke_and_assert_ok SoccerLlmAnalystFunction '{"action":"deployment_llm_smoke"}' llm
           python - <<'PY'
           import json
@@ -173,7 +173,12 @@ jobs:
           response = json.load(open('/tmp/llm.json'))
           assert response['component'] == 'llm_analyst', response
           assert response['model_id'] == 'us.amazon.nova-2-lite-v1:0', response
-          print('bedrock_cris_smoke', response['model_id'])
+          status = response['status']
+          assert status in {'ANALYZED', 'FRESH_ANALYSIS_REUSED', 'DEFERRED_QUOTA'}, response
+          if status == 'DEFERRED_QUOTA':
+              assert response.get('reason') == 'BEDROCK_DAILY_TOKEN_QUOTA', response
+              assert response.get('retry_after'), response
+          print('bedrock_cris_smoke', response['model_id'], status)
           PY
           invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_controller_post_llm"}' controller_after_llm
 

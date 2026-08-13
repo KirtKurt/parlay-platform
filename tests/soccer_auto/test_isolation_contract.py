@@ -230,6 +230,31 @@ class IsolationTests(unittest.TestCase):
         self.assertIn("bedrock_cris_smoke", workflow)
         self.assertIn("us-east-1|us-east-2|us-west-1|us-west-2", workflow)
 
+    def test_llm_retries_quota_deferral_on_six_hour_schedule(self) -> None:
+        template = yaml.load(
+            (ROOT / "soccer-auto-template.yaml").read_text(),
+            Loader=CloudFormationLoader,
+        )
+        resources = template["Resources"]
+        events = resources["SoccerLlmAnalystFunction"]["Properties"]["Events"]
+        self.assertEqual(set(events), {"AnalyzeSoccerLearningEverySixHours"})
+        self.assertEqual(
+            events["AnalyzeSoccerLearningEverySixHours"]["Properties"]["Schedule"],
+            "cron(22 3/6 * * ? *)",
+        )
+        alarm = resources["SoccerLlmAnalystLivenessAlarm"]["Properties"]
+        self.assertEqual(alarm["Period"], 21600)
+        self.assertEqual(alarm["EvaluationPeriods"], 2)
+        self.assertEqual(alarm["DatapointsToAlarm"], 2)
+        self.assertIn("two six-hour schedule periods", alarm["AlarmDescription"])
+
+        workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
+        for status in ("ANALYZED", "FRESH_ANALYSIS_REUSED", "DEFERRED_QUOTA"):
+            self.assertIn(status, workflow)
+        self.assertIn("BEDROCK_DAILY_TOKEN_QUOTA", workflow)
+        self.assertIn("response.get('retry_after')", workflow)
+        self.assertIn("bedrock_cris_smoke", workflow)
+
     def test_controller_observes_every_scheduled_component_fail_closed(self) -> None:
         template = yaml.load(
             (ROOT / "soccer-auto-template.yaml").read_text(),

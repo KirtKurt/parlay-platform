@@ -10,9 +10,11 @@ install_if_needed()
 
 from soccer_auto.autonomous_controller import (  # noqa: E402
     COMPONENT_LIVENESS,
+    _llm_state,
     authority_state,
     component_liveness,
 )
+from soccer_auto.llm_analyst import validate_analysis  # noqa: E402
 
 
 class CloudWatch:
@@ -81,8 +83,44 @@ class ComponentLivenessTests(unittest.TestCase):
             counts={"settlements": 1000},
             consecutive_failures=1,
             liveness_failed=True,
+            validated_llm_missing=False,
         )
         self.assertEqual(state, ("DEGRADED", "SCHEDULED_COMPONENT_LIVENESS_FAILED"))
+
+    def test_configured_llm_without_digest_validated_latest_fails_closed(self) -> None:
+        observed = datetime(2026, 8, 14, 4, 5, tzinfo=timezone.utc)
+        latest = {
+            **validate_analysis({"summary": "valid", "recommended_trials": []}),
+            "created_at": "2026-08-14T04:00:00Z",
+            "expires_at": int(datetime(2026, 8, 15, tzinfo=timezone.utc).timestamp()),
+        }
+
+        class Ops:
+            def get_item(self, **kwargs):
+                return {"Item": latest}
+
+        class Store:
+            ops = Ops()
+
+        with patch.dict(
+            "os.environ",
+            {"SOCCER_AUTO_LLM_MODEL_ID": "us.amazon.nova-2-lite-v1:0"},
+            clear=False,
+        ):
+            self.assertTrue(_llm_state(Store(), observed)["fresh"])
+            latest["summary"] = "tampered after validation"
+            llm = _llm_state(Store(), observed)
+
+        self.assertTrue(llm["configured"])
+        self.assertFalse(llm["fresh"])
+        state = authority_state(
+            model={"automatic_prediction_allowed": True},
+            counts={"settlements": 1000},
+            consecutive_failures=0,
+            liveness_failed=False,
+            validated_llm_missing=True,
+        )
+        self.assertEqual(state, ("DEGRADED", "FRESH_VALIDATED_LLM_ANALYSIS_MISSING"))
 
 
 if __name__ == "__main__":

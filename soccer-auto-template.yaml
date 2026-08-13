@@ -543,10 +543,10 @@ Resources:
       Timeout: 300
       MemorySize: 1024
       Events:
-        AnalyzeSoccerLearningDaily:
+        AnalyzeSoccerLearningEverySixHours:
           Type: Schedule
           Properties:
-            Schedule: cron(22 3 * * ? *)
+            Schedule: cron(22 3/6 * * ? *)
             Input: '{"action":"analyze_soccer_learning"}'
             RetryPolicy: {MaximumEventAgeInSeconds: 900, MaximumRetryAttempts: 1}
 
@@ -766,14 +766,14 @@ Resources:
   SoccerLlmAnalystLivenessAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmDescription: soccer_auto LLM analyst has not invoked for two daily schedule periods
+      AlarmDescription: soccer_auto LLM analyst has not invoked for two six-hour schedule periods
       Namespace: AWS/Lambda
       MetricName: Invocations
       Dimensions:
         - Name: FunctionName
           Value: !Ref SoccerLlmAnalystFunction
       Statistic: Sum
-      Period: 86400
+      Period: 21600
       EvaluationPeriods: 2
       DatapointsToAlarm: 2
       Threshold: 1

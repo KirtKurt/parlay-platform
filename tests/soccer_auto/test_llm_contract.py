@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import json
 import unittest
-from datetime import datetime, timezone
-from unittest.mock import patch
+from datetime import datetime, timedelta, timezone
+from unittest.mock import Mock, patch
 
 from tests.soccer_auto.aws_stubs import install_if_needed
 
 install_if_needed()
 
+from botocore.exceptions import ClientError  # noqa: E402
 from soccer_auto.llm_analyst import (  # noqa: E402
     _context,
     latest_llm_trials,
+    llm_analyst_handler,
     validate_analysis,
 )
 
@@ -20,6 +23,7 @@ class Ops:
         self.rows = rows or []
         self.latest = latest
         self.autonomy = autonomy or {}
+        self.writes = []
 
     def scan(self, **kwargs):
         return {"Items": self.rows}
@@ -29,6 +33,10 @@ class Ops:
             return {"Item": self.autonomy}
         if Key == {"PK": "LLM_ANALYSIS", "SK": "LATEST"} and self.latest:
             return {"Item": self.latest}
+        return {}
+
+    def put_item(self, **kwargs):
+        self.writes.append(kwargs["Item"])
         return {}
 
 
@@ -44,6 +52,16 @@ class Store:
 
 
 class LlmBoundaryTests(unittest.TestCase):
+    @staticmethod
+    def _response(payload):
+        return {
+            "output": {
+                "message": {
+                    "content": [{"text": json.dumps(payload)}],
+                }
+            }
+        }
+
     def test_untrusted_trials_are_clamped_and_deduplicated(self) -> None:
         payload = {
             "summary": "soccer only",
@@ -142,6 +160,120 @@ class LlmBoundaryTests(unittest.TestCase):
             trials, analysis_digest = latest_llm_trials(Store(Ops(latest=row)))
         self.assertEqual(trials, [])
         self.assertIsNone(analysis_digest)
+
+    def test_success_writes_validated_analysis_latest_and_attempt(self) -> None:
+        observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
+        ops = Ops()
+        store = Store(ops)
+        bedrock = Mock()
+        bedrock.converse.return_value = self._response(
+            {
+                "summary": "bounded soccer research",
+                "recommended_trials": [
+                    {"learning_rate": 0.03, "l2": 0.001, "epochs": 60}
+                ],
+            }
+        )
+        with (
+            patch("soccer_auto.llm_analyst.MODEL_ID", "us.amazon.nova-2-lite-v1:0"),
+            patch("soccer_auto.llm_analyst.SoccerStore", return_value=store),
+            patch("soccer_auto.llm_analyst.boto3.client", return_value=bedrock),
+            patch("soccer_auto.llm_analyst.now_utc", return_value=observed),
+        ):
+            result = llm_analyst_handler({}, None)
+
+        self.assertEqual(result["status"], "ANALYZED")
+        self.assertEqual([row["SK"] for row in ops.writes][-2:], ["LATEST", "LAST_ATTEMPT"])
+        self.assertTrue(str(ops.writes[0]["SK"]).startswith("ANALYSIS#"))
+        self.assertEqual(ops.writes[-1]["status"], "ANALYZED")
+        self.assertEqual(ops.writes[-1]["analysis_digest"], result["analysis_digest"])
+
+    def test_daily_token_throttle_is_deferred_without_latest_write(self) -> None:
+        observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
+        ops = Ops()
+        store = Store(ops)
+        bedrock = Mock()
+        bedrock.converse.side_effect = ClientError(
+            {
+                "Error": {
+                    "Code": "ThrottlingException",
+                    "Message": "Too many tokens per day, please wait before trying again.",
+                }
+            },
+            "Converse",
+        )
+        with (
+            patch("soccer_auto.llm_analyst.MODEL_ID", "us.amazon.nova-2-lite-v1:0"),
+            patch("soccer_auto.llm_analyst.SoccerStore", return_value=store),
+            patch("soccer_auto.llm_analyst.boto3.client", return_value=bedrock),
+            patch("soccer_auto.llm_analyst.now_utc", return_value=observed),
+        ):
+            result = llm_analyst_handler({}, None)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "DEFERRED_QUOTA")
+        self.assertEqual(result["reason"], "BEDROCK_DAILY_TOKEN_QUOTA")
+        self.assertEqual(result["retry_after"], "2026-08-14T10:00:00Z")
+        self.assertEqual([row["SK"] for row in ops.writes], ["LAST_ATTEMPT"])
+        attempt = ops.writes[0]
+        self.assertEqual(attempt["status"], "DEFERRED_QUOTA")
+        self.assertEqual(
+            attempt["expires_at"],
+            int((observed + timedelta(days=30)).timestamp()),
+        )
+
+    def test_nonquota_bedrock_client_error_is_reraised(self) -> None:
+        store = Store(Ops())
+        bedrock = Mock()
+        bedrock.converse.side_effect = ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "denied"}},
+            "Converse",
+        )
+        with (
+            patch("soccer_auto.llm_analyst.MODEL_ID", "us.amazon.nova-2-lite-v1:0"),
+            patch("soccer_auto.llm_analyst.SoccerStore", return_value=store),
+            patch("soccer_auto.llm_analyst.boto3.client", return_value=bedrock),
+            self.assertRaises(ClientError),
+        ):
+            llm_analyst_handler({}, None)
+        self.assertEqual(store.ops.writes, [])
+
+    def test_malformed_model_json_is_reraised_fail_closed(self) -> None:
+        store = Store(Ops())
+        bedrock = Mock()
+        bedrock.converse.return_value = {
+            "output": {"message": {"content": [{"text": "not-json"}]}}
+        }
+        with (
+            patch("soccer_auto.llm_analyst.MODEL_ID", "us.amazon.nova-2-lite-v1:0"),
+            patch("soccer_auto.llm_analyst.SoccerStore", return_value=store),
+            patch("soccer_auto.llm_analyst.boto3.client", return_value=bedrock),
+            self.assertRaises(ValueError),
+        ):
+            llm_analyst_handler({}, None)
+        self.assertEqual(store.ops.writes, [])
+
+    def test_fresh_validated_latest_is_reused_before_context_or_converse(self) -> None:
+        observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
+        latest = {
+            **validate_analysis({"recommended_trials": []}),
+            "created_at": "2026-08-14T03:00:00Z",
+            "expires_at": int((observed + timedelta(hours=12)).timestamp()),
+        }
+        store = Store(Ops(latest=latest))
+        with (
+            patch("soccer_auto.llm_analyst.MODEL_ID", "us.amazon.nova-2-lite-v1:0"),
+            patch("soccer_auto.llm_analyst.SoccerStore", return_value=store),
+            patch("soccer_auto.llm_analyst.now_utc", return_value=observed),
+            patch("soccer_auto.llm_analyst._context") as context_mock,
+            patch("soccer_auto.llm_analyst.boto3.client") as client_mock,
+        ):
+            result = llm_analyst_handler({}, None)
+
+        self.assertEqual(result["status"], "FRESH_ANALYSIS_REUSED")
+        context_mock.assert_not_called()
+        client_mock.assert_not_called()
+        self.assertEqual(store.ops.writes, [])
 
 
 if __name__ == "__main__":
