@@ -42,6 +42,7 @@ Globals:
         MLB_AUTO_LLM_INTERVAL_SECONDS: '14400'
         MLB_AUTO_LLM_MAX_FEATURES: '8'
         MLB_AUTO_LLM_MAX_OUTPUT_TOKENS: '2200'
+        MLB_AUTO_LLM_HTTP_TIMEOUT_SECONDS: '180'
 
 Resources:
   StateTable:
@@ -153,6 +154,12 @@ Resources:
               Action:
                 - bedrock:InvokeModel
                 - bedrock:InvokeModelWithResponseStream
+              Resource: '*'
+            - Sid: UseShortTermBedrockTokens
+              Effect: Allow
+              Action:
+                - bedrock:CallWithBearerToken
+                - bedrock-mantle:CallWithBearerToken
               Resource: '*'
             - Sid: ManageExactOpusModelAccess
               Effect: Allow
