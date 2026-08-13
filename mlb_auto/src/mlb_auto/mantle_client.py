@@ -6,6 +6,8 @@ from typing import Any, Callable
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import boto3
+
 SYSTEM_PROMPT = (
     'You are the isolated MLB Auto research scientist. Return compact JSON only. '
     'Use only supplied point-in-time pregame feature names and approved numeric '
@@ -62,12 +64,43 @@ def _json(text: Any) -> dict:
         raise
 
 
-def invoke_anthropic(
+def _invoke_runtime(
     model_id: str,
     prompt: str,
     *,
     max_tokens: int,
-    system_prompt: str = SYSTEM_PROMPT,
+    system_prompt: str,
+    runtime_client=None,
+) -> tuple[dict, dict]:
+    runtime = runtime_client or boto3.client('bedrock-runtime', region_name=_region())
+    response = runtime.converse(
+        modelId=str(model_id),
+        system=[{'text': system_prompt}],
+        messages=[{'role': 'user', 'content': [{'text': prompt}]}],
+        inferenceConfig={'maxTokens': max(256, min(8000, int(max_tokens)))},
+    )
+    parts = (((response.get('output') or {}).get('message') or {}).get('content') or [])
+    text = ''.join(
+        str(item.get('text') or '')
+        for item in parts
+        if isinstance(item, dict)
+    )
+    usage = dict(response.get('usage') or {})
+    usage.update({
+        'endpoint_family': 'bedrock-runtime-converse',
+        'runtime_model_id': str(model_id),
+        'foundation_model_id': _foundation_id(model_id),
+        'configured_model_id': str(model_id),
+    })
+    return _json(text), usage
+
+
+def _invoke_mantle(
+    model_id: str,
+    prompt: str,
+    *,
+    max_tokens: int,
+    system_prompt: str,
     token_provider=None,
     post=None,
 ) -> tuple[dict, dict]:
@@ -119,3 +152,53 @@ def invoke_anthropic(
         'configured_model_id': str(model_id),
     })
     return _json(text), usage
+
+
+def invoke_anthropic(
+    model_id: str,
+    prompt: str,
+    *,
+    max_tokens: int,
+    system_prompt: str = SYSTEM_PROMPT,
+    token_provider=None,
+    post=None,
+    runtime_client=None,
+) -> tuple[dict, dict]:
+    """Invoke Claude through Bedrock Runtime first, then Mantle if needed.
+
+    The configured MLB Auto IDs are Bedrock Runtime/inference-profile IDs. A
+    supplied ``post`` callback intentionally selects the Mantle path for unit
+    tests; production calls use Runtime first and preserve Mantle as a genuine
+    secondary endpoint rather than treating account-disabled models as required.
+    """
+    runtime_error = None
+    if post is None or runtime_client is not None:
+        try:
+            return _invoke_runtime(
+                model_id,
+                prompt,
+                max_tokens=max_tokens,
+                system_prompt=system_prompt,
+                runtime_client=runtime_client,
+            )
+        except Exception as exc:
+            runtime_error = f'{type(exc).__name__}:{str(exc)[:1200]}'
+
+    try:
+        return _invoke_mantle(
+            model_id,
+            prompt,
+            max_tokens=max_tokens,
+            system_prompt=system_prompt,
+            token_provider=token_provider,
+            post=post,
+        )
+    except Exception as exc:
+        if runtime_error:
+            mantle_error = f'{type(exc).__name__}:{str(exc)[:1200]}'
+            raise RuntimeError(
+                'ALL_ANTHROPIC_ENDPOINTS_FAILED|'
+                f'bedrock-runtime-converse:{runtime_error}|'
+                f'bedrock-mantle-anthropic:{mantle_error}'
+            ) from exc
+        raise
