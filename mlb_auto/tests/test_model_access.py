@@ -49,9 +49,6 @@ def test_runtime_does_not_receive_account_enrollment_permissions():
 class FakeStore:
     state = {}
 
-    def __init__(self):
-        type(self).state = {}
-
     def get_state(self, key):
         return dict(type(self).state.get(key) or {})
 
@@ -79,6 +76,7 @@ class FakeStore:
 
 
 def test_provider_quota_state_is_truthful_and_non_blocking(monkeypatch):
+    FakeStore.state = {}
     errors = [
         'us.amazon.nova-premier-v1:0:ThrottlingException:Too many tokens per day',
         'us.amazon.nova-pro-v1:0:ServiceUnavailableException:temporarily unavailable',
@@ -114,6 +112,8 @@ def test_provider_quota_state_is_truthful_and_non_blocking(monkeypatch):
 
 
 def test_configuration_defect_still_fails_closed(monkeypatch):
+    FakeStore.state = {}
+
     def invalid_response(*_args, **_kwargs):
         raise ValueError('INVALID_RD_FEATURE_SPEC')
 
