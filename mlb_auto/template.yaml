@@ -35,6 +35,7 @@ Globals:
         MLB_AUTO_MIN_NEW_EXAMPLES: '25'
         MLB_AUTO_LOCK_MINUTES: '45'
         MLB_AUTO_MIN_OFFICIAL_PROBABILITY: '0.58'
+        MLB_AUTO_HISTORICAL_DAYS_PER_RUN: '1'
 
 Resources:
   StateTable:
@@ -49,7 +50,6 @@ Resources:
       KeySchema:
         - {AttributeName: PK, KeyType: HASH}
         - {AttributeName: SK, KeyType: RANGE}
-
   SnapshotsTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -62,7 +62,6 @@ Resources:
       KeySchema:
         - {AttributeName: PK, KeyType: HASH}
         - {AttributeName: SK, KeyType: RANGE}
-
   PredictionsTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -75,7 +74,6 @@ Resources:
       KeySchema:
         - {AttributeName: PK, KeyType: HASH}
         - {AttributeName: SK, KeyType: RANGE}
-
   LocksTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -88,7 +86,6 @@ Resources:
       KeySchema:
         - {AttributeName: PK, KeyType: HASH}
         - {AttributeName: SK, KeyType: RANGE}
-
   OutcomesTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -101,7 +98,6 @@ Resources:
       KeySchema:
         - {AttributeName: PK, KeyType: HASH}
         - {AttributeName: SK, KeyType: RANGE}
-
   ModelsTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -114,7 +110,6 @@ Resources:
       KeySchema:
         - {AttributeName: PK, KeyType: HASH}
         - {AttributeName: SK, KeyType: RANGE}
-
   ArchiveBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
@@ -129,12 +124,10 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
-
   AutoApi:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: prod
-
   AutoFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -151,51 +144,28 @@ Resources:
       Events:
         StatusApi:
           Type: HttpApi
-          Properties:
-            ApiId: !Ref AutoApi
-            Path: /v1/mlb-auto/status
-            Method: GET
+          Properties: {ApiId: !Ref AutoApi, Path: /v1/mlb-auto/status, Method: GET}
         PredictionsApi:
           Type: HttpApi
-          Properties:
-            ApiId: !Ref AutoApi
-            Path: /v1/mlb-auto/predictions
-            Method: GET
+          Properties: {ApiId: !Ref AutoApi, Path: /v1/mlb-auto/predictions, Method: GET}
         Heartbeat:
           Type: Schedule
-          Properties:
-            Name: !Sub '${AWS::StackName}-heartbeat-5m'
-            Schedule: rate(5 minutes)
-            State: !Ref ScheduleState
-            Input: '{"action":"MLB_AUTO_HEARTBEAT"}'
+          Properties: {Name: !Sub '${AWS::StackName}-heartbeat-5m', Schedule: rate(5 minutes), State: !Ref ScheduleState, Input: '{"action":"MLB_AUTO_HEARTBEAT"}'}
         LockCheck:
           Type: Schedule
-          Properties:
-            Name: !Sub '${AWS::StackName}-lock-1m'
-            Schedule: rate(1 minute)
-            State: !Ref ScheduleState
-            Input: '{"action":"MLB_AUTO_LOCK"}'
+          Properties: {Name: !Sub '${AWS::StackName}-lock-1m', Schedule: rate(1 minute), State: !Ref ScheduleState, Input: '{"action":"MLB_AUTO_LOCK"}'}
         Settlement:
           Type: Schedule
-          Properties:
-            Name: !Sub '${AWS::StackName}-settle-30m'
-            Schedule: rate(30 minutes)
-            State: !Ref ScheduleState
-            Input: '{"action":"MLB_AUTO_SETTLE"}'
+          Properties: {Name: !Sub '${AWS::StackName}-settle-30m', Schedule: rate(30 minutes), State: !Ref ScheduleState, Input: '{"action":"MLB_AUTO_SETTLE"}'}
         Training:
           Type: Schedule
-          Properties:
-            Name: !Sub '${AWS::StackName}-train-1h'
-            Schedule: rate(1 hour)
-            State: !Ref ScheduleState
-            Input: '{"action":"MLB_AUTO_TRAIN"}'
+          Properties: {Name: !Sub '${AWS::StackName}-train-1h', Schedule: rate(1 hour), State: !Ref ScheduleState, Input: '{"action":"MLB_AUTO_TRAIN"}'}
         Repair:
           Type: Schedule
-          Properties:
-            Name: !Sub '${AWS::StackName}-repair-5m'
-            Schedule: rate(5 minutes)
-            State: !Ref ScheduleState
-            Input: '{"action":"MLB_AUTO_REPAIR"}'
+          Properties: {Name: !Sub '${AWS::StackName}-repair-5m', Schedule: rate(5 minutes), State: !Ref ScheduleState, Input: '{"action":"MLB_AUTO_REPAIR"}'}
+        HistoricalBackfill:
+          Type: Schedule
+          Properties: {Name: !Sub '${AWS::StackName}-history-15m', Schedule: rate(15 minutes), State: !Ref ScheduleState, Input: '{"action":"MLB_AUTO_HISTORICAL_BACKFILL"}'}
 
 Outputs:
   ApiUrl:
