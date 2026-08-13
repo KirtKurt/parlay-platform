@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from . import handler as base
+from . import provider_patch as _provider_patch
 from .autonomous_markets import (
     cached_market_inventory as _cached_inventory,
     discover_market_inventory as _discover_inventory,
