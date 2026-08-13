@@ -11,6 +11,7 @@ from .autonomous_markets import (
 from .evolution import discover_challenger
 from .historical_backfill_v2 import run_historical_backfill
 from .llm_rd import (
+    MODEL_IDS as _configured_rd_models,
     active_program as _active_rd_program,
     apply_program as _apply_rd_program,
     record_training_result as _record_rd_training_result,
@@ -104,10 +105,30 @@ def autonomous_backfill(max_games_per_run: int | None = None) -> dict:
     return result
 
 
+def _model_access_status(rd: dict) -> dict:
+    selected = rd.get('model_id')
+    invocation_verified = bool(selected and rd.get('last_run_ok') is True)
+    return {
+        'scope': 'mlb_auto_only',
+        'mode': 'CONFIGURATION_DRIVEN_FALLBACK',
+        'configured_model_ids': rd.get('configured_model_ids') or list(_configured_rd_models),
+        'selected_model_id': selected,
+        'selection_policy': 'FIRST_INVOKABLE_CONFIGURED_MODEL',
+        'verification_state': 'INVOKED' if selected else 'NOT_YET_INVOKED',
+        'model_access_verified_by_last_research_run': invocation_verified,
+        'exact_model_requirement': False,
+        'required_exact_model_ids': [],
+        'runtime_account_enrollment_managed': False,
+        'account_mutation_attempted': False,
+    }
+
+
 def _status_with_rd() -> dict:
     result = base.status()
     if isinstance(result, dict):
-        result['llm_rd'] = _rd_status(Store=Store)
+        rd = _rd_status(Store=Store)
+        result['llm_rd'] = rd
+        result['llm_model_access'] = _model_access_status(rd)
     return result
 
 
