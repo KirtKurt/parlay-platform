@@ -1,0 +1,336 @@
+name: Probe MLB Auto fresh production status 20260813 1931
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/mlb-auto-fresh-status-20260813-1931
+    paths:
+      - .github/workflows/probe-mlb-auto-fresh-status-20260813-1931.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: probe-mlb-auto-fresh-status-20260813-1931
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-mlb-auto-prod
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Read live MLB Auto production state
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+
+          aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" --region "$REGION" --output json > stack.json
+
+          FN=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" --logical-resource-id AutoFunction \
+            --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+          STATE_TABLE=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" --logical-resource-id StateTable \
+            --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+
+          aws lambda get-function-configuration \
+            --function-name "$FN" --region "$REGION" --output json > function.json
+
+          aws lambda invoke \
+            --function-name "$FN" --region "$REGION" \
+            --cli-read-timeout 180 --cli-connect-timeout 30 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"STATUS"}' status.json > invoke.json
+
+          for key in controller historical_backfill repair llm_rd; do
+            aws dynamodb get-item \
+              --table-name "$STATE_TABLE" --region "$REGION" --consistent-read \
+              --key "{\"PK\":{\"S\":\"MLB_AUTO#STATE\"},\"SK\":{\"S\":\"$key\"}}" \
+              --output json > "state-${key}.json"
+          done
+
+          aws events list-rules \
+            --name-prefix "${STACK_NAME}-" --region "$REGION" --output json > rules.json
+          aws cloudwatch describe-alarms \
+            --alarm-name-prefix "$STACK_NAME" --region "$REGION" --output json > alarms.json
+
+          end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          start=$(date -u -d '120 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          metric() {
+            local metric_name="$1" statistic="$2" output="$3"
+            aws cloudwatch get-metric-statistics \
+              --namespace AWS/Lambda --metric-name "$metric_name" \
+              --dimensions Name=FunctionName,Value="$FN" \
+              --statistics "$statistic" --period 300 \
+              --start-time "$start" --end-time "$end" \
+              --region "$REGION" --output json > "$output"
+          }
+          metric Errors Sum metric-errors.json
+          metric Invocations Sum metric-invocations.json
+          metric Throttles Sum metric-throttles.json
+          metric Duration Maximum metric-duration.json
+
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          ET = ZoneInfo('America/New_York')
+
+          def load(path, default=None):
+              try:
+                  return json.loads(Path(path).read_text())
+              except Exception:
+                  return {} if default is None else default
+
+          def ddb(value):
+              if not isinstance(value, dict) or len(value) != 1:
+                  return value
+              kind, raw = next(iter(value.items()))
+              if kind == 'S': return raw
+              if kind == 'N':
+                  try:
+                      x = float(raw)
+                      return int(x) if x.is_integer() else x
+                  except Exception: return raw
+              if kind == 'BOOL': return bool(raw)
+              if kind == 'NULL': return None
+              if kind == 'M': return {k: ddb(v) for k, v in raw.items()}
+              if kind == 'L': return [ddb(v) for v in raw]
+              if kind in ('SS', 'NS'): return list(raw)
+              if kind == 'B': return '<binary>'
+              return raw
+
+          def item(path):
+              raw = load(path, {}).get('Item') or {}
+              return {k: ddb(v) for k, v in raw.items()}
+
+          def metric_sum(path):
+              return sum(float(x.get('Sum') or 0) for x in (load(path, {}).get('Datapoints') or []))
+
+          def metric_max(path):
+              vals = [float(x.get('Maximum') or 0) for x in (load(path, {}).get('Datapoints') or [])]
+              return max(vals) if vals else None
+
+          def parse_time(value):
+              if not value: return None
+              try:
+                  dt = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+                  if dt.tzinfo is None: dt = dt.replace(tzinfo=timezone.utc)
+                  return dt.astimezone(timezone.utc)
+              except Exception:
+                  return None
+
+          now = datetime.now(timezone.utc)
+          stack = load('stack.json', {})
+          fn = load('function.json', {})
+          invoke = load('invoke.json', {})
+          status = load('status.json', {})
+          controller = item('state-controller.json')
+          historical = item('state-historical_backfill.json')
+          repair = item('state-repair.json')
+          llm_state = item('state-llm_rd.json')
+          rules = load('rules.json', {}).get('Rules') or []
+          alarms = load('alarms.json', {})
+
+          stack_rows = stack.get('Stacks') or []
+          stack_status = stack_rows[0].get('StackStatus') if stack_rows else None
+          expected_suffixes = ('heartbeat-5m','lock-1m','settle-30m','train-1h','repair-5m','history-15m')
+          schedule_rows = []
+          for suffix in expected_suffixes:
+              matches = [r for r in rules if str(r.get('Name') or '').endswith(suffix)]
+              schedule_rows.append({
+                  'suffix': suffix,
+                  'count': len(matches),
+                  'state': matches[0].get('State') if len(matches) == 1 else 'MISSING_OR_DUPLICATE',
+                  'expression': matches[0].get('ScheduleExpression') if len(matches) == 1 else None,
+              })
+
+          training = int(status.get('training_examples') or 0)
+          minimum = int(status.get('minimum_training_examples') or 250)
+          remaining = max(0, minimum - training)
+          errors_120m = int(metric_sum('metric-errors.json'))
+          invocations_120m = int(metric_sum('metric-invocations.json'))
+          throttles_120m = int(metric_sum('metric-throttles.json'))
+          max_duration_ms = metric_max('metric-duration.json')
+
+          alarm_rows = []
+          for row in (alarms.get('MetricAlarms') or []):
+              alarm_rows.append({
+                  'name': row.get('AlarmName'),
+                  'state': row.get('StateValue'),
+                  'reason': row.get('StateReason'),
+                  'updated_at': row.get('StateUpdatedTimestamp'),
+              })
+          for row in (alarms.get('CompositeAlarms') or []):
+              alarm_rows.append({
+                  'name': row.get('AlarmName'),
+                  'state': row.get('StateValue'),
+                  'reason': row.get('StateReason'),
+                  'updated_at': row.get('StateUpdatedTimestamp'),
+              })
+
+          last_pull = parse_time(controller.get('last_pull_at'))
+          last_ingest = parse_time(controller.get('last_ingest_completed_at'))
+          last_history = parse_time(historical.get('last_run_at'))
+          last_training = parse_time(controller.get('last_training_check_at') or controller.get('last_training_at'))
+          last_repair = parse_time(repair.get('last_repair_at'))
+
+          healthy = all([
+              stack_status == 'UPDATE_COMPLETE',
+              fn.get('State') == 'Active',
+              fn.get('LastUpdateStatus') == 'Successful',
+              not invoke.get('FunctionError'),
+              status.get('ok') is True,
+              status.get('sport') == 'mlb_auto',
+              all(x['state'] == 'ENABLED' for x in schedule_rows),
+              controller.get('last_ingest_ok') is True,
+              not controller.get('last_ingest_error'),
+              repair.get('last_repair_ok') is True,
+              not repair.get('last_repair_error'),
+          ])
+
+          report = {
+              'checked_at_utc': now.isoformat(),
+              'checked_at_et': now.astimezone(ET).isoformat(),
+              'overall_healthy': healthy,
+              'stack_status': stack_status,
+              'function': {
+                  'state': fn.get('State'),
+                  'last_update_status': fn.get('LastUpdateStatus'),
+                  'last_modified': fn.get('LastModified'),
+                  'memory_mb': fn.get('MemorySize'),
+                  'timeout_seconds': fn.get('Timeout'),
+              },
+              'training': {
+                  'examples': training,
+                  'minimum': minimum,
+                  'remaining': remaining,
+                  'threshold_reached': training >= minimum,
+                  'last_check_at': controller.get('last_training_check_at'),
+                  'last_check_result': controller.get('last_training_check_result'),
+                  'last_check_count': controller.get('last_training_check_count'),
+                  'champion_model_id': status.get('champion_model_id'),
+                  'prediction_mode': status.get('prediction_mode'),
+              },
+              'today': {
+                  'predictions': status.get('today_prediction_count'),
+                  'official_picks': status.get('today_official_pick_count'),
+                  'locked': status.get('today_locked_count'),
+              },
+              'controller': {
+                  'last_pull_at': controller.get('last_pull_at'),
+                  'last_ingest_completed_at': controller.get('last_ingest_completed_at'),
+                  'last_ingest_ok': controller.get('last_ingest_ok'),
+                  'last_ingest_error': controller.get('last_ingest_error'),
+                  'event_count': controller.get('event_count'),
+                  'prediction_count': controller.get('prediction_count'),
+                  'known_market_key_count': controller.get('known_market_key_count'),
+                  'market_inventory_error_count': controller.get('market_inventory_error_count'),
+                  'missing_market_fraction': controller.get('missing_market_fraction'),
+                  'odds_regions': controller.get('odds_regions'),
+                  'last_settlement_at': controller.get('last_settlement_at'),
+                  'last_settlement_count': controller.get('last_settlement_count'),
+                  'last_settlement_ok': controller.get('last_settlement_ok'),
+              },
+              'historical_backfill': {
+                  'last_run_at': historical.get('last_run_at'),
+                  'last_run_added': historical.get('last_run_added'),
+                  'last_run_attempted': historical.get('last_run_attempted'),
+                  'last_run_failure_reasons': historical.get('last_run_failure_reasons'),
+                  'cursor_date': historical.get('cursor_date'),
+                  'game_index': historical.get('game_index'),
+                  'total_games_processed': historical.get('total_games_processed'),
+                  'total_days_processed': historical.get('total_days_processed'),
+                  'resumable_per_game': historical.get('resumable_per_game'),
+              },
+              'repair': {
+                  'last_repair_at': repair.get('last_repair_at'),
+                  'last_repair_ok': repair.get('last_repair_ok'),
+                  'last_repair_error': repair.get('last_repair_error'),
+                  'action_count': repair.get('action_count'),
+                  'actions': repair.get('actions'),
+              },
+              'llm_rd': {
+                  'last_run_at': llm_state.get('last_run_at'),
+                  'last_result': llm_state.get('last_result'),
+                  'last_run_ok': llm_state.get('last_run_ok'),
+                  'last_invocation_ok': llm_state.get('last_invocation_ok'),
+                  'provider_available': llm_state.get('provider_available'),
+                  'degraded': llm_state.get('degraded'),
+                  'retryable': llm_state.get('retryable'),
+                  'candidate_id': llm_state.get('candidate_id'),
+                  'candidate_status': llm_state.get('candidate_status'),
+                  'active_program_id': llm_state.get('active_program_id'),
+                  'model_id': llm_state.get('llm_model_id'),
+                  'last_error': llm_state.get('last_error'),
+              },
+              'schedules': schedule_rows,
+              'lambda_120m': {
+                  'invocations': invocations_120m,
+                  'errors': errors_120m,
+                  'throttles': throttles_120m,
+                  'max_duration_seconds': round(max_duration_ms / 1000, 3) if max_duration_ms is not None else None,
+              },
+              'alarms': alarm_rows,
+              'ages_minutes': {
+                  'last_pull': round((now-last_pull).total_seconds()/60, 2) if last_pull else None,
+                  'last_ingest': round((now-last_ingest).total_seconds()/60, 2) if last_ingest else None,
+                  'last_historical_backfill': round((now-last_history).total_seconds()/60, 2) if last_history else None,
+                  'last_training_check': round((now-last_training).total_seconds()/60, 2) if last_training else None,
+                  'last_repair': round((now-last_repair).total_seconds()/60, 2) if last_repair else None,
+              },
+          }
+
+          Path('fresh-mlb-auto-status.json').write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
+          print('=== FRESH_MLB_AUTO_STATUS_JSON ===')
+          print(json.dumps(report, indent=2, sort_keys=True))
+          print('=== FRESH_MLB_AUTO_STATUS_SUMMARY ===')
+          print(f"overall={'HEALTHY' if healthy else 'ATTENTION_REQUIRED'}")
+          print(f"training={training}/{minimum}; remaining={remaining}; threshold_reached={training >= minimum}")
+          print(f"champion={status.get('champion_model_id')}; mode={status.get('prediction_mode')}")
+          print(f"today_predictions={status.get('today_prediction_count')}; official={status.get('today_official_pick_count')}; locked={status.get('today_locked_count')}")
+          print(f"historical_last={historical.get('last_run_added')}/{historical.get('last_run_attempted')}; cursor={historical.get('cursor_date')}#{historical.get('game_index')}")
+          print(f"lambda_120m=invocations:{invocations_120m},errors:{errors_120m},throttles:{throttles_120m},max_duration_s:{report['lambda_120m']['max_duration_seconds']}")
+          print(f"llm_result={llm_state.get('last_result')}; provider_available={llm_state.get('provider_available')}; degraded={llm_state.get('degraded')}")
+
+          if status.get('ok') is not True or status.get('sport') != 'mlb_auto':
+              raise SystemExit('MLB Auto status invocation was not authoritative')
+          PY
+
+      - name: Upload status evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: fresh-mlb-auto-status-${{ github.run_id }}
+          path: |
+            fresh-mlb-auto-status.json
+            status.json
+            stack.json
+            function.json
+            rules.json
+            alarms.json
+            state-controller.json
+            state-historical_backfill.json
+            state-repair.json
+            state-llm_rd.json
+            metric-errors.json
+            metric-invocations.json
+            metric-throttles.json
+            metric-duration.json
+          retention-days: 7
