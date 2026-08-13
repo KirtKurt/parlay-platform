@@ -5,24 +5,14 @@ import math
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 
-FEATURES = (
-    'market_home_probability',
-    'market_home_logit',
-    'book_divergence',
-    'book_count_log1p',
-    'pull_count_log1p',
-    'market_move',
-    'market_velocity',
-    'market_volatility',
-    'market_reversals',
-    'market_key_count',
-    'bookmaker_count_all_markets',
-    'player_prop_market_count',
-    'period_market_count',
-    'market_outcome_count',
-    'has_alternate_lines',
-    'has_team_totals',
-    'hours_to_first_pitch',
+DEFAULT_FEATURES = (
+    'market_home_probability', 'market_home_logit', 'book_divergence',
+    'book_count_log1p', 'pull_count_log1p', 'market_move', 'market_velocity',
+    'market_volatility', 'market_reversals', 'market_key_count',
+    'bookmaker_count_all_markets', 'player_prop_market_count',
+    'period_market_count', 'market_outcome_count', 'has_alternate_lines',
+    'has_team_totals', 'hours_to_first_pitch', 'home_spread_consensus',
+    'home_spread_cover_probability', 'game_total_consensus', 'over_probability',
 )
 
 
@@ -30,7 +20,9 @@ FEATURES = (
 class Model:
     intercept: float
     weights: tuple[float, ...]
-    feature_names: tuple[str, ...] = FEATURES
+    feature_names: tuple[str, ...] = DEFAULT_FEATURES
+    model_family: str = 'logistic'
+    metadata: dict | None = None
 
     def predict(self, row: Mapping[str, float]) -> float:
         z = self.intercept + sum(w * float(row.get(n, 0.0)) for w, n in zip(self.weights, self.feature_names))
@@ -38,29 +30,37 @@ class Model:
         return 1 / (1 + math.exp(-z))
 
     def dumps(self) -> str:
-        return json.dumps(
-            {'intercept': self.intercept, 'weights': self.weights, 'feature_names': self.feature_names},
-            sort_keys=True,
+        return json.dumps({
+            'intercept': self.intercept,
+            'weights': self.weights,
+            'feature_names': self.feature_names,
+            'model_family': self.model_family,
+            'metadata': self.metadata or {},
+        }, sort_keys=True)
+
+    @classmethod
+    def loads(cls, payload: str | Mapping) -> 'Model':
+        obj = json.loads(payload) if isinstance(payload, str) else dict(payload)
+        return cls(
+            float(obj['intercept']), tuple(float(x) for x in obj['weights']),
+            tuple(obj.get('feature_names') or DEFAULT_FEATURES),
+            str(obj.get('model_family') or 'logistic'), dict(obj.get('metadata') or {}),
         )
 
 
-def train_logistic(
-    rows: Sequence[Mapping[str, float]],
-    labels: Sequence[int],
-    *,
-    epochs: int = 500,
-    lr: float = .03,
-    l2: float = .001,
-) -> Model:
-    if len(rows) != len(labels) or len(rows) < 10:
+def train_logistic(rows: Sequence[Mapping[str, float]], labels: Sequence[int], *,
+                   feature_names: Sequence[str] | None = None, epochs: int = 500,
+                   lr: float = .03, l2: float = .001, metadata: dict | None = None) -> Model:
+    names = tuple(feature_names or DEFAULT_FEATURES)
+    if len(rows) != len(labels) or len(rows) < 10 or not names:
         raise ValueError('INSUFFICIENT_OR_MISMATCHED_TRAINING_ROWS')
-    w = [0.0] * len(FEATURES)
+    w = [0.0] * len(names)
     b = 0.0
-    for _ in range(epochs):
+    for _ in range(int(epochs)):
         gb = 0.0
         gw = [0.0] * len(w)
         for row, y in zip(rows, labels):
-            x = [float(row.get(n, 0.0)) for n in FEATURES]
+            x = [float(row.get(n, 0.0)) for n in names]
             z = max(-30., min(30., b + sum(a * c for a, c in zip(w, x))))
             p = 1 / (1 + math.exp(-z))
             e = p - int(y)
@@ -71,32 +71,30 @@ def train_logistic(
         b -= lr * gb / n
         for i in range(len(w)):
             w[i] -= lr * (gw[i] / n + l2 * w[i])
-    return Model(b, tuple(w))
+    return Model(b, tuple(w), names, 'logistic', metadata)
 
 
-def log_loss(model: Model, rows: Sequence[Mapping[str, float]], labels: Sequence[int]) -> float:
+def log_loss(model: Model, rows, labels) -> float:
     eps = 1e-9
     vals = []
     for row, y in zip(rows, labels):
         p = max(eps, min(1 - eps, model.predict(row)))
-        vals.append(-(y * math.log(p) + (1 - y) * math.log(1 - p)))
+        vals.append(-(int(y) * math.log(p) + (1 - int(y)) * math.log(1 - p)))
     return sum(vals) / len(vals)
 
 
-def brier_score(model: Model, rows: Sequence[Mapping[str, float]], labels: Sequence[int]) -> float:
-    return sum((model.predict(row) - int(y)) ** 2 for row, y in zip(rows, labels)) / len(rows)
+def brier_score(model: Model, rows, labels) -> float:
+    return sum((model.predict(r) - int(y)) ** 2 for r, y in zip(rows, labels)) / len(rows)
 
 
-def calibration_error(model: Model, rows: Sequence[Mapping[str, float]], labels: Sequence[int], bins: int = 10) -> float:
+def calibration_error(model: Model, rows, labels, bins: int = 10) -> float:
     groups = [[] for _ in range(bins)]
     for row, y in zip(rows, labels):
         p = model.predict(row)
         groups[min(bins - 1, int(p * bins))].append((p, int(y)))
     total = max(1, len(rows))
-    return sum(
-        (len(group) / total) * abs(sum(p for p, _ in group) / len(group) - sum(y for _, y in group) / len(group))
-        for group in groups if group
-    )
+    return sum((len(g)/total) * abs(sum(p for p,_ in g)/len(g) - sum(y for _,y in g)/len(g))
+               for g in groups if g)
 
 
 def chronological_split(rows, labels, holdout_fraction: float = .2):
@@ -105,25 +103,21 @@ def chronological_split(rows, labels, holdout_fraction: float = .2):
     return rows[:cut], labels[:cut], rows[cut:], labels[cut:]
 
 
-def promote_challenger(*, challenger: Model, incumbent: Model | None, validation_rows, validation_labels,
-                       min_logloss_improvement: float = .001, max_calibration_error: float = .10) -> dict:
-    challenger_loss = log_loss(challenger, validation_rows, validation_labels)
-    challenger_brier = brier_score(challenger, validation_rows, validation_labels)
-    challenger_cal = calibration_error(challenger, validation_rows, validation_labels)
-    if challenger_cal > max_calibration_error:
-        return {'promote': False, 'reason': 'CALIBRATION_GATE', 'challengerLogLoss': challenger_loss,
-                'challengerBrier': challenger_brier, 'challengerCalibrationError': challenger_cal}
+def promote_challenger(*, challenger: Model, incumbent: Model | None, validation_rows,
+                       validation_labels, min_logloss_improvement: float = .001,
+                       max_calibration_error: float = .10) -> dict:
+    cl = log_loss(challenger, validation_rows, validation_labels)
+    cb = brier_score(challenger, validation_rows, validation_labels)
+    cc = calibration_error(challenger, validation_rows, validation_labels)
+    if cc > max_calibration_error:
+        return {'promote': False, 'reason': 'CALIBRATION_GATE', 'challengerLogLoss': cl,
+                'challengerBrier': cb, 'challengerCalibrationError': cc}
     if incumbent is None:
-        return {'promote': True, 'reason': 'FIRST_QUALIFIED_CHAMPION', 'challengerLogLoss': challenger_loss,
-                'challengerBrier': challenger_brier, 'challengerCalibrationError': challenger_cal}
-    incumbent_loss = log_loss(incumbent, validation_rows, validation_labels)
-    improvement = incumbent_loss - challenger_loss
-    return {
-        'promote': improvement >= min_logloss_improvement,
-        'reason': 'BEATS_INCUMBENT' if improvement >= min_logloss_improvement else 'NO_MATERIAL_IMPROVEMENT',
-        'challengerLogLoss': challenger_loss,
-        'incumbentLogLoss': incumbent_loss,
-        'logLossImprovement': improvement,
-        'challengerBrier': challenger_brier,
-        'challengerCalibrationError': challenger_cal,
-    }
+        return {'promote': True, 'reason': 'FIRST_QUALIFIED_CHAMPION', 'challengerLogLoss': cl,
+                'challengerBrier': cb, 'challengerCalibrationError': cc}
+    il = log_loss(incumbent, validation_rows, validation_labels)
+    improvement = il - cl
+    return {'promote': improvement >= min_logloss_improvement,
+            'reason': 'BEATS_INCUMBENT' if improvement >= min_logloss_improvement else 'NO_MATERIAL_IMPROVEMENT',
+            'challengerLogLoss': cl, 'incumbentLogLoss': il, 'logLossImprovement': improvement,
+            'challengerBrier': cb, 'challengerCalibrationError': cc}
