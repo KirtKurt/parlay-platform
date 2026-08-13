@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 import boto3
+from boto3.dynamodb.conditions import Key
 
 
 def safe(value: Any):
@@ -17,6 +18,16 @@ def safe(value: Any):
         return [safe(v) for v in value]
     if isinstance(value, tuple):
         return [safe(v) for v in value]
+    return value
+
+
+def plain(value: Any):
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, dict):
+        return {str(k): plain(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [plain(v) for v in value]
     return value
 
 
@@ -33,35 +44,50 @@ class Store:
         self.bucket = os.environ['MLB_AUTO_ARCHIVE_BUCKET']
 
     def get_state(self, name='controller'):
-        return self.state.get_item(
-            Key={'PK': 'MLB_AUTO#STATE', 'SK': name}, ConsistentRead=True
-        ).get('Item') or {}
+        return plain(self.state.get_item(Key={'PK': 'MLB_AUTO#STATE', 'SK': name}, ConsistentRead=True).get('Item') or {})
 
     def put_state(self, name, item):
         self.state.put_item(Item=safe({'PK': 'MLB_AUTO#STATE', 'SK': name, **item}))
 
     def put_snapshot(self, slate, at, item):
-        self.snapshots.put_item(Item=safe({'PK': f'MLB_AUTO#SNAPSHOTS#{slate}', 'SK': at, **item}))
+        event_id = str(item.get('event_id') or item.get('eventId') or '')
+        sk = f'{at}#{event_id}' if event_id else at
+        self.snapshots.put_item(Item=safe({'PK': f'MLB_AUTO#SNAPSHOTS#{slate}', 'SK': sk, **item}))
+
+    def query_snapshots(self, slate, event_id=None, limit=500):
+        rows = self.snapshots.query(KeyConditionExpression=Key('PK').eq(f'MLB_AUTO#SNAPSHOTS#{slate}'), ScanIndexForward=True, Limit=limit).get('Items') or []
+        rows = [plain(x) for x in rows]
+        return [x for x in rows if str(x.get('event_id') or '') == str(event_id)] if event_id else rows
 
     def put_prediction(self, slate, event_id, item):
         self.predictions.put_item(Item=safe({'PK': f'MLB_AUTO#PREDICTIONS#{slate}', 'SK': event_id, **item}))
 
+    def get_prediction(self, slate, event_id):
+        return plain(self.predictions.get_item(Key={'PK': f'MLB_AUTO#PREDICTIONS#{slate}', 'SK': event_id}, ConsistentRead=True).get('Item') or {})
+
+    def query_predictions(self, slate):
+        rows = self.predictions.query(KeyConditionExpression=Key('PK').eq(f'MLB_AUTO#PREDICTIONS#{slate}'), ScanIndexForward=True).get('Items') or []
+        return [plain(x) for x in rows]
+
+    def query_locks(self, slate):
+        rows = self.locks.query(KeyConditionExpression=Key('PK').eq(f'MLB_AUTO#LOCKS#{slate}'), ScanIndexForward=True).get('Items') or []
+        return [plain(x) for x in rows]
+
     def put_training_example(self, slate, event_id, item):
         self.outcomes.put_item(Item=safe({'PK': 'MLB_AUTO#TRAINING_EXAMPLES', 'SK': f'{slate}#{event_id}', **item}))
+
+    def query_training_examples(self, limit=5000):
+        rows = self.outcomes.query(KeyConditionExpression=Key('PK').eq('MLB_AUTO#TRAINING_EXAMPLES'), ScanIndexForward=True, Limit=limit).get('Items') or []
+        return [plain(x) for x in rows]
 
     def put_model(self, sk, item):
         self.models.put_item(Item=safe({'PK': 'MLB_AUTO#MODEL_REGISTRY', 'SK': sk, **item}))
 
+    def get_model(self, sk='CHAMPION'):
+        return plain(self.models.get_item(Key={'PK': 'MLB_AUTO#MODEL_REGISTRY', 'SK': sk}, ConsistentRead=True).get('Item') or {})
+
     def put_lock_once(self, slate, event_id, item):
-        self.locks.put_item(
-            Item=safe({'PK': f'MLB_AUTO#LOCKS#{slate}', 'SK': event_id, **item}),
-            ConditionExpression='attribute_not_exists(PK) AND attribute_not_exists(SK)',
-        )
+        self.locks.put_item(Item=safe({'PK': f'MLB_AUTO#LOCKS#{slate}', 'SK': event_id, **item}), ConditionExpression='attribute_not_exists(PK) AND attribute_not_exists(SK)')
 
     def archive_json(self, key, payload):
-        self.s3.put_object(
-            Bucket=self.bucket,
-            Key=key,
-            Body=json.dumps(payload, sort_keys=True, default=str).encode(),
-            ContentType='application/json',
-        )
+        self.s3.put_object(Bucket=self.bucket, Key=key, Body=json.dumps(payload, sort_keys=True, default=str).encode(), ContentType='application/json')
