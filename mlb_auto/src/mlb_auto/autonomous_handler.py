@@ -1,24 +1,5 @@
 from __future__ import annotations
 
-import os
-
-# Bedrock's current Opus model cards use direct foundation-model IDs for the
-# in-region us-east-1 Converse examples. Prepend those IDs ahead of any
-# cross-region profiles supplied by infrastructure, while retaining all
-# configured fallbacks.
-_direct_opus_ids = (
-    'anthropic.claude-opus-4-8',
-    'anthropic.claude-opus-4-7',
-)
-_configured_llm_ids = tuple(
-    value.strip()
-    for value in os.getenv('MLB_AUTO_LLM_MODEL_IDS', '').split(',')
-    if value.strip()
-)
-os.environ['MLB_AUTO_LLM_MODEL_IDS'] = ','.join(
-    dict.fromkeys((*_direct_opus_ids, *_configured_llm_ids))
-)
-
 from . import handler as base
 from .autonomous_markets import (
     cached_market_inventory as _cached_inventory,
@@ -38,7 +19,6 @@ from .llm_rd import (
     status_payload as _rd_status,
 )
 from .ml import promote_challenger
-from .model_access import ensure_opus_access as _ensure_opus_access
 from .provider_open import OpenEndedOddsApiClient
 from .runtime_hardening import install as _install_runtime_hardening
 from .storage import Store
@@ -85,26 +65,11 @@ def _cached_market_inventory(max_age_seconds: int = 21600) -> dict | None:
     return _cached_inventory(Store, OpenEndedOddsApiClient, max_age_seconds)
 
 
-def _canonical_opus_id(runtime_model_id: str | None) -> str | None:
-    value = str(runtime_model_id or '')
-    if 'claude-opus-4-8' in value:
-        return 'us.anthropic.claude-opus-4-8'
-    if 'claude-opus-4-7' in value:
-        return 'us.anthropic.claude-opus-4-7'
-    return runtime_model_id
-
-
 def autonomous_research(*, force: bool = False) -> dict:
     result = _run_research(Store=Store, force=force)
     if isinstance(result, dict) and result.get('llm_model_id'):
-        runtime_model_id = str(result['llm_model_id'])
-        result['llm_runtime_model_id'] = runtime_model_id
-        result['llm_model_id'] = _canonical_opus_id(runtime_model_id)
+        result['llm_runtime_model_id'] = str(result['llm_model_id'])
     return result
-
-
-def autonomous_model_access() -> dict:
-    return _ensure_opus_access(Store=Store)
 
 
 def autonomous_train() -> dict:
@@ -143,7 +108,6 @@ def _status_with_rd() -> dict:
     result = base.status()
     if isinstance(result, dict):
         result['llm_rd'] = _rd_status(Store=Store)
-        result['llm_model_access'] = Store().get_state('llm_model_access')
     return result
 
 
@@ -154,8 +118,6 @@ def handler(event, context):
         return autonomous_train()
     if action in ('LLM_RD', 'MLB_AUTO_LLM_RD'):
         return autonomous_research(force=bool(event.get('force', True)))
-    if action in ('ENABLE_OPUS_ACCESS', 'MLB_AUTO_ENABLE_OPUS_ACCESS'):
-        return autonomous_model_access()
     if action in ('LIVE_PROVIDER_PROOF', 'MLB_AUTO_LIVE_PROVIDER_PROOF'):
         return live_provider_proof()
     if action in ('MARKET_INVENTORY', 'MLB_AUTO_MARKET_INVENTORY'):
