@@ -16,6 +16,7 @@ SNAPSHOT_OFFSETS_MINUTES = (600, 360, 180, 90, 45)
 EARLIEST_HISTORY = date(2020, 6, 30)
 EARLIEST_ADDITIONAL = datetime(2023, 5, 3, 5, 30, tzinfo=timezone.utc)
 DAYS_PER_RUN = int(os.getenv('MLB_AUTO_HISTORICAL_DAYS_PER_RUN', '1'))
+MAX_GAMES_PER_RUN = max(1, int(os.getenv('MLB_AUTO_HISTORICAL_MAX_GAMES_PER_RUN', '1')))
 
 
 def _dt(v: Any) -> datetime:
@@ -58,6 +59,7 @@ def final_games(day: date) -> list[dict[str, Any]]:
             out.append({'game_pk': str(g.get('gamePk') or ''), 'commence_time': _iso(_dt(g['gameDate'])),
                         'home_team': str(hn), 'away_team': str(an),
                         'home_score': int(h['score']), 'away_score': int(a['score'])})
+    out.sort(key=lambda x: (x['commence_time'], x['game_pk']))
     return out
 
 
@@ -125,30 +127,92 @@ def build_example(client: OddsApiClient, game: dict[str, Any], market_keys: list
     }, {'event_id': str(event['id']), 'history_points': len(history), 'errors': errors}
 
 
-def run_historical_backfill(days_per_run: int | None = None) -> dict[str, Any]:
+def _persist_progress(store: Store, *, cursor: date, game_index: int, added: int, attempted: int,
+                      prior_games: int, prior_days: int, day_complete: bool = False) -> None:
+    store.put_state('historical_backfill', {
+        'cursor_date': cursor.isoformat(),
+        'game_index': int(game_index),
+        'last_run_at': datetime.now(timezone.utc).isoformat(),
+        'last_run_added': int(added),
+        'last_run_attempted': int(attempted),
+        'total_games_processed': int(prior_games + attempted),
+        'total_days_processed': int(prior_days + (1 if day_complete else 0)),
+        'autonomous': True,
+        'point_in_time_only': True,
+        'resumable_per_game': True,
+    })
+
+
+def run_historical_backfill(days_per_run: int | None = None, max_games_per_run: int | None = None) -> dict[str, Any]:
+    """Process a bounded, resumable historical batch.
+
+    The cursor is persisted after every attempted game.  A retry therefore resumes at
+    the next game instead of replaying an entire slate, keeping each Lambda invocation
+    bounded while still crawling the complete history autonomously over repeated runs.
+    """
     store, client = Store(), OddsApiClient()
     ctl, state = store.get_state('controller'), store.get_state('historical_backfill')
     market_keys = sorted({str(x) for x in (ctl.get('known_market_keys') or []) if str(x)})
     cursor = date.fromisoformat(state['cursor_date']) if state.get('cursor_date') else datetime.now(timezone.utc).date() - timedelta(days=1)
-    days = max(1, min(7, int(days_per_run or DAYS_PER_RUN)))
-    added = attempted = 0; reports = []
+    game_index = max(0, int(state.get('game_index') or 0))
+    day_limit = max(1, min(7, int(days_per_run or DAYS_PER_RUN)))
+    game_budget = max(1, min(8, int(max_games_per_run or MAX_GAMES_PER_RUN)))
+    added = attempted = completed_days = 0
+    reports: list[dict[str, Any]] = []
     prior_days = int(state.get('total_days_processed') or 0)
-    for _ in range(days):
-        if cursor < EARLIEST_HISTORY: break
-        games, day_added, audits = final_games(cursor), 0, []
-        for game in games:
-            attempted += 1
-            row, audit = build_example(client, game, market_keys); audits.append(audit)
-            if not row: continue
+    prior_games = int(state.get('total_games_processed') or 0)
+
+    while cursor >= EARLIEST_HISTORY and attempted < game_budget and completed_days < day_limit:
+        games = final_games(cursor)
+        if game_index >= len(games):
+            store.archive_json(f'mlb_auto/historical/{cursor.isoformat()}.json', {
+                'date': cursor.isoformat(), 'games': len(games), 'status': 'COMPLETE',
+                'completed_at': datetime.now(timezone.utc).isoformat(),
+            })
+            reports.append({'date': cursor.isoformat(), 'games': len(games), 'complete': True})
+            cursor -= timedelta(days=1)
+            game_index = 0
+            completed_days += 1
+            _persist_progress(store, cursor=cursor, game_index=0, added=added, attempted=attempted,
+                              prior_games=prior_games, prior_days=prior_days, day_complete=True)
+            prior_days += 1
+            continue
+
+        game = games[game_index]
+        row, audit = build_example(client, game, market_keys)
+        attempted += 1
+        if row:
             store.put_training_example(row['slate_date'], row['event_id'], row)
-            day_added += 1; added += 1
-        store.archive_json(f'mlb_auto/historical/{cursor.isoformat()}.json', {'date': cursor.isoformat(), 'games': len(games), 'added': day_added, 'audits': audits})
-        reports.append({'date': cursor.isoformat(), 'games': len(games), 'added': day_added})
-        cursor -= timedelta(days=1)
-        store.put_state('historical_backfill', {'cursor_date': cursor.isoformat(), 'last_run_at': datetime.now(timezone.utc).isoformat(),
-                        'last_run_added': added, 'total_days_processed': prior_days + len(reports),
-                        'autonomous': True, 'point_in_time_only': True})
+            added += 1
+        store.archive_json(
+            f"mlb_auto/historical/{cursor.isoformat()}/{game_index:03d}-{game.get('game_pk') or 'unknown'}.json",
+            {'date': cursor.isoformat(), 'game_index': game_index, 'game': game, 'added': bool(row), 'audit': audit},
+        )
+        reports.append({'date': cursor.isoformat(), 'game_index': game_index, 'game_pk': game.get('game_pk'), 'added': bool(row)})
+        game_index += 1
+        if game_index >= len(games):
+            cursor -= timedelta(days=1)
+            game_index = 0
+            completed_days += 1
+            day_complete = True
+        else:
+            day_complete = False
+        _persist_progress(store, cursor=cursor, game_index=game_index, added=added, attempted=attempted,
+                          prior_games=prior_games, prior_days=prior_days, day_complete=day_complete)
+        if day_complete:
+            prior_days += 1
+
     total = len(store.query_training_examples(limit=5000))
-    return {'ok': True, 'action': 'HISTORICAL_BACKFILL', 'added': added, 'attempted': attempted,
-            'training_examples': total, 'next_cursor_date': cursor.isoformat(), 'days': reports,
-            'known_market_key_count': len(market_keys)}
+    return {
+        'ok': True,
+        'action': 'HISTORICAL_BACKFILL',
+        'added': added,
+        'attempted': attempted,
+        'training_examples': total,
+        'next_cursor_date': cursor.isoformat(),
+        'next_game_index': game_index,
+        'batch_game_budget': game_budget,
+        'resumable_per_game': True,
+        'days': reports,
+        'known_market_key_count': len(market_keys),
+    }
