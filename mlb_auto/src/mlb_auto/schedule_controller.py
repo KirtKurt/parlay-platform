@@ -33,7 +33,7 @@ def information_gain_score(*, hours_to_first_pitch: float | None, volatility: fl
 def desired_interval_minutes(hours_to_first_pitch: float | None, volatility: float = 0.0,
                              missing_market_fraction: float = 0.0, recent_signal_change: float = 0.0,
                              new_event_fraction: float = 0.0) -> int:
-    # Baseline is driven by game proximity. Signals may only accelerate collection.
+    """Choose live pull cadence from information value only; cost/quota are never inputs."""
     if hours_to_first_pitch is None or hours_to_first_pitch > 24:
         base = 60
     elif hours_to_first_pitch > 12:
@@ -44,6 +44,15 @@ def desired_interval_minutes(hours_to_first_pitch: float | None, volatility: flo
         base = 10
     else:
         base = 5
+
+    # Material new information always accelerates regardless of how far the game is away.
+    if (abs(volatility) >= .025 or missing_market_fraction >= .35 or
+            abs(recent_signal_change) >= .025 or new_event_fraction >= .35):
+        return min(base, 5)
+    if (abs(volatility) >= .012 or missing_market_fraction >= .15 or
+            abs(recent_signal_change) >= .012 or new_event_fraction >= .15):
+        return min(base, 10)
+
     gain = information_gain_score(hours_to_first_pitch=hours_to_first_pitch, volatility=volatility,
                                   missing_market_fraction=missing_market_fraction,
                                   recent_signal_change=recent_signal_change, new_event_fraction=new_event_fraction)
