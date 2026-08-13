@@ -1,0 +1,162 @@
+name: Deploy Isolated Soccer Auto
+
+# Deliberately manual during initial build/verification. Publish the initial
+# isolation change as one merge commit containing [skip ci]; this suppresses
+# the main deploy and its MLB workflow_run consumers at the event source. After
+# that merge, the main workflow ignores all soccer-only paths, and activation
+# here cannot touch MLB, tennis, or legacy soccer resources.
+on:
+  workflow_dispatch:
+    inputs:
+      enable_historical_backfill:
+        description: Enable resumable Odds API historical raw backfill
+        required: true
+        default: 'false'
+        type: choice
+        options: ['true', 'false']
+      shared_quota_reserve_percent:
+        description: Percent of shared all-sports credits soccer must leave untouched
+        required: true
+        default: '80'
+        type: choice
+        options: ['80', '60', '40', '20']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soccer-auto-deploy
+  cancel-in-progress: false
+
+jobs:
+  verify-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - uses: aws-actions/setup-sam@v2
+      - name: Verify isolated source and contracts
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing existing all-sports ODDS_API_KEY'; exit 1; }
+          case '${{ secrets.AWS_REGION }}' in
+            us-east-1|us-east-2|us-west-1|us-west-2) ;;
+            *) echo '::error::Soccer Nova 2 US CRIS deployment requires a supported US AWS region'; exit 1 ;;
+          esac
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
+          python -m py_compile soccer_auto/*.py
+          python -m pytest -q tests/soccer_auto
+          sam validate --template-file soccer-auto-template.yaml --lint
+          ! grep -Eq 'parlay_platform_|inqis_tennis|MLB|TENNIS' soccer-auto-template.yaml
+          aws sts get-caller-identity
+      - name: Build isolated artifact
+        run: sam build --no-cached --template-file soccer-auto-template.yaml
+      - name: Deploy isolated soccer_auto stack
+        run: |
+          set -euo pipefail
+          soccer_llm_model_id=us.amazon.nova-2-lite-v1:0
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name parlay-platform-soccer-auto \
+            --region "${{ secrets.AWS_REGION }}" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              OddsApiKey="${{ secrets.ODDS_API_KEY }}" \
+              EnableHistoricalBackfill="${{ inputs.enable_historical_backfill }}" \
+              SharedQuotaReservePercent="${{ inputs.shared_quota_reserve_percent }}" \
+              SoccerLlmModelId="$soccer_llm_model_id" \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+      - name: Prove isolated runtime integrations
+        run: |
+          set -euo pipefail
+          stack_name=parlay-platform-soccer-auto
+          region='${{ secrets.AWS_REGION }}'
+
+          physical_function() {
+            aws cloudformation describe-stack-resource \
+              --stack-name "$stack_name" \
+              --logical-resource-id "$1" \
+              --region "$region" \
+              --query 'StackResourceDetail.PhysicalResourceId' \
+              --output text
+          }
+
+          invoke_and_assert_ok() {
+            logical_id="$1"
+            payload="$2"
+            output_name="$3"
+            function_name=$(physical_function "$logical_id")
+            test -n "$function_name"
+            aws lambda invoke \
+              --function-name "$function_name" \
+              --region "$region" \
+              --cli-binary-format raw-in-base64-out \
+              --payload "$payload" \
+              "/tmp/${output_name}.json" \
+              > "/tmp/${output_name}-meta.json"
+            python - "$output_name" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          name = sys.argv[1]
+          metadata = json.loads(pathlib.Path(f"/tmp/{name}-meta.json").read_text())
+          response = json.loads(pathlib.Path(f"/tmp/{name}.json").read_text())
+          assert not metadata.get("FunctionError"), metadata
+          assert response.get("ok") is True, response
+          print(name, response)
+          PY
+          }
+
+          # Catalog and events are quota-free provider calls. Together they
+          # validate the existing all-sports key and populate the isolated
+          # registry before any paid T-10 collection work is released.
+          invoke_and_assert_ok SoccerCatalogFunction '{"action":"deployment_catalog_smoke"}' catalog
+          invoke_and_assert_ok SoccerInventoryFunction '{"action":"deployment_inventory_smoke"}' inventory
+          invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_controller_smoke"}' controller_before_llm
+
+          # This proves that the Bedrock permission was retained on the narrow
+          # soccer analyst role and that the configured model is invocable.
+          invoke_and_assert_ok SoccerLlmAnalystFunction '{"action":"deployment_llm_smoke"}' llm
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/llm.json'))
+          assert response['component'] == 'llm_analyst', response
+          assert response['model_id'] == 'us.amazon.nova-2-lite-v1:0', response
+          print('bedrock_cris_smoke', response['model_id'])
+          PY
+          invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_controller_post_llm"}' controller_after_llm
+
+          # Dispatch is provider-call-free. Its deep worker gate remains the
+          # authority for releasing paid work only when a daily T-10 window is
+          # open; invoking it here starts any already-due collection safely.
+          invoke_and_assert_ok SoccerDispatchFunction '{"action":"deployment_dispatch_smoke"}' dispatch
+
+          status_url=$(aws cloudformation describe-stacks \
+            --stack-name "$stack_name" \
+            --region "$region" \
+            --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" \
+            --output text)
+          test -n "$status_url"
+          curl --fail --retry 10 --retry-all-errors --retry-delay 10 "$status_url" | tee /tmp/soccer-auto-status.json
+          python - <<'PY'
+          import json
+          status=json.load(open('/tmp/soccer-auto-status.json'))
+          assert status['system']=='soccer_auto'
+          assert status['authority'] in {'BOOTSTRAPPING','COLLECTING','SHADOW_LEARNING','AUTHORITATIVE','DEGRADED'}
+          assert status.get('automatic_prediction_allowed', False) is False or status['authority']=='AUTHORITATIVE'
+          print(status)
+          PY

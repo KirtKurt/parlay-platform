@@ -1,0 +1,922 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Fully isolated autonomous soccer market collection and ML prediction stack
+
+Parameters:
+  OddsApiKey:
+    Type: String
+    NoEcho: true
+    Description: Existing all-sports The Odds API credential used by soccer_auto
+  EnableHistoricalBackfill:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  SharedQuotaReservePercent:
+    Type: Number
+    Default: 80
+    MinValue: 0
+    MaxValue: 100
+    Description: Percent of the one all-sports subscription reserved from soccer_auto use
+  QuotaRaceBufferCredits:
+    Type: Number
+    Default: 600
+    MinValue: 0
+    Description: Extra credits held back for admitted calls still in flight across the shared key
+  SoccerLlmModelId:
+    Type: String
+    Default: us.amazon.nova-2-lite-v1:0
+    AllowedValues:
+      - us.amazon.nova-2-lite-v1:0
+    Description: Bedrock US cross-Region inference-profile ID for the isolated soccer analyst
+
+Conditions:
+  HistoricalBackfillEnabled: !Equals [!Ref EnableHistoricalBackfill, 'true']
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Architectures: [arm64]
+    Tracing: Active
+    Environment:
+      Variables:
+        SOCCER_AUTO_REGISTRY_TABLE: !Ref SoccerRegistryTable
+        SOCCER_AUTO_EVENTS_TABLE: !Ref SoccerEventsTable
+        SOCCER_AUTO_SNAPSHOT_SLOTS_TABLE: !Ref SoccerSnapshotSlotsTable
+        SOCCER_AUTO_LOCKS_TABLE: !Ref SoccerLocksTable
+        SOCCER_AUTO_SETTLEMENTS_TABLE: !Ref SoccerSettlementsTable
+        SOCCER_AUTO_PREDICTIONS_TABLE: !Ref SoccerPredictionsTable
+        SOCCER_AUTO_MODELS_TABLE: !Ref SoccerModelsTable
+        SOCCER_AUTO_OPS_TABLE: !Ref SoccerOpsTable
+        SOCCER_AUTO_RAW_BUCKET: !Ref SoccerRawBucket
+        SOCCER_AUTO_ARTIFACT_BUCKET: !Ref SoccerArtifactBucket
+        SOCCER_AUTO_COLLECTION_QUEUE_URL: !Ref SoccerCollectionQueue
+        SOCCER_AUTO_COLLECTION_DLQ_URL: !Ref SoccerCollectionDeadLetterQueue
+        SOCCER_AUTO_ODDS_SECRET_ARN: !Ref SoccerOddsApiSecret
+        SOCCER_AUTO_MIN_BOOKMAKERS: '3'
+        SOCCER_AUTO_MIN_TRAINING_ROWS: '500'
+        SOCCER_AUTO_MIN_AUDIT_ROWS: '100'
+        SOCCER_AUTO_MIN_PROSPECTIVE_ROWS: '200'
+        SOCCER_AUTO_MAX_TRAINING_ROWS: '5000'
+        SOCCER_AUTO_ALLOW_UNVERIFIED_KNOCKOUT_LABELS: 'false'
+        SOCCER_AUTO_DAY_TIMEZONE: America/New_York
+        SOCCER_AUTO_COLLECTION_LEAD_HOURS: '10'
+        SOCCER_AUTO_SHARED_QUOTA_RESERVE_PERCENT: !Ref SharedQuotaReservePercent
+        SOCCER_AUTO_QUOTA_RACE_BUFFER_CREDITS: !Ref QuotaRaceBufferCredits
+        SOCCER_AUTO_SCORES_CADENCE_SECONDS: '300'
+        SOCCER_AUTO_LLM_MODEL_ID: !Ref SoccerLlmModelId
+        SOCCER_AUTO_LLM_ANALYSIS_MAX_AGE_HOURS: '36'
+
+Resources:
+  SoccerOddsApiSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Isolated storage of the existing all-sports Odds API credential for soccer_auto
+      SecretString: !Ref OddsApiKey
+
+  SoccerRawBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VersioningConfiguration: {Status: Enabled}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+
+  SoccerArtifactBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VersioningConfiguration: {Status: Enabled}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+
+  SoccerRegistryTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+      SSESpecification: {SSEEnabled: true}
+
+  SoccerEventsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+        - {AttributeName: GSI1PK, AttributeType: S}
+        - {AttributeName: GSI1SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+      GlobalSecondaryIndexes:
+        - IndexName: ByStateAndCommence
+          KeySchema:
+            - {AttributeName: GSI1PK, KeyType: HASH}
+            - {AttributeName: GSI1SK, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+      SSESpecification: {SSEEnabled: true}
+
+  SoccerSnapshotSlotsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+      SSESpecification: {SSEEnabled: true}
+
+  SoccerLocksTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+      SSESpecification: {SSEEnabled: true}
+
+  SoccerSettlementsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+      SSESpecification: {SSEEnabled: true}
+
+  SoccerPredictionsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+        - {AttributeName: GSI1PK, AttributeType: S}
+        - {AttributeName: GSI1SK, AttributeType: S}
+        - {AttributeName: GSI2PK, AttributeType: S}
+        - {AttributeName: GSI2SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+      GlobalSecondaryIndexes:
+        - IndexName: ByPredictionTime
+          KeySchema:
+            - {AttributeName: GSI1PK, KeyType: HASH}
+            - {AttributeName: GSI1SK, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+        - IndexName: ByModel
+          KeySchema:
+            - {AttributeName: GSI2PK, KeyType: HASH}
+            - {AttributeName: GSI2SK, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+      SSESpecification: {SSEEnabled: true}
+
+  SoccerModelsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+      SSESpecification: {SSEEnabled: true}
+
+  SoccerOpsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+      SSESpecification: {SSEEnabled: true}
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  SoccerCollectionDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  SoccerCollectionQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 900
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt SoccerCollectionDeadLetterQueue.Arn
+        maxReceiveCount: 4
+
+  SoccerAutoAlarmTopic:
+    Type: AWS::SNS::Topic
+
+  SoccerAutoRuntimeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+        - PolicyName: SoccerAutoOnlyResources
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchGetItem
+                  - dynamodb:BatchWriteItem
+                Resource:
+                  - !GetAtt SoccerRegistryTable.Arn
+                  - !GetAtt SoccerEventsTable.Arn
+                  - !Sub '${SoccerEventsTable.Arn}/index/*'
+                  - !GetAtt SoccerSnapshotSlotsTable.Arn
+                  - !GetAtt SoccerLocksTable.Arn
+                  - !GetAtt SoccerSettlementsTable.Arn
+                  - !GetAtt SoccerPredictionsTable.Arn
+                  - !Sub '${SoccerPredictionsTable.Arn}/index/*'
+                  - !GetAtt SoccerModelsTable.Arn
+                  - !GetAtt SoccerOpsTable.Arn
+              - Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject]
+                Resource:
+                  - !Sub '${SoccerRawBucket.Arn}/*'
+                  - !Sub '${SoccerArtifactBucket.Arn}/*'
+              - Effect: Allow
+                Action: [sqs:SendMessage, sqs:ReceiveMessage, sqs:DeleteMessage, sqs:GetQueueAttributes, sqs:ChangeMessageVisibility]
+                Resource:
+                  - !GetAtt SoccerCollectionQueue.Arn
+                  - !GetAtt SoccerCollectionDeadLetterQueue.Arn
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref SoccerOddsApiSecret
+              - Effect: Allow
+                Action: cloudwatch:GetMetricStatistics
+                Resource: '*'
+
+  SoccerLlmAnalystRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+        - PolicyName: SoccerLlmReadOnlyDiagnostics
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:Scan]
+                Resource:
+                  - !GetAtt SoccerRegistryTable.Arn
+                  - !GetAtt SoccerModelsTable.Arn
+                  - !GetAtt SoccerOpsTable.Arn
+              - Effect: Allow
+                Action: dynamodb:PutItem
+                Resource: !GetAtt SoccerOpsTable.Arn
+                Condition:
+                  ForAllValues:StringEquals:
+                    dynamodb:LeadingKeys: [LLM_ANALYSIS]
+              - Sid: InvokeOnlySoccerNovaProfile
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${SoccerLlmModelId}'
+              - Sid: InvokeOnlyNovaTwoLiteThroughSoccerProfile
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:us-east-1::foundation-model/amazon.nova-2-lite-v1:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:us-east-2::foundation-model/amazon.nova-2-lite-v1:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:us-west-1::foundation-model/amazon.nova-2-lite-v1:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/amazon.nova-2-lite-v1:0'
+                Condition:
+                  StringEquals:
+                    bedrock:InferenceProfileArn: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${SoccerLlmModelId}'
+
+  SoccerReadApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+        - PolicyName: SoccerReadApiOnly
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:Scan]
+                Resource:
+                  - !GetAtt SoccerRegistryTable.Arn
+                  - !GetAtt SoccerPredictionsTable.Arn
+                  - !Sub '${SoccerPredictionsTable.Arn}/index/*'
+                  - !GetAtt SoccerModelsTable.Arn
+                  - !GetAtt SoccerOpsTable.Arn
+
+  SoccerCatalogFunction:
+    Type: AWS::Serverless::Function
+    Metadata: {BuildMethod: makefile}
+    Properties:
+      CodeUri: soccer_auto/
+      Handler: soccer_auto.collector.catalog_handler
+      Role: !GetAtt SoccerAutoRuntimeRole.Arn
+      Timeout: 120
+      MemorySize: 512
+      Events:
+        CatalogEveryFifteenMinutes:
+          Type: Schedule
+          Properties:
+            Schedule: cron(1/15 * * * ? *)
+            Input: '{"action":"scheduled_catalog"}'
+            RetryPolicy: {MaximumEventAgeInSeconds: 900, MaximumRetryAttempts: 1}
+
+  SoccerDispatchFunction:
+    Type: AWS::Serverless::Function
+    Metadata: {BuildMethod: makefile}
+    Properties:
+      CodeUri: soccer_auto/
+      Handler: soccer_auto.collector.dispatch_handler
+      Role: !GetAtt SoccerAutoRuntimeRole.Arn
+      Timeout: 120
+      MemorySize: 512
+      Events:
+        AdaptiveDispatchEveryMinute:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 minute)
+            Input: '{"action":"adaptive_dispatch"}'
+            RetryPolicy: {MaximumEventAgeInSeconds: 120, MaximumRetryAttempts: 0}
+
+  SoccerInventoryFunction:
+    Type: AWS::Serverless::Function
+    Metadata: {BuildMethod: makefile}
+    Properties:
+      CodeUri: soccer_auto/
+      Handler: soccer_auto.collector.inventory_handler
+      Role: !GetAtt SoccerAutoRuntimeRole.Arn
+      Timeout: 300
+      MemorySize: 512
+      Events:
+        InventoryEveryFifteenMinutes:
+          Type: Schedule
+          Properties:
+            Schedule: cron(2/15 * * * ? *)
+            Input: '{"action":"fixture_inventory"}'
+            RetryPolicy: {MaximumEventAgeInSeconds: 300, MaximumRetryAttempts: 1}
+
+  SoccerOutrightDispatchFunction:
+    Type: AWS::Serverless::Function
+    Metadata: {BuildMethod: makefile}
+    Properties:
+      CodeUri: soccer_auto/
+      Handler: soccer_auto.collector.outright_dispatch_handler
+      Role: !GetAtt SoccerAutoRuntimeRole.Arn
+      Timeout: 120
+      MemorySize: 512
+      Events:
+        OutrightsEveryFiveMinutes:
+          Type: Schedule
+          Properties:
+            Schedule: cron(4/5 * * * ? *)
+            Input: '{"action":"collect_all_outrights"}'
+            RetryPolicy: {MaximumEventAgeInSeconds: 300, MaximumRetryAttempts: 0}
+
+  SoccerCollectionWorkerFunction:
+    Type: AWS::Serverless::Function
+    Metadata: {BuildMethod: makefile}
+    Properties:
+      CodeUri: soccer_auto/
+      Handler: soccer_auto.collector.worker_handler
+      Role: !GetAtt SoccerAutoRuntimeRole.Arn
+      Timeout: 900
+      MemorySize: 1024
+      Events:
+        CollectionQueue:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt SoccerCollectionQueue.Arn
+            BatchSize: 1
+            FunctionResponseTypes: [ReportBatchItemFailures]
+            ScalingConfig: {MaximumConcurrency: 6}
+
+  SoccerFreezeFunction:
+    Type: AWS::Serverless::Function
+    Metadata: {BuildMethod: makefile}
+    Properties:
+      CodeUri: soccer_auto/
+      Handler: soccer_auto.inference.freeze_handler
+      Role: !GetAtt SoccerAutoRuntimeRole.Arn
+      Timeout: 300
+      MemorySize: 1024
+      Events:
+        FreezeEveryMinute:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 minute)
+            Input: '{"action":"freeze_t45_and_predict"}'
+            RetryPolicy: {MaximumEventAgeInSeconds: 120, MaximumRetryAttempts: 0}
+
+  SoccerSettlementFunction:
+    Type: AWS::Serverless::Function
+    Metadata: {BuildMethod: makefile}
+    Properties:
+      CodeUri: soccer_auto/
+      Handler: soccer_auto.settlement.settlement_handler
+      Role: !GetAtt SoccerAutoRuntimeRole.Arn
+      Timeout: 900
+      MemorySize: 1024
+      Events:
+        SettlementEveryFiveMinutes:
+          Type: Schedule
+          Properties:
+            Schedule: cron(8/5 * * * ? *)
+            Input: '{"action":"settle_all_active_soccer"}'
+            RetryPolicy: {MaximumEventAgeInSeconds: 300, MaximumRetryAttempts: 0}
+
+  SoccerTrainerFunction:
+    Type: AWS::Serverless::Function
+    Metadata: {BuildMethod: makefile}
+    Properties:
+      CodeUri: soccer_auto/
+      Handler: soccer_auto.trainer.trainer_handler
+      Role: !GetAtt SoccerAutoRuntimeRole.Arn
+      Timeout: 900
+      MemorySize: 4096
+      Events:
+        TrainEverySixHours:
+          Type: Schedule
+          Properties:
+            Schedule: cron(37 1/6 * * ? *)
+            Input: '{"action":"train_evaluate_promote"}'
+            RetryPolicy: {MaximumEventAgeInSeconds: 1800, MaximumRetryAttempts: 0}
+
+  SoccerLlmAnalystFunction:
+    Type: AWS::Serverless::Function
+    Metadata: {BuildMethod: makefile}
+    Properties:
+      CodeUri: soccer_auto/
+      Handler: soccer_auto.llm_analyst.llm_analyst_handler
+      Role: !GetAtt SoccerLlmAnalystRole.Arn
+      Timeout: 300
+      MemorySize: 1024
+      Events:
+        AnalyzeSoccerLearningDaily:
+          Type: Schedule
+          Properties:
+            Schedule: cron(22 3 * * ? *)
+            Input: '{"action":"analyze_soccer_learning"}'
+            RetryPolicy: {MaximumEventAgeInSeconds: 900, MaximumRetryAttempts: 1}
+
+  SoccerHistoricalFunction:
+    Type: AWS::Serverless::Function
+    Condition: HistoricalBackfillEnabled
+    Metadata: {BuildMethod: makefile}
+    Properties:
+      CodeUri: soccer_auto/
+      Handler: soccer_auto.historical.historical_handler
+      Role: !GetAtt SoccerAutoRuntimeRole.Arn
+      Timeout: 900
+      MemorySize: 1024
+      Events:
+        FeaturedHistoricalHourly:
+          Type: Schedule
+          Properties:
+            Schedule: cron(17 * * * ? *)
+            Input: '{"mode":"featured"}'
+            RetryPolicy: {MaximumEventAgeInSeconds: 1800, MaximumRetryAttempts: 0}
+        AdditionalHistoricalHourly:
+          Type: Schedule
+          Properties:
+            Schedule: cron(47 * * * ? *)
+            Input: '{"mode":"additional"}'
+            RetryPolicy: {MaximumEventAgeInSeconds: 1800, MaximumRetryAttempts: 0}
+
+  SoccerControllerFunction:
+    Type: AWS::Serverless::Function
+    Metadata: {BuildMethod: makefile}
+    Properties:
+      CodeUri: soccer_auto/
+      Handler: soccer_auto.autonomous_controller.controller_handler
+      Role: !GetAtt SoccerAutoRuntimeRole.Arn
+      Timeout: 900
+      MemorySize: 1024
+      Environment:
+        Variables:
+          SOCCER_AUTO_INVENTORY_FUNCTION: !Ref SoccerInventoryFunction
+          SOCCER_AUTO_DISPATCH_FUNCTION: !Ref SoccerDispatchFunction
+          SOCCER_AUTO_FREEZE_FUNCTION: !Ref SoccerFreezeFunction
+          SOCCER_AUTO_SETTLEMENT_FUNCTION: !Ref SoccerSettlementFunction
+          SOCCER_AUTO_TRAINER_FUNCTION: !Ref SoccerTrainerFunction
+          SOCCER_AUTO_LLM_ANALYST_FUNCTION: !Ref SoccerLlmAnalystFunction
+      Events:
+        ControllerEveryFifteenMinutes:
+          Type: Schedule
+          Properties:
+            Schedule: cron(13/15 * * * ? *)
+            Input: '{"action":"autonomous_cycle"}'
+            RetryPolicy: {MaximumEventAgeInSeconds: 900, MaximumRetryAttempts: 0}
+
+  SoccerApiFunction:
+    Type: AWS::Serverless::Function
+    Metadata: {BuildMethod: makefile}
+    Properties:
+      CodeUri: soccer_auto/
+      Handler: soccer_auto.api.api_handler
+      Role: !GetAtt SoccerReadApiRole.Arn
+      Timeout: 60
+      MemorySize: 512
+      Events:
+        Status:
+          Type: Api
+          Properties: {Path: /v1/soccer-auto/status, Method: GET}
+        Predictions:
+          Type: Api
+          Properties: {Path: /v1/soccer-auto/predictions, Method: GET}
+        Coverage:
+          Type: Api
+          Properties: {Path: /v1/soccer-auto/coverage, Method: GET}
+        Models:
+          Type: Api
+          Properties: {Path: /v1/soccer-auto/models, Method: GET}
+
+  SoccerCollectionDlqAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: soccer_auto collection jobs entered the isolated dead-letter queue
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt SoccerCollectionDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
+  SoccerCollectionQueueAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: soccer_auto collection queue has not drained with timing headroom
+      Namespace: AWS/SQS
+      MetricName: ApproximateAgeOfOldestMessage
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt SoccerCollectionQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 600
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
+  SoccerCollectionQueueDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: soccer_auto collection fanout is accumulating faster than it drains
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt SoccerCollectionQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
+  SoccerInventoryLivenessAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: soccer_auto fixture inventory has not invoked for three schedule periods
+      Namespace: AWS/Lambda
+      MetricName: Invocations
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SoccerInventoryFunction
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
+  SoccerDispatchLivenessAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: soccer_auto T-10 dispatcher has not invoked for ten minutes
+      Namespace: AWS/Lambda
+      MetricName: Invocations
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SoccerDispatchFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
+  SoccerFreezeLivenessAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: soccer_auto T-45 freeze and prediction has not invoked for ten minutes
+      Namespace: AWS/Lambda
+      MetricName: Invocations
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SoccerFreezeFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
+  SoccerSettlementLivenessAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: soccer_auto settlement has not invoked for fifteen minutes
+      Namespace: AWS/Lambda
+      MetricName: Invocations
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SoccerSettlementFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
+  SoccerTrainerLivenessAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: soccer_auto trainer has not invoked for twelve hours
+      Namespace: AWS/Lambda
+      MetricName: Invocations
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SoccerTrainerFunction
+      Statistic: Sum
+      Period: 21600
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
+  SoccerLlmAnalystLivenessAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: soccer_auto LLM analyst has not invoked for two daily schedule periods
+      Namespace: AWS/Lambda
+      MetricName: Invocations
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SoccerLlmAnalystFunction
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
+  SoccerInventoryErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: soccer_auto fixture inventory Lambda errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SoccerInventoryFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
+  SoccerDispatchErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: soccer_auto T-10 dispatcher Lambda errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SoccerDispatchFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
+  SoccerFreezeErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: soccer_auto T-45 freeze and prediction Lambda errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SoccerFreezeFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
+  SoccerSettlementErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: soccer_auto settlement Lambda errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SoccerSettlementFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
+  SoccerTrainerErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: soccer_auto trainer Lambda errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SoccerTrainerFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
+  SoccerLlmAnalystErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: soccer_auto LLM analyst Lambda errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SoccerLlmAnalystFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
+  SoccerControllerErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: soccer_auto autonomous controller Lambda errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SoccerControllerFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
+  SoccerAutoDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardBody: !Sub |
+        {"widgets":[
+          {"type":"metric","width":12,"height":6,"properties":{"title":"soccer_auto Lambda errors","region":"${AWS::Region}","metrics":[["AWS/Lambda","Errors","FunctionName","${SoccerControllerFunction}"],[".",".",".","${SoccerCollectionWorkerFunction}"],[".",".",".","${SoccerSettlementFunction}"],[".",".",".","${SoccerTrainerFunction}"]],"stat":"Sum","period":300}},
+          {"type":"metric","width":12,"height":6,"properties":{"title":"soccer_auto queues","region":"${AWS::Region}","metrics":[["AWS/SQS","ApproximateNumberOfMessagesVisible","QueueName","${SoccerCollectionQueue.QueueName}"],[".",".",".","${SoccerCollectionDeadLetterQueue.QueueName}"]],"stat":"Maximum","period":300}}
+        ]}
+
+Outputs:
+  SoccerAutoApiBaseUrl:
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/soccer-auto'
+  SoccerAutoStatusUrl:
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/soccer-auto/status'
+  SoccerAutoAlarmTopicArn:
+    Value: !Ref SoccerAutoAlarmTopic
+  SoccerAutoRawBucket:
+    Value: !Ref SoccerRawBucket
+  SoccerAutoArtifactBucket:
+    Value: !Ref SoccerArtifactBucket
