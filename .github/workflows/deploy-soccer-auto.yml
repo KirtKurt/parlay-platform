@@ -6,6 +6,11 @@ name: Deploy Isolated Soccer Auto
 # that merge, the main workflow ignores all soccer-only paths, and activation
 # here cannot touch MLB, tennis, or legacy soccer resources.
 on:
+  # One-time initial activation trigger. Removed after the verified deploy.
+  push:
+    branches: [main]
+    paths:
+      - "soccer_auto/.deploy-v1-once"
   workflow_dispatch:
     inputs:
       enable_historical_backfill:
@@ -73,8 +78,8 @@ jobs:
             --capabilities CAPABILITY_IAM \
             --parameter-overrides \
               OddsApiKey="${{ secrets.ODDS_API_KEY }}" \
-              EnableHistoricalBackfill="${{ inputs.enable_historical_backfill }}" \
-              SharedQuotaReservePercent="${{ inputs.shared_quota_reserve_percent }}" \
+              EnableHistoricalBackfill="${{ inputs.enable_historical_backfill || 'false' }}" \
+              SharedQuotaReservePercent="${{ inputs.shared_quota_reserve_percent || '80' }}" \
               SoccerLlmModelId="$soccer_llm_model_id" \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
