@@ -19,7 +19,7 @@ env:
 jobs:
   validate-deploy-verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
@@ -33,7 +33,7 @@ jobs:
           AWS_DEFAULT_REGION: us-east-1
         run: |
           set -euo pipefail
-          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.40,<2' 'PyYAML>=6,<7'
           python -m pytest -q
           python scripts/verify_isolation.py
           python -m compileall -q src
@@ -71,6 +71,86 @@ jobs:
         run: |
           set -euo pipefail
           sam deploy --template-file .aws-sam/build/template.yaml --stack-name "$STACK_NAME" --capabilities CAPABILITY_IAM --resolve-s3 --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides "OddsApiKey=${ODDS_API_KEY_VALUE}" "ScheduleState=DISABLED" "DeployGitSha=${GITHUB_SHA}"
+      - name: Enable and prove Claude Opus 4.8 and 4.7 for MLB Auto
+        run: |
+          set -euo pipefail
+          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
+          ready=0
+          for attempt in $(seq 1 8); do
+            rm -f opus_access.json
+            if ! aws lambda invoke --cli-read-timeout 300 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_ENABLE_OPUS_ACCESS"}' opus_access.json >/dev/null 2>opus_access.err; then
+              cat opus_access.err >&2 || true
+              sleep 30
+              continue
+            fi
+            echo "--- Opus access attempt ${attempt} ---"
+            cat opus_access.json
+            if python - <<'PY'
+          import json, sys
+          result=json.load(open('opus_access.json'))
+          rows=result.get('models') or []
+          expected={
+              'us.anthropic.claude-opus-4-8',
+              'us.anthropic.claude-opus-4-7',
+          }
+          observed={str(row.get('runtime_model_id') or '') for row in rows}
+          checks=[
+              result.get('ok') is True,
+              result.get('action') == 'ENABLE_OPUS_ACCESS',
+              result.get('scope') == 'mlb_auto_only',
+              result.get('access_policy') == 'OPUS_4_8_AND_4_7_REQUIRED',
+              result.get('all_models_ready') is True,
+              result.get('all_invocations_ok') is True,
+              observed == expected,
+              all(row.get('access_ready') is True for row in rows),
+              all((row.get('invocation_probe') or {}).get('ok') is True for row in rows),
+          ]
+          sys.exit(0 if all(checks) else 1)
+          PY
+            then
+              ready=1
+              break
+            fi
+            sleep 30
+          done
+          test "$ready" = 1
+
+          aws lambda invoke --cli-read-timeout 420 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_LLM_RD","force":true}' llm_rd.json >/dev/null
+          aws lambda invoke --cli-read-timeout 120 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"STATUS"}' llm_status.json >/dev/null
+          echo '--- LLM R&D ---'; cat llm_rd.json
+          echo '--- LLM status ---'; cat llm_status.json
+          python - <<'PY'
+          import json
+          rd=json.load(open('llm_rd.json'))
+          status=json.load(open('llm_status.json'))
+          access=status.get('llm_model_access') or {}
+          layer=status.get('llm_rd') or {}
+          assert rd.get('ok') is True, rd
+          assert rd.get('action') == 'LLM_RD', rd
+          assert rd.get('generated') is True, rd
+          assert str(rd.get('candidate_id') or '').startswith('LLM_RD_'), rd
+          assert 1 <= int(rd.get('feature_count') or 0) <= 8, rd
+          assert rd.get('llm_model_id') in {
+              'us.anthropic.claude-opus-4-8',
+              'us.anthropic.claude-opus-4-7',
+          }, rd
+          assert int(rd.get('development_rows') or 0) > 0, rd
+          assert int(rd.get('untouched_audit_reserve_count') or 0) >= 50, rd
+          assert status.get('sport') == 'mlb_auto', status
+          assert access.get('scope') == 'mlb_auto_only', access
+          assert access.get('last_attempt_ok') is True, access
+          assert access.get('all_models_ready') is True, access
+          assert access.get('all_invocations_ok') is True, access
+          assert layer.get('enabled') is True, layer
+          assert layer.get('mode') == 'BEDROCK_LLM_AUTONOMOUS_RD', layer
+          assert layer.get('scope') == 'mlb_auto_only', layer
+          assert layer.get('generated_executable_code') is False, layer
+          assert layer.get('promotion_requires_existing_model_audit_gate') is True, layer
+          assert layer.get('candidate_id') == rd.get('candidate_id'), (layer, rd)
+          assert layer.get('candidate_status') == 'DEVELOPMENT_CANDIDATE', layer
+          assert int(layer.get('candidate_feature_count') or 0) == int(rd.get('feature_count') or 0), (layer, rd)
+          assert layer.get('last_run_ok') is True, layer
+          PY
       - name: Live provider, ingest, all-region historical, and runtime proof
         run: |
           set -euo pipefail
@@ -101,7 +181,7 @@ jobs:
           python - <<'PY'
           import json
           p=json.load(open('provider.json')); m=json.load(open('market_inventory.json')); b=json.load(open('heartbeat.json')); h=json.load(open('history.json')); s=json.load(open('status.json'))
-          c=s.get('controller') or {}
+          c=s.get('controller') or {}; access=s.get('llm_model_access') or {}; layer=s.get('llm_rd') or {}
           assert p.get('ok') is True and p.get('action')=='LIVE_PROVIDER_PROOF', p
           assert p.get('provider_sport_key')=='baseball_mlb', p
           assert set(str(p.get('regions') or '').split(',')) == {'us','us2','uk','eu','au'}, p
@@ -128,6 +208,11 @@ jobs:
           assert c.get('last_ingest_ok') is True, c
           assert c.get('last_ingest_completed_at'), c
           assert not c.get('last_ingest_error'), c
+          assert access.get('last_attempt_ok') is True, access
+          assert access.get('all_models_ready') is True, access
+          assert access.get('all_invocations_ok') is True, access
+          assert layer.get('last_run_ok') is True, layer
+          assert layer.get('candidate_status') == 'DEVELOPMENT_CANDIDATE', layer
           PY
       - name: Enable autonomous schedules
         working-directory: mlb_auto
@@ -164,6 +249,8 @@ jobs:
           status=json.load(open('post_enable_status.json'))
           controller=status.get('controller') or {}
           repair=status.get('repair') or {}
+          access=status.get('llm_model_access') or {}
+          layer=status.get('llm_rd') or {}
           since=parse(os.environ['ENABLED_AT'])
           heartbeat=parse(controller.get('heartbeat_at'))
           repaired=parse(repair.get('last_repair_at'))
@@ -180,6 +267,11 @@ jobs:
               bool(controller.get('last_market_inventory_at')),
               status.get('official_pick_policy') == 'CHAMPION_CONFIDENCE_ONLY',
               status.get('expected_value_selection_gate') is False,
+              access.get('last_attempt_ok') is True,
+              access.get('all_models_ready') is True,
+              access.get('all_invocations_ok') is True,
+              layer.get('last_run_ok') is True,
+              layer.get('candidate_status') == 'DEVELOPMENT_CANDIDATE',
           ]
           sys.exit(0 if all(checks) else 1)
           PY
@@ -230,11 +322,14 @@ jobs:
           set -euo pipefail
           aws cloudformation describe-stacks --stack-name "$STACK_NAME" --output json > stack.json
           aws cloudformation list-stack-resources --stack-name "$STACK_NAME" --output json > resources.json
-          sha256sum provider.json market_inventory.json heartbeat.json history.json status.json post_enable_status.json rules.json stack.json resources.json > SHA256SUMS
+          sha256sum opus_access.json llm_rd.json llm_status.json provider.json market_inventory.json heartbeat.json history.json status.json post_enable_status.json rules.json stack.json resources.json > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: mlb-auto-v1-deployment-evidence-${{ github.run_id }}
           path: |
+            opus_access.json
+            llm_rd.json
+            llm_status.json
             provider.json
             market_inventory.json
             heartbeat.json
