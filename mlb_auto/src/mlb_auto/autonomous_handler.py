@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from . import handler as base
 from .evolution import discover_challenger
-from .historical_backfill import run_historical_backfill
+from .historical_backfill_v2 import run_historical_backfill
 from .ml import chronological_split, promote_challenger
 from .provider_open import OpenEndedOddsApiClient
 from .storage import Store
@@ -91,7 +91,6 @@ def handler(event, context):
         return autonomous_train()
     if action in ('HISTORICAL_BACKFILL', 'MLB_AUTO_HISTORICAL_BACKFILL'):
         return autonomous_backfill()
-    # Repair must route its training action through the evolutionary trainer too.
     if action in ('REPAIR', 'MLB_AUTO_REPAIR'):
         original_train = base.train
         try:
