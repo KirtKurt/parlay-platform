@@ -13,12 +13,22 @@ OPUS_MODELS = (
         'name': 'Claude Opus 4.8',
         'foundation_model_id': 'anthropic.claude-opus-4-8',
         'runtime_model_id': 'us.anthropic.claude-opus-4-8',
+        'runtime_model_ids': (
+            'anthropic.claude-opus-4-8',
+            'us.anthropic.claude-opus-4-8',
+            'global.anthropic.claude-opus-4-8',
+        ),
         'marketplace_product_id': 'prod-bk5rjg4eo2pke',
     },
     {
         'name': 'Claude Opus 4.7',
         'foundation_model_id': 'anthropic.claude-opus-4-7',
         'runtime_model_id': 'us.anthropic.claude-opus-4-7',
+        'runtime_model_ids': (
+            'anthropic.claude-opus-4-7',
+            'us.anthropic.claude-opus-4-7',
+            'global.anthropic.claude-opus-4-7',
+        ),
         'marketplace_product_id': 'prod-d2ik6zgct5hxi',
     },
 )
@@ -186,6 +196,7 @@ def _invoke_probe(runtime, runtime_model_id: str) -> dict[str, Any]:
         text = ''.join(str(row.get('text') or '') for row in content if isinstance(row, dict))
         return {
             'ok': True,
+            'runtime_model_id': runtime_model_id,
             'request_id': metadata.get('RequestId'),
             'usage': dict(response.get('usage') or {}),
             'response_confirmed': 'mlb_auto_opus_access' in text,
@@ -193,9 +204,29 @@ def _invoke_probe(runtime, runtime_model_id: str) -> dict[str, Any]:
     except Exception as exc:
         return {
             'ok': False,
+            'runtime_model_id': runtime_model_id,
             'error_code': _error_code(exc),
             'error': _error_message(exc),
         }
+
+
+def _probe_runtime_ids(runtime, runtime_model_ids) -> dict[str, Any]:
+    attempts = []
+    for runtime_model_id in runtime_model_ids:
+        result = _invoke_probe(runtime, str(runtime_model_id))
+        attempts.append(result)
+        if result.get('ok') is True:
+            return {
+                **result,
+                'attempts': attempts,
+                'selected_runtime_model_id': runtime_model_id,
+            }
+    return {
+        'ok': False,
+        'attempts': attempts,
+        'selected_runtime_model_id': None,
+        'reason': 'NO_DOCUMENTED_RUNTIME_ID_INVOKABLE',
+    }
 
 
 def ensure_opus_access(
@@ -223,6 +254,7 @@ def ensure_opus_access(
             agreement = _create_agreement(bedrock, spec['foundation_model_id'])
         model_rows.append({
             **spec,
+            'runtime_model_ids': list(spec['runtime_model_ids']),
             'availability_before': before,
             'agreement': agreement,
             'availability_after': before,
@@ -241,15 +273,23 @@ def ensure_opus_access(
 
     for row in model_rows:
         row['invocation_probe'] = (
-            _invoke_probe(runtime, row['runtime_model_id'])
+            _probe_runtime_ids(runtime, row['runtime_model_ids'])
             if row.get('access_ready')
             else {'ok': False, 'reason': 'MODEL_ACCESS_NOT_READY'}
         )
+        row['selected_runtime_model_id'] = (
+            row.get('invocation_probe') or {}
+        ).get('selected_runtime_model_id')
 
     ok = bool(use_case.get('ok')) and all(
         row.get('access_ready') and (row.get('invocation_probe') or {}).get('ok')
         for row in model_rows
     )
+    selected_runtime_model_ids = [
+        str(row.get('selected_runtime_model_id'))
+        for row in model_rows
+        if row.get('selected_runtime_model_id')
+    ]
     completed_at = _iso()
     payload = {
         'ok': ok,
@@ -260,11 +300,13 @@ def ensure_opus_access(
         'completed_at': completed_at,
         'use_case': use_case,
         'models': model_rows,
+        'selected_runtime_model_ids': selected_runtime_model_ids,
         'all_models_ready': all(bool(row.get('access_ready')) for row in model_rows),
         'all_invocations_ok': all(
             bool((row.get('invocation_probe') or {}).get('ok')) for row in model_rows
         ),
         'access_policy': 'OPUS_4_8_AND_4_7_REQUIRED',
+        'runtime_id_policy': 'DIRECT_FOUNDATION_THEN_US_THEN_GLOBAL',
     }
     store.put_state('llm_model_access', {
         'last_attempt_at': completed_at,
@@ -273,8 +315,10 @@ def ensure_opus_access(
         'region': region,
         'use_case_ok': bool(use_case.get('ok')),
         'models': model_rows,
+        'selected_runtime_model_ids': selected_runtime_model_ids,
         'all_models_ready': payload['all_models_ready'],
         'all_invocations_ok': payload['all_invocations_ok'],
         'access_policy': payload['access_policy'],
+        'runtime_id_policy': payload['runtime_id_policy'],
     })
     return payload
