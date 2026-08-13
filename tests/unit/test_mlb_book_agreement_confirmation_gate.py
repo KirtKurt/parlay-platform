@@ -129,6 +129,41 @@ def large_move_medium_late_movement_row(tags, *, late_movement=0.02):
     }
 
 
+def large_move_medium_full_acceleration_row(tags, *, full_acceleration=0.02):
+    return {
+        "predictedSide": "home",
+        "predictedWinner": "Home",
+        "playable": True,
+        "homeSignal": {
+            "marketConsensusProbability": 0.60,
+            "latestGap": 0.20,
+            "delta": 0.04,
+            "reversalCount": 1,
+            "tags": tags,
+            "temporalFeatures": {
+                "horizons": {
+                    "full": {
+                        "reversalCount": 1,
+                        "accelerationPpHr2": full_acceleration,
+                    }
+                }
+            },
+        },
+        "awaySignal": {
+            "marketConsensusProbability": 0.40,
+            "delta": 0.0,
+            "temporalFeatures": {
+                "horizons": {
+                    "full": {
+                        "reversalCount": 1,
+                        "accelerationPpHr2": 0.0,
+                    }
+                }
+            },
+        },
+    }
+
+
 def component_names(value):
     return {item["name"] for item in module._components(value)}
 
@@ -177,6 +212,34 @@ def test_large_move_medium_late_movement_gate():
         large_move_medium_late_movement_row([], late_movement=-0.02)
     )
     assert "large_move_medium_late_movement_without_confirmation" not in opposite_late_move
+
+
+def test_large_move_medium_full_acceleration_gate():
+    unstable = large_move_medium_full_acceleration_row([])
+    reasons = module._signal_risk_gate_reasons(unstable)
+    assert "large_move_medium_full_acceleration_without_confirmation" in reasons
+    assert module._is_playable(unstable) is False
+    assert "large_move_medium_full_acceleration_penalty" in component_names(unstable)
+
+    confirmed = module._signal_risk_gate_reasons(
+        large_move_medium_full_acceleration_row(["BOOK_AGREEMENT", "STEAM"])
+    )
+    assert "large_move_medium_full_acceleration_without_confirmation" not in confirmed
+
+    confirmed_run_line = module._signal_risk_gate_reasons(
+        large_move_medium_full_acceleration_row(["BOOK_AGREEMENT", "RUN_LINE_CONFIRMATION"])
+    )
+    assert "large_move_medium_full_acceleration_without_confirmation" not in confirmed_run_line
+
+    small_acceleration = module._signal_risk_gate_reasons(
+        large_move_medium_full_acceleration_row([], full_acceleration=0.005)
+    )
+    assert "large_move_medium_full_acceleration_without_confirmation" not in small_acceleration
+
+    opposite_acceleration = module._signal_risk_gate_reasons(
+        large_move_medium_full_acceleration_row([], full_acceleration=-0.02)
+    )
+    assert "large_move_medium_full_acceleration_without_confirmation" not in opposite_acceleration
 
 
 def main():
@@ -233,6 +296,7 @@ def main():
 
     test_large_move_extreme_180m_acceleration_gate()
     test_large_move_medium_late_movement_gate()
+    test_large_move_medium_full_acceleration_gate()
 
     print("MLB book-agreement confirmation gate PASS")
 
