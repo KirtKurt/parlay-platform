@@ -54,8 +54,15 @@ def _availability_ready(payload: dict[str, Any]) -> bool:
 
 def _safe_availability(client, model_id: str) -> dict[str, Any]:
     try:
-        response = client.get_foundation_model_availability(modelId=model_id)
-        return {'ok': True, **dict(response or {})}
+        response = dict(client.get_foundation_model_availability(modelId=model_id) or {})
+        return {
+            'ok': True,
+            'modelId': response.get('modelId') or model_id,
+            'agreementAvailability': dict(response.get('agreementAvailability') or {}),
+            'authorizationStatus': response.get('authorizationStatus'),
+            'entitlementAvailability': response.get('entitlementAvailability'),
+            'regionAvailability': response.get('regionAvailability'),
+        }
     except Exception as exc:
         return {
             'ok': False,
@@ -67,8 +74,13 @@ def _safe_availability(client, model_id: str) -> dict[str, Any]:
 
 def _ensure_anthropic_use_case(client) -> dict[str, Any]:
     try:
-        response = client.get_use_case_for_model_access()
-        return {'ok': True, 'submitted': False, 'already_present': True, 'response': response}
+        response = dict(client.get_use_case_for_model_access() or {})
+        return {
+            'ok': True,
+            'submitted': False,
+            'already_present': True,
+            'form_present': bool(response.get('formData')),
+        }
     except Exception as exc:
         if _error_code(exc) != 'ResourceNotFoundException':
             return {
@@ -118,7 +130,6 @@ def _create_agreement(client, model_id: str) -> dict[str, Any]:
                 offerType='ALL',
             )
         except Exception as exc:
-            # Older SDK service models may not expose offerType even though the API does.
             if _error_code(exc) not in ('ParamValidationError', 'UnknownParameterError'):
                 raise
             offers = client.list_foundation_model_agreement_offers(modelId=model_id)
@@ -169,12 +180,15 @@ def _invoke_probe(runtime, runtime_model_id: str) -> dict[str, Any]:
             'output_config': {'effort': 'low'},
         }
     try:
-        response = runtime.converse(**kwargs)
+        response = dict(runtime.converse(**kwargs) or {})
         metadata = dict(response.get('ResponseMetadata') or {})
+        content = (((response.get('output') or {}).get('message') or {}).get('content') or [])
+        text = ''.join(str(row.get('text') or '') for row in content if isinstance(row, dict))
         return {
             'ok': True,
             'request_id': metadata.get('RequestId'),
             'usage': dict(response.get('usage') or {}),
+            'response_confirmed': 'mlb_auto_opus_access' in text,
         }
     except Exception as exc:
         return {
@@ -190,7 +204,7 @@ def ensure_opus_access(
     bedrock_client=None,
     runtime_client=None,
     sleep: Callable[[float], None] = time.sleep,
-    poll_attempts: int = 36,
+    poll_attempts: int = 12,
     poll_seconds: int = 10,
 ) -> dict[str, Any]:
     """Enable and prove Opus 4.8/4.7 access for the isolated MLB Auto runtime."""
@@ -250,6 +264,7 @@ def ensure_opus_access(
         'all_invocations_ok': all(
             bool((row.get('invocation_probe') or {}).get('ok')) for row in model_rows
         ),
+        'access_policy': 'OPUS_4_8_AND_4_7_REQUIRED',
     }
     store.put_state('llm_model_access', {
         'last_attempt_at': completed_at,
@@ -260,5 +275,6 @@ def ensure_opus_access(
         'models': model_rows,
         'all_models_ready': payload['all_models_ready'],
         'all_invocations_ok': payload['all_invocations_ok'],
+        'access_policy': payload['access_policy'],
     })
     return payload
