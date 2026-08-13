@@ -8,6 +8,8 @@ from typing import Any, Callable
 
 import boto3
 
+from .mantle_client import invoke_anthropic
+
 OPUS_MODELS = (
     {
         'name': 'Claude Opus 4.8',
@@ -46,7 +48,7 @@ def _error_code(exc: Exception) -> str:
 def _error_message(exc: Exception) -> str:
     response = getattr(exc, 'response', None) or {}
     message = (response.get('Error') or {}).get('Message')
-    return str(message or exc)[:800]
+    return str(message or exc)[:1200]
 
 
 def _availability_ready(payload: dict[str, Any]) -> bool:
@@ -173,7 +175,7 @@ def _create_agreement(client, model_id: str) -> dict[str, Any]:
         }
 
 
-def _invoke_probe(runtime, runtime_model_id: str) -> dict[str, Any]:
+def _runtime_probe(runtime, runtime_model_id: str) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         'modelId': runtime_model_id,
         'messages': [{
@@ -189,24 +191,61 @@ def _invoke_probe(runtime, runtime_model_id: str) -> dict[str, Any]:
             'thinking': {'type': 'adaptive'},
             'output_config': {'effort': 'low'},
         }
+    response = dict(runtime.converse(**kwargs) or {})
+    metadata = dict(response.get('ResponseMetadata') or {})
+    content = (((response.get('output') or {}).get('message') or {}).get('content') or [])
+    text = ''.join(str(row.get('text') or '') for row in content if isinstance(row, dict))
+    return {
+        'ok': 'mlb_auto_opus_access' in text,
+        'runtime_model_id': runtime_model_id,
+        'resolved_model_id': runtime_model_id,
+        'request_id': metadata.get('RequestId'),
+        'usage': {
+            **dict(response.get('usage') or {}),
+            'endpoint_family': 'bedrock-runtime-converse',
+        },
+        'endpoint_family': 'bedrock-runtime-converse',
+        'response_confirmed': 'mlb_auto_opus_access' in text,
+    }
+
+
+def _invoke_probe(runtime, runtime_model_id: str) -> dict[str, Any]:
+    prompt = (
+        'Return exactly this JSON object and nothing else: '
+        '{"mlb_auto_opus_access":true}'
+    )
+    mantle_error = None
     try:
-        response = dict(runtime.converse(**kwargs) or {})
-        metadata = dict(response.get('ResponseMetadata') or {})
-        content = (((response.get('output') or {}).get('message') or {}).get('content') or [])
-        text = ''.join(str(row.get('text') or '') for row in content if isinstance(row, dict))
+        payload, usage = invoke_anthropic(
+            runtime_model_id,
+            prompt,
+            max_tokens=512,
+            system_prompt='MLB Auto model-access verification only. Return JSON only.',
+        )
+        confirmed = payload.get('mlb_auto_opus_access') is True
         return {
-            'ok': True,
+            'ok': confirmed,
             'runtime_model_id': runtime_model_id,
-            'request_id': metadata.get('RequestId'),
-            'usage': dict(response.get('usage') or {}),
-            'response_confirmed': 'mlb_auto_opus_access' in text,
+            'resolved_model_id': usage.get('foundation_model_id'),
+            'usage': usage,
+            'endpoint_family': 'bedrock-mantle-anthropic',
+            'response_confirmed': confirmed,
         }
+    except Exception as exc:
+        mantle_error = f'{type(exc).__name__}:{str(exc)[:1200]}'
+
+    try:
+        result = _runtime_probe(runtime, runtime_model_id)
+        result['mantle_error'] = mantle_error
+        return result
     except Exception as exc:
         return {
             'ok': False,
             'runtime_model_id': runtime_model_id,
             'error_code': _error_code(exc),
             'error': _error_message(exc),
+            'mantle_error': mantle_error,
+            'endpoint_family': 'bedrock-mantle-then-runtime',
         }
 
 
@@ -225,7 +264,7 @@ def _probe_runtime_ids(runtime, runtime_model_ids) -> dict[str, Any]:
         'ok': False,
         'attempts': attempts,
         'selected_runtime_model_id': None,
-        'reason': 'NO_DOCUMENTED_RUNTIME_ID_INVOKABLE',
+        'reason': 'NO_DOCUMENTED_ENDPOINT_INVOKABLE',
     }
 
 
@@ -306,7 +345,7 @@ def ensure_opus_access(
             bool((row.get('invocation_probe') or {}).get('ok')) for row in model_rows
         ),
         'access_policy': 'OPUS_4_8_AND_4_7_REQUIRED',
-        'runtime_id_policy': 'DIRECT_FOUNDATION_THEN_US_THEN_GLOBAL',
+        'runtime_id_policy': 'MANTLE_FOUNDATION_THEN_RUNTIME_FALLBACK',
     }
     store.put_state('llm_model_access', {
         'last_attempt_at': completed_at,
