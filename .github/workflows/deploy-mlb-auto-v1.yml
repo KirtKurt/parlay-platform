@@ -76,26 +76,26 @@ jobs:
           set -euo pipefail
           FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
           aws lambda invoke --cli-read-timeout 180 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_LIVE_PROVIDER_PROOF"}' provider.json >/dev/null
-          aws lambda invoke --cli-read-timeout 900 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_HISTORICAL_BACKFILL"}' history.json >/dev/null
+          aws lambda invoke --cli-read-timeout 240 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_MARKET_INVENTORY"}' market_inventory.json >/dev/null
+          aws lambda invoke --cli-read-timeout 600 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_HISTORICAL_BACKFILL","max_games_per_run":1}' history.json >/dev/null
           aws lambda invoke --cli-read-timeout 120 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"STATUS"}' status.json >/dev/null
           python - <<'PY'
           import json
-          p=json.load(open('provider.json')); h=json.load(open('history.json')); s=json.load(open('status.json'))
-          m=h.get('market_inventory') or {}
-          json.dump(m, open('market_inventory.json','w'), indent=2, sort_keys=True)
+          p=json.load(open('provider.json')); m=json.load(open('market_inventory.json')); h=json.load(open('history.json')); s=json.load(open('status.json'))
           assert p.get('ok') is True and p.get('action')=='LIVE_PROVIDER_PROOF', p
           assert p.get('provider_sport_key')=='baseball_mlb', p
           assert set(str(p.get('regions') or '').split(',')) == {'us','us2','uk','eu','au'}, p
           assert p.get('featured_markets') == ['h2h','spreads','totals'], p
           assert int(p.get('event_count') or 0)>0 and int(p.get('bookmaker_count') or 0)>0, p
           assert p.get('raw_metadata_requested') == {'links':True,'source_ids':True,'bet_limits':True,'rotation_numbers':True}, p
-          assert m.get('ok') is True, m
+          assert m.get('ok') is True and m.get('action')=='MARKET_INVENTORY', m
           assert set(str(m.get('regions') or '').split(',')) == {'us','us2','uk','eu','au'}, m
           assert int(m.get('event_count') or 0)>0 and int(m.get('market_key_count') or 0)>0, m
           assert isinstance(m.get('market_keys'), list) and len(m['market_keys'])==int(m['market_key_count']), m
           assert h.get('ok') is True and h.get('action')=='HISTORICAL_BACKFILL', h
-          assert int(h.get('attempted') or 0)>0, h
-          assert int(h.get('added') or 0)>0, h
+          assert h.get('resumable_per_game') is True, h
+          assert int(h.get('attempted') or 0)==1, h
+          assert int(h.get('batch_game_budget') or 0)==1, h
           assert int(h.get('training_examples') or 0)>0, h
           assert s.get('ok') is True and s.get('sport')=='mlb_auto', s
           assert s.get('provider_sport_key')=='baseball_mlb' and s.get('autonomous') is True, s
