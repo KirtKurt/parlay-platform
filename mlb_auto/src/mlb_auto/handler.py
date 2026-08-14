@@ -14,6 +14,7 @@ from .odds_api import OddsApiClient, merge_event_odds
 from .repair import diagnose, validate_self_repair
 from .schedule_controller import decide_pull
 from .storage import Store
+from .team_form import TEAM_FORM_SOURCE, TEAM_FORM_VERSION, build_team_form_context
 
 ET = ZoneInfo('America/New_York')
 MIN_TRAIN = int(os.getenv('MLB_AUTO_MIN_TRAINING_EXAMPLES', '250'))
@@ -21,7 +22,7 @@ MIN_VALID = int(os.getenv('MLB_AUTO_MIN_VALIDATION_EXAMPLES', '50'))
 MIN_NEW = int(os.getenv('MLB_AUTO_MIN_NEW_EXAMPLES', '25'))
 MIN_OFFICIAL_PROB = float(os.getenv('MLB_AUTO_MIN_OFFICIAL_PROBABILITY', '0.58'))
 LOCK_MINUTES = int(os.getenv('MLB_AUTO_LOCK_MINUTES', '45'))
-PLATFORM_VERSION = 'MLB-AUTO-v1-autonomous-evolution'
+PLATFORM_VERSION = 'MLB-AUTO-v1.1-team-form-rd'
 
 
 def _now() -> datetime:
@@ -143,6 +144,8 @@ def ingest(*, force_reason: str | None = None) -> dict:
     event_map = {str(x.get('id')): x for x in events}
     predictions = []
     discovery_errors = []
+    team_form_errors = []
+    team_form_available_count = 0
     market_key_total = missing = 0
     volatility_values = []
     champion_item = store.get_model('CHAMPION')
@@ -165,12 +168,24 @@ def ingest(*, force_reason: str | None = None) -> dict:
         history = _latest_home_history(store, slate, event_id)
         fair = moneyline_consensus(base)
         history_plus = history + [float(fair.get('home') or .5)]
-        features = build_feature_vector(event=base, detail=detail, home_probability_history=history_plus, pulled_at=_iso(now), pull_count=len(history_plus))
+        home, away = str(base.get('home_team') or ''), str(base.get('away_team') or '')
+        team_form = build_team_form_context(home, away, now, historical=False)
+        if team_form.get('ok'):
+            team_form_available_count += 1
+        else:
+            team_form_errors.append(f"{event_id}:{team_form.get('error') or 'TEAM_FORM_UNAVAILABLE'}")
+        features = build_feature_vector(
+            event=base,
+            detail=detail,
+            home_probability_history=history_plus,
+            pulled_at=_iso(now),
+            pull_count=len(history_plus),
+            team_form_features=team_form.get('features') or {},
+        )
         volatility_values.append(float(features.get('market_volatility') or 0))
         bootstrap = bootstrap_home_probability(features)
         home_prob = champion.predict(features) if champion else bootstrap
         away_prob = 1.0 - home_prob
-        home, away = str(base.get('home_team') or ''), str(base.get('away_team') or '')
         winner = home if home_prob >= .5 else away
         win_prob = max(home_prob, away_prob)
         price, price_book = _pick_price(base, winner)
@@ -192,6 +207,12 @@ def ingest(*, force_reason: str | None = None) -> dict:
             'pull_count_for_event': len(history_plus), 'discovered_market_keys': discovered_keys,
             'market_discovery_errors': errors, 'platform_version': PLATFORM_VERSION,
             'pre_lock_cutoff': now <= cutoff,
+            'team_form_version': TEAM_FORM_VERSION,
+            'team_form_source': TEAM_FORM_SOURCE,
+            'team_form_available': bool(team_form.get('ok')),
+            'team_form_as_of': (team_form.get('metadata') or {}).get('as_of'),
+            'team_form_metadata': team_form.get('metadata') or {},
+            'team_form_error': team_form.get('error') or '',
         }
         row['prediction_fingerprint'] = _prediction_fingerprint(row)
         store.put_snapshot(slate, _iso(now), {
@@ -212,10 +233,32 @@ def ingest(*, force_reason: str | None = None) -> dict:
         'discovery_error_count': len(discovery_errors), 'last_ingest_ok': True,
         'last_heartbeat_ok': True,
         'prediction_mode': 'ML_CHAMPION' if champion else 'MARKET_BOOTSTRAP',
+        'team_form_version': TEAM_FORM_VERSION,
+        'team_form_available_count': team_form_available_count,
+        'team_form_error_count': len(team_form_errors),
+        'team_form_errors': team_form_errors[:20],
     }
     store.put_state('controller', next_state)
-    store.archive_json(f'mlb_auto/raw/{now:%Y/%m/%d/%H%M%S}.json', {'events': events, 'featured': featured, 'predictions': predictions, 'errors': discovery_errors})
-    return {'ok': True, 'action': 'INGEST', 'decision': decision.__dict__, 'event_count': len(events), 'prediction_count': len(predictions), 'champion_model_id': champion_id, 'errors': discovery_errors[:20]}
+    store.archive_json(f'mlb_auto/raw/{now:%Y/%m/%d/%H%M%S}.json', {
+        'events': events,
+        'featured': featured,
+        'predictions': predictions,
+        'errors': discovery_errors,
+        'team_form_errors': team_form_errors,
+    })
+    return {
+        'ok': True,
+        'action': 'INGEST',
+        'decision': decision.__dict__,
+        'event_count': len(events),
+        'prediction_count': len(predictions),
+        'champion_model_id': champion_id,
+        'errors': discovery_errors[:20],
+        'team_form_version': TEAM_FORM_VERSION,
+        'team_form_available_count': team_form_available_count,
+        'team_form_error_count': len(team_form_errors),
+        'team_form_errors': team_form_errors[:20],
+    }
 
 
 def _precutoff_prediction(store: Store, slate: str, event_id: str, cutoff: datetime) -> dict | None:
@@ -306,6 +349,12 @@ def settle() -> dict:
             'lock_cutoff_at': lock.get('lock_cutoff_at'), 'prediction_fingerprint': lock.get('prediction_fingerprint'),
             'source_pull_at': lock.get('source_pull_at'), 'official_pick': bool(lock.get('official_pick')),
             'predicted_winner': lock.get('predicted_winner'),
+            'team_form_version': lock.get('team_form_version'),
+            'team_form_source': lock.get('team_form_source'),
+            'team_form_available': bool(lock.get('team_form_available')),
+            'team_form_as_of': lock.get('team_form_as_of'),
+            'team_form_metadata': lock.get('team_form_metadata') or {},
+            'team_form_error': lock.get('team_form_error') or '',
         })
         settled += 1
     settlement_at = _iso()
