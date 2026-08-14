@@ -251,6 +251,30 @@ jobs:
           PY
           invoke_and_assert_ok SoccerCatalogFunction '{"action":"deployment_catalog_smoke"}' catalog
           invoke_and_assert_ok SoccerInventoryFunction '{"action":"deployment_inventory_smoke"}' inventory
+          # Convert legacy immutable final scores with stored event-market
+          # evidence before historical T45 materialization. This path is
+          # provider-call-free and deliberately does not advance the scheduled
+          # migration cursor during deployment verification.
+          invoke_and_assert_ok SoccerSettlementFunction '{"action":"reconcile_admissibility_only"}' settlement_reconcile
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/settlement_reconcile.json'))
+          reconciliation = response['admissibility_reconciliation']
+          assert response['component'] == 'settlement', response
+          assert response['action'] == 'reconcile_admissibility_only', response
+          assert int(response['provider_calls']) == 0, response
+          assert not response['failures'], response
+          assert reconciliation['scan_mode'] == 'BOUNDED_CHECKPOINTED', reconciliation
+          assert reconciliation['checkpoint_requested'] is False, reconciliation
+          assert reconciliation['claim_requested'] is False, reconciliation
+          assert reconciliation['scan_checkpointed'] is False, reconciliation
+          assert int(reconciliation['settlement_table_rows_scanned']) <= int(reconciliation['scan_page_limit']), reconciliation
+          assert int(reconciliation['certificates_written']) >= 0, reconciliation
+          assert int(reconciliation['certificates_existing']) >= 0, reconciliation
+          assert int(reconciliation['pending_market_evidence']) >= 0, reconciliation
+          print('settlement_admissibility_reconciliation_smoke', reconciliation)
+          PY
           invoke_and_assert_ok SoccerHistoricalFunction '{"mode":"status"}' historical_status
           python - <<'PY'
           import json
@@ -649,6 +673,45 @@ jobs:
           done
           test "$coverage_ready" -eq 1
           tee /tmp/soccer-auto-coverage-proof.json < /tmp/soccer-auto-coverage.json
+
+          # Exercise both immutable authorities after exact coverage is ready.
+          # T45 is training/audit evidence only; T10 is the sole final public
+          # decision authority and may safely be not-due when no match is in its
+          # bounded capture window.
+          invoke_and_assert_ok SoccerFreezeFunction '{"action":"deployment_dual_lock_smoke"}' freeze
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/freeze.json'))
+          assert response['system'] == 'soccer_auto', response
+          assert response['training_horizon'] == 'T45', response
+          assert response['public_decision_horizon'] == 'T10', response
+          for field in (
+              'locks_created_by_horizon',
+              'locks_retried_by_horizon',
+              'locks_blocked_by_horizon',
+              'not_due_by_horizon',
+          ):
+              assert set(response[field]) == {'T45', 'T10'}, (field, response)
+              assert all(int(value) >= 0 for value in response[field].values()), response
+          assert int(response['locks_created']) == sum(
+              int(value) for value in response['locks_created_by_horizon'].values()
+          ), response
+          assert int(response['locks_retried']) == sum(
+              int(value) for value in response['locks_retried_by_horizon'].values()
+          ), response
+          assert int(response['final_decision_window_misses']) >= 0, response
+          assert not response['failures'], response
+          if int(response['final_decision_window_misses']) > 0:
+              print('::warning::Pre-repair Soccer events missed their historical T10 capture window; they remain unpublished and immutable')
+          print('dual_lock_freeze_smoke', response)
+          PY
+
+          # Persist a fresh evidence-backed controller proof after collection,
+          # reconciliation, trainer, LLM, dispatch, coverage, and dual-lock
+          # verification have all completed.
+          invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_final_health_proof"}' controller_final
+
           # Re-read status after the asynchronous coverage proof. A provider
           # 429 raised while the poll was running must fail this deployment;
           # pre-poll telemetry is not authoritative for the completed smoke.
@@ -659,9 +722,42 @@ jobs:
           status=json.load(open('/tmp/soccer-auto-status.json'))
           coverage=json.load(open('/tmp/soccer-auto-coverage.json'))
           dispatch=json.load(open('/tmp/dispatch.json'))
+          controller_final=json.load(open('/tmp/controller_final.json'))
           assert status['system']=='soccer_auto'
           assert status['authority'] in {'BOOTSTRAPPING','COLLECTING','SHADOW_LEARNING','AUTHORITATIVE','DEGRADED'}
           assert status.get('automatic_prediction_allowed', False) is False or status['authority']=='AUTHORITATIVE'
+          assert str(status['updated_at']) >= str(controller_final['updated_at']), (status, controller_final)
+
+          health = status['prediction_and_training_health']
+          assert health['contract_version'] == 'soccer-auto-health-proof-v1', health
+          assert health['proof_complete'] is True, health
+          assert health['scan_truncated'] is False, health
+          assert health['healthy'] is True, health
+          assert int(health['integrity_failures']) == 0, health
+          decisions = health['t10_decisions']
+          assert int(decisions['invalid_locks']) == 0, decisions
+          assert int(decisions['valid_or_present_locks']) >= 0, decisions
+          assert int(decisions['missing_locks']) >= int(decisions['missed_locks']) >= 0, decisions
+          public = health['public_authority']
+          assert int(public['duplicate_public_authorities']) == 0, public
+          assert int(public['public_prediction_after_cutoff']) == 0, public
+          assert int(public['public_prediction_after_commit_deadline']) == 0, public
+          assert int(public['binding_integrity_failures']) == 0, public
+          training_health = health['training']
+          validated = int(training_health['validated_final_score_rows'])
+          admissible = int(training_health['admissible_final_score_rows'])
+          ready = int(training_health['training_rows_ready'])
+          backlog = int(training_health['conversion_backlog'])
+          assert validated >= admissible >= ready >= 0, training_health
+          assert backlog == admissible - ready, training_health
+          assert int(training_health['invalid_existing_locks']) == 0, training_health
+          if int(health['availability_warnings']) > 0:
+              assert health['state'] == 'DEGRADED_AVAILABILITY', health
+              print('::warning::Soccer authority is safely degraded while missing T10 or T45 evidence remains unavailable')
+          else:
+              assert health['state'] in {'COLLECTING_LABELS', 'HEALTHY'}, health
+          assert not status.get('failures'), status
+          print('prediction_and_training_health_proof', health)
           baseline = int(open('/tmp/soccer-auto-429-baseline.txt').read())
           latest_baseline = open('/tmp/soccer-auto-429-latest-baseline.txt').read()
           latest = str((status['provider_429_telemetry']['latest_rows'] or [{}])[0].get('SK') or '')
