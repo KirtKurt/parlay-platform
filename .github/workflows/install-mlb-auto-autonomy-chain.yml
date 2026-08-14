@@ -33,12 +33,15 @@ jobs:
         run: python -m pip install --quiet "boto3>=1.34,<2" "pytest>=8,<9" "PyYAML>=6,<7" "scikit-learn>=1.4,<2"
 
       - name: Install canonical MLB AUTO autonomy chain
-        run: python scripts/install_mlb_auto_autonomy_chain.py
+        run: |
+          python scripts/install_mlb_auto_autonomy_chain.py
+          python scripts/patch_mlb_auto_promotion_invariant.py
 
       - name: Prove installer is idempotent
         run: |
           BEFORE=$(git diff | sha256sum | awk '{print $1}')
           python scripts/install_mlb_auto_autonomy_chain.py
+          python scripts/patch_mlb_auto_promotion_invariant.py
           AFTER=$(git diff | sha256sum | awk '{print $1}')
           test "$BEFORE" = "$AFTER"
 
@@ -50,7 +53,8 @@ jobs:
             hello_world/mlb_auto_llm_hypothesis_v1.py \
             scripts/reconcile_mlb_prospective_backlog_v6.py \
             scripts/synchronize_mlb_ml_deployment_identity.py \
-            scripts/install_mlb_auto_autonomy_chain.py
+            scripts/install_mlb_auto_autonomy_chain.py \
+            scripts/patch_mlb_auto_promotion_invariant.py
 
       - name: Run focused MLB AUTO tests
         env:
