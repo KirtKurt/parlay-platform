@@ -69,23 +69,15 @@ jobs:
           FN_ARN=$(aws lambda get-function --function-name "$PULL_FN" --region "$AWS_REGION" --query 'Configuration.FunctionArn' --output text)
           RULES=$(aws events list-rule-names-by-target --target-arn "$FN_ARN" --region "$AWS_REGION" --query 'RuleNames' --output json)
           echo "canonical_ingest_rules=$RULES"
-          python - <<'PY'
-          import json, os, subprocess
-          rules=json.loads(os.environ['RULES_JSON'])
-          if not rules:
-              raise SystemExit('No EventBridge rule targets the canonical MLB ingest Lambda')
-          enabled=[]
-          for rule in rules:
-              out=subprocess.check_output(['aws','events','describe-rule','--name',rule,'--region',os.environ['AWS_REGION'],'--output','json'], text=True)
-              data=json.loads(out)
-              if data.get('State') == 'ENABLED':
-                  enabled.append((rule, data.get('ScheduleExpression')))
-          print('enabled_canonical_ingest_rules=', enabled)
-          if not enabled:
-              raise SystemExit('Canonical MLB ingest has no enabled EventBridge schedule')
-          PY
-        env:
-          RULES_JSON: ${{ env.RULES }}
+          [ "$(printf '%s' "$RULES" | jq 'length')" -gt 0 ] || { echo "::error::No EventBridge rule targets canonical MLB ingest"; exit 1; }
+          ENABLED=0
+          while IFS= read -r rule; do
+            STATE=$(aws events describe-rule --name "$rule" --region "$AWS_REGION" --query State --output text)
+            SCHEDULE=$(aws events describe-rule --name "$rule" --region "$AWS_REGION" --query ScheduleExpression --output text)
+            echo "canonical_rule=$rule state=$STATE schedule=$SCHEDULE"
+            [ "$STATE" = "ENABLED" ] && ENABLED=$((ENABLED+1))
+          done < <(printf '%s' "$RULES" | jq -r '.[]')
+          [ "$ENABLED" -gt 0 ] || { echo "::error::Canonical MLB ingest has no enabled EventBridge schedule"; exit 1; }
 
       - name: Force one canonical live MLB ingest and capture failure diagnostics
         run: |
@@ -114,10 +106,8 @@ jobs:
           print(clean(log))
           print('tail_log_end')
           if raw:
-              try:
-                  obj=json.loads(raw)
-              except Exception:
-                  obj={'raw':raw[:1500]}
+              try: obj=json.loads(raw)
+              except Exception: obj={'raw':raw[:1500]}
               print('response_summary=', clean(json.dumps(obj, default=str))[:3000])
           if meta.get('FunctionError'):
               raise SystemExit('Canonical MLB ingest Lambda returned FunctionError: '+str(meta.get('FunctionError')))
