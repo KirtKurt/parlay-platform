@@ -26,6 +26,9 @@ ANALYSIS_ORIGIN = "BEDROCK_CONVERSE"
 ALLOWED_MODEL_IDS = frozenset(
     {
         "us.amazon.nova-2-lite-v1:0",
+        "mistral.ministral-3-14b-instruct",
+        "us.meta.llama4-scout-17b-instruct-v1:0",
+        "us.meta.llama4-maverick-17b-instruct-v1:0",
         "global.amazon.nova-2-lite-v1:0",
         "us.amazon.nova-pro-v1:0",
         "us.amazon.nova-lite-v1:0",
@@ -37,6 +40,9 @@ FALLBACK_MODEL_IDS = tuple(
     model_id.strip()
     for model_id in os.getenv(
         "SOCCER_AUTO_LLM_FALLBACK_MODEL_IDS",
+        "mistral.ministral-3-14b-instruct,"
+        "us.meta.llama4-scout-17b-instruct-v1:0,"
+        "us.meta.llama4-maverick-17b-instruct-v1:0,"
         "global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,"
         "us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0",
     ).split(",")

@@ -275,7 +275,7 @@ jobs:
 
           # Force one genuine Bedrock Converse analysis. Primary quota or
           # transient faults must fall through to an independently metered
-          # Nova profile; no deferred-quota response is accepted as green.
+          # Bedrock model; no deferred-quota response is accepted as green.
           invoke_and_assert_ok SoccerLlmAnalystFunction '{"action":"deployment_llm_smoke","force_refresh":true}' llm
           python - <<'PY'
           import json
@@ -285,6 +285,9 @@ jobs:
           assert response['status'] == 'ANALYZED', response
           assert response['model_id'] in {
               'us.amazon.nova-2-lite-v1:0',
+              'mistral.ministral-3-14b-instruct',
+              'us.meta.llama4-scout-17b-instruct-v1:0',
+              'us.meta.llama4-maverick-17b-instruct-v1:0',
               'global.amazon.nova-2-lite-v1:0',
               'us.amazon.nova-pro-v1:0',
               'us.amazon.nova-lite-v1:0',

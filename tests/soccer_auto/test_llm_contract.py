@@ -87,6 +87,9 @@ class LlmBoundaryTests(unittest.TestCase):
 
     def test_production_fallback_chain_is_ordered_and_allowlisted(self) -> None:
         fallbacks = (
+            "mistral.ministral-3-14b-instruct",
+            "us.meta.llama4-scout-17b-instruct-v1:0",
+            "us.meta.llama4-maverick-17b-instruct-v1:0",
             "global.amazon.nova-2-lite-v1:0",
             "us.amazon.nova-pro-v1:0",
             "us.amazon.nova-lite-v1:0",
@@ -293,7 +296,10 @@ class LlmBoundaryTests(unittest.TestCase):
             patch("soccer_auto.llm_analyst.MODEL_ID", "us.amazon.nova-2-lite-v1:0"),
             patch(
                 "soccer_auto.llm_analyst.FALLBACK_MODEL_IDS",
-                ("us.amazon.nova-lite-v1:0", "us.amazon.nova-micro-v1:0"),
+                (
+                    "mistral.ministral-3-14b-instruct",
+                    "us.amazon.nova-micro-v1:0",
+                ),
             ),
             patch("soccer_auto.llm_analyst.SoccerStore", return_value=store),
             patch("soccer_auto.llm_analyst.boto3.client", return_value=bedrock),
@@ -303,19 +309,33 @@ class LlmBoundaryTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["status"], "ANALYZED")
-        self.assertEqual(result["model_id"], "us.amazon.nova-lite-v1:0")
+        self.assertEqual(
+            result["model_id"], "mistral.ministral-3-14b-instruct"
+        )
         self.assertEqual(
             result["attempted_model_ids"],
-            ["us.amazon.nova-2-lite-v1:0", "us.amazon.nova-lite-v1:0"],
+            [
+                "us.amazon.nova-2-lite-v1:0",
+                "mistral.ministral-3-14b-instruct",
+            ],
         )
         self.assertEqual(
             [call.kwargs["modelId"] for call in bedrock.converse.call_args_list],
-            ["us.amazon.nova-2-lite-v1:0", "us.amazon.nova-lite-v1:0"],
+            [
+                "us.amazon.nova-2-lite-v1:0",
+                "mistral.ministral-3-14b-instruct",
+            ],
         )
         analysis, latest, attempt = ops.writes
-        self.assertEqual(analysis["model_id"], "us.amazon.nova-lite-v1:0")
-        self.assertEqual(latest["model_id"], "us.amazon.nova-lite-v1:0")
-        self.assertEqual(attempt["model_id"], "us.amazon.nova-lite-v1:0")
+        self.assertEqual(
+            analysis["model_id"], "mistral.ministral-3-14b-instruct"
+        )
+        self.assertEqual(
+            latest["model_id"], "mistral.ministral-3-14b-instruct"
+        )
+        self.assertEqual(
+            attempt["model_id"], "mistral.ministral-3-14b-instruct"
+        )
         self.assertEqual(attempt["attempted_model_ids"], result["attempted_model_ids"])
         self.assertEqual(
             result["model_errors"],

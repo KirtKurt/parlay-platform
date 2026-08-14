@@ -73,7 +73,7 @@ Globals:
         SOCCER_AUTO_ODDS_RATE_LIMIT_MAX_CONTENTION_ATTEMPTS: '128'
         SOCCER_AUTO_SCORES_CADENCE_SECONDS: '300'
         SOCCER_AUTO_LLM_MODEL_ID: !Ref SoccerLlmModelId
-        SOCCER_AUTO_LLM_FALLBACK_MODEL_IDS: 'global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'
+        SOCCER_AUTO_LLM_FALLBACK_MODEL_IDS: 'mistral.ministral-3-14b-instruct,us.meta.llama4-scout-17b-instruct-v1:0,us.meta.llama4-maverick-17b-instruct-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'
         SOCCER_AUTO_LLM_ANALYSIS_MAX_AGE_HOURS: '36'
         SOCCER_AUTO_HISTORICAL_BACKFILL_ENABLED: !Ref EnableHistoricalBackfill
 
@@ -365,11 +365,13 @@ Resources:
                 Condition:
                   ForAllValues:StringEquals:
                     dynamodb:LeadingKeys: [LLM_ANALYSIS]
-              - Sid: InvokeOnlySoccerNovaProfile
+              - Sid: InvokeOnlySoccerAnalystProfiles
                 Effect: Allow
                 Action: bedrock:InvokeModel
                 Resource:
                   - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${SoccerLlmModelId}'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.meta.llama4-scout-17b-instruct-v1:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.meta.llama4-maverick-17b-instruct-v1:0'
                   - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-pro-v1:0'
                   - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-lite-v1:0'
                   - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-micro-v1:0'
@@ -383,6 +385,30 @@ Resources:
                 Condition:
                   StringEquals:
                     bedrock:InferenceProfileArn: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${SoccerLlmModelId}'
+              - Sid: InvokeOnlyMinistralFoundationModel
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/mistral.ministral-3-14b-instruct'
+              - Sid: InvokeOnlyLlamaScoutThroughSoccerFallbackProfile
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:us-east-1::foundation-model/meta.llama4-scout-17b-instruct-v1:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:us-east-2::foundation-model/meta.llama4-scout-17b-instruct-v1:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/meta.llama4-scout-17b-instruct-v1:0'
+                Condition:
+                  StringEquals:
+                    bedrock:InferenceProfileArn: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.meta.llama4-scout-17b-instruct-v1:0'
+              - Sid: InvokeOnlyLlamaMaverickThroughSoccerFallbackProfile
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:us-east-1::foundation-model/meta.llama4-maverick-17b-instruct-v1:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:us-east-2::foundation-model/meta.llama4-maverick-17b-instruct-v1:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/meta.llama4-maverick-17b-instruct-v1:0'
+                Condition:
+                  StringEquals:
+                    bedrock:InferenceProfileArn: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.meta.llama4-maverick-17b-instruct-v1:0'
               - Sid: InvokeOnlyGlobalNovaTwoLiteProfileInSourceRegion
                 Effect: Allow
                 Action: bedrock:InvokeModel

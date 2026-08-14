@@ -109,9 +109,13 @@ player, card, corner, first-half, or qualification props.
 ## LLM boundary
 
 The LLM analyst runs hourly and uses an ordered real Amazon Bedrock
-cross-Region profile chain: US Nova 2 Lite, global Nova 2 Lite, US Nova Pro,
-US Nova Lite, then US Nova Micro. A quota, transient, or candidate-local
-configuration failure immediately tries the next independently metered model.
+chain: US Nova 2 Lite, direct in-Region Ministral 14B 3.0, US Meta Llama 4
+Scout, US Meta Llama 4 Maverick, global Nova 2 Lite, US Nova Pro, US Nova Lite,
+then US Nova Micro. A quota, transient, or candidate-local configuration
+failure immediately tries the next independently metered model. The Mistral
+and Meta models are tried before the already-exhausted Nova-family fallback
+buckets; the Meta candidates keep their bounded diagnostics within the US
+cross-Region geography.
 Global Nova 2 Lite uses its separate global quota path and may process the
 bounded soccer diagnostics in any supported commercial AWS Region.
 It receives only isolated soccer coverage summaries, immutable feature-schema
@@ -124,8 +128,9 @@ prediction, alter a label or feature lock, promote a model, change deployment
 resources, or access MLB/tennis state. Deterministic chronological evaluation is
 the sole authority for accepting an LLM-proposed experiment. Its dedicated IAM
 role can read only soccer diagnostics, write only the `LLM_ANALYSIS` operations
-partition, and invoke only the five exact inference profiles and their exact
-underlying Nova foundation-model resources.
+partition, and invoke only one exact in-Region Mistral foundation model plus
+seven exact inference profiles and their exact Nova and Meta foundation-model
+resources.
 
 A fresh validated analysis is reused without another model call. Deployment
 forces a new Converse call and succeeds only after a provenance-signed,

@@ -318,6 +318,9 @@ class IsolationTests(unittest.TestCase):
         globals_environment = template["Globals"]["Function"]["Environment"]["Variables"]
         self.assertEqual(
             globals_environment["SOCCER_AUTO_LLM_FALLBACK_MODEL_IDS"],
+            "mistral.ministral-3-14b-instruct,"
+            "us.meta.llama4-scout-17b-instruct-v1:0,"
+            "us.meta.llama4-maverick-17b-instruct-v1:0,"
             "global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,"
             "us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0",
         )
@@ -328,11 +331,13 @@ class IsolationTests(unittest.TestCase):
             ["Policies"][0]["PolicyDocument"]["Statement"]
             if statement.get("Sid")
         }
-        profile_arns = statements["InvokeOnlySoccerNovaProfile"]["Resource"]
+        profile_arns = statements["InvokeOnlySoccerAnalystProfiles"]["Resource"]
         self.assertEqual(
             profile_arns,
             [
                 "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${SoccerLlmModelId}",
+                "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.meta.llama4-scout-17b-instruct-v1:0",
+                "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.meta.llama4-maverick-17b-instruct-v1:0",
                 "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-pro-v1:0",
                 "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-lite-v1:0",
                 "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-micro-v1:0",
@@ -360,6 +365,16 @@ class IsolationTests(unittest.TestCase):
                 "amazon.nova-micro-v1:0",
                 ("us-east-1", "us-east-2", "us-west-2"),
             ),
+            "InvokeOnlyLlamaScoutThroughSoccerFallbackProfile": (
+                "us.meta.llama4-scout-17b-instruct-v1:0",
+                "meta.llama4-scout-17b-instruct-v1:0",
+                ("us-east-1", "us-east-2", "us-west-2"),
+            ),
+            "InvokeOnlyLlamaMaverickThroughSoccerFallbackProfile": (
+                "us.meta.llama4-maverick-17b-instruct-v1:0",
+                "meta.llama4-maverick-17b-instruct-v1:0",
+                ("us-east-1", "us-east-2", "us-west-2"),
+            ),
         }
         for sid, (profile_id, foundation_model_id, regions) in expected.items():
             statement = statements[sid]
@@ -376,6 +391,17 @@ class IsolationTests(unittest.TestCase):
                 "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:"
                 f"inference-profile/{profile_id}",
             )
+
+        self.assertEqual(
+            statements["InvokeOnlyMinistralFoundationModel"],
+            {
+                "Sid": "InvokeOnlyMinistralFoundationModel",
+                "Effect": "Allow",
+                "Action": "bedrock:InvokeModel",
+                "Resource": "arn:${AWS::Partition}:bedrock:${AWS::Region}::"
+                "foundation-model/mistral.ministral-3-14b-instruct",
+            },
+        )
 
         global_profile = (
             "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:"
