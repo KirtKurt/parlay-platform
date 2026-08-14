@@ -2210,13 +2210,20 @@ class SoccerStore:
                 or str(current.get("plan_digest") or "") != plan_digest
             ):
                 return None
-            exact_expected = coverage_expected_batch_digests(
-                plan_digest=plan_digest,
-                request_markets=tuple(current.get("request_markets") or ()),
-                expected_pairs=sorted(
-                    set(current.get("required_pairs") or ())
-                    | set(current.get("probe_pairs") or ())
-                ),
+            # Batch execution follows request-market chunk order, while the
+            # persisted fanout manifest is a canonical set.  Compare both in
+            # the same order so a valid multi-batch plan cannot be rejected
+            # merely because its SHA-256 digests are not lexicographically
+            # ordered by their request chunks.
+            exact_expected = sorted(
+                coverage_expected_batch_digests(
+                    plan_digest=plan_digest,
+                    request_markets=tuple(current.get("request_markets") or ()),
+                    expected_pairs=sorted(
+                        set(current.get("required_pairs") or ())
+                        | set(current.get("probe_pairs") or ())
+                    ),
+                )
             )
             if expected != exact_expected:
                 return None
