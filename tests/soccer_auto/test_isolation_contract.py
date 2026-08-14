@@ -181,20 +181,15 @@ class IsolationTests(unittest.TestCase):
         self.assertIn("provider_429_baseline", workflow)
         self.assertIn("distributed_rate_limit_state", workflow)
 
-    def test_verified_soccer_deployment_has_only_exact_one_shot_trigger(self) -> None:
+    def test_verified_soccer_deployment_is_manual_only(self) -> None:
         workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
         trigger = workflow.split("permissions:", 1)[0]
         self.assertIn("workflow_dispatch:", trigger)
-        self.assertIn("push:", trigger)
-        self.assertIn("branches: [main]", trigger)
-        self.assertIn("- 'soccer_auto/.deploy-repair-once'", trigger)
+        self.assertNotIn("push:", trigger)
+        self.assertNotIn("branches: [main]", trigger)
+        self.assertNotIn("soccer_auto/.deploy-repair-once", trigger)
         self.assertNotIn("soccer_auto/**", trigger)
-        marker = ROOT / "soccer_auto/.deploy-repair-once"
-        self.assertTrue(marker.exists())
-        self.assertEqual(
-            marker.read_text().strip(),
-            "One-shot retry 7: bound Bedrock transport attempts and deployment smoke timeouts.",
-        )
+        self.assertFalse((ROOT / "soccer_auto/.deploy-repair-once").exists())
 
     def test_historical_backfill_defaults_on_and_remains_observable_with_kill_switch(self) -> None:
         template = yaml.load(

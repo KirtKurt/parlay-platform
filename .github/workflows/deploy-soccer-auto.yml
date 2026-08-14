@@ -1,14 +1,9 @@
 name: Deploy Isolated Soccer Auto
 
-# The exact marker path is a one-shot deployment trigger for this repair. It is
-# removed with the trigger immediately after live verification. The main
-# workflow ignores all soccer-only paths, and this stack cannot mutate MLB,
-# tennis, or legacy soccer resources.
+# Manual-only after the verified soccer repair. The main workflow ignores all
+# soccer-only paths, and this stack cannot mutate MLB, tennis, or legacy soccer
+# resources.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'soccer_auto/.deploy-repair-once'
   workflow_dispatch:
     inputs:
       shared_quota_reserve_percent:

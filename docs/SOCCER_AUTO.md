@@ -215,10 +215,8 @@ an accidentally unbounded diagnostics payload.
   odds rows remain training-ineligible until joined to an authoritative final
   result with point-in-time T-45 materialization; prices are never used as
   labels.
-- This repair uses one exact marker-path push trigger so the connected GitHub
-  publisher can run the verified deployment once. The marker and trigger are
-  removed together after live verification; ordinary soccer source pushes do
-  not deploy the stack, and the workflow then remains manual-only.
+- The isolated soccer deployment workflow is manual-only after repair
+  verification. Ordinary soccer source pushes do not deploy the stack.
 
 ## Deployment recovery
 
