@@ -1,0 +1,249 @@
+name: Audit today's Tennis picks 20260813 1945
+
+on:
+  push:
+    branches: [agent/audit-todays-tennis-picks-20260813-1945]
+    paths: ['.github/workflows/audit-todays-tennis-picks-20260813-1945.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  STACK_NAME: parlay-platform-tennis-ml-prod
+  LOCK_FUNCTION: parlay-platform-tennis-ml-prod-tennis-lock
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Read live Tennis locks, tables, functions, and outcome evidence
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          from collections import Counter, defaultdict
+          from datetime import datetime, timezone
+          from decimal import Decimal
+          from pathlib import Path
+          from typing import Any
+          from zoneinfo import ZoneInfo
+
+          import boto3
+
+          REGION = os.environ['REGION']
+          STACK = os.environ['STACK_NAME']
+          LOCK_FUNCTION = os.environ['LOCK_FUNCTION']
+          ET = ZoneInfo('America/New_York')
+          now = datetime.now(timezone.utc)
+          today = now.astimezone(ET).date().isoformat()
+
+          cf = boto3.client('cloudformation', region_name=REGION)
+          lam = boto3.client('lambda', region_name=REGION)
+          ddb = boto3.resource('dynamodb', region_name=REGION)
+
+          def plain(value: Any) -> Any:
+              if isinstance(value, Decimal):
+                  if value % 1 == 0:
+                      return int(value)
+                  return float(value)
+              if isinstance(value, datetime):
+                  return value.isoformat()
+              if isinstance(value, dict):
+                  return {str(k): plain(v) for k, v in value.items()}
+              if isinstance(value, list):
+                  return [plain(v) for v in value]
+              return value
+
+          def write(name: str, payload: Any) -> None:
+              Path(name).write_text(json.dumps(plain(payload), indent=2, sort_keys=True, default=str) + '\n')
+
+          stack = cf.describe_stacks(StackName=STACK)['Stacks'][0]
+          resources = []
+          token = None
+          while True:
+              kwargs = {'StackName': STACK}
+              if token:
+                  kwargs['NextToken'] = token
+              page = cf.list_stack_resources(**kwargs)
+              resources.extend(page.get('StackResourceSummaries') or [])
+              token = page.get('NextToken')
+              if not token:
+                  break
+          write('stack.json', stack)
+          write('resources.json', resources)
+
+          lambda_names = sorted({
+              str(r.get('PhysicalResourceId'))
+              for r in resources
+              if r.get('ResourceType') == 'AWS::Lambda::Function' and r.get('PhysicalResourceId')
+          })
+          table_names = {
+              str(r.get('PhysicalResourceId'))
+              for r in resources
+              if r.get('ResourceType') == 'AWS::DynamoDB::Table' and r.get('PhysicalResourceId')
+          }
+
+          function_inventory = []
+          secret_tokens = ('KEY', 'TOKEN', 'SECRET', 'PASSWORD', 'CREDENTIAL')
+          for name in lambda_names:
+              cfg = lam.get_function_configuration(FunctionName=name)
+              env = dict((cfg.get('Environment') or {}).get('Variables') or {})
+              for key, value in env.items():
+                  if key.endswith('_TABLE') or key.endswith('_TABLE_NAME'):
+                      if value:
+                          table_names.add(str(value))
+              public_env = {
+                  key: ('[REDACTED]' if any(tok in key.upper() for tok in secret_tokens) else value)
+                  for key, value in env.items()
+              }
+              function_inventory.append({
+                  'name': name,
+                  'runtime': cfg.get('Runtime'),
+                  'handler': cfg.get('Handler'),
+                  'state': cfg.get('State'),
+                  'last_update_status': cfg.get('LastUpdateStatus'),
+                  'last_modified': cfg.get('LastModified'),
+                  'environment': public_env,
+              })
+          write('functions.json', function_inventory)
+
+          invoke_payload = {
+              'httpMethod': 'GET',
+              'path': '/today',
+              'queryStringParameters': {'date': today, 'slate_date': today},
+              'requestContext': {'httpMethod': 'GET'},
+          }
+          response = lam.invoke(
+              FunctionName=LOCK_FUNCTION,
+              InvocationType='RequestResponse',
+              Payload=json.dumps(invoke_payload).encode(),
+          )
+          raw = response['Payload'].read().decode()
+          lock_envelope = json.loads(raw or '{}')
+          body = lock_envelope.get('body')
+          try:
+              lock_status = json.loads(body) if isinstance(body, str) else (body or lock_envelope)
+          except Exception:
+              lock_status = {'raw': raw, 'envelope': lock_envelope}
+          write('lock-envelope.json', lock_envelope)
+          write('lock-status.json', lock_status)
+
+          def contains_today(item: dict[str, Any]) -> bool:
+              candidate_keys = (
+                  'slate_date', 'slateDate', 'event_date', 'eventDate', 'date',
+                  'commence_time', 'commenceTime', 'event_time', 'eventTime',
+                  'settled_at', 'settledAt', 'locked_at', 'lockedAt',
+                  'created_at', 'createdAt', 'updated_at', 'updatedAt',
+              )
+              for key in candidate_keys:
+                  value = item.get(key)
+                  if value is not None and today in str(value):
+                      return True
+              for key in ('PK', 'SK'):
+                  if today in str(item.get(key) or ''):
+                      return True
+              data = item.get('data')
+              if isinstance(data, dict):
+                  for key in candidate_keys:
+                      if today in str(data.get(key) or ''):
+                          return True
+                  pick = data.get('pick')
+                  if isinstance(pick, dict) and today in str(pick.get('commenceTime') or ''):
+                      return True
+              return False
+
+          table_evidence: dict[str, Any] = {}
+          prefix_counts: dict[str, Any] = {}
+          for table_name in sorted(table_names):
+              table = ddb.Table(table_name)
+              matches = []
+              prefixes = Counter()
+              record_types = Counter()
+              scanned = 0
+              last = None
+              while True:
+                  kwargs = {'Limit': 1000}
+                  if last:
+                      kwargs['ExclusiveStartKey'] = last
+                  page = table.scan(**kwargs)
+                  rows = page.get('Items') or []
+                  scanned += len(rows)
+                  for row in rows:
+                      pk = str(row.get('PK') or '')
+                      sk = str(row.get('SK') or '')
+                      prefixes[pk.split('#', 1)[0] if pk else '(none)'] += 1
+                      rt = str(row.get('record_type') or row.get('recordType') or '')
+                      if rt:
+                          record_types[rt] += 1
+                      if contains_today(row):
+                          matches.append(plain(row))
+                  last = page.get('LastEvaluatedKey')
+                  if not last:
+                      break
+                  if scanned >= 200000:
+                      break
+              table_evidence[table_name] = {
+                  'scanned_items': scanned,
+                  'today_match_count': len(matches),
+                  'items': matches[:10000],
+                  'scan_truncated_at_200k': bool(last),
+              }
+              prefix_counts[table_name] = {
+                  'pk_prefix_counts': dict(prefixes.most_common()),
+                  'record_type_counts': dict(record_types.most_common()),
+              }
+          write('table-evidence.json', table_evidence)
+          write('table-prefix-counts.json', prefix_counts)
+
+          summary = {
+              'checked_at_utc': now.isoformat(),
+              'checked_at_et': now.astimezone(ET).isoformat(),
+              'slate_date_et': today,
+              'stack_status': stack.get('StackStatus'),
+              'lambda_count': len(lambda_names),
+              'table_count': len(table_names),
+              'lock_status_ok': lock_status.get('ok'),
+              'manifest_complete': lock_status.get('manifestComplete'),
+              'match_count': lock_status.get('matchCount'),
+              'locked_count': lock_status.get('lockedCount'),
+              'missed_count': lock_status.get('missedCount'),
+              'terminal_count': lock_status.get('terminalCount'),
+              'lock_status_complete': lock_status.get('lockStatusComplete'),
+              'pick_count': len(lock_status.get('picks') or []),
+              'tables': sorted(table_names),
+              'functions': lambda_names,
+          }
+          write('audit-discovery-summary.json', summary)
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload audit discovery evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: tennis-picks-audit-discovery-${{ github.run_id }}
+          path: |
+            audit-discovery-summary.json
+            lock-envelope.json
+            lock-status.json
+            stack.json
+            resources.json
+            functions.json
+            table-evidence.json
+            table-prefix-counts.json
+          retention-days: 7
