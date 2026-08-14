@@ -490,11 +490,19 @@ def _latest_summary_coverage(
             and enqueued_batches == expected_batches
         )
         unresolved_batches = expected_batches - succeeded_batches - failed_batches
+        reported_expected_batches = set(expected_batches)
         if not batch_partition_valid:
             succeeded_batches = set()
             failed_batches = set()
             deferred_batches = set()
-            unresolved_batches = set(exact_expected_batches or expected_batches)
+            # The immutable plan still proves the request universe even when
+            # persisted fanout evidence is absent or malformed.  Report that
+            # full universe as unresolved so global batch algebra cannot
+            # undercount multiple invalid PLAN_READY cycles.
+            reported_expected_batches = set(
+                exact_expected_batches or expected_batches
+            )
+            unresolved_batches = set(reported_expected_batches)
 
         returned = {str(pair) for pair in summary.get("returned_pairs") or []} & expected
         rejected = (
@@ -549,7 +557,7 @@ def _latest_summary_coverage(
             "required_missing_pairs": required_missing,
             "probe_missing_pairs": probe_missing,
             "never_attempted_pairs": never_attempted,
-            "expected_batch_digests": expected_batches,
+            "expected_batch_digests": reported_expected_batches,
             "succeeded_batch_digests": succeeded_batches,
             "failed_batch_digests": failed_batches,
             "deferred_batch_digests": deferred_batches,
@@ -617,7 +625,7 @@ def _latest_summary_coverage(
                 "missing": len(missing),
                 "required_missing": len(required_missing),
                 "probe_missing": len(probe_missing),
-                "expected_batches": len(expected_batches),
+                "expected_batches": len(reported_expected_batches),
                 "enqueued_batches": len(enqueued_batches),
                 "succeeded_batches": len(succeeded_batches),
                 "failed_batches": len(failed_batches),

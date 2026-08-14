@@ -397,6 +397,34 @@ class FailedEnqueueStore:
         return True
 
 
+class RecoverablePlanDispatchStore(FailedEnqueueStore):
+    def __init__(self, event, summary):
+        super().__init__(event)
+        self.summary = dict(summary)
+        self.jobs = []
+
+    def latest_coverage_summary(self, event_key):
+        return dict(self.summary)
+
+    def enqueue(self, payload):
+        self.jobs.append(dict(payload))
+
+    def put_coverage_discovery_attempt(self, event, **kwargs):
+        self.discovery_attempts.append(kwargs)
+        self.summary = {
+            **self.summary,
+            "discovery_observed_at": kwargs["discovery_observed_at"],
+            "discovery_status": kwargs["status"],
+            "discovery_status_observed_at": kwargs["observed_at"],
+        }
+        return {**self.summary, "latest_summary_updated": True}
+
+    def mark_dispatched(self, event_key, observed_at, **kwargs):
+        self.marked.append(event_key)
+        self.event["last_dispatched_at"] = observed_at
+        return True
+
+
 def event_at(commence_time="2026-08-14T14:00:00Z"):
     sport_key = "soccer_new_runtime_league"
     event_id = "a" * 32
@@ -854,6 +882,159 @@ class DeepGateTests(unittest.TestCase):
             ["QUEUED", "ENQUEUE_FAILED"],
         )
 
+    def test_dispatch_recovers_current_plan_before_normal_cadence(self) -> None:
+        row = {
+            **event_at(),
+            "last_seen_at": "2026-08-14T04:00:00Z",
+            "last_dispatched_at": "2026-08-14T04:00:00Z",
+        }
+        row["schedule_identity"] = schedule_identity(row)
+        summary = {
+            "entity_type": "SOCCER_EVENT_COVERAGE_LATEST",
+            "event_key": row["event_key"],
+            "discovery_observed_at": "2026-08-14T04:00:00Z",
+            "discovery_status": "PLAN_READY",
+            "plan_version": COVERAGE_PLAN_VERSION,
+            "plan_observed_at": "2026-08-14T04:00:30Z",
+            "plan_digest": "saved-plan",
+            "request_markets": ["h2h", "totals"],
+            "schedule_revision": row["schedule_revision"],
+            "schedule_identity": row["schedule_identity"],
+        }
+        store = RecoverablePlanDispatchStore(row, summary)
+        observed = datetime(2026, 8, 14, 4, 1, tzinfo=timezone.utc)
+
+        with patch("soccer_auto.collector.SoccerStore", return_value=store), patch(
+            "soccer_auto.collector.now_utc", return_value=observed
+        ):
+            result = dispatch_handler({}, None)
+
+        self.assertEqual(result["enqueued"], 1)
+        self.assertEqual(result["recovered_plans"], 1)
+        self.assertEqual(result["skipped"], 0)
+        self.assertEqual(store.marked, [])
+        self.assertEqual(len(store.jobs), 1)
+        self.assertEqual(
+            store.jobs[0]["dispatch_observed_at"],
+            "2026-08-14T04:00:00Z",
+        )
+        self.assertEqual(
+            store.manifests[0][0][0]["required_discovery_observed_at"],
+            "2026-08-14T04:00:00Z",
+        )
+
+    def test_dispatch_recovers_queued_existing_plan_after_send_gap(self) -> None:
+        row = {
+            **event_at(),
+            "last_seen_at": "2026-08-14T04:00:00Z",
+            "last_dispatched_at": "2026-08-14T04:00:00Z",
+        }
+        row["schedule_identity"] = schedule_identity(row)
+        summary = {
+            "entity_type": "SOCCER_EVENT_COVERAGE_LATEST",
+            "event_key": row["event_key"],
+            "discovery_observed_at": "2026-08-14T04:00:00Z",
+            "discovery_status": "QUEUED",
+            "plan_version": COVERAGE_PLAN_VERSION,
+            "plan_observed_at": "2026-08-14T04:00:30Z",
+            "plan_digest": "saved-plan",
+            "request_markets": ["h2h", "totals"],
+            "schedule_revision": row["schedule_revision"],
+            "schedule_identity": row["schedule_identity"],
+        }
+        store = RecoverablePlanDispatchStore(row, summary)
+        observed = datetime(2026, 8, 14, 4, 2, tzinfo=timezone.utc)
+
+        with patch("soccer_auto.collector.SoccerStore", return_value=store), patch(
+            "soccer_auto.collector.now_utc", return_value=observed
+        ):
+            result = dispatch_handler({}, None)
+
+        self.assertEqual(result["enqueued"], 1)
+        self.assertEqual(result["recovered_plans"], 1)
+        self.assertEqual(len(store.jobs), 1)
+        self.assertEqual(
+            store.jobs[0]["dispatch_observed_at"],
+            "2026-08-14T04:00:00Z",
+        )
+
+    def test_dispatch_uses_new_generation_after_plan_cadence_expires(self) -> None:
+        row = {
+            **event_at(),
+            "last_seen_at": "2026-08-14T04:00:00Z",
+            "last_dispatched_at": "2026-08-14T04:00:00Z",
+        }
+        row["schedule_identity"] = schedule_identity(row)
+        summary = {
+            "entity_type": "SOCCER_EVENT_COVERAGE_LATEST",
+            "event_key": row["event_key"],
+            "discovery_observed_at": "2026-08-14T04:00:00Z",
+            "discovery_status": "PLAN_READY",
+            "plan_version": COVERAGE_PLAN_VERSION,
+            "plan_observed_at": "2026-08-14T04:00:30Z",
+            "plan_digest": "saved-plan",
+            "request_markets": ["h2h", "totals"],
+            "schedule_revision": row["schedule_revision"],
+            "schedule_identity": row["schedule_identity"],
+        }
+        store = RecoverablePlanDispatchStore(row, summary)
+        observed_ticks = [
+            datetime(2026, 8, 14, 4, 1, tzinfo=timezone.utc),
+            datetime(2026, 8, 14, 4, 14, tzinfo=timezone.utc),
+            datetime(2026, 8, 14, 4, 16, tzinfo=timezone.utc),
+        ]
+        results = []
+        for observed in observed_ticks:
+            with patch(
+                "soccer_auto.collector.SoccerStore", return_value=store
+            ), patch("soccer_auto.collector.now_utc", return_value=observed):
+                results.append(dispatch_handler({}, None))
+
+        self.assertEqual(
+            [result["recovered_plans"] for result in results], [1, 1, 0]
+        )
+        self.assertEqual(store.marked, [row["event_key"]])
+        self.assertEqual(len(store.jobs), 3)
+        self.assertEqual(
+            store.jobs[-1]["dispatch_observed_at"],
+            "2026-08-14T04:15:00Z",
+        )
+
+    def test_dispatch_does_not_republish_completed_plan_within_cadence(self) -> None:
+        row = {
+            **event_at(),
+            "last_seen_at": "2026-08-14T04:00:00Z",
+            "last_dispatched_at": "2026-08-14T04:00:00Z",
+        }
+        row["schedule_identity"] = schedule_identity(row)
+        summary = {
+            "entity_type": "SOCCER_EVENT_COVERAGE_LATEST",
+            "event_key": row["event_key"],
+            "discovery_observed_at": "2026-08-14T04:00:00Z",
+            "discovery_status": "HTTP_200",
+            "plan_version": COVERAGE_PLAN_VERSION,
+            "plan_observed_at": "2026-08-14T04:00:30Z",
+            "plan_digest": "completed-plan",
+            "request_markets": ["h2h", "totals"],
+            "schedule_revision": row["schedule_revision"],
+            "schedule_identity": row["schedule_identity"],
+        }
+        store = RecoverablePlanDispatchStore(row, summary)
+        observed = datetime(2026, 8, 14, 4, 1, tzinfo=timezone.utc)
+
+        with patch("soccer_auto.collector.SoccerStore", return_value=store), patch(
+            "soccer_auto.collector.now_utc", return_value=observed
+        ):
+            result = dispatch_handler({}, None)
+
+        self.assertEqual(result["enqueued"], 0)
+        self.assertEqual(result["recovered_plans"], 0)
+        self.assertEqual(result["skipped"], 1)
+        self.assertEqual(store.jobs, [])
+        self.assertEqual(
+            store.manifests[0][0][0]["required_discovery_observed_at"], ""
+        )
+
     def test_dispatch_never_requests_post_kickoff_events(self) -> None:
         class EmptyStore:
             def __init__(self):
@@ -920,6 +1101,50 @@ class DeepGateTests(unittest.TestCase):
             self.assertTrue(
                 all(pair.rsplit("|", 1)[1] in job["markets"] for pair in job["planned_pairs"])
             )
+
+    def test_plan_ready_replay_resumes_five_batches_without_paid_discovery(self) -> None:
+        row = event_at()
+        store = FakeStore(row)
+        client = FakeClient()
+        markets = [f"market_{index:02d}" for index in range(48)]
+        saved_plan = {
+            "event_key": row["event_key"],
+            "discovery_observed_at": "2026-08-14T04:00:00Z",
+            "discovery_status": "STARTED",
+            "plan_version": COVERAGE_PLAN_VERSION,
+            "plan_observed_at": "2026-08-14T04:00:30Z",
+            "plan_digest": "saved-five-batch-plan",
+            "request_markets": markets,
+            "required_pairs": [f"book|{market}" for market in markets],
+            "probe_pairs": [],
+            "expected_pairs": [f"book|{market}" for market in markets],
+            "latest_summary_updated": True,
+        }
+
+        def resume_attempt(event, **kwargs):
+            store.discovery_attempts.append({"event": dict(event), **kwargs})
+            return dict(saved_plan)
+
+        store.put_coverage_discovery_attempt = resume_attempt
+        with patch(
+            "soccer_auto.collector._observed_at",
+            return_value="2026-08-14T04:01:00Z",
+        ):
+            result = _discover_event(
+                store,
+                client,
+                {
+                    "event": row,
+                    "dispatch_observed_at": "2026-08-14T04:00:00Z",
+                },
+            )
+
+        self.assertTrue(result["resumed_existing_plan"])
+        self.assertEqual(result["fetch_jobs_total"], 5)
+        self.assertEqual(result["fetch_jobs_enqueued"], 5)
+        self.assertEqual(len(store.jobs), 5)
+        self.assertEqual(client.market_calls, 0)
+        self.assertEqual(store.calls, [])
 
     def test_rolling_probe_union_is_not_retimestamped_as_current_inventory(self) -> None:
         row = event_at()

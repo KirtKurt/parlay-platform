@@ -9,6 +9,7 @@ install_if_needed()
 from botocore.exceptions import ClientError  # noqa: E402
 from soccer_auto.api import _latest_cycle_coverage, _latest_summary_coverage  # noqa: E402
 from soccer_auto.canonical import digest  # noqa: E402
+from soccer_auto.collector import _enqueue_coverage_fanout  # noqa: E402
 from soccer_auto.storage import (  # noqa: E402
     EVENT_INVENTORY_AUTHORITY_VERSION,
     COVERAGE_PLAN_VERSION,
@@ -156,6 +157,104 @@ class CoverageOps:
 
 
 class CoverageCycleTests(unittest.TestCase):
+    def test_real_store_canonicalizes_and_completes_multi_batch_fanout(self) -> None:
+        store = SoccerStore.__new__(SoccerStore)
+        store.ops = CoverageOps()
+        queued = []
+        store.enqueue = lambda payload: queued.append(dict(payload))
+        event = {
+            "event_key": "event",
+            "event_id": "provider-event",
+            "sport_key": "soccer_test",
+            "commence_time": "2026-08-14T14:00:00Z",
+            "home_team": "Home",
+            "away_team": "Away",
+            "schedule_revision": 1,
+        }
+        generation = "2026-08-14T04:00:00Z"
+        store.put_coverage_discovery_attempt(
+            event,
+            discovery_observed_at=generation,
+            status="QUEUED",
+            observed_at=generation,
+        )
+        markets = [f"market_{index:02d}" for index in range(48)]
+        plan = store.put_coverage_plan(
+            event["event_key"],
+            {"book": {"markets": markets}},
+            "2026-08-14T04:00:01Z",
+            event=event,
+            discovery_observed_at=generation,
+            request_markets=markets,
+        )
+        self.assertEqual(plan["discovery_status"], "PLAN_READY")
+
+        result = _enqueue_coverage_fanout(
+            store,
+            event,
+            plan,
+            observed_at="2026-08-14T04:00:02Z",
+        )
+        expected = coverage_expected_batch_digests(
+            plan_digest=plan["plan_digest"],
+            request_markets=plan["request_markets"],
+            expected_pairs=plan["expected_pairs"],
+        )
+        summary = store.latest_coverage_cycles()[0]
+
+        self.assertEqual(len(expected), 5)
+        self.assertNotEqual(expected, sorted(expected))
+        self.assertEqual(result["fetch_jobs_total"], 5)
+        self.assertEqual(result["fetch_jobs_enqueued"], 5)
+        self.assertEqual(len(queued), 5)
+        self.assertEqual(
+            {str(job["batch_digest"]) for job in queued}, set(expected)
+        )
+        self.assertEqual(
+            summary["fanout_expected_batch_digests"], sorted(expected)
+        )
+        self.assertEqual(
+            summary["fanout_enqueued_batch_digests"], sorted(expected)
+        )
+        self.assertEqual(summary["discovery_status"], "HTTP_200")
+
+    def test_invalid_multi_batch_fanout_reports_every_plan_batch_unresolved(self) -> None:
+        summaries = []
+        for event_index in range(2):
+            markets = [f"market_{index:02d}" for index in range(48)]
+            summaries.append(
+                exact_summary(
+                    event_key=f"event-{event_index}",
+                    schedule_identity=f"identity-{event_index}",
+                    discovery_status="PLAN_READY",
+                    request_markets=markets,
+                    required_pairs=[f"book|{market}" for market in markets],
+                    fanout_expected_batch_digests=[],
+                    fanout_enqueued_batch_digests=[],
+                    fanout_succeeded_batch_digests=[],
+                )
+            )
+
+        result = _latest_summary_coverage(summaries)
+
+        self.assertEqual(result["integrity_failures"], 2)
+        self.assertEqual(len(result["expected_batch_digests"]), 10)
+        self.assertEqual(len(result["succeeded_batch_digests"]), 0)
+        self.assertEqual(len(result["failed_batch_digests"]), 0)
+        self.assertEqual(len(result["unresolved_batch_digests"]), 10)
+        self.assertEqual(
+            result["expected_batch_digests"],
+            result["succeeded_batch_digests"]
+            | result["failed_batch_digests"]
+            | result["unresolved_batch_digests"],
+        )
+        self.assertTrue(
+            all(cycle["expected_batches"] == 5 for cycle in result["cycles"])
+        )
+        self.assertTrue(
+            all(cycle["unresolved_batches"] == 5 for cycle in result["cycles"])
+        )
+
     def test_old_fetch_cannot_satisfy_new_plan(self) -> None:
         plans = [
             {

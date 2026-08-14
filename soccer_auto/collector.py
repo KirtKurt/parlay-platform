@@ -513,6 +513,7 @@ def dispatch_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str,
     skipped = 0
     before_window = 0
     schedule_races = 0
+    recovered_plans = 0
     prepared: list[dict[str, Any]] = []
     for row in events:
         status = collection_status(row, windows, observed_at=observed)
@@ -536,9 +537,41 @@ def dispatch_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str,
             or not last
             or (observed - parse_utc(last)).total_seconds() >= cadence
         )
-        generation_source = observed if due else parse_utc(str(last))
-        slot_epoch = int(generation_source.timestamp()) // cadence * cadence
-        generation_at = iso_utc(datetime.fromtimestamp(slot_epoch, timezone.utc))
+        # A discovery worker can persist an immutable plan and then fail while
+        # publishing its multi-batch fanout.  Its SQS delivery is invisible for
+        # up to 15 minutes, so recover that exact generation on the next
+        # dispatcher tick.  The discovery worker detects the saved plan and
+        # resumes fanout without another paid event-markets request.
+        recovery_generation = str(
+            latest_summary.get("discovery_observed_at") or ""
+        )
+        recoverable_plan = bool(
+            not due
+            and summary_current
+            and str(latest_summary.get("discovery_status") or "")
+            in {
+                "QUEUED",
+                "PLAN_READY",
+                "FANOUT_PENDING",
+                "STARTED",
+                "ENQUEUE_FAILED",
+            }
+            and recovery_generation
+            and latest_summary.get("plan_observed_at")
+            and latest_summary.get("plan_digest")
+            and latest_summary.get("request_markets")
+            and not latest_summary.get("coverage_error")
+        )
+        dispatch_required = bool(due or recoverable_plan)
+        if recoverable_plan:
+            generation_at = recovery_generation
+            slot_epoch = int(parse_utc(recovery_generation).timestamp())
+        else:
+            generation_source = observed if due else parse_utc(str(last))
+            slot_epoch = int(generation_source.timestamp()) // cadence * cadence
+            generation_at = iso_utc(
+                datetime.fromtimestamp(slot_epoch, timezone.utc)
+            )
         prepared.append(
             {
                 "row": row,
@@ -547,12 +580,16 @@ def dispatch_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str,
                 "slot_epoch": slot_epoch,
                 "generation_at": generation_at,
                 "due": due,
+                "dispatch_required": dispatch_required,
+                "recoverable_plan": recoverable_plan,
                 "manifest": {
                     "event_key": row["event_key"],
                     "commence_time": row["commence_time"],
                     "schedule_revision": int(row.get("schedule_revision") or 0),
                     "schedule_identity": event_identity,
-                    "required_discovery_observed_at": generation_at if due else "",
+                    "required_discovery_observed_at": (
+                        generation_at if dispatch_required else ""
+                    ),
                 },
             }
         )
@@ -596,7 +633,7 @@ def dispatch_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str,
         status = item["status"]
         cadence = int(item["cadence"])
         generation_at = str(item["generation_at"])
-        if not item["due"]:
+        if not item["dispatch_required"]:
             skipped += 1
             continue
         dispatched_event = {
@@ -636,7 +673,12 @@ def dispatch_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str,
             except Exception:
                 pass
             raise
-        if not store.mark_dispatched(
+        if item["recoverable_plan"]:
+            # Recovery replays the already-dispatched generation.  Do not move
+            # the event cadence anchor forward, or repeated recovery attempts
+            # could postpone the next fresh generation indefinitely.
+            recovered_plans += 1
+        elif not store.mark_dispatched(
             row["event_key"],
             dispatch_observed_at,
             schedule_revision=int(row.get("schedule_revision") or 0),
@@ -660,6 +702,7 @@ def dispatch_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str,
         "enqueued": enqueued,
         "skipped": skipped,
         "schedule_races": schedule_races,
+        "recovered_plans": recovered_plans,
     }
 
 
