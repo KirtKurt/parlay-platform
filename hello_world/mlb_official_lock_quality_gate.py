@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, Optional
 
-VERSION = "MLB-OFFICIAL-LOCK-QUALITY-v1-60pct-confirmed-direction"
+import mlb_precision_admission_gate_v1 as precision_admission
+import mlb_reversal_similarity_v2 as reversal_similarity
+
+
+VERSION = "MLB-OFFICIAL-LOCK-QUALITY-v2-70pct-precision-admission"
 MIN_OFFICIAL_PROBABILITY_PCT = 60.0
 MAX_UNCONFIRMED_REVERSALS = 1
 MAX_UNCONFIRMED_BOOK_DIVERGENCE = 0.035
+ENFORCE_PRECISION_ADMISSION = str(
+    os.environ.get("INQSI_MLB_ENFORCE_70_PRECISION_ADMISSION", "true")
+).strip().lower() not in {"0", "false", "no", "off"}
 
 
 def _f(value: Any, default: Optional[float] = None) -> Optional[float]:
@@ -105,6 +113,15 @@ def _clean_confirmation(row: Dict[str, Any], selected: Dict[str, Any], tags: set
     }
 
 
+def _signal_family(row: Dict[str, Any], selected: Dict[str, Any], shape: Dict[str, Any]) -> str:
+    explicit = row.get("signalFamily") or selected.get("signalFamily")
+    if explicit:
+        return str(explicit)
+    if shape.get("researchCandidate") is True:
+        return str(shape.get("signalFamily"))
+    return "MLB_GENERAL_OFFICIAL_PICK"
+
+
 def evaluate(row: Dict[str, Any], accuracy_module: Any = None) -> Dict[str, Any]:
     selected = _selected_signal(row, accuracy_module)
     tags = _tags(row, selected)
@@ -114,6 +131,18 @@ def evaluate(row: Dict[str, Any], accuracy_module: Any = None) -> Dict[str, Any]
     divergence = _f(selected.get("bookDivergence"), 0.0) or 0.0
     delta = _f(selected.get("delta"))
     confirmation = _clean_confirmation(row, selected, tags)
+    temporal = selected.get("temporalFeatures") if isinstance(selected.get("temporalFeatures"), dict) else {}
+    shape = reversal_similarity.analyze(
+        temporal,
+        independently_confirmed=confirmation["independentConfirmation"],
+    )
+    family = _signal_family(row, selected, shape)
+    precision_evidence = precision_admission.evidence_from_row(row, selected)
+    precision = precision_admission.evaluate(
+        precision_evidence,
+        expected_signal_family=family,
+        expected_similarity_signature=str(shape.get("similaritySignature") or ""),
+    )
     reasons = []
 
     if probability_pct is None:
@@ -151,12 +180,22 @@ def evaluate(row: Dict[str, Any], accuracy_module: Any = None) -> Dict[str, Any]
 
     signal_policy = row.get("signalPolicyV13") or {}
     risk_gate = signal_policy.get("signalRiskGate") if isinstance(signal_policy, dict) else {}
-    risk_reasons = {
-        str(value)
-        for value in ((risk_gate or {}).get("reasons") or [])
-    }
+    risk_reasons = {str(value) for value in ((risk_gate or {}).get("reasons") or [])}
     if "late_direction_conflict_without_confirmation" in risk_reasons:
         reasons.append("late_direction_conflict_without_independent_confirmation")
+
+    for risk in shape.get("riskReasons") or []:
+        if risk in {
+            "reversal_history_unreliable",
+            "latest_leg_against_selected_side",
+            "dominant_market_flip_against_selected_side",
+            "late_direction_conflict",
+            "large_reversal_swing_without_independent_confirmation",
+        }:
+            reasons.append(f"reversal_shape:{risk}")
+
+    if ENFORCE_PRECISION_ADMISSION and precision.get("admitted") is not True:
+        reasons.extend(str(reason) for reason in precision.get("reasons") or [])
 
     reasons = sorted(set(reasons))
     return {
@@ -169,12 +208,18 @@ def evaluate(row: Dict[str, Any], accuracy_module: Any = None) -> Dict[str, Any]
         "selectedMovement": delta,
         "bookDivergence": round(divergence, 6),
         "lateDirectionConflict": late_conflict,
+        "signalFamily": family,
+        "reversalSimilarity": shape,
+        "reversalSimilaritySignature": shape.get("similaritySignature"),
+        "precisionAdmissionEnforced": ENFORCE_PRECISION_ADMISSION,
+        "precisionAdmission": precision,
         **confirmation,
         "reasons": reasons,
         "policy": (
-            "A canonical locked winner remains visible and auditable, but it is official-target eligible only at "
-            "60% or higher with direction integrity. Multiple reversals, late conflict, resistance, compressed "
-            "markets, or high divergence require independent book agreement plus steam or run-line confirmation."
+            "Every canonical locked winner remains visible and auditable. Official recommendation eligibility "
+            "requires the existing direction, probability and confirmation checks plus a frozen, prospective, "
+            "chronological signal-family validation whose 95% Wilson lower precision bound is at least 70%. "
+            "Missing or weak evidence causes abstention rather than an unsupported accuracy claim."
         ),
     }
 
@@ -195,5 +240,6 @@ def apply(accuracy_module: Any) -> Any:
     accuracy_module._is_official = quality_gated_is_official
     accuracy_module.OFFICIAL_LOCK_QUALITY_GATE_VERSION = VERSION
     accuracy_module.INDIVIDUAL_GAME_OFFICIAL_PICK_PROBABILITY_FLOOR_PCT = MIN_OFFICIAL_PROBABILITY_PCT
+    accuracy_module.MIN_OFFICIAL_SIGNAL_FAMILY_WILSON_LOWER_BOUND_PCT = precision_admission.TARGET_PRECISION_PCT
     accuracy_module._INQSI_MLB_OFFICIAL_LOCK_QUALITY_GATE_APPLIED = True
     return accuracy_module
