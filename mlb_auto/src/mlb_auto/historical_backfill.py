@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json, os, re, time
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -10,6 +10,7 @@ from .engine import moneyline_consensus
 from .features import build_feature_vector
 from .odds_api import FEATURED, OddsApiClient, merge_event_odds
 from .storage import Store
+from .team_form import TEAM_FORM_SOURCE, TEAM_FORM_VERSION, build_team_form_context
 
 MLB_STATS_BASE = 'https://statsapi.mlb.com/api/v1'
 SNAPSHOT_OFFSETS_MINUTES = (600, 360, 180, 90, 45)
@@ -99,7 +100,12 @@ def _detail(client: OddsApiClient, event: dict[str, Any], at: datetime, keys: li
     return detail, errors
 
 
-def build_example(client: OddsApiClient, game: dict[str, Any], market_keys: list[str]):
+def build_example(
+    client: OddsApiClient,
+    game: dict[str, Any],
+    market_keys: list[str],
+    team_form_builder: Callable[..., dict[str, Any]] | None = None,
+):
     start, history, chosen, errors = _dt(game['commence_time']), [], None, []
     for mins in SNAPSHOT_OFFSETS_MINUTES:
         at = start - timedelta(minutes=mins)
@@ -119,8 +125,21 @@ def build_example(client: OddsApiClient, game: dict[str, Any], market_keys: list
         return None, {'reason': 'NO_HISTORY', 'history_points': 0, 'errors': errors}
     detail, more = _detail(client, event, at, market_keys)
     errors += more
-    features = build_feature_vector(event=event, detail=detail, home_probability_history=history,
-                                    pulled_at=_iso(at), pull_count=len(history))
+    form_builder = team_form_builder or build_team_form_context
+    form = form_builder(
+        str(event.get('home_team') or game['home_team']),
+        str(event.get('away_team') or game['away_team']),
+        at,
+        historical=True,
+    )
+    features = build_feature_vector(
+        event=event,
+        detail=detail,
+        home_probability_history=history,
+        pulled_at=_iso(at),
+        pull_count=len(history),
+        team_form_features=form.get('features') or {},
+    )
     return {
         'sport': 'mlb_auto', 'provider_sport_key': 'baseball_mlb', 'event_id': str(event['id']),
         'historical': True, 'historical_source': 'THE_ODDS_API_POINT_IN_TIME',
@@ -131,8 +150,22 @@ def build_example(client: OddsApiClient, game: dict[str, Any], market_keys: list
         'label_home_win': 1 if game['home_score'] > game['away_score'] else 0,
         'features': features, 'source_pull_at': _iso(at), 'lock_cutoff_at': _iso(start - timedelta(minutes=45)),
         'source_before_or_at_cutoff': True, 'training_eligible': True,
+        'team_form_version': TEAM_FORM_VERSION,
+        'team_form_source': TEAM_FORM_SOURCE,
+        'team_form_available': bool(form.get('ok')),
+        'team_form_as_of': (form.get('metadata') or {}).get('as_of'),
+        'team_form_metadata': form.get('metadata') or {},
+        'team_form_error': form.get('error') or '',
         'snapshot_offsets_minutes': list(SNAPSHOT_OFFSETS_MINUTES), 'historical_market_errors': errors[:50]
-    }, {'event_id': str(event['id']), 'history_points': len(history), 'reason': 'OK', 'errors': errors}
+    }, {
+        'event_id': str(event['id']),
+        'history_points': len(history),
+        'reason': 'OK',
+        'errors': errors,
+        'team_form_available': bool(form.get('ok')),
+        'team_form_version': TEAM_FORM_VERSION,
+        'team_form_error': form.get('error') or '',
+    }
 
 
 def _persist_progress(store: Store, *, cursor: date, game_index: int, added: int, attempted: int,
