@@ -986,6 +986,47 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
             "max_output_tokens": latest.get("max_output_tokens")
             or BEDROCK_MAX_OUTPUT_TOKENS,
         }
+    if not force_refresh:
+        last_attempt = plain(
+            store.ops.get_item(
+                Key={"PK": "LLM_ANALYSIS", "SK": "LAST_ATTEMPT"},
+                ConsistentRead=True,
+            ).get("Item")
+            or {}
+        )
+        try:
+            retry_after = parse_utc(str(last_attempt.get("retry_after") or ""))
+        except (TypeError, ValueError):
+            retry_after = None
+        if (
+            last_attempt.get("status") in {"DEFERRED_QUOTA", "DEFERRED_TRANSIENT"}
+            and retry_after is not None
+            and retry_after > attempt_started
+        ):
+            # The hourly schedule must not burn eight more model requests while
+            # an existing bounded deferral is still active.  No new attempt row
+            # or pointer is written; force_refresh remains available for the
+            # deployment smoke and explicit operator diagnostics.
+            return {
+                "ok": False,
+                "system": "soccer_auto",
+                "component": "llm_analyst",
+                "status": str(last_attempt["status"]),
+                "reason": str(last_attempt.get("reason") or ""),
+                "analysis_available": False,
+                "validated_trials": 0,
+                "model_id": str(last_attempt.get("model_id") or model_ids[0]),
+                "attempted_model_ids": [],
+                "model_errors": list(last_attempt.get("model_errors") or []),
+                "retry_after": iso_utc(retry_after),
+                "attempt_id": str(last_attempt.get("attempt_id") or ""),
+                "attempt_started_at": str(
+                    last_attempt.get("attempt_started_at") or ""
+                ),
+                "observed_at": attempt_started_at,
+                "reused_deferral": True,
+                "source_attempt_status": str(last_attempt["status"]),
+            }
     analysis_context = _context(store)
     context_byte_count = len(canonical_json(analysis_context).encode("utf-8"))
     coverage = analysis_context.get("coverage") or {}

@@ -605,7 +605,7 @@ Resources:
           Type: Schedule
           Properties:
             Schedule: rate(1 minute)
-            Input: '{"action":"freeze_t45_and_predict"}'
+            Input: '{"action":"freeze_t45_training_and_t10_final_decision"}'
             RetryPolicy: {MaximumEventAgeInSeconds: 120, MaximumRetryAttempts: 0}
 
   SoccerSettlementFunction:
@@ -831,7 +831,7 @@ Resources:
   SoccerFreezeLivenessAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmDescription: soccer_auto T-45 freeze and prediction has not invoked for ten minutes
+      AlarmDescription: soccer_auto T-45 training and T-10 final-decision freeze has not invoked for ten minutes
       Namespace: AWS/Lambda
       MetricName: Invocations
       Dimensions:
@@ -956,7 +956,7 @@ Resources:
   SoccerFreezeErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmDescription: soccer_auto T-45 freeze and prediction Lambda errors
+      AlarmDescription: soccer_auto dual T-45 training and T-10 final-decision freeze Lambda errors
       Namespace: AWS/Lambda
       MetricName: Errors
       Dimensions:

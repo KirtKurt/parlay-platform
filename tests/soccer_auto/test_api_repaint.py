@@ -256,10 +256,15 @@ def row(*, model: str, revision: int = 4, status: str = "PUBLISHED", created: st
         "commence_time": "2026-08-14T14:00:00Z",
         "home_team": "Home",
         "away_team": "Away",
-        "horizon": "T45",
+        "horizon": "T10",
         "target": "result_1x2",
+        "lock_at": "2026-08-14T13:49:00Z",
+        "decision_target_at": "2026-08-14T13:50:00Z",
+        "capture_opens_at": "2026-08-14T13:48:20Z",
+        "lock_commit_deadline": "2026-08-14T13:49:50Z",
+        "source_observed_at_max": "2026-08-14T13:48:55Z",
         "feature_hash": "feature-four",
-        "lock_version": "soccer-auto-t45-lock-v2",
+        "lock_version": "soccer-auto-t10-lock-v1",
         "coverage_certificate_version": (
             "soccer-auto-coverage-certificate-v2"
         ),
@@ -272,8 +277,8 @@ def row(*, model: str, revision: int = 4, status: str = "PUBLISHED", created: st
         "publication_cutoff": "2026-08-14T13:50:00Z",
         "commit_deadline": "2026-08-14T13:49:50Z",
         "commit_headroom_seconds": 10,
-        "autonomy_updated_at": "2026-08-14T13:14:00Z",
-        "autonomy_updated_at_epoch_ms": 1_786_713_240_000,
+        "autonomy_updated_at": "2026-08-14T13:49:00Z",
+        "autonomy_updated_at_epoch_ms": 1_786_715_340_000,
         "event_metadata_revision": 12,
         "immutable": True,
     }
@@ -299,25 +304,30 @@ def binding(
     *,
     model: str,
     revision: int = 4,
-    bound_at: str = "2026-08-14T13:15:01Z",
+    bound_at: str = "2026-08-14T13:49:01Z",
 ):
     event = current_event(revision=revision)
     return {
         "PK": "PUBLIC_PREDICTION_BINDING#EVENT#soccer_test#one",
-        "SK": f"REV#{revision}#HORIZON#T45#TARGET#result_1x2",
+        "SK": f"REV#{revision}#HORIZON#T10#TARGET#result_1x2",
         "entity_type": "SOCCER_PUBLIC_PREDICTION_BINDING",
-        "binding_version": "soccer-auto-public-prediction-binding-v2",
+        "binding_version": "soccer-auto-public-prediction-binding-v3",
         "event_key": event["event_key"],
         "event_id": event["event_id"],
         "sport_key": event["sport_key"],
         "commence_time": event["commence_time"],
         "schedule_revision": revision,
         "schedule_identity": event["schedule_identity"],
-        "horizon": "T45",
+        "horizon": "T10",
         "target": "result_1x2",
-        "lock_sk": f"LOCK#T45#REV#{revision}#TARGET#result_1x2",
+        "lock_sk": f"LOCK#T10#REV#{revision}#TARGET#result_1x2",
+        "lock_at": "2026-08-14T13:49:00Z",
+        "decision_target_at": "2026-08-14T13:50:00Z",
+        "capture_opens_at": "2026-08-14T13:48:20Z",
+        "lock_commit_deadline": "2026-08-14T13:49:50Z",
+        "source_observed_at_max": "2026-08-14T13:48:55Z",
         "feature_hash": "feature-four",
-        "lock_version": "soccer-auto-t45-lock-v2",
+        "lock_version": "soccer-auto-t10-lock-v1",
         "coverage_certificate_version": (
             "soccer-auto-coverage-certificate-v2"
         ),
@@ -328,8 +338,8 @@ def binding(
         "commit_deadline": "2026-08-14T13:49:50Z",
         "commit_headroom_seconds": 10,
         "bound_at": bound_at,
-        "autonomy_updated_at": "2026-08-14T13:14:00Z",
-        "autonomy_updated_at_epoch_ms": 1_786_713_240_000,
+        "autonomy_updated_at": "2026-08-14T13:49:00Z",
+        "autonomy_updated_at_epoch_ms": 1_786_715_340_000,
         "event_metadata_revision": 12,
         "immutable": True,
     }
@@ -337,20 +347,26 @@ def binding(
 
 class ApiRepaintTests(unittest.TestCase):
     def test_public_endpoint_suppresses_shadow_stale_and_duplicate_authorities(self):
+        legacy_t45 = {
+            **row(model="legacy-t45", created="2026-08-14T13:49:00Z"),
+            "horizon": "T45",
+            "lock_version": "soccer-auto-t45-lock-v2",
+        }
         rows = [
-            row(model="shadow", status="SHADOW", created="2026-08-14T13:15:00Z"),
-            row(model="old-revision", revision=3, created="2026-08-14T13:14:00Z"),
-            row(model="first-bound", created="2026-08-14T13:15:01Z"),
-            row(model="later-repaint", created="2026-08-14T13:16:01Z"),
+            legacy_t45,
+            row(model="shadow", status="SHADOW", created="2026-08-14T13:49:00Z"),
+            row(model="old-revision", revision=3, created="2026-08-14T13:48:59Z"),
+            row(model="first-bound", created="2026-08-14T13:49:01Z"),
+            row(model="later-repaint", created="2026-08-14T13:49:20Z"),
         ]
         current = {"EVENT#soccer_test#one": current_event()}
         result = predictions(Store(rows, current, [binding(model="first-bound")]))
         self.assertEqual(result["count"], 1)
         self.assertEqual(result["predictions"][0]["model_digest"], "first-bound")
-        self.assertEqual(result["audit_rows_suppressed"], 3)
+        self.assertEqual(result["audit_rows_suppressed"], 4)
 
     def test_public_endpoint_requires_champion_current_identity_and_exact_binding(self):
-        valid = row(model="bound", created="2026-08-14T13:15:01Z")
+        valid = row(model="bound", created="2026-08-14T13:49:01Z")
         challenger = {**valid, "model_digest": "challenger", "model_authority": "PROSPECTIVE_SHADOW"}
         copied_identity = {
             **valid,
@@ -358,7 +374,7 @@ class ApiRepaintTests(unittest.TestCase):
             "home_team": "Repainted Home",
         }
         wrong_model = {**valid, "model_digest": "not-bound"}
-        missing_binding = row(model="missing-binding", revision=5, created="2026-08-14T13:17:00Z")
+        missing_binding = row(model="missing-binding", revision=5, created="2026-08-14T13:49:30Z")
         current = {"EVENT#soccer_test#one": current_event()}
 
         result = predictions(
@@ -374,7 +390,7 @@ class ApiRepaintTests(unittest.TestCase):
         self.assertEqual(result["audit_rows_suppressed"], 4)
 
     def test_public_endpoint_fails_closed_without_immutable_binding(self):
-        decision = row(model="bound", created="2026-08-14T13:15:01Z")
+        decision = row(model="bound", created="2026-08-14T13:49:01Z")
         current = {"EVENT#soccer_test#one": current_event()}
         mutable = {**binding(model="bound"), "immutable": False}
 

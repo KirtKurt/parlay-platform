@@ -1,4 +1,10 @@
-"""Immutable T-45 feature locks and champion/challenger inference."""
+"""Dual immutable soccer locks and champion/challenger inference.
+
+T45 is retained as the leakage-safe training/audit horizon.  T10 is the only
+public-decision horizon.  A T10 lock is captured at-or-before the publication
+deadline and records its exact evidence cutoff, so late data can never repaint
+the final decision.
+"""
 from __future__ import annotations
 
 import os
@@ -13,8 +19,14 @@ from .canonical import (
     schedule_identity,
 )
 from .config import (
+    FINAL_DECISION_CAPTURE_LEAD_SECONDS,
+    LOCK_MINUTES_BY_HORIZON,
+    LOCK_VERSION_BY_HORIZON,
+    PUBLIC_DECISION_HORIZON,
+    PUBLIC_PREDICTION_BINDING_VERSION,
     PUBLICATION_COMMIT_HEADROOM_SECONDS,
     PUBLICATION_CUTOFF_MINUTES,
+    TRAINING_LOCK_HORIZON,
 )
 from .market_features import FEATURE_SCHEMA_VERSION, compile_features
 from .model import CLASSES, ResidualSoftmaxModel
@@ -26,12 +38,77 @@ from .storage import (
 )
 
 
-LOCK_VERSION = "soccer-auto-t45-lock-v2"
-PUBLIC_BINDING_VERSION = "soccer-auto-public-prediction-binding-v2"
+# Backward-compatible aliases are intentionally retained for modules/tests that
+# refer to the original training lock constant directly.
+LOCK_VERSION = LOCK_VERSION_BY_HORIZON[TRAINING_LOCK_HORIZON]
+PUBLIC_BINDING_VERSION = PUBLIC_PREDICTION_BINDING_VERSION
 MIN_BOOKMAKERS = int(os.getenv("SOCCER_AUTO_MIN_BOOKMAKERS", "3"))
 PUBLISH_CONFIDENCE = float(os.getenv("SOCCER_AUTO_PUBLISH_CONFIDENCE", "0.50"))
 AUTONOMY_STATE_MAX_AGE_MINUTES = 30
 AUTONOMY_STATE_MAX_FUTURE_SKEW_MINUTES = 2
+
+
+def _normalized_horizon(value: Any) -> str:
+    horizon = str(value or "").strip().upper()
+    if horizon not in LOCK_MINUTES_BY_HORIZON:
+        raise ValueError(f"unsupported soccer lock horizon: {horizon or '<empty>'}")
+    return horizon
+
+
+def _lock_horizon(lock: Mapping[str, Any]) -> str:
+    """Return the explicit horizon, with one narrow legacy-T45 fallback."""
+    explicit = str(lock.get("horizon") or "").strip().upper()
+    if explicit:
+        return _normalized_horizon(explicit)
+    key = str(lock.get("SK") or "")
+    version = str(lock.get("lock_version") or "")
+    if key.startswith("LOCK#T45#") and version == LOCK_VERSION:
+        return TRAINING_LOCK_HORIZON
+    raise ValueError("lock horizon is missing or inconsistent")
+
+
+def lock_key(
+    horizon: str,
+    schedule_revision: int,
+    target: str = "result_1x2",
+) -> str:
+    normalized = _normalized_horizon(horizon)
+    return f"LOCK#{normalized}#REV#{int(schedule_revision)}#TARGET#{target}"
+
+
+def _lock_timing(
+    commence: datetime,
+    *,
+    horizon: str,
+    observed: datetime,
+) -> dict[str, datetime]:
+    """Return immutable target/capture timing for one lock horizon."""
+    normalized = _normalized_horizon(horizon)
+    target_at = commence - timedelta(
+        minutes=LOCK_MINUTES_BY_HORIZON[normalized]
+    )
+    if normalized == TRAINING_LOCK_HORIZON:
+        return {
+            "target_at": target_at,
+            "capture_opens_at": target_at,
+            "commit_deadline": target_at,
+            "evidence_cutoff_at": target_at,
+        }
+    commit_deadline = target_at - timedelta(
+        seconds=PUBLICATION_COMMIT_HEADROOM_SECONDS
+    )
+    capture_opens_at = commit_deadline - timedelta(
+        seconds=FINAL_DECISION_CAPTURE_LEAD_SECONDS
+    )
+    # The final lock stores the exact pre-deadline evidence cutoff used by this
+    # invocation.  It is never backdated to the nominal T10 target.
+    evidence_cutoff_at = min(observed, commit_deadline)
+    return {
+        "target_at": target_at,
+        "capture_opens_at": capture_opens_at,
+        "commit_deadline": commit_deadline,
+        "evidence_cutoff_at": evidence_cutoff_at,
+    }
 
 
 def _latest_and_earliest_by_scope(slots: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -116,21 +193,37 @@ def _certified_cohort(
     return pointers, payload
 
 
-def build_frozen_lock(store: SoccerStore, event: Mapping[str, Any], *, observed_at: str) -> dict[str, Any]:
+def build_frozen_lock(
+    store: SoccerStore,
+    event: Mapping[str, Any],
+    *,
+    observed_at: str,
+    horizon: str = TRAINING_LOCK_HORIZON,
+) -> dict[str, Any]:
     event_key = str(event["event_key"])
     schedule_revision = int(event.get("schedule_revision") or 0)
     if schedule_revision <= 0:
         raise ValueError("a positive schedule_revision is required for a frozen lock")
     commence = parse_utc(str(event["commence_time"]))
-    lock_at = commence - timedelta(minutes=45)
+    normalized_horizon = _normalized_horizon(horizon)
+    observed = parse_utc(observed_at)
+    timing = _lock_timing(
+        commence,
+        horizon=normalized_horizon,
+        observed=observed,
+    )
+    target_at = timing["target_at"]
+    capture_opens_at = timing["capture_opens_at"]
+    commit_deadline = timing["commit_deadline"]
+    lock_at = timing["evidence_cutoff_at"]
     event_schedule_identity = str(
         event.get("schedule_identity") or schedule_identity(event)
     )
     base = {
         "PK": event_key,
-        "SK": f"LOCK#T45#REV#{schedule_revision}#TARGET#result_1x2",
+        "SK": lock_key(normalized_horizon, schedule_revision),
         "entity_type": "SOCCER_FROZEN_FEATURE_LOCK",
-        "lock_version": LOCK_VERSION,
+        "lock_version": LOCK_VERSION_BY_HORIZON[normalized_horizon],
         "event_key": event_key,
         "event_id": event["event_id"],
         "sport_key": event["sport_key"],
@@ -140,13 +233,29 @@ def build_frozen_lock(store: SoccerStore, event: Mapping[str, Any], *, observed_
         "home_team": event.get("home_team"),
         "away_team": event.get("away_team"),
         "target": "result_1x2",
+        "horizon": normalized_horizon,
+        "minutes_before_start": LOCK_MINUTES_BY_HORIZON[
+            normalized_horizon
+        ],
+        "decision_target_at": iso_utc(target_at),
+        "capture_opens_at": iso_utc(capture_opens_at),
+        "lock_commit_deadline": iso_utc(commit_deadline),
         "lock_at": iso_utc(lock_at),
-        "created_at": observed_at,
+        "created_at": iso_utc(observed),
         "labels": None,
         "immutable": True,
     }
-    if parse_utc(observed_at) < lock_at:
+    if observed < capture_opens_at:
         return {**base, "write_ready": False, "reason": "LOCK_NOT_DUE"}
+    if (
+        normalized_horizon == PUBLIC_DECISION_HORIZON
+        and observed > commit_deadline
+    ):
+        return {
+            **base,
+            "write_ready": False,
+            "reason": "T10_FINAL_DECISION_WINDOW_CLOSED",
+        }
     certificates = store.coverage_certificates_before(
         event_key,
         iso_utc(lock_at),
@@ -284,8 +393,18 @@ def build_frozen_lock(store: SoccerStore, event: Mapping[str, Any], *, observed_
     return {
         **base,
         "write_ready": True,
-        "training_eligible": not exclusion_reasons,
-        "prediction_eligible": not exclusion_reasons,
+        "training_eligible": bool(
+            normalized_horizon == TRAINING_LOCK_HORIZON
+            and not exclusion_reasons
+        ),
+        "prediction_eligible": bool(
+            normalized_horizon == PUBLIC_DECISION_HORIZON
+            and not exclusion_reasons
+        ),
+        "evidence_lead_seconds": max(
+            0,
+            int((target_at - lock_at).total_seconds()),
+        ),
         "exclusion_reasons": exclusion_reasons,
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
         "feature_hash": feature_hash,
@@ -365,15 +484,22 @@ def build_frozen_lock(store: SoccerStore, event: Mapping[str, Any], *, observed_
 
 
 def live_lock_coverage_provenance_valid(lock: Mapping[str, Any]) -> bool:
-    """Recompute the immutable v2 live-lock binding before use."""
+    """Recompute the immutable live-lock binding before use.
+
+    Legacy T45 v2 rows remain valid for training.  T10 rows must additionally
+    prove that the exact evidence cutoff was inside the bounded final-decision
+    capture window and no later than the atomic publication deadline.
+    """
     try:
-        if lock.get("lock_version") != LOCK_VERSION:
+        horizon = _lock_horizon(lock)
+        if lock.get("lock_version") != LOCK_VERSION_BY_HORIZON[horizon]:
             return False
         if (
             lock.get("coverage_certificate_version")
             != COVERAGE_CERTIFICATE_VERSION
         ):
             return False
+        commence = parse_utc(str(lock["commence_time"]))
         lock_at = parse_utc(str(lock["lock_at"]))
         completed_at = parse_utc(str(lock["coverage_completed_at"]))
         plan_observed_at = parse_utc(
@@ -386,6 +512,61 @@ def live_lock_coverage_provenance_valid(lock: Mapping[str, Any]) -> bool:
         baseline_observed_at = parse_utc(
             str(lock["movement_baseline_source_observed_at_max"])
         )
+        expected_target_at = commence - timedelta(
+            minutes=LOCK_MINUTES_BY_HORIZON[horizon]
+        )
+        target_at = parse_utc(
+            str(lock.get("decision_target_at") or iso_utc(expected_target_at))
+        )
+        if horizon == TRAINING_LOCK_HORIZON:
+            capture_opens_at = parse_utc(
+                str(lock.get("capture_opens_at") or iso_utc(expected_target_at))
+            )
+            commit_deadline = parse_utc(
+                str(lock.get("lock_commit_deadline") or iso_utc(expected_target_at))
+            )
+            timing_valid = bool(
+                target_at == expected_target_at
+                and capture_opens_at == expected_target_at
+                and commit_deadline == expected_target_at
+                and lock_at == expected_target_at
+                and (
+                    not lock.get("horizon")
+                    or str(lock.get("horizon") or "").upper()
+                    == TRAINING_LOCK_HORIZON
+                )
+                and (
+                    lock.get("minutes_before_start") is None
+                    or int(lock.get("minutes_before_start") or 0)
+                    == LOCK_MINUTES_BY_HORIZON[TRAINING_LOCK_HORIZON]
+                )
+            )
+        else:
+            expected_commit_deadline = expected_target_at - timedelta(
+                seconds=PUBLICATION_COMMIT_HEADROOM_SECONDS
+            )
+            expected_capture_opens_at = expected_commit_deadline - timedelta(
+                seconds=FINAL_DECISION_CAPTURE_LEAD_SECONDS
+            )
+            capture_opens_at = parse_utc(str(lock["capture_opens_at"]))
+            commit_deadline = parse_utc(str(lock["lock_commit_deadline"]))
+            created_at = parse_utc(str(lock["created_at"]))
+            timing_valid = bool(
+                str(lock.get("horizon") or "").upper()
+                == PUBLIC_DECISION_HORIZON
+                and int(lock.get("minutes_before_start") or 0)
+                == LOCK_MINUTES_BY_HORIZON[PUBLIC_DECISION_HORIZON]
+                and target_at == expected_target_at
+                and capture_opens_at == expected_capture_opens_at
+                and commit_deadline == expected_commit_deadline
+                and capture_opens_at <= lock_at <= commit_deadline
+                and created_at == lock_at
+                and lock.get("training_eligible") is False
+                and lock.get("prediction_eligible") is True
+            )
+        if not timing_valid:
+            return False
+
         required_values = list(lock.get("coverage_required_pairs") or [])
         probe_values = list(lock.get("coverage_probe_pairs") or [])
         required = {str(value) for value in required_values if value}
@@ -456,10 +637,7 @@ def live_lock_coverage_provenance_valid(lock: Mapping[str, Any]) -> bool:
             and str(lock.get("target") or "") == "result_1x2"
             and str(lock.get("PK") or "") == str(lock["event_key"])
             and str(lock.get("SK") or "")
-            == (
-                f"LOCK#T45#REV#{int(lock['schedule_revision'])}#"
-                "TARGET#result_1x2"
-            )
+            == lock_key(horizon, int(lock["schedule_revision"]))
             and str(lock.get("schedule_identity") or "")
             == schedule_identity(lock)
             and baseline_plan_observed_at <= plan_observed_at <= completed_at
@@ -555,10 +733,13 @@ def _same_schedule(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
 
 
 def _public_binding_key(lock: Mapping[str, Any]) -> dict[str, str]:
+    horizon = _lock_horizon(lock)
+    if horizon != PUBLIC_DECISION_HORIZON:
+        raise ValueError("public binding requires the immutable T10 horizon")
     return {
         "PK": f"PUBLIC_PREDICTION_BINDING#{lock['event_key']}",
         "SK": (
-            f"REV#{int(lock['schedule_revision'])}#HORIZON#T45#"
+            f"REV#{int(lock['schedule_revision'])}#HORIZON#{horizon}#"
             "TARGET#result_1x2"
         ),
     }
@@ -571,6 +752,7 @@ def _public_model_binding(
 ) -> dict[str, Any]:
     """Build the static binding written atomically with its prediction."""
     key = _public_binding_key(lock)
+    horizon = _lock_horizon(lock)
     lock_identity = str(lock.get("schedule_identity") or schedule_identity(lock))
     return {
         **key,
@@ -582,10 +764,15 @@ def _public_model_binding(
         "commence_time": iso_utc(str(lock["commence_time"])),
         "schedule_revision": int(lock["schedule_revision"]),
         "schedule_identity": lock_identity,
-        "horizon": "T45",
+        "horizon": horizon,
         "target": "result_1x2",
         "lock_sk": lock["SK"],
         "lock_version": lock["lock_version"],
+        "lock_at": lock["lock_at"],
+        "decision_target_at": lock["decision_target_at"],
+        "capture_opens_at": lock["capture_opens_at"],
+        "lock_commit_deadline": lock["lock_commit_deadline"],
+        "source_observed_at_max": lock["source_observed_at_max"],
         "feature_hash": lock["feature_hash"],
         "coverage_certificate_version": lock[
             "coverage_certificate_version"
@@ -678,6 +865,16 @@ def predict_lock(
     work can cross the T-10 boundary after the handler starts.
     """
     wall_clock = clock or now_utc
+    try:
+        horizon = _lock_horizon(lock)
+    except ValueError:
+        return {"models": 0, "predictions": 0, "reason": "LOCK_HORIZON_INVALID"}
+    if horizon != PUBLIC_DECISION_HORIZON:
+        return {
+            "models": 0,
+            "predictions": 0,
+            "reason": "LOCK_NOT_FINAL_DECISION_HORIZON",
+        }
     if not lock.get("prediction_eligible"):
         return {"models": 0, "predictions": 0, "reason": "LOCK_NOT_PREDICTION_ELIGIBLE"}
     if not live_lock_coverage_provenance_valid(lock):
@@ -694,12 +891,8 @@ def predict_lock(
     lock_schedule_identity = str(
         lock.get("schedule_identity") or schedule_identity(lock)
     )
-    publication_cutoff = parse_utc(str(lock["commence_time"])) - timedelta(
-        minutes=PUBLICATION_CUTOFF_MINUTES
-    )
-    commit_deadline = publication_cutoff - timedelta(
-        seconds=PUBLICATION_COMMIT_HEADROOM_SECONDS
-    )
+    publication_cutoff = parse_utc(str(lock["decision_target_at"]))
+    commit_deadline = parse_utc(str(lock["lock_commit_deadline"]))
     written = 0
     failures = []
     blocked = []
@@ -797,7 +990,7 @@ def predict_lock(
             prediction = {
                 "PK": lock["event_key"],
                 "SK": (
-                    f"PRED#T45#REV#{schedule_revision}#TARGET#result_1x2#"
+                    f"PRED#{horizon}#REV#{schedule_revision}#TARGET#result_1x2#"
                     f"MODEL#{model_row['model_digest']}"
                 ),
                 "entity_type": "SOCCER_MODEL_PREDICTION",
@@ -810,8 +1003,12 @@ def predict_lock(
                 "home_team": lock.get("home_team"),
                 "away_team": lock.get("away_team"),
                 "target": "result_1x2",
-                "horizon": "T45",
+                "horizon": horizon,
                 "lock_at": lock["lock_at"],
+                "decision_target_at": lock["decision_target_at"],
+                "capture_opens_at": lock["capture_opens_at"],
+                "lock_commit_deadline": lock["lock_commit_deadline"],
+                "source_observed_at_max": lock["source_observed_at_max"],
                 "publication_cutoff": iso_utc(publication_cutoff),
                 "commit_deadline": iso_utc(commit_deadline),
                 "commit_headroom_seconds": PUBLICATION_COMMIT_HEADROOM_SECONDS,
@@ -838,7 +1035,8 @@ def predict_lock(
                 "GSI1PK": "SOCCER_PREDICTIONS",
                 "GSI2PK": f"MODEL#{model_row['model_digest']}",
                 "GSI2SK": (
-                    f"{lock['commence_time']}#REV#{schedule_revision}#{lock['event_key']}"
+                    f"{lock['commence_time']}#REV#{schedule_revision}#"
+                    f"HORIZON#{horizon}#{lock['event_key']}"
                 ),
             }
             binding = (
@@ -944,57 +1142,103 @@ def freeze_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, A
     store = SoccerStore()
     observed = now_utc()
     observed_at = iso_utc(observed)
-    events = store.active_events_between(iso_utc(observed), iso_utc(observed + timedelta(minutes=50)))
-    created = 0
-    blocked = 0
-    not_due = 0
+    events = store.active_events_between(
+        iso_utc(observed),
+        iso_utc(observed + timedelta(minutes=50)),
+    )
+    horizons = (TRAINING_LOCK_HORIZON, PUBLIC_DECISION_HORIZON)
+    created_by_horizon = {horizon: 0 for horizon in horizons}
+    retried_by_horizon = {horizon: 0 for horizon in horizons}
+    blocked_by_horizon = {horizon: 0 for horizon in horizons}
+    not_due_by_horizon = {horizon: 0 for horizon in horizons}
+    reason_counts: dict[str, int] = {}
     predictions = 0
-    retried = 0
     publish_blocked = 0
-    failures = []
+    final_decision_window_misses = 0
+    failures: list[dict[str, Any]] = []
+
     for row in events:
         try:
             schedule_revision = int(row.get("schedule_revision") or 0)
             if schedule_revision <= 0:
                 raise ValueError("event is missing a positive schedule_revision")
-            lock = store.get_lock(
-                row["event_key"], schedule_revision=schedule_revision
-            )
-            if lock:
-                retried += 1
-            else:
-                lock = build_frozen_lock(store, row, observed_at=observed_at)
-                if not lock.pop("write_ready", False):
-                    not_due += 1
-                    continue
-                if not store.put_lock(lock):
-                    # A concurrent freeze may have won the immutable write.
-                    # Read and infer from that exact revision instead of
-                    # suppressing missing model predictions until forever.
-                    lock = store.get_lock(
-                        row["event_key"], schedule_revision=schedule_revision
-                    )
-                    if not lock:
-                        continue
-                    retried += 1
+            for horizon in horizons:
+                lock = store.get_lock(
+                    row["event_key"],
+                    schedule_revision=schedule_revision,
+                    horizon=horizon,
+                )
+                if lock:
+                    retried_by_horizon[horizon] += 1
                 else:
-                    created += 1
-                    if not lock.get("training_eligible"):
-                        blocked += 1
-            prediction_result = predict_lock(store, lock, observed_at=observed_at)
-            predictions += int(prediction_result.get("predictions") or 0)
-            publish_blocked += len(prediction_result.get("blocked") or [])
-            failures.extend(prediction_result.get("failures") or [])
+                    lock = build_frozen_lock(
+                        store,
+                        row,
+                        observed_at=observed_at,
+                        horizon=horizon,
+                    )
+                    if not lock.pop("write_ready", False):
+                        reason = str(lock.get("reason") or "LOCK_NOT_READY")
+                        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+                        not_due_by_horizon[horizon] += 1
+                        if (
+                            horizon == PUBLIC_DECISION_HORIZON
+                            and reason == "T10_FINAL_DECISION_WINDOW_CLOSED"
+                        ):
+                            final_decision_window_misses += 1
+                        continue
+                    if not store.put_lock(lock):
+                        # A concurrent freeze may have won the immutable write.
+                        # Read that exact horizon/revision rather than creating a
+                        # second authority or waiting for another schedule tick.
+                        lock = store.get_lock(
+                            row["event_key"],
+                            schedule_revision=schedule_revision,
+                            horizon=horizon,
+                        )
+                        if not lock:
+                            continue
+                        retried_by_horizon[horizon] += 1
+                    else:
+                        created_by_horizon[horizon] += 1
+                        eligible_field = (
+                            "training_eligible"
+                            if horizon == TRAINING_LOCK_HORIZON
+                            else "prediction_eligible"
+                        )
+                        if not lock.get(eligible_field):
+                            blocked_by_horizon[horizon] += 1
+                if horizon != PUBLIC_DECISION_HORIZON:
+                    continue
+                prediction_result = predict_lock(
+                    store,
+                    lock,
+                    observed_at=observed_at,
+                )
+                predictions += int(prediction_result.get("predictions") or 0)
+                publish_blocked += len(prediction_result.get("blocked") or [])
+                failures.extend(prediction_result.get("failures") or [])
         except Exception as exc:
-            failures.append({"event_key": row["event_key"], "error": str(exc)})
+            failures.append(
+                {"event_key": row.get("event_key"), "error": str(exc)}
+            )
+
     return {
         "ok": not failures,
         "system": "soccer_auto",
         "events_considered": len(events),
-        "locks_created": created,
-        "locks_retried": retried,
-        "locks_blocked": blocked,
-        "not_due": not_due,
+        "training_horizon": TRAINING_LOCK_HORIZON,
+        "public_decision_horizon": PUBLIC_DECISION_HORIZON,
+        "locks_created": sum(created_by_horizon.values()),
+        "locks_created_by_horizon": created_by_horizon,
+        "locks_retried": sum(retried_by_horizon.values()),
+        "locks_retried_by_horizon": retried_by_horizon,
+        "locks_blocked": sum(blocked_by_horizon.values()),
+        "locks_blocked_by_horizon": blocked_by_horizon,
+        "not_due": sum(not_due_by_horizon.values()),
+        "not_due_by_horizon": not_due_by_horizon,
+        "lock_reason_counts": reason_counts,
+        "final_decision_window_misses": final_decision_window_misses,
         "predictions_written": predictions,
         "champion_publish_blocked": publish_blocked,
         "failures": failures,

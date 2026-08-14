@@ -11,6 +11,7 @@ from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 from .canonical import iso_utc
+from .health import prediction_and_training_health
 from .llm_analyst import latest_validated_analysis
 from .odds_api import provider_safety_config
 from .settlement import settlement_conflict_blocks_training
@@ -314,9 +315,12 @@ def authority_state(
     consecutive_failures: int,
     liveness_failed: bool,
     validated_llm_missing: bool,
+    operational_failure: bool = False,
 ) -> tuple[str, str]:
     if liveness_failed:
         return "DEGRADED", "SCHEDULED_COMPONENT_LIVENESS_FAILED"
+    if operational_failure:
+        return "DEGRADED", "OPERATIONAL_INTEGRITY_FAILURE"
     # The Bedrock analyst is bounded advisory research. Deterministic
     # chronological gates—not LLM availability or prose—own promotion.
     if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
@@ -370,7 +374,19 @@ def run_cycle() -> dict[str, Any]:
     llm = _llm_state(store, observed)
     validated_llm_missing = bool(llm["configured"] and not llm["fresh"])
     if validated_llm_missing:
-        warnings.append("llm_analyst:fresh_validated_analysis_missing")
+        last_attempt = llm.get("last_attempt") or {}
+        if last_attempt.get("status") == "DEFERRED_QUOTA":
+            warnings.append("llm_analyst:daily_token_quota_deferred")
+        else:
+            warnings.append("llm_analyst:fresh_validated_analysis_missing")
+
+    evidence_health = prediction_and_training_health(store, observed=observed)
+    if evidence_health.get("scan_truncated"):
+        failures.append("evidence_health:bounded_scan_truncated")
+    if int(evidence_health.get("integrity_failures") or 0) > 0:
+        failures.append("evidence_health:integrity_failures")
+    if int(evidence_health.get("availability_warnings") or 0) > 0:
+        warnings.append("evidence_health:availability_warnings")
 
     consecutive_failures = int(previous.get("consecutive_failures") or 0) + 1 if failures else 0
     counts = {
@@ -378,7 +394,25 @@ def run_cycle() -> dict[str, Any]:
         "events": _bounded_count(store.events),
         "snapshot_slots": _bounded_count(store.slots),
         "locks": _bounded_count(store.locks),
-        "settlements": _bounded_count(store.settlements),
+        "settlements": int(
+            (evidence_health.get("training") or {}).get(
+                "validated_final_score_rows"
+            )
+            or 0
+        ),
+        "settlement_table_items": _bounded_count(store.settlements),
+        "admissibility_certificates": int(
+            (evidence_health.get("training") or {}).get(
+                "admissibility_certificates"
+            )
+            or 0
+        ),
+        "training_rows_ready": int(
+            (evidence_health.get("training") or {}).get(
+                "training_rows_ready"
+            )
+            or 0
+        ),
         "predictions": _bounded_count(store.predictions),
         "models": _bounded_count(store.models),
     }
@@ -395,6 +429,7 @@ def run_cycle() -> dict[str, Any]:
         consecutive_failures=consecutive_failures,
         liveness_failed=liveness_failed,
         validated_llm_missing=validated_llm_missing,
+        operational_failure=bool(failures),
     )
     observed_at = iso_utc(observed)
     state = {
@@ -421,6 +456,7 @@ def run_cycle() -> dict[str, Any]:
         "counts_are_lower_bounds_at": 1000,
         "model": model,
         "llm_analyst": llm,
+        "prediction_and_training_health": evidence_health,
         "latest_quota": _latest_quota(store),
         "shared_provider_safety": provider_safety_config(),
         "distributed_rate_limit_state": store.rate_limit_status(),

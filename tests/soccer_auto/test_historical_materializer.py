@@ -76,8 +76,17 @@ class Store:
     def scan_all(table, **kwargs):
         yield from table
 
-    def get_lock(self, event_key, target="result_1x2", *, schedule_revision=None):
+    def get_lock(
+        self,
+        event_key,
+        target="result_1x2",
+        *,
+        schedule_revision=None,
+        historical=False,
+    ):
         expected = f"LOCK#T45#REV#{int(schedule_revision)}#TARGET#{target}"
+        if historical:
+            expected = f"{expected}#SOURCE#HISTORICAL"
         return next(
             (
                 dict(row)
@@ -112,12 +121,13 @@ class RaceStore(Store):
     def __init__(self, final, winner):
         super().__init__([final])
         self.winner = dict(winner)
-        self.get_calls = 0
+        self.historical_get_calls = 0
 
     def get_lock(self, *args, **kwargs):
-        self.get_calls += 1
-        if self.get_calls == 1:
-            return None
+        if kwargs.get("historical"):
+            self.historical_get_calls += 1
+            if self.historical_get_calls == 1:
+                return None
         return super().get_lock(*args, **kwargs)
 
     def put_lock(self, item):
@@ -311,6 +321,31 @@ def odds_event(*, home="Home", away="Away", book_count=3):
             for index in range(book_count)
         ],
     }
+
+
+def historical_lock(final, *, stale_schema=False):
+    event = odds_event(home=final["home_team"], away=final["away_team"])
+    event.update(
+        {
+            "id": final["event_id"],
+            "sport_key": final["sport_key"],
+            "commence_time": final["commence_time"],
+        }
+    )
+    lock_at = iso_utc(
+        parse_utc(final["commence_time"]) - timedelta(minutes=45)
+    )
+    lock = _build_lock(
+        final,
+        event,
+        provider_at=lock_at,
+        raw_uri="s3://raw/race-winner.json",
+        payload_hash=digest(event),
+        observed_at=iso_utc(OBSERVED),
+    )
+    if stale_schema:
+        lock["feature_schema_version"] = "stale-schema"
+    return lock
 
 
 class Client:
@@ -521,16 +556,34 @@ class HistoricalMaterializerTests(unittest.TestCase):
 
         result = self.run_once(store, client)
         status = materialization_status(store)
+        rows, excluded = training_rows(store)
 
-        self.assertEqual(result["provider_calls"], 0)
-        self.assertEqual(client.calls, [])
-        self.assertEqual(result["existing_training_eligible_locks"], 0)
-        self.assertEqual(result["invalid_existing_locks"], 1)
+        self.assertEqual(result["provider_calls"], 1)
+        self.assertEqual(len(client.calls), 1)
+        self.assertEqual(result["materialized"], 1)
+        self.assertEqual(result["nontraining_live_locks"], 1)
         self.assertEqual(
-            result["invalid_existing_lock_reasons"], {"schema_mismatch": 1}
+            result["nontraining_live_lock_reasons"], {"schema_mismatch": 1}
         )
-        self.assertEqual(status["invalid_existing_locks"], 1)
-        self.assertEqual(status["historical_training_rows"], 0)
+        self.assertEqual(result["invalid_existing_locks"], 0)
+        self.assertEqual(status["invalid_existing_locks"], 0)
+        self.assertEqual(status["nontraining_live_locks"], 1)
+        self.assertEqual(status["historical_training_rows"], 1)
+        self.assertEqual(len(store.locks), 2)
+        self.assertEqual(
+            store.locks[0]["SK"],
+            f"LOCK#T45#REV#{final['schedule_revision']}#TARGET#result_1x2",
+        )
+        self.assertEqual(store.locks[0]["feature_schema_version"], "stale-schema")
+        self.assertEqual(
+            store.locks[1]["SK"],
+            (
+                f"LOCK#T45#REV#{final['schedule_revision']}#"
+                "TARGET#result_1x2#SOURCE#HISTORICAL"
+            ),
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(excluded["schema_mismatch"], 1)
 
     def test_wrong_entity_lock_cannot_be_masked_by_valid_live_row(self):
         invalid_final = settlement()
@@ -544,14 +597,17 @@ class HistoricalMaterializerTests(unittest.TestCase):
         status = materialization_status(store)
         rows, excluded, trainer_manifest = _training_rows_with_proof(store)
 
-        self.assertEqual(result["provider_calls"], 0)
-        self.assertEqual(result["invalid_existing_locks"], 1)
-        self.assertEqual(result["existing_training_eligible_locks"], 1)
-        self.assertEqual(status["invalid_existing_locks"], 1)
+        self.assertEqual(result["provider_calls"], 1)
+        self.assertEqual(result["materialized"], 1)
+        self.assertEqual(result["nontraining_live_locks"], 1)
+        self.assertEqual(result["invalid_existing_locks"], 0)
+        self.assertEqual(status["invalid_existing_locks"], 0)
+        self.assertEqual(status["nontraining_live_locks"], 1)
         self.assertEqual(status["existing_live_training_locks"], 1)
-        self.assertEqual(len(rows), 1)
+        self.assertEqual(status["historical_training_rows"], 1)
+        self.assertEqual(len(rows), 2)
         self.assertEqual(excluded["invalid"], 1)
-        self.assertEqual(trainer_manifest["count"], 0)
+        self.assertEqual(trainer_manifest["count"], 1)
 
     def test_malformed_feature_containers_fail_closed_as_invalid(self):
         final = settlement()
@@ -579,14 +635,17 @@ class HistoricalMaterializerTests(unittest.TestCase):
                 status = materialization_status(store)
                 rows, excluded, _manifest = _training_rows_with_proof(store)
 
-                self.assertEqual(result["invalid_existing_locks"], 1)
-                self.assertEqual(status["invalid_existing_locks"], 1)
-                self.assertEqual(rows, [])
+                self.assertEqual(result["materialized"], 1)
+                self.assertEqual(result["nontraining_live_locks"], 1)
+                self.assertEqual(result["invalid_existing_locks"], 0)
+                self.assertEqual(status["invalid_existing_locks"], 0)
+                self.assertEqual(status["nontraining_live_locks"], 1)
+                self.assertEqual(len(rows), 1)
                 self.assertEqual(excluded["invalid"], 1)
 
     def test_conditional_write_race_validates_the_persisted_winner(self):
         final = settlement()
-        store = RaceStore(final, live_lock(final))
+        store = RaceStore(final, historical_lock(final))
 
         result = self.run_once(store, Client())
 
@@ -594,13 +653,12 @@ class HistoricalMaterializerTests(unittest.TestCase):
         self.assertEqual(result["materialized"], 0)
         self.assertEqual(result["existing_locks"], 1)
         self.assertEqual(result["existing_training_eligible_locks"], 1)
-        self.assertEqual(result["existing_live_training_locks"], 1)
+        self.assertEqual(result["existing_historical_training_locks"], 1)
         self.assertEqual(result["invalid_existing_locks"], 0)
 
     def test_conditional_write_race_rejects_a_malformed_winner(self):
         final = settlement()
-        malformed = live_lock(final)
-        malformed["feature_schema_version"] = "stale-schema"
+        malformed = historical_lock(final, stale_schema=True)
         store = RaceStore(final, malformed)
 
         result = self.run_once(store, Client())
@@ -740,6 +798,26 @@ class HistoricalMaterializerTests(unittest.TestCase):
             trainer_manifest["digest"],
         )
         self.assertEqual(status["pending_authoritative_settlements"], 0)
+
+    def test_duplicate_live_and_historical_training_authorities_fail_closed(self):
+        final = settlement()
+        store = Store([final])
+        self.run_once(store, Client())
+        store.locks.insert(0, live_lock(final))
+
+        status = materialization_status(store)
+        rows, excluded, trainer_manifest = _training_rows_with_proof(store)
+
+        self.assertEqual(rows, [])
+        self.assertEqual(excluded["duplicate_training_authority"], 1)
+        self.assertEqual(status["duplicate_training_eligible_locks"], 1)
+        self.assertEqual(status["invalid_existing_locks"], 1)
+        self.assertEqual(
+            status["invalid_existing_lock_reasons"],
+            {"duplicate_training_authority": 1},
+        )
+        self.assertEqual(status["historical_training_rows"], 0)
+        self.assertEqual(trainer_manifest["count"], 0)
 
     def test_trainer_handler_publishes_the_exact_historical_manifest(self):
         store = Store([settlement()])

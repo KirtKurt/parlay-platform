@@ -39,10 +39,11 @@ from soccer_auto.storage import (  # noqa: E402
 
 
 class Ops:
-    def __init__(self, rows=None, latest=None, autonomy=None):
+    def __init__(self, rows=None, latest=None, autonomy=None, last_attempt=None):
         self.rows = rows or []
         self.latest = latest
         self.autonomy = autonomy or {}
+        self.last_attempt = last_attempt
         self.writes = []
 
     def scan(self, **kwargs):
@@ -53,6 +54,11 @@ class Ops:
             return {"Item": self.autonomy}
         if Key == {"PK": "LLM_ANALYSIS", "SK": "LATEST"} and self.latest:
             return {"Item": self.latest}
+        if (
+            Key == {"PK": "LLM_ANALYSIS", "SK": "LAST_ATTEMPT"}
+            and self.last_attempt
+        ):
+            return {"Item": self.last_attempt}
         return {}
 
     def put_item(self, **kwargs):
@@ -1195,6 +1201,47 @@ class LlmBoundaryTests(unittest.TestCase):
             "BEDROCK_ALL_FALLBACK_MODELS_INVALID_RESPONSE",
         )
         self.assertEqual(attempt["model_errors"][0]["error_code"], "INVALID_RESPONSE")
+
+    def test_active_daily_quota_deferral_is_reused_without_bedrock_calls(self) -> None:
+        observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
+        last_attempt = {
+            "PK": "LLM_ANALYSIS",
+            "SK": "LAST_ATTEMPT",
+            "entity_type": "SOCCER_LLM_ATTEMPT",
+            "status": "DEFERRED_QUOTA",
+            "reason": "BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE",
+            "model_id": "us.amazon.nova-2-lite-v1:0",
+            "model_errors": [
+                {
+                    "model_id": "us.amazon.nova-2-lite-v1:0",
+                    "error_code": "ThrottlingException",
+                    "category": "DAILY_TOKEN_QUOTA",
+                }
+            ],
+            "retry_after": "2026-08-14T10:00:00Z",
+            "attempt_id": "prior-attempt",
+            "attempt_started_at": "2026-08-14T03:00:00Z",
+        }
+        store = Store(Ops(last_attempt=last_attempt))
+        with (
+            patch(
+                "soccer_auto.llm_analyst.MODEL_ID",
+                "us.amazon.nova-2-lite-v1:0",
+            ),
+            patch("soccer_auto.llm_analyst.SoccerStore", return_value=store),
+            patch("soccer_auto.llm_analyst.now_utc", return_value=observed),
+            patch("soccer_auto.llm_analyst._context") as context_mock,
+            patch("soccer_auto.llm_analyst.boto3.client") as client_mock,
+        ):
+            result = llm_analyst_handler({}, None)
+
+        self.assertEqual(result["status"], "DEFERRED_QUOTA")
+        self.assertTrue(result["reused_deferral"])
+        self.assertEqual(result["attempted_model_ids"], [])
+        self.assertEqual(result["attempt_id"], "prior-attempt")
+        context_mock.assert_not_called()
+        client_mock.assert_not_called()
+        self.assertEqual(store.ops.writes, [])
 
     def test_fresh_validated_latest_is_reused_before_context_or_converse(self) -> None:
         observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)

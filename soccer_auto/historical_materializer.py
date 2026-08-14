@@ -34,6 +34,7 @@ from .settlement import (
     settlement_conflict_blocks_training,
     settlement_training_admissible,
     settlement_training_evidence_valid,
+    settlement_training_views,
 )
 from .storage import SoccerStore, ddb_safe, now_utc, plain
 
@@ -43,6 +44,7 @@ HISTORICAL_LOCK_VERSION = "soccer-auto-historical-t45-lock-v1"
 HISTORICAL_TRAINING_MANIFEST_VERSION = (
     "soccer-auto-historical-training-manifest-v1"
 )
+HISTORICAL_LOCK_SOURCE_SUFFIX = "#SOURCE#HISTORICAL"
 MAX_SNAPSHOT_LAG_MINUTES = 15
 MIN_BOOKMAKERS = int(os.getenv("SOCCER_AUTO_MIN_BOOKMAKERS", "3"))
 MAX_EVENTS_PER_INVOCATION = min(
@@ -73,6 +75,32 @@ TERMINAL_STATES = frozenset(
 
 class HistoricalIdentityMismatch(ValueError):
     """Historical price evidence does not match the settled schedule identity."""
+
+
+def live_training_lock_key(
+    schedule_revision: int,
+    target: str = "result_1x2",
+) -> str:
+    return (
+        f"LOCK#T45#REV#{int(schedule_revision)}#TARGET#{target}"
+    )
+
+
+def historical_training_lock_key(
+    schedule_revision: int,
+    target: str = "result_1x2",
+) -> str:
+    """Return the separate immutable key for retrospective T45 evidence.
+
+    A live T45 lock may already exist but be unsuitable for supervised
+    training because it predates coverage certificates or other provenance
+    requirements.  Retrospective evidence must never overwrite that live
+    record, so it occupies a distinct item under the same event partition.
+    """
+    return (
+        f"{live_training_lock_key(schedule_revision, target)}"
+        f"{HISTORICAL_LOCK_SOURCE_SUFFIX}"
+    )
 
 
 def _state_key(settlement: Mapping[str, Any]) -> dict[str, str]:
@@ -124,6 +152,7 @@ def _write_state(
 
 
 def _validated_settlements(store: SoccerStore) -> list[dict[str, Any]]:
+    rows = list(store.scan_all(store.settlements, ConsistentRead=True))
     return sorted(
         [
             {
@@ -132,7 +161,7 @@ def _validated_settlements(store: SoccerStore) -> list[dict[str, Any]]:
                     row.get("schedule_identity") or schedule_identity(row)
                 ),
             }
-            for row in store.scan_all(store.settlements, ConsistentRead=True)
+            for row in settlement_training_views(rows)
             if settlement_training_evidence_valid(row)
         ],
         key=lambda row: (str(row.get("commence_time") or ""), str(row["event_key"])),
@@ -221,9 +250,8 @@ def historical_lock_provenance_valid(
                 "source_raw_uri": source_uris[0],
             }
         )
-        expected_lock_sk = (
-            f"LOCK#T45#REV#{int(settlement['schedule_revision'])}#"
-            "TARGET#result_1x2"
+        expected_lock_sk = historical_training_lock_key(
+            int(settlement["schedule_revision"])
         )
         return bool(
             settlement_training_admissible(settlement)
@@ -327,8 +355,13 @@ def training_candidate(
         return None, "schedule_mismatch"
     try:
         expected_lock_sk = (
-            f"LOCK#T45#REV#{int(settlement['schedule_revision'])}#"
-            "TARGET#result_1x2"
+            historical_training_lock_key(
+                int(settlement["schedule_revision"])
+            )
+            if lock_has_historical_signals(lock)
+            else live_training_lock_key(
+                int(settlement["schedule_revision"])
+            )
         )
         if (
             str(lock.get("PK") or "") != str(settlement["event_key"])
@@ -389,6 +422,59 @@ def training_candidate(
     except (KeyError, TypeError, ValueError):
         return None, "invalid"
     return TrainingCandidate(row, historical_entry), None
+
+
+def select_training_candidate(
+    locks: list[Mapping[str, Any]],
+    settlement: Mapping[str, Any],
+    *,
+    conflicted: bool,
+) -> dict[str, Any]:
+    """Select one deterministic training authority for an event revision.
+
+    Valid live T45 evidence is preferred because it was captured prospectively.
+    A certified retrospective lock is a fallback when the immutable live lock
+    is absent or training-ineligible.  Multiple valid locks fail closed rather
+    than adding the same label twice.
+    """
+    valid: list[tuple[int, str, Mapping[str, Any], TrainingCandidate]] = []
+    invalid_live_reasons: dict[str, int] = {}
+    invalid_historical_reasons: dict[str, int] = {}
+    for lock in locks:
+        candidate, reason = training_candidate(
+            lock,
+            settlement,
+            conflicted=conflicted,
+        )
+        historical = lock_has_historical_signals(lock)
+        if candidate is not None:
+            valid.append(
+                (
+                    1 if historical else 0,
+                    str(lock.get("SK") or ""),
+                    lock,
+                    candidate,
+                )
+            )
+            continue
+        bucket = (
+            invalid_historical_reasons
+            if historical
+            else invalid_live_reasons
+        )
+        reason_key = str(reason or "invalid")
+        bucket[reason_key] = int(bucket.get(reason_key) or 0) + 1
+    valid.sort(key=lambda row: (row[0], row[1]))
+    duplicate_eligible_locks = max(0, len(valid) - 1)
+    selected_lock = valid[0][2] if valid else None
+    selected_candidate = valid[0][3] if valid else None
+    return {
+        "candidate": selected_candidate,
+        "lock": selected_lock,
+        "duplicate_eligible_locks": duplicate_eligible_locks,
+        "invalid_live_reasons": invalid_live_reasons,
+        "invalid_historical_reasons": invalid_historical_reasons,
+    }
 
 
 def historical_training_manifest(
@@ -520,9 +606,8 @@ def _build_lock(
     )
     return {
         "PK": settlement["event_key"],
-        "SK": (
-            f"LOCK#T45#REV#{int(settlement['schedule_revision'])}#"
-            "TARGET#result_1x2"
+        "SK": historical_training_lock_key(
+            int(settlement["schedule_revision"])
         ),
         "entity_type": "SOCCER_FROZEN_FEATURE_LOCK",
         "lock_version": HISTORICAL_LOCK_VERSION,
@@ -591,6 +676,29 @@ def _record_existing_lock(
     reasons[reason_key] = int(reasons.get(reason_key) or 0) + 1
 
 
+def _record_nontraining_live_lock(
+    result: dict[str, Any],
+    lock: Mapping[str, Any],
+    settlement: Mapping[str, Any],
+) -> None:
+    """Record a legacy/live exclusion without treating it as corruption.
+
+    The immutable live row remains auditable.  It simply does not block a
+    separate retrospective lock from supplying certified training evidence.
+    """
+    candidate, reason = training_candidate(
+        lock,
+        settlement,
+        conflicted=False,
+    )
+    if candidate is not None:
+        raise RuntimeError("valid live lock passed to nontraining recorder")
+    result["nontraining_live_locks"] += 1
+    reason_key = str(reason or "invalid")
+    reasons = result["nontraining_live_lock_reasons"]
+    reasons[reason_key] = int(reasons.get(reason_key) or 0) + 1
+
+
 def run_materialization(
     store: SoccerStore,
     *,
@@ -617,6 +725,8 @@ def run_materialization(
         "existing_training_eligible_locks": 0,
         "existing_historical_training_locks": 0,
         "existing_live_training_locks": 0,
+        "nontraining_live_locks": 0,
+        "nontraining_live_lock_reasons": {},
         "invalid_existing_locks": 0,
         "invalid_existing_lock_reasons": {},
         "terminal_skips": 0,
@@ -629,13 +739,36 @@ def run_materialization(
         if str(settlement["event_key"]) in conflicts:
             result["conflict_skips"] += 1
             continue
-        existing = store.get_lock(
+        historical_existing = store.get_lock(
+            str(settlement["event_key"]),
+            schedule_revision=int(settlement["schedule_revision"]),
+            historical=True,
+        )
+        if historical_existing:
+            _record_existing_lock(
+                result,
+                historical_existing,
+                settlement,
+            )
+            continue
+        live_existing = store.get_lock(
             str(settlement["event_key"]),
             schedule_revision=int(settlement["schedule_revision"]),
         )
-        if existing:
-            _record_existing_lock(result, existing, settlement)
-            continue
+        if live_existing:
+            live_candidate, _reason = training_candidate(
+                live_existing,
+                settlement,
+                conflicted=False,
+            )
+            if live_candidate is not None:
+                _record_existing_lock(result, live_existing, settlement)
+                continue
+            _record_nontraining_live_lock(
+                result,
+                live_existing,
+                settlement,
+            )
         state = _state(store, settlement)
         if str(state.get("status") or "") in TERMINAL_STATES:
             result["terminal_skips"] += 1
@@ -804,10 +937,31 @@ def run_materialization(
                     "built historical lock failed training proof: "
                     f"{reason or 'historical_manifest_missing'}"
                 )
+            # A live freeze may have completed while the historical provider
+            # request was in flight.  Prefer that prospective evidence when it
+            # now passes the current training contract.
+            concurrent_live = store.get_lock(
+                str(settlement["event_key"]),
+                schedule_revision=int(settlement["schedule_revision"]),
+            )
+            if concurrent_live:
+                live_candidate, _reason = training_candidate(
+                    concurrent_live,
+                    settlement,
+                    conflicted=False,
+                )
+                if live_candidate is not None:
+                    _record_existing_lock(
+                        result,
+                        concurrent_live,
+                        settlement,
+                    )
+                    continue
             if not store.put_lock(lock):
                 winner = store.get_lock(
                     str(settlement["event_key"]),
                     schedule_revision=int(settlement["schedule_revision"]),
+                    historical=True,
                 )
                 if not winner:
                     raise RuntimeError(
@@ -864,42 +1018,68 @@ def materialization_status(store: SoccerStore) -> dict[str, Any]:
         (str(row.get("PK") or ""), str(row.get("SK") or "")): row
         for row in all_locks
     }
-    locks_by_key = {
-        key: lock
-        for key, settlement in settlements_by_key.items()
-        if (
-            lock := locks_by_storage_key.get(
-                (
-                    str(settlement["event_key"]),
-                    (
-                        f"LOCK#T45#REV#{int(settlement['schedule_revision'])}#"
-                        "TARGET#result_1x2"
-                    ),
-                )
-            )
-        )
-        is not None
-    }
     historical_entries: list[dict[str, Any]] = []
     valid_live_existing_locks = 0
     invalid_existing_locks = 0
     invalid_existing_lock_reasons: dict[str, int] = {}
+    nontraining_live_locks = 0
+    nontraining_live_lock_reasons: dict[str, int] = {}
+    duplicate_training_eligible_locks = 0
+    selected_lock_keys: set[tuple[str, int]] = set()
+    invalid_historical_keys: set[tuple[str, int]] = set()
     for key, settlement in settlements_by_key.items():
-        lock = locks_by_key.get(key)
-        if lock is None or key[0] in conflicted_event_keys:
+        if key[0] in conflicted_event_keys:
             continue
-        candidate, reason = training_candidate(
-            lock,
+        event_key = str(settlement["event_key"])
+        revision = int(settlement["schedule_revision"])
+        live = locks_by_storage_key.get(
+            (event_key, live_training_lock_key(revision))
+        )
+        historical = locks_by_storage_key.get(
+            (event_key, historical_training_lock_key(revision))
+        )
+        assessment = select_training_candidate(
+            [lock for lock in (live, historical) if lock is not None],
             settlement,
             conflicted=False,
         )
-        if candidate is None:
-            invalid_existing_locks += 1
-            reason_key = str(reason or "invalid")
-            invalid_existing_lock_reasons[reason_key] = (
-                int(invalid_existing_lock_reasons.get(reason_key) or 0) + 1
+        for reason, count in assessment["invalid_live_reasons"].items():
+            nontraining_live_locks += int(count)
+            nontraining_live_lock_reasons[reason] = (
+                int(nontraining_live_lock_reasons.get(reason) or 0)
+                + int(count)
             )
-        elif candidate.historical_manifest_entry is not None:
+        historical_invalid_count = sum(
+            int(count)
+            for count in assessment["invalid_historical_reasons"].values()
+        )
+        if historical_invalid_count:
+            invalid_historical_keys.add(key)
+        for reason, count in assessment["invalid_historical_reasons"].items():
+            invalid_existing_locks += int(count)
+            invalid_existing_lock_reasons[reason] = (
+                int(invalid_existing_lock_reasons.get(reason) or 0)
+                + int(count)
+            )
+        duplicate_count = int(assessment["duplicate_eligible_locks"])
+        if duplicate_count:
+            duplicate_training_eligible_locks += duplicate_count
+            invalid_existing_locks += duplicate_count
+            invalid_existing_lock_reasons["duplicate_training_authority"] = (
+                int(
+                    invalid_existing_lock_reasons.get(
+                        "duplicate_training_authority"
+                    )
+                    or 0
+                )
+                + duplicate_count
+            )
+            continue
+        candidate = assessment["candidate"]
+        if candidate is None:
+            continue
+        selected_lock_keys.add(key)
+        if candidate.historical_manifest_entry is not None:
             historical_entries.append(candidate.historical_manifest_entry)
         else:
             valid_live_existing_locks += 1
@@ -918,7 +1098,6 @@ def materialization_status(store: SoccerStore) -> dict[str, Any]:
         if not cursor:
             break
         kwargs["ExclusiveStartKey"] = cursor
-    lock_keys = set(locks_by_key)
     terminal_keys = {
         (str(row.get("event_key") or ""), int(row.get("schedule_revision") or 0))
         for row in states
@@ -929,19 +1108,21 @@ def materialization_status(store: SoccerStore) -> dict[str, Any]:
         for event_key, _revision in settlements_by_key
     )
     terminal_without_lock = sum(
-        key not in lock_keys
+        key not in selected_lock_keys
+        and key not in invalid_historical_keys
         and key in terminal_keys
         and key[0] not in conflicted_event_keys
         for key in settlements_by_key
     )
     pending = sum(
-        key not in lock_keys
+        key not in selected_lock_keys
+        and key not in invalid_historical_keys
         and key not in terminal_keys
         and key[0] not in conflicted_event_keys
         for key in settlements_by_key
     )
     existing_nonconflicted = sum(
-        key in lock_keys and key[0] not in conflicted_event_keys
+        key in selected_lock_keys and key[0] not in conflicted_event_keys
         for key in settlements_by_key
     )
     return {
@@ -960,6 +1141,11 @@ def materialization_status(store: SoccerStore) -> dict[str, Any]:
         ),
         "existing_historical_training_locks": historical_manifest["count"],
         "existing_live_training_locks": valid_live_existing_locks,
+        "nontraining_live_locks": nontraining_live_locks,
+        "nontraining_live_lock_reasons": nontraining_live_lock_reasons,
+        "duplicate_training_eligible_locks": (
+            duplicate_training_eligible_locks
+        ),
         "invalid_existing_locks": invalid_existing_locks,
         "invalid_existing_lock_reasons": invalid_existing_lock_reasons,
         "conflict_blocked_authoritative_settlements": conflict_count,
@@ -967,6 +1153,7 @@ def materialization_status(store: SoccerStore) -> dict[str, Any]:
         "pending_authoritative_settlements": pending,
         "classified_authoritative_settlements": (
             existing_nonconflicted
+            + len(invalid_historical_keys)
             + conflict_count
             + terminal_without_lock
             + pending
