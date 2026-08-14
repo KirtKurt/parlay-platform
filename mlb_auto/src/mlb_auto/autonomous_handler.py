@@ -23,6 +23,7 @@ from .ml import promote_challenger
 from .model_guard import policy_payload as _model_guard_policy
 from .model_guard_runtime import (
     OFFICIAL_PICK_POLICY as _guard_official_pick_policy,
+    PLATFORM_VERSION as _guard_platform_version,
     install as _install_model_guard,
 )
 from .provider_open import OpenEndedOddsApiClient
@@ -173,6 +174,7 @@ def _status_with_rd() -> dict:
         result['llm_rd'] = rd
         result['llm_model_access'] = _model_access_status(rd)
         result['team_form'] = _team_form_status(Store=Store)
+        result['platform_version'] = _guard_platform_version
         result['official_pick_policy'] = _guard_official_pick_policy
         result['model_input_guard'] = _model_guard_policy()
         controller = result.get('controller') or {}
