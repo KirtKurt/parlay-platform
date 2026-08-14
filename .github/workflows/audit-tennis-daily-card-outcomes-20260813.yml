@@ -1,0 +1,258 @@
+name: Audit Tennis daily card outcomes 20260813
+
+on:
+  push:
+    branches: [agent/audit-todays-tennis-picks-20260813-1945]
+    paths: ['.github/workflows/audit-tennis-daily-card-outcomes-20260813.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Compare card picks with settled winners
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          TABLE_NAME: inqis_tennis_learning
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import math
+          import os
+          import urllib.parse
+          import urllib.request
+          from collections import Counter, defaultdict
+          from datetime import datetime, timedelta, timezone
+          from decimal import Decimal
+          from pathlib import Path
+          from typing import Any
+          from zoneinfo import ZoneInfo
+
+          import boto3
+
+          ET = ZoneInfo('America/New_York')
+          TABLE_NAME = os.environ['TABLE_NAME']
+          REGION = os.environ['AWS_REGION_VALUE']
+          API_KEY = os.environ.get('ODDS_API_KEY_VALUE') or ''
+          table = boto3.resource('dynamodb', region_name=REGION).Table(TABLE_NAME)
+          card = json.loads(Path('runtime/tennis_daily_card.json').read_text())
+
+          def plain(value: Any) -> Any:
+              if isinstance(value, Decimal):
+                  if value % 1 == 0:
+                      return int(value)
+                  return float(value)
+              if isinstance(value, dict):
+                  return {str(k): plain(v) for k, v in value.items()}
+              if isinstance(value, list):
+                  return [plain(v) for v in value]
+              return value
+
+          def dt(value: Any) -> datetime | None:
+              if not value:
+                  return None
+              try:
+                  parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+                  if parsed.tzinfo is None:
+                      parsed = parsed.replace(tzinfo=timezone.utc)
+                  return parsed.astimezone(timezone.utc)
+              except Exception:
+                  return None
+
+          def provider_get(path: str, params: dict[str, Any]) -> Any:
+              query = dict(params)
+              query['apiKey'] = API_KEY
+              url = 'https://api.the-odds-api.com/v4' + path + '?' + urllib.parse.urlencode(query)
+              req = urllib.request.Request(url, headers={'User-Agent': 'inqis-tennis-daily-audit/1.0'})
+              with urllib.request.urlopen(req, timeout=45) as response:
+                  return json.loads(response.read().decode())
+
+          def winner_from_score(event: dict[str, Any]) -> str | None:
+              if not event.get('completed'):
+                  return None
+              scores = event.get('scores') or []
+              if len(scores) != 2:
+                  return None
+              try:
+                  a = int(scores[0]['score'])
+                  b = int(scores[1]['score'])
+              except Exception:
+                  return None
+              if a == b:
+                  return None
+              return str(scores[0]['name'] if a > b else scores[1]['name'])
+
+          raw_rows = []
+          sport_keys: set[str] = set()
+          for pick in card.get('picks') or []:
+              event_id = str(pick.get('event_id') or '')
+              live = table.get_item(Key={'PK': f'LIVE#{event_id}', 'SK': 'LATEST'}, ConsistentRead=True).get('Item') or {}
+              settlement = table.get_item(Key={'PK': f'SETTLEMENT#{event_id}', 'SK': 'RECORD'}, ConsistentRead=True).get('Item') or {}
+              prediction_stamp = str(pick.get('prediction_timestamp') or '')
+              prediction = {}
+              if prediction_stamp:
+                  prediction = table.get_item(
+                      Key={'PK': f'PREDICTION#{event_id}', 'SK': prediction_stamp},
+                      ConsistentRead=True,
+                  ).get('Item') or {}
+              sport_key = str(live.get('sport_key') or '')
+              if sport_key:
+                  sport_keys.add(sport_key)
+              commence = dt(pick.get('commence_time'))
+              predicted = dt(prediction_stamp)
+              lead_minutes = None
+              if commence and predicted:
+                  lead_minutes = round((commence - predicted).total_seconds() / 60.0, 3)
+              settlement_winner = None
+              settlement_label = settlement.get('label')
+              if settlement and settlement_label is not None:
+                  settlement_winner = str(
+                      settlement.get('player') if int(settlement_label) == 1 else settlement.get('opponent')
+                  )
+              raw_rows.append({
+                  **pick,
+                  'live_record_found': bool(live),
+                  'prediction_record_found': bool(prediction),
+                  'settlement_record_found': bool(settlement),
+                  'sport_key': sport_key or None,
+                  'lead_minutes': lead_minutes,
+                  'prediction_pre_start': lead_minutes is not None and lead_minutes >= 0,
+                  'prediction_t45_or_earlier': lead_minutes is not None and lead_minutes >= 45,
+                  'settlement_winner': settlement_winner,
+                  'settlement_label': plain(settlement_label),
+                  'settled_at': str(settlement.get('trained_at') or ''),
+                  'prediction_probability_record': plain(prediction.get('probability')) if prediction else None,
+                  'prediction_model_version_record': plain(prediction.get('model_version')) if prediction else None,
+              })
+
+          provider_events: dict[str, dict[str, Any]] = {}
+          provider_errors: dict[str, str] = {}
+          if API_KEY:
+              for key in sorted(sport_keys):
+                  try:
+                      response = provider_get(f'/sports/{key}/scores/', {'daysFrom': 3, 'dateFormat': 'iso'})
+                      if not isinstance(response, list):
+                          raise RuntimeError('unexpected response type')
+                      for event in response:
+                          event_id = str(event.get('id') or '')
+                          if event_id:
+                              provider_events[event_id] = event
+                  except Exception as exc:
+                      provider_errors[key] = f'{type(exc).__name__}:{str(exc)[:300]}'
+
+          rows = []
+          for row in raw_rows:
+              event_id = str(row['event_id'])
+              provider = provider_events.get(event_id) or {}
+              provider_winner = winner_from_score(provider)
+              settlement_winner = row.get('settlement_winner')
+              winner = settlement_winner or provider_winner
+              source = 'SETTLEMENT_RECORD' if settlement_winner else ('ODDS_API_SCORE' if provider_winner else None)
+              correct = None if winner is None else str(row.get('pick')) == str(winner)
+              provider_settlement_agrees = None
+              if settlement_winner and provider_winner:
+                  provider_settlement_agrees = settlement_winner == provider_winner
+              rows.append({
+                  **row,
+                  'provider_completed': bool(provider.get('completed')),
+                  'provider_winner': provider_winner,
+                  'provider_settlement_agrees': provider_settlement_agrees,
+                  'winner': winner,
+                  'outcome_source': source,
+                  'result': 'PENDING' if winner is None else ('WIN' if correct else 'LOSS'),
+                  'correct': correct,
+              })
+
+          def aggregate(selected: list[dict[str, Any]]) -> dict[str, Any]:
+              settled = [x for x in selected if x['result'] in ('WIN', 'LOSS')]
+              wins = sum(x['result'] == 'WIN' for x in settled)
+              losses = sum(x['result'] == 'LOSS' for x in settled)
+              return {
+                  'total': len(selected),
+                  'settled': len(settled),
+                  'wins': wins,
+                  'losses': losses,
+                  'pending': sum(x['result'] == 'PENDING' for x in selected),
+                  'accuracy': (wins / len(settled)) if settled else None,
+                  'pre_start_count': sum(bool(x.get('prediction_pre_start')) for x in selected),
+                  'post_start_count': sum(x.get('prediction_pre_start') is False for x in selected),
+                  't45_or_earlier_count': sum(bool(x.get('prediction_t45_or_earlier')) for x in selected),
+                  'inside_t45_or_post_start_count': sum(x.get('prediction_t45_or_earlier') is False for x in selected),
+              }
+
+          official = [x for x in rows if x.get('band') == 'STRONG']
+          watch = [x for x in rows if x.get('band') == 'WATCH']
+          passed = [x for x in rows if x.get('band') == 'PASS']
+          official_t45 = [x for x in official if x.get('prediction_t45_or_earlier')]
+          official_prestart = [x for x in official if x.get('prediction_pre_start')]
+          post_start_official = [x for x in official if x.get('prediction_pre_start') is False]
+          mismatches = [x for x in rows if x.get('provider_settlement_agrees') is False]
+          record_missing = [x for x in rows if not x.get('prediction_record_found') or not x.get('live_record_found')]
+
+          summary = {
+              'audited_at_utc': datetime.now(timezone.utc).isoformat(),
+              'audited_at_et': datetime.now(timezone.utc).astimezone(ET).isoformat(),
+              'card_date_et': card.get('date_et'),
+              'card_generated_at': card.get('generated_at'),
+              'card_source': card.get('source'),
+              'card_match_count': card.get('match_count'),
+              'card_official_pick_count': card.get('official_pick_count'),
+              'card_watch_count': card.get('watch_count'),
+              'card_pass_count': card.get('pass_count'),
+              'all_card_rows': aggregate(rows),
+              'official_strong': aggregate(official),
+              'official_strong_prestart': aggregate(official_prestart),
+              'official_strong_t45_or_earlier': aggregate(official_t45),
+              'watch': aggregate(watch),
+              'pass': aggregate(passed),
+              'post_start_official_count': len(post_start_official),
+              'provider_errors': provider_errors,
+              'provider_settlement_mismatch_count': len(mismatches),
+              'missing_live_or_prediction_record_count': len(record_missing),
+              'settlement_records_found': sum(bool(x.get('settlement_record_found')) for x in rows),
+              'provider_completed_found': sum(bool(x.get('provider_completed')) for x in rows),
+          }
+
+          Path('tennis-card-audit.json').write_text(json.dumps({'summary': summary, 'rows': rows}, indent=2, sort_keys=True) + '\n')
+          Path('tennis-card-audit-summary.json').write_text(json.dumps(summary, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          print('\nOFFICIAL STRONG PICKS')
+          for row in official:
+              print(json.dumps({
+                  'event_id': row['event_id'],
+                  'match': f"{row.get('player')} vs {row.get('opponent')}",
+                  'pick': row.get('pick'),
+                  'confidence_pct': row.get('probability_pct'),
+                  'commence_time': row.get('commence_time'),
+                  'prediction_timestamp': row.get('prediction_timestamp'),
+                  'lead_minutes': row.get('lead_minutes'),
+                  't45_or_earlier': row.get('prediction_t45_or_earlier'),
+                  'winner': row.get('winner'),
+                  'result': row.get('result'),
+                  'outcome_source': row.get('outcome_source'),
+              }, sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tennis-daily-card-audit-${{ github.run_id }}
+          path: |
+            tennis-card-audit.json
+            tennis-card-audit-summary.json
+          retention-days: 14
