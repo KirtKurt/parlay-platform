@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import uuid
 from datetime import timedelta
 from typing import Any, Mapping, Sequence
 
@@ -17,12 +18,13 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
+from .api import _coverage_summary_universe, _latest_summary_coverage
 from .canonical import canonical_json, digest, iso_utc, parse_utc
 from .market_features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION
 from .storage import SoccerStore, ddb_safe, now_utc, plain
 
 
-ANALYSIS_VERSION = "soccer-auto-llm-analyst-v2"
+ANALYSIS_VERSION = "soccer-auto-llm-analyst-v3"
 ANALYSIS_ORIGIN = "BEDROCK_CONVERSE"
 ALLOWED_MODEL_IDS = frozenset(
     {
@@ -283,8 +285,97 @@ def _coverage_diagnostics(store: SoccerStore) -> dict[str, Any]:
             }
         )
     missing = sorted(expected - returned)
+    provider_unavailable: list[str] = []
+    normalization_rejected: list[str] = []
+    attempted_incomplete: list[str] = []
+    quota_deferred: list[str] = []
+    failed_pairs: list[str] = []
+    never_attempted: list[str] = []
+    unresolved: list[str] = list(missing)
+    required_missing: list[str] = list(missing)
+    expected_batches: list[str] = []
+    succeeded_batches: list[str] = []
+    failed_batches: list[str] = []
+    deferred_batches: list[str] = []
+    unresolved_batches: list[str] = []
+    discovery_status_counts: dict[str, int] = {}
+    coverage_integrity_failures = 0
+    coverage_error_cycles = 0
+    dispatch_manifest: dict[str, Any] = {}
+    if hasattr(store, "latest_coverage_cycles") and hasattr(
+        store, "latest_coverage_dispatch_manifest"
+    ):
+        summaries, dispatch_manifest = _coverage_summary_universe(
+            store,
+            observed_at=now_utc(),
+        )
+        exact = _latest_summary_coverage(
+            summaries
+        )
+        expected = set(exact["expected_pairs"])
+        returned = set(exact["returned_pairs"])
+        missing = sorted(exact["missing_pairs"])
+        provider_unavailable = sorted(exact["provider_unavailable_pairs"])
+        normalization_rejected = sorted(exact["normalization_rejected_pairs"])
+        attempted_incomplete = sorted(exact["attempted_incomplete_pairs"])
+        quota_deferred = sorted(exact["quota_deferred_pairs"])
+        failed_pairs = sorted(exact["failed_pairs"])
+        never_attempted = sorted(exact["never_attempted_pairs"])
+        unresolved = sorted(exact["unresolved_pairs"])
+        required_missing = sorted(exact["required_missing_pairs"])
+        expected_batches = sorted(exact["expected_batch_digests"])
+        succeeded_batches = sorted(exact["succeeded_batch_digests"])
+        failed_batches = sorted(exact["failed_batch_digests"])
+        deferred_batches = sorted(exact["deferred_batch_digests"])
+        unresolved_batches = sorted(exact["unresolved_batch_digests"])
+        discovery_status_counts = dict(exact["discovery_status_counts"])
+        coverage_integrity_failures = int(exact["integrity_failures"])
+        coverage_error_cycles = int(exact["coverage_error_cycles"])
+        cycles = list(exact["cycles"])
     failures.sort(key=lambda row: str(row.get("observed_at") or ""), reverse=True)
     cycles.sort(key=lambda row: (row["plan_observed_at"], row["event_key"]), reverse=True)
+    incomplete_latest_cycles = sum(
+        not bool(cycle.get("complete", not int(cycle.get("missing") or 0)))
+        for cycle in cycles
+    )
+    incomplete_request_cycles = sum(
+        not bool(cycle.get("request_complete", not int(cycle.get("missing") or 0)))
+        for cycle in cycles
+    )
+    quota_only_incomplete_request_cycles = sum(
+        bool(cycle.get("quota_only_incomplete")) for cycle in cycles
+    )
+    manifest_authoritative = bool(
+        not dispatch_manifest or dispatch_manifest.get("authoritative")
+    )
+    inventory_binding = (
+        dispatch_manifest.get("inventory_authority")
+        if isinstance(dispatch_manifest.get("inventory_authority"), Mapping)
+        else {}
+    )
+    compact_dispatch_manifest = (
+        {
+            "authoritative": dispatch_manifest.get("authoritative"),
+            "manifest_digest": dispatch_manifest.get("manifest_digest"),
+            "manifest_events": dispatch_manifest.get("manifest_events"),
+            "manifest_error": dispatch_manifest.get("manifest_error"),
+            "inventory_authority_state": dispatch_manifest.get(
+                "inventory_authority_state"
+            ),
+            "inventory_authority_current": dispatch_manifest.get(
+                "inventory_authority_current"
+            ),
+            "inventory_authority_version": inventory_binding.get(
+                "authority_version"
+            ),
+            "inventory_generation_id": inventory_binding.get("generation_id"),
+            "inventory_authority_revision": inventory_binding.get(
+                "authority_revision"
+            ),
+        }
+        if dispatch_manifest
+        else {}
+    )
     return {
         "diagnostics_truncated": truncated,
         "inventory_observations": len(inventories),
@@ -311,9 +402,70 @@ def _coverage_diagnostics(store: SoccerStore) -> dict[str, Any]:
         "expected_pairs": len(expected),
         "fetched_pairs": len(returned),
         "missing_pairs": len(missing),
+        "required_missing_pairs": len(required_missing),
+        "provider_unavailable_pairs": len(provider_unavailable),
+        "normalization_rejected_pairs": len(normalization_rejected),
+        "attempted_incomplete_pairs": len(attempted_incomplete),
+        "quota_deferred_pairs": len(quota_deferred),
+        "failed_pairs": len(failed_pairs),
+        "never_attempted_pairs": len(never_attempted),
+        "unresolved_pairs": len(unresolved),
+        "expected_request_batches": len(expected_batches),
+        "succeeded_request_batches": len(succeeded_batches),
+        "failed_request_batches": len(failed_batches),
+        "deferred_request_batches": len(deferred_batches),
+        "unresolved_request_batches": len(unresolved_batches),
+        "discovery_status_counts": discovery_status_counts,
+        "coverage_integrity_failures": coverage_integrity_failures,
+        "coverage_error_cycles": coverage_error_cycles,
+        "dispatch_manifest": compact_dispatch_manifest,
+        "incomplete_latest_event_cycles": incomplete_latest_cycles,
+        "incomplete_request_cycles": incomplete_request_cycles,
+        "quota_only_incomplete_request_cycles": quota_only_incomplete_request_cycles,
+        "non_quota_incomplete_request_cycles": (
+            incomplete_request_cycles - quota_only_incomplete_request_cycles
+        ),
+        "coverage_complete": bool(cycles)
+        and manifest_authoritative
+        and incomplete_latest_cycles == 0,
+        "request_cycles_complete": bool(cycles)
+        and manifest_authoritative
+        and incomplete_request_cycles == 0,
         "missing_pair_sample": [
             _bounded_text(value, 160)
             for value in missing[:MISSING_PAIR_SAMPLE_LIMIT]
+        ],
+        "unresolved_pair_sample": [
+            _bounded_text(value, 160)
+            for value in unresolved[:MISSING_PAIR_SAMPLE_LIMIT]
+        ],
+        "attempted_incomplete_pair_sample": [
+            _bounded_text(value, 160)
+            for value in attempted_incomplete[:MISSING_PAIR_SAMPLE_LIMIT]
+        ],
+        "quota_deferred_pair_sample": [
+            _bounded_text(value, 160)
+            for value in quota_deferred[:MISSING_PAIR_SAMPLE_LIMIT]
+        ],
+        "failed_pair_sample": [
+            _bounded_text(value, 160)
+            for value in failed_pairs[:MISSING_PAIR_SAMPLE_LIMIT]
+        ],
+        "never_attempted_pair_sample": [
+            _bounded_text(value, 160)
+            for value in never_attempted[:MISSING_PAIR_SAMPLE_LIMIT]
+        ],
+        "failed_batch_sample": [
+            _bounded_text(value, 160)
+            for value in failed_batches[:MISSING_PAIR_SAMPLE_LIMIT]
+        ],
+        "deferred_batch_sample": [
+            _bounded_text(value, 160)
+            for value in deferred_batches[:MISSING_PAIR_SAMPLE_LIMIT]
+        ],
+        "unresolved_batch_sample": [
+            _bounded_text(value, 160)
+            for value in unresolved_batches[:MISSING_PAIR_SAMPLE_LIMIT]
         ],
         "collection_failures": len(failures),
         "permanent_collection_failures": sum(bool(row.get("permanent")) for row in failures),
@@ -371,26 +523,36 @@ def _compact_context_to_budget(context: dict[str, Any]) -> dict[str, Any]:
     sample_paths = (
         ("coverage", "failure_sample"),
         ("coverage", "missing_pair_sample"),
+        ("coverage", "unresolved_pair_sample"),
+        ("coverage", "attempted_incomplete_pair_sample"),
+        ("coverage", "quota_deferred_pair_sample"),
+        ("coverage", "failed_pair_sample"),
+        ("coverage", "never_attempted_pair_sample"),
+        ("coverage", "failed_batch_sample"),
+        ("coverage", "deferred_batch_sample"),
+        ("coverage", "unresolved_batch_sample"),
         ("coverage", "latest_event_cycles"),
         ("coverage", "market_sample"),
         ("coverage", "bookmaker_sample"),
-        ("autonomy", "liveness", "unhealthy_sample"),
         ("recent_model_reports",),
+        ("autonomy", "liveness", "unhealthy_sample"),
     )
-    while len(canonical_json(context).encode("utf-8")) > MAX_CONTEXT_CANONICAL_BYTES:
-        changed = False
-        for path in sample_paths:
-            target: Any = context
-            for key in path:
-                if not isinstance(target, Mapping):
-                    target = None
-                    break
-                target = target.get(key)
-            if isinstance(target, list) and target:
-                target.pop()
-                changed = True
-        if not changed:
-            raise RuntimeError("soccer analyst core context exceeds its hard budget")
+    for path in sample_paths:
+        target: Any = context
+        for key in path:
+            if not isinstance(target, Mapping):
+                target = None
+                break
+            target = target.get(key)
+        while (
+            isinstance(target, list)
+            and target
+            and len(canonical_json(context).encode("utf-8"))
+            > MAX_CONTEXT_CANONICAL_BYTES
+        ):
+            target.pop()
+    if len(canonical_json(context).encode("utf-8")) > MAX_CONTEXT_CANONICAL_BYTES:
+        raise RuntimeError("soccer analyst core context exceeds its hard budget")
     return context
 
 
@@ -442,7 +604,7 @@ def _context(store: SoccerStore) -> dict[str, Any]:
             "reason": _bounded_text(autonomy.get("reason"), 120),
             "promotion_blocked": bool(autonomy.get("promotion_blocked")),
             "counts": {
-                key: _bounded_nonnegative_int(autonomy_counts.get(key))
+                key: value
                 for key in (
                     "competitions",
                     "events",
@@ -452,17 +614,25 @@ def _context(store: SoccerStore) -> dict[str, Any]:
                     "predictions",
                     "models",
                 )
+                if (value := _bounded_nonnegative_int(autonomy_counts.get(key)))
+                is not None
             },
             "queues": {
-                key: _bounded_nonnegative_int(autonomy_queues.get(key))
+                key: value
                 for key in ("collection", "dead_letter")
+                if (value := _bounded_nonnegative_int(autonomy_queues.get(key)))
+                is not None
             },
             "latest_quota": {
-                "operation": _bounded_text(latest_quota.get("operation"), 50),
-                "remaining": _bounded_nonnegative_int(latest_quota.get("remaining")),
-                "used": _bounded_nonnegative_int(latest_quota.get("used")),
-                "last_cost": _bounded_nonnegative_int(latest_quota.get("last_cost")),
-                "observed_at": _bounded_text(latest_quota.get("observed_at"), 40),
+                key: value
+                for key, value in {
+                    "operation": _bounded_text(latest_quota.get("operation"), 50),
+                    "remaining": _bounded_nonnegative_int(latest_quota.get("remaining")),
+                    "used": _bounded_nonnegative_int(latest_quota.get("used")),
+                    "last_cost": _bounded_nonnegative_int(latest_quota.get("last_cost")),
+                    "observed_at": _bounded_text(latest_quota.get("observed_at"), 40),
+                }.items()
+                if value not in (None, "")
             },
             "liveness": liveness,
             "component_liveness_complete": bool(
@@ -559,6 +729,46 @@ def latest_llm_trials(store: SoccerStore) -> tuple[list[dict[str, Any]], str | N
     ], str(row.get("analysis_digest") or "") or None
 
 
+def _put_newer_llm_pointer(
+    store: SoccerStore,
+    item: Mapping[str, Any],
+    *,
+    attempt_started_at: str,
+) -> bool:
+    """Publish a mutable pointer only when its attempt started later.
+
+    Bedrock invocations may overlap the hourly schedule or a deployment smoke.
+    Ordering by invocation start prevents an older slow completion from
+    repainting either LATEST or LAST_ATTEMPT after a newer run has published.
+    """
+    attempt_started_order = int(
+        parse_utc(attempt_started_at).timestamp() * 1_000_000
+    )
+    payload = {
+        **dict(item),
+        "attempt_started_at": attempt_started_at,
+        "attempt_started_order": attempt_started_order,
+    }
+    try:
+        store.ops.put_item(
+            Item=ddb_safe(payload),
+            ConditionExpression=(
+                "attribute_not_exists(attempt_started_order) OR "
+                "attempt_started_order < :attempt_started_order"
+            ),
+            ExpressionAttributeValues=ddb_safe(
+                {":attempt_started_order": attempt_started_order}
+            ),
+        )
+        return True
+    except ClientError as exc:
+        if (exc.response.get("Error") or {}).get("Code") != (
+            "ConditionalCheckFailedException"
+        ):
+            raise
+        return False
+
+
 def _record_llm_attempt(
     store: SoccerStore,
     *,
@@ -572,7 +782,9 @@ def _record_llm_attempt(
     model_errors: Sequence[Mapping[str, Any]] | None = None,
     context_byte_count: int | None = None,
     request_byte_count: int | None = None,
-) -> None:
+    attempt_id: str,
+    attempt_started_at: str,
+) -> bool:
     item = {
         "PK": "LLM_ANALYSIS",
         "SK": "LAST_ATTEMPT",
@@ -581,6 +793,8 @@ def _record_llm_attempt(
         "model_id": model_id or MODEL_ID,
         "attempted_model_ids": list(attempted_model_ids or (model_id or MODEL_ID,)),
         "observed_at": iso_utc(observed),
+        "attempt_id": attempt_id,
+        "attempt_started_at": attempt_started_at,
         "expires_at": int((observed + timedelta(days=ATTEMPT_RETENTION_DAYS)).timestamp()),
     }
     if reason:
@@ -596,7 +810,11 @@ def _record_llm_attempt(
     if request_byte_count is not None:
         item["request_byte_count"] = int(request_byte_count)
     item["max_output_tokens"] = BEDROCK_MAX_OUTPUT_TOKENS
-    store.ops.put_item(Item=ddb_safe(item))
+    return _put_newer_llm_pointer(
+        store,
+        item,
+        attempt_started_at=attempt_started_at,
+    )
 
 
 def _model_ids() -> tuple[str, ...]:
@@ -695,6 +913,10 @@ def _bedrock_transport_diagnostic(
 
 
 def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, Any]:
+    attempt_started = now_utc()
+    attempt_started_at = iso_utc(attempt_started)
+    attempt_started_order = int(attempt_started.timestamp() * 1_000_000)
+    attempt_id = f"{attempt_started_at}#{uuid.uuid4().hex}"
     model_ids = _model_ids()
     if not model_ids:
         return {
@@ -726,6 +948,37 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
         }
     analysis_context = _context(store)
     context_byte_count = len(canonical_json(analysis_context).encode("utf-8"))
+    coverage = analysis_context.get("coverage") or {}
+    dispatch_manifest = coverage.get("dispatch_manifest") or {}
+    if not bool(dispatch_manifest.get("authoritative")):
+        # A syntactically valid Bedrock response is not authoritative when its
+        # input event universe is stale, incomplete, or from a mixed inventory
+        # generation.  Defer before constructing the prompt or contacting any
+        # model, and do not publish an attempt pointer that could be mistaken
+        # for Bedrock availability telemetry.
+        observed = now_utc()
+        retry_after = iso_utc(observed + timedelta(minutes=5))
+        return {
+            "ok": False,
+            "system": "soccer_auto",
+            "component": "llm_analyst",
+            "status": "DEFERRED_CONTEXT_AUTHORITY",
+            "reason": "COVERAGE_DISPATCH_MANIFEST_NOT_AUTHORITATIVE",
+            "analysis_available": False,
+            "validated_trials": 0,
+            "model_id": model_ids[0],
+            "attempted_model_ids": [],
+            "model_errors": [],
+            "retry_after": retry_after,
+            "attempt_id": attempt_id,
+            "attempt_started_at": attempt_started_at,
+            "observed_at": iso_utc(observed),
+            "context_digest": digest(analysis_context),
+            "context_byte_count": context_byte_count,
+            "inventory_authority_state": str(
+                dispatch_manifest.get("inventory_authority_state") or "MISSING"
+            ),
+        }
     prompt_text = _prompt(analysis_context)
     system = [{"text": SYSTEM_PROMPT}]
     messages = [{"role": "user", "content": [{"text": prompt_text}]}]
@@ -850,6 +1103,8 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
             model_errors=model_errors,
             context_byte_count=context_byte_count,
             request_byte_count=request_byte_count,
+            attempt_id=attempt_id,
+            attempt_started_at=attempt_started_at,
         )
         # Exhausted Bedrock quota is an expected external capacity state, not
         # a Lambda runtime defect. Keep it fail-closed for analysis authority
@@ -870,6 +1125,9 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
                 "attempted_model_ids": attempted_model_ids,
                 "model_errors": model_errors,
                 "retry_after": retry_after,
+                "attempt_id": attempt_id,
+                "attempt_started_at": attempt_started_at,
+                "observed_at": iso_utc(observed),
             }
         raise RuntimeError(
             "all configured real Bedrock analyst models are temporarily unavailable: "
@@ -922,10 +1180,17 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
         "max_output_tokens": BEDROCK_MAX_OUTPUT_TOKENS,
         **content,
         "analysis_digest": analysis_digest,
+        "attempt_id": attempt_id,
+        "attempt_started_at": attempt_started_at,
+        "attempt_started_order": attempt_started_order,
     }
     store.ops.put_item(Item=ddb_safe(row), ConditionExpression="attribute_not_exists(SK)")
     latest = {**row, "SK": "LATEST", "source_sk": row["SK"]}
-    store.ops.put_item(Item=ddb_safe(latest))
+    _put_newer_llm_pointer(
+        store,
+        latest,
+        attempt_started_at=attempt_started_at,
+    )
     _record_llm_attempt(
         store,
         observed=observed,
@@ -936,6 +1201,8 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
         model_errors=model_errors,
         context_byte_count=context_byte_count,
         request_byte_count=request_byte_count,
+        attempt_id=attempt_id,
+        attempt_started_at=attempt_started_at,
     )
     return {
         "ok": True,
@@ -943,6 +1210,9 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
         "component": "llm_analyst",
         "status": "ANALYZED",
         "analysis_digest": analysis_digest,
+        "attempt_id": attempt_id,
+        "attempt_started_at": attempt_started_at,
+        "observed_at": observed_at,
         "validated_trials": len(validated["recommended_trials"]),
         "model_id": selected_model_id,
         "attempted_model_ids": attempted_model_ids,

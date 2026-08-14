@@ -7,12 +7,24 @@ from typing import Any, Mapping
 
 from boto3.dynamodb.conditions import Key
 
-from .canonical import schedule_identity
+from .canonical import digest, iso_utc, parse_utc, schedule_identity
 from .odds_api import provider_safety_config
-from .storage import SoccerStore, plain
+from .storage import (
+    COVERAGE_DISPATCH_MANIFEST_VERSION,
+    COVERAGE_EXTERNAL_QUOTA_REASONS,
+    COVERAGE_PLAN_VERSION,
+    EVENT_INVENTORY_AUTHORITY_MAX_AGE_SECONDS,
+    EVENT_INVENTORY_AUTHORITY_VERSION,
+    SoccerStore,
+    coverage_expected_batch_digests,
+    coverage_plan_digest,
+    now_utc,
+    plain,
+)
 
 
 PUBLIC_BINDING_VERSION = "soccer-auto-public-prediction-binding-v1"
+COVERAGE_DISPATCH_MANIFEST_MAX_AGE_SECONDS = 180
 
 
 def _response(status: int, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -299,6 +311,547 @@ def _latest_cycle_coverage(
     }
 
 
+def _latest_summary_coverage(
+    summaries: list[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Reconcile exact materialized cycles with deterministic outcome precedence."""
+    aggregate: dict[str, set[str]] = {
+        "expected_pairs": set(),
+        "required_pairs": set(),
+        "probe_pairs": set(),
+        "returned_pairs": set(),
+        "provider_unavailable_pairs": set(),
+        "normalization_rejected_pairs": set(),
+        "attempted_incomplete_pairs": set(),
+        "quota_deferred_pairs": set(),
+        "failed_pairs": set(),
+        "unresolved_pairs": set(),
+        "missing_pairs": set(),
+        "required_missing_pairs": set(),
+        "probe_missing_pairs": set(),
+        "never_attempted_pairs": set(),
+        "expected_batch_digests": set(),
+        "succeeded_batch_digests": set(),
+        "failed_batch_digests": set(),
+        "deferred_batch_digests": set(),
+        "unresolved_batch_digests": set(),
+    }
+    cycles: list[dict[str, Any]] = []
+    discovery_status_counts: dict[str, int] = {}
+    integrity_failures = 0
+    coverage_error_cycles = 0
+    for summary in summaries:
+        event_key = str(summary.get("event_key") or summary.get("SK") or "")
+        if not event_key:
+            continue
+        stored_required = {str(pair) for pair in summary.get("required_pairs") or []}
+        stored_probe = {str(pair) for pair in summary.get("probe_pairs") or []}
+        stored_expected = {str(pair) for pair in summary.get("expected_pairs") or []}
+        expected = stored_expected or stored_required | stored_probe
+        required = stored_required & expected
+        probe = (stored_probe & expected) - required
+        discovery_status = str(summary.get("discovery_status") or "UNKNOWN")
+        discovery_budget_reason = str(summary.get("budget_reason") or "")
+        discovery_status_counts[discovery_status] = (
+            discovery_status_counts.get(discovery_status, 0) + 1
+        )
+        coverage_error_cycles += int(bool(summary.get("coverage_error")))
+        expected_digest_valid = str(summary.get("expected_digest") or "") == digest(
+            sorted(expected)
+        )
+        partition_valid = (
+            not (stored_required & stored_probe)
+            and (not stored_expected or stored_expected == stored_required | stored_probe)
+        )
+        plan_observed_at = str(summary.get("plan_observed_at") or "")
+        stored_plan_digest = str(summary.get("plan_digest") or "")
+        plan_present = bool(plan_observed_at and stored_plan_digest)
+        request_markets = sorted(
+            {str(value) for value in summary.get("request_markets") or [] if value}
+        )
+        plan_binding_valid = bool(
+            (not plan_observed_at and not stored_plan_digest)
+            or (
+                plan_present
+                and str(summary.get("plan_version") or "")
+                == COVERAGE_PLAN_VERSION
+                and stored_plan_digest
+                == coverage_plan_digest(
+                    event_key=event_key,
+                    observed_at=plan_observed_at,
+                    schedule_revision=int(
+                        summary.get("schedule_revision") or 0
+                    ),
+                    schedule_identity_value=str(
+                        summary.get("schedule_identity") or ""
+                    ),
+                    request_markets=request_markets,
+                    required_pairs=sorted(required),
+                    probe_pairs=sorted(probe),
+                )
+            )
+        )
+        integrity_valid = (
+            expected_digest_valid and partition_valid and plan_binding_valid
+        )
+        raw_expected_batch_values = list(
+            summary.get("fanout_expected_batch_digests") or []
+        )
+        raw_enqueued_batch_values = list(
+            summary.get("fanout_enqueued_batch_digests") or []
+        )
+        raw_succeeded_batch_values = list(
+            summary.get("fanout_succeeded_batch_digests") or []
+        )
+        raw_failed_batch_values = list(
+            summary.get("fanout_failed_batch_digests") or []
+        )
+        raw_deferred_batch_values = list(
+            summary.get("fanout_deferred_batch_digests") or []
+        )
+        expected_batches = {
+            str(value) for value in raw_expected_batch_values if value
+        }
+        exact_expected_batches = set(
+            coverage_expected_batch_digests(
+                plan_digest=stored_plan_digest,
+                request_markets=request_markets,
+                expected_pairs=sorted(expected),
+            )
+        ) if plan_present else set()
+        enqueued_batches = {
+            str(value) for value in raw_enqueued_batch_values if value
+        }
+        succeeded_batches = {
+            str(value) for value in raw_succeeded_batch_values if value
+        }
+        failed_batches = {
+            str(value) for value in raw_failed_batch_values if value
+        }
+        deferred_batches = {
+            str(value) for value in raw_deferred_batch_values if value
+        }
+        raw_deferred_batch_reasons = summary.get(
+            "fanout_deferred_batch_reasons"
+        ) or {}
+        deferred_reason_container_valid = isinstance(
+            raw_deferred_batch_reasons, Mapping
+        )
+        deferred_batch_reasons = (
+            {
+                str(key): [str(reason) for reason in value if reason]
+                for key, value in raw_deferred_batch_reasons.items()
+                if key and isinstance(value, (list, tuple, set))
+            }
+            if deferred_reason_container_valid
+            else {}
+        )
+        deferred_reason_integrity_valid = bool(
+            deferred_reason_container_valid
+            and set(deferred_batch_reasons) == deferred_batches
+            and all(
+                reasons
+                and len(reasons) == len(set(reasons))
+                and set(reasons) <= COVERAGE_EXTERNAL_QUOTA_REASONS
+                for reasons in deferred_batch_reasons.values()
+            )
+        )
+        discovery_quota_reason_valid = bool(
+            discovery_status != "QUOTA_DEFERRED"
+            or discovery_budget_reason in COVERAGE_EXTERNAL_QUOTA_REASONS
+        )
+        batch_partition_valid = bool(
+            expected_batches == exact_expected_batches
+            and len(raw_expected_batch_values) == len(expected_batches)
+            and len(raw_enqueued_batch_values) == len(enqueued_batches)
+            and len(raw_succeeded_batch_values) == len(succeeded_batches)
+            and len(raw_failed_batch_values) == len(failed_batches)
+            and len(raw_deferred_batch_values) == len(deferred_batches)
+            and
+            enqueued_batches <= expected_batches
+            and succeeded_batches <= enqueued_batches
+            and failed_batches <= enqueued_batches
+            and deferred_batches <= enqueued_batches
+            and not (succeeded_batches & failed_batches)
+            and not (succeeded_batches & deferred_batches)
+            and not (failed_batches & deferred_batches)
+            and deferred_reason_integrity_valid
+            and discovery_quota_reason_valid
+            and int(summary.get("split_batch_conflicts") or 0) == 0
+            and int(summary.get("region_split_conflicts") or 0) == 0
+        )
+        integrity_valid = integrity_valid and batch_partition_valid
+        if not integrity_valid:
+            integrity_failures += 1
+        discovery_complete = bool(
+            discovery_status == "HTTP_200"
+            and plan_present
+            and expected_batches
+            and enqueued_batches == expected_batches
+        )
+        unresolved_batches = expected_batches - succeeded_batches - failed_batches
+        if not batch_partition_valid:
+            succeeded_batches = set()
+            failed_batches = set()
+            deferred_batches = set()
+            unresolved_batches = set(exact_expected_batches or expected_batches)
+
+        returned = {str(pair) for pair in summary.get("returned_pairs") or []} & expected
+        rejected = (
+            {str(pair) for pair in summary.get("normalization_rejected_pairs") or []}
+            & expected
+        ) - returned
+        unavailable = (
+            {str(pair) for pair in summary.get("provider_unavailable_pairs") or []}
+            & expected
+        ) - returned - rejected
+        terminal = returned | rejected | unavailable
+        unresolved = expected - terminal
+        attempted_incomplete = (
+            {str(pair) for pair in summary.get("attempted_incomplete_pairs") or []}
+            & unresolved
+        )
+        if not integrity_valid:
+            returned = set()
+            rejected = set()
+            unavailable = set()
+            terminal = set()
+            unresolved = set(expected)
+            attempted_incomplete = set()
+        deferred = (
+            {str(pair) for pair in summary.get("quota_deferred_pairs") or []}
+            & unresolved
+        ) - attempted_incomplete
+        failed = (
+            {str(pair) for pair in summary.get("failed_pairs") or []}
+            & unresolved
+        ) - attempted_incomplete - deferred
+        attempted = (
+            returned | rejected | unavailable | attempted_incomplete | deferred | failed
+        )
+        never_attempted = unresolved - attempted
+        missing = expected - returned
+        required_missing = required - returned
+        probe_missing = probe - returned
+
+        values = {
+            "expected_pairs": expected,
+            "required_pairs": required,
+            "probe_pairs": probe,
+            "returned_pairs": returned,
+            "provider_unavailable_pairs": unavailable,
+            "normalization_rejected_pairs": rejected,
+            "attempted_incomplete_pairs": attempted_incomplete,
+            "quota_deferred_pairs": deferred,
+            "failed_pairs": failed,
+            "unresolved_pairs": unresolved,
+            "missing_pairs": missing,
+            "required_missing_pairs": required_missing,
+            "probe_missing_pairs": probe_missing,
+            "never_attempted_pairs": never_attempted,
+            "expected_batch_digests": expected_batches,
+            "succeeded_batch_digests": succeeded_batches,
+            "failed_batch_digests": failed_batches,
+            "deferred_batch_digests": deferred_batches,
+            "unresolved_batch_digests": unresolved_batches,
+        }
+        for name, pairs in values.items():
+            aggregate[name].update(f"{event_key}|{pair}" for pair in pairs)
+        request_complete = bool(
+            discovery_complete
+            and integrity_valid
+            and succeeded_batches == expected_batches
+            and not failed_batches
+            and not unresolved_batches
+            and bool(expected)
+            and not unresolved
+        )
+        quota_only_incomplete = bool(
+            not request_complete
+            and integrity_valid
+            and not summary.get("coverage_error")
+            and discovery_status in {"HTTP_200", "QUOTA_DEFERRED"}
+            and not attempted_incomplete
+            and not failed
+            and not never_attempted
+            and unresolved == deferred
+            and not failed_batches
+            and unresolved_batches == deferred_batches
+            and (
+                discovery_status == "QUOTA_DEFERRED"
+                or bool(deferred)
+                or bool(deferred_batches)
+            )
+        )
+        cycles.append(
+            {
+                "event_key": event_key,
+                "plan_observed_at": str(summary.get("plan_observed_at") or ""),
+                "plan_digest": str(summary.get("plan_digest") or ""),
+                "discovery_observed_at": str(
+                    summary.get("discovery_observed_at") or ""
+                ),
+                "discovery_status": discovery_status,
+                "budget_reason": discovery_budget_reason,
+                "deferred_batch_reasons": deferred_batch_reasons,
+                "discovery_complete": discovery_complete,
+                "integrity_valid": integrity_valid,
+                "coverage_error": str(summary.get("coverage_error") or ""),
+                "coverage_item_size_bytes": int(
+                    summary.get("coverage_item_size_bytes") or 0
+                ),
+                "split_batch_conflicts": int(
+                    summary.get("split_batch_conflicts") or 0
+                ),
+                "expected": len(expected),
+                "required_current": len(required),
+                "rolling_probes": len(probe),
+                "fetched": len(returned),
+                "provider_unavailable": len(unavailable),
+                "normalization_rejected": len(rejected),
+                "attempted_incomplete": len(attempted_incomplete),
+                "quota_deferred": len(deferred),
+                "failed": len(failed),
+                "never_attempted": len(never_attempted),
+                "unresolved": len(unresolved),
+                "missing": len(missing),
+                "required_missing": len(required_missing),
+                "probe_missing": len(probe_missing),
+                "expected_batches": len(expected_batches),
+                "enqueued_batches": len(enqueued_batches),
+                "succeeded_batches": len(succeeded_batches),
+                "failed_batches": len(failed_batches),
+                "deferred_batches": len(deferred_batches),
+                "unresolved_batches": len(unresolved_batches),
+                "request_complete": request_complete,
+                "quota_only_incomplete": quota_only_incomplete,
+                "required_availability_complete": (
+                    discovery_complete
+                    and integrity_valid
+                    and succeeded_batches == expected_batches
+                    and not failed_batches
+                    and not unresolved_batches
+                    and bool(required)
+                    and not required_missing
+                ),
+                "all_planned_pairs_returned": (
+                    discovery_complete
+                    and integrity_valid
+                    and succeeded_batches == expected_batches
+                    and not failed_batches
+                    and not unresolved_batches
+                    and bool(expected)
+                    and not missing
+                ),
+                "complete": (
+                    discovery_complete
+                    and integrity_valid
+                    and succeeded_batches == expected_batches
+                    and not failed_batches
+                    and not unresolved_batches
+                    and bool(required)
+                    and not required_missing
+                    and not unresolved
+                ),
+                "outcome_counts": dict(summary.get("outcome_counts") or {}),
+                "updated_at": str(summary.get("updated_at") or ""),
+            }
+        )
+    cycles.sort(key=lambda row: (row["plan_observed_at"], row["event_key"]), reverse=True)
+    return {
+        **aggregate,
+        "cycles": cycles,
+        "discovery_status_counts": discovery_status_counts,
+        "integrity_failures": integrity_failures,
+        "coverage_error_cycles": coverage_error_cycles,
+    }
+
+
+def _coverage_summary_universe(
+    store: SoccerStore,
+    *,
+    observed_at: Any,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Join exact latest summaries to the dispatcher's fresh event manifest."""
+    manifest = store.latest_coverage_dispatch_manifest()
+    version = COVERAGE_DISPATCH_MANIFEST_VERSION
+    manifest_at = str(manifest.get("observed_at") or "")
+    raw_entries = manifest.get("events") or []
+    raw_inventory_binding = manifest.get("inventory_authority") or {}
+    inventory_binding = (
+        {
+            "authority_version": str(
+                raw_inventory_binding.get("authority_version") or ""
+            ),
+            "generation_id": str(raw_inventory_binding.get("generation_id") or ""),
+            "completed_at": str(raw_inventory_binding.get("completed_at") or ""),
+            "authority_revision": int(
+                raw_inventory_binding.get("authority_revision") or 0
+            ),
+        }
+        if isinstance(raw_inventory_binding, Mapping)
+        else {}
+    )
+    current_inventory = store.event_inventory_authority()
+    inventory_current = False
+    try:
+        inventory_age = (
+            observed_at - parse_utc(inventory_binding["completed_at"])
+        ).total_seconds()
+        inventory_current = bool(
+            inventory_binding["authority_version"]
+            == EVENT_INVENTORY_AUTHORITY_VERSION
+            and inventory_binding["generation_id"]
+            and inventory_binding["authority_revision"] > 0
+            and str(current_inventory.get("authority_version") or "")
+            == inventory_binding["authority_version"]
+            and str(current_inventory.get("authority_state") or "") == "COMPLETED"
+            and str(current_inventory.get("generation_id") or "")
+            == inventory_binding["generation_id"]
+            and str(current_inventory.get("completed_at") or "")
+            == inventory_binding["completed_at"]
+            and int(current_inventory.get("authority_revision") or 0)
+            == inventory_binding["authority_revision"]
+            and -5
+            <= inventory_age
+            <= EVENT_INVENTORY_AUTHORITY_MAX_AGE_SECONDS
+        )
+    except (KeyError, TypeError, ValueError):
+        inventory_current = False
+    integrity_valid = False
+    fresh = False
+    entries: list[dict[str, Any]] = []
+    try:
+        entries = sorted(
+            (
+                {
+                    "event_key": str(row["event_key"]),
+                    "commence_time": str(row["commence_time"]),
+                    "schedule_revision": int(row.get("schedule_revision") or 0),
+                    "schedule_identity": str(row["schedule_identity"]),
+                    "required_discovery_observed_at": str(
+                        row.get("required_discovery_observed_at") or ""
+                    ),
+                }
+                for row in raw_entries
+            ),
+            key=lambda row: (row["commence_time"], row["event_key"]),
+        )
+        keys = [row["event_key"] for row in entries]
+        expected_digest = digest(
+            {
+                "version": version,
+                "observed_at": manifest_at,
+                "inventory_authority": inventory_binding,
+                "manifest_error": str(manifest.get("manifest_error") or ""),
+                "events": entries,
+            }
+        )
+        integrity_valid = bool(
+            manifest.get("entity_type") == "SOCCER_COVERAGE_DISPATCH_MANIFEST"
+            and manifest.get("manifest_version") == version
+            and not manifest.get("manifest_error")
+            and str(manifest.get("manifest_digest") or "") == expected_digest
+            and int(manifest.get("event_count") or 0) == len(entries)
+            and len(set(keys)) == len(keys)
+            and all(
+                row["event_key"]
+                and row["schedule_identity"]
+                and row["schedule_revision"] > 0
+                for row in entries
+            )
+        )
+        age_seconds = (observed_at - parse_utc(manifest_at)).total_seconds()
+        fresh = -5 <= age_seconds <= COVERAGE_DISPATCH_MANIFEST_MAX_AGE_SECONDS
+    except (KeyError, TypeError, ValueError):
+        integrity_valid = False
+        fresh = False
+
+    rows = (
+        store.latest_coverage_cycles(event_keys={row["event_key"] for row in entries})
+        if integrity_valid
+        else []
+    )
+    by_event = {
+        str(row.get("event_key") or row.get("SK") or ""): dict(row)
+        for row in rows
+    }
+    authoritative_rows: list[dict[str, Any]] = []
+    missing = 0
+    schedule_mismatch = 0
+    schedule_revision_mismatch = 0
+    stale_generation = 0
+    for entry in entries:
+        event_key = entry["event_key"]
+        row = by_event.get(event_key)
+        reason = ""
+        if row is None:
+            missing += 1
+            reason = "SUMMARY_MISSING"
+        elif int(row.get("schedule_revision") or 0) != int(
+            entry["schedule_revision"]
+        ):
+            schedule_revision_mismatch += 1
+            reason = "SCHEDULE_REVISION_MISMATCH"
+        elif str(row.get("schedule_identity") or "") != entry["schedule_identity"]:
+            schedule_mismatch += 1
+            reason = "SCHEDULE_IDENTITY_MISMATCH"
+        elif (
+            entry["required_discovery_observed_at"]
+            and str(row.get("discovery_observed_at") or "")
+            < entry["required_discovery_observed_at"]
+        ):
+            stale_generation += 1
+            reason = "DISCOVERY_GENERATION_STALE"
+        if not reason:
+            authoritative_rows.append(row)
+            continue
+        authoritative_rows.append(
+            {
+                "PK": "COVERAGE_LATEST",
+                "SK": event_key,
+                "entity_type": "SOCCER_EVENT_COVERAGE_LATEST",
+                **entry,
+                "discovery_observed_at": str(
+                    (row or {}).get("discovery_observed_at") or ""
+                ),
+                "discovery_status": reason,
+                "required_pairs": [],
+                "probe_pairs": [],
+                "expected_digest": digest([]),
+                "plan_digest": "",
+                "returned_pairs": [],
+                "provider_unavailable_pairs": [],
+                "normalization_rejected_pairs": [],
+                "attempted_incomplete_pairs": [],
+                "quota_deferred_pairs": [],
+                "failed_pairs": [],
+            }
+        )
+    return authoritative_rows, {
+        "manifest_observed_at": manifest_at,
+        "manifest_digest": str(manifest.get("manifest_digest") or ""),
+        "manifest_events": len(entries),
+        "manifest_declared_events": int(manifest.get("event_count") or 0),
+        "manifest_error": str(manifest.get("manifest_error") or ""),
+        "manifest_item_size_bytes": int(
+            manifest.get("manifest_item_size_bytes") or 0
+        ),
+        "inventory_authority": inventory_binding,
+        "inventory_authority_state": str(
+            current_inventory.get("authority_state") or "MISSING"
+        ),
+        "inventory_authority_current": inventory_current,
+        "manifest_fresh": fresh,
+        "manifest_integrity_valid": integrity_valid,
+        "missing_event_summaries": missing,
+        "schedule_identity_mismatches": schedule_mismatch,
+        "schedule_revision_mismatches": schedule_revision_mismatch,
+        "stale_discovery_generations": stale_generation,
+        "authoritative": integrity_valid and fresh and inventory_current,
+    }
+
+
 def coverage(store: SoccerStore) -> dict[str, Any]:
     competitions = store.list_competitions()
     diagnostic_rows, diagnostics_truncated = _bounded_ops_diagnostics(store)
@@ -312,15 +865,40 @@ def coverage(store: SoccerStore) -> dict[str, Any]:
     cursors, cursors_truncated = _query_partition(store.ops, "HISTORICAL_CURSOR")
     daily_windows, windows_truncated = _query_partition(store.ops, "COLLECTION_WINDOW")
     daily_windows.sort(key=lambda row: row.get("match_day") or "", reverse=True)
-    coverage_plans = [row for row in diagnostic_rows if row.get("entity_type") == "SOCCER_EVENT_COVERAGE_PLAN"]
-    coverage_fetches = [row for row in diagnostic_rows if row.get("entity_type") == "SOCCER_EVENT_COVERAGE_FETCH"]
     collection_failures = [row for row in diagnostic_rows if row.get("entity_type") == "SOCCER_COLLECTION_FAILURE"]
     quota_blocks, quota_blocks_truncated = _query_partition(store.ops, "QUOTA_GUARD")
     rate_limit_blocks, rate_blocks_truncated = _query_partition(store.ops, "RATE_LIMIT_GUARD")
-    cycle_coverage = _latest_cycle_coverage(coverage_plans, coverage_fetches)
+    coverage_observed_at = now_utc()
+    latest_cycle_summaries, coverage_universe = _coverage_summary_universe(
+        store,
+        observed_at=coverage_observed_at,
+    )
+    cycle_coverage = _latest_summary_coverage(latest_cycle_summaries)
     expected_pairs = cycle_coverage["expected_pairs"]
+    required_pairs = cycle_coverage["required_pairs"]
+    probe_pairs = cycle_coverage["probe_pairs"]
     returned_pairs = cycle_coverage["returned_pairs"]
     missing_pairs = sorted(cycle_coverage["missing_pairs"])
+    required_missing_pairs = sorted(cycle_coverage["required_missing_pairs"])
+    probe_missing_pairs = sorted(cycle_coverage["probe_missing_pairs"])
+    unresolved_pairs = sorted(cycle_coverage["unresolved_pairs"])
+    unavailable_pairs = sorted(cycle_coverage["provider_unavailable_pairs"])
+    rejected_pairs = sorted(cycle_coverage["normalization_rejected_pairs"])
+    attempted_incomplete_pairs = sorted(
+        cycle_coverage["attempted_incomplete_pairs"]
+    )
+    deferred_pairs = sorted(cycle_coverage["quota_deferred_pairs"])
+    failed_pairs = sorted(cycle_coverage["failed_pairs"])
+    never_attempted_pairs = sorted(cycle_coverage["never_attempted_pairs"])
+    expected_batch_digests = sorted(cycle_coverage["expected_batch_digests"])
+    succeeded_batch_digests = sorted(cycle_coverage["succeeded_batch_digests"])
+    failed_batch_digests = sorted(cycle_coverage["failed_batch_digests"])
+    deferred_batch_digests = sorted(cycle_coverage["deferred_batch_digests"])
+    unresolved_batch_digests = sorted(cycle_coverage["unresolved_batch_digests"])
+    for pair in expected_pairs:
+        _, bookmaker, market = pair.rsplit("|", 2)
+        books.add(bookmaker)
+        markets.add(market)
     return {
         "ok": True,
         "system": "soccer_auto",
@@ -336,23 +914,84 @@ def coverage(store: SoccerStore) -> dict[str, Any]:
             "unique_markets_seen": len(markets),
             "markets_seen": sorted(markets),
             "expected_event_bookmaker_market_pairs": len(expected_pairs),
+            "required_current_event_bookmaker_market_pairs": len(required_pairs),
+            "rolling_probe_event_bookmaker_market_pairs": len(probe_pairs),
             "fetched_event_bookmaker_market_pairs": len(returned_pairs),
+            "provider_unavailable_event_bookmaker_market_pairs": len(unavailable_pairs),
+            "normalization_rejected_event_bookmaker_market_pairs": len(rejected_pairs),
+            "attempted_incomplete_event_bookmaker_market_pairs": len(
+                attempted_incomplete_pairs
+            ),
+            "quota_deferred_event_bookmaker_market_pairs": len(deferred_pairs),
+            "failed_event_bookmaker_market_pairs": len(failed_pairs),
+            "never_attempted_event_bookmaker_market_pairs": len(never_attempted_pairs),
+            "unresolved_event_bookmaker_market_pairs": len(unresolved_pairs),
+            "expected_request_batches": len(expected_batch_digests),
+            "succeeded_request_batches": len(succeeded_batch_digests),
+            "failed_request_batches": len(failed_batch_digests),
+            "deferred_request_batches": len(deferred_batch_digests),
+            "unresolved_request_batches": len(unresolved_batch_digests),
             "missing_event_bookmaker_market_pairs": len(missing_pairs),
             "missing_pair_sample": missing_pairs[:500],
+            "required_missing_pair_sample": required_missing_pairs[:500],
+            "rolling_probe_missing_pair_sample": probe_missing_pairs[:500],
+            "provider_unavailable_pair_sample": unavailable_pairs[:500],
+            "normalization_rejected_pair_sample": rejected_pairs[:500],
+            "attempted_incomplete_pair_sample": attempted_incomplete_pairs[:500],
+            "quota_deferred_pair_sample": deferred_pairs[:500],
+            "failed_pair_sample": failed_pairs[:500],
+            "never_attempted_pair_sample": never_attempted_pairs[:500],
+            "unresolved_pair_sample": unresolved_pairs[:500],
+            "failed_batch_sample": failed_batch_digests[:500],
+            "deferred_batch_sample": deferred_batch_digests[:500],
+            "unresolved_batch_sample": unresolved_batch_digests[:500],
             "latest_event_cycles": cycle_coverage["cycles"][:500],
+            "dispatch_manifest": coverage_universe,
+            "discovery_status_counts": cycle_coverage["discovery_status_counts"],
+            "coverage_integrity_failures": cycle_coverage["integrity_failures"],
+            "coverage_error_cycles": cycle_coverage["coverage_error_cycles"],
             "incomplete_latest_event_cycles": sum(
                 not row["complete"] for row in cycle_coverage["cycles"]
+            ),
+            "incomplete_request_cycles": sum(
+                not row["request_complete"] for row in cycle_coverage["cycles"]
+            ),
+            "quota_only_incomplete_request_cycles": sum(
+                bool(row.get("quota_only_incomplete"))
+                for row in cycle_coverage["cycles"]
+            ),
+            "non_quota_incomplete_request_cycles": sum(
+                not row["request_complete"]
+                and not row.get("quota_only_incomplete")
+                for row in cycle_coverage["cycles"]
             ),
             "collection_failures": len(collection_failures),
             "permanent_collection_failures": sum(bool(row.get("permanent")) for row in collection_failures),
             "quota_guard_blocks": len(quota_blocks),
             "distributed_rate_limit_blocks": len(rate_limit_blocks),
             "coverage_complete": (
-                bool(expected_pairs)
-                and not missing_pairs
-                and not any(row.get("permanent") for row in collection_failures)
-                and not diagnostics_truncated
+                coverage_universe["authoritative"]
+                and
+                bool(cycle_coverage["cycles"])
+                and all(row["complete"] for row in cycle_coverage["cycles"])
             ),
+            "all_planned_pairs_returned": (
+                coverage_universe["authoritative"]
+                and
+                bool(cycle_coverage["cycles"])
+                and all(
+                    row["all_planned_pairs_returned"]
+                    for row in cycle_coverage["cycles"]
+                )
+            ),
+            "request_cycles_complete": (
+                coverage_universe["authoritative"]
+                and
+                bool(cycle_coverage["cycles"])
+                and all(row["request_complete"] for row in cycle_coverage["cycles"])
+            ),
+            "latest_cycle_source": "KEYED_STRONGLY_CONSISTENT_SUMMARY",
+            "latest_cycle_read_truncated": False,
             "diagnostics_truncated": diagnostics_truncated,
         },
         "historical_cursors": cursors,
