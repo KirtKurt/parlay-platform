@@ -490,6 +490,9 @@ Resources:
                   - !Sub '${SoccerPredictionsTable.Arn}/index/*'
                   - !GetAtt SoccerModelsTable.Arn
                   - !GetAtt SoccerOpsTable.Arn
+              - Effect: Allow
+                Action: [dynamodb:Scan]
+                Resource:
                   - !GetAtt SoccerLocksTable.Arn
                   - !GetAtt SoccerSettlementsTable.Arn
 
