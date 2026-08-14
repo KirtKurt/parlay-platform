@@ -61,9 +61,25 @@ def _total_features(event: Mapping[str, Any]) -> dict[str, float]:
     }
 
 
+def _safe_team_form_features(values: Mapping[str, Any] | None) -> dict[str, float]:
+    out: dict[str, float] = {}
+    for key, value in (values or {}).items():
+        name = str(key)
+        if not name.startswith('form_'):
+            continue
+        try:
+            number = float(value)
+        except Exception:
+            continue
+        if math.isfinite(number):
+            out[name] = number
+    return out
+
+
 def build_feature_vector(*, event: Mapping[str, Any], detail: Mapping[str, Any] | None,
                          home_probability_history: Sequence[float], pulled_at: str,
-                         pull_count: int) -> dict[str, float]:
+                         pull_count: int,
+                         team_form_features: Mapping[str, Any] | None = None) -> dict[str, float]:
     fair = moneyline_consensus(event)
     hp = float(fair['home'])
     tp = temporal_features(home_probability_history)
@@ -85,6 +101,7 @@ def build_feature_vector(*, event: Mapping[str, Any], detail: Mapping[str, Any] 
         **depth,
         **_spread_features(event),
         **_total_features(event),
+        **_safe_team_form_features(team_form_features),
     }
 
 
