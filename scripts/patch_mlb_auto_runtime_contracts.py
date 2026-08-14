@@ -215,9 +215,11 @@ def _patch_cold_import_verifier() -> None:
             raise RuntimeError(f"runtime contract marker missing: {label}")
 
     marker = 'assert runtime.get("automaticWagerAllowed") is False, runtime\n'
+    # The target file embeds these assertions inside an outer raw f-string, so
+    # mapping literals must remain doubled ({{}}) in the generated source.
     addition = '''assert runtime.get("v2AutomaticPromotionEnabled") is True, runtime
 assert runtime.get("firstPromotionRequiresManualReview") is False, runtime
-assert (runtime.get("v2InferenceConsumer") or {}).get("enabled") is True, runtime
+assert (runtime.get("v2InferenceConsumer") or {{}}).get("enabled") is True, runtime
 assert runtime.get("v2ChampionActive") is False, runtime
 '''
     if addition not in text:
