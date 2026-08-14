@@ -55,9 +55,38 @@ batches. Market and region batches are independently
 bisected when the provider rejects a scope, preserving every valid remainder.
 The inventory is a rolling 24-hour cumulative union, so a transiently absent
 bookmaker or market is not forgotten while genuinely delisted scopes age out.
+Only pairs observed in the current provider response receive a new observation
+timestamp; carried-forward probe pairs retain their original timestamps and
+cannot refresh themselves indefinitely.
 Runtime-discovered market keys always win over the static seed list, including
 newly introduced player props in leagues outside the provider's currently
 documented six-league prop set.
+
+Every odds batch carries the exact immutable subset of the discovery plan that
+it is responsible for. A successful provider response records normalized odds,
+raw bookmaker/market presence, provider-unavailable pairs, and pairs rejected
+by normalization as separate outcomes. Provider-unavailable rolling probes are
+retried on the normal five/fifteen-minute cadence without fabricating odds or
+spending on an immediate retry loop. A quota denial before network I/O remains
+unresolved logical work; the original SQS delivery is acknowledged only after
+a delayed replacement has been durably enqueued. If that enqueue fails, the
+original delivery remains failed so normal SQS redrive semantics preserve it.
+
+The coverage API reads a strongly consistent keyed latest-cycle summary rather
+than deriving operational completeness from a bounded table scan. It reports
+current required availability, rolling probes, raw-provider omissions,
+normalization rejections, quota deferrals, failed/unattempted pairs, and strict
+all-planned-pairs availability independently. A bounded diagnostic scan is
+retained only for ancillary historical inventory/failure samples and its
+truncation no longer decides the latest cycle's completion state.
+
+Fixture and competition mutations occur inside one reclaimable inventory
+generation lease. Dispatch scans the base Events table strongly consistently,
+checks the same completed inventory generation before and after that scan, and
+binds the generation ID, revision, and completion timestamp into its manifest.
+The API and analyst re-read that authority row; a running, failed, changed, or
+stale inventory generation immediately makes the prior manifest
+non-authoritative and paid event work remains deferred.
 
 Raw payloads preserve every returned bookmaker, market, outcome, price, point,
 link, source ID, limit, rotation number, and DFS multiplier in versioned S3.
@@ -144,7 +173,13 @@ resources.
 A fresh validated analysis is reused without another model call. Deployment
 forces a new Converse call and fully verifies any provenance-signed,
 digest-validated `LATEST` analysis with the actual selected model, context
-digest, clean stop reason, and token usage. Exhaustion of every fallback
+digest, clean stop reason, and token usage. Before any new prompt or model call,
+the analyst requires a fresh, integrity-valid dispatch manifest bound to the
+current completed event-inventory generation. A stale, missing, or mixed
+generation returns `DEFERRED_CONTEXT_AUTHORITY` without calling Bedrock or
+writing an analysis/attempt pointer; deployment polls for the exact authority
+fence before exercising the model chain. The v3 analysis schema rejects older
+fresh-looking pointers that predate this context-authority contract. Exhaustion of every fallback
 is recorded as a structured `DEFERRED_QUOTA` result with `ok=false`, no `LATEST`
 write, and a bounded retry time. This expected provider-capacity state does not
 increment the Lambda runtime-error metric. Deployment accepts only an exact

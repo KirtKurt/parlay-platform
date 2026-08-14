@@ -361,6 +361,67 @@ jobs:
           print('provider_429_after_provider_smoke', telemetry)
           PY
 
+          # Publish the exact open-window event universe before the analyst so
+          # its production diagnostics exercise the same strongly consistent
+          # manifest-backed path used by /coverage.
+          invoke_and_assert_ok SoccerDispatchFunction '{"action":"deployment_dispatch_before_llm"}' dispatch_before_llm
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/dispatch_before_llm.json'))
+          assert response['system'] == 'soccer_auto', response
+          assert response.get('observed_at'), response
+          if response.get('authority_deferred'):
+              assert int(response.get('enqueued') or 0) == 0, response
+              print('::warning::Inventory generation is still running; waiting for an authoritative dispatch manifest')
+          elif response.get('stale_dispatch'):
+              assert int(response['enqueued']) == 0, response
+              assert int(response['events_seen']) == int(response['before_window']) + int(response['skipped']), response
+          else:
+              manifest_events = int(response['coverage_manifest_events'])
+              assert response.get('coverage_manifest_digest'), response
+              assert int(response['events_seen']) == int(response['before_window']) + manifest_events, response
+              assert int(response['enqueued']) + int(response['skipped']) == manifest_events, response
+          print('coverage_dispatch_before_llm', response)
+          PY
+
+          # A concurrent scheduled inventory can legitimately hold the global
+          # generation fence when this deployment first invokes dispatch. Poll
+          # and republish until the exact manifest is bound to the current
+          # completed generation; Bedrock must never analyze a stale/mixed
+          # event universe.
+          coverage_url="${status_url%/status}/coverage"
+          llm_context_ready=0
+          for attempt in $(seq 1 72); do
+            curl --fail --max-time 55 --retry 2 --retry-all-errors --retry-delay 5 \
+              "$coverage_url" > /tmp/soccer-auto-coverage-before-llm.json
+            if python - <<'PY'
+          import json
+
+          inventory = json.load(open('/tmp/soccer-auto-coverage-before-llm.json'))['live_inventory']
+          manifest = inventory['dispatch_manifest']
+          ready = bool(
+              manifest.get('authoritative')
+              and not manifest.get('manifest_error')
+              and manifest.get('manifest_fresh')
+              and manifest.get('manifest_integrity_valid')
+              and manifest.get('inventory_authority_current')
+              and manifest.get('inventory_authority_state') == 'COMPLETED'
+              and (manifest.get('inventory_authority') or {}).get('generation_id')
+          )
+          raise SystemExit(0 if ready else 1)
+          PY
+            then
+              llm_context_ready=1
+              break
+            fi
+            sleep 5
+            invoke_and_assert_ok SoccerDispatchFunction \
+              '{"action":"deployment_dispatch_before_llm_retry"}' \
+              "dispatch_before_llm_retry_${attempt}"
+          done
+          test "$llm_context_ready" -eq 1
+
           # Force one genuine Bedrock Converse analysis. Primary quota or
           # transient faults must fall through the complete allowlisted chain.
           # Exact all-model daily-token exhaustion is visible degradation; any
@@ -447,27 +508,63 @@ jobs:
           invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_controller_post_llm"}' controller_after_llm
           python - <<'PY'
           import json
+          from datetime import datetime
+
+          def parsed_at(value):
+              return datetime.fromisoformat(str(value).replace('Z', '+00:00'))
 
           llm = json.load(open('/tmp/llm.json'))
-          before = json.load(open('/tmp/controller_before_llm.json'))['llm_analyst']
           controller = json.load(open('/tmp/controller_after_llm.json'))
           state = controller['llm_analyst']
+          smoke_attempt_id = llm['attempt_id']
+          smoke_started_at = llm['attempt_started_at']
+          assert smoke_attempt_id and smoke_started_at, llm
+          state_attempt = state.get('last_attempt') or {}
+          state_analysis_started = str(state.get('attempt_started_at') or '')
+          exact_analysis = state.get('attempt_id') == smoke_attempt_id
+          newer_analysis = bool(
+              state.get('fresh')
+              and state_analysis_started
+              and parsed_at(state_analysis_started) > parsed_at(smoke_started_at)
+          )
+          exact_attempt = state_attempt.get('attempt_id') == smoke_attempt_id
+          state_attempt_started = str(state_attempt.get('attempt_started_at') or '')
+          newer_attempt = bool(
+              state_attempt_started
+              and parsed_at(state_attempt_started) > parsed_at(smoke_started_at)
+          )
           if llm['status'] == 'ANALYZED':
               assert state['fresh'] is True, controller
-              assert state['analysis_digest'] == llm['analysis_digest'], (state, llm)
-              assert state['model_id'] == llm['model_id'], (state, llm)
+              assert exact_analysis or newer_analysis, (state, llm)
+              assert state['analysis_origin'] == 'BEDROCK_CONVERSE', state
+              if exact_analysis:
+                  assert state['analysis_digest'] == llm['analysis_digest'], (state, llm)
+                  assert state['model_id'] == llm['model_id'], (state, llm)
+              else:
+                  print('::warning::A newer validated Bedrock analysis superseded the deployment smoke')
               print('controller_validated_bedrock_analysis', state)
           else:
-              attempt = state['last_attempt']
-              assert attempt['status'] == 'DEFERRED_QUOTA', (attempt, llm)
-              assert attempt['reason'] == llm['reason'], (attempt, llm)
-              assert attempt['retry_after'] == llm['retry_after'], (attempt, llm)
-              assert attempt['model_errors'] == llm['model_errors'], (attempt, llm)
-              if before.get('fresh'):
-                  assert state['fresh'] is True, (before, state)
-                  assert state.get('analysis_digest') == before.get('analysis_digest'), (before, state)
+              assert exact_attempt or newer_attempt, (state_attempt, llm)
+              if exact_attempt:
+                  assert state_attempt['status'] == 'DEFERRED_QUOTA', (state_attempt, llm)
+                  assert state_attempt['reason'] == llm['reason'], (state_attempt, llm)
+                  assert state_attempt['retry_after'] == llm['retry_after'], (state_attempt, llm)
+                  assert state_attempt['model_errors'] == llm['model_errors'], (state_attempt, llm)
               else:
-                  assert state['fresh'] is False, state
+                  assert state_attempt['status'] in {'ANALYZED', 'DEFERRED_QUOTA'}, state_attempt
+                  if state_attempt['status'] == 'DEFERRED_QUOTA':
+                      assert state_attempt['reason'] == 'BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE', state_attempt
+                      errors = state_attempt.get('model_errors') or []
+                      assert errors and all(
+                          error.get('error_code') == 'ThrottlingException'
+                          and error.get('category') == 'DAILY_TOKEN_QUOTA'
+                          for error in errors
+                      ), state_attempt
+                  print('::warning::A newer safe Bedrock attempt superseded the deployment smoke attempt pointer')
+              if state.get('fresh'):
+                  assert state['analysis_origin'] == 'BEDROCK_CONVERSE', state
+                  assert state.get('analysis_digest'), state
+              else:
                   assert int(state.get('analyses') or 0) == 0, state
               print('controller_validated_bedrock_quota_deferral', state)
           PY
@@ -477,14 +574,88 @@ jobs:
           # open; invoking it here starts any already-due collection safely.
           invoke_and_assert_ok SoccerDispatchFunction '{"action":"deployment_dispatch_smoke"}' dispatch
 
-          curl --fail --retry 10 --retry-all-errors --retry-delay 10 "$status_url" | tee /tmp/soccer-auto-status.json
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/dispatch.json'))
+          assert response['system'] == 'soccer_auto', response
+          assert response.get('observed_at'), response
+          if response.get('stale_dispatch'):
+              assert int(response['enqueued']) == 0, response
+              assert int(response['events_seen']) == int(response['before_window']) + int(response['skipped']), response
+          else:
+              manifest_events = int(response['coverage_manifest_events'])
+              assert response.get('coverage_manifest_digest'), response
+              assert int(response['events_seen']) == int(response['before_window']) + manifest_events, response
+              assert int(response['enqueued']) + int(response['skipped']) == manifest_events, response
+          print('coverage_dispatch_after_runtime_smoke', response)
+          PY
+
           coverage_url="${status_url%/status}/coverage"
-          curl --fail --max-time 55 --retry 2 --retry-all-errors --retry-delay 5 \
-            "$coverage_url" | tee /tmp/soccer-auto-coverage.json
+          coverage_ready=0
+          for attempt in $(seq 1 72); do
+            curl --fail --max-time 55 --retry 2 --retry-all-errors --retry-delay 5 \
+              "$coverage_url" > /tmp/soccer-auto-coverage.json
+            if python - <<'PY'
+          import json
+
+          inventory = json.load(open('/tmp/soccer-auto-coverage.json'))['live_inventory']
+          manifest = inventory['dispatch_manifest']
+          universe_ready = bool(
+              manifest.get('authoritative')
+              and not manifest.get('manifest_error')
+              and manifest.get('inventory_authority_current')
+              and int(manifest.get('missing_event_summaries') or 0) == 0
+              and int(manifest.get('schedule_identity_mismatches') or 0) == 0
+              and int(manifest.get('schedule_revision_mismatches') or 0) == 0
+              and int(manifest.get('stale_discovery_generations') or 0) == 0
+              and int(inventory.get('coverage_integrity_failures') or 0) == 0
+              and int(inventory.get('coverage_error_cycles') or 0) == 0
+          )
+          events = int(manifest.get('manifest_events') or 0)
+          statuses = set(inventory.get('discovery_status_counts') or {})
+          exact_quota = bool(
+              events > 0
+              and int(inventory['incomplete_request_cycles']) > 0
+              and int(inventory['quota_only_incomplete_request_cycles'])
+                  == int(inventory['incomplete_request_cycles'])
+              and int(inventory['non_quota_incomplete_request_cycles']) == 0
+              and statuses
+              and statuses <= {'HTTP_200', 'QUOTA_DEFERRED'}
+              and int(inventory['attempted_incomplete_event_bookmaker_market_pairs']) == 0
+              and int(inventory['failed_event_bookmaker_market_pairs']) == 0
+              and int(inventory['never_attempted_event_bookmaker_market_pairs']) == 0
+              and int(inventory['unresolved_event_bookmaker_market_pairs'])
+                  == int(inventory['quota_deferred_event_bookmaker_market_pairs'])
+              and int(inventory['failed_request_batches']) == 0
+              and int(inventory['unresolved_request_batches'])
+                  == int(inventory['deferred_request_batches'])
+          )
+          ready = universe_ready and (
+              events == 0
+              or bool(inventory.get('request_cycles_complete'))
+              or exact_quota
+          )
+          raise SystemExit(0 if ready else 1)
+          PY
+            then
+              coverage_ready=1
+              break
+            fi
+            sleep 5
+          done
+          test "$coverage_ready" -eq 1
+          tee /tmp/soccer-auto-coverage-proof.json < /tmp/soccer-auto-coverage.json
+          # Re-read status after the asynchronous coverage proof. A provider
+          # 429 raised while the poll was running must fail this deployment;
+          # pre-poll telemetry is not authoritative for the completed smoke.
+          curl --fail --retry 10 --retry-all-errors --retry-delay 10 \
+            "$status_url" | tee /tmp/soccer-auto-status.json
           python - <<'PY'
           import json
           status=json.load(open('/tmp/soccer-auto-status.json'))
           coverage=json.load(open('/tmp/soccer-auto-coverage.json'))
+          dispatch=json.load(open('/tmp/dispatch.json'))
           assert status['system']=='soccer_auto'
           assert status['authority'] in {'BOOTSTRAPPING','COLLECTING','SHADOW_LEARNING','AUTHORITATIVE','DEGRADED'}
           assert status.get('automatic_prediction_allowed', False) is False or status['authority']=='AUTHORITATIVE'
@@ -495,6 +666,101 @@ jobs:
           assert latest == latest_baseline, status['provider_429_telemetry']
           assert coverage['ok'] is True and coverage['system'] == 'soccer_auto', coverage
           assert coverage['historical_backfill']['enabled'] is True, coverage
+          inventory = coverage['live_inventory']
+          manifest = inventory['dispatch_manifest']
+          assert inventory['latest_cycle_source'] == 'KEYED_STRONGLY_CONSISTENT_SUMMARY', inventory
+          assert inventory['latest_cycle_read_truncated'] is False, inventory
+          assert manifest['manifest_fresh'] is True, manifest
+          assert manifest['manifest_integrity_valid'] is True, manifest
+          assert manifest['authoritative'] is True, manifest
+          assert manifest['inventory_authority_current'] is True, manifest
+          assert manifest['inventory_authority_state'] == 'COMPLETED', manifest
+          assert manifest['inventory_authority']['generation_id'], manifest
+          assert int(manifest['inventory_authority']['authority_revision']) > 0, manifest
+          assert not manifest.get('manifest_error'), manifest
+          assert int(manifest.get('manifest_item_size_bytes') or 0) == 0, manifest
+          assert int(manifest['missing_event_summaries']) == 0, manifest
+          assert int(manifest['schedule_identity_mismatches']) == 0, manifest
+          assert int(manifest['schedule_revision_mismatches']) == 0, manifest
+          assert int(manifest['stale_discovery_generations']) == 0, manifest
+          assert int(inventory['coverage_integrity_failures']) == 0, inventory
+          assert int(inventory['coverage_error_cycles']) == 0, inventory
+          size_statuses = {'PLAN_SIZE_LIMIT', 'SUMMARY_SIZE_LIMIT', 'EVIDENCE_SIZE_LIMIT'}
+          assert not (size_statuses & set(inventory['discovery_status_counts'])), inventory
+          manifest_at = str(manifest['manifest_observed_at'])
+          dispatch_at = str(dispatch['observed_at'])
+          assert manifest_at >= dispatch_at, (manifest, dispatch)
+          if manifest_at == dispatch_at and not dispatch.get('stale_dispatch'):
+              assert manifest['manifest_digest'] == dispatch['coverage_manifest_digest'], (manifest, dispatch)
+              assert int(manifest['manifest_events']) == int(dispatch['coverage_manifest_events']), (manifest, dispatch)
+          manifest_events = int(manifest['manifest_events'])
+          assert int(manifest['manifest_declared_events']) == manifest_events, manifest
+          assert sum(int(value) for value in inventory['discovery_status_counts'].values()) == manifest_events, inventory
+
+          expected = int(inventory['expected_event_bookmaker_market_pairs'])
+          required = int(inventory['required_current_event_bookmaker_market_pairs'])
+          probes = int(inventory['rolling_probe_event_bookmaker_market_pairs'])
+          fetched = int(inventory['fetched_event_bookmaker_market_pairs'])
+          missing = int(inventory['missing_event_bookmaker_market_pairs'])
+          unavailable = int(inventory['provider_unavailable_event_bookmaker_market_pairs'])
+          rejected = int(inventory['normalization_rejected_event_bookmaker_market_pairs'])
+          unresolved = int(inventory['unresolved_event_bookmaker_market_pairs'])
+          attempted_incomplete = int(inventory['attempted_incomplete_event_bookmaker_market_pairs'])
+          deferred = int(inventory['quota_deferred_event_bookmaker_market_pairs'])
+          failed = int(inventory['failed_event_bookmaker_market_pairs'])
+          never_attempted = int(inventory['never_attempted_event_bookmaker_market_pairs'])
+          assert expected == required + probes, inventory
+          assert expected == fetched + missing, inventory
+          assert missing == unavailable + rejected + unresolved, inventory
+          assert unresolved == attempted_incomplete + deferred + failed + never_attempted, inventory
+
+          expected_batches = int(inventory['expected_request_batches'])
+          succeeded_batches = int(inventory['succeeded_request_batches'])
+          failed_batches = int(inventory['failed_request_batches'])
+          unresolved_batches = int(inventory['unresolved_request_batches'])
+          deferred_batches = int(inventory['deferred_request_batches'])
+          assert expected_batches == succeeded_batches + failed_batches + unresolved_batches, inventory
+          assert 0 <= deferred_batches <= unresolved_batches, inventory
+
+          statuses = set(inventory['discovery_status_counts'])
+          exact_quota = bool(
+              manifest_events > 0
+              and int(inventory['incomplete_request_cycles']) > 0
+              and int(inventory['quota_only_incomplete_request_cycles'])
+                  == int(inventory['incomplete_request_cycles'])
+              and int(inventory['non_quota_incomplete_request_cycles']) == 0
+              and statuses
+              and statuses <= {'HTTP_200', 'QUOTA_DEFERRED'}
+              and attempted_incomplete == 0
+              and failed == 0
+              and never_attempted == 0
+              and unresolved == deferred
+              and failed_batches == 0
+              and unresolved_batches == deferred_batches
+          )
+
+          incomplete_coverage = int(inventory['incomplete_latest_event_cycles'])
+          incomplete_requests = int(inventory['incomplete_request_cycles'])
+          assert bool(inventory['coverage_complete']) == (manifest_events > 0 and incomplete_coverage == 0), inventory
+          assert bool(inventory['request_cycles_complete']) == (manifest_events > 0 and incomplete_requests == 0), inventory
+          assert bool(inventory['all_planned_pairs_returned']) == (
+              bool(inventory['request_cycles_complete']) and missing == 0
+          ), inventory
+          if manifest_events == 0:
+              assert not inventory['latest_event_cycles'], inventory
+              assert expected == expected_batches == 0, inventory
+              assert inventory['coverage_complete'] is False, inventory
+              assert inventory['request_cycles_complete'] is False, inventory
+              assert inventory['all_planned_pairs_returned'] is False, inventory
+          elif inventory['request_cycles_complete']:
+              assert int(inventory['incomplete_request_cycles']) == 0, inventory
+              assert expected_batches > 0, inventory
+              assert succeeded_batches == expected_batches, inventory
+              assert failed_batches == deferred_batches == unresolved_batches == 0, inventory
+              assert attempted_incomplete == deferred == failed == never_attempted == 0, inventory
+          else:
+              assert exact_quota, inventory
+              print('::warning::Soccer coverage proof is externally quota-deferred; exact unresolved scopes remain fail-closed')
           print(status)
-          print('coverage_endpoint_ok', coverage['live_inventory'])
+          print('coverage_endpoint_exact_manifest_proof', inventory)
           PY

@@ -156,6 +156,8 @@ class IsolationTests(unittest.TestCase):
         ]["CollectionQueue"]["Properties"]
         self.assertEqual(queue_event["BatchSize"], 1)
         self.assertEqual(queue_event["ScalingConfig"]["MaximumConcurrency"], 6)
+        queue = template["Resources"]["SoccerCollectionQueue"]["Properties"]
+        self.assertEqual(queue["RedrivePolicy"]["maxReceiveCount"], 4)
 
         workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
         self.assertIn("default: '0'", workflow)
@@ -558,9 +560,46 @@ class IsolationTests(unittest.TestCase):
         self.assertIn("allow_daily_quota", workflow)
         self.assertIn("BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE", workflow)
         self.assertIn("controller_validated_bedrock_quota_deferral", workflow)
+        self.assertIn("smoke_attempt_id = llm['attempt_id']", workflow)
+        self.assertIn("exact_analysis or newer_analysis", workflow)
+        self.assertIn("exact_attempt or newer_attempt", workflow)
+        self.assertIn(
+            "state_attempt['status'] in {'ANALYZED', 'DEFERRED_QUOTA'}",
+            workflow,
+        )
         self.assertNotIn("continue-on-error", workflow)
         self.assertIn("response['analysis_origin'] == 'BEDROCK_CONVERSE'", workflow)
         self.assertIn("bedrock_cris_smoke", workflow)
+        self.assertIn("soccer-auto-coverage-before-llm.json", workflow)
+        self.assertIn("llm_context_ready", workflow)
+        self.assertIn("manifest.get('inventory_authority_current')", workflow)
+        analyst = (ROOT / "soccer_auto/llm_analyst.py").read_text()
+        self.assertIn("DEFERRED_CONTEXT_AUTHORITY", analyst)
+        self.assertLess(
+            analyst.index('dispatch_manifest.get("authoritative")'),
+            analyst.index('boto3.client("bedrock-runtime"'),
+        )
+
+    def test_deploy_proves_exact_manifest_request_completion_or_quota_only(self) -> None:
+        workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
+        self.assertIn("for attempt in $(seq 1 72)", workflow)
+        self.assertIn("manifest.get('authoritative')", workflow)
+        self.assertIn("manifest.get('inventory_authority_current')", workflow)
+        self.assertIn("manifest['inventory_authority_state'] == 'COMPLETED'", workflow)
+        self.assertIn("inventory.get('coverage_integrity_failures')", workflow)
+        self.assertIn("inventory.get('coverage_error_cycles')", workflow)
+        self.assertIn("quota_only_incomplete_request_cycles", workflow)
+        self.assertIn("non_quota_incomplete_request_cycles", workflow)
+        self.assertIn("unresolved_batches == deferred_batches", workflow)
+        self.assertIn("succeeded_batches == expected_batches", workflow)
+        self.assertIn("failed_batches == deferred_batches == unresolved_batches == 0", workflow)
+        self.assertIn("attempted_incomplete == deferred == failed == never_attempted == 0", workflow)
+        self.assertIn("size_statuses = {'PLAN_SIZE_LIMIT', 'SUMMARY_SIZE_LIMIT', 'EVIDENCE_SIZE_LIMIT'}", workflow)
+        self.assertLess(
+            workflow.index("tee /tmp/soccer-auto-coverage-proof.json"),
+            workflow.index("tee /tmp/soccer-auto-status.json"),
+        )
+        self.assertNotIn("continue-on-error", workflow)
 
     def test_controller_observes_every_scheduled_component_fail_closed(self) -> None:
         template = yaml.load(

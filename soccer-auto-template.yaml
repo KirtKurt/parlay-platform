@@ -277,6 +277,8 @@ Resources:
       SqsManagedSseEnabled: true
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt SoccerCollectionDeadLetterQueue.Arn
+        # Quota deferrals are acknowledged only after a delayed replacement is
+        # on SQS, so this remains a poison-message policy for real failures.
         maxReceiveCount: 4
 
   SoccerAutoAlarmTopic:

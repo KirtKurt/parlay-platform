@@ -116,6 +116,33 @@ class SharedProviderGuardTests(unittest.TestCase):
         self.assertFalse(allowed)
         self.assertEqual(store.ops.blocked[0]["reason"], "QUOTA_OBSERVATION_UNAVAILABLE")
 
+    def test_malformed_quota_observations_are_never_external_capacity(self) -> None:
+        malformed = (
+            {"remaining": 100, "used": 0},
+            {"remaining": 0, "used": 0, "quota_snapshot": "snapshot"},
+            {"remaining": -1, "used": 101, "quota_snapshot": "snapshot"},
+            {"remaining": "bad", "used": 1, "quota_snapshot": "snapshot"},
+        )
+        for index, row in enumerate(malformed):
+            with self.subTest(row=row):
+                store = self.store(None, None)
+                store.ops.quota_state = {
+                    "PK": "QUOTA_STATE",
+                    "SK": "LATEST",
+                    "observed_at": f"2026-08-14T03:59:0{index}Z",
+                    **row,
+                }
+                admission = store.provider_budget_admission(
+                    "event_odds",
+                    "2026-08-14T04:00:00Z",
+                )
+                self.assertFalse(admission["available"])
+                self.assertFalse(admission["external_capacity"])
+                self.assertEqual(
+                    admission["reason"],
+                    "QUOTA_OBSERVATION_UNAVAILABLE",
+                )
+
     def test_default_race_buffer_scales_down_for_small_subscription(self) -> None:
         store = self.store(95, 5)
         with patch.dict(

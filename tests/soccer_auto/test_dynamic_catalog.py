@@ -13,6 +13,7 @@ from soccer_auto.collector import (  # noqa: E402
     catalog_handler,
     inventory_handler,
 )
+from soccer_auto.canonical import stable_event_key  # noqa: E402
 from soccer_auto.odds_api import ApiResponse  # noqa: E402
 
 
@@ -23,6 +24,7 @@ class CatalogStore:
         self.jobs = []
         self.claims = []
         self.released = []
+        self.inventory_generations = []
 
     def record_quota(self, *args, **kwargs):
         pass
@@ -35,6 +37,12 @@ class CatalogStore:
 
     def put_event(self, row, observed_at):
         self.events.append(row)
+        return {
+            "event_key": stable_event_key(str(row["sport_key"]), str(row["id"]))
+        }
+
+    def record_event_inventory_omissions(self, sport_key, **kwargs):
+        return 0
 
     def enqueue(self, job):
         self.jobs.append(job)
@@ -50,6 +58,14 @@ class CatalogStore:
 
     def release_job(self, claim):
         self.released.append(claim)
+
+    def begin_event_inventory_generation(self, **kwargs):
+        self.inventory_generations.append({"phase": "RUNNING", **kwargs})
+        return {"acquired": True, "generation_id": kwargs["generation_id"]}
+
+    def finish_event_inventory_generation(self, **kwargs):
+        self.inventory_generations.append({"phase": "FINISHED", **kwargs})
+        return {"updated": True}
 
 
 class CatalogClient:
@@ -103,9 +119,11 @@ class DynamicCatalogTests(unittest.TestCase):
             result = catalog_handler({}, None)
         self.assertEqual(result["soccer_competitions"], 2)
         self.assertEqual(
-            {row["key"] for row in store.competitions},
+            set(result["soccer_competition_keys"]),
             {"soccer_future_league", "soccer_prefixed_future"},
         )
+        self.assertTrue(result["catalog_observational_only"])
+        self.assertEqual(store.competitions, [])
 
     def test_outright_competition_still_discovers_game_events(self) -> None:
         store = CatalogStore()
@@ -130,6 +148,12 @@ class DynamicCatalogTests(unittest.TestCase):
             result = inventory_handler({}, None)
         self.assertTrue(result["queue_bypassed"])
         self.assertEqual(result["competitions_refreshed"], 1)
+        self.assertEqual(result["authority_state"], "COMPLETED")
+        self.assertEqual(len(store.competitions), 2)
+        self.assertEqual(
+            [row["phase"] for row in store.inventory_generations],
+            ["RUNNING", "FINISHED"],
+        )
         self.assertEqual(len(store.events), 1)
         self.assertEqual(store.jobs, [])
 

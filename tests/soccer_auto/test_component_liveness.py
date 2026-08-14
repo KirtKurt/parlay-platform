@@ -184,6 +184,8 @@ class ComponentLivenessTests(unittest.TestCase):
             "expires_at": int(datetime(2026, 8, 15, tzinfo=timezone.utc).timestamp()),
             "stop_reason": "end_turn",
             "usage": {"inputTokens": 100, "outputTokens": 40, "totalTokens": 140},
+            "attempt_id": "2026-08-14T03:59:59Z#attempt",
+            "attempt_started_at": "2026-08-14T03:59:59Z",
         }
         latest["analysis_digest"] = digest(
             {
@@ -210,7 +212,12 @@ class ComponentLivenessTests(unittest.TestCase):
             {"SOCCER_AUTO_LLM_MODEL_ID": "us.amazon.nova-2-lite-v1:0"},
             clear=False,
         ):
-            self.assertTrue(_llm_state(Store(), observed)["fresh"])
+            fresh = _llm_state(Store(), observed)
+            self.assertTrue(fresh["fresh"])
+            self.assertEqual(fresh["attempt_id"], latest["attempt_id"])
+            self.assertEqual(
+                fresh["attempt_started_at"], latest["attempt_started_at"]
+            )
             latest["summary"] = "tampered after validation"
             llm = _llm_state(Store(), observed)
 

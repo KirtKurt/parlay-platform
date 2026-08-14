@@ -10,19 +10,30 @@ from tests.soccer_auto.aws_stubs import install_if_needed
 install_if_needed()
 
 from botocore.exceptions import ClientError, ReadTimeoutError  # noqa: E402
-from soccer_auto.canonical import canonical_json, digest  # noqa: E402
+from soccer_auto.canonical import canonical_json, digest, iso_utc  # noqa: E402
 from soccer_auto.llm_analyst import (  # noqa: E402
     ANALYSIS_ORIGIN,
     BEDROCK_MAX_OUTPUT_TOKENS,
     MAX_BEDROCK_REQUEST_BYTES,
     MAX_CONTEXT_CANONICAL_BYTES,
+    _coverage_diagnostics,
     _context,
     _model_ids,
+    _put_newer_llm_pointer,
     latest_llm_trials,
     llm_analyst_handler,
     validate_analysis,
 )
-from soccer_auto.storage import ddb_safe, plain  # noqa: E402
+from soccer_auto.storage import (  # noqa: E402
+    COVERAGE_DISPATCH_MANIFEST_VERSION,
+    COVERAGE_PLAN_VERSION,
+    EVENT_INVENTORY_AUTHORITY_VERSION,
+    coverage_expected_batch_digests,
+    coverage_plan_digest,
+    ddb_safe,
+    now_utc,
+    plain,
+)
 
 
 class Ops:
@@ -56,6 +67,114 @@ class Store:
 
     def model_items(self):
         return []
+
+
+class ExactCoverageStore(Store):
+    def __init__(self, ops, cycles):
+        super().__init__(ops)
+        self.cycles = cycles
+
+    def latest_coverage_cycles(self, **kwargs):
+        rows = [
+            {
+                "commence_time": "2026-08-14T14:00:00Z",
+                "schedule_revision": 1,
+                "schedule_identity": f"identity-{row['event_key']}",
+                **row,
+            }
+            for row in self.cycles
+        ]
+        for row in rows:
+            if row.get("plan_observed_at"):
+                expected = sorted(
+                    set(row.get("required_pairs") or ())
+                    | set(row.get("probe_pairs") or ())
+                )
+                request_markets = sorted(
+                    set(row.get("request_markets") or ())
+                    or {pair.rsplit("|", 1)[1] for pair in expected}
+                )
+                row["request_markets"] = request_markets
+                row["plan_version"] = COVERAGE_PLAN_VERSION
+                row["plan_digest"] = coverage_plan_digest(
+                    event_key=row["event_key"],
+                    observed_at=row["plan_observed_at"],
+                    schedule_revision=row["schedule_revision"],
+                    schedule_identity_value=row["schedule_identity"],
+                    request_markets=request_markets,
+                    required_pairs=sorted(row.get("required_pairs") or ()),
+                    probe_pairs=sorted(row.get("probe_pairs") or ()),
+                )
+                batches = coverage_expected_batch_digests(
+                    plan_digest=row["plan_digest"],
+                    request_markets=request_markets,
+                    expected_pairs=expected,
+                )
+                row.setdefault("fanout_expected_batch_digests", batches)
+                row.setdefault("fanout_enqueued_batch_digests", batches)
+                terminal = (
+                    set(row.get("returned_pairs") or ())
+                    | set(row.get("provider_unavailable_pairs") or ())
+                    | set(row.get("normalization_rejected_pairs") or ())
+                ) & set(expected)
+                row.setdefault(
+                    "fanout_succeeded_batch_digests",
+                    batches if expected and terminal == set(expected) else [],
+                )
+                row.setdefault("fanout_failed_batch_digests", [])
+                row.setdefault("fanout_deferred_batch_digests", [])
+        return rows
+
+    def latest_coverage_dispatch_manifest(self):
+        from soccer_auto import llm_analyst as analyst_module
+
+        rows = self.latest_coverage_cycles()
+        observed_at = iso_utc(analyst_module.now_utc())
+        entries = sorted(
+            [
+                {
+                    "event_key": row["event_key"],
+                    "commence_time": row["commence_time"],
+                    "schedule_revision": row["schedule_revision"],
+                    "schedule_identity": row["schedule_identity"],
+                    "required_discovery_observed_at": row["discovery_observed_at"],
+                }
+                for row in rows
+            ],
+            key=lambda row: (row["commence_time"], row["event_key"]),
+        )
+        version = COVERAGE_DISPATCH_MANIFEST_VERSION
+        inventory_binding = {
+            "authority_version": EVENT_INVENTORY_AUTHORITY_VERSION,
+            "generation_id": "inventory-test",
+            "completed_at": observed_at,
+            "authority_revision": 2,
+        }
+        self.inventory_binding = inventory_binding
+        return {
+            "entity_type": "SOCCER_COVERAGE_DISPATCH_MANIFEST",
+            "manifest_version": version,
+            "manifest_digest": digest(
+                {
+                    "version": version,
+                    "observed_at": observed_at,
+                    "inventory_authority": inventory_binding,
+                    "manifest_error": "",
+                    "events": entries,
+                }
+            ),
+            "observed_at": observed_at,
+            "events": entries,
+            "event_count": len(entries),
+            "inventory_authority": inventory_binding,
+            "manifest_error": "",
+        }
+
+    def event_inventory_authority(self):
+        return {
+            **self.inventory_binding,
+            "authority_state": "COMPLETED",
+        }
 
 
 class LlmBoundaryTests(unittest.TestCase):
@@ -106,6 +225,72 @@ class LlmBoundaryTests(unittest.TestCase):
                 _model_ids(),
                 ("us.amazon.nova-2-lite-v1:0", *fallbacks),
             )
+
+    def test_mutable_llm_pointers_reject_an_older_slow_completion(self) -> None:
+        class ChronologyOps:
+            def __init__(self):
+                self.row = None
+
+            def put_item(
+                self,
+                *,
+                Item,
+                ConditionExpression=None,
+                ExpressionAttributeValues=None,
+                **kwargs,
+            ):
+                incoming = plain(Item)
+                threshold = plain(ExpressionAttributeValues or {}).get(
+                    ":attempt_started_order"
+                )
+                if (
+                    ConditionExpression
+                    and self.row
+                    and int(self.row.get("attempt_started_order") or 0)
+                    >= int(threshold or 0)
+                ):
+                    raise ClientError(
+                        {
+                            "Error": {
+                                "Code": "ConditionalCheckFailedException",
+                                "Message": "newer pointer already published",
+                            }
+                        },
+                        "PutItem",
+                    )
+                self.row = incoming
+
+        class PointerStore:
+            def __init__(self):
+                self.ops = ChronologyOps()
+
+        store = PointerStore()
+        newer = {
+            "PK": "LLM_ANALYSIS",
+            "SK": "LATEST",
+            "attempt_id": "newer",
+            "attempt_started_at": "2026-08-14T04:01:00Z",
+        }
+        older = {
+            **newer,
+            "attempt_id": "older",
+            "attempt_started_at": "2026-08-14T04:00:00Z",
+        }
+        self.assertTrue(
+            _put_newer_llm_pointer(
+                store,
+                newer,
+                attempt_started_at=newer["attempt_started_at"],
+            )
+        )
+        self.assertFalse(
+            _put_newer_llm_pointer(
+                store,
+                older,
+                attempt_started_at=older["attempt_started_at"],
+            )
+        )
+        self.assertEqual(store.ops.row["attempt_id"], "newer")
 
     def test_trial_precision_is_canonical_before_provenance_digest(self) -> None:
         result = validate_analysis(
@@ -199,6 +384,58 @@ class LlmBoundaryTests(unittest.TestCase):
             [{"component": "freeze", "reason": "UNKNOWN"}],
         )
         self.assertNotIn("component_liveness", context["autonomy"])
+
+    def test_exact_context_exposes_every_unresolved_coverage_cause(self) -> None:
+        expected = ["book|btts", "book|draw_no_bet", "book|h2h", "book|totals"]
+        diagnostics = _coverage_diagnostics(
+            ExactCoverageStore(
+                Ops([]),
+                [
+                    {
+                        "event_key": "event",
+                        "plan_observed_at": "2026-08-14T04:00:00Z",
+                        "plan_digest": "plan",
+                        "discovery_observed_at": "2026-08-14T03:59:59Z",
+                        "discovery_status": "HTTP_200",
+                        "required_pairs": expected,
+                        "probe_pairs": [],
+                        "expected_digest": digest(expected),
+                        "attempted_incomplete_pairs": ["book|btts"],
+                        "quota_deferred_pairs": ["book|draw_no_bet"],
+                        "failed_pairs": ["book|h2h"],
+                    }
+                ],
+            )
+        )
+        self.assertEqual(diagnostics["attempted_incomplete_pairs"], 1)
+        self.assertEqual(diagnostics["quota_deferred_pairs"], 1)
+        self.assertEqual(diagnostics["failed_pairs"], 1)
+        self.assertEqual(diagnostics["never_attempted_pairs"], 1)
+        self.assertEqual(diagnostics["discovery_status_counts"], {"HTTP_200": 1})
+        self.assertEqual(diagnostics["coverage_integrity_failures"], 0)
+
+    def test_unsampled_empty_cycle_still_blocks_llm_coverage_authority(self) -> None:
+        cycles = []
+        for index in range(9):
+            required = [] if index == 0 else ["book|h2h"]
+            cycles.append(
+                {
+                    "event_key": f"event-{index}",
+                    "plan_observed_at": f"2026-08-14T04:0{index}:00Z",
+                    "discovery_observed_at": f"2026-08-14T04:0{index}:00Z",
+                    "discovery_status": "HTTP_200",
+                    "required_pairs": required,
+                    "probe_pairs": [],
+                    "expected_digest": digest(required),
+                    "returned_pairs": list(required),
+                }
+            )
+        diagnostics = _coverage_diagnostics(ExactCoverageStore(Ops([]), cycles))
+        self.assertEqual(len(diagnostics["latest_event_cycles"]), 8)
+        self.assertEqual(diagnostics["incomplete_latest_event_cycles"], 1)
+        self.assertEqual(diagnostics["incomplete_request_cycles"], 1)
+        self.assertFalse(diagnostics["coverage_complete"])
+        self.assertFalse(diagnostics["request_cycles_complete"])
 
     def test_context_has_a_hard_canonical_byte_ceiling(self) -> None:
         huge = "\\\"" * 500
@@ -300,10 +537,57 @@ class LlmBoundaryTests(unittest.TestCase):
         self.assertEqual(trials, [])
         self.assertIsNone(analysis_digest)
 
+    def test_fresh_legacy_analysis_without_context_authority_is_rejected(self) -> None:
+        observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
+        validated = validate_analysis(
+            {
+                "summary": "legacy analysis predates exact context authority",
+                "recommended_trials": [
+                    {"learning_rate": 0.03, "l2": 0.001, "epochs": 60}
+                ],
+            }
+        )
+        legacy_content = {
+            **validated,
+            "analysis_version": "soccer-auto-llm-analyst-v2",
+        }
+        created_at = "2026-08-14T03:00:00Z"
+        expires_at = int((observed + timedelta(hours=12)).timestamp())
+        row = {
+            **legacy_content,
+            "analysis_origin": ANALYSIS_ORIGIN,
+            "model_id": "us.amazon.nova-lite-v1:0",
+            "context_digest": "legacy-context-digest",
+            "created_at": created_at,
+            "expires_at": expires_at,
+            "stop_reason": "end_turn",
+            "usage": {"inputTokens": 100, "outputTokens": 40, "totalTokens": 140},
+        }
+        row["analysis_digest"] = digest(
+            {
+                **{
+                    key: value
+                    for key, value in legacy_content.items()
+                    if key != "analysis_digest"
+                },
+                "analysis_origin": row["analysis_origin"],
+                "model_id": row["model_id"],
+                "context_digest": row["context_digest"],
+                "created_at": created_at,
+                "expires_at": expires_at,
+                "stop_reason": row["stop_reason"],
+                "usage": row["usage"],
+            }
+        )
+        with patch("soccer_auto.llm_analyst.now_utc", return_value=observed):
+            trials, analysis_digest = latest_llm_trials(Store(Ops(latest=row)))
+        self.assertEqual(trials, [])
+        self.assertIsNone(analysis_digest)
+
     def test_success_writes_validated_analysis_latest_and_attempt(self) -> None:
         observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
         ops = Ops()
-        store = Store(ops)
+        store = ExactCoverageStore(ops, [])
         bedrock = Mock()
         bedrock.converse.return_value = self._response(
             {
@@ -324,6 +608,8 @@ class LlmBoundaryTests(unittest.TestCase):
             result = llm_analyst_handler({}, None)
 
         self.assertEqual(result["status"], "ANALYZED")
+        self.assertTrue(result["attempt_id"])
+        self.assertEqual(result["attempt_started_at"], iso_utc(observed))
         self.assertEqual([row["SK"] for row in ops.writes][-2:], ["LATEST", "LAST_ATTEMPT"])
         self.assertTrue(str(ops.writes[0]["SK"]).startswith("ANALYSIS#"))
         self.assertEqual(ops.writes[0]["model_id"], "us.amazon.nova-2-lite-v1:0")
@@ -361,10 +647,44 @@ class LlmBoundaryTests(unittest.TestCase):
             {"mode": "standard", "total_max_attempts": 1},
         )
 
+    def test_nonauthoritative_coverage_defers_before_bedrock_or_writes(self) -> None:
+        observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
+        ops = Ops()
+
+        class NonAuthoritativeCoverageStore(ExactCoverageStore):
+            def event_inventory_authority(self):
+                return {
+                    "authority_state": "RUNNING",
+                    "authority_version": EVENT_INVENTORY_AUTHORITY_VERSION,
+                    "generation_id": "newer-inventory-generation",
+                    "authority_revision": 3,
+                    "completed_at": "",
+                }
+
+        store = NonAuthoritativeCoverageStore(ops, [])
+        with (
+            patch("soccer_auto.llm_analyst.MODEL_ID", "us.amazon.nova-2-lite-v1:0"),
+            patch("soccer_auto.llm_analyst.SoccerStore", return_value=store),
+            patch("soccer_auto.llm_analyst.now_utc", return_value=observed),
+            patch("soccer_auto.llm_analyst.boto3.client") as client_mock,
+        ):
+            result = llm_analyst_handler({"force_refresh": True}, None)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status"], "DEFERRED_CONTEXT_AUTHORITY")
+        self.assertEqual(
+            result["reason"],
+            "COVERAGE_DISPATCH_MANIFEST_NOT_AUTHORITATIVE",
+        )
+        self.assertEqual(result["attempted_model_ids"], [])
+        self.assertEqual(result["inventory_authority_state"], "RUNNING")
+        self.assertEqual(ops.writes, [])
+        client_mock.assert_not_called()
+
     def test_primary_daily_token_throttle_uses_real_bedrock_fallback(self) -> None:
         observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
         ops = Ops()
-        store = Store(ops)
+        store = ExactCoverageStore(ops, [])
         bedrock = Mock()
 
         def converse(**kwargs):
@@ -449,7 +769,7 @@ class LlmBoundaryTests(unittest.TestCase):
     def test_transport_timeout_is_bounded_and_falls_through_to_next_model(self) -> None:
         observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
         ops = Ops()
-        store = Store(ops)
+        store = ExactCoverageStore(ops, [])
         bedrock = Mock()
         bedrock.converse.side_effect = [
             ReadTimeoutError(
@@ -502,7 +822,7 @@ class LlmBoundaryTests(unittest.TestCase):
     def test_all_model_daily_token_throttles_are_deferred_without_latest_write(self) -> None:
         observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
         ops = Ops()
-        store = Store(ops)
+        store = ExactCoverageStore(ops, [])
         bedrock = Mock()
         bedrock.converse.side_effect = ClientError(
             {
@@ -564,7 +884,7 @@ class LlmBoundaryTests(unittest.TestCase):
 
     def test_mixed_recoverable_errors_are_redacted_and_not_mislabeled_quota(self) -> None:
         observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
-        store = Store(Ops())
+        store = ExactCoverageStore(Ops(), [])
         bedrock = Mock()
         errors = [
             ("ThrottlingException", "Account quota exceeded", 429, "quota-request"),
@@ -624,7 +944,7 @@ class LlmBoundaryTests(unittest.TestCase):
 
     def test_generic_account_throttle_uses_short_retry_not_daily_retry(self) -> None:
         observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
-        store = Store(Ops())
+        store = ExactCoverageStore(Ops(), [])
         bedrock = Mock()
         bedrock.converse.side_effect = ClientError(
             {
@@ -653,7 +973,7 @@ class LlmBoundaryTests(unittest.TestCase):
 
     def test_global_profile_access_denial_falls_through_to_nova_pro(self) -> None:
         observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
-        store = Store(Ops())
+        store = ExactCoverageStore(Ops(), [])
         bedrock = Mock()
 
         def converse(**kwargs):
@@ -697,7 +1017,7 @@ class LlmBoundaryTests(unittest.TestCase):
 
     def test_all_configuration_failures_are_persisted_as_blocked(self) -> None:
         observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
-        store = Store(Ops())
+        store = ExactCoverageStore(Ops(), [])
         bedrock = Mock()
         bedrock.converse.side_effect = ClientError(
             {
@@ -733,7 +1053,7 @@ class LlmBoundaryTests(unittest.TestCase):
         self.assertEqual(len(attempt["model_errors"]), 2)
 
     def test_non_candidate_client_error_is_reraised(self) -> None:
-        store = Store(Ops())
+        store = ExactCoverageStore(Ops(), [])
         bedrock = Mock()
         bedrock.converse.side_effect = ClientError(
             {"Error": {"Code": "UnrecognizedClientException", "Message": "denied"}},
@@ -749,7 +1069,7 @@ class LlmBoundaryTests(unittest.TestCase):
         self.assertEqual(store.ops.writes, [])
 
     def test_malformed_model_json_is_persisted_and_raised_fail_closed(self) -> None:
-        store = Store(Ops())
+        store = ExactCoverageStore(Ops(), [])
         bedrock = Mock()
         bedrock.converse.return_value = {
             "output": {"message": {"content": [{"text": "not-json"}]}}

@@ -160,6 +160,8 @@ def _llm_state(store: SoccerStore, observed: datetime) -> dict[str, Any]:
         "analyses": 1,
         "fresh": True,
         "analysis_digest": row.get("analysis_digest"),
+        "attempt_id": row.get("attempt_id"),
+        "attempt_started_at": row.get("attempt_started_at"),
         "validated_trials": len(row.get("recommended_trials") or []),
         "created_at": row.get("created_at"),
         "expires_at": row.get("expires_at"),
