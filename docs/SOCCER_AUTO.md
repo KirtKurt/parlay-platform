@@ -141,6 +141,9 @@ genuine adaptive research authority for bounded trial proposals, but its prose
 or temporary unavailability cannot override deterministic promotion gates.
 Every failed model attempt stores only bounded, redacted Bedrock diagnostics;
 prompts and model responses are never written to error telemetry.
+The request is deterministically compacted to at most 4,800 UTF-8 bytes with a
+384-token output ceiling, so reduced-account token quotas cannot be defeated by
+an accidentally unbounded diagnostics payload.
 
 ## Non-interference controls
 

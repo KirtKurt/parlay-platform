@@ -56,6 +56,20 @@ ATTEMPT_RETENTION_DAYS = 30
 MAX_BEDROCK_ERROR_MESSAGE_LENGTH = 300
 DIAGNOSTIC_SCAN_PAGE_LIMIT = int(os.getenv("SOCCER_AUTO_LLM_DIAGNOSTIC_SCAN_PAGE_LIMIT", "4"))
 DIAGNOSTIC_ROW_LIMIT = int(os.getenv("SOCCER_AUTO_LLM_DIAGNOSTIC_ROW_LIMIT", "2000"))
+MAX_CONTEXT_CANONICAL_BYTES = 3_000
+MAX_BEDROCK_REQUEST_BYTES = 4_800
+BEDROCK_MAX_OUTPUT_TOKENS = 384
+MAX_ANALYSIS_SUMMARY_CHARS = 240
+MAX_ANALYSIS_LIST_ITEMS = 3
+MAX_ANALYSIS_ITEM_CHARS = 160
+MAX_ANALYSIS_RATIONALE_CHARS = 160
+BOOKMAKER_SAMPLE_LIMIT = 8
+MARKET_SAMPLE_LIMIT = 12
+EVENT_CYCLE_SAMPLE_LIMIT = 8
+MISSING_PAIR_SAMPLE_LIMIT = 10
+FAILURE_SAMPLE_LIMIT = 6
+MODEL_REPORT_SAMPLE_LIMIT = 4
+LIVENESS_FAILURE_SAMPLE_LIMIT = 8
 BASELINE_TRIALS: tuple[dict[str, Any], ...] = (
     {"learning_rate": 0.01, "l2": 0.0005, "epochs": 40},
     {"learning_rate": 0.03, "l2": 0.001, "epochs": 60},
@@ -75,23 +89,27 @@ consensus on untouched chronological evidence. Return JSON only.
 
 def _prompt(context: Mapping[str, Any]) -> str:
     schema = {
-        "summary": "short string",
-        "coverage_findings": ["string"],
-        "warnings": ["string"],
+        "summary": "one string, at most 240 characters",
+        "coverage_findings": ["at most 3 strings, each at most 160 characters"],
+        "warnings": ["at most 3 strings, each at most 160 characters"],
         "recommended_trials": [
             {
                 "learning_rate": "number from 0.005 through 0.1",
                 "l2": "number from 0.00001 through 0.1",
                 "epochs": "integer from 20 through 120",
-                "rationale": "short string grounded only in the context",
+                "rationale": "at most 160 characters, grounded only in context",
             }
         ],
     }
+    context_json = canonical_json(context)
+    if len(context_json.encode("utf-8")) > MAX_CONTEXT_CANONICAL_BYTES:
+        raise ValueError("soccer analyst context exceeds its hard byte budget")
     return (
         "Review this soccer-only context and propose at most two distinct "
         "residual-softmax training trials. Do not propose new data sources or "
-        "features that are absent from the supplied feature schema. Required JSON schema:\n"
-        f"{canonical_json(schema)}\nCONTEXT:\n{canonical_json(context)}"
+        "features that are absent from the supplied feature schema. Keep the "
+        "entire response under 1,400 characters. Required JSON schema:\n"
+        f"{canonical_json(schema)}\nCONTEXT:\n{context_json}"
     )
 
 
@@ -133,16 +151,24 @@ def validate_analysis(payload: Mapping[str, Any]) -> dict[str, Any]:
                 "learning_rate": identity[0],
                 "l2": identity[1],
                 "epochs": epochs,
-                "rationale": _bounded_text(raw.get("rationale")),
+                "rationale": _bounded_text(
+                    raw.get("rationale"), MAX_ANALYSIS_RATIONALE_CHARS
+                ),
             }
         )
     findings = payload.get("coverage_findings") if isinstance(payload.get("coverage_findings"), list) else []
     warnings = payload.get("warnings") if isinstance(payload.get("warnings"), list) else []
     result = {
         "analysis_version": ANALYSIS_VERSION,
-        "summary": _bounded_text(payload.get("summary"), 1000),
-        "coverage_findings": [_bounded_text(value) for value in findings[:20]],
-        "warnings": [_bounded_text(value) for value in warnings[:20]],
+        "summary": _bounded_text(payload.get("summary"), MAX_ANALYSIS_SUMMARY_CHARS),
+        "coverage_findings": [
+            _bounded_text(value, MAX_ANALYSIS_ITEM_CHARS)
+            for value in findings[:MAX_ANALYSIS_LIST_ITEMS]
+        ],
+        "warnings": [
+            _bounded_text(value, MAX_ANALYSIS_ITEM_CHARS)
+            for value in warnings[:MAX_ANALYSIS_LIST_ITEMS]
+        ],
         "recommended_trials": trials,
         "validation_status": "VALIDATED",
     }
@@ -256,27 +282,108 @@ def _coverage_diagnostics(store: SoccerStore) -> dict[str, Any]:
         "inventory_observations": len(inventories),
         "unique_bookmakers_seen": len(books),
         "unique_markets_seen": len(markets),
-        "bookmaker_sample": sorted(books)[:100],
-        "market_sample": sorted(markets)[:200],
-        "latest_event_cycles": cycles[:100],
+        "bookmaker_sample": [
+            _bounded_text(value, 60)
+            for value in sorted(books)[:BOOKMAKER_SAMPLE_LIMIT]
+        ],
+        "market_sample": [
+            _bounded_text(value, 60)
+            for value in sorted(markets)[:MARKET_SAMPLE_LIMIT]
+        ],
+        "latest_event_cycles": [
+            {
+                **cycle,
+                "event_key": _bounded_text(cycle.get("event_key"), 100),
+                "plan_observed_at": _bounded_text(
+                    cycle.get("plan_observed_at"), 40
+                ),
+            }
+            for cycle in cycles[:EVENT_CYCLE_SAMPLE_LIMIT]
+        ],
         "expected_pairs": len(expected),
         "fetched_pairs": len(returned),
         "missing_pairs": len(missing),
-        "missing_pair_sample": missing[:100],
+        "missing_pair_sample": [
+            _bounded_text(value, 160)
+            for value in missing[:MISSING_PAIR_SAMPLE_LIMIT]
+        ],
         "collection_failures": len(failures),
         "permanent_collection_failures": sum(bool(row.get("permanent")) for row in failures),
         "failure_sample": [
             {
-                "event_key": row.get("event_key"),
-                "operation": row.get("operation"),
+                "event_key": _bounded_text(row.get("event_key"), 100),
+                "operation": _bounded_text(row.get("operation"), 50),
                 "permanent": bool(row.get("permanent")),
-                "observed_at": row.get("observed_at"),
-                "detail": _bounded_text(row.get("detail"), 300),
+                "observed_at": _bounded_text(row.get("observed_at"), 40),
+                "detail": _bounded_text(row.get("detail"), 200),
             }
-            for row in failures[:50]
+            for row in failures[:FAILURE_SAMPLE_LIMIT]
         ],
         "shared_quota_guard_blocks": len(quota_blocks),
     }
+
+
+def _bounded_nonnegative_int(value: Any) -> int | None:
+    try:
+        return min(max(0, int(value)), 10**15)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _liveness_summary(value: Any) -> dict[str, Any]:
+    rows = value if isinstance(value, Mapping) else {}
+    unhealthy: list[dict[str, str]] = []
+    healthy = 0
+    recovered = 0
+    for component, detail in sorted(rows.items(), key=lambda item: str(item[0])):
+        detail = detail if isinstance(detail, Mapping) else {}
+        is_healthy = bool(detail.get("healthy"))
+        reason = _bounded_text(detail.get("reason") or "UNKNOWN", 80)
+        if is_healthy:
+            healthy += 1
+            recovered += int(reason == "RECOVERED_AFTER_ERROR")
+        elif len(unhealthy) < LIVENESS_FAILURE_SAMPLE_LIMIT:
+            unhealthy.append(
+                {
+                    "component": _bounded_text(component, 50),
+                    "reason": reason,
+                }
+            )
+    return {
+        "components": len(rows),
+        "healthy": healthy,
+        "unhealthy": len(rows) - healthy,
+        "recovered_after_error": recovered,
+        "unhealthy_sample": unhealthy,
+    }
+
+
+def _compact_context_to_budget(context: dict[str, Any]) -> dict[str, Any]:
+    """Drop only bounded samples until the canonical hard ceiling is met."""
+    sample_paths = (
+        ("coverage", "failure_sample"),
+        ("coverage", "missing_pair_sample"),
+        ("coverage", "latest_event_cycles"),
+        ("coverage", "market_sample"),
+        ("coverage", "bookmaker_sample"),
+        ("autonomy", "liveness", "unhealthy_sample"),
+        ("recent_model_reports",),
+    )
+    while len(canonical_json(context).encode("utf-8")) > MAX_CONTEXT_CANONICAL_BYTES:
+        changed = False
+        for path in sample_paths:
+            target: Any = context
+            for key in path:
+                if not isinstance(target, Mapping):
+                    target = None
+                    break
+                target = target.get(key)
+            if isinstance(target, list) and target:
+                target.pop()
+                changed = True
+        if not changed:
+            raise RuntimeError("soccer analyst core context exceeds its hard budget")
+    return context
 
 
 def _context(store: SoccerStore) -> dict[str, Any]:
@@ -289,12 +396,33 @@ def _context(store: SoccerStore) -> dict[str, Any]:
         [row for row in store.model_items() if str(row.get("SK") or "").startswith("VERSION#")],
         key=lambda row: row.get("created_at") or "",
         reverse=True,
-    )[:10]
-    return {
+    )[:MODEL_REPORT_SAMPLE_LIMIT]
+    liveness = _liveness_summary(plain(autonomy.get("component_liveness") or {}))
+    autonomy_counts = plain(autonomy.get("counts") or {})
+    autonomy_queues = plain(autonomy.get("queues") or {})
+    latest_quota = plain(autonomy.get("latest_quota") or {})
+    context = {
         "system": "soccer_auto",
         "generated_at": iso_utc(observed),
-        "feature_schema_version": FEATURE_SCHEMA_VERSION,
-        "feature_names": list(FEATURE_NAMES),
+        "feature_schema_version": _bounded_text(FEATURE_SCHEMA_VERSION, 80),
+        "feature_summary": {
+            "count": len(FEATURE_NAMES),
+            "direct_feature_names": [
+                _bounded_text(name, 80)
+                for name in FEATURE_NAMES
+                if not str(name).startswith(
+                    ("league_bucket_", "market_bucket_", "market_bucket_movement_")
+                )
+            ],
+            "bucket_counts": {
+                prefix: sum(str(name).startswith(prefix) for name in FEATURE_NAMES)
+                for prefix in (
+                    "league_bucket_",
+                    "market_bucket_",
+                    "market_bucket_movement_",
+                )
+            },
+        },
         "baseline_trials": list(BASELINE_TRIALS),
         "competition_counts": {
             "known": len(competitions),
@@ -302,30 +430,52 @@ def _context(store: SoccerStore) -> dict[str, Any]:
             "outright": sum(1 for row in competitions if row.get("has_outrights")),
         },
         "autonomy": {
-            key: plain(autonomy.get(key))
-            for key in (
-                "authority",
-                "reason",
-                "promotion_blocked",
-                "counts",
-                "queues",
-                "latest_quota",
-                "component_liveness",
-                "component_liveness_complete",
-                "updated_at",
-            )
+            "authority": _bounded_text(autonomy.get("authority"), 60),
+            "reason": _bounded_text(autonomy.get("reason"), 120),
+            "promotion_blocked": bool(autonomy.get("promotion_blocked")),
+            "counts": {
+                key: _bounded_nonnegative_int(autonomy_counts.get(key))
+                for key in (
+                    "competitions",
+                    "events",
+                    "snapshot_slots",
+                    "locks",
+                    "settlements",
+                    "predictions",
+                    "models",
+                )
+            },
+            "queues": {
+                key: _bounded_nonnegative_int(autonomy_queues.get(key))
+                for key in ("collection", "dead_letter")
+            },
+            "latest_quota": {
+                "operation": _bounded_text(latest_quota.get("operation"), 50),
+                "remaining": _bounded_nonnegative_int(latest_quota.get("remaining")),
+                "used": _bounded_nonnegative_int(latest_quota.get("used")),
+                "last_cost": _bounded_nonnegative_int(latest_quota.get("last_cost")),
+                "observed_at": _bounded_text(latest_quota.get("observed_at"), 40),
+            },
+            "liveness": liveness,
+            "component_liveness_complete": bool(
+                autonomy.get("component_liveness_complete")
+            ),
+            "updated_at": _bounded_text(autonomy.get("updated_at"), 40),
         },
         "coverage": _coverage_diagnostics(store),
         "recent_model_reports": [
             {
-                "model_digest": row.get("model_digest"),
-                "authority_state": row.get("authority_state"),
-                "created_at": row.get("created_at"),
-                "feature_schema_version": row.get("feature_schema_version"),
+                "model_digest": _bounded_text(row.get("model_digest"), 80),
+                "authority_state": _bounded_text(row.get("authority_state"), 60),
+                "created_at": _bounded_text(row.get("created_at"), 40),
+                "feature_schema_version": _bounded_text(
+                    row.get("feature_schema_version"), 80
+                ),
             }
             for row in model_rows
         ],
     }
+    return _compact_context_to_budget(context)
 
 
 def _analysis_is_fresh(row: Mapping[str, Any], observed_at: Any | None = None) -> bool:
@@ -412,6 +562,8 @@ def _record_llm_attempt(
     model_id: str | None = None,
     attempted_model_ids: Sequence[str] | None = None,
     model_errors: Sequence[Mapping[str, Any]] | None = None,
+    context_byte_count: int | None = None,
+    request_byte_count: int | None = None,
 ) -> None:
     item = {
         "PK": "LLM_ANALYSIS",
@@ -431,6 +583,11 @@ def _record_llm_attempt(
         item["analysis_digest"] = analysis_digest
     if model_errors:
         item["model_errors"] = [dict(error) for error in model_errors]
+    if context_byte_count is not None:
+        item["context_byte_count"] = int(context_byte_count)
+    if request_byte_count is not None:
+        item["request_byte_count"] = int(request_byte_count)
+    item["max_output_tokens"] = BEDROCK_MAX_OUTPUT_TOKENS
     store.ops.put_item(Item=ddb_safe(item))
 
 
@@ -538,8 +695,21 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
             "expires_at": latest.get("expires_at"),
             "analysis_origin": latest.get("analysis_origin"),
             "context_digest": latest.get("context_digest"),
+            "context_byte_count": latest.get("context_byte_count"),
+            "request_byte_count": latest.get("request_byte_count"),
+            "max_output_tokens": latest.get("max_output_tokens")
+            or BEDROCK_MAX_OUTPUT_TOKENS,
         }
     analysis_context = _context(store)
+    context_byte_count = len(canonical_json(analysis_context).encode("utf-8"))
+    prompt_text = _prompt(analysis_context)
+    system = [{"text": SYSTEM_PROMPT}]
+    messages = [{"role": "user", "content": [{"text": prompt_text}]}]
+    request_byte_count = len(
+        canonical_json({"system": system, "messages": messages}).encode("utf-8")
+    )
+    if request_byte_count > MAX_BEDROCK_REQUEST_BYTES:
+        raise RuntimeError("soccer analyst request exceeds its hard byte budget")
     bedrock = boto3.client("bedrock-runtime")
     attempted_model_ids: list[str] = []
     model_errors: list[dict[str, Any]] = []
@@ -552,9 +722,13 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
         try:
             response = bedrock.converse(
                 modelId=model_id,
-                system=[{"text": SYSTEM_PROMPT}],
-                messages=[{"role": "user", "content": [{"text": _prompt(analysis_context)}]}],
-                inferenceConfig={"maxTokens": 900, "temperature": 0.1, "topP": 0.9},
+                system=system,
+                messages=messages,
+                inferenceConfig={
+                    "maxTokens": BEDROCK_MAX_OUTPUT_TOKENS,
+                    "temperature": 0.1,
+                    "topP": 0.9,
+                },
             )
             stop_reason = str(response.get("stopReason") or "")
             if stop_reason != "end_turn":
@@ -638,6 +812,8 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
             model_id=model_ids[0],
             attempted_model_ids=attempted_model_ids,
             model_errors=model_errors,
+            context_byte_count=context_byte_count,
+            request_byte_count=request_byte_count,
         )
         raise RuntimeError(
             "all configured real Bedrock analyst models are temporarily unavailable: "
@@ -685,6 +861,9 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
         "stop_reason": selected_stop_reason,
         "usage": selected_usage,
         "context_digest": context_digest,
+        "context_byte_count": context_byte_count,
+        "request_byte_count": request_byte_count,
+        "max_output_tokens": BEDROCK_MAX_OUTPUT_TOKENS,
         **content,
         "analysis_digest": analysis_digest,
     }
@@ -699,6 +878,8 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
         model_id=selected_model_id,
         attempted_model_ids=attempted_model_ids,
         model_errors=model_errors,
+        context_byte_count=context_byte_count,
+        request_byte_count=request_byte_count,
     )
     return {
         "ok": True,
@@ -715,4 +896,7 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
         "context_digest": context_digest,
         "stop_reason": selected_stop_reason,
         "usage": selected_usage,
+        "context_byte_count": context_byte_count,
+        "request_byte_count": request_byte_count,
+        "max_output_tokens": BEDROCK_MAX_OUTPUT_TOKENS,
     }

@@ -10,9 +10,12 @@ from tests.soccer_auto.aws_stubs import install_if_needed
 install_if_needed()
 
 from botocore.exceptions import ClientError  # noqa: E402
-from soccer_auto.canonical import digest  # noqa: E402
+from soccer_auto.canonical import canonical_json, digest  # noqa: E402
 from soccer_auto.llm_analyst import (  # noqa: E402
     ANALYSIS_ORIGIN,
+    BEDROCK_MAX_OUTPUT_TOKENS,
+    MAX_BEDROCK_REQUEST_BYTES,
+    MAX_CONTEXT_CANONICAL_BYTES,
     _context,
     _model_ids,
     latest_llm_trials,
@@ -190,6 +193,71 @@ class LlmBoundaryTests(unittest.TestCase):
         self.assertEqual(coverage["missing_pairs"], 1)
         self.assertEqual(coverage["permanent_collection_failures"], 1)
         self.assertFalse(context["autonomy"]["component_liveness_complete"])
+        self.assertEqual(context["autonomy"]["liveness"]["unhealthy"], 1)
+        self.assertEqual(
+            context["autonomy"]["liveness"]["unhealthy_sample"],
+            [{"component": "freeze", "reason": "UNKNOWN"}],
+        )
+        self.assertNotIn("component_liveness", context["autonomy"])
+
+    def test_context_has_a_hard_canonical_byte_ceiling(self) -> None:
+        huge = "\\\"" * 500
+        rows = [
+            {
+                "entity_type": "SOCCER_MARKET_INVENTORY",
+                "inventory": {
+                    f"book-{index}-{huge}": {
+                        "markets": [f"market-{market}-{huge}" for market in range(20)]
+                    }
+                    for index in range(20)
+                },
+            }
+        ]
+        for index in range(40):
+            event_key = f"event-{index}-{huge}"
+            observed_at = f"2026-08-14T04:{index:02d}:00Z"
+            rows.extend(
+                [
+                    {
+                        "entity_type": "SOCCER_EVENT_COVERAGE_PLAN",
+                        "event_key": event_key,
+                        "observed_at": observed_at,
+                        "expected_pairs": [f"book-{pair}|h2h-{huge}" for pair in range(10)],
+                    },
+                    {
+                        "entity_type": "SOCCER_COLLECTION_FAILURE",
+                        "event_key": event_key,
+                        "operation": huge,
+                        "permanent": True,
+                        "observed_at": observed_at,
+                        "detail": huge,
+                    },
+                ]
+            )
+        autonomy = {
+            "authority": huge,
+            "reason": huge,
+            "component_liveness_complete": False,
+            "component_liveness": {
+                f"component-{index}-{huge}": {
+                    "healthy": False,
+                    "reason": huge,
+                    "function_name": huge,
+                    "error": huge,
+                }
+                for index in range(30)
+            },
+        }
+
+        context = _context(Store(Ops(rows, autonomy=autonomy)))
+
+        self.assertLessEqual(
+            len(canonical_json(context).encode("utf-8")),
+            MAX_CONTEXT_CANONICAL_BYTES,
+        )
+        self.assertLessEqual(
+            len(context["autonomy"]["liveness"]["unhealthy_sample"]), 8
+        )
 
     def test_expired_analysis_cannot_control_a_future_training_search(self) -> None:
         validated = validate_analysis(
@@ -264,6 +332,23 @@ class LlmBoundaryTests(unittest.TestCase):
         self.assertEqual(ops.writes[-1]["status"], "ANALYZED")
         self.assertEqual(ops.writes[-1]["model_id"], "us.amazon.nova-2-lite-v1:0")
         self.assertEqual(ops.writes[-1]["analysis_digest"], result["analysis_digest"])
+        request = bedrock.converse.call_args.kwargs
+        self.assertEqual(
+            request["inferenceConfig"]["maxTokens"], BEDROCK_MAX_OUTPUT_TOKENS
+        )
+        self.assertLessEqual(
+            result["context_byte_count"], MAX_CONTEXT_CANONICAL_BYTES
+        )
+        self.assertEqual(
+            result["context_byte_count"], ops.writes[0]["context_byte_count"]
+        )
+        self.assertEqual(
+            result["request_byte_count"], ops.writes[-1]["request_byte_count"]
+        )
+        self.assertLessEqual(result["request_byte_count"], MAX_BEDROCK_REQUEST_BYTES)
+        self.assertEqual(
+            ops.writes[-1]["max_output_tokens"], BEDROCK_MAX_OUTPUT_TOKENS
+        )
 
     def test_primary_daily_token_throttle_uses_real_bedrock_fallback(self) -> None:
         observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
