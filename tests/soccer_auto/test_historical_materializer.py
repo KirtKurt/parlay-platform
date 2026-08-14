@@ -12,6 +12,7 @@ from botocore.exceptions import ClientError  # noqa: E402
 from soccer_auto.canonical import digest, iso_utc, parse_utc  # noqa: E402
 from soccer_auto.historical import _manifest  # noqa: E402
 from soccer_auto.historical_materializer import (  # noqa: E402
+    historical_lock_provenance_valid,
     materialization_status,
     run_materialization,
 )
@@ -119,6 +120,26 @@ def settlement():
     )
 
 
+def ambiguous_settlement():
+    return build_settlement(
+        {
+            "id": "cup-event",
+            "sport_key": "soccer_fa_cup",
+            "schedule_revision": 1,
+            "commence_time": COMMENCE,
+            "completed": True,
+            "home_team": "Home",
+            "away_team": "Away",
+            "scores": [
+                {"name": "Home", "score": "2"},
+                {"name": "Away", "score": "1"},
+            ],
+        },
+        observed_at=iso_utc(OBSERVED),
+        regulation_ambiguous=True,
+    )
+
+
 def odds_event(*, home="Home", away="Away", book_count=3):
     return {
         "id": "event-1",
@@ -183,23 +204,7 @@ class HistoricalMaterializerTests(unittest.TestCase):
         self.assertEqual(store.locks, [])
 
     def test_unsigned_eligibility_flip_cannot_admit_ambiguous_result(self):
-        final = build_settlement(
-            {
-                "id": "cup-event",
-                "sport_key": "soccer_fa_cup",
-                "schedule_revision": 1,
-                "commence_time": COMMENCE,
-                "completed": True,
-                "home_team": "Home",
-                "away_team": "Away",
-                "scores": [
-                    {"name": "Home", "score": "2"},
-                    {"name": "Away", "score": "1"},
-                ],
-            },
-            observed_at=iso_utc(OBSERVED),
-            regulation_ambiguous=True,
-        )
+        final = ambiguous_settlement()
         final["training_eligible_1x2"] = True
         final["training_eligible_score_derived"] = True
         with patch.dict(
@@ -207,6 +212,67 @@ class HistoricalMaterializerTests(unittest.TestCase):
             {"SOCCER_AUTO_ALLOW_UNVERIFIED_KNOCKOUT_LABELS": "false"},
         ):
             self.assertFalse(settlement_training_evidence_valid(final))
+
+    def test_digest_valid_ambiguous_result_is_not_materialized_or_counted(self):
+        with patch.dict(
+            "os.environ",
+            {"SOCCER_AUTO_ALLOW_UNVERIFIED_KNOCKOUT_LABELS": "false"},
+        ):
+            final = ambiguous_settlement()
+            self.assertTrue(settlement_training_evidence_valid(final))
+            self.assertFalse(final["training_eligible_1x2"])
+            store = Store([final])
+            client = Client()
+            result = self.run_once(store, client)
+            status = materialization_status(store)
+
+        self.assertEqual(result["authoritative_settlements"], 0)
+        self.assertEqual(result["provider_calls"], 0)
+        self.assertEqual(client.calls, [])
+        self.assertEqual(store.locks, [])
+        self.assertEqual(status["authoritative_settlements"], 0)
+        self.assertEqual(status["validated_settlements"], 1)
+        self.assertEqual(status["ineligible_validated_settlements"], 1)
+        self.assertEqual(status["historical_training_rows"], 0)
+
+    def test_previously_materialized_ambiguous_lock_remains_quarantined(self):
+        with patch.dict(
+            "os.environ",
+            {"SOCCER_AUTO_ALLOW_UNVERIFIED_KNOCKOUT_LABELS": "false"},
+        ):
+            final = ambiguous_settlement()
+            historical_event = odds_event()
+            historical_event.update(
+                {"id": "cup-event", "sport_key": "soccer_fa_cup"}
+            )
+            store = Store([final])
+            client = Client(event=historical_event)
+            # Reproduce the prior bug's persisted lock and terminal state.
+            with patch(
+                "soccer_auto.historical_materializer._authoritative_settlements",
+                return_value=[final],
+            ):
+                result = self.run_once(store, client)
+            status = materialization_status(store)
+            rows, excluded = training_rows(store)
+
+        self.assertEqual(result["materialized"], 1)
+        self.assertEqual(len(store.locks), 1)
+        self.assertEqual(
+            next(
+                row
+                for row in store.ops.rows.values()
+                if row.get("entity_type")
+                == "SOCCER_HISTORICAL_T45_MATERIALIZATION_STATE"
+            )["status"],
+            "MATERIALIZED_ELIGIBLE",
+        )
+        self.assertFalse(historical_lock_provenance_valid(store.locks[0], final))
+        self.assertEqual(status["materialized_rows"], 0)
+        self.assertEqual(status["historical_training_rows"], 0)
+        self.assertEqual(status["pending_authoritative_settlements"], 0)
+        self.assertEqual(rows, [])
+        self.assertEqual(excluded["settlement_ineligible"], 1)
 
     def test_exact_t45_materialization_is_trainable_but_never_predictable(self):
         final = settlement()
