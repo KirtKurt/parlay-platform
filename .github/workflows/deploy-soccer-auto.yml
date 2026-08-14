@@ -12,6 +12,10 @@ on:
         default: '0'
         type: choice
         options: ['0', '20', '40', '60', '80']
+  push:
+    branches: [main]
+    paths:
+      - soccer_auto/.deploy-manifest-proof-once
 permissions:
   contents: read
 
