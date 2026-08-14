@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import math
 import os
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -67,10 +67,13 @@ def test_bedrock_failure_falls_back_without_production_authority():
 
 def _synthetic_rows():
     rows = []
-    for day in range(30):
-        slate = f"2026-07-{day + 1:02d}"
-        for game in range(10):
-            value = -1.0 + 2.0 * ((game + day % 3) / 11.0)
+    first_day = date(2026, 5, 1)
+    # Sixty complete slates with twenty games each ensures that validation and
+    # untouched partitions both clear the evaluator's 100-row floor.
+    for day in range(60):
+        slate = (first_day + timedelta(days=day)).isoformat()
+        for game in range(20):
+            value = float(game) - 9.5
             home_won = int(value >= 0.0)
             rows.append(
                 {
@@ -79,7 +82,7 @@ def _synthetic_rows():
                     "features": {
                         "deltaGapHome": value,
                         "reversalGapHome": 0.0,
-                        # Deliberately weak baseline.
+                        # Deliberately weak baseline: always selects home.
                         "homeMarketDeVigProbability": 0.5,
                     },
                 }
@@ -109,6 +112,8 @@ def test_hypothesis_is_selected_on_training_and_test_is_untouched():
     assert result["wholeSlateChronologyPreserved"] is True
     assert result["untouchedHoldoutUsedForSelection"] is False
     assert result["productionAuthority"] is False
+    assert result["validation"]["rowCount"] >= 100
+    assert result["untouchedHoldout"]["rowCount"] >= 100
     assert result["untouchedHoldout"]["overallAccuracy"] > 0.9
 
 
