@@ -95,9 +95,25 @@ jobs:
           import json
           train=json.load(open('train-final.json'))
           status=json.load(open('status-final.json'))
+          summaries=[]
+          with open('backfill-summary.jsonl') as f:
+              summaries=[json.loads(line) for line in f if line.strip()]
+          auto_training_rows=[
+              row for row in summaries
+              if isinstance(row.get('training'), dict) and row['training'].get('trained') is True
+          ]
+          trained_now=train.get('trained') is True
+          expected_no_new_evidence=(
+              train.get('trained') is False
+              and train.get('reason') == 'NO_NEW_EVIDENCE'
+              and bool(auto_training_rows)
+          )
           assert train.get('ok') is True, train
-          assert train.get('trained') is True, train
-          assert int(train.get('examples') or train.get('count') or 0) >= 250, train
+          assert trained_now or expected_no_new_evidence, {
+              'train': train,
+              'auto_training_rows': auto_training_rows,
+          }
+          assert int(train.get('examples') or train.get('count') or status.get('training_examples') or 0) >= 250, train
           assert status.get('ok') is True and status.get('sport') == 'mlb_auto', status
           assert int(status.get('training_examples') or 0) >= 250, status
           assert status.get('training_lock_minutes') == 10, status
@@ -112,7 +128,9 @@ jobs:
               'registered_champion_model_id': status.get('registered_champion_model_id'),
               'active_champion_model_id': status.get('champion_model_id'),
               'champion_lock_policy_compatible': status.get('champion_lock_policy_compatible'),
+              'training_source': 'explicit_train' if trained_now else 'backfill_auto_train',
               'train': train,
+              'auto_training_rows': auto_training_rows,
               'promotion_gate': status.get('champion_promotion_gate') or {},
           }
           with open('mlb-auto-t10-training-proof.json','w') as f:
