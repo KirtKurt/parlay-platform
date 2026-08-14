@@ -148,10 +148,13 @@ jobs:
           print('historical_rules_enabled', names)
           PY
       - name: Prove isolated runtime integrations
+        env:
+          SOCCER_AWS_REGION: ${{ secrets.AWS_REGION }}
+          SOCCER_SHARED_QUOTA_RESERVE_PERCENT: ${{ inputs.shared_quota_reserve_percent || '0' }}
         run: |
           set -euo pipefail
           stack_name=parlay-platform-soccer-auto
-          region='${{ secrets.AWS_REGION }}'
+          region="$SOCCER_AWS_REGION"
 
           physical_function() {
             aws cloudformation describe-stack-resource \
@@ -333,7 +336,7 @@ jobs:
           open('/tmp/soccer-authoritative-settlements.txt', 'w').write(str(eligible))
           print('historical_training_rows_after_materialization', supervised)
           PY
-          printf '%s' '${{ inputs.shared_quota_reserve_percent || '0' }}' > /tmp/soccer-reserve-percent.txt
+          printf '%s' "$SOCCER_SHARED_QUOTA_RESERVE_PERCENT" > /tmp/soccer-reserve-percent.txt
           invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_controller_smoke"}' controller_before_llm
           python - <<'PY'
           import json
