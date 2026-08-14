@@ -21,6 +21,7 @@ from .canonical import (
     iso_utc,
     parse_utc,
     scope_hash,
+    schedule_identity,
     stable_event_key,
 )
 from .config import PUBLISHED_SCORE_SUPPORT
@@ -136,35 +137,89 @@ class SoccerStore:
         event_id = str(event["id"])
         commence_time = iso_utc(str(event["commence_time"]))
         event_key = stable_event_key(sport_key, event_id)
-        current = self.events.get_item(Key={"PK": event_key, "SK": "METADATA"}, ConsistentRead=True).get("Item")
-        schedule_revision = int((current or {}).get("schedule_revision") or 1)
-        if current and str(current.get("commence_time")) != commence_time:
-            schedule_revision += 1
-        item = {
-            "PK": event_key,
-            "SK": "METADATA",
-            "entity_type": "SOCCER_EVENT",
-            "event_key": event_key,
-            "event_id": event_id,
+        incoming = {
             "sport_key": sport_key,
-            "sport_title": event.get("sport_title"),
+            "event_id": event_id,
             "commence_time": commence_time,
-            "schedule_revision": schedule_revision,
             "home_team": event.get("home_team"),
             "away_team": event.get("away_team"),
-            "first_seen_at": (current or {}).get("first_seen_at") or observed_at,
-            "last_seen_at": observed_at,
-            "last_dispatched_at": (
-                (current or {}).get("last_dispatched_at")
-                if not current or str(current.get("commence_time")) == commence_time
-                else None
-            ),
-            "completed": bool((current or {}).get("completed", False)),
-            "GSI1PK": "COMPLETED" if bool((current or {}).get("completed", False)) else "ACTIVE",
-            "GSI1SK": commence_time,
         }
-        self.events.put_item(Item=ddb_safe(item))
-        return plain(item)
+        incoming_identity = schedule_identity(incoming)
+        observed_at = iso_utc(observed_at)
+        key = {"PK": event_key, "SK": "METADATA"}
+        for _ in range(8):
+            current = self.events.get_item(Key=key, ConsistentRead=True).get("Item")
+            current_plain = plain(current) if current else {}
+            current_seen = str(current_plain.get("last_seen_at") or "")
+            # Provider and Lambda responses can arrive out of order. Never let
+            # an older observation repaint current schedule authority.
+            if current_seen and current_seen >= observed_at:
+                return current_plain
+            current_identity = str(current_plain.get("schedule_identity") or "")
+            if current_plain and not current_identity:
+                current_identity = schedule_identity(current_plain)
+            identity_changed = bool(current_plain and current_identity != incoming_identity)
+            current_revision = int(current_plain.get("schedule_revision") or 0)
+            current_metadata_revision = int(
+                current_plain.get("metadata_revision") or 0
+            )
+            schedule_revision = max(1, current_revision + int(identity_changed))
+            completed = bool(current_plain.get("completed", False))
+            item = {
+                **key,
+                "entity_type": "SOCCER_EVENT",
+                "event_key": event_key,
+                "event_id": event_id,
+                "sport_key": sport_key,
+                "sport_title": event.get("sport_title") or current_plain.get("sport_title"),
+                "commence_time": commence_time,
+                "schedule_revision": schedule_revision,
+                "metadata_revision": current_metadata_revision + 1,
+                "schedule_identity": incoming_identity,
+                "home_team": event.get("home_team"),
+                "away_team": event.get("away_team"),
+                "first_seen_at": current_plain.get("first_seen_at") or observed_at,
+                "last_seen_at": observed_at,
+                "last_dispatched_at": (
+                    current_plain.get("last_dispatched_at") if not identity_changed else None
+                ),
+                "completed": completed,
+                "completed_seen_at": current_plain.get("completed_seen_at"),
+                "GSI1PK": "COMPLETED" if completed else "ACTIVE",
+                "GSI1SK": commence_time,
+            }
+            kwargs: dict[str, Any] = {
+                "Item": ddb_safe(item),
+                "ConditionExpression": (
+                    "attribute_not_exists(PK)"
+                    if not current_plain
+                    else (
+                        "last_seen_at=:seen AND schedule_revision=:revision AND "
+                        "metadata_revision=:metadata_revision"
+                        if current_metadata_revision > 0
+                        else (
+                            "last_seen_at=:seen AND schedule_revision=:revision AND "
+                            "attribute_not_exists(metadata_revision)"
+                        )
+                    )
+                ),
+            }
+            if current_plain:
+                kwargs["ExpressionAttributeValues"] = {
+                    ":seen": current_seen,
+                    ":revision": current_revision,
+                }
+                if current_metadata_revision > 0:
+                    kwargs["ExpressionAttributeValues"][":metadata_revision"] = (
+                        current_metadata_revision
+                    )
+            try:
+                self.events.put_item(**kwargs)
+                return plain(item)
+            except ClientError as exc:
+                if not _is_conditional_failure(exc):
+                    raise
+        raise RuntimeError("event schedule update contention did not converge")
 
     def record_collection_window_call(
         self,
@@ -267,15 +322,26 @@ class SoccerStore:
     def mark_dispatched(self, event_key: str, observed_at: str) -> None:
         self.events.update_item(
             Key={"PK": event_key, "SK": "METADATA"},
-            UpdateExpression="SET last_dispatched_at=:value",
-            ExpressionAttributeValues={":value": observed_at},
+            UpdateExpression=(
+                "SET last_dispatched_at=:value "
+                "ADD metadata_revision :one"
+            ),
+            ExpressionAttributeValues={":value": observed_at, ":one": 1},
         )
 
     def mark_completed(self, event_key: str, observed_at: str) -> None:
         self.events.update_item(
             Key={"PK": event_key, "SK": "METADATA"},
-            UpdateExpression="SET completed=:yes, GSI1PK=:state, completed_seen_at=:seen",
-            ExpressionAttributeValues={":yes": True, ":state": "COMPLETED", ":seen": observed_at},
+            UpdateExpression=(
+                "SET completed=:yes, GSI1PK=:state, completed_seen_at=:seen "
+                "ADD metadata_revision :one"
+            ),
+            ExpressionAttributeValues={
+                ":yes": True,
+                ":state": "COMPLETED",
+                ":seen": observed_at,
+                ":one": 1,
+            },
         )
 
     def claim_job(self, job_key: str, expires_at_epoch: int) -> bool:
@@ -755,6 +821,15 @@ class SoccerStore:
         schedule_revision = int(event.get("schedule_revision") or 0)
         if schedule_revision <= 0:
             raise ValueError("a positive schedule_revision is required for a snapshot")
+        event_schedule_identity = str(event.get("schedule_identity") or schedule_identity(event))
+        payload_schedule_identity = schedule_identity(payload)
+        if payload_schedule_identity != event_schedule_identity:
+            raise ValueError("provider event-odds response schedule identity mismatch")
+        payload_commence = parse_utc(str(payload["commence_time"]))
+        if parse_utc(observed_at) >= min(
+            parse_utc(str(event["commence_time"])), payload_commence
+        ):
+            raise ValueError("provider event-odds response arrived at or after kickoff")
         slot = floor_slot(observed_at, slot_seconds)
         scope = scope_hash(bookmakers=bookmakers, markets=markets)
         raw_uri, payload_hash = self.archive_json(
@@ -766,6 +841,7 @@ class SoccerStore:
                 "event_key": event_key,
                 "scope": scope,
                 "schedule_revision": str(schedule_revision),
+                "schedule_identity": event_schedule_identity,
             },
         )
         normalized_books = payload.get("bookmakers") or []
@@ -809,6 +885,7 @@ class SoccerStore:
             "entity_type": "SOCCER_SNAPSHOT_ATTEMPT",
             **candidate.__dict__,
             "schedule_revision": schedule_revision,
+            "schedule_identity": event_schedule_identity,
             "slot_start": iso_utc(slot),
             "slot_seconds": slot_seconds,
             "scope_hash": scope,
@@ -851,6 +928,7 @@ class SoccerStore:
                     "entity_type": "SOCCER_CANONICAL_SNAPSHOT_SLOT",
                     **candidate.__dict__,
                     "schedule_revision": schedule_revision,
+                    "schedule_identity": event_schedule_identity,
                     "slot_start": iso_utc(slot),
                     "slot_seconds": slot_seconds,
                     "grace_seconds": grace_seconds,
@@ -861,8 +939,16 @@ class SoccerStore:
                     "canonical": True,
                     "training_eligible": True,
                 }
-                condition = "attribute_not_exists(SK)" if not current_plain else "payload_sha256=:expected"
-                values = None if not current_plain else {":expected": current_plain["payload_sha256"]}
+                condition = (
+                    "attribute_not_exists(SK)"
+                    if not current_plain
+                    else "attempt_id=:expected"
+                )
+                values = (
+                    None
+                    if not current_plain
+                    else {":expected": current_plain["attempt_id"]}
+                )
                 try:
                     kwargs: dict[str, Any] = {"Item": ddb_safe(pointer), "ConditionExpression": condition}
                     if values:
@@ -889,6 +975,7 @@ class SoccerStore:
         cutoff: str,
         *,
         schedule_revision: int | None = None,
+        schedule_identity: str | None = None,
     ) -> list[dict[str, Any]]:
         kwargs: dict[str, Any] = {
             "KeyConditionExpression": Key("PK").eq(event_key) & Key("SK").begins_with("SLOT#"),
@@ -902,6 +989,10 @@ class SoccerStore:
                 row = plain(item)
                 if schedule_revision is not None and int(row.get("schedule_revision") or 0) != int(
                     schedule_revision
+                ):
+                    continue
+                if schedule_identity is not None and str(row.get("schedule_identity") or "") != str(
+                    schedule_identity
                 ):
                     continue
                 finalized_at = parse_utc(row["slot_start"]) + timedelta(

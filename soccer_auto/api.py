@@ -2,12 +2,17 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Mapping
 
-from boto3.dynamodb.conditions import Attr, Key
+from boto3.dynamodb.conditions import Key
 
+from .canonical import schedule_identity
 from .odds_api import provider_safety_config
 from .storage import SoccerStore, plain
+
+
+PUBLIC_BINDING_VERSION = "soccer-auto-public-prediction-binding-v1"
 
 
 def _response(status: int, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -32,6 +37,7 @@ def status(store: SoccerStore) -> dict[str, Any]:
             "shared_provider_safety": provider_safety_config(),
             "distributed_rate_limit_state": store.rate_limit_status(),
             "provider_429_telemetry": provider_429_telemetry,
+            "historical_backfill": _historical_status(store),
         }
     return {
         "ok": True,
@@ -39,23 +45,198 @@ def status(store: SoccerStore) -> dict[str, Any]:
         "shared_provider_safety": provider_safety_config(),
         "distributed_rate_limit_state": store.rate_limit_status(),
         "provider_429_telemetry": provider_429_telemetry,
+        "historical_backfill": _historical_status(store),
     }
 
 
 def predictions(store: SoccerStore, limit: int = 100) -> dict[str, Any]:
-    response = store.predictions.query(
-        IndexName="ByPredictionTime",
-        KeyConditionExpression=Key("GSI1PK").eq("SOCCER_PREDICTIONS"),
-        ScanIndexForward=False,
-        Limit=limit,
-    )
-    rows = [plain(row) for row in response.get("Items") or []]
+    rows: list[dict[str, Any]] = []
+    query: dict[str, Any] = {
+        "IndexName": "ByPredictionTime",
+        "KeyConditionExpression": Key("GSI1PK").eq("SOCCER_PREDICTIONS"),
+        "ScanIndexForward": False,
+        "Limit": 500,
+    }
+    raw_cap = min(2000, max(500, limit * 4))
+    for _ in range(4):
+        response = store.predictions.query(**query)
+        rows.extend(plain(row) for row in response.get("Items") or [])
+        cursor = response.get("LastEvaluatedKey")
+        if not cursor or len(rows) >= raw_cap:
+            break
+        query["ExclusiveStartKey"] = cursor
+    rows = rows[:raw_cap]
+    current_events: dict[str, Mapping[str, Any] | None] = {}
+    public_bindings: dict[tuple[str, int, str, str], Mapping[str, Any] | None] = {}
+    public_rows: dict[tuple[str, str, str], dict[str, Any]] = {}
+    suppressed = 0
+    for row in rows:
+        if (
+            row.get("prediction_status") not in {"PUBLISHED", "NO_PICK"}
+            or row.get("model_authority") != "CHAMPION"
+            or row.get("immutable") is not True
+        ):
+            suppressed += 1
+            continue
+        event_key = str(row.get("event_key") or "")
+        if event_key not in current_events:
+            current_events[event_key] = store.get_event(event_key)
+        current = current_events[event_key] or {}
+        try:
+            revision = int(row.get("schedule_revision") or 0)
+            horizon = str(row.get("horizon") or "")
+            target = str(row.get("target") or "")
+            row_identity = str(row.get("schedule_identity") or "")
+            current_identity = str(current.get("schedule_identity") or "")
+            same_schedule = bool(
+                event_key
+                and current
+                and revision > 0
+                and revision == int(current.get("schedule_revision") or 0)
+                and row_identity
+                and current_identity
+                and row_identity == current_identity
+                and row_identity == schedule_identity(row)
+                and current_identity == schedule_identity(current)
+                and str(row.get("commence_time") or "")
+                == str(current.get("commence_time") or "")
+                and horizon == "T45"
+                and target == "result_1x2"
+            )
+        except (KeyError, TypeError, ValueError):
+            same_schedule = False
+        if not same_schedule:
+            suppressed += 1
+            continue
+        binding_key = (event_key, revision, horizon, target)
+        if binding_key not in public_bindings:
+            binding = store.ops.get_item(
+                Key={
+                    "PK": f"PUBLIC_PREDICTION_BINDING#{event_key}",
+                    "SK": f"REV#{revision}#HORIZON#{horizon}#TARGET#{target}",
+                },
+                ConsistentRead=True,
+            ).get("Item")
+            public_bindings[binding_key] = plain(binding) if binding else None
+        binding = public_bindings[binding_key] or {}
+        try:
+            binding_matches = bool(
+                binding
+                and binding.get("entity_type") == "SOCCER_PUBLIC_PREDICTION_BINDING"
+                and binding.get("binding_version") == PUBLIC_BINDING_VERSION
+                and binding.get("immutable") is True
+                and str(binding.get("event_key") or "") == event_key
+                and str(binding.get("event_id") or "") == str(row.get("event_id") or "")
+                and str(binding.get("sport_key") or "") == str(row.get("sport_key") or "")
+                and str(binding.get("commence_time") or "")
+                == str(row.get("commence_time") or "")
+                and int(binding.get("schedule_revision") or 0) == revision
+                and str(binding.get("schedule_identity") or "") == row_identity
+                and str(binding.get("horizon") or "") == horizon
+                and str(binding.get("target") or "") == target
+                and str(binding.get("lock_sk") or "")
+                == f"LOCK#{horizon}#REV#{revision}#TARGET#{target}"
+                and bool(str(row.get("feature_hash") or ""))
+                and str(binding.get("feature_hash") or "")
+                == str(row.get("feature_hash") or "")
+                and bool(str(row.get("model_digest") or ""))
+                and str(binding.get("model_digest") or "")
+                == str(row.get("model_digest") or "")
+            )
+        except (TypeError, ValueError):
+            binding_matches = False
+        if not binding_matches:
+            suppressed += 1
+            continue
+        identity = (event_key, horizon, target)
+        existing = public_rows.get(identity)
+        if existing is None or str(row.get("created_at") or "") < str(
+            existing.get("created_at") or ""
+        ):
+            public_rows[identity] = row
+        else:
+            suppressed += 1
+    visible = sorted(
+        public_rows.values(),
+        key=lambda row: (str(row.get("commence_time") or ""), str(row.get("event_key") or "")),
+        reverse=True,
+    )[:limit]
     return {
         "ok": True,
         "system": "soccer_auto",
-        "count": min(len(rows), limit),
-        "predictions": rows[:limit],
+        "count": len(visible),
+        "predictions": visible,
+        "audit_rows_suppressed": suppressed,
+        "public_contract": "one immutable current-schedule T45 public decision per event",
     }
+
+
+def _query_partition(table: Any, pk: str, *, limit: int = 1000) -> tuple[list[dict[str, Any]], bool]:
+    response = table.query(
+        KeyConditionExpression=Key("PK").eq(pk),
+        ConsistentRead=True,
+        Limit=max(1, int(limit)),
+    )
+    return [plain(row) for row in response.get("Items") or []], bool(response.get("LastEvaluatedKey"))
+
+
+def _historical_status(store: SoccerStore) -> dict[str, Any]:
+    cursors, truncated = _query_partition(store.ops, "HISTORICAL_CURSOR", limit=1000)
+    detail = [row for row in cursors if not str(row.get("SK") or "").endswith("#SUMMARY")]
+    completed = [row for row in detail if row.get("status") == "COMPLETE"]
+    progressing = [
+        row
+        for row in detail
+        if row.get("status") in {"RUNNING", "PENDING", "QUOTA_DEFERRED"}
+    ]
+    latest_progress = max(
+        (str(row.get("last_progress_at") or row.get("updated_at") or "") for row in detail),
+        default="",
+    )
+    return {
+        "enabled": os.getenv("SOCCER_AUTO_HISTORICAL_BACKFILL_ENABLED", "true").lower()
+        == "true",
+        "mode": "RAW_ARCHIVE_ONLY",
+        "state": "COMPLETE" if detail and len(completed) == len(detail) else "RUNNING" if progressing else "PENDING",
+        "cursor_rows": len(detail),
+        "completed_cursor_rows": len(completed),
+        "calls_completed": sum(int(row.get("calls_completed") or 0) for row in detail),
+        "latest_progress_at": latest_progress or None,
+        "cursors_truncated": truncated,
+        "historical_training_rows": 0,
+        "training_note": "Raw historical odds remain ineligible until joined to authoritative final results with point-in-time T45 materialization.",
+    }
+
+
+def _bounded_ops_diagnostics(
+    store: SoccerStore,
+    *,
+    page_limit: int = 4,
+    row_limit: int = 2000,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Bound API work so the coverage endpoint cannot full-scan itself into a 504."""
+    entity_types = {
+        "SOCCER_MARKET_INVENTORY",
+        "SOCCER_EVENT_COVERAGE_PLAN",
+        "SOCCER_EVENT_COVERAGE_FETCH",
+        "SOCCER_COLLECTION_FAILURE",
+    }
+    rows: list[dict[str, Any]] = []
+    kwargs: dict[str, Any] = {"Limit": 500}
+    cursor = None
+    for _ in range(max(1, page_limit)):
+        response = store.ops.scan(**kwargs)
+        for item in response.get("Items") or []:
+            row = plain(item)
+            if row.get("entity_type") in entity_types:
+                rows.append(row)
+                if len(rows) >= max(1, row_limit):
+                    return rows, True
+        cursor = response.get("LastEvaluatedKey")
+        if not cursor:
+            return rows, False
+        kwargs["ExclusiveStartKey"] = cursor
+    return rows, bool(cursor)
 
 
 def _latest_cycle_coverage(
@@ -110,69 +291,22 @@ def _latest_cycle_coverage(
 
 def coverage(store: SoccerStore) -> dict[str, Any]:
     competitions = store.list_competitions()
-    inventories = [
-        row
-        for row in store.scan_all(
-            store.ops,
-            FilterExpression=Attr("entity_type").eq("SOCCER_MARKET_INVENTORY"),
-        )
-    ]
+    diagnostic_rows, diagnostics_truncated = _bounded_ops_diagnostics(store)
+    inventories = [row for row in diagnostic_rows if row.get("entity_type") == "SOCCER_MARKET_INVENTORY"]
     books = set()
     markets = set()
     for row in inventories:
         for book, detail in (row.get("inventory") or {}).items():
             books.add(book)
             markets.update(detail.get("markets") or [])
-    cursors = [
-        row
-        for row in store.scan_all(
-            store.ops,
-            FilterExpression=Attr("PK").eq("HISTORICAL_CURSOR"),
-        )
-    ]
-    daily_windows = [
-        row
-        for row in store.scan_all(
-            store.ops,
-            FilterExpression=Attr("PK").eq("COLLECTION_WINDOW"),
-        )
-    ]
+    cursors, cursors_truncated = _query_partition(store.ops, "HISTORICAL_CURSOR")
+    daily_windows, windows_truncated = _query_partition(store.ops, "COLLECTION_WINDOW")
     daily_windows.sort(key=lambda row: row.get("match_day") or "", reverse=True)
-    coverage_plans = [
-        row
-        for row in store.scan_all(
-            store.ops,
-            FilterExpression=Attr("entity_type").eq("SOCCER_EVENT_COVERAGE_PLAN"),
-        )
-    ]
-    coverage_fetches = [
-        row
-        for row in store.scan_all(
-            store.ops,
-            FilterExpression=Attr("entity_type").eq("SOCCER_EVENT_COVERAGE_FETCH"),
-        )
-    ]
-    collection_failures = [
-        row
-        for row in store.scan_all(
-            store.ops,
-            FilterExpression=Attr("entity_type").eq("SOCCER_COLLECTION_FAILURE"),
-        )
-    ]
-    quota_blocks = [
-        row
-        for row in store.scan_all(
-            store.ops,
-            FilterExpression=Attr("entity_type").eq("SOCCER_SHARED_PROVIDER_QUOTA_GUARD"),
-        )
-    ]
-    rate_limit_blocks = [
-        row
-        for row in store.scan_all(
-            store.ops,
-            FilterExpression=Attr("entity_type").eq("SOCCER_DISTRIBUTED_RATE_LIMIT_BLOCK"),
-        )
-    ]
+    coverage_plans = [row for row in diagnostic_rows if row.get("entity_type") == "SOCCER_EVENT_COVERAGE_PLAN"]
+    coverage_fetches = [row for row in diagnostic_rows if row.get("entity_type") == "SOCCER_EVENT_COVERAGE_FETCH"]
+    collection_failures = [row for row in diagnostic_rows if row.get("entity_type") == "SOCCER_COLLECTION_FAILURE"]
+    quota_blocks, quota_blocks_truncated = _query_partition(store.ops, "QUOTA_GUARD")
+    rate_limit_blocks, rate_blocks_truncated = _query_partition(store.ops, "RATE_LIMIT_GUARD")
     cycle_coverage = _latest_cycle_coverage(coverage_plans, coverage_fetches)
     expected_pairs = cycle_coverage["expected_pairs"]
     returned_pairs = cycle_coverage["returned_pairs"]
@@ -207,9 +341,21 @@ def coverage(store: SoccerStore) -> dict[str, Any]:
                 bool(expected_pairs)
                 and not missing_pairs
                 and not any(row.get("permanent") for row in collection_failures)
+                and not diagnostics_truncated
             ),
+            "diagnostics_truncated": diagnostics_truncated,
         },
         "historical_cursors": cursors,
+        "historical_backfill": _historical_status(store),
+        "response_truncated": any(
+            (
+                diagnostics_truncated,
+                cursors_truncated,
+                windows_truncated,
+                quota_blocks_truncated,
+                rate_blocks_truncated,
+            )
+        ),
         "shared_provider_safety": provider_safety_config(),
         "distributed_rate_limit_state": store.rate_limit_status(),
         "provider_429_telemetry": store.provider_429_status(),
@@ -218,7 +364,7 @@ def coverage(store: SoccerStore) -> dict[str, Any]:
             "match_day_timezone": "America/New_York",
             "opens": "10 hours before the first kickoff of each match-day",
             "no_early_market_or_odds_calls": True,
-            "cadence": "15 minutes minimum, 5 minutes inside T-6h, 1 minute in-play",
+            "cadence": "15 minutes after the window opens and 5 minutes inside T-6h; pre-match only",
         },
         "historical_label_limit": "The Odds API historical odds do not include final results; unlabeled historical snapshots remain training-ineligible.",
     }

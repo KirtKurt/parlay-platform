@@ -23,8 +23,9 @@ CloudFormation stack with MLB, tennis, or the legacy soccer implementation.
 - EventBridge checks the boundary every minute. The enforceable invariant is no
   early provider call; the first actual call and positive drift are persisted.
   Drift over two minutes is recorded as an SLA violation.
-- After opening, every game is collected at least every 15 minutes, every five
-  minutes inside six hours of kickoff, and every minute while live/recently due.
+- After opening, every game is collected at least every 15 minutes and every
+  five minutes inside six hours of kickoff. Match-market collection is strictly
+  pre-match; score settlement continues after kickoff.
 - A future fixture not seen for three consecutive inventory intervals is
   excluded from the day planner. A newly discovered earlier fixture opens the
   window immediately and records the resulting late-discovery drift.
@@ -64,9 +65,10 @@ Tournament outright data is collected on its own five-minute cadence. Scores
 and completed results are permanently settled while they remain inside the
 provider's three-day result window.
 
-Historical featured and additional-market backfills are resumable and archive
-provider timestamps. They are opt-in at initial activation because the one API
-subscription is shared with existing sports. Historical odds remain
+Historical featured and additional-market raw backfills are enabled by default,
+resumable per league, monotonically checkpointed, and archive provider
+timestamps. A kill switch leaves the function/status surface deployed while
+disabling its schedules and paid work. Historical odds remain
 training-ineligible unless a real result label exists: The Odds API does not
 provide historical results, and odds must never be treated as labels.
 
@@ -93,15 +95,24 @@ The production prediction target is calibrated three-class
 6. Promotion is atomic and fail-closed. Accuracy is reported but never used as
    the sole promotion criterion.
 
+Every event revision carries a full schedule-identity digest over sport, event,
+kickoff, and both teams. Provider responses are revalidated after network I/O;
+late or mismatched payloads are archived but never canonicalized. The first
+champion evaluated for an event's T-45 public decision is immutably bound to
+that lock. A later champion cannot repaint the pick, stale revisions are hidden
+from the public API, and no public decision may be created after T-10.
+
 Knockout competitions remain quarantined from supervised 1X2 training unless
 regulation-time semantics are independently verified. Match scores cannot label
 player, card, corner, first-half, or qualification props.
 
 ## LLM boundary
 
-The LLM analyst runs every six hours and uses Amazon Bedrock Nova 2 Lite through the US
-cross-Region inference profile (`us.amazon.nova-2-lite-v1:0`). It receives only isolated
-soccer coverage summaries, immutable feature-schema metadata, and model reports.
+The LLM analyst runs hourly and uses a real Amazon Bedrock US cross-Region
+profile chain: Nova 2 Lite, Nova Lite, then Nova Micro. A quota or transient
+failure on one model immediately tries the next independently metered model.
+It receives only isolated soccer coverage summaries, immutable feature-schema
+metadata, and non-audit model metadata.
 It may propose a small bounded hyperparameter search and diagnostics.
 
 Every LLM response is treated as untrusted input. Code enforces numeric bounds,
@@ -110,16 +121,16 @@ prediction, alter a label or feature lock, promote a model, change deployment
 resources, or access MLB/tennis state. Deterministic chronological evaluation is
 the sole authority for accepting an LLM-proposed experiment. Its dedicated IAM
 role can read only soccer diagnostics, write only the `LLM_ANALYSIS` operations
-partition, and invoke only that inference profile and its underlying Nova 2 Lite
-foundation-model resources.
+partition, and invoke only the three exact inference profiles and their exact
+underlying Nova foundation-model resources.
 
-A fresh validated analysis is reused without another model call. If Bedrock
-returns its specific daily-token quota throttle, the analyst records a bounded
-30-day `LAST_ATTEMPT` audit row, reports `DEFERRED_QUOTA`, and retries on the next
-six-hour schedule. It does not replace `LATEST`, train, predict, or promote while
-deferred. Every other Bedrock or response-validation error remains fail-closed,
-and the controller blocks authority whenever the configured analyst lacks a
-fresh, digest-validated `LATEST` analysis.
+A fresh validated analysis is reused without another model call. Deployment
+forces a new Converse call and succeeds only after a provenance-signed,
+digest-validated `LATEST` analysis is stored with the actual selected model,
+context digest, clean stop reason, and token usage. Exhaustion of every fallback
+is a visible Lambda failure rather than a false-green deferral. The analyst is
+genuine adaptive research authority for bounded trial proposals, but its prose
+or temporary unavailability cannot override deterministic promotion gates.
 
 ## Non-interference controls
 
@@ -178,14 +189,16 @@ fresh, digest-validated `LATEST` analysis.
   burst-one policy without exposing the credential. MLB and tennis remain
   outside this soccer-only stack and ledger; the Odds API subscription and
   credential are still shared.
-- Historical raw backfill remains disabled by default during the initial
-  coverage-first activation. When explicitly enabled, its small resumable
-  per-cycle calls use the same distributed three-RPS limiter and shared-credit
-  admission controls. Historical odds rows remain training-ineligible until
-  joined to an authoritative final result; prices are never used as labels.
-- The deployment workflow is manual-only after the verified coverage-first
-  activation. Future source changes cannot deploy this stack merely by being
-  pushed to `main`.
+- Historical raw backfill is enabled by default. Its bounded, resumable
+  per-league calls use the same distributed three-RPS limiter and shared-credit
+  admission controls, and terminal cursors never wrap or replay. Historical
+  odds rows remain training-ineligible until joined to an authoritative final
+  result with point-in-time T-45 materialization; prices are never used as
+  labels.
+- This repair uses one exact marker-path push trigger so the connected GitHub
+  publisher can run the verified deployment once. The marker and trigger are
+  removed together after live verification; ordinary soccer source pushes do
+  not deploy the stack, and the workflow then remains manual-only.
 
 ## Deployment recovery
 

@@ -5,7 +5,7 @@ import os
 from datetime import timedelta
 from typing import Any, Mapping
 
-from .canonical import digest, iso_utc, stable_event_key
+from .canonical import digest, iso_utc, parse_utc, schedule_identity, stable_event_key
 from .collector import _client
 from .odds_api import DEFAULT_MAX_ATTEMPTS
 from .storage import SoccerStore, ddb_safe, now_utc, plain
@@ -115,6 +115,8 @@ def build_settlement(
     if schedule_revision <= 0:
         raise ValueError("a positive schedule_revision is required for settlement")
     commence_time = iso_utc(str(score_event["commence_time"]))
+    if parse_utc(observed_at) < parse_utc(commence_time):
+        raise ValueError("completed score cannot be settled before scheduled kickoff")
     home_team = str(score_event.get("home_team") or "")
     away_team = str(score_event.get("away_team") or "")
     scores = _score_map(score_event)
@@ -130,6 +132,7 @@ def build_settlement(
     )
     allow_ambiguous = os.getenv("SOCCER_AUTO_ALLOW_UNVERIFIED_KNOCKOUT_LABELS", "false").lower() == "true"
     event_key = stable_event_key(sport_key, event_id)
+    identity = str(score_event.get("schedule_identity") or schedule_identity(score_event))
     item = {
         "PK": event_key,
         "SK": "FINAL#v1",
@@ -140,6 +143,7 @@ def build_settlement(
         "sport_key": sport_key,
         "commence_time": commence_time,
         "schedule_revision": schedule_revision,
+        "schedule_identity": identity,
         "completed_at": score_event.get("last_update") or observed_at,
         "observed_at": observed_at,
         "home_team": home_team,
@@ -165,6 +169,7 @@ def build_settlement(
         {
             "event_key": event_key,
             "schedule_revision": schedule_revision,
+            "schedule_identity": identity,
             "commence_time": commence_time,
             "sport_key": sport_key,
             "home_team": home_team,
@@ -246,11 +251,16 @@ def settlement_handler(event: Mapping[str, Any] | None, context: Any) -> dict[st
             except Exception:
                 store.release_job(claim)
                 raise
-            store.record_quota(response, operation="scores", observed_at=observed_at)
+            # Chronology and quota observations are evidence about when the
+            # provider response was in hand, never when the request began.
+            score_observed_at = iso_utc(now_utc())
+            store.record_quota(
+                response, operation="scores", observed_at=score_observed_at
+            )
             store.archive_json(
                 "scores",
                 response.data,
-                observed_at=observed_at,
+                observed_at=score_observed_at,
                 identity=sport_key,
                 metadata={"sport_key": sport_key},
             )
@@ -260,18 +270,54 @@ def settlement_handler(event: Mapping[str, Any] | None, context: Any) -> dict[st
                 raw = {**raw, "sport_key": raw.get("sport_key") or sport_key}
                 if not raw.get("commence_time"):
                     raise ValueError("completed score event is missing commence_time")
-                stored_event = store.put_event(raw, observed_at)
+                candidate_event_key = stable_event_key(
+                    str(raw["sport_key"]), str(raw.get("id") or "")
+                )
+                # Scores are label evidence, never schedule authority. An
+                # out-of-order or mismatched score response cannot repaint the
+                # event revision that collection and T-45 locking used.
+                stored_event = store.get_event(candidate_event_key)
+                try:
+                    identity_matches = bool(
+                        stored_event
+                        and schedule_identity(raw)
+                        == str(
+                            stored_event.get("schedule_identity")
+                            or schedule_identity(stored_event)
+                        )
+                    )
+                except (KeyError, TypeError, ValueError):
+                    identity_matches = False
+                if not identity_matches:
+                    store.ops.put_item(
+                        Item=ddb_safe(
+                            {
+                                "PK": "SETTLEMENT_CONFLICT",
+                                "SK": f"{candidate_event_key}#{score_observed_at}#SCHEDULE_IDENTITY",
+                                "entity_type": "SOCCER_SETTLEMENT_CONFLICT",
+                                "event_key": candidate_event_key,
+                                "reason": "SCORE_SCHEDULE_IDENTITY_MISMATCH",
+                                "observed_at": score_observed_at,
+                                "training_blocked": True,
+                            }
+                        )
+                    )
+                    conflicts += 1
+                    continue
                 raw = {
                     **raw,
                     "commence_time": stored_event["commence_time"],
                     "schedule_revision": stored_event["schedule_revision"],
+                    "schedule_identity": str(
+                        stored_event.get("schedule_identity")
+                        or schedule_identity(stored_event)
+                    ),
+                    "home_team": stored_event["home_team"],
+                    "away_team": stored_event["away_team"],
                 }
-                candidate_event_key = stable_event_key(
-                    str(raw["sport_key"]), str(raw.get("id") or "")
-                )
                 inventory = store.cumulative_market_inventory(
                     candidate_event_key,
-                    observed_at=observed_at,
+                    observed_at=score_observed_at,
                 )
                 event_markets = {
                     str(market)
@@ -280,7 +326,7 @@ def settlement_handler(event: Mapping[str, Any] | None, context: Any) -> dict[st
                 }
                 candidate = build_settlement(
                     raw,
-                    observed_at=observed_at,
+                    observed_at=score_observed_at,
                     regulation_ambiguous=regulation_time_ambiguous(
                         str(raw["sport_key"]),
                         competition=competition_rows.get(str(raw["sport_key"])),
@@ -294,14 +340,16 @@ def settlement_handler(event: Mapping[str, Any] | None, context: Any) -> dict[st
                     existing = plain(existing)
                     if existing.get("settlement_digest") == candidate.get("settlement_digest"):
                         idempotent += 1
-                        store.mark_completed(candidate["event_key"], observed_at)
+                        store.mark_completed(candidate["event_key"], score_observed_at)
                     else:
-                        _record_conflict(store, existing, candidate, observed_at)
+                        _record_conflict(
+                            store, existing, candidate, score_observed_at
+                        )
                         conflicts += 1
                     continue
                 if store.put_settlement(candidate):
                     written += 1
-                    store.mark_completed(candidate["event_key"], observed_at)
+                    store.mark_completed(candidate["event_key"], score_observed_at)
         except Exception as exc:
             failures.append({"sport_key": sport_key, "error": str(exc)})
     return {

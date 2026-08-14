@@ -9,7 +9,14 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import boto3
 
-from .canonical import digest, iso_utc, normalize_event_odds, parse_utc, stable_event_key
+from .canonical import (
+    digest,
+    iso_utc,
+    normalize_event_odds,
+    parse_utc,
+    schedule_identity,
+    stable_event_key,
+)
 from .config import (
     ALL_BOOKMAKER_REGIONS,
     CADENCE_SECONDS_BY_HOURS_TO_START,
@@ -604,6 +611,56 @@ def _fetch_event(store: SoccerStore, client: OddsApiClient, job: Mapping[str, An
         metadata={"event_key": event["event_key"], "operation": "event_odds"},
     )
     normalized = normalize_event_odds(response.data or {})
+    current_event = store.get_event(str(event["event_key"]))
+    try:
+        queued_identity = str(event.get("schedule_identity") or schedule_identity(event))
+        current_identity = str(
+            (current_event or {}).get("schedule_identity")
+            or schedule_identity(current_event or {})
+        )
+        response_identity = schedule_identity(normalized)
+        identity_valid = queued_identity == current_identity == response_identity
+        chronology_valid = parse_utc(observed_at) < min(
+            parse_utc(str(event["commence_time"])),
+            parse_utc(str((current_event or {})["commence_time"])),
+            parse_utc(str(normalized["commence_time"])),
+        )
+    except (KeyError, TypeError, ValueError):
+        identity_valid = False
+        chronology_valid = False
+    if not identity_valid or not chronology_valid:
+        reason = (
+            "PROVIDER_RESPONSE_SCHEDULE_IDENTITY_MISMATCH"
+            if not identity_valid
+            else "PROVIDER_RESPONSE_AT_OR_AFTER_KICKOFF"
+        )
+        store.record_collection_failure(
+            event_key=event["event_key"],
+            operation="event_odds_response_validation",
+            observed_at=observed_at,
+            detail=reason,
+            scope={
+                "bookmakers": list(bookmakers),
+                "regions": list(regions),
+                "markets": list(markets),
+                "provider_raw_digest": provider_raw_digest,
+            },
+            permanent=False,
+        )
+        store.put_coverage_fetch(
+            event["event_key"],
+            {"bookmakers": []},
+            observed_at=observed_at,
+            requested_bookmakers=bookmakers,
+            requested_markets=markets,
+            plan_observed_at=str(job.get("discovery_observed_at") or "") or None,
+        )
+        return {
+            "event_key": event["event_key"],
+            "quarantined": True,
+            "reason": reason,
+            "provider_raw_uri": provider_raw_uri,
+        }
     returned_inventory = {
         str(book.get("key")): {
             "title": book.get("title") or book.get("key"),

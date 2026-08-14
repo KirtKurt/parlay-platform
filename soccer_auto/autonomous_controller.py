@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Any, Mapping
 
 import boto3
-from boto3.dynamodb.conditions import Attr, Key
+from boto3.dynamodb.conditions import Key
 
 from .canonical import iso_utc
 from .llm_analyst import latest_validated_analysis
@@ -19,15 +19,19 @@ MAX_CONSECUTIVE_FAILURES = int(os.getenv("SOCCER_AUTO_MAX_CONSECUTIVE_FAILURES",
 
 # These windows intentionally allow multiple missed schedule periods and normal
 # CloudWatch metric publication delay. A component is unhealthy when it has no
-# invocation in its window or when any invocation raised a Lambda error.
+# invocation in its window or its most recent invocation bucket still contains
+# an unresolved Lambda error. An older error cannot poison authority after a
+# later successful scheduled invocation has proved recovery.
 COMPONENT_LIVENESS: Mapping[str, tuple[str, int]] = {
     "inventory": ("SOCCER_AUTO_INVENTORY_FUNCTION", 45),
     "dispatch": ("SOCCER_AUTO_DISPATCH_FUNCTION", 10),
     "freeze": ("SOCCER_AUTO_FREEZE_FUNCTION", 10),
     "settlement": ("SOCCER_AUTO_SETTLEMENT_FUNCTION", 20),
     "trainer": ("SOCCER_AUTO_TRAINER_FUNCTION", 780),
-    "llm_analyst": ("SOCCER_AUTO_LLM_ANALYST_FUNCTION", 420),
+    "llm_analyst": ("SOCCER_AUTO_LLM_ANALYST_FUNCTION", 130),
+    "historical": ("SOCCER_AUTO_HISTORICAL_FUNCTION", 130),
 }
+ADVISORY_COMPONENTS = frozenset({"llm_analyst", "historical"})
 
 
 def _bounded_count(table: Any, limit: int = 1000) -> int:
@@ -90,12 +94,20 @@ def _model_state(store: SoccerStore) -> dict[str, Any]:
 
 
 def _llm_state(store: SoccerStore, observed: datetime) -> dict[str, Any]:
+    attempt = plain(
+        store.ops.get_item(
+            Key={"PK": "LLM_ANALYSIS", "SK": "LAST_ATTEMPT"},
+            ConsistentRead=True,
+        ).get("Item")
+        or {}
+    )
     row = latest_validated_analysis(store, observed)
     if row is None:
         return {
             "configured": bool(os.getenv("SOCCER_AUTO_LLM_MODEL_ID")),
             "analyses": 0,
             "fresh": False,
+            "last_attempt": attempt or None,
         }
     return {
         "configured": bool(os.getenv("SOCCER_AUTO_LLM_MODEL_ID")),
@@ -105,6 +117,9 @@ def _llm_state(store: SoccerStore, observed: datetime) -> dict[str, Any]:
         "validated_trials": len(row.get("recommended_trials") or []),
         "created_at": row.get("created_at"),
         "expires_at": row.get("expires_at"),
+        "model_id": row.get("model_id"),
+        "analysis_origin": row.get("analysis_origin"),
+        "last_attempt": attempt or None,
     }
 
 
@@ -141,6 +156,15 @@ def component_liveness(cloudwatch: Any, observed: datetime) -> dict[str, dict[st
     """Read independent Lambda heartbeats without invoking scheduled work."""
     result: dict[str, dict[str, Any]] = {}
     for component, (environment_key, lookback_minutes) in COMPONENT_LIVENESS.items():
+        if component == "historical" and os.getenv(
+            "SOCCER_AUTO_HISTORICAL_BACKFILL_ENABLED", "true"
+        ).strip().lower() != "true":
+            result[component] = {
+                "healthy": True,
+                "reason": "DISABLED_BY_EXPLICIT_KILL_SWITCH",
+                "lookback_minutes": lookback_minutes,
+            }
+            continue
         function_name = os.getenv(environment_key, "").strip()
         if not function_name:
             result[component] = {
@@ -157,7 +181,7 @@ def component_liveness(cloudwatch: Any, observed: datetime) -> dict[str, dict[st
                 observed=observed,
                 lookback_minutes=lookback_minutes,
             )
-            errors, _ = _metric_sum(
+            errors, latest_error = _metric_sum(
                 cloudwatch,
                 function_name=function_name,
                 metric_name="Errors",
@@ -166,18 +190,23 @@ def component_liveness(cloudwatch: Any, observed: datetime) -> dict[str, dict[st
             )
             if invocations < 1:
                 reason = "NO_RECENT_INVOCATION"
-            elif errors > 0:
+            elif errors > 0 and (
+                not latest or not latest_error or latest_error >= latest
+            ):
                 reason = "RECENT_LAMBDA_ERRORS"
+            elif errors > 0:
+                reason = "RECOVERED_AFTER_ERROR"
             else:
                 reason = "HEALTHY"
             result[component] = {
-                "healthy": reason == "HEALTHY",
+                "healthy": reason in {"HEALTHY", "RECOVERED_AFTER_ERROR"},
                 "reason": reason,
                 "function_name": function_name,
                 "lookback_minutes": lookback_minutes,
                 "invocations": int(invocations),
                 "errors": int(errors),
                 "latest_metric_bucket_at": latest,
+                "latest_error_metric_bucket_at": latest_error,
             }
         except Exception as exc:
             result[component] = {
@@ -200,8 +229,8 @@ def authority_state(
 ) -> tuple[str, str]:
     if liveness_failed:
         return "DEGRADED", "SCHEDULED_COMPONENT_LIVENESS_FAILED"
-    if validated_llm_missing:
-        return "DEGRADED", "FRESH_VALIDATED_LLM_ANALYSIS_MISSING"
+    # The Bedrock analyst is bounded advisory research. Deterministic
+    # chronological gates—not LLM availability or prose—own promotion.
     if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
         return "DEGRADED", "FAILURE_CIRCUIT_BREAKER"
     if model.get("automatic_prediction_allowed"):
@@ -217,6 +246,7 @@ def run_cycle() -> dict[str, Any]:
     previous = store.ops.get_item(Key={"PK": "AUTONOMY", "SK": "STATE"}, ConsistentRead=True).get("Item") or {}
     actions: dict[str, Any] = {}
     failures: list[str] = []
+    warnings: list[str] = []
 
     actions["catalog"] = {
         "scheduled": True,
@@ -228,32 +258,33 @@ def run_cycle() -> dict[str, Any]:
     # EventBridge schedules.  The controller observes them rather than doubling
     # provider calls or training work every fifteen minutes.
     liveness = component_liveness(boto3.client("cloudwatch"), observed)
-    for action in ("inventory", "dispatch", "freeze", "settlement", "trainer", "llm_analyst"):
+    for action in COMPONENT_LIVENESS:
         actions[action] = {
             "scheduled": True,
             "invoked_by_controller": False,
             "liveness": liveness[action],
         }
         if not liveness[action]["healthy"]:
-            failures.append(f"component_liveness:{action}:{liveness[action]['reason']}")
+            issue = f"component_liveness:{action}:{liveness[action]['reason']}"
+            (warnings if action in ADVISORY_COMPONENTS else failures).append(issue)
 
     queues = _queue_health(store)
     if queues.get("dead_letter", 0) > 0:
         failures.append("collection_dead_letter_queue_not_empty")
-    settlement_conflicts = sum(
-        1
-        for _ in SoccerStore.scan_all(
-            store.ops,
-            FilterExpression=Attr("PK").eq("SETTLEMENT_CONFLICT"),
-        )
+    settlement_conflict_response = store.ops.query(
+        KeyConditionExpression=Key("PK").eq("SETTLEMENT_CONFLICT"),
+        Select="COUNT",
+        ConsistentRead=True,
+        Limit=1000,
     )
+    settlement_conflicts = int(settlement_conflict_response.get("Count") or 0)
     if settlement_conflicts:
         failures.append("immutable_settlement_conflicts_present")
 
     llm = _llm_state(store, observed)
     validated_llm_missing = bool(llm["configured"] and not llm["fresh"])
     if validated_llm_missing:
-        failures.append("llm_analyst:fresh_validated_analysis_missing")
+        warnings.append("llm_analyst:fresh_validated_analysis_missing")
 
     consecutive_failures = int(previous.get("consecutive_failures") or 0) + 1 if failures else 0
     counts = {
@@ -266,7 +297,12 @@ def run_cycle() -> dict[str, Any]:
         "models": _bounded_count(store.models),
     }
     model = _model_state(store)
-    liveness_failed = any(not row["healthy"] for row in liveness.values())
+    liveness_failed = any(
+        not row["healthy"]
+        for component, row in liveness.items()
+        if component not in ADVISORY_COMPONENTS
+    )
+    all_liveness_complete = all(row["healthy"] for row in liveness.values())
     authority, reason = authority_state(
         model=model,
         counts=counts,
@@ -287,9 +323,11 @@ def run_cycle() -> dict[str, Any]:
         "automatic_prediction_allowed": model["automatic_prediction_allowed"] and not failures,
         "consecutive_failures": consecutive_failures,
         "failures": failures,
+        "operational_warnings": warnings,
         "actions": actions,
         "component_liveness": liveness,
         "component_liveness_complete": not liveness_failed,
+        "all_component_liveness_complete": all_liveness_complete,
         "queues": queues,
         "settlement_conflicts": settlement_conflicts,
         "counts": counts,

@@ -1,17 +1,16 @@
 name: Deploy Isolated Soccer Auto
 
-# Manual-only after the verified coverage-first activation. The main workflow
-# ignores all soccer-only paths, and this stack cannot mutate MLB, tennis, or
-# legacy soccer resources.
+# The exact marker path is a one-shot deployment trigger for this repair. It is
+# removed with the trigger immediately after live verification. The main
+# workflow ignores all soccer-only paths, and this stack cannot mutate MLB,
+# tennis, or legacy soccer resources.
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'soccer_auto/.deploy-repair-once'
   workflow_dispatch:
     inputs:
-      enable_historical_backfill:
-        description: Enable resumable Odds API historical raw backfill
-        required: true
-        default: 'false'
-        type: choice
-        options: ['true', 'false']
       shared_quota_reserve_percent:
         description: Percent of shared all-sports credits soccer must leave untouched
         required: true
@@ -48,7 +47,7 @@ jobs:
           set -euo pipefail
           test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing existing all-sports ODDS_API_KEY'; exit 1; }
           case '${{ secrets.AWS_REGION }}' in
-            us-east-1|us-east-2|us-west-1|us-west-2) ;;
+            us-east-1|us-east-2|us-west-2) ;;
             *) echo '::error::Soccer Nova 2 US CRIS deployment requires a supported US AWS region'; exit 1 ;;
           esac
           python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
@@ -103,13 +102,53 @@ jobs:
             --capabilities CAPABILITY_IAM \
             --parameter-overrides \
               OddsApiKey="${{ secrets.ODDS_API_KEY }}" \
-              EnableHistoricalBackfill="${{ inputs.enable_historical_backfill || 'false' }}" \
+              EnableHistoricalBackfill="true" \
               SharedQuotaReservePercent="${{ inputs.shared_quota_reserve_percent || '0' }}" \
               QuotaRaceBufferCredits="2000" \
               SoccerOddsRequestsPerSecond="3" \
               SoccerLlmModelId="$soccer_llm_model_id" \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
+      - name: Assert historical backfill is deployed and scheduled
+        run: |
+          set -euo pipefail
+          stack_name=parlay-platform-soccer-auto
+          region='${{ secrets.AWS_REGION }}'
+          configured=$(aws cloudformation describe-stacks \
+            --stack-name "$stack_name" \
+            --region "$region" \
+            --query "Stacks[0].Parameters[?ParameterKey=='EnableHistoricalBackfill'].ParameterValue" \
+            --output text)
+          test "$configured" = "true"
+          function_name=$(aws cloudformation describe-stack-resource \
+            --stack-name "$stack_name" \
+            --logical-resource-id SoccerHistoricalFunction \
+            --region "$region" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          function_arn=$(aws lambda get-function \
+            --function-name "$function_name" \
+            --region "$region" \
+            --query 'Configuration.FunctionArn' \
+            --output text)
+          aws events list-rule-names-by-target \
+            --target-arn "$function_arn" \
+            --region "$region" \
+            --output json > /tmp/soccer-historical-rules.json
+          python - <<'PY'
+          import json
+          import subprocess
+
+          names = json.load(open('/tmp/soccer-historical-rules.json'))['RuleNames']
+          assert len(names) == 2, names
+          for name in names:
+              state = subprocess.check_output([
+                  'aws', 'events', 'describe-rule', '--name', name,
+                  '--region', '${{ secrets.AWS_REGION }}', '--query', 'State', '--output', 'text',
+              ], text=True).strip()
+              assert state == 'ENABLED', (name, state)
+          print('historical_rules_enabled', names)
+          PY
       - name: Prove isolated runtime integrations
         run: |
           set -euo pipefail
@@ -179,13 +218,38 @@ jobs:
           PY
           invoke_and_assert_ok SoccerCatalogFunction '{"action":"deployment_catalog_smoke"}' catalog
           invoke_and_assert_ok SoccerInventoryFunction '{"action":"deployment_inventory_smoke"}' inventory
+          invoke_and_assert_ok SoccerHistoricalFunction '{"mode":"status"}' historical_status
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/historical_status.json'))
+          assert response['component'] == 'historical_backfill', response
+          assert response['enabled'] is True, response
+          assert response['provider_calls'] == 0, response
+          print('historical_status_before_smoke', response['modes'])
+          PY
+          invoke_and_assert_ok SoccerHistoricalFunction '{"mode":"featured","sport_key":"soccer_epl","max_calls":1}' historical_featured
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/historical_featured.json'))
+          featured = response['featured']
+          assert response['enabled'] is True, response
+          assert response['provider_calls'] == 1, response
+          assert featured['calls'] == 1, response
+          assert featured['archived'], response
+          assert any(int(row.get('calls_completed') or 0) > 0 for row in featured['cursors']), response
+          print('historical_featured_smoke', featured['calls'], featured['remaining_competitions'])
+          PY
+          printf '%s' '${{ inputs.shared_quota_reserve_percent || '0' }}' > /tmp/soccer-reserve-percent.txt
           invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_controller_smoke"}' controller_before_llm
           python - <<'PY'
           import json
 
           response = json.load(open('/tmp/controller_before_llm.json'))
           safety = response['shared_provider_safety']
-          assert safety['shared_quota_reserve_percent'] == 0, safety
+          expected_reserve = int(open('/tmp/soccer-reserve-percent.txt').read())
+          assert safety['shared_quota_reserve_percent'] == expected_reserve, safety
           assert safety['quota_race_buffer_credits'] == 2000, safety
           assert safety['soccer_request_limit_per_second'] == 3, safety
           assert safety['burst_capacity'] == 1, safety
@@ -209,23 +273,56 @@ jobs:
           print('provider_429_after_provider_smoke', telemetry)
           PY
 
-          # Exercise the narrow Bedrock analyst path. A fresh validated result
-          # is reused; daily token quota exhaustion is recorded and deferred.
-          invoke_and_assert_ok SoccerLlmAnalystFunction '{"action":"deployment_llm_smoke"}' llm
+          # Force one genuine Bedrock Converse analysis. Primary quota or
+          # transient faults must fall through to an independently metered
+          # Nova profile; no deferred-quota response is accepted as green.
+          invoke_and_assert_ok SoccerLlmAnalystFunction '{"action":"deployment_llm_smoke","force_refresh":true}' llm
           python - <<'PY'
           import json
 
           response = json.load(open('/tmp/llm.json'))
           assert response['component'] == 'llm_analyst', response
-          assert response['model_id'] == 'us.amazon.nova-2-lite-v1:0', response
-          status = response['status']
-          assert status in {'ANALYZED', 'FRESH_ANALYSIS_REUSED', 'DEFERRED_QUOTA'}, response
-          if status == 'DEFERRED_QUOTA':
-              assert response.get('reason') == 'BEDROCK_DAILY_TOKEN_QUOTA', response
-              assert response.get('retry_after'), response
-          print('bedrock_cris_smoke', response['model_id'], status)
+          assert response['status'] == 'ANALYZED', response
+          assert response['model_id'] in {
+              'us.amazon.nova-2-lite-v1:0',
+              'us.amazon.nova-lite-v1:0',
+              'us.amazon.nova-micro-v1:0',
+          }, response
+          assert response['analysis_origin'] == 'BEDROCK_CONVERSE', response
+          assert response.get('analysis_digest'), response
+          assert response.get('context_digest'), response
+          assert response.get('stop_reason') == 'end_turn', response
+          assert response.get('usage'), response
+          print('bedrock_cris_smoke', response['model_id'], response['status'])
+          PY
+          invoke_and_assert_ok SoccerTrainerFunction '{"action":"deployment_trainer_smoke"}' trainer
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/trainer.json'))
+          assert response['system'] == 'soccer_auto', response
+          assert response['training_rows'] >= 0, response
+          training = response['training']
+          assert training.get('trained') is True or training.get('reason') in {
+              'INSUFFICIENT_TRAINING_ROWS',
+              'INSUFFICIENT_UNTOUCHED_AUDIT_ROWS',
+              'DATA_MANIFEST_ALREADY_EVALUATED',
+              'ACTIVE_PROSPECTIVE_CHALLENGER',
+          }, response
+          print('deterministic_trainer_smoke', response['training_rows'], training)
           PY
           invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_controller_post_llm"}' controller_after_llm
+          python - <<'PY'
+          import json
+
+          llm = json.load(open('/tmp/llm.json'))
+          controller = json.load(open('/tmp/controller_after_llm.json'))
+          state = controller['llm_analyst']
+          assert state['fresh'] is True, controller
+          assert state['analysis_digest'] == llm['analysis_digest'], (state, llm)
+          assert state['model_id'] == llm['model_id'], (state, llm)
+          print('controller_validated_bedrock_analysis', state)
+          PY
 
           # Dispatch is provider-call-free. Its deep worker gate remains the
           # authority for releasing paid work only when a daily T-10 window is
@@ -233,9 +330,13 @@ jobs:
           invoke_and_assert_ok SoccerDispatchFunction '{"action":"deployment_dispatch_smoke"}' dispatch
 
           curl --fail --retry 10 --retry-all-errors --retry-delay 10 "$status_url" | tee /tmp/soccer-auto-status.json
+          coverage_url="${status_url%/status}/coverage"
+          curl --fail --max-time 55 --retry 2 --retry-all-errors --retry-delay 5 \
+            "$coverage_url" | tee /tmp/soccer-auto-coverage.json
           python - <<'PY'
           import json
           status=json.load(open('/tmp/soccer-auto-status.json'))
+          coverage=json.load(open('/tmp/soccer-auto-coverage.json'))
           assert status['system']=='soccer_auto'
           assert status['authority'] in {'BOOTSTRAPPING','COLLECTING','SHADOW_LEARNING','AUTHORITATIVE','DEGRADED'}
           assert status.get('automatic_prediction_allowed', False) is False or status['authority']=='AUTHORITATIVE'
@@ -244,5 +345,8 @@ jobs:
           latest = str((status['provider_429_telemetry']['latest_rows'] or [{}])[0].get('SK') or '')
           assert status['provider_429_telemetry']['rolling_count'] == baseline, status['provider_429_telemetry']
           assert latest == latest_baseline, status['provider_429_telemetry']
+          assert coverage['ok'] is True and coverage['system'] == 'soccer_auto', coverage
+          assert coverage['historical_backfill']['enabled'] is True, coverage
           print(status)
+          print('coverage_endpoint_ok', coverage['live_inventory'])
           PY

@@ -122,6 +122,16 @@ class SuccessfulOddsClient:
         )
 
 
+class RepaintedOddsClient(SuccessfulOddsClient):
+    def event_odds(self, sport_key, event_id, markets, **kwargs):
+        response = super().event_odds(sport_key, event_id, markets, **kwargs)
+        return ApiResponse(
+            data={**response.data, "home_team": "Different Home"},
+            status=response.status,
+            request_url=response.request_url,
+        )
+
+
 class GlobalCoverageClient:
     def __init__(self):
         self.calls = []
@@ -319,6 +329,22 @@ class DeepGateTests(unittest.TestCase):
             snapshot["request_metadata"]["response_observed_at"],
             "2026-08-14T13:15:01Z",
         )
+
+    def test_provider_identity_change_is_archived_but_never_canonicalized(self) -> None:
+        row = event_at()
+        store = FakeStore(row)
+        job = {
+            "event": row,
+            "bookmakers": ["new_book"],
+            "markets": ["new_runtime_market"],
+        }
+        with patch("soccer_auto.collector._observed_at", return_value="2026-08-14T13:00:00Z"):
+            result = _fetch_event(store, RepaintedOddsClient(), job)
+        self.assertTrue(result["quarantined"])
+        self.assertEqual(result["reason"], "PROVIDER_RESPONSE_SCHEDULE_IDENTITY_MISMATCH")
+        self.assertEqual(store.snapshot_writes, [])
+        self.assertEqual(store.inventory_writes, [])
+        self.assertFalse(store.failures[-1]["permanent"])
 
     def test_sqs_failure_releases_boundary_claim_without_marking_dispatch(self) -> None:
         row = {

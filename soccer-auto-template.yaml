@@ -9,7 +9,7 @@ Parameters:
     Description: Existing all-sports The Odds API credential used by soccer_auto
   EnableHistoricalBackfill:
     Type: String
-    Default: 'false'
+    Default: 'true'
     AllowedValues: ['true', 'false']
   SharedQuotaReservePercent:
     Type: Number
@@ -73,7 +73,9 @@ Globals:
         SOCCER_AUTO_ODDS_RATE_LIMIT_MAX_CONTENTION_ATTEMPTS: '128'
         SOCCER_AUTO_SCORES_CADENCE_SECONDS: '300'
         SOCCER_AUTO_LLM_MODEL_ID: !Ref SoccerLlmModelId
+        SOCCER_AUTO_LLM_FALLBACK_MODEL_IDS: 'us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'
         SOCCER_AUTO_LLM_ANALYSIS_MAX_AGE_HOURS: '36'
+        SOCCER_AUTO_HISTORICAL_BACKFILL_ENABLED: !Ref EnableHistoricalBackfill
 
 Resources:
   SoccerOddsApiSecret:
@@ -366,18 +368,40 @@ Resources:
               - Sid: InvokeOnlySoccerNovaProfile
                 Effect: Allow
                 Action: bedrock:InvokeModel
-                Resource: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${SoccerLlmModelId}'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${SoccerLlmModelId}'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-lite-v1:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-micro-v1:0'
               - Sid: InvokeOnlyNovaTwoLiteThroughSoccerProfile
                 Effect: Allow
                 Action: bedrock:InvokeModel
                 Resource:
                   - !Sub 'arn:${AWS::Partition}:bedrock:us-east-1::foundation-model/amazon.nova-2-lite-v1:0'
                   - !Sub 'arn:${AWS::Partition}:bedrock:us-east-2::foundation-model/amazon.nova-2-lite-v1:0'
-                  - !Sub 'arn:${AWS::Partition}:bedrock:us-west-1::foundation-model/amazon.nova-2-lite-v1:0'
                   - !Sub 'arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/amazon.nova-2-lite-v1:0'
                 Condition:
                   StringEquals:
                     bedrock:InferenceProfileArn: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${SoccerLlmModelId}'
+              - Sid: InvokeOnlyNovaLiteThroughSoccerFallbackProfile
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:us-east-1::foundation-model/amazon.nova-lite-v1:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:us-east-2::foundation-model/amazon.nova-lite-v1:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/amazon.nova-lite-v1:0'
+                Condition:
+                  StringEquals:
+                    bedrock:InferenceProfileArn: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-lite-v1:0'
+              - Sid: InvokeOnlyNovaMicroThroughSoccerFallbackProfile
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:us-east-1::foundation-model/amazon.nova-micro-v1:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:us-east-2::foundation-model/amazon.nova-micro-v1:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/amazon.nova-micro-v1:0'
+                Condition:
+                  StringEquals:
+                    bedrock:InferenceProfileArn: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-micro-v1:0'
 
   SoccerReadApiRole:
     Type: AWS::IAM::Role
@@ -400,6 +424,7 @@ Resources:
                 Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:Scan]
                 Resource:
                   - !GetAtt SoccerRegistryTable.Arn
+                  - !GetAtt SoccerEventsTable.Arn
                   - !GetAtt SoccerPredictionsTable.Arn
                   - !Sub '${SoccerPredictionsTable.Arn}/index/*'
                   - !GetAtt SoccerModelsTable.Arn
@@ -552,16 +577,15 @@ Resources:
       Timeout: 300
       MemorySize: 1024
       Events:
-        AnalyzeSoccerLearningEverySixHours:
+        AnalyzeSoccerLearningHourly:
           Type: Schedule
           Properties:
-            Schedule: cron(22 3/6 * * ? *)
+            Schedule: cron(22 * * * ? *)
             Input: '{"action":"analyze_soccer_learning"}'
-            RetryPolicy: {MaximumEventAgeInSeconds: 900, MaximumRetryAttempts: 1}
+            RetryPolicy: {MaximumEventAgeInSeconds: 900, MaximumRetryAttempts: 0}
 
   SoccerHistoricalFunction:
     Type: AWS::Serverless::Function
-    Condition: HistoricalBackfillEnabled
     Metadata: {BuildMethod: makefile}
     Properties:
       CodeUri: soccer_auto/
@@ -574,12 +598,14 @@ Resources:
           Type: Schedule
           Properties:
             Schedule: cron(17 * * * ? *)
+            Enabled: !If [HistoricalBackfillEnabled, true, false]
             Input: '{"mode":"featured"}'
             RetryPolicy: {MaximumEventAgeInSeconds: 1800, MaximumRetryAttempts: 0}
         AdditionalHistoricalHourly:
           Type: Schedule
           Properties:
             Schedule: cron(47 * * * ? *)
+            Enabled: !If [HistoricalBackfillEnabled, true, false]
             Input: '{"mode":"additional"}'
             RetryPolicy: {MaximumEventAgeInSeconds: 1800, MaximumRetryAttempts: 0}
 
@@ -600,6 +626,8 @@ Resources:
           SOCCER_AUTO_SETTLEMENT_FUNCTION: !Ref SoccerSettlementFunction
           SOCCER_AUTO_TRAINER_FUNCTION: !Ref SoccerTrainerFunction
           SOCCER_AUTO_LLM_ANALYST_FUNCTION: !Ref SoccerLlmAnalystFunction
+          SOCCER_AUTO_HISTORICAL_FUNCTION: !Ref SoccerHistoricalFunction
+          SOCCER_AUTO_HISTORICAL_BACKFILL_ENABLED: !Ref EnableHistoricalBackfill
       Events:
         ControllerEveryFifteenMinutes:
           Type: Schedule
@@ -775,14 +803,33 @@ Resources:
   SoccerLlmAnalystLivenessAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmDescription: soccer_auto LLM analyst has not invoked for two six-hour schedule periods
+      AlarmDescription: soccer_auto LLM analyst has not invoked for two hourly schedule periods
       Namespace: AWS/Lambda
       MetricName: Invocations
       Dimensions:
         - Name: FunctionName
           Value: !Ref SoccerLlmAnalystFunction
       Statistic: Sum
-      Period: 21600
+      Period: 3600
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
+  SoccerHistoricalLivenessAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HistoricalBackfillEnabled
+    Properties:
+      AlarmDescription: soccer_auto historical raw backfill has not invoked for two hourly periods
+      Namespace: AWS/Lambda
+      MetricName: Invocations
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SoccerHistoricalFunction
+      Statistic: Sum
+      Period: 3600
       EvaluationPeriods: 2
       DatapointsToAlarm: 2
       Threshold: 1
@@ -892,6 +939,24 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref SoccerAutoAlarmTopic]
 
+  SoccerHistoricalErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HistoricalBackfillEnabled
+    Properties:
+      AlarmDescription: soccer_auto historical raw backfill Lambda errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SoccerHistoricalFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SoccerAutoAlarmTopic]
+
   SoccerControllerErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -914,7 +979,7 @@ Resources:
     Properties:
       DashboardBody: !Sub |
         {"widgets":[
-          {"type":"metric","width":12,"height":6,"properties":{"title":"soccer_auto Lambda errors","region":"${AWS::Region}","metrics":[["AWS/Lambda","Errors","FunctionName","${SoccerControllerFunction}"],[".",".",".","${SoccerCollectionWorkerFunction}"],[".",".",".","${SoccerSettlementFunction}"],[".",".",".","${SoccerTrainerFunction}"]],"stat":"Sum","period":300}},
+          {"type":"metric","width":12,"height":6,"properties":{"title":"soccer_auto Lambda errors","region":"${AWS::Region}","metrics":[["AWS/Lambda","Errors","FunctionName","${SoccerControllerFunction}"],[".",".",".","${SoccerCollectionWorkerFunction}"],[".",".",".","${SoccerSettlementFunction}"],[".",".",".","${SoccerTrainerFunction}"],[".",".",".","${SoccerHistoricalFunction}"]],"stat":"Sum","period":300}},
           {"type":"metric","width":12,"height":6,"properties":{"title":"soccer_auto queues","region":"${AWS::Region}","metrics":[["AWS/SQS","ApproximateNumberOfMessagesVisible","QueueName","${SoccerCollectionQueue.QueueName}"],[".",".",".","${SoccerCollectionDeadLetterQueue.QueueName}"]],"stat":"Maximum","period":300}}
         ]}
 
@@ -929,3 +994,5 @@ Outputs:
     Value: !Ref SoccerRawBucket
   SoccerAutoArtifactBucket:
     Value: !Ref SoccerArtifactBucket
+  SoccerAutoHistoricalFunction:
+    Value: !Ref SoccerHistoricalFunction

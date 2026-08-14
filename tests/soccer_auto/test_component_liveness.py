@@ -14,7 +14,11 @@ from soccer_auto.autonomous_controller import (  # noqa: E402
     authority_state,
     component_liveness,
 )
-from soccer_auto.llm_analyst import validate_analysis  # noqa: E402
+from soccer_auto.canonical import digest  # noqa: E402
+from soccer_auto.llm_analyst import (  # noqa: E402
+    ANALYSIS_ORIGIN,
+    validate_analysis,
+)
 
 
 class CloudWatch:
@@ -27,6 +31,13 @@ class CloudWatch:
         value = self.values.get((kwargs["Dimensions"][0]["Value"], kwargs["MetricName"]), 0)
         if value is None:
             return {"Datapoints": []}
+        if isinstance(value, list):
+            return {
+                "Datapoints": [
+                    {"Timestamp": timestamp, "Sum": amount}
+                    for timestamp, amount in value
+                ]
+            }
         return {
             "Datapoints": [
                 {
@@ -87,13 +98,51 @@ class ComponentLivenessTests(unittest.TestCase):
         )
         self.assertEqual(state, ("DEGRADED", "SCHEDULED_COMPONENT_LIVENESS_FAILED"))
 
-    def test_configured_llm_without_digest_validated_latest_fails_closed(self) -> None:
+    def test_later_successful_invocation_clears_stale_error_poisoning(self) -> None:
+        values = {
+            (f"soccer-{component}", "Invocations"): 1
+            for component in COMPONENT_LIVENESS
+        }
+        values[("soccer-llm_analyst", "Invocations")] = [
+            (datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc), 1)
+        ]
+        values[("soccer-llm_analyst", "Errors")] = [
+            (datetime(2026, 8, 14, 3, 0, tzinfo=timezone.utc), 1)
+        ]
+        with patch.dict("os.environ", function_environment(), clear=False):
+            result = component_liveness(
+                CloudWatch(values),
+                datetime(2026, 8, 14, 4, 5, tzinfo=timezone.utc),
+            )
+        self.assertTrue(result["llm_analyst"]["healthy"])
+        self.assertEqual(result["llm_analyst"]["reason"], "RECOVERED_AFTER_ERROR")
+
+    def test_configured_llm_requires_provenance_signed_latest_but_is_advisory(self) -> None:
         observed = datetime(2026, 8, 14, 4, 5, tzinfo=timezone.utc)
+        validated = validate_analysis({"summary": "valid", "recommended_trials": []})
+        content = {key: value for key, value in validated.items() if key != "analysis_digest"}
         latest = {
-            **validate_analysis({"summary": "valid", "recommended_trials": []}),
+            **content,
+            "analysis_origin": ANALYSIS_ORIGIN,
+            "model_id": "us.amazon.nova-2-lite-v1:0",
+            "context_digest": "context-digest",
             "created_at": "2026-08-14T04:00:00Z",
             "expires_at": int(datetime(2026, 8, 15, tzinfo=timezone.utc).timestamp()),
+            "stop_reason": "end_turn",
+            "usage": {"inputTokens": 100, "outputTokens": 40, "totalTokens": 140},
         }
+        latest["analysis_digest"] = digest(
+            {
+                **content,
+                "analysis_origin": latest["analysis_origin"],
+                "model_id": latest["model_id"],
+                "context_digest": latest["context_digest"],
+                "created_at": latest["created_at"],
+                "expires_at": latest["expires_at"],
+                "stop_reason": latest["stop_reason"],
+                "usage": latest["usage"],
+            }
+        )
 
         class Ops:
             def get_item(self, **kwargs):
@@ -120,7 +169,7 @@ class ComponentLivenessTests(unittest.TestCase):
             liveness_failed=False,
             validated_llm_missing=True,
         )
-        self.assertEqual(state, ("DEGRADED", "FRESH_VALIDATED_LLM_ANALYSIS_MISSING"))
+        self.assertEqual(state, ("AUTHORITATIVE", "CHAMPION_PROMOTED_BY_PROSPECTIVE_GATES"))
 
 
 if __name__ == "__main__":

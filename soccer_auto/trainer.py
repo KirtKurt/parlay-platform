@@ -31,7 +31,7 @@ SCOPE = "global"
 MODEL_PK = f"MODEL#{TARGET}#{SCOPE}"
 
 
-def _schedule_identity(row: Mapping[str, Any]) -> tuple[str, int, str] | None:
+def _schedule_identity(row: Mapping[str, Any]) -> tuple[str, int, str, str] | None:
     try:
         revision = int(row.get("schedule_revision") or 0)
         if revision <= 0:
@@ -40,6 +40,7 @@ def _schedule_identity(row: Mapping[str, Any]) -> tuple[str, int, str] | None:
             str(row["event_key"]),
             revision,
             iso_utc(str(row["commence_time"])),
+            str(row.get("schedule_identity") or "LEGACY_IDENTITY_UNAVAILABLE"),
         )
     except (KeyError, TypeError, ValueError):
         return None
@@ -53,8 +54,35 @@ def _settlements(store: SoccerStore) -> dict[str, dict[str, Any]]:
     }
 
 
+def _settlement_conflict_events(store: SoccerStore) -> set[str]:
+    if not hasattr(store.ops, "query"):
+        return {
+            str(row.get("event_key") or "")
+            for row in store.scan_all(store.ops)
+            if row.get("training_blocked") and row.get("event_key")
+        }
+    kwargs: dict[str, Any] = {
+        "KeyConditionExpression": Key("PK").eq("SETTLEMENT_CONFLICT"),
+        "ConsistentRead": True,
+    }
+    rows: list[Mapping[str, Any]] = []
+    while True:
+        response = store.ops.query(**kwargs)
+        rows.extend(response.get("Items") or [])
+        cursor = response.get("LastEvaluatedKey")
+        if not cursor:
+            break
+        kwargs["ExclusiveStartKey"] = cursor
+    return {
+        str(row.get("event_key") or "")
+        for row in rows
+        if row.get("training_blocked") and row.get("event_key")
+    }
+
+
 def training_rows(store: SoccerStore) -> tuple[list[TrainingRow], dict[str, int]]:
     settlements = _settlements(store)
+    conflicted_events = _settlement_conflict_events(store) if hasattr(store, "ops") else set()
     rows: list[TrainingRow] = []
     excluded = {
         "no_settlement": 0,
@@ -63,6 +91,7 @@ def training_rows(store: SoccerStore) -> tuple[list[TrainingRow], dict[str, int]
         "schedule_mismatch": 0,
         "schema_mismatch": 0,
         "invalid": 0,
+        "settlement_conflict": 0,
     }
     for lock in store.scan_all(store.locks):
         if lock.get("entity_type") != "SOCCER_FROZEN_FEATURE_LOCK":
@@ -70,6 +99,9 @@ def training_rows(store: SoccerStore) -> tuple[list[TrainingRow], dict[str, int]
         settlement = settlements.get(lock.get("event_key"))
         if not settlement:
             excluded["no_settlement"] += 1
+            continue
+        if str(lock.get("event_key") or "") in conflicted_events:
+            excluded["settlement_conflict"] += 1
             continue
         if not settlement.get("training_eligible_1x2"):
             excluded["settlement_ineligible"] += 1
@@ -139,10 +171,12 @@ def _prior_vector(row: Mapping[str, Any]) -> list[float]:
 
 
 def evaluate_prospective_candidate(store: SoccerStore, candidate: Mapping[str, Any]) -> dict[str, Any]:
+    conflicted_events = _settlement_conflict_events(store)
     settlements = {
         schedule: row
         for row in _settlements(store).values()
         if (schedule := _schedule_identity(row)) is not None
+        and str(row.get("event_key") or "") not in conflicted_events
     }
     candidate_predictions = _prediction_rows(store, candidate["model_digest"])
     champion = _champion(store)

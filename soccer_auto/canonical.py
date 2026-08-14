@@ -39,6 +39,27 @@ def stable_event_key(sport_key: str, event_id: str) -> str:
     return f"EVENT#{sport_key}#{event_id}"
 
 
+def schedule_identity(event: Mapping[str, Any]) -> str:
+    """Hash every field that defines one immutable match schedule revision."""
+    sport_key = str(event.get("sport_key") or "").strip()
+    event_id = str(event.get("event_id") or event.get("id") or "").strip()
+    commence_time = iso_utc(str(event.get("commence_time") or ""))
+    home_team = str(event.get("home_team") or "").strip()
+    away_team = str(event.get("away_team") or "").strip()
+    stable_event_key(sport_key, event_id)
+    if not home_team or not away_team:
+        raise ValueError("home_team and away_team are required for schedule identity")
+    return digest(
+        {
+            "sport_key": sport_key,
+            "event_id": event_id,
+            "commence_time": commence_time,
+            "home_team": home_team,
+            "away_team": away_team,
+        }
+    )
+
+
 def floor_slot(observed_at: str | datetime, seconds: int = 60) -> datetime:
     if seconds <= 0:
         raise ValueError("slot size must be positive")
@@ -222,4 +243,3 @@ def choose_canonical_attempt(
 
 def is_prematch(observed_at: str, commence_time: str) -> bool:
     return parse_utc(observed_at) < parse_utc(commence_time)
-

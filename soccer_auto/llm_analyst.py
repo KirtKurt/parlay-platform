@@ -20,13 +20,29 @@ from .market_features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION
 from .storage import SoccerStore, ddb_safe, now_utc, plain
 
 
-ANALYSIS_VERSION = "soccer-auto-llm-analyst-v1"
+ANALYSIS_VERSION = "soccer-auto-llm-analyst-v2"
+ANALYSIS_ORIGIN = "BEDROCK_CONVERSE"
+ALLOWED_MODEL_IDS = frozenset(
+    {
+        "us.amazon.nova-2-lite-v1:0",
+        "us.amazon.nova-lite-v1:0",
+        "us.amazon.nova-micro-v1:0",
+    }
+)
 MODEL_ID = os.getenv("SOCCER_AUTO_LLM_MODEL_ID", "").strip()
+FALLBACK_MODEL_IDS = tuple(
+    model_id.strip()
+    for model_id in os.getenv(
+        "SOCCER_AUTO_LLM_FALLBACK_MODEL_IDS",
+        "us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0",
+    ).split(",")
+    if model_id.strip()
+)
 MAX_TRIALS = 2
 ANALYSIS_MAX_AGE_HOURS = int(os.getenv("SOCCER_AUTO_LLM_ANALYSIS_MAX_AGE_HOURS", "36"))
 DAILY_TOKEN_RETRY_HOURS = 6
 ATTEMPT_RETENTION_DAYS = 30
-DIAGNOSTIC_SCAN_PAGE_LIMIT = int(os.getenv("SOCCER_AUTO_LLM_DIAGNOSTIC_SCAN_PAGE_LIMIT", "20"))
+DIAGNOSTIC_SCAN_PAGE_LIMIT = int(os.getenv("SOCCER_AUTO_LLM_DIAGNOSTIC_SCAN_PAGE_LIMIT", "4"))
 DIAGNOSTIC_ROW_LIMIT = int(os.getenv("SOCCER_AUTO_LLM_DIAGNOSTIC_ROW_LIMIT", "2000"))
 BASELINE_TRIALS: tuple[dict[str, Any], ...] = (
     {"learning_rate": 0.01, "l2": 0.0005, "epochs": 40},
@@ -99,8 +115,11 @@ def validate_analysis(payload: Mapping[str, Any]) -> dict[str, Any]:
         seen.add(identity)
         trials.append(
             {
-                "learning_rate": learning_rate,
-                "l2": l2,
+                # Persist the same bounded precision used for identity. This
+                # keeps the provenance digest stable across DynamoDB's Decimal
+                # conversion instead of rejecting our own validated analysis.
+                "learning_rate": identity[0],
+                "l2": identity[1],
                 "epochs": epochs,
                 "rationale": _bounded_text(raw.get("rationale")),
             }
@@ -115,6 +134,8 @@ def validate_analysis(payload: Mapping[str, Any]) -> dict[str, Any]:
         "recommended_trials": trials,
         "validation_status": "VALIDATED",
     }
+    if not result["summary"]:
+        raise ValueError("LLM analyst response requires a nonempty summary")
     result["analysis_digest"] = digest(result)
     return result
 
@@ -287,9 +308,8 @@ def _context(store: SoccerStore) -> dict[str, Any]:
             {
                 "model_digest": row.get("model_digest"),
                 "authority_state": row.get("authority_state"),
-                "retrospective_report": row.get("retrospective_report"),
-                "prospective_metrics": row.get("prospective_metrics"),
-                "gate_failures": row.get("prospective_gate_failures") or row.get("retrospective_gate_failures"),
+                "created_at": row.get("created_at"),
+                "feature_schema_version": row.get("feature_schema_version"),
             }
             for row in model_rows
         ],
@@ -321,14 +341,42 @@ def latest_validated_analysis(
     if not row:
         return None
     row = plain(row)
-    if row.get("validation_status") != "VALIDATED" or row.get("analysis_version") != ANALYSIS_VERSION:
+    if (
+        row.get("validation_status") != "VALIDATED"
+        or row.get("analysis_version") != ANALYSIS_VERSION
+        or row.get("analysis_origin") != ANALYSIS_ORIGIN
+        or row.get("model_id") not in ALLOWED_MODEL_IDS
+    ):
         return None
     if not _analysis_is_fresh(row, observed_at):
         return None
     validated = validate_analysis(row)
-    if validated["analysis_digest"] != row.get("analysis_digest"):
+    content = {
+        key: validated[key]
+        for key in (
+            "analysis_version",
+            "summary",
+            "coverage_findings",
+            "warnings",
+            "recommended_trials",
+            "validation_status",
+        )
+    }
+    expected_digest = digest(
+        {
+            **content,
+            "analysis_origin": row.get("analysis_origin"),
+            "model_id": row.get("model_id"),
+            "context_digest": row.get("context_digest"),
+            "created_at": row.get("created_at"),
+            "expires_at": row.get("expires_at"),
+            "stop_reason": row.get("stop_reason"),
+            "usage": row.get("usage") or {},
+        }
+    )
+    if expected_digest != row.get("analysis_digest"):
         return None
-    return {**row, **validated}
+    return {**row, **content, "analysis_digest": expected_digest}
 
 
 def latest_llm_trials(store: SoccerStore) -> tuple[list[dict[str, Any]], str | None]:
@@ -349,13 +397,16 @@ def _record_llm_attempt(
     reason: str | None = None,
     retry_after: str | None = None,
     analysis_digest: str | None = None,
+    model_id: str | None = None,
+    attempted_model_ids: Sequence[str] | None = None,
 ) -> None:
     item = {
         "PK": "LLM_ANALYSIS",
         "SK": "LAST_ATTEMPT",
         "entity_type": "SOCCER_LLM_ATTEMPT",
         "status": status,
-        "model_id": MODEL_ID,
+        "model_id": model_id or MODEL_ID,
+        "attempted_model_ids": list(attempted_model_ids or (model_id or MODEL_ID,)),
         "observed_at": iso_utc(observed),
         "expires_at": int((observed + timedelta(days=ATTEMPT_RETENTION_DAYS)).timestamp()),
     }
@@ -368,8 +419,32 @@ def _record_llm_attempt(
     store.ops.put_item(Item=ddb_safe(item))
 
 
+def _model_ids() -> tuple[str, ...]:
+    """Return a stable, de-duplicated real-Bedrock fallback chain."""
+    result: list[str] = []
+    for model_id in (MODEL_ID, *FALLBACK_MODEL_IDS):
+        if model_id and model_id not in result:
+            result.append(model_id)
+    unknown = [model_id for model_id in result if model_id not in ALLOWED_MODEL_IDS]
+    if unknown:
+        raise ValueError(f"unsupported soccer Bedrock analyst model IDs: {unknown}")
+    return tuple(result)
+
+
+def _recoverable_model_error(exc: ClientError) -> bool:
+    error = exc.response.get("Error") or {}
+    return error.get("Code") in {
+        "ThrottlingException",
+        "ServiceUnavailableException",
+        "InternalServerException",
+        "ModelTimeoutException",
+        "ModelNotReadyException",
+    }
+
+
 def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, Any]:
-    if not MODEL_ID:
+    model_ids = _model_ids()
+    if not model_ids:
         return {
             "ok": False,
             "system": "soccer_auto",
@@ -378,7 +453,8 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
         }
     store = SoccerStore()
     latest = latest_validated_analysis(store)
-    if latest is not None:
+    force_refresh = bool((event or {}).get("force_refresh"))
+    if latest is not None and not force_refresh:
         return {
             "ok": True,
             "system": "soccer_auto",
@@ -386,53 +462,112 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
             "status": "FRESH_ANALYSIS_REUSED",
             "analysis_digest": latest["analysis_digest"],
             "validated_trials": len(latest["recommended_trials"]),
-            "model_id": MODEL_ID,
+            "model_id": latest.get("model_id") or MODEL_ID,
+            "attempted_model_ids": [],
             "expires_at": latest.get("expires_at"),
+            "analysis_origin": latest.get("analysis_origin"),
+            "context_digest": latest.get("context_digest"),
         }
     analysis_context = _context(store)
-    try:
-        response = boto3.client("bedrock-runtime").converse(
-            modelId=MODEL_ID,
-            system=[{"text": SYSTEM_PROMPT}],
-            messages=[{"role": "user", "content": [{"text": _prompt(analysis_context)}]}],
-            inferenceConfig={"maxTokens": 1800, "temperature": 0.1, "topP": 0.9},
-        )
-    except ClientError as exc:
-        error = exc.response.get("Error") or {}
-        message = str(error.get("Message") or "")
-        if error.get("Code") != "ThrottlingException" or "tokens per day" not in message.lower():
-            raise
+    bedrock = boto3.client("bedrock-runtime")
+    attempted_model_ids: list[str] = []
+    quota_deferred_model_ids: list[str] = []
+    invalid_responses: list[tuple[str, ValueError]] = []
+    validated: dict[str, Any] | None = None
+    selected_model_id: str | None = None
+    selected_stop_reason: str | None = None
+    selected_usage: dict[str, Any] = {}
+    for model_id in model_ids:
+        attempted_model_ids.append(model_id)
+        try:
+            response = bedrock.converse(
+                modelId=model_id,
+                system=[{"text": SYSTEM_PROMPT}],
+                messages=[{"role": "user", "content": [{"text": _prompt(analysis_context)}]}],
+                inferenceConfig={"maxTokens": 900, "temperature": 0.1, "topP": 0.9},
+            )
+            stop_reason = str(response.get("stopReason") or "")
+            if stop_reason != "end_turn":
+                raise ValueError(f"Bedrock analyst did not complete cleanly: {stop_reason}")
+            validated = validate_analysis(_extract_json_text(response))
+            selected_model_id = model_id
+            selected_stop_reason = stop_reason
+            selected_usage = {
+                str(key): int(value)
+                for key, value in (response.get("usage") or {}).items()
+                if isinstance(value, (int, float))
+            }
+            break
+        except ClientError as exc:
+            if not _recoverable_model_error(exc):
+                raise
+            quota_deferred_model_ids.append(model_id)
+        except ValueError as exc:
+            # A malformed response has no authority. Try another real Bedrock
+            # model, but fail the invocation if every model is malformed.
+            invalid_responses.append((model_id, exc))
+    if validated is None or selected_model_id is None:
+        if invalid_responses:
+            model_id, exc = invalid_responses[-1]
+            raise ValueError(
+                f"all available Bedrock analyst responses were invalid; last model={model_id}: {exc}"
+            ) from exc
         observed = now_utc()
         retry_after = iso_utc(observed + timedelta(hours=DAILY_TOKEN_RETRY_HOURS))
         _record_llm_attempt(
             store,
             observed=observed,
             status="DEFERRED_QUOTA",
-            reason="BEDROCK_DAILY_TOKEN_QUOTA",
+            reason="BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE",
             retry_after=retry_after,
+            model_id=model_ids[0],
+            attempted_model_ids=attempted_model_ids,
         )
-        return {
-            "ok": True,
-            "system": "soccer_auto",
-            "component": "llm_analyst",
-            "status": "DEFERRED_QUOTA",
-            "reason": "BEDROCK_DAILY_TOKEN_QUOTA",
-            "model_id": MODEL_ID,
-            "retry_after": retry_after,
-        }
-    validated = validate_analysis(_extract_json_text(response))
+        raise RuntimeError(
+            "all configured real Bedrock analyst models are temporarily unavailable: "
+            + ",".join(attempted_model_ids)
+        )
     observed = now_utc()
     observed_at = iso_utc(observed)
     expires_at = int((observed + timedelta(hours=max(1, ANALYSIS_MAX_AGE_HOURS))).timestamp())
+    content = {
+        key: validated[key]
+        for key in (
+            "analysis_version",
+            "summary",
+            "coverage_findings",
+            "warnings",
+            "recommended_trials",
+            "validation_status",
+        )
+    }
+    context_digest = digest(analysis_context)
+    analysis_digest = digest(
+        {
+            **content,
+            "analysis_origin": ANALYSIS_ORIGIN,
+            "model_id": selected_model_id,
+            "context_digest": context_digest,
+            "created_at": observed_at,
+            "expires_at": expires_at,
+            "stop_reason": selected_stop_reason,
+            "usage": selected_usage,
+        }
+    )
     row = {
         "PK": "LLM_ANALYSIS",
-        "SK": f"ANALYSIS#{observed_at}#{validated['analysis_digest']}",
+        "SK": f"ANALYSIS#{observed_at}#{analysis_digest}",
         "entity_type": "SOCCER_LLM_ANALYSIS",
-        "model_id": MODEL_ID,
+        "analysis_origin": ANALYSIS_ORIGIN,
+        "model_id": selected_model_id,
+        "attempted_model_ids": attempted_model_ids,
         "created_at": observed_at,
         "expires_at": expires_at,
-        "context_digest": digest(analysis_context),
-        **validated,
+        "stop_reason": selected_stop_reason,
+        "usage": selected_usage,
+        "context_digest": context_digest,
+        **content,
+        "analysis_digest": analysis_digest,
     }
     store.ops.put_item(Item=ddb_safe(row), ConditionExpression="attribute_not_exists(SK)")
     latest = {**row, "SK": "LATEST", "source_sk": row["SK"]}
@@ -441,15 +576,22 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
         store,
         observed=observed,
         status="ANALYZED",
-        analysis_digest=validated["analysis_digest"],
+        analysis_digest=analysis_digest,
+        model_id=selected_model_id,
+        attempted_model_ids=attempted_model_ids,
     )
     return {
         "ok": True,
         "system": "soccer_auto",
         "component": "llm_analyst",
         "status": "ANALYZED",
-        "analysis_digest": validated["analysis_digest"],
+        "analysis_digest": analysis_digest,
         "validated_trials": len(validated["recommended_trials"]),
-        "model_id": MODEL_ID,
+        "model_id": selected_model_id,
+        "attempted_model_ids": attempted_model_ids,
         "expires_at": expires_at,
+        "analysis_origin": ANALYSIS_ORIGIN,
+        "context_digest": context_digest,
+        "stop_reason": selected_stop_reason,
+        "usage": selected_usage,
     }

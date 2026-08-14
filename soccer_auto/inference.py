@@ -5,15 +5,25 @@ import os
 from datetime import timedelta
 from typing import Any, Mapping
 
-from .canonical import digest, iso_utc, merge_event_payloads, parse_utc
+from botocore.exceptions import ClientError
+
+from .canonical import (
+    digest,
+    iso_utc,
+    merge_event_payloads,
+    parse_utc,
+    schedule_identity,
+)
 from .market_features import FEATURE_SCHEMA_VERSION, compile_features
 from .model import CLASSES, ResidualSoftmaxModel
 from .storage import SoccerStore, now_utc, plain
 
 
 LOCK_VERSION = "soccer-auto-t45-lock-v1"
+PUBLIC_BINDING_VERSION = "soccer-auto-public-prediction-binding-v1"
 MIN_BOOKMAKERS = int(os.getenv("SOCCER_AUTO_MIN_BOOKMAKERS", "3"))
 PUBLISH_CONFIDENCE = float(os.getenv("SOCCER_AUTO_PUBLISH_CONFIDENCE", "0.50"))
+PUBLICATION_CUTOFF_MINUTES = 10
 
 
 def _latest_and_earliest_by_scope(slots: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -40,6 +50,9 @@ def build_frozen_lock(store: SoccerStore, event: Mapping[str, Any], *, observed_
         raise ValueError("a positive schedule_revision is required for a frozen lock")
     commence = parse_utc(str(event["commence_time"]))
     lock_at = commence - timedelta(minutes=45)
+    event_schedule_identity = str(
+        event.get("schedule_identity") or schedule_identity(event)
+    )
     base = {
         "PK": event_key,
         "SK": f"LOCK#T45#REV#{schedule_revision}#TARGET#result_1x2",
@@ -50,6 +63,7 @@ def build_frozen_lock(store: SoccerStore, event: Mapping[str, Any], *, observed_
         "sport_key": event["sport_key"],
         "commence_time": iso_utc(commence),
         "schedule_revision": schedule_revision,
+        "schedule_identity": event_schedule_identity,
         "home_team": event.get("home_team"),
         "away_team": event.get("away_team"),
         "target": "result_1x2",
@@ -63,6 +77,7 @@ def build_frozen_lock(store: SoccerStore, event: Mapping[str, Any], *, observed_
         event_key,
         iso_utc(lock_at),
         schedule_revision=schedule_revision,
+        schedule_identity=event_schedule_identity,
     )
     if not slots:
         return {
@@ -146,14 +161,105 @@ def _load_model(store: SoccerStore, row: Mapping[str, Any]) -> ResidualSoftmaxMo
 
 def _same_schedule(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
     try:
+        left_identity = str(left.get("schedule_identity") or schedule_identity(left))
+        right_identity = str(right.get("schedule_identity") or schedule_identity(right))
+        # A persisted digest must still agree with the fields carried beside it.
+        # This prevents a partial metadata rewrite from preserving authority by
+        # copying an old digest onto a new team or kickoff identity.
+        if left.get("schedule_identity") and left_identity != schedule_identity(left):
+            return False
+        if right.get("schedule_identity") and right_identity != schedule_identity(right):
+            return False
         return (
             int(left.get("schedule_revision") or 0) > 0
             and int(left.get("schedule_revision") or 0)
             == int(right.get("schedule_revision") or 0)
-            and iso_utc(str(left["commence_time"])) == iso_utc(str(right["commence_time"]))
+            and left_identity == right_identity
         )
     except (KeyError, TypeError, ValueError):
         return False
+
+
+def _conditional_failure(exc: ClientError) -> bool:
+    return (exc.response.get("Error") or {}).get("Code") == "ConditionalCheckFailedException"
+
+
+def _public_binding_key(lock: Mapping[str, Any]) -> dict[str, str]:
+    return {
+        "PK": f"PUBLIC_PREDICTION_BINDING#{lock['event_key']}",
+        "SK": (
+            f"REV#{int(lock['schedule_revision'])}#HORIZON#T45#"
+            "TARGET#result_1x2"
+        ),
+    }
+
+
+def _claim_public_model_binding(
+    store: SoccerStore,
+    lock: Mapping[str, Any],
+    *,
+    model_digest: str,
+    observed_at: str,
+) -> tuple[bool, str, dict[str, Any]]:
+    """Bind the first publishable champion to this exact frozen schedule.
+
+    Prediction rows remain append-only per model, so their model-specific keys
+    alone cannot prevent two successive champions from both being marked
+    ``PUBLISHED`` for one match.  This conditional operations-table row is the
+    single public authority.  A retry by the same model is idempotent; a later
+    model, altered feature lock, or colliding schedule revision fails closed.
+    """
+    key = _public_binding_key(lock)
+    lock_identity = str(lock.get("schedule_identity") or schedule_identity(lock))
+    binding = {
+        **key,
+        "entity_type": "SOCCER_PUBLIC_PREDICTION_BINDING",
+        "binding_version": PUBLIC_BINDING_VERSION,
+        "event_key": lock["event_key"],
+        "event_id": lock["event_id"],
+        "sport_key": lock["sport_key"],
+        "commence_time": iso_utc(str(lock["commence_time"])),
+        "schedule_revision": int(lock["schedule_revision"]),
+        "schedule_identity": lock_identity,
+        "horizon": "T45",
+        "target": "result_1x2",
+        "lock_sk": lock["SK"],
+        "feature_hash": lock["feature_hash"],
+        "model_digest": model_digest,
+        "bound_at": observed_at,
+        "immutable": True,
+    }
+    try:
+        store.ops.put_item(
+            Item=binding,
+            ConditionExpression="attribute_not_exists(SK)",
+        )
+        return True, "PUBLIC_MODEL_BOUND", binding
+    except ClientError as exc:
+        if not _conditional_failure(exc):
+            raise
+    existing = store.ops.get_item(Key=key, ConsistentRead=True).get("Item")
+    existing = plain(existing) if existing else {}
+    if not existing:
+        return False, "PUBLIC_MODEL_BINDING_UNAVAILABLE", {}
+    immutable_fields = (
+        "binding_version",
+        "event_key",
+        "event_id",
+        "sport_key",
+        "commence_time",
+        "schedule_revision",
+        "schedule_identity",
+        "horizon",
+        "target",
+        "lock_sk",
+        "feature_hash",
+    )
+    if any(existing.get(field) != binding.get(field) for field in immutable_fields):
+        return False, "PUBLIC_MODEL_BINDING_INTEGRITY_MISMATCH", existing
+    if str(existing.get("model_digest") or "") != model_digest:
+        return False, "PUBLIC_MODEL_BINDING_MISMATCH", existing
+    return True, "PUBLIC_MODEL_ALREADY_BOUND", existing
 
 
 def _champion_publish_permission(store: SoccerStore) -> tuple[bool, str, dict[str, Any]]:
@@ -184,9 +290,15 @@ def predict_lock(store: SoccerStore, lock: Mapping[str, Any], *, observed_at: st
         return {"models": 0, "predictions": 0, "reason": "LOCK_NOT_PREDICTION_ELIGIBLE"}
     current_event = store.get_event(str(lock["event_key"]))
     if not current_event or not _same_schedule(lock, current_event):
-        return {"models": 0, "predictions": 0, "reason": "STALE_SCHEDULE_REVISION"}
+        return {"models": 0, "predictions": 0, "reason": "STALE_SCHEDULE_IDENTITY"}
     features = lock["frozen_features"]
     schedule_revision = int(lock["schedule_revision"])
+    lock_schedule_identity = str(
+        lock.get("schedule_identity") or schedule_identity(lock)
+    )
+    publication_cutoff = parse_utc(str(lock["commence_time"])) - timedelta(
+        minutes=PUBLICATION_CUTOFF_MINUTES
+    )
     written = 0
     failures = []
     blocked = []
@@ -204,6 +316,16 @@ def predict_lock(store: SoccerStore, lock: Mapping[str, Any], *, observed_at: st
                     }
                 )
                 continue
+            if authority == "CHAMPION" and parse_utc(observed_at) > publication_cutoff:
+                blocked.append(
+                    {
+                        "model_digest": model_row.get("model_digest"),
+                        "reason": "PUBLICATION_AFTER_T10_CUTOFF",
+                        "publication_cutoff": iso_utc(publication_cutoff),
+                        "observed_at": iso_utc(observed_at),
+                    }
+                )
+                continue
             model = _load_model(store, model_row)
             if tuple(model.feature_names) != tuple(features["feature_names"]):
                 raise ValueError("feature schema mismatch")
@@ -215,7 +337,42 @@ def predict_lock(store: SoccerStore, lock: Mapping[str, Any], *, observed_at: st
                 abstention_reasons.append("CHALLENGER_SHADOW_ONLY")
             if confidence < PUBLISH_CONFIDENCE:
                 abstention_reasons.append("CONFIDENCE_BELOW_PREDECLARED_THRESHOLD")
-            status = "PUBLISHED" if authority == "CHAMPION" and not abstention_reasons else "NO_PICK" if authority == "CHAMPION" else "SHADOW"
+            if authority == "CHAMPION":
+                # Close the schedule-check-to-write window as far as possible
+                # before claiming public authority. The immutable binding also
+                # carries the full identity and fails closed on a numeric
+                # revision collision.
+                latest_event = store.get_event(str(lock["event_key"]))
+                if not latest_event or not _same_schedule(lock, latest_event):
+                    blocked.append(
+                        {
+                            "model_digest": model_row.get("model_digest"),
+                            "reason": "STALE_SCHEDULE_IDENTITY",
+                        }
+                    )
+                    continue
+                bound, binding_reason, binding = _claim_public_model_binding(
+                    store,
+                    lock,
+                    model_digest=str(model_row["model_digest"]),
+                    observed_at=observed_at,
+                )
+                if not bound:
+                    blocked.append(
+                        {
+                            "model_digest": model_row.get("model_digest"),
+                            "reason": binding_reason,
+                            "bound_model_digest": binding.get("model_digest"),
+                        }
+                    )
+                    continue
+            status = (
+                "PUBLISHED"
+                if authority == "CHAMPION" and not abstention_reasons
+                else "NO_PICK"
+                if authority == "CHAMPION"
+                else "SHADOW"
+            )
             prediction = {
                 "PK": lock["event_key"],
                 "SK": (
@@ -228,12 +385,14 @@ def predict_lock(store: SoccerStore, lock: Mapping[str, Any], *, observed_at: st
                 "sport_key": lock["sport_key"],
                 "commence_time": lock["commence_time"],
                 "schedule_revision": schedule_revision,
+                "schedule_identity": lock_schedule_identity,
                 "home_team": lock.get("home_team"),
                 "away_team": lock.get("away_team"),
                 "target": "result_1x2",
                 "horizon": "T45",
                 "created_at": observed_at,
                 "lock_at": lock["lock_at"],
+                "publication_cutoff": iso_utc(publication_cutoff),
                 "feature_hash": lock["feature_hash"],
                 "feature_schema_version": lock["feature_schema_version"],
                 "model_digest": model_row["model_digest"],

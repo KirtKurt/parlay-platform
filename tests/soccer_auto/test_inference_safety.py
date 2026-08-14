@@ -8,6 +8,9 @@ from tests.soccer_auto.aws_stubs import install_if_needed
 
 install_if_needed()
 
+from botocore.exceptions import ClientError  # noqa: E402
+
+from soccer_auto.canonical import schedule_identity  # noqa: E402
 from soccer_auto.inference import (  # noqa: E402
     build_frozen_lock,
     freeze_handler,
@@ -52,10 +55,32 @@ def eligible_lock(*, revision: int = 4):
 
 class OpsTable:
     def __init__(self, state):
-        self.state = state
+        self.rows = {}
+        if state:
+            self.rows[("AUTONOMY", "STATE")] = state
+
+    @property
+    def state(self):
+        return self.rows.get(("AUTONOMY", "STATE"))
+
+    @state.setter
+    def state(self, value):
+        self.rows[("AUTONOMY", "STATE")] = value
 
     def get_item(self, **kwargs):
-        return {"Item": self.state} if self.state else {}
+        key = kwargs["Key"]
+        row = self.rows.get((key["PK"], key["SK"]))
+        return {"Item": row} if row else {}
+
+    def put_item(self, **kwargs):
+        item = kwargs["Item"]
+        key = (item["PK"], item["SK"])
+        if kwargs.get("ConditionExpression") and key in self.rows:
+            raise ClientError(
+                {"Error": {"Code": "ConditionalCheckFailedException"}},
+                "PutItem",
+            )
+        self.rows[key] = item
 
 
 class FakeModel:
@@ -85,9 +110,18 @@ class PredictionStore:
 class LockBuildStore:
     def __init__(self):
         self.requested_revision = None
+        self.requested_schedule_identity = None
 
-    def canonical_slots_before(self, event_key, cutoff, *, schedule_revision=None):
+    def canonical_slots_before(
+        self,
+        event_key,
+        cutoff,
+        *,
+        schedule_revision=None,
+        schedule_identity=None,
+    ):
         self.requested_revision = schedule_revision
+        self.requested_schedule_identity = schedule_identity
         return []
 
 
@@ -126,6 +160,11 @@ SHADOW = {
     "SK": "VERSION#shadow",
     "model_digest": "shadow-digest",
     "authority_state": "PROSPECTIVE_SHADOW",
+}
+NEW_CHAMPION = {
+    "SK": "CHAMPION",
+    "model_digest": "new-champion-digest",
+    "authority_state": "CHAMPION",
 }
 
 
@@ -189,6 +228,11 @@ class InferenceSafetyTests(unittest.TestCase):
         self.assertEqual(lock["schedule_revision"], 7)
         self.assertIn("#REV#7#", lock["SK"])
         self.assertEqual(build_store.requested_revision, 7)
+        self.assertEqual(lock["schedule_identity"], schedule_identity(event_row(revision=7)))
+        self.assertEqual(
+            build_store.requested_schedule_identity,
+            lock["schedule_identity"],
+        )
 
         prediction_store = PredictionStore(event_row(revision=8), autonomy={})
         result = predict_lock(
@@ -196,8 +240,118 @@ class InferenceSafetyTests(unittest.TestCase):
             eligible_lock(revision=7),
             observed_at="2026-08-14T13:15:01Z",
         )
-        self.assertEqual(result["reason"], "STALE_SCHEDULE_REVISION")
+        self.assertEqual(result["reason"], "STALE_SCHEDULE_IDENTITY")
         self.assertEqual(prediction_store.predictions, {})
+
+    def test_first_public_champion_binding_prevents_later_champion_repaint(self):
+        store = PredictionStore(
+            event_row(),
+            {
+                "authority": "AUTHORITATIVE",
+                "automatic_prediction_allowed": True,
+                "promotion_blocked": False,
+            },
+        )
+        with patch("soccer_auto.inference._load_model", return_value=FakeModel()):
+            with patch("soccer_auto.inference._active_models", return_value=[CHAMPION, SHADOW]):
+                first = predict_lock(
+                    store,
+                    eligible_lock(),
+                    observed_at="2026-08-14T13:15:01Z",
+                )
+            with patch("soccer_auto.inference._active_models", return_value=[CHAMPION]):
+                same_model_retry = predict_lock(
+                    store,
+                    eligible_lock(),
+                    observed_at="2026-08-14T13:15:30Z",
+                )
+            with patch(
+                "soccer_auto.inference._active_models",
+                return_value=[NEW_CHAMPION, SHADOW],
+            ):
+                second = predict_lock(
+                    store,
+                    eligible_lock(),
+                    observed_at="2026-08-14T13:16:01Z",
+                )
+
+        published = [
+            row
+            for row in store.predictions.values()
+            if row["prediction_status"] == "PUBLISHED"
+        ]
+        self.assertEqual(first["predictions"], 2)
+        self.assertEqual(same_model_retry["predictions"], 0)
+        self.assertEqual(same_model_retry["blocked"], [])
+        self.assertEqual(len(published), 1)
+        self.assertEqual(published[0]["model_digest"], "champion-digest")
+        self.assertFalse(
+            any(
+                row["model_digest"] == "new-champion-digest"
+                for row in store.predictions.values()
+            )
+        )
+        self.assertEqual(
+            second["blocked"][0]["reason"],
+            "PUBLIC_MODEL_BINDING_MISMATCH",
+        )
+        binding_rows = [
+            row
+            for row in store.ops.rows.values()
+            if row.get("entity_type") == "SOCCER_PUBLIC_PREDICTION_BINDING"
+        ]
+        self.assertEqual(len(binding_rows), 1)
+        self.assertEqual(binding_rows[0]["model_digest"], "champion-digest")
+
+    def test_champion_publication_is_allowed_at_t10_and_rejected_after_t10(self):
+        autonomy = {
+            "authority": "AUTHORITATIVE",
+            "automatic_prediction_allowed": True,
+            "promotion_blocked": False,
+        }
+        with patch("soccer_auto.inference._active_models", return_value=[CHAMPION, SHADOW]), patch(
+            "soccer_auto.inference._load_model", return_value=FakeModel()
+        ):
+            at_cutoff = PredictionStore(event_row(), autonomy)
+            allowed = predict_lock(
+                at_cutoff,
+                eligible_lock(),
+                observed_at="2026-08-14T13:50:00Z",
+            )
+            after_cutoff = PredictionStore(event_row(), autonomy)
+            rejected = predict_lock(
+                after_cutoff,
+                eligible_lock(),
+                observed_at="2026-08-14T13:50:00.001000Z",
+            )
+
+        self.assertEqual(allowed["predictions"], 2)
+        self.assertEqual(
+            sum(
+                row["prediction_status"] == "PUBLISHED"
+                for row in at_cutoff.predictions.values()
+            ),
+            1,
+        )
+        self.assertEqual(rejected["blocked"][0]["reason"], "PUBLICATION_AFTER_T10_CUTOFF")
+        self.assertEqual(
+            [row["prediction_status"] for row in after_cutoff.predictions.values()],
+            ["SHADOW"],
+        )
+
+    def test_same_revision_and_kickoff_with_changed_team_is_stale_identity(self):
+        changed = event_row()
+        changed["home_team"] = "Replacement Home"
+        store = PredictionStore(changed, autonomy={})
+
+        result = predict_lock(
+            store,
+            eligible_lock(),
+            observed_at="2026-08-14T13:15:01Z",
+        )
+
+        self.assertEqual(result["reason"], "STALE_SCHEDULE_IDENTITY")
+        self.assertEqual(store.predictions, {})
 
 
 if __name__ == "__main__":

@@ -138,7 +138,7 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual(template["Parameters"]["QuotaRaceBufferCredits"]["Default"], 2000)
         self.assertEqual(template["Parameters"]["SoccerOddsRequestsPerSecond"]["Default"], 3)
         self.assertEqual(template["Parameters"]["SoccerOddsRequestsPerSecond"]["MaxValue"], 3)
-        self.assertEqual(template["Parameters"]["EnableHistoricalBackfill"]["Default"], "false")
+        self.assertEqual(template["Parameters"]["EnableHistoricalBackfill"]["Default"], "true")
         queue_event = template["Resources"]["SoccerCollectionWorkerFunction"]["Properties"][
             "Events"
         ]["CollectionQueue"]["Properties"]
@@ -176,12 +176,38 @@ class IsolationTests(unittest.TestCase):
         self.assertIn("provider_429_baseline", workflow)
         self.assertIn("distributed_rate_limit_state", workflow)
 
-    def test_verified_soccer_deployment_is_manual_only(self) -> None:
+    def test_verified_soccer_deployment_has_only_exact_one_shot_trigger(self) -> None:
         workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
         trigger = workflow.split("permissions:", 1)[0]
         self.assertIn("workflow_dispatch:", trigger)
-        self.assertNotIn("push:", trigger)
-        self.assertFalse((ROOT / "soccer_auto/.deploy-v1-once").exists())
+        self.assertIn("push:", trigger)
+        self.assertIn("branches: [main]", trigger)
+        self.assertIn("- 'soccer_auto/.deploy-repair-once'", trigger)
+        self.assertNotIn("soccer_auto/**", trigger)
+        self.assertTrue((ROOT / "soccer_auto/.deploy-repair-once").exists())
+
+    def test_historical_backfill_defaults_on_and_remains_observable_with_kill_switch(self) -> None:
+        template = yaml.load(
+            (ROOT / "soccer-auto-template.yaml").read_text(),
+            Loader=CloudFormationLoader,
+        )
+        resource = template["Resources"]["SoccerHistoricalFunction"]
+        self.assertNotIn("Condition", resource)
+        events = resource["Properties"]["Events"]
+        self.assertEqual(set(events), {"FeaturedHistoricalHourly", "AdditionalHistoricalHourly"})
+        for event in events.values():
+            self.assertEqual(event["Properties"]["Enabled"], ["HistoricalBackfillEnabled", True, False])
+        self.assertEqual(
+            template["Globals"]["Function"]["Environment"]["Variables"][
+                "SOCCER_AUTO_HISTORICAL_BACKFILL_ENABLED"
+            ],
+            "EnableHistoricalBackfill",
+        )
+        workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
+        self.assertNotIn("enable_historical_backfill:", workflow)
+        self.assertIn('EnableHistoricalBackfill="true"', workflow)
+        self.assertIn("historical_rules_enabled", workflow)
+        self.assertIn("historical_featured_smoke", workflow)
 
     def test_lambda_memory_fits_the_production_account_ceiling(self) -> None:
         template = yaml.load(
@@ -282,31 +308,95 @@ class IsolationTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
         self.assertIn("SoccerLlmModelId=\"$soccer_llm_model_id\"", workflow)
         self.assertIn("bedrock_cris_smoke", workflow)
-        self.assertIn("us-east-1|us-east-2|us-west-1|us-west-2", workflow)
+        self.assertIn("us-east-1|us-east-2|us-west-2", workflow)
 
-    def test_llm_retries_quota_deferral_on_six_hour_schedule(self) -> None:
+    def test_llm_fallback_chain_has_exact_profile_and_foundation_model_authority(self) -> None:
+        template = yaml.load(
+            (ROOT / "soccer-auto-template.yaml").read_text(),
+            Loader=CloudFormationLoader,
+        )
+        globals_environment = template["Globals"]["Function"]["Environment"]["Variables"]
+        self.assertEqual(
+            globals_environment["SOCCER_AUTO_LLM_FALLBACK_MODEL_IDS"],
+            "us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0",
+        )
+
+        statements = {
+            statement.get("Sid"): statement
+            for statement in template["Resources"]["SoccerLlmAnalystRole"]["Properties"]
+            ["Policies"][0]["PolicyDocument"]["Statement"]
+            if statement.get("Sid")
+        }
+        profile_arns = statements["InvokeOnlySoccerNovaProfile"]["Resource"]
+        self.assertEqual(
+            profile_arns,
+            [
+                "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${SoccerLlmModelId}",
+                "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-lite-v1:0",
+                "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-micro-v1:0",
+            ],
+        )
+
+        expected = {
+            "InvokeOnlyNovaTwoLiteThroughSoccerProfile": (
+                "${SoccerLlmModelId}",
+                "amazon.nova-2-lite-v1:0",
+                ("us-east-1", "us-east-2", "us-west-2"),
+            ),
+            "InvokeOnlyNovaLiteThroughSoccerFallbackProfile": (
+                "us.amazon.nova-lite-v1:0",
+                "amazon.nova-lite-v1:0",
+                ("us-east-1", "us-east-2", "us-west-2"),
+            ),
+            "InvokeOnlyNovaMicroThroughSoccerFallbackProfile": (
+                "us.amazon.nova-micro-v1:0",
+                "amazon.nova-micro-v1:0",
+                ("us-east-1", "us-east-2", "us-west-2"),
+            ),
+        }
+        for sid, (profile_id, foundation_model_id, regions) in expected.items():
+            statement = statements[sid]
+            self.assertEqual(statement["Action"], "bedrock:InvokeModel")
+            self.assertEqual(
+                statement["Resource"],
+                [
+                    f"arn:${{AWS::Partition}}:bedrock:{region}::foundation-model/{foundation_model_id}"
+                    for region in regions
+                ],
+            )
+            self.assertEqual(
+                statement["Condition"]["StringEquals"]["bedrock:InferenceProfileArn"],
+                "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:"
+                f"inference-profile/{profile_id}",
+            )
+
+        policy = str(template["Resources"]["SoccerLlmAnalystRole"])
+        self.assertNotIn("foundation-model/*", policy)
+        self.assertNotIn("inference-profile/*", policy)
+
+    def test_llm_fallback_recovery_runs_hourly(self) -> None:
         template = yaml.load(
             (ROOT / "soccer-auto-template.yaml").read_text(),
             Loader=CloudFormationLoader,
         )
         resources = template["Resources"]
         events = resources["SoccerLlmAnalystFunction"]["Properties"]["Events"]
-        self.assertEqual(set(events), {"AnalyzeSoccerLearningEverySixHours"})
+        self.assertEqual(set(events), {"AnalyzeSoccerLearningHourly"})
         self.assertEqual(
-            events["AnalyzeSoccerLearningEverySixHours"]["Properties"]["Schedule"],
-            "cron(22 3/6 * * ? *)",
+            events["AnalyzeSoccerLearningHourly"]["Properties"]["Schedule"],
+            "cron(22 * * * ? *)",
         )
         alarm = resources["SoccerLlmAnalystLivenessAlarm"]["Properties"]
-        self.assertEqual(alarm["Period"], 21600)
+        self.assertEqual(alarm["Period"], 3600)
         self.assertEqual(alarm["EvaluationPeriods"], 2)
         self.assertEqual(alarm["DatapointsToAlarm"], 2)
-        self.assertIn("two six-hour schedule periods", alarm["AlarmDescription"])
+        self.assertIn("two hourly schedule periods", alarm["AlarmDescription"])
 
         workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
-        for status in ("ANALYZED", "FRESH_ANALYSIS_REUSED", "DEFERRED_QUOTA"):
-            self.assertIn(status, workflow)
-        self.assertIn("BEDROCK_DAILY_TOKEN_QUOTA", workflow)
-        self.assertIn("response.get('retry_after')", workflow)
+        self.assertIn("response['status'] == 'ANALYZED'", workflow)
+        self.assertIn('"force_refresh":true', workflow)
+        self.assertNotIn("status in {'ANALYZED', 'FRESH_ANALYSIS_REUSED', 'DEFERRED_QUOTA'}", workflow)
+        self.assertIn("response['analysis_origin'] == 'BEDROCK_CONVERSE'", workflow)
         self.assertIn("bedrock_cris_smoke", workflow)
 
     def test_controller_observes_every_scheduled_component_fail_closed(self) -> None:
@@ -324,6 +414,8 @@ class IsolationTests(unittest.TestCase):
             "SOCCER_AUTO_SETTLEMENT_FUNCTION": "SoccerSettlementFunction",
             "SOCCER_AUTO_TRAINER_FUNCTION": "SoccerTrainerFunction",
             "SOCCER_AUTO_LLM_ANALYST_FUNCTION": "SoccerLlmAnalystFunction",
+            "SOCCER_AUTO_HISTORICAL_FUNCTION": "SoccerHistoricalFunction",
+            "SOCCER_AUTO_HISTORICAL_BACKFILL_ENABLED": "EnableHistoricalBackfill",
         }
         self.assertEqual(variables, expected_functions)
         self.assertIn(
@@ -339,6 +431,7 @@ class IsolationTests(unittest.TestCase):
             ("Settlement", "SoccerSettlementFunction"),
             ("Trainer", "SoccerTrainerFunction"),
             ("LlmAnalyst", "SoccerLlmAnalystFunction"),
+            ("Historical", "SoccerHistoricalFunction"),
         ):
             alarm = resources[f"Soccer{component}LivenessAlarm"]
             self.assertEqual(alarm["Type"], "AWS::CloudWatch::Alarm")
