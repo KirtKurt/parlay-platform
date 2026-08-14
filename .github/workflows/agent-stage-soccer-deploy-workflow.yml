@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   stage:
-    if: github.event.head_commit.message != 'Stage verified soccer deployment workflow payload'
+    if: github.event.head_commit.message != 'Publish staged soccer deployment workflow payload'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +40,6 @@ jobs:
           mkdir -p .agent
           cp .github/workflows/deploy-soccer-auto.yml .agent/deploy-soccer-auto.yml.payload
           git checkout -- .github/workflows/deploy-soccer-auto.yml
-          test "$(sha256sum .agent/deploy-soccer-auto.yml.payload | awk '{print $1}')" = "$(sha256sum /tmp/soccer-workflow.expected 2>/dev/null | awk '{print $1}')" || true
           git diff --exit-code -- .github/workflows/deploy-soccer-auto.yml
       - name: Publish payload only
         shell: bash
@@ -51,5 +50,5 @@ jobs:
           git add .agent/deploy-soccer-auto.yml.payload
           changed=$(git diff --cached --name-only)
           test "$changed" = '.agent/deploy-soccer-auto.yml.payload'
-          git commit -m 'Stage verified soccer deployment workflow payload'
+          git commit -m 'Publish staged soccer deployment workflow payload'
           git push origin HEAD:agent/soccer-authority-repair
