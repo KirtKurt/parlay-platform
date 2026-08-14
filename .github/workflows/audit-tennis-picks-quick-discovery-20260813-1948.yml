@@ -1,0 +1,74 @@
+name: Audit Tennis picks quick discovery 20260813 1948
+
+on:
+  push:
+    branches: [agent/audit-todays-tennis-picks-20260813-1945]
+    paths: ['.github/workflows/audit-tennis-picks-quick-discovery-20260813-1948.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  STACK_NAME: parlay-platform-tennis-ml-prod
+  LOCK_FUNCTION: parlay-platform-tennis-ml-prod-tennis-lock
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Read stack resources, Lambda configuration, and today's lock card
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          TODAY=$(TZ=America/New_York date +%F)
+          aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$REGION" --output json > stack.json
+          aws cloudformation list-stack-resources --stack-name "$STACK_NAME" --region "$REGION" --output json > resources.json
+          aws lambda invoke --function-name "$LOCK_FUNCTION" --region "$REGION" --cli-binary-format raw-in-base64-out \
+            --payload "{\"httpMethod\":\"GET\",\"path\":\"/today\",\"queryStringParameters\":{\"date\":\"$TODAY\",\"slate_date\":\"$TODAY\"},\"requestContext\":{\"httpMethod\":\"GET\"}}" \
+            lock-envelope.json >/dev/null
+          python - <<'PY'
+          import json, subprocess
+          resources=json.load(open('resources.json')).get('StackResourceSummaries') or []
+          functions=[]
+          tables=[]
+          for row in resources:
+              if row.get('ResourceType')=='AWS::Lambda::Function':
+                  functions.append(row.get('PhysicalResourceId'))
+              if row.get('ResourceType')=='AWS::DynamoDB::Table':
+                  tables.append(row.get('PhysicalResourceId'))
+          inventory=[]
+          for name in sorted(x for x in functions if x):
+              raw=subprocess.check_output(['aws','lambda','get-function-configuration','--function-name',name,'--output','json'])
+              cfg=json.loads(raw)
+              env=dict((cfg.get('Environment') or {}).get('Variables') or {})
+              clean={}
+              for k,v in env.items():
+                  clean[k]='[REDACTED]' if any(t in k.upper() for t in ('KEY','TOKEN','SECRET','PASSWORD','CREDENTIAL')) else v
+              inventory.append({'name':name,'handler':cfg.get('Handler'),'state':cfg.get('State'),'last_update_status':cfg.get('LastUpdateStatus'),'environment':clean})
+          json.dump({'functions':inventory,'tables':sorted(x for x in tables if x)},open('inventory.json','w'),indent=2,sort_keys=True)
+          envelope=json.load(open('lock-envelope.json'))
+          body=envelope.get('body')
+          card=json.loads(body) if isinstance(body,str) else (body or envelope)
+          json.dump(card,open('lock-card.json','w'),indent=2,sort_keys=True)
+          print(json.dumps({'tables':tables,'functions':functions,'lock_summary':{k:card.get(k) for k in ('ok','slateDate','manifestComplete','matchCount','lockedCount','missedCount','terminalCount','lockStatusComplete')},'pick_count':len(card.get('picks') or [])},indent=2,sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tennis-picks-quick-discovery-${{ github.run_id }}
+          path: |
+            stack.json
+            resources.json
+            inventory.json
+            lock-envelope.json
+            lock-card.json
+          retention-days: 7
