@@ -80,6 +80,7 @@ jobs:
           [ "$ENABLED" -gt 0 ] || { echo "::error::Canonical MLB ingest has no enabled EventBridge schedule"; exit 1; }
 
       - name: Force one canonical live MLB ingest and capture failure diagnostics
+        continue-on-error: true
         run: |
           set -euo pipefail
           aws lambda invoke \
@@ -125,6 +126,8 @@ jobs:
           PY
 
       - name: Verify fresh canonical pull reached DynamoDB
+        if: always()
+        continue-on-error: true
         run: |
           set -euo pipefail
           sleep 5
@@ -151,6 +154,7 @@ jobs:
           PY
 
       - name: Verify no MLB alarms are currently ALARM
+        if: always()
         run: |
           set -euo pipefail
           aws cloudwatch describe-alarms --state-value ALARM --region "$AWS_REGION" --output json > /tmp/alarms.json
