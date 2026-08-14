@@ -4,7 +4,7 @@ import json
 import os
 import random
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, Iterable, Mapping
 
@@ -21,6 +21,7 @@ MIN_LIVE_AUDIT = int(os.getenv("TENNIS_MIN_LIVE_AUDIT", "30"))
 MIN_LIVE_ACCURACY = float(os.getenv("TENNIS_MIN_LIVE_ACCURACY", "0.55"))
 MAX_LIVE_BRIER = float(os.getenv("TENNIS_MAX_LIVE_BRIER", "0.25"))
 MAX_CONSECUTIVE_FAILURES = int(os.getenv("TENNIS_MAX_CONSECUTIVE_FAILURES", "3"))
+PREDICTION_CUTOFF_MINUTES = max(0, int(os.getenv("TENNIS_PREDICTION_CUTOFF_MINUTES", "10")))
 INVOKE_MAX_ATTEMPTS = max(1, int(os.getenv("TENNIS_INVOKE_MAX_ATTEMPTS", "4")))
 INVOKE_BASE_DELAY_SECONDS = max(
     0.1, float(os.getenv("TENNIS_INVOKE_BASE_DELAY_SECONDS", "2"))
@@ -54,6 +55,20 @@ def _now() -> str:
 
 def _decimal(value: float) -> Decimal:
     return Decimal(str(round(value, 8)))
+
+
+def _parse_utc(value: Any) -> datetime:
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError("missing timestamp")
+    parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _prediction_deadline(commence_time: Any) -> datetime:
+    return _parse_utc(commence_time) - timedelta(minutes=PREDICTION_CUTOFF_MINUTES)
 
 
 def _retryable_invoke_error(exc: ClientError) -> bool:
@@ -116,10 +131,31 @@ def _scan(prefix: str) -> Iterable[Dict[str, Any]]:
 
 
 def _live_audit(limit: int = 200) -> Dict[str, Any]:
+    deadlines: Dict[str, datetime] = {}
+    for item in _scan("LIVE#"):
+        match_id = str(item.get("event_id") or str(item.get("PK", "")).split("#", 1)[-1])
+        if not match_id:
+            continue
+        try:
+            deadlines[match_id] = _prediction_deadline(item.get("commence_time"))
+        except (TypeError, ValueError):
+            continue
+
     predictions: Dict[str, Dict[str, Any]] = {}
+    late_prediction_records_ignored = 0
     for item in _scan("PREDICTION#"):
         match_id = str(item["PK"]).split("#", 1)[1]
         if match_id.startswith(("hist-", "bootstrap:")):
+            continue
+        deadline = deadlines.get(match_id)
+        if deadline is None:
+            continue
+        try:
+            stamp_dt = _parse_utc(item.get("SK"))
+        except (TypeError, ValueError):
+            continue
+        if stamp_dt > deadline:
+            late_prediction_records_ignored += 1
             continue
         current = predictions.get(match_id)
         if current is None or str(item.get("SK", "")) > str(current.get("SK", "")):
@@ -146,10 +182,10 @@ def _live_audit(limit: int = 200) -> Dict[str, Any]:
     rows.sort(reverse=True)
     rows = rows[:limit]
     if not rows:
-        return {"count": 0, "accuracy": None, "brier": None}
+        return {"count": 0, "accuracy": None, "brier": None, "late_prediction_records_ignored": late_prediction_records_ignored, "prediction_cutoff_minutes": PREDICTION_CUTOFF_MINUTES}
     correct = sum(int((p >= 0.5) == bool(y)) for _, p, y in rows)
     brier = sum((p - y) ** 2 for _, p, y in rows) / len(rows)
-    return {"count": len(rows), "accuracy": correct / len(rows), "brier": brier}
+    return {"count": len(rows), "accuracy": correct / len(rows), "brier": brier, "late_prediction_records_ignored": late_prediction_records_ignored, "prediction_cutoff_minutes": PREDICTION_CUTOFF_MINUTES}
 
 
 def _model_state() -> Dict[str, Any]:
@@ -173,12 +209,12 @@ def _authority(
     if samples < MIN_TRAINING_SAMPLES:
         return "SHADOW", "insufficient_total_training_samples"
     if int(audit.get("count") or 0) < MIN_LIVE_AUDIT:
-        return "SHADOW", "insufficient_live_audit_samples"
+        return "SHADOW", "insufficient_t10_live_audit_samples"
     if float(audit.get("accuracy") or 0.0) < MIN_LIVE_ACCURACY:
-        return "SHADOW", "live_accuracy_below_gate"
+        return "SHADOW", "t10_live_accuracy_below_gate"
     if float(audit.get("brier") or 1.0) > MAX_LIVE_BRIER:
-        return "SHADOW", "live_calibration_below_gate"
-    return "AUTHORITATIVE", "all_autonomous_promotion_gates_passed"
+        return "SHADOW", "t10_live_calibration_below_gate"
+    return "AUTHORITATIVE", "all_t10_autonomous_promotion_gates_passed"
 
 
 def _run_action(
@@ -267,6 +303,8 @@ def run_cycle() -> Dict[str, Any]:
         "live_brier": _decimal(float(audit["brier"]))
         if audit.get("brier") is not None
         else None,
+        "prediction_cutoff_minutes": PREDICTION_CUTOFF_MINUTES,
+        "late_prediction_records_ignored": int(audit.get("late_prediction_records_ignored") or 0),
         "historical_backfill_enabled": HISTORICAL_ENABLED,
         "historical_backfill_required": HISTORICAL_REQUIRED,
         "last_cycle_at": now,
@@ -295,6 +333,7 @@ def run_cycle() -> Dict[str, Any]:
             "min_live_audit": MIN_LIVE_AUDIT,
             "min_live_accuracy": MIN_LIVE_ACCURACY,
             "max_live_brier": MAX_LIVE_BRIER,
+            "prediction_cutoff_minutes": PREDICTION_CUTOFF_MINUTES,
         },
     }
 
