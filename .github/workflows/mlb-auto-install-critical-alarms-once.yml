@@ -1,0 +1,98 @@
+name: MLB Auto Install Critical Alarms Once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-auto-install-critical-alarms-once.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-1
+      STACK_NAME: parlay-platform-dev
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Resolve canonical MLB ingest Lambda
+        run: |
+          set -euo pipefail
+          PULL_FN=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBAuditedPullFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          [ -n "$PULL_FN" ] && [ "$PULL_FN" != "None" ]
+          echo "PULL_FN=$PULL_FN" >> "$GITHUB_ENV"
+          echo "canonical_ingest_lambda=$PULL_FN"
+
+      - name: Install fail-fast error alarm
+        run: |
+          set -euo pipefail
+          aws cloudwatch put-metric-alarm \
+            --region "$AWS_REGION" \
+            --alarm-name "MLB-Auto-Critical-Canonical-Ingest-Errors" \
+            --alarm-description "Critical: canonical MLB Auto ingest Lambda emitted one or more errors in a 5-minute period." \
+            --namespace AWS/Lambda \
+            --metric-name Errors \
+            --dimensions Name=FunctionName,Value="$PULL_FN" \
+            --statistic Sum \
+            --period 300 \
+            --evaluation-periods 1 \
+            --datapoints-to-alarm 1 \
+            --threshold 0 \
+            --comparison-operator GreaterThanThreshold \
+            --treat-missing-data notBreaching
+
+      - name: Install no-invocation schedule alarm
+        run: |
+          set -euo pipefail
+          aws cloudwatch put-metric-alarm \
+            --region "$AWS_REGION" \
+            --alarm-name "MLB-Auto-Critical-Canonical-Ingest-NoInvocations" \
+            --alarm-description "Critical: canonical MLB Auto ingest Lambda has no invocation in two consecutive 15-minute periods." \
+            --namespace AWS/Lambda \
+            --metric-name Invocations \
+            --dimensions Name=FunctionName,Value="$PULL_FN" \
+            --statistic Sum \
+            --period 900 \
+            --evaluation-periods 2 \
+            --datapoints-to-alarm 2 \
+            --threshold 1 \
+            --comparison-operator LessThanThreshold \
+            --treat-missing-data breaching
+
+      - name: Verify critical alarms exist
+        run: |
+          set -euo pipefail
+          aws cloudwatch describe-alarms \
+            --region "$AWS_REGION" \
+            --alarm-names \
+              "MLB-Auto-Critical-Canonical-Ingest-Errors" \
+              "MLB-Auto-Critical-Canonical-Ingest-NoInvocations" \
+            --query 'MetricAlarms[].{name:AlarmName,state:StateValue,reason:StateReason,metric:MetricName,period:Period,evaluationPeriods:EvaluationPeriods}' \
+            --output json
+          COUNT=$(aws cloudwatch describe-alarms \
+            --region "$AWS_REGION" \
+            --alarm-names \
+              "MLB-Auto-Critical-Canonical-Ingest-Errors" \
+              "MLB-Auto-Critical-Canonical-Ingest-NoInvocations" \
+            --query 'length(MetricAlarms)' --output text)
+          [ "$COUNT" = "2" ]
+
+      - name: Disable this one-shot workflow
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --method PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/mlb-auto-install-critical-alarms-once.yml/disable"
