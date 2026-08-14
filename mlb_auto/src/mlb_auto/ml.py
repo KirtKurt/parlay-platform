@@ -130,6 +130,55 @@ def train_logistic(rows: Sequence[Mapping[str, float]], labels: Sequence[int], *
     return Model(b, tuple(w), names, 'logistic', model_meta)
 
 
+def _model_logit(model: Model, row: Mapping[str, float]) -> float:
+    return max(-30.0, min(30.0, model.intercept + sum(
+        w * _scaled_value(row, n, model.metadata)
+        for w, n in zip(model.weights, model.feature_names)
+    )))
+
+
+def calibrate_platt(model: Model, rows, labels, *, epochs: int = 500, lr: float = .03,
+                    l2: float = .001) -> Model:
+    """Fit a calibration-only sigmoid on chronological validation evidence.
+
+    The calibrated probability is sigmoid(a * raw_logit + b). Folding ``a`` and
+    ``b`` back into the original linear model keeps the runtime representation
+    unchanged while allowing autonomous correction of over/under-confidence.
+    """
+    if len(rows) != len(labels) or len(rows) < 20:
+        raise ValueError('INSUFFICIENT_CALIBRATION_ROWS')
+    logits = [_model_logit(model, row) for row in rows]
+    a, b = 1.0, 0.0
+    for _ in range(int(epochs)):
+        ga = gb = 0.0
+        for z, y in zip(logits, labels):
+            q = max(-30.0, min(30.0, a * z + b))
+            p = 1.0 / (1.0 + math.exp(-q))
+            e = p - int(y)
+            ga += e * z
+            gb += e
+        n = float(len(logits))
+        a -= lr * (ga / n + l2 * (a - 1.0))
+        b -= lr * gb / n
+        a = max(0.15, min(3.0, a))
+        b = max(-3.0, min(3.0, b))
+    meta = dict(model.metadata or {})
+    meta.update({
+        'probability_calibration': 'platt_logit_fold_v1',
+        'calibration_scale': a,
+        'calibration_bias': b,
+        'calibration_rows': len(rows),
+        'calibration_source': 'INNER_CHRONOLOGICAL_VALIDATION_ONLY',
+    })
+    return Model(
+        b + a * model.intercept,
+        tuple(a * w for w in model.weights),
+        model.feature_names,
+        model.model_family,
+        meta,
+    )
+
+
 def log_loss(model: Model, rows, labels) -> float:
     eps = 1e-9
     vals = []
