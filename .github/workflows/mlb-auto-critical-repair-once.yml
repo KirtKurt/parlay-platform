@@ -80,6 +80,7 @@ jobs:
           [ "$ENABLED" -gt 0 ] || { echo "::error::Canonical MLB ingest has no enabled EventBridge schedule"; exit 1; }
 
       - name: Force one canonical live MLB ingest and capture failure diagnostics
+        id: force_ingest
         continue-on-error: true
         run: |
           set -euo pipefail
@@ -126,6 +127,7 @@ jobs:
           PY
 
       - name: Verify fresh canonical pull reached DynamoDB
+        id: verify_fresh
         if: always()
         continue-on-error: true
         run: |
@@ -154,7 +156,9 @@ jobs:
           PY
 
       - name: Verify no MLB alarms are currently ALARM
+        id: verify_alarms
         if: always()
+        continue-on-error: true
         run: |
           set -euo pipefail
           aws cloudwatch describe-alarms --state-value ALARM --region "$AWS_REGION" --output json > /tmp/alarms.json
@@ -169,6 +173,26 @@ jobs:
           print('active_mlb_alarms=', rows)
           if rows: raise SystemExit('Active MLB alarms remain: '+', '.join(rows))
           PY
+
+      - name: Fail if recovery is incomplete after collecting diagnostics
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "force_ingest_outcome=${{ steps.force_ingest.outcome }}"
+          echo "fresh_pull_outcome=${{ steps.verify_fresh.outcome }}"
+          echo "alarm_check_outcome=${{ steps.verify_alarms.outcome }}"
+          if [ "${{ steps.force_ingest.outcome }}" != "success" ]; then
+            echo "::error::Canonical MLB ingest recovery is still failing"
+            exit 1
+          fi
+          if [ "${{ steps.verify_fresh.outcome }}" != "success" ]; then
+            echo "::error::Canonical MLB pull is still stale"
+            exit 1
+          fi
+          if [ "${{ steps.verify_alarms.outcome }}" != "success" ]; then
+            echo "::error::One or more MLB alarms remain active"
+            exit 1
+          fi
 
       - name: Disable this one-shot repair workflow
         if: success()
