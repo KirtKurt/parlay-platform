@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Compatibility wrapper for the MLB trainer deploy verifier.
+"""Autonomous MLB trainer deployment verifier.
 
-The full verifier implementation is preserved in
-``verify_mlb_trainer_deploy_response_legacy``. This wrapper corrects the
-manual-first shadow authority lifecycle without changing any other verifier
-contract. A persisted shadow artifact is not live inference authority; runtime
-activation must remain unavailable until manual approval installs a consumer or
-enables live inference authority.
+The full structural verifier remains in
+``verify_mlb_trainer_deploy_response_legacy``. This wrapper replaces the old
+manual-first shadow expectation with the intended MLB AUTO contract:
+
+* gated automatic promotion is enabled;
+* the first passing prospective champion does not require manual review;
+* the V2 inference consumer is installed; and
+* runtime activation is available only through immutable prospective,
+  calibration, proper-scoring, and deployment-identity gates.
 """
 from __future__ import annotations
 
@@ -30,7 +33,6 @@ for _name in dir(_legacy):
 
 
 def _health_latest_live_authority(status_after: Dict[str, Any], key: str) -> Any:
-    """Return the persisted latest-run authority marker for one health domain."""
     health = status_after.get(key)
     if not isinstance(health, dict) or health.get("ok") is not True:
         return None
@@ -43,58 +45,38 @@ def _health_latest_live_authority(status_after: Dict[str, Any], key: str) -> Any
 def _runtime_authority_activation_errors(
     status_after: Dict[str, Any],
 ) -> List[str]:
-    """Validate activation availability while preserving manual-first safety.
+    errors: List[str] = []
+    if status_after.get("automaticPromotionEnabled") is not True:
+        errors.append("automatic_promotion_not_enabled")
+    if status_after.get("firstPromotionRequiresManualReview") is not False:
+        errors.append("first_promotion_still_requires_manual_review")
+    if status_after.get("v2InferenceConsumerInstalled") is not True:
+        errors.append("v2_inference_consumer_not_installed")
+    if status_after.get("runtimeAuthorityActivationAvailable") is not True:
+        errors.append("runtime_authority_activation_not_available")
+    if status_after.get("learningContinuesBelowAspirationalAccuracy") is not True:
+        errors.append("learning_still_bound_to_aspirational_accuracy")
+    if status_after.get("aspirationalAccuracyBlocksTraining") is not False:
+        errors.append("aspirational_accuracy_still_blocks_training")
+    if status_after.get("aspirationalAccuracyBlocksCandidateEvaluation") is not False:
+        errors.append("aspirational_accuracy_still_blocks_candidate_evaluation")
+    if status_after.get("aspirationalAccuracyBlocksPlayableAuthority") is not True:
+        errors.append("aspirational_accuracy_does_not_block_playable_authority")
 
-    The deployed persisted-status response does not always repeat
-    ``liveInferenceAuthority`` at the top level. In that exact schema, require
-    both independently persisted training and selection-capture health records
-    to prove shadow-only authority. Missing or unhealthy evidence remains
-    fail-closed.
-    """
-    automatic_promotion_disabled = (
-        status_after.get("automaticPromotionEnabled") is False
-    )
-    manual_first_required = (
-        status_after.get("firstPromotionRequiresManualReview") is True
-    )
-    inference_consumer_absent = (
-        status_after.get("v2InferenceConsumerInstalled") is False
-    )
+    consumer = status_after.get("v2InferenceConsumer") or {}
+    if not isinstance(consumer, dict) or consumer.get("installed") is not True:
+        errors.append("v2_inference_consumer_contract_missing")
+    elif consumer.get("automaticWagerAllowed") is not False:
+        errors.append("v2_consumer_automatic_wager_contract_invalid")
 
-    top_level_live_authority = status_after.get("liveInferenceAuthority")
-    if top_level_live_authority is False:
-        live_authority_absent = True
-    elif "liveInferenceAuthority" not in status_after:
-        live_authority_absent = (
-            _health_latest_live_authority(status_after, "trainingHealth") is False
-            and _health_latest_live_authority(
-                status_after, "selectionCaptureHealth"
-            )
-            is False
-        )
-    else:
-        live_authority_absent = False
-
-    activation_available = status_after.get("runtimeAuthorityActivationAvailable")
-    shadow_manual_first = (
-        automatic_promotion_disabled
-        and manual_first_required
-        and inference_consumer_absent
-        and live_authority_absent
-    )
-    if shadow_manual_first:
-        return (
-            []
-            if activation_available is False
-            else [
-                "runtime_authority_activation_must_remain_unavailable_before_manual_approval"
-            ]
-        )
-    return (
-        []
-        if activation_available is True
-        else ["runtime_authority_activation_not_available"]
-    )
+    # Before a champion passes the gate, persisted training and capture runs
+    # remain shadow/no-authority. That is expected and distinct from the
+    # availability of the automatic activation path itself.
+    for key in ("trainingHealth", "selectionCaptureHealth"):
+        marker = _health_latest_live_authority(status_after, key)
+        if marker not in {False, True}:
+            errors.append(f"{key}:live_inference_authority_marker_missing")
+    return errors
 
 
 # Functions copied from the legacy module retain that module's global namespace,
