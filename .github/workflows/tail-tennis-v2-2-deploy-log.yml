@@ -1,0 +1,33 @@
+name: Capture Tennis V2.2 deploy failure log
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/tail-tennis-v2-2-deploy-log.yml"]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_JOB_ID: "89321110498"
+    steps:
+      - name: Download exact failed deployment log
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/jobs/${TARGET_JOB_ID}/logs" \
+            > evidence/tennis-v2-2-deploy-job.log
+          tail -n 320 evidence/tennis-v2-2-deploy-job.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tennis-v2-2-deploy-failure-log-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: evidence/

@@ -1,0 +1,45 @@
+{
+  "release": "TENNIS_PREDICTIVE_PLATFORM_V2_2_POLYMARKET_PUBLIC_SOURCE_LOCKED_PARITY",
+  "sport": "tennis",
+  "runtime_data_isolation": true,
+  "market_provider": "polymarket_public_gamma_clob",
+  "market_data_credential_required": false,
+  "schedule_enrichment_provider": "espn_public_tennis_core",
+  "aws_stack": "parlay-platform-tennis-ml-prod",
+  "protected_mlb_stack": "parlay-platform-dev",
+  "base_release": {
+    "archive_sha256": "e1d429273b32deabd2eea97dbf1532318f94d41868eabf50758b470edf02deb5",
+    "catalog_fix": ".github/tennis-release/apply_catalog_fix.py"
+  },
+  "patch": {
+    "uncompressed_sha256": "6d23ccf2e94d69db933a00002c930e1e095cf63aa867975adfcacdf13950c820",
+    "xz_sha256": "43876c21c8be375b6a6b0f4149a7928e03246601c2ba4305af50e2db87148112",
+    "base64_sha256": "4b49ddf5862d8d684015694929c973524d10507a7506a7c5b6ef7b736587ae8e",
+    "parts": 6
+  },
+  "final_source_tree_sha256": "f6b2f0408cf5eb3b2969243961e414fbab787bb30a2b597323ba7070a2b4f911",
+  "mlb_source_parity": {
+    "hello_world/mlb_game_winner_engine.py": "37667544e1a44c47be11468235d4f6f799de463e",
+    "hello_world/mlb_temporal_features_v1.py": "4b372c72fb047979f592b017bcb08f65dff435c5",
+    "hello_world/mlb_daily_per_game_lock_patch.py": "072a346cffd319c3646b357cd68884698d52274d"
+  },
+  "process_flow": [
+    "public Tennis moneyline discovery",
+    "all open two-player markets retained",
+    "earliest match minus ten hours",
+    "canonical fifteen-minute snapshots",
+    "MLB-source-locked de-vig and scoring",
+    "T-minus-60 and T-minus-50 readiness",
+    "immutable no-rescore T-minus-45 lock",
+    "T-minus-30 and T-minus-15 playability",
+    "exact Polymarket market resolution",
+    "ESPN normal-final result fallback",
+    "Tennis-only labels and autonomous challenger training"
+  ],
+  "local_validation": {
+    "pytest": "80 passed",
+    "isolation_scan": "passed",
+    "template_validation": "34 Tennis-only resources",
+    "python_compilation": "passed"
+  }
+}
