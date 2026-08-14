@@ -1,0 +1,89 @@
+name: Agent apply verified soccer legacy-lock migration
+
+on:
+  push:
+    branches:
+      - agent/soccer-authority-repair
+
+permissions:
+  contents: write
+
+concurrency:
+  group: agent-apply-soccer-legacy-lock-migration
+  cancel-in-progress: false
+
+jobs:
+  apply-test-publish:
+    if: github.event.head_commit.message == 'Apply verified soccer legacy-lock migration patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Decode and verify reviewed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          source=.agent/soccer-legacy-lock-repair.patch.gz.b64
+          test "$(sha256sum "$source" | awk '{print $1}')" = "af62905d02d8b2ff4626cb1d6efbc2a0c84f2557f17491e5cb1c62043cfa1c7f"
+          base64 -d "$source" > /tmp/soccer-legacy-lock-repair.patch.gz
+          test "$(sha256sum /tmp/soccer-legacy-lock-repair.patch.gz | awk '{print $1}')" = "5a59fa1ef8adf6ce24c4f80033f604cbc543456b2a29511f6f181ee61b031f11"
+          gzip -dc /tmp/soccer-legacy-lock-repair.patch.gz > /tmp/soccer-legacy-lock-repair.patch
+          test "$(sha256sum /tmp/soccer-legacy-lock-repair.patch | awk '{print $1}')" = "24e77052e353dd9424ea1495ce83ae4c823ebdbf9da42f14b2b4be086eaa4cff"
+          git apply --check /tmp/soccer-legacy-lock-repair.patch
+          git apply --index /tmp/soccer-legacy-lock-repair.patch
+          git rm -f "$source"
+
+      - name: Verify soccer-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import subprocess
+
+          allowed = {
+              '.agent/soccer-legacy-lock-repair.patch.gz.b64',
+              'soccer_auto/health.py',
+              'soccer_auto/historical_materializer.py',
+              'soccer_auto/storage.py',
+              'soccer_auto/trainer.py',
+              'tests/soccer_auto/test_health_contract.py',
+              'tests/soccer_auto/test_historical_materializer.py',
+          }
+          changed = set(subprocess.check_output(
+              ['git', 'diff', '--cached', '--name-only'], text=True
+          ).splitlines())
+          assert changed == allowed, (changed, allowed)
+          assert not any(
+              path.startswith('hello_world/')
+              or path.startswith('tennis_learning/')
+              or 'mlb' in path.casefold()
+              for path in changed
+          ), changed
+          print('soccer_legacy_lock_repair_scope', sorted(changed))
+          PY
+          git diff --cached --check
+
+      - name: Run complete isolated soccer verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
+          python -m py_compile soccer_auto/*.py
+          python -m pytest -q tests/soccer_auto
+          sam validate --template-file soccer-auto-template.yaml --lint
+          ! grep -Eq 'parlay_platform_|inqis_tennis|MLB|TENNIS' soccer-auto-template.yaml
+
+      - name: Publish verified source repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Kurt Soccer Repair Agent'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'Fix soccer legacy T45 training-lock migration'
+          git push origin HEAD:agent/soccer-authority-repair
