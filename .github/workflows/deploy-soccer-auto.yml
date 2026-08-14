@@ -306,6 +306,7 @@ jobs:
           eligible = int(supervised['authoritative_settlements'])
           ineligible = int(supervised['ineligible_validated_settlements'])
           training_rows = int(supervised['historical_training_rows'])
+          assert validated > 0, supervised
           assert validated == eligible + ineligible, supervised
           assert 0 <= training_rows <= int(supervised['materialized_rows']) <= eligible, supervised
           if materialized_now > 0:
