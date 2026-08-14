@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from datetime import datetime, timezone
 
 from mlb_auto.historical_backfill import build_example
+from mlb_auto.team_form import TEAM_FORM_VERSION
 
 
 def _event():
@@ -44,6 +45,27 @@ class FakeClient:
         return SimpleNamespace(data={'data': _event()})
 
 
+def _team_form(home, away, as_of, *, historical):
+    assert historical is True
+    return {
+        'ok': True,
+        'features': {
+            'form_available': 1.0,
+            'form_home_wins': 70.0,
+            'form_away_wins': 68.0,
+            'form_home_last3_wins': 2.0,
+            'form_away_last7_wins': 4.0,
+            'form_home_streak_signed': 2.0,
+            'form_away_streak_signed': -1.0,
+        },
+        'metadata': {
+            'as_of': datetime.fromisoformat(str(as_of)).astimezone(timezone.utc).isoformat(),
+            'historical': True,
+        },
+        'error': '',
+    }
+
+
 def test_historical_example_is_point_in_time_and_t45_locked():
     game = {
         'game_pk': '123',
@@ -53,17 +75,27 @@ def test_historical_example_is_point_in_time_and_t45_locked():
         'home_score': 6,
         'away_score': 4,
     }
-    row, audit = build_example(FakeClient(), game, ['h2h_1st_5_innings', 'pitcher_strikeouts'])
+    row, audit = build_example(
+        FakeClient(),
+        game,
+        ['h2h_1st_5_innings', 'pitcher_strikeouts'],
+        team_form_builder=_team_form,
+    )
     assert row is not None
     assert row['historical'] is True
     assert row['historical_source'] == 'THE_ODDS_API_POINT_IN_TIME'
     assert row['label_source'] == 'MLB_STATS_FINAL_SCORE'
     assert row['label_home_win'] == 1
     assert row['source_before_or_at_cutoff'] is True
+    assert row['team_form_available'] is True
+    assert row['team_form_version'] == TEAM_FORM_VERSION
+    assert row['features']['form_home_last3_wins'] == 2
+    assert row['features']['form_away_last7_wins'] == 4
     start = datetime.fromisoformat(row['commence_time'])
     source = datetime.fromisoformat(row['source_pull_at'])
     assert (start - source).total_seconds() == 45 * 60
     assert audit['history_points'] == 5
+    assert audit['team_form_available'] is True
 
 
 def test_v2_wrapper_forwards_bounded_game_budget(monkeypatch):
