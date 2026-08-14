@@ -193,7 +193,12 @@ def test_template_protects_lock_ledger_and_adds_failure_observability():
     assert 'PointInTimeRecoveryEnabled: true' in template
     assert 'Sid: ImmutableLockLedger' in template
     assert 'DynamoDBCrudPolicy: {TableName: !Ref LocksTable}' not in template
-    assert 'AutoDeadLetterQueue:' in template
     assert 'AutoFunctionErrorsAlarm:' in template
     assert 'AutoFunctionThrottlesAlarm:' in template
-    assert 'AutoDeadLetterQueueDepthAlarm:' in template
+    assert 'HeartbeatFailedInvocationsAlarm:' in template
+    assert 'LockFailedInvocationsAlarm:' in template
+    assert 'SettlementFailedInvocationsAlarm:' in template
+    assert 'TrainingFailedInvocationsAlarm:' in template
+    assert 'RepairFailedInvocationsAlarm:' in template
+    assert 'HistoricalBackfillFailedInvocationsAlarm:' in template
+    assert 'AWS::SQS::Queue' not in template

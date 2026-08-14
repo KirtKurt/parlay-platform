@@ -409,38 +409,33 @@ jobs:
               json.dump(evidence, handle, indent=2, sort_keys=True)
               handle.write('\n')
           PY
-      - name: Verify Auto alarms and empty dead-letter queue
+      - name: Verify Auto runtime and schedule alarms
         run: |
           set -euo pipefail
-          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
-          ERRORS_ALARM=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunctionErrorsAlarm --query StackResourceDetail.PhysicalResourceId --output text)
-          THROTTLES_ALARM=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunctionThrottlesAlarm --query StackResourceDetail.PhysicalResourceId --output text)
-          DLQ_ALARM=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoDeadLetterQueueDepthAlarm --query StackResourceDetail.PhysicalResourceId --output text)
-          DLQ_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='DeadLetterQueueUrl'].OutputValue" --output text)
-          aws cloudwatch describe-alarms \
-            --alarm-names "$ERRORS_ALARM" "$THROTTLES_ALARM" "$DLQ_ALARM" \
-            --output json > alarms.json
-          aws sqs get-queue-attributes --queue-url "$DLQ_URL" \
-            --attribute-names QueueArn ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible ApproximateNumberOfMessagesDelayed \
-            --output json > dlq.json
-          aws lambda get-function-configuration --function-name "$FN" \
-            --query '{FunctionName:FunctionName,DeadLetterConfig:DeadLetterConfig}' \
-            --output json > lambda_dlq.json
-          export ERRORS_ALARM THROTTLES_ALARM DLQ_ALARM
+          : > alarm_names.txt
+          for logical in \
+            AutoFunctionErrorsAlarm AutoFunctionThrottlesAlarm \
+            HeartbeatFailedInvocationsAlarm LockFailedInvocationsAlarm \
+            SettlementFailedInvocationsAlarm TrainingFailedInvocationsAlarm \
+            RepairFailedInvocationsAlarm HistoricalBackfillFailedInvocationsAlarm
+          do
+            aws cloudformation describe-stack-resource \
+              --stack-name "$STACK_NAME" --logical-resource-id "$logical" \
+              --query StackResourceDetail.PhysicalResourceId --output text >> alarm_names.txt
+          done
+          mapfile -t ALARM_NAMES < alarm_names.txt
+          test "${#ALARM_NAMES[@]}" = 8
+          aws cloudwatch describe-alarms --alarm-names "${ALARM_NAMES[@]}" --output json > alarms.json
           python - <<'PY'
-          import json, os
+          import json
 
           alarms=json.load(open('alarms.json')).get('MetricAlarms') or []
-          expected={os.environ['ERRORS_ALARM'], os.environ['THROTTLES_ALARM'], os.environ['DLQ_ALARM']}
-          assert len(expected) == 3 and all(name and name != 'None' for name in expected), expected
+          expected={line.strip() for line in open('alarm_names.txt') if line.strip()}
+          assert len(expected) == 8 and 'None' not in expected, expected
           assert {row.get('AlarmName') for row in alarms} == expected, (alarms, expected)
           assert all(row.get('StateValue') in {'OK','INSUFFICIENT_DATA'} for row in alarms), alarms
-          attrs=(json.load(open('dlq.json')).get('Attributes') or {})
-          for key in ('ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible','ApproximateNumberOfMessagesDelayed'):
-              assert key in attrs and int(attrs[key]) == 0, (key, attrs)
-          queue_arn=attrs.get('QueueArn')
-          config=json.load(open('lambda_dlq.json'))
-          assert queue_arn and (config.get('DeadLetterConfig') or {}).get('TargetArn') == queue_arn, (config, attrs)
+          assert sum(1 for row in alarms if row.get('Namespace') == 'AWS/Lambda') == 2, alarms
+          assert sum(1 for row in alarms if row.get('Namespace') == 'AWS/Events') == 6, alarms
           PY
       - name: Verify schedules and protected stacks
         env:
@@ -501,7 +496,7 @@ jobs:
           set -euo pipefail
           aws cloudformation describe-stacks --stack-name "$STACK_NAME" --output json > stack.json
           aws cloudformation list-stack-resources --stack-name "$STACK_NAME" --output json > resources.json
-          sha256sum llm_rd.json llm_status.json provider.json market_inventory.json heartbeat.json history.json status.json post_enable_status.json aug13_predictions.json aug13_audit.json aug13_audit_invoke.json aug13_authority_assertions.json alarms.json dlq.json lambda_dlq.json rules.json protected_stack_fingerprints.json stack.json resources.json > SHA256SUMS
+          sha256sum llm_rd.json llm_status.json provider.json market_inventory.json heartbeat.json history.json status.json post_enable_status.json aug13_predictions.json aug13_audit.json aug13_audit_invoke.json aug13_authority_assertions.json alarm_names.txt alarms.json rules.json protected_stack_fingerprints.json stack.json resources.json > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: mlb-auto-v1-deployment-evidence-${{ github.run_id }}
@@ -518,9 +513,8 @@ jobs:
             aug13_audit.json
             aug13_audit_invoke.json
             aug13_authority_assertions.json
+            alarm_names.txt
             alarms.json
-            dlq.json
-            lambda_dlq.json
             rules.json
             protected_stack_fingerprints.json
             stack.json

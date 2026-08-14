@@ -48,11 +48,6 @@ Globals:
         MLB_AUTO_LLM_HTTP_TIMEOUT_SECONDS: '180'
 
 Resources:
-  AutoDeadLetterQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      MessageRetentionPeriod: 1209600
-      SqsManagedSseEnabled: true
   StateTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -150,9 +145,6 @@ Resources:
     Properties:
       CodeUri: src/
       Handler: mlb_auto.autonomous_handler.handler
-      DeadLetterQueue:
-        Type: SQS
-        TargetArn: !GetAtt AutoDeadLetterQueue.Arn
       Policies:
         - DynamoDBCrudPolicy: {TableName: !Ref StateTable}
         - DynamoDBCrudPolicy: {TableName: !Ref SnapshotsTable}
@@ -274,15 +266,90 @@ Resources:
       Threshold: 1
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
-  AutoDeadLetterQueueDepthAlarm:
+  HeartbeatFailedInvocationsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmDescription: MLB Auto dead-letter queue contains a failed asynchronous invocation
-      Namespace: AWS/SQS
-      MetricName: ApproximateNumberOfMessagesVisible
+      AlarmDescription: MLB Auto heartbeat schedule failed to invoke its target
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
       Dimensions:
-        - {Name: QueueName, Value: !GetAtt AutoDeadLetterQueue.QueueName}
-      Statistic: Maximum
+        - {Name: RuleName, Value: !Sub '${AWS::StackName}-heartbeat-5m'}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+  LockFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MLB Auto lock schedule failed to invoke its target
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - {Name: RuleName, Value: !Sub '${AWS::StackName}-lock-1m'}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+  SettlementFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MLB Auto settlement schedule failed to invoke its target
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - {Name: RuleName, Value: !Sub '${AWS::StackName}-settle-30m'}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+  TrainingFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MLB Auto training schedule failed to invoke its target
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - {Name: RuleName, Value: !Sub '${AWS::StackName}-train-1h'}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+  RepairFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MLB Auto repair schedule failed to invoke its target
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - {Name: RuleName, Value: !Sub '${AWS::StackName}-repair-5m'}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+  HistoricalBackfillFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MLB Auto historical backfill schedule failed to invoke its target
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - {Name: RuleName, Value: !Sub '${AWS::StackName}-history-15m'}
+      Statistic: Sum
       Period: 300
       EvaluationPeriods: 1
       DatapointsToAlarm: 1
@@ -297,5 +364,3 @@ Outputs:
     Value: !Ref AutoFunction
   ArchiveBucketName:
     Value: !Ref ArchiveBucket
-  DeadLetterQueueUrl:
-    Value: !Ref AutoDeadLetterQueue
