@@ -1,0 +1,197 @@
+name: Soccer Persisted Hash Repair
+
+on:
+  push:
+    branches:
+      - agent/soccer-authority-repair
+    paths:
+      - .github/workflows/soccer-persisted-hash-repair.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: soccer-persisted-hash-repair
+  cancel-in-progress: false
+
+jobs:
+  repair-test-deploy-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/soccer-authority-repair
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Patch hash to exact DynamoDB persisted representation
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path('soccer_auto/inference.py')
+          text = source.read_text()
+          old_import = '''from .storage import (\n    COVERAGE_CERTIFICATE_VERSION,\n    SoccerStore,\n    now_utc,\n    plain,\n)'''
+          new_import = '''from .storage import (\n    COVERAGE_CERTIFICATE_VERSION,\n    SoccerStore,\n    ddb_safe,\n    now_utc,\n    plain,\n)'''
+          assert old_import in text, 'storage import block changed unexpectedly'
+          text = text.replace(old_import, new_import, 1)
+
+          marker = '    exclusion_reasons = []\n'
+          assert text.count(marker) == 1, text.count(marker)
+          text = text.replace(
+              marker,
+              '    # Bind the immutable feature hash to the exact numeric representation\\n'
+              '    # that DynamoDB will persist. ddb_safe rounds floats to 12 decimals;\\n'
+              '    # hashing full-precision floats before that conversion makes a valid\\n'
+              '    # lock fail provenance validation after a storage round trip.\\n'
+              '    features = plain(ddb_safe(features))\\n'
+              + marker,
+              1,
+          )
+          source.write_text(text)
+
+          test = Path('tests/soccer_auto/test_certified_lock_cohorts.py')
+          t = test.read_text()
+          old_tail = '    coverage_plan_digest,\n)'
+          new_tail = '    coverage_plan_digest,\n    ddb_safe,\n    plain,\n)'
+          assert old_tail in t, 'storage test import block changed unexpectedly'
+          t = t.replace(old_tail, new_tail, 1)
+
+          assertion = '        self.assertTrue(live_lock_coverage_provenance_valid(final_lock))\n'
+          assert t.count(assertion) == 1, t.count(assertion)
+          t = t.replace(
+              assertion,
+              assertion
+              + '        persisted_round_trip = plain(ddb_safe(final_lock))\n'
+              + '        self.assertTrue(\n'
+              + '            live_lock_coverage_provenance_valid(persisted_round_trip)\n'
+              + '        )\n'
+              + '        self.assertEqual(\n'
+              + '            final_lock["feature_hash"],\n'
+              + '            persisted_round_trip["feature_hash"],\n'
+              + '        )\n',
+              1,
+          )
+          test.write_text(t)
+          PY
+
+      - name: Run Soccer regression and full isolated test suite
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
+          python -m py_compile soccer_auto/*.py
+          python -m pytest -q tests/soccer_auto/test_certified_lock_cohorts.py
+          python -m pytest -q tests/soccer_auto
+
+      - name: Commit isolated Soccer repair
+        run: |
+          set -euo pipefail
+          git config user.name 'Soccer Critical Watch'
+          git config user.email 'actions@users.noreply.github.com'
+          git add soccer_auto/inference.py tests/soccer_auto/test_certified_lock_cohorts.py
+          git diff --cached --check
+          git commit -m 'Fix Soccer lock hash after DynamoDB float normalization'
+          git push origin HEAD:agent/soccer-authority-repair
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Build and deploy isolated Soccer stack
+        run: |
+          set -euo pipefail
+          sam validate --template-file soccer-auto-template.yaml --lint
+          ! grep -Eq 'parlay_platform_|inqis_tennis|MLB|TENNIS' soccer-auto-template.yaml
+          sam build --no-cached --template-file soccer-auto-template.yaml
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name parlay-platform-soccer-auto \
+            --region '${{ secrets.AWS_REGION }}' \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              OddsApiKey='${{ secrets.ODDS_API_KEY }}' \
+              EnableHistoricalBackfill='true' \
+              SharedQuotaReservePercent='0' \
+              QuotaRaceBufferCredits='2000' \
+              SoccerOddsRequestsPerSecond='3' \
+              SoccerLlmModelId='us.amazon.nova-2-lite-v1:0' \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+
+      - name: Verify deployed Soccer runtime and blockers
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, boto3
+          from soccer_auto.inference import live_lock_coverage_provenance_valid
+          from soccer_auto.storage import plain
+
+          region = os.environ['AWS_REGION_VALUE']
+          stack = 'parlay-platform-soccer-auto'
+          cf = boto3.client('cloudformation', region_name=region)
+          lam = boto3.client('lambda', region_name=region)
+          ddb = boto3.resource('dynamodb', region_name=region)
+
+          def resource(logical):
+              return cf.describe_stack_resource(
+                  StackName=stack, LogicalResourceId=logical
+              )['StackResourceDetail']['PhysicalResourceId']
+
+          controller = resource('SoccerControllerFunction')
+          freeze = resource('SoccerFreezeFunction')
+          controller_cfg = lam.get_function_configuration(FunctionName=controller)
+          freeze_cfg = lam.get_function_configuration(FunctionName=freeze)
+          print(json.dumps({
+              'controller_last_modified': controller_cfg['LastModified'],
+              'freeze_last_modified': freeze_cfg['LastModified'],
+          }, indent=2))
+
+          for name, payload in ((freeze, {}), (controller, {})):
+              out = '/tmp/' + name.replace(':','_').replace('/','_') + '.json'
+              lam.invoke(
+                  FunctionName=name,
+                  InvocationType='RequestResponse',
+                  Payload=json.dumps(payload).encode(),
+                  LogType='Tail',
+              )
+
+          locks_table = ddb.Table(resource('SoccerLocksTable'))
+          rows = []
+          kwargs = {}
+          while True:
+              page = locks_table.scan(**kwargs)
+              rows.extend(plain(x) for x in page.get('Items', []))
+              key = page.get('LastEvaluatedKey')
+              if not key:
+                  break
+              kwargs = {'ExclusiveStartKey': key}
+          t10 = [
+              x for x in rows
+              if x.get('entity_type') == 'SOCCER_FROZEN_FEATURE_LOCK'
+              and x.get('horizon') == 'T10'
+          ]
+          valid = sum(1 for x in t10 if live_lock_coverage_provenance_valid(x))
+          print(json.dumps({
+              'persisted_t10_total': len(t10),
+              'persisted_t10_valid': valid,
+              'persisted_t10_invalid_legacy': len(t10) - valid,
+              'note': 'Existing immutable pre-fix T10 rows are not rewritten after deadline.'
+          }, indent=2))
+
+          health_table = ddb.Table(resource('SoccerHealthTable'))
+          health = health_table.scan().get('Items', [])
+          provider_rows = [plain(x) for x in health if str(x.get('PK','')).startswith('PROVIDER') or 'quota' in str(x).lower()]
+          print(json.dumps({'provider_health_rows_tail': provider_rows[-5:]}, indent=2, default=str))
+          PY
