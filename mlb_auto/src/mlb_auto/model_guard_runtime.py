@@ -14,7 +14,8 @@ from .model_guard import (
     policy_payload,
 )
 
-OFFICIAL_PICK_POLICY = 'CHAMPION_CONFIDENCE_WITH_OOD_GUARD'
+PLATFORM_VERSION = 'MLB-AUTO-v1.2-ood-guard'
+OFFICIAL_PICK_POLICY = 'CHAMPION_CONFIDENCE_ONLY'
 MIXED_MODE = 'MIXED_CHAMPION_OOD_FALLBACK'
 
 _guard_context: ContextVar[dict[str, Any] | None] = ContextVar(
@@ -89,6 +90,7 @@ def _postprocess_latest_ingest(*, base, Store, original_model_from_item, result:
     champion = original_model_from_item(champion_item)
     if not pull_at or champion is None:
         store.put_state('controller', {
+            'platform_version': PLATFORM_VERSION,
             'official_pick_policy': OFFICIAL_PICK_POLICY,
             'model_guard_version': MODEL_GUARD_VERSION,
             'model_guard_enabled': True,
@@ -99,6 +101,7 @@ def _postprocess_latest_ingest(*, base, Store, original_model_from_item, result:
         })
         return {
             **result,
+            'platform_version': PLATFORM_VERSION,
             'official_pick_policy': OFFICIAL_PICK_POLICY,
             'model_input_guard': policy_payload(),
             'model_guard_evaluated_count': 0,
@@ -153,6 +156,7 @@ def _postprocess_latest_ingest(*, base, Store, original_model_from_item, result:
         except Exception:
             pass
 
+        row['platform_version'] = PLATFORM_VERSION
         row['official_pick_policy'] = OFFICIAL_PICK_POLICY
         row['model_guard_triggered'] = triggered
         row['model_guard_reason'] = reason
@@ -188,6 +192,7 @@ def _postprocess_latest_ingest(*, base, Store, original_model_from_item, result:
         prediction_mode = 'MARKET_BOOTSTRAP'
 
     guard_summary = {
+        'platform_version': PLATFORM_VERSION,
         'official_pick_policy': OFFICIAL_PICK_POLICY,
         'model_guard_version': MODEL_GUARD_VERSION,
         'model_guard_enabled': True,
@@ -249,4 +254,5 @@ def install(base, Store) -> None:
     base.ingest = guarded_ingest
     base._mlb_auto_model_guard_policy = policy_payload
     base._mlb_auto_model_guard_official_pick_policy = OFFICIAL_PICK_POLICY
+    base._mlb_auto_model_guard_platform_version = PLATFORM_VERSION
     base._mlb_auto_model_guard_installed = True
