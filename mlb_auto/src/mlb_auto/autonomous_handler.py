@@ -186,6 +186,11 @@ def _status_with_rd() -> dict:
 def handler(event, context):
     event = event or {}
     action = str(event.get('action') or event.get('detail-type') or '').upper()
+    if event.get('requestContext'):
+        path = str(event.get('rawPath') or '')
+        if path.endswith('/status'):
+            return base._response(_status_with_rd())
+        return base.handler(event, context)
     if action in ('TRAIN', 'MLB_AUTO_TRAIN'):
         return autonomous_train()
     if action in ('LLM_RD', 'MLB_AUTO_LLM_RD'):
