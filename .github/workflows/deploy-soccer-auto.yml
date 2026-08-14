@@ -283,10 +283,14 @@ jobs:
           response = json.load(open('/tmp/historical_materialize.json'))
           materialization = response['materialization']
           assert response['component'] == 'historical_backfill', response
-          assert materialization['authoritative_settlements'] > 0, materialization
           assert materialization['provider_calls'] <= 5, materialization
           assert not materialization['quota_deferred'], materialization
-          assert materialization['materialized'] > 0 or materialization['existing_locks'] > 0, materialization
+          if materialization['authoritative_settlements'] > 0:
+              assert materialization['materialized'] > 0 or materialization['existing_locks'] > 0, materialization
+          else:
+              assert materialization['provider_calls'] == 0, materialization
+              assert materialization['materialized'] == 0, materialization
+              print('::warning::No trainer-eligible settled Soccer events are currently available for T45 materialization')
           print('historical_t45_materialization_smoke', materialization)
           PY
           invoke_and_assert_ok SoccerHistoricalFunction '{"mode":"status"}' historical_status_after_materialize
@@ -295,7 +299,25 @@ jobs:
 
           response = json.load(open('/tmp/historical_status_after_materialize.json'))
           supervised = response['supervised_materialization']
-          assert supervised['historical_training_rows'] > 0, supervised
+          materialization = json.load(open('/tmp/historical_materialize.json'))['materialization']
+          materialized_now = int(materialization['materialized'])
+          validated = int(supervised['validated_settlements'])
+          eligible = int(supervised['authoritative_settlements'])
+          ineligible = int(supervised['ineligible_validated_settlements'])
+          training_rows = int(supervised['historical_training_rows'])
+          assert validated > 0, supervised
+          assert validated == eligible + ineligible, supervised
+          assert int(materialization['authoritative_settlements']) == eligible, (materialization, supervised)
+          assert 0 <= training_rows <= int(supervised['materialized_rows']) <= eligible, supervised
+          if materialized_now > 0:
+              assert training_rows > 0, supervised
+          elif eligible == 0:
+              assert training_rows == 0, supervised
+              print('::warning::Validated Soccer settlements are currently regulation-ambiguous and remain training-ineligible')
+          else:
+              print('::warning::Eligible Soccer settlements already had immutable locks; no new historical lock was required')
+          open('/tmp/soccer-historical-training-rows.txt', 'w').write(str(training_rows))
+          open('/tmp/soccer-authoritative-settlements.txt', 'w').write(str(eligible))
           print('historical_training_rows_after_materialization', supervised)
           PY
           printf '%s' '${{ inputs.shared_quota_reserve_percent || '0' }}' > /tmp/soccer-reserve-percent.txt
@@ -370,7 +392,16 @@ jobs:
 
           response = json.load(open('/tmp/trainer.json'))
           assert response['system'] == 'soccer_auto', response
-          assert response['training_rows'] > 0, response
+          historical_training_rows = int(open('/tmp/soccer-historical-training-rows.txt').read())
+          eligible_settlements = int(open('/tmp/soccer-authoritative-settlements.txt').read())
+          total_eligible_rows = int(response['total_eligible_rows'])
+          training_rows = int(response['training_rows'])
+          assert historical_training_rows <= total_eligible_rows <= eligible_settlements, response
+          assert 0 <= training_rows <= total_eligible_rows, response
+          if eligible_settlements == 0:
+              assert total_eligible_rows == 0 and training_rows == 0, response
+          else:
+              assert total_eligible_rows > 0 and training_rows > 0, response
           training = response['training']
           assert training.get('trained') is True or training.get('reason') in {
               'INSUFFICIENT_TRAINING_ROWS',
@@ -378,7 +409,9 @@ jobs:
               'DATA_MANIFEST_ALREADY_EVALUATED',
               'ACTIVE_PROSPECTIVE_CHALLENGER',
           }, response
-          print('deterministic_trainer_smoke', response['training_rows'], training)
+          if eligible_settlements == 0:
+              print('::warning::Trainer correctly remains at zero until an eligible authoritative settlement is available')
+          print('deterministic_trainer_smoke', training_rows, training)
           PY
           invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_controller_post_llm"}' controller_after_llm
           python - <<'PY'

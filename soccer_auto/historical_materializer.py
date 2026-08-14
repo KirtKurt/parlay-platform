@@ -116,7 +116,7 @@ def _write_state(
     return row
 
 
-def _authoritative_settlements(store: SoccerStore) -> list[dict[str, Any]]:
+def _validated_settlements(store: SoccerStore) -> list[dict[str, Any]]:
     return sorted(
         [
             {
@@ -131,6 +131,21 @@ def _authoritative_settlements(store: SoccerStore) -> list[dict[str, Any]]:
         key=lambda row: (str(row.get("commence_time") or ""), str(row["event_key"])),
         reverse=True,
     )
+
+
+def _settlement_training_admissible(row: Mapping[str, Any]) -> bool:
+    return bool(
+        row.get("training_eligible_1x2") is True
+        and row.get("training_eligible_score_derived") is True
+        and settlement_training_evidence_valid(row)
+    )
+
+
+def _authoritative_settlements(store: SoccerStore) -> list[dict[str, Any]]:
+    return [
+        row for row in _validated_settlements(store)
+        if _settlement_training_admissible(row)
+    ]
 
 
 def _conflicted_event_keys(store: SoccerStore) -> set[str]:
@@ -208,7 +223,7 @@ def historical_lock_provenance_valid(
             "TARGET#result_1x2"
         )
         return bool(
-            settlement_training_evidence_valid(settlement)
+            _settlement_training_admissible(settlement)
             and lock.get("historical_materialization") is True
             and lock.get("retrospective_only") is True
             and lock.get("immutable") is True
@@ -632,7 +647,11 @@ def run_materialization(
 
 
 def materialization_status(store: SoccerStore) -> dict[str, Any]:
-    settlements = _authoritative_settlements(store)
+    validated_settlements = _validated_settlements(store)
+    settlements = [
+        row for row in validated_settlements
+        if _settlement_training_admissible(row)
+    ]
     conflicted_event_keys = _conflicted_event_keys(store)
     settlements_by_key = {
         (str(row["event_key"]), int(row["schedule_revision"])): row
@@ -685,7 +704,11 @@ def materialization_status(store: SoccerStore) -> dict[str, Any]:
     }
     return {
         "mode": "AUTHORITATIVE_RESULT_JOINED_T45",
+        "validated_settlements": len(validated_settlements),
         "authoritative_settlements": len(settlements),
+        "ineligible_validated_settlements": (
+            len(validated_settlements) - len(settlements)
+        ),
         "materialized_rows": len(joined),
         "historical_training_rows": sum(
             row.get("training_eligible") is True for row in joined
@@ -708,7 +731,8 @@ def materialization_status(store: SoccerStore) -> dict[str, Any]:
         "state_rows_truncated": False,
         "state_query_pages": state_query_pages,
         "label_policy": (
-            "Only immutable The Odds API final-score settlements are admitted; "
-            "older odds-only archives remain training-ineligible."
+            "Only immutable, trainer-eligible The Odds API final-score "
+            "settlements are admitted; regulation-ambiguous results and older "
+            "odds-only archives remain training-ineligible."
         ),
     }
