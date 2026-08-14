@@ -1,0 +1,47 @@
+name: Test MLB Auto team form W-L feature family
+
+on:
+  push:
+    branches:
+      - agent/mlb-auto-team-form-wl-v1
+    paths:
+      - 'mlb_auto/**'
+      - '.github/workflows/test-mlb-auto-team-form-wl-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-mlb-auto-team-form-wl-v1
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test MLB Auto and isolation contracts
+        working-directory: mlb_auto
+        env:
+          PYTHONPATH: src
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.40,<2' 'PyYAML>=6,<7'
+          python -m pytest -q
+          python scripts/verify_isolation.py
+          python -m compileall -q src
+      - uses: aws-actions/setup-sam@v2
+      - name: Validate and build isolated SAM application
+        working-directory: mlb_auto
+        run: |
+          set -euo pipefail
+          sam validate --template-file template.yaml --lint
+          rm -rf .aws-sam
+          sam build --template-file template.yaml --no-cached
