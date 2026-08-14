@@ -5,7 +5,7 @@ import math
 import os
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, Iterable, Mapping
 
@@ -19,6 +19,7 @@ ODDS_API_KEY = os.environ["ODDS_API_KEY"]
 BASE_URL = os.getenv("TENNIS_ODDS_BASE_URL", "https://api.the-odds-api.com/v4")
 REGIONS = os.getenv("TENNIS_ODDS_REGIONS", "us")
 MAX_ACTIVE_KEYS = int(os.getenv("TENNIS_MAX_ACTIVE_KEYS", "24"))
+PREDICTION_CUTOFF_MINUTES = max(0, int(os.getenv("TENNIS_PREDICTION_CUTOFF_MINUTES", "10")))
 table = boto3.resource("dynamodb").Table(TABLE_NAME)
 
 
@@ -26,7 +27,7 @@ def _get(path: str, params: Mapping[str, Any]) -> Any:
     query = dict(params)
     query["apiKey"] = ODDS_API_KEY
     url = f"{BASE_URL}{path}?{urllib.parse.urlencode(query)}"
-    request = urllib.request.Request(url, headers={"User-Agent": "inqis-tennis-learning/1.3"})
+    request = urllib.request.Request(url, headers={"User-Agent": "inqis-tennis-learning/1.4"})
     with urllib.request.urlopen(request, timeout=45) as response:
         return json.loads(response.read().decode("utf-8"))
 
@@ -44,6 +45,20 @@ def _decimal(value: Any) -> Decimal:
     if number is None:
         raise ValueError(f"non-finite numeric value: {value!r}")
     return Decimal(str(number))
+
+
+def _parse_utc(value: Any) -> datetime:
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError("missing timestamp")
+    parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _deadline(commence_time: Any) -> datetime:
+    return _parse_utc(commence_time) - timedelta(minutes=PREDICTION_CUTOFF_MINUTES)
 
 
 def _discover_tennis_keys() -> list[str]:
@@ -94,9 +109,10 @@ def _best_h2h(event: Mapping[str, Any]) -> tuple[float, float] | None:
 def collect_live() -> Dict[str, Any]:
     discovered = _discover_tennis_keys()
     eventful, discovery_errors = _eventful_keys(discovered)
-    stored = predicted = skipped = malformed = total_events = successful_keys = 0
+    stored = predicted = skipped = malformed = deadline_skipped = total_events = successful_keys = 0
     request_errors: Dict[str, str] = dict(discovery_errors)
-    now = datetime.now(timezone.utc).isoformat()
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
     for sport_key in eventful:
         try:
             events = _get(f"/sports/{sport_key}/odds", {"regions": REGIONS, "markets": "h2h", "oddsFormat": "american", "dateFormat": "iso"})
@@ -113,13 +129,22 @@ def collect_live() -> Dict[str, Any]:
             player = str(event.get("home_team") or "")
             opponent = str(event.get("away_team") or "")
             event_id = str(event.get("id") or "")
-            if pair is None or not player or not opponent or not event_id:
+            commence_time = str(event.get("commence_time") or "")
+            if pair is None or not player or not opponent or not event_id or not commence_time:
                 skipped += 1
+                continue
+            try:
+                if now_dt > _deadline(commence_time):
+                    deadline_skipped += 1
+                    continue
+            except ValueError as exc:
+                malformed += 1
+                request_errors[f"event:{event_id}"] = f"invalid commence_time: {exc}"
                 continue
             signals = {"player_odds": pair[0], "opponent_odds": pair[1], "elo_diff": 0.0, "surface_elo_diff": 0.0, "recent_win_rate_diff": 0.0, "serve_points_won_diff": 0.0, "return_points_won_diff": 0.0, "break_points_saved_diff": 0.0, "rest_days_diff": 0.0, "best_of_five": False}
             try:
                 safe_signals = {k: (_decimal(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v) for k, v in signals.items()}
-                table.put_item(Item={"PK": f"LIVE#{event_id}", "SK": "LATEST", "event_id": event_id, "sport_key": sport_key, "player": player, "opponent": opponent, "commence_time": str(event.get("commence_time") or ""), "signals": safe_signals, "source": "the-odds-api-v4", "updated_at": now})
+                table.put_item(Item={"PK": f"LIVE#{event_id}", "SK": "LATEST", "event_id": event_id, "sport_key": sport_key, "player": player, "opponent": opponent, "commence_time": commence_time, "signals": safe_signals, "source": "the-odds-api-v4", "updated_at": now, "prediction_cutoff_minutes": PREDICTION_CUTOFF_MINUTES})
                 predict({"match_id": event_id, "player": player, "opponent": opponent, "signals": signals})
             except (ValueError, ArithmeticError) as exc:
                 malformed += 1
@@ -129,7 +154,7 @@ def collect_live() -> Dict[str, Any]:
             predicted += 1
     if eventful and successful_keys == 0:
         raise RuntimeError(f"all active tennis odds requests failed: {request_errors}")
-    return {"discovered_sport_keys": len(discovered), "eventful_sport_keys": len(eventful), "successful_sport_keys": successful_keys, "events": total_events, "stored": stored, "predicted": predicted, "skipped": skipped, "malformed": malformed, "errors": request_errors, "model": status()}
+    return {"discovered_sport_keys": len(discovered), "eventful_sport_keys": len(eventful), "successful_sport_keys": successful_keys, "events": total_events, "stored": stored, "predicted": predicted, "skipped": skipped, "deadline_skipped": deadline_skipped, "prediction_cutoff_minutes": PREDICTION_CUTOFF_MINUTES, "malformed": malformed, "errors": request_errors, "model": status()}
 
 
 def _winner(score_event: Mapping[str, Any]) -> str | None:
@@ -165,7 +190,7 @@ def _stored_sport_keys() -> list[str]:
 
 def settle_recent() -> Dict[str, Any]:
     sport_keys = _stored_sport_keys()
-    trained = duplicates = missing = score_events = successful_keys = malformed = 0
+    trained = duplicates = missing = score_events = successful_keys = malformed = late_snapshots = 0
     errors: Dict[str, str] = {}
     for sport_key in sport_keys:
         try:
@@ -187,10 +212,15 @@ def settle_recent() -> Dict[str, Any]:
                 missing += 1
                 continue
             try:
+                snapshot_at = _parse_utc(item.get("updated_at"))
+                commence_time = item.get("commence_time") or event.get("commence_time")
+                if snapshot_at > _deadline(commence_time):
+                    late_snapshots += 1
+                    continue
                 signals = {k: (float(v) if isinstance(v, Decimal) else v) for k, v in dict(item["signals"]).items()}
                 if any(_finite(v) is None for k, v in signals.items() if k != "best_of_five"):
                     raise ValueError("stored signals contain non-finite values")
-                result = settle({"match_id": event_id, "player": str(item["player"]), "opponent": str(item["opponent"]), "event_time": str(event.get("commence_time") or item.get("commence_time") or datetime.now(timezone.utc).isoformat()), "player_won": winner == str(item["player"]), "signals": signals, "source": "the-odds-api-v4-scores", "source_mode": "live_settlement"})
+                result = settle({"match_id": event_id, "player": str(item["player"]), "opponent": str(item["opponent"]), "event_time": str(event.get("commence_time") or item.get("commence_time") or datetime.now(timezone.utc).isoformat()), "player_won": winner == str(item["player"]), "signals": signals, "source": "the-odds-api-v4-scores", "source_mode": "live_settlement_t10"})
             except (ValueError, ArithmeticError) as exc:
                 malformed += 1
                 errors[f"event:{event_id}"] = str(exc)
@@ -199,7 +229,7 @@ def settle_recent() -> Dict[str, Any]:
             duplicates += int(result.get("duplicate", False))
     if sport_keys and successful_keys == 0:
         raise RuntimeError(f"all tracked tennis score requests failed: {errors}")
-    return {"sport_keys": len(sport_keys), "successful_sport_keys": successful_keys, "score_events": score_events, "trained": trained, "duplicates": duplicates, "missing_snapshots": missing, "malformed": malformed, "errors": errors, "model": status()}
+    return {"sport_keys": len(sport_keys), "successful_sport_keys": successful_keys, "score_events": score_events, "trained": trained, "duplicates": duplicates, "missing_snapshots": missing, "late_snapshots_skipped": late_snapshots, "prediction_cutoff_minutes": PREDICTION_CUTOFF_MINUTES, "malformed": malformed, "errors": errors, "model": status()}
 
 
 def lambda_handler(event: Mapping[str, Any], context: Any) -> Dict[str, Any]:
