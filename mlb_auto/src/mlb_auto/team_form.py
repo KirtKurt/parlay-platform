@@ -296,7 +296,7 @@ def _team_summary(
         'games_last14_days': float(games_last14_days),
     }
     for lag in range(1, 8):
-        summary[f'result_lag{lag}'] = float(history[-lag]['result']) if len(history) >= lag else 0.0
+        summary[f'wl_lag{lag}'] = float(history[-lag]['result']) if len(history) >= lag else 0.0
     return summary
 
 
@@ -331,7 +331,7 @@ def _neutral_summary() -> dict[str, float]:
         'games_last14_days': 0.0,
     }
     for lag in range(1, 8):
-        summary[f'result_lag{lag}'] = 0.0
+        summary[f'wl_lag{lag}'] = 0.0
     return summary
 
 
@@ -371,8 +371,8 @@ def _compose_features(
     for name in delta_names:
         features[f'form_{name}_delta'] = float(home[name]) - float(away[name])
     for lag in range(1, 8):
-        features[f'form_result_lag{lag}_delta'] = (
-            float(home[f'result_lag{lag}']) - float(away[f'result_lag{lag}'])
+        features[f'form_wl_lag{lag}_delta'] = (
+            float(home[f'wl_lag{lag}']) - float(away[f'wl_lag{lag}'])
         )
     features['form_home_split_vs_away_split_delta'] = (
         float(home['home_win_pct']) - float(away['road_win_pct'])
