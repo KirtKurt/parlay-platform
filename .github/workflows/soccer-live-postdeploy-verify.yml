@@ -26,7 +26,7 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Verify stack, schedules, alarms, Lambda errors, queues, and T10 locks
+      - name: Verify stack, schedules, alarms, runtime authority, quotas, and T10 locks
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
         run: |
@@ -64,6 +64,9 @@ jobs:
 
           def by_type(t):
               return [r for r in resources if r.get('ResourceType') == t]
+
+          def physical(logical_id):
+              return next(r['PhysicalResourceId'] for r in resources if r['LogicalResourceId'] == logical_id)
 
           print('STACK=' + json.dumps({
               'status': stack_info['StackStatus'],
@@ -140,8 +143,57 @@ jobs:
               queue_rows.append({'logical_id': r['LogicalResourceId'], **attrs})
           print('QUEUES=' + json.dumps(queue_rows))
 
-          lock_resource = next(r for r in resources if r['LogicalResourceId'] == 'SoccerLocksTable')
-          locks = ddb.Table(lock_resource['PhysicalResourceId'])
+          ops = ddb.Table(physical('SoccerOpsTable'))
+          quota = plain(ops.get_item(Key={'PK': 'QUOTA_STATE', 'SK': 'LATEST'}, ConsistentRead=True).get('Item') or {})
+          autonomy = plain(ops.get_item(Key={'PK': 'AUTONOMY', 'SK': 'STATE'}, ConsistentRead=True).get('Item') or {})
+          llm_attempt = plain(ops.get_item(Key={'PK': 'LLM_ANALYSIS', 'SK': 'LAST_ATTEMPT'}, ConsistentRead=True).get('Item') or {})
+          llm_latest = plain(ops.get_item(Key={'PK': 'LLM_ANALYSIS', 'SK': 'LATEST'}, ConsistentRead=True).get('Item') or {})
+          print('QUOTA_STATE=' + json.dumps({
+              'remaining': quota.get('remaining'),
+              'used': quota.get('used'),
+              'last_cost': quota.get('last_cost'),
+              'operation': quota.get('operation'),
+              'observed_at': quota.get('observed_at'),
+          }, default=str))
+          print('AUTONOMY_STATE=' + json.dumps({
+              'authority': autonomy.get('authority'),
+              'reason': autonomy.get('reason'),
+              'promotion_blocked': autonomy.get('promotion_blocked'),
+              'automatic_prediction_allowed': autonomy.get('automatic_prediction_allowed'),
+              'updated_at': autonomy.get('updated_at'),
+              'counts': autonomy.get('counts'),
+              'queues': autonomy.get('queues'),
+              'latest_quota': autonomy.get('latest_quota'),
+              'consecutive_failures': autonomy.get('consecutive_failures'),
+              'failures': autonomy.get('failures'),
+              'component_liveness_complete': autonomy.get('component_liveness_complete'),
+              'component_liveness': autonomy.get('component_liveness'),
+          }, default=str))
+          print('LLM_ATTEMPT=' + json.dumps({
+              'status': llm_attempt.get('status'),
+              'reason': llm_attempt.get('reason'),
+              'retry_after': llm_attempt.get('retry_after'),
+              'model_id': llm_attempt.get('model_id'),
+              'attempted_model_ids': llm_attempt.get('attempted_model_ids'),
+              'model_errors': [
+                  {
+                      'model_id': x.get('model_id'),
+                      'code': x.get('code'),
+                      'category': x.get('category'),
+                  }
+                  for x in (llm_attempt.get('model_errors') or [])
+                  if isinstance(x, dict)
+              ],
+              'observed_at': llm_attempt.get('observed_at'),
+          }, default=str))
+          print('LLM_LATEST=' + json.dumps({
+              'present': bool(llm_latest),
+              'validation_status': llm_latest.get('validation_status'),
+              'created_at': llm_latest.get('created_at'),
+              'model_id': llm_latest.get('model_id'),
+          }, default=str))
+
+          locks = ddb.Table(physical('SoccerLocksTable'))
           rows = []
           kwargs = {}
           while True:
