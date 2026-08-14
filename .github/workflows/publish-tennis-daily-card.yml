@@ -30,11 +30,12 @@ jobs:
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
           TABLE_NAME: inqis_tennis_learning
+          TENNIS_PREDICTION_CUTOFF_MINUTES: '10'
         run: |
           python - <<'PY'
           import json
           import os
-          from datetime import datetime, timezone
+          from datetime import datetime, timedelta, timezone
           from decimal import Decimal
           from zoneinfo import ZoneInfo
 
@@ -42,6 +43,7 @@ jobs:
           from boto3.dynamodb.conditions import Attr
 
           table = boto3.resource('dynamodb', region_name=os.environ['AWS_REGION_VALUE']).Table(os.environ['TABLE_NAME'])
+          cutoff_minutes = max(0, int(os.getenv('TENNIS_PREDICTION_CUTOFF_MINUTES', '10')))
 
           def scan_prefix(prefix):
               out = []
@@ -54,16 +56,27 @@ jobs:
                       return out
                   kwargs['ExclusiveStartKey'] = key
 
+          def parse_utc(value):
+              raw = str(value or '').strip()
+              if not raw:
+                  raise ValueError('missing timestamp')
+              dt = datetime.fromisoformat(raw.replace('Z','+00:00'))
+              if dt.tzinfo is None:
+                  dt = dt.replace(tzinfo=timezone.utc)
+              return dt.astimezone(timezone.utc)
+
           eastern = ZoneInfo('America/New_York')
           now = datetime.now(timezone.utc)
           today = now.astimezone(eastern).date()
 
           live = {}
+          deadlines = {}
           for item in scan_prefix('LIVE#'):
               event_id = str(item.get('event_id') or str(item.get('PK','')).split('#',1)[-1])
               raw = str(item.get('commence_time') or '')
               try:
-                  dt = datetime.fromisoformat(raw.replace('Z','+00:00')).astimezone(eastern)
+                  commence_utc = parse_utc(raw)
+                  dt = commence_utc.astimezone(eastern)
               except Exception:
                   continue
               if dt.date() != today:
@@ -75,13 +88,24 @@ jobs:
                   'commence_time': dt.isoformat(),
                   'updated_at': str(item.get('updated_at') or ''),
               }
+              deadlines[event_id] = commence_utc - timedelta(minutes=cutoff_minutes)
 
           latest = {}
+          timing_violation_records_ignored = 0
+          malformed_prediction_timestamps = 0
           for item in scan_prefix('PREDICTION#'):
               event_id = str(item.get('PK','')).split('#',1)[-1]
               if event_id not in live:
                   continue
               stamp = str(item.get('SK') or '')
+              try:
+                  stamp_dt = parse_utc(stamp)
+              except Exception:
+                  malformed_prediction_timestamps += 1
+                  continue
+              if stamp_dt > deadlines[event_id]:
+                  timing_violation_records_ignored += 1
+                  continue
               if event_id not in latest or stamp > str(latest[event_id].get('SK') or ''):
                   latest[event_id] = item
 
@@ -102,6 +126,8 @@ jobs:
                   'band': band,
                   'model_version': int(pred.get('model_version') or 0),
                   'prediction_timestamp': str(pred.get('SK') or ''),
+                  'prediction_cutoff_minutes': cutoff_minutes,
+                  't10_compliant': True,
               })
 
           picks.sort(key=lambda x: (x['commence_time'], -x['probability']))
@@ -109,7 +135,10 @@ jobs:
               'service': 'tennis-daily-card',
               'date_et': str(today),
               'generated_at': now.isoformat(),
-              'source': 'inqis_tennis_learning DynamoDB latest pre-match records',
+              'source': 'inqis_tennis_learning DynamoDB latest prediction at or before T-10 cutoff',
+              'prediction_cutoff_minutes': cutoff_minutes,
+              'timing_violation_records_ignored': timing_violation_records_ignored,
+              'malformed_prediction_timestamps': malformed_prediction_timestamps,
               'match_count': len(picks),
               'official_pick_count': sum(p['band'] == 'STRONG' for p in picks),
               'watch_count': sum(p['band'] == 'WATCH' for p in picks),
