@@ -175,6 +175,15 @@ class Store:
         )
         return [plain(x) for x in rows]
 
+    def update_training_example_features(self, slate, event_id, features, fields=None):
+        payload = dict(fields or {})
+        payload['features'] = dict(features or {})
+        return self._update_fields(
+            self.outcomes,
+            {'PK': 'MLB_AUTO#TRAINING_EXAMPLES', 'SK': f'{slate}#{event_id}'},
+            payload,
+        )
+
     def put_model(self, sk, item):
         self.models.put_item(Item=safe({'PK': 'MLB_AUTO#MODEL_REGISTRY', 'SK': sk, **item}))
 
