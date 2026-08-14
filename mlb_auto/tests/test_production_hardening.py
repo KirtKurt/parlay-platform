@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from mlb_auto import autonomous_handler, handler
+from mlb_auto import autonomous_handler, handler, training_guard
 from mlb_auto.engine import market_depth_features
 from mlb_auto.evolution import candidate_numeric_features
 from mlb_auto.storage import Store
@@ -136,6 +136,7 @@ def _examples(count=250, label=lambda i: i % 2):
         'commence_time': f'2026-01-{1 + i // 15:02d}T12:00:00+00:00',
         'features': {'signal': i / max(1, count - 1), 'market_home_probability': .4 + .2 * (i % 2)},
         'label_home_win': int(label(i)),
+        'lock_minutes': 10,
     } for i in range(count)]
 
 
@@ -173,7 +174,8 @@ def test_autonomous_search_never_receives_final_audit_holdout(monkeypatch):
     assert seen['search_kwargs'] == {'min_train': 160, 'min_validation': 40}
     assert result['search_manifest']['untouchedAuditRows'] == 50
     assert result['search_manifest']['validationPolicy'].endswith('untouched_audit_v1')
-    assert any(sk == 'CHAMPION' for sk, _ in store.models)
+    assert not any(sk == 'CHAMPION' for sk, _ in store.models)
+    assert result['gate']['reason'] == 'OFFICIAL_PICK_AUDIT_GATE'
 
 
 def test_training_does_not_refit_without_minimum_new_evidence(monkeypatch):
@@ -202,3 +204,27 @@ def test_single_class_training_corpus_is_rejected(monkeypatch):
     assert result['reason'] == 'INSUFFICIENT_LABEL_DIVERSITY'
     assert store.models == []
     assert store.state['last_training_attempt_result'] == 'INSUFFICIENT_LABEL_DIVERSITY'
+
+
+def test_t10_training_excludes_obsolete_t45_examples(monkeypatch):
+    obsolete = [{**row, 'lock_minutes': 45} for row in _examples(250)]
+    current = _examples(12)
+    store = _TrainingStore([*obsolete, *current])
+    monkeypatch.setenv('MLB_AUTO_DEPLOY_GIT_SHA', 't10-policy-test')
+
+    context, response = training_guard.begin(lambda: store, handler)
+
+    assert context is None
+    assert response['reason'] == 'INSUFFICIENT_EXAMPLES'
+    assert response['count'] == 12
+    assert response['incompatible_lock_horizon_count'] == 250
+    assert response['training_lock_minutes'] == 10
+
+
+def test_obsolete_champion_is_not_active_under_t10_policy():
+    model = handler.Model(0.0, (0.0,), ('signal',))
+    old = {'model_json': model.dumps(), 'model_id': 't45', 'training_lock_minutes': 45}
+    current = {'model_json': model.dumps(), 'model_id': 't10', 'training_lock_minutes': 10}
+
+    assert handler._current_policy_model_from_item(old) is None
+    assert handler._current_policy_model_from_item(current) is not None

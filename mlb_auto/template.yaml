@@ -34,8 +34,11 @@ Globals:
         MLB_AUTO_MIN_TRAINING_EXAMPLES: '250'
         MLB_AUTO_MIN_VALIDATION_EXAMPLES: '50'
         MLB_AUTO_MIN_NEW_EXAMPLES: '25'
-        MLB_AUTO_LOCK_MINUTES: '45'
+        MLB_AUTO_LOCK_MINUTES: '10'
         MLB_AUTO_MIN_OFFICIAL_PROBABILITY: '0.58'
+        MLB_AUTO_MIN_OFFICIAL_AUDIT_SELECTIONS: '10'
+        MLB_AUTO_MIN_OFFICIAL_AUDIT_ACCURACY: '0.58'
+        MLB_AUTO_MIN_OFFICIAL_AUDIT_WILSON: '0.42'
         MLB_AUTO_HISTORICAL_DAYS_PER_RUN: '1'
         MLB_AUTO_LLM_MODEL_IDS: 'us.anthropic.claude-opus-4-6-v1,us.anthropic.claude-sonnet-4-6,us.anthropic.claude-sonnet-4-5-20250929-v1:0,amazon.nova-premier-v1:0,amazon.nova-pro-v1:0,us.amazon.nova-2-lite-v1:0,amazon.nova-lite-v1:0,amazon.nova-micro-v1:0'
         MLB_AUTO_LLM_MIN_EXAMPLES: '75'
@@ -45,6 +48,11 @@ Globals:
         MLB_AUTO_LLM_HTTP_TIMEOUT_SECONDS: '180'
 
 Resources:
+  AutoDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
   StateTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -87,6 +95,8 @@ Resources:
     UpdateReplacePolicy: Retain
     Properties:
       BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       AttributeDefinitions:
         - {AttributeName: PK, AttributeType: S}
         - {AttributeName: SK, AttributeType: S}
@@ -140,15 +150,25 @@ Resources:
     Properties:
       CodeUri: src/
       Handler: mlb_auto.autonomous_handler.handler
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt AutoDeadLetterQueue.Arn
       Policies:
         - DynamoDBCrudPolicy: {TableName: !Ref StateTable}
         - DynamoDBCrudPolicy: {TableName: !Ref SnapshotsTable}
         - DynamoDBCrudPolicy: {TableName: !Ref PredictionsTable}
-        - DynamoDBCrudPolicy: {TableName: !Ref LocksTable}
         - DynamoDBCrudPolicy: {TableName: !Ref OutcomesTable}
         - DynamoDBCrudPolicy: {TableName: !Ref ModelsTable}
         - S3CrudPolicy: {BucketName: !Ref ArchiveBucket}
         - Statement:
+            - Sid: ImmutableLockLedger
+              Effect: Allow
+              Action:
+                - dynamodb:DescribeTable
+                - dynamodb:GetItem
+                - dynamodb:Query
+                - dynamodb:PutItem
+              Resource: !GetAtt LocksTable.Arn
             - Sid: InvokeBedrockModels
               Effect: Allow
               Action:
@@ -173,6 +193,9 @@ Resources:
         PredictionsApi:
           Type: HttpApi
           Properties: {ApiId: !Ref AutoApi, Path: /v1/mlb-auto/predictions, Method: GET}
+        AuditApi:
+          Type: HttpApi
+          Properties: {ApiId: !Ref AutoApi, Path: /v1/mlb-auto/audit, Method: GET}
         Heartbeat:
           Type: Schedule
           Properties:
@@ -221,6 +244,51 @@ Resources:
             State: !Ref ScheduleState
             Input: '{"action":"MLB_AUTO_HISTORICAL_BACKFILL"}'
             RetryPolicy: {MaximumRetryAttempts: 1, MaximumEventAgeInSeconds: 900}
+  AutoFunctionErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MLB Auto Lambda reported at least one execution error in five minutes
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - {Name: FunctionName, Value: !Ref AutoFunction}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+  AutoFunctionThrottlesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MLB Auto Lambda was throttled in five minutes
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - {Name: FunctionName, Value: !Ref AutoFunction}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+  AutoDeadLetterQueueDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MLB Auto dead-letter queue contains a failed asynchronous invocation
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - {Name: QueueName, Value: !GetAtt AutoDeadLetterQueue.QueueName}
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
 
 Outputs:
   ApiUrl:
@@ -229,3 +297,5 @@ Outputs:
     Value: !Ref AutoFunction
   ArchiveBucketName:
     Value: !Ref ArchiveBucket
+  DeadLetterQueueUrl:
+    Value: !Ref AutoDeadLetterQueue

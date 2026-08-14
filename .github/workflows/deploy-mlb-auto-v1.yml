@@ -64,6 +64,7 @@ jobs:
           fp() { local s="$1"; if ! aws cloudformation describe-stacks --stack-name "$s" >/dev/null 2>&1; then printf MISSING; return; fi; { aws cloudformation get-template --stack-name "$s" --output json; aws cloudformation list-stack-resources --stack-name "$s" --output json; } | sha256sum | awk '{print $1}'; }
           echo "mlb=$(fp parlay-platform-dev)" >> "$GITHUB_OUTPUT"
           echo "tennis=$(fp parlay-platform-tennis-ml-prod)" >> "$GITHUB_OUTPUT"
+          echo "soccer=$(fp parlay-platform-soccer-auto)" >> "$GITHUB_OUTPUT"
       - name: Deploy schedule-disabled canary
         working-directory: mlb_auto
         env:
@@ -192,7 +193,7 @@ jobs:
           assert s.get('ok') is True and s.get('sport')=='mlb_auto', s
           assert s.get('provider_sport_key')=='baseball_mlb' and s.get('autonomous') is True, s
           assert s.get('cost_throttling') is False, s
-          assert s.get('official_pick_policy')=='CHAMPION_CONFIDENCE_ONLY', s
+          assert s.get('official_pick_policy')=='CHAMPION_CONFIDENCE_AT_OR_BEFORE_T10', s
           assert s.get('expected_value_selection_gate') is False, s
           assert c.get('last_heartbeat_ok') is True, c
           assert c.get('last_ingest_ok') is True, c
@@ -276,7 +277,7 @@ jobs:
               not repair.get('last_repair_error'),
               int(controller.get('known_market_key_count') or 0) > 0,
               bool(controller.get('last_market_inventory_at')),
-              status.get('official_pick_policy') == 'CHAMPION_CONFIDENCE_ONLY',
+              status.get('official_pick_policy') == 'CHAMPION_CONFIDENCE_AT_OR_BEFORE_T10',
               status.get('expected_value_selection_gate') is False,
               llm_state_ok,
               not layer.get('candidate_id') or layer.get('candidate_status') in {
@@ -292,10 +293,160 @@ jobs:
           done
           cat post_enable_status.json || true
           test "$fresh" = 1
+      - name: Prove immutable August 13 public authority and dual-ledger audit
+        run: |
+          set -euo pipefail
+          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
+          API_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+          case "$API_URL" in
+            https://*) ;;
+            *) echo "::error::Invalid MLB Auto API URL: $API_URL"; exit 1 ;;
+          esac
+          curl --fail-with-body --silent --show-error --retry 6 --retry-all-errors --connect-timeout 15 --max-time 120 \
+            "${API_URL%/}/v1/mlb-auto/predictions?date=2026-08-13" \
+            --output aug13_predictions.json
+          audit_ok=0
+          for attempt in $(seq 1 6); do
+            rm -f aug13_audit.json aug13_audit_invoke.json
+            if aws lambda invoke --cli-read-timeout 180 --cli-connect-timeout 30 \
+              --function-name "$FN" --cli-binary-format raw-in-base64-out \
+              --payload '{"action":"MLB_AUTO_AUDIT","date":"2026-08-13"}' \
+              aug13_audit.json > aug13_audit_invoke.json \
+              && python - <<'PY'
+          import json, sys
+          metadata=json.load(open('aug13_audit_invoke.json'))
+          sys.exit(0 if int(metadata.get('StatusCode') or 0) == 200 and not metadata.get('FunctionError') else 1)
+          PY
+            then
+              audit_ok=1
+              break
+            fi
+            sleep $((attempt * 5))
+          done
+          test "$audit_ok" = 1
+          echo '--- immutable public predictions ---'; cat aug13_predictions.json
+          echo '--- dual-ledger audit ---'; cat aug13_audit.json
+          python - <<'PY'
+          import json
+
+          predictions=json.load(open('aug13_predictions.json'))
+          audit=json.load(open('aug13_audit.json'))
+          rows=list(predictions.get('predictions') or [])
+          assert predictions.get('ok') is True, predictions
+          assert predictions.get('sport') == 'mlb_auto', predictions
+          assert predictions.get('slate_date') == '2026-08-13', predictions
+          assert predictions.get('prediction_authority') == 'IMMUTABLE_LOCK_WHEN_PRESENT', predictions
+          assert predictions.get('public_authority_version') == 'MLB_AUTO_IMMUTABLE_PUBLIC_AUTHORITY_V2', predictions
+          assert int(predictions.get('configured_lock_minutes') or 0) == 10, predictions
+          assert int(predictions.get('count') or 0) == len(rows) > 0, predictions
+          assert int(predictions.get('locked_count') or 0) == len(rows), predictions
+          assert all(row.get('locked') is True for row in rows), rows
+          assert all(row.get('public_record_frozen') is True for row in rows), rows
+          assert all(row.get('prediction_authority') == 'IMMUTABLE_T45_LOCK' for row in rows), rows
+
+          assert audit.get('ok') is True, audit
+          assert audit.get('sport') == 'mlb_auto', audit
+          assert audit.get('slate_date') == '2026-08-13', audit
+          assert audit.get('audit_version') == 'MLB_AUTO_DUAL_LEDGER_AUDIT_V1', audit
+          assert audit.get('canonical_authority') == 'IMMUTABLE_LOCK_LEDGER', audit
+          assert int(audit.get('configured_lock_minutes') or 0) == 10, audit
+          assert audit.get('outcome_join') == 'EXACT_PROVIDER_EVENT_ID', audit
+          assert audit.get('historical_predictions_recomputed') is False, audit
+
+          published=audit.get('published_official_picks') or {}
+          canonical=audit.get('canonical_official_picks') or {}
+          published_all=audit.get('published_feed_forecasts') or {}
+          canonical_all=audit.get('canonical_locked_forecasts') or {}
+          published_rows=list(published.get('rows') or [])
+          canonical_rows=list(canonical.get('rows') or [])
+          published_winners={row.get('predicted_winner') for row in published_rows}
+          canonical_winners={row.get('predicted_winner') for row in canonical_rows}
+          assert int(published_all.get('count') or 0) == 9, published_all
+          assert int(published_all.get('graded_count') or 0) == 9, published_all
+          assert int(published_all.get('wins') or 0) == 4 and int(published_all.get('losses') or 0) == 5, published_all
+          assert int(canonical_all.get('count') or 0) == 9, canonical_all
+          assert int(canonical_all.get('graded_count') or 0) == 9, canonical_all
+          assert int(canonical_all.get('wins') or 0) == 2 and int(canonical_all.get('losses') or 0) == 7, canonical_all
+          assert int(published.get('count') or 0) == 2, published
+          assert int(published.get('graded_count') or 0) == 2, published
+          assert int(published.get('wins') or 0) == 1 and int(published.get('losses') or 0) == 1, published
+          assert published_winners == {'Texas Rangers','Milwaukee Brewers'}, published_rows
+          assert int(canonical.get('count') or 0) == 2, canonical
+          assert int(canonical.get('graded_count') or 0) == 2, canonical
+          assert int(canonical.get('wins') or 0) == 0 and int(canonical.get('losses') or 0) == 2, canonical
+          assert canonical_winners == {'Texas Rangers','Los Angeles Dodgers'}, canonical_rows
+          public_official={row.get('predicted_winner') for row in rows if row.get('official_pick')}
+          assert int(predictions.get('official_pick_count') or 0) == 2, predictions
+          assert public_official == canonical_winners, (public_official, canonical_winners)
+          drift=list(audit.get('public_lock_drift') or [])
+          assert int(audit.get('public_lock_drift_count') or 0) == len(drift) > 0, audit
+
+          evidence={
+              'verified': True,
+              'slate_date': '2026-08-13',
+              'public_prediction_authority': predictions.get('prediction_authority'),
+              'public_locked_count': predictions.get('locked_count'),
+              'public_official_predicted_winners': sorted(public_official),
+              'published_all': {
+                  'count': published_all.get('count'),
+                  'wins': published_all.get('wins'), 'losses': published_all.get('losses'),
+              },
+              'published_official': {
+                  'predicted_winners': sorted(published_winners),
+                  'wins': published.get('wins'), 'losses': published.get('losses'),
+              },
+              'historical_canonical_t45_all': {
+                  'count': canonical_all.get('count'),
+                  'wins': canonical_all.get('wins'), 'losses': canonical_all.get('losses'),
+              },
+              'canonical_official': {
+                  'predicted_winners': sorted(canonical_winners),
+                  'wins': canonical.get('wins'), 'losses': canonical.get('losses'),
+              },
+              'public_lock_drift_count': audit.get('public_lock_drift_count'),
+          }
+          with open('aug13_authority_assertions.json','w') as handle:
+              json.dump(evidence, handle, indent=2, sort_keys=True)
+              handle.write('\n')
+          PY
+      - name: Verify Auto alarms and empty dead-letter queue
+        run: |
+          set -euo pipefail
+          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
+          ERRORS_ALARM=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunctionErrorsAlarm --query StackResourceDetail.PhysicalResourceId --output text)
+          THROTTLES_ALARM=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunctionThrottlesAlarm --query StackResourceDetail.PhysicalResourceId --output text)
+          DLQ_ALARM=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoDeadLetterQueueDepthAlarm --query StackResourceDetail.PhysicalResourceId --output text)
+          DLQ_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='DeadLetterQueueUrl'].OutputValue" --output text)
+          aws cloudwatch describe-alarms \
+            --alarm-names "$ERRORS_ALARM" "$THROTTLES_ALARM" "$DLQ_ALARM" \
+            --output json > alarms.json
+          aws sqs get-queue-attributes --queue-url "$DLQ_URL" \
+            --attribute-names QueueArn ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible ApproximateNumberOfMessagesDelayed \
+            --output json > dlq.json
+          aws lambda get-function-configuration --function-name "$FN" \
+            --query '{FunctionName:FunctionName,DeadLetterConfig:DeadLetterConfig}' \
+            --output json > lambda_dlq.json
+          export ERRORS_ALARM THROTTLES_ALARM DLQ_ALARM
+          python - <<'PY'
+          import json, os
+
+          alarms=json.load(open('alarms.json')).get('MetricAlarms') or []
+          expected={os.environ['ERRORS_ALARM'], os.environ['THROTTLES_ALARM'], os.environ['DLQ_ALARM']}
+          assert len(expected) == 3 and all(name and name != 'None' for name in expected), expected
+          assert {row.get('AlarmName') for row in alarms} == expected, (alarms, expected)
+          assert all(row.get('StateValue') in {'OK','INSUFFICIENT_DATA'} for row in alarms), alarms
+          attrs=(json.load(open('dlq.json')).get('Attributes') or {})
+          for key in ('ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible','ApproximateNumberOfMessagesDelayed'):
+              assert key in attrs and int(attrs[key]) == 0, (key, attrs)
+          queue_arn=attrs.get('QueueArn')
+          config=json.load(open('lambda_dlq.json'))
+          assert queue_arn and (config.get('DeadLetterConfig') or {}).get('TargetArn') == queue_arn, (config, attrs)
+          PY
       - name: Verify schedules and protected stacks
         env:
           MLB_BEFORE: ${{ steps.before.outputs.mlb }}
           TENNIS_BEFORE: ${{ steps.before.outputs.tennis }}
+          SOCCER_BEFORE: ${{ steps.before.outputs.soccer }}
         run: |
           set -euo pipefail
           aws events list-rules --name-prefix "${STACK_NAME}-" --output json > rules.json
@@ -308,8 +459,26 @@ jobs:
               assert len(m)==1 and m[0][1]=='ENABLED', (suffix,names)
           PY
           fp() { local s="$1"; if ! aws cloudformation describe-stacks --stack-name "$s" >/dev/null 2>&1; then printf MISSING; return; fi; { aws cloudformation get-template --stack-name "$s" --output json; aws cloudformation list-stack-resources --stack-name "$s" --output json; } | sha256sum | awk '{print $1}'; }
-          test "$MLB_BEFORE" = "$(fp parlay-platform-dev)"
-          test "$TENNIS_BEFORE" = "$(fp parlay-platform-tennis-ml-prod)"
+          MLB_AFTER=$(fp parlay-platform-dev)
+          TENNIS_AFTER=$(fp parlay-platform-tennis-ml-prod)
+          SOCCER_AFTER=$(fp parlay-platform-soccer-auto)
+          test "$MLB_BEFORE" = "$MLB_AFTER"
+          test "$TENNIS_BEFORE" = "$TENNIS_AFTER"
+          test "$SOCCER_BEFORE" = "$SOCCER_AFTER"
+          export MLB_AFTER TENNIS_AFTER SOCCER_AFTER
+          python - <<'PY'
+          import json, os
+
+          rows={
+              'parlay-platform-dev': {'before': os.environ['MLB_BEFORE'], 'after': os.environ['MLB_AFTER']},
+              'parlay-platform-tennis-ml-prod': {'before': os.environ['TENNIS_BEFORE'], 'after': os.environ['TENNIS_AFTER']},
+              'parlay-platform-soccer-auto': {'before': os.environ['SOCCER_BEFORE'], 'after': os.environ['SOCCER_AFTER']},
+          }
+          assert all(row['before'] == row['after'] for row in rows.values()), rows
+          with open('protected_stack_fingerprints.json','w') as handle:
+              json.dump(rows, handle, indent=2, sort_keys=True)
+              handle.write('\n')
+          PY
       - name: Fail-safe restore autonomous schedules
         if: ${{ failure() || cancelled() }}
         run: |
@@ -332,7 +501,7 @@ jobs:
           set -euo pipefail
           aws cloudformation describe-stacks --stack-name "$STACK_NAME" --output json > stack.json
           aws cloudformation list-stack-resources --stack-name "$STACK_NAME" --output json > resources.json
-          sha256sum llm_rd.json llm_status.json provider.json market_inventory.json heartbeat.json history.json status.json post_enable_status.json rules.json stack.json resources.json > SHA256SUMS
+          sha256sum llm_rd.json llm_status.json provider.json market_inventory.json heartbeat.json history.json status.json post_enable_status.json aug13_predictions.json aug13_audit.json aug13_audit_invoke.json aug13_authority_assertions.json alarms.json dlq.json lambda_dlq.json rules.json protected_stack_fingerprints.json stack.json resources.json > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: mlb-auto-v1-deployment-evidence-${{ github.run_id }}
@@ -345,7 +514,15 @@ jobs:
             history.json
             status.json
             post_enable_status.json
+            aug13_predictions.json
+            aug13_audit.json
+            aug13_audit_invoke.json
+            aug13_authority_assertions.json
+            alarms.json
+            dlq.json
+            lambda_dlq.json
             rules.json
+            protected_stack_fingerprints.json
             stack.json
             resources.json
             SHA256SUMS

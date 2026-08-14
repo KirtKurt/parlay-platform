@@ -24,6 +24,7 @@ REMATERIALIZE_LIMIT = max(
 LLM_READY_COVERAGE = max(
     0.0, min(1.0, float(os.getenv('MLB_AUTO_TEAM_FORM_MIN_LLM_COVERAGE', '0.65')))
 )
+LOCK_MINUTES = int(os.getenv('MLB_AUTO_LOCK_MINUTES', '10'))
 
 _NAME_ALIASES = {
     'oaklandathletics': 'athletics',
@@ -496,8 +497,8 @@ def rematerialize_training_examples(*, Store, limit: int | None = None) -> dict[
         away = str(row.get('away_team') or '')
         try:
             start = _dt(row.get('commence_time'))
-            source = _dt(row.get('source_pull_at')) if row.get('source_pull_at') else start - timedelta(minutes=45)
-            as_of = source if source <= start else start - timedelta(minutes=45)
+            source = _dt(row.get('source_pull_at')) if row.get('source_pull_at') else start - timedelta(minutes=LOCK_MINUTES)
+            as_of = source if source <= start else start - timedelta(minutes=LOCK_MINUTES)
         except Exception as exc:
             failed += 1
             failure_reasons[f'INVALID_TIME:{type(exc).__name__}'] += 1

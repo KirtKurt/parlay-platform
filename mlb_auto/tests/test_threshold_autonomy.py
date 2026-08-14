@@ -5,6 +5,7 @@ from mlb_auto.threshold_policy import (
     model_threshold,
     qualifies,
 )
+from mlb_auto.training_search import _official_pick_audit_gate
 
 
 def test_live_pick_eligibility_uses_champion_learned_threshold():
@@ -37,3 +38,16 @@ def test_threshold_is_learned_from_search_validation_and_persisted_in_model_meta
     assert metrics['selection_policy'] == 'ACCURACY_WILSON_NO_ROI_V1'
     assert metrics['selection_count'] >= 10
     assert metrics['selection_accuracy'] is not None
+
+
+def test_champion_promotion_requires_official_pick_audit_strength():
+    assert _official_pick_audit_gate({
+        'selection_count': 25,
+        'selection_accuracy': .64,
+        'selection_wilson_lower_bound': .45,
+    })['pass'] is True
+    assert _official_pick_audit_gate({
+        'selection_count': 33,
+        'selection_accuracy': .5758,
+        'selection_wilson_lower_bound': .408,
+    })['pass'] is False

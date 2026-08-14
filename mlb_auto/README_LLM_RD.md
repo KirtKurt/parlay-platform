@@ -2,7 +2,7 @@
 
 This layer is scoped only to `mlb_auto`.
 
-It uses Amazon Bedrock to propose new pregame numeric feature interactions from an allow-listed transform library. It cannot execute generated code, access postgame fields, alter T-45 lock rules, weaken chronological validation, or touch Tennis or legacy MLB stacks.
+It uses Amazon Bedrock to propose new pregame numeric feature interactions from an allow-listed transform library. It cannot execute generated code, access postgame fields, alter T-10 lock rules, weaken chronological validation, or touch Tennis or legacy MLB stacks.
 
 The effective runtime list is account-safe. By default it excludes non-Amazon provider models from the supplied list and normalizes Amazon Nova direct IDs to their US geographic inference-profile IDs. The first invokable effective model is used. Status exposes both the supplied list and the effective list, and model access is never reported as verified until a real research invocation succeeds.
 

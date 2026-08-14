@@ -11,13 +11,18 @@ def finish(context, evaluation, base) -> dict:
     if promoted:
         store.put_model('CHAMPION', artifact)
     trained_at = base._iso()
+    attempt_result = (
+        'CHAMPION_PROMOTED'
+        if promoted
+        else f"CHALLENGER_REJECTED:{str(gate.get('reason') or 'AUDIT_GATE')[:120]}"
+    )
     store.put_state('controller', {
         'last_training_at': trained_at,
         'last_training_count': context['count'],
         'last_training_attempt_at': trained_at,
         'last_training_attempt_count': context['count'],
         'last_training_attempt_git_sha': context['deploy_sha'],
-        'last_training_attempt_result': 'TRAINED',
+        'last_training_attempt_result': attempt_result,
         'last_training_new_examples': context['new_examples'],
         'champion_model_id': model_id if promoted else evaluation['incumbent_item'].get('model_id'),
         'last_training_gate': gate,

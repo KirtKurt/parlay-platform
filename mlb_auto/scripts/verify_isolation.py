@@ -15,6 +15,9 @@ forbidden_runtime_tokens = (
     'parlay_platform_predictions',
     'parlay_platform_outcomes',
     'parlay-platform-tennis-ml-prod',
+    'import soccer',
+    'from soccer',
+    'parlay-platform-soccer-auto',
 )
 
 violations = []
@@ -40,4 +43,4 @@ if re.search(r'\bSNAPSHOTS_TABLE\b', text) or re.search(r'\bPREDICTIONS_TABLE\b'
 
 if violations:
     raise SystemExit('MLB_AUTO_ISOLATION_FAILED\n' + '\n'.join(violations))
-print('PASS: MLB Auto runtime and infrastructure are isolated from Tennis and existing MLB resources')
+print('PASS: MLB Auto runtime and infrastructure are isolated from Tennis, Soccer, and existing MLB resources')

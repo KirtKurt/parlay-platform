@@ -14,8 +14,8 @@ from .model_guard import (
     policy_payload,
 )
 
-PLATFORM_VERSION = 'MLB-AUTO-v1.2-ood-guard'
-OFFICIAL_PICK_POLICY = 'CHAMPION_CONFIDENCE_ONLY'
+PLATFORM_VERSION = 'MLB-AUTO-v1.4-t10-authority-audit'
+OFFICIAL_PICK_POLICY = 'CHAMPION_CONFIDENCE_AT_OR_BEFORE_T10'
 MIXED_MODE = 'MIXED_CHAMPION_OOD_FALLBACK'
 
 _guard_context: ContextVar[dict[str, Any] | None] = ContextVar(
@@ -91,7 +91,7 @@ def _postprocess_latest_ingest(*, base, Store, original_model_from_item, result:
     controller = store.get_state('controller')
     pull_at = str(controller.get('last_pull_at') or '')
     champion_item = store.get_model('CHAMPION')
-    champion = original_model_from_item(champion_item)
+    champion = base._current_policy_model_from_item(champion_item)
     if not pull_at or champion is None:
         store.put_state('controller', {
             'platform_version': PLATFORM_VERSION,

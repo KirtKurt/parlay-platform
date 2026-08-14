@@ -163,6 +163,12 @@ class Store:
         )
         return [plain(x) for x in rows]
 
+    def get_lock(self, slate, event_id):
+        return plain(self.locks.get_item(
+            Key={'PK': f'MLB_AUTO#LOCKS#{slate}', 'SK': str(event_id)},
+            ConsistentRead=True,
+        ).get('Item') or {})
+
     def put_training_example(self, slate, event_id, item):
         self.outcomes.put_item(Item=safe({'PK': 'MLB_AUTO#TRAINING_EXAMPLES', 'SK': f'{slate}#{event_id}', **item}))
 

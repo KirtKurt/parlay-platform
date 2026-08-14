@@ -1,9 +1,32 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from datetime import datetime, timezone
 
 from .threshold_policy import attach_learned_threshold, evaluate_model_threshold
+
+MIN_OFFICIAL_AUDIT_SELECTIONS = max(1, int(os.getenv('MLB_AUTO_MIN_OFFICIAL_AUDIT_SELECTIONS', '10')))
+MIN_OFFICIAL_AUDIT_ACCURACY = float(os.getenv('MLB_AUTO_MIN_OFFICIAL_AUDIT_ACCURACY', '0.58'))
+MIN_OFFICIAL_AUDIT_WILSON = float(os.getenv('MLB_AUTO_MIN_OFFICIAL_AUDIT_WILSON', '0.42'))
+
+
+def _official_pick_audit_gate(summary: dict) -> dict:
+    count = int(summary.get('selection_count') or 0)
+    accuracy = summary.get('selection_accuracy')
+    wilson = float(summary.get('selection_wilson_lower_bound') or 0.0)
+    passed = bool(
+        count >= MIN_OFFICIAL_AUDIT_SELECTIONS
+        and accuracy is not None
+        and float(accuracy) >= MIN_OFFICIAL_AUDIT_ACCURACY
+        and wilson >= MIN_OFFICIAL_AUDIT_WILSON
+    )
+    return {
+        'pass': passed,
+        'minimum_selection_count': MIN_OFFICIAL_AUDIT_SELECTIONS,
+        'minimum_accuracy': MIN_OFFICIAL_AUDIT_ACCURACY,
+        'minimum_wilson_lower_bound': MIN_OFFICIAL_AUDIT_WILSON,
+    }
 
 
 def evaluate(context, base, discover_challenger, promote_challenger):
@@ -32,17 +55,26 @@ def evaluate(context, base, discover_challenger, promote_challenger):
         base.MIN_OFFICIAL_PROB,
     )
     incumbent_item = context['store'].get_model('CHAMPION')
-    incumbent = base._model_from_item(incumbent_item)
+    incumbent = base._current_policy_model_from_item(incumbent_item)
     gate = promote_challenger(
         challenger=challenger, incumbent=incumbent,
         validation_rows=audit_rows, validation_labels=audit_labels,
     )
+    official_pick_audit = evaluate_model_threshold(
+        challenger, audit_rows, audit_labels, base.MIN_OFFICIAL_PROB,
+    )
+    official_pick_gate = _official_pick_audit_gate(official_pick_audit)
     gate = {
         **dict(gate or {}),
-        'officialPickAudit': evaluate_model_threshold(
-            challenger, audit_rows, audit_labels, base.MIN_OFFICIAL_PROB,
-        ),
+        'officialPickAudit': official_pick_audit,
+        'officialPickAuditGate': official_pick_gate,
     }
+    if gate.get('promote') and not official_pick_gate['pass']:
+        gate.update({
+            'promote': False,
+            'reason': 'OFFICIAL_PICK_AUDIT_GATE',
+            'priorGateReason': gate.get('reason'),
+        })
     manifest = {
         **dict(discovered.search_manifest or {}),
         'searchPopulationRows': len(search_rows),
@@ -66,6 +98,8 @@ def evaluate(context, base, discover_challenger, promote_challenger):
         'untouched_chronological_audit': True,
         'official_probability_threshold': threshold_metrics.get('threshold'),
         'official_threshold_source': threshold_metrics.get('threshold_source'),
+        'training_lock_minutes': base.LOCK_MINUTES,
+        'lock_authority_policy': base.OFFICIAL_PICK_POLICY,
         'expected_value_selection_gate': False,
     }
     return {

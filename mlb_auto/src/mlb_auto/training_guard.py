@@ -1,6 +1,25 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
+
+
+def _dt(value):
+    parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _authority_minutes(example) -> int | None:
+    try:
+        if example.get('lock_minutes') is not None:
+            return int(example['lock_minutes'])
+        start = _dt(example.get('commence_time'))
+        cutoff = _dt(example.get('lock_cutoff_at'))
+        return int(round((start - cutoff).total_seconds() / 60.0))
+    except Exception:
+        return None
 
 
 def record(store, base, count: int, deploy_sha: str, result: str, **extra) -> None:
@@ -15,19 +34,25 @@ def record(store, base, count: int, deploy_sha: str, result: str, **extra) -> No
 
 def begin(Store, base):
     store = Store()
-    examples = store.query_training_examples(limit=5000)
+    all_examples = store.query_training_examples(limit=5000)
+    examples = [row for row in all_examples if _authority_minutes(row) == base.LOCK_MINUTES]
     examples.sort(key=lambda x: (str(x.get('commence_time') or ''), str(x.get('SK') or '')))
     count = len(examples)
+    incompatible_count = len(all_examples) - count
     deploy_sha = os.getenv('MLB_AUTO_DEPLOY_GIT_SHA', 'unknown')
     if count < base.MIN_TRAIN:
         store.put_state('controller', {
             'last_training_check_at': base._iso(),
             'last_training_check_count': count,
+            'last_training_incompatible_lock_horizon_count': incompatible_count,
+            'training_lock_minutes': base.LOCK_MINUTES,
             'last_training_check_result': 'INSUFFICIENT_EXAMPLES',
         })
         return None, {
             'ok': True, 'trained': False, 'reason': 'INSUFFICIENT_EXAMPLES',
             'count': count, 'minimum': base.MIN_TRAIN,
+            'incompatible_lock_horizon_count': incompatible_count,
+            'training_lock_minutes': base.LOCK_MINUTES,
         }
 
     state = store.get_state('controller')
@@ -61,4 +86,5 @@ def begin(Store, base):
     return {
         'store': store, 'rows': rows, 'labels': labels, 'count': count,
         'deploy_sha': deploy_sha, 'new_examples': new_examples,
+        'incompatible_lock_horizon_count': incompatible_count,
     }, None
