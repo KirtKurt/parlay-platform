@@ -33,12 +33,14 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import json
+          import os
           from collections import Counter
           from datetime import timedelta
+
           import boto3
           from boto3.dynamodb.types import TypeDeserializer
 
-          from soccer_auto.canonical import parse_utc, iso_utc, schedule_identity, digest
+          from soccer_auto.canonical import iso_utc, parse_utc, schedule_identity
           from soccer_auto.config import (
               FINAL_DECISION_CAPTURE_LEAD_SECONDS,
               LOCK_MINUTES_BY_HORIZON,
@@ -50,7 +52,7 @@ jobs:
           from soccer_auto.inference import live_lock_coverage_provenance_valid, lock_key
           from soccer_auto.storage import now_utc
 
-          region = __import__('os').environ['AWS_REGION_VALUE']
+          region = os.environ['AWS_REGION_VALUE']
           stack = 'parlay-platform-soccer-auto'
           cf = boto3.client('cloudformation', region_name=region)
           lam = boto3.client('lambda', region_name=region)
@@ -58,7 +60,10 @@ jobs:
           deser = TypeDeserializer()
 
           def physical(logical):
-              return cf.describe_stack_resource(StackName=stack, LogicalResourceId=logical)['StackResourceDetail']['PhysicalResourceId']
+              return cf.describe_stack_resource(
+                  StackName=stack,
+                  LogicalResourceId=logical,
+              )['StackResourceDetail']['PhysicalResourceId']
 
           def scan(logical):
               table = physical(logical)
@@ -69,112 +74,172 @@ jobs:
                   if key:
                       kwargs['ExclusiveStartKey'] = key
                   page = ddb.scan(**kwargs)
-                  rows.extend({k: deser.deserialize(v) for k, v in item.items()} for item in page.get('Items', []))
+                  rows.extend(
+                      {k: deser.deserialize(v) for k, v in item.items()}
+                      for item in page.get('Items', [])
+                  )
                   key = page.get('LastEvaluatedKey')
                   if not key:
                       return rows
 
           observed = now_utc()
-          events = [r for r in scan('SoccerEventsTable') if r.get('entity_type') == 'SOCCER_EVENT' and r.get('completed') is not True]
-          locks = [r for r in scan('SoccerLocksTable') if r.get('entity_type') == 'SOCCER_FROZEN_FEATURE_LOCK']
-          lock_map = {(str(r.get('PK') or r.get('event_key') or '')), str(r.get('SK') or '')): r for r in locks}
-
-          def reasons(lock, event):
-              out = []
-              try:
-                  commence = parse_utc(str(event['commence_time']))
-                  expected_target = commence - timedelta(minutes=LOCK_MINUTES_BY_HORIZON[PUBLIC_DECISION_HORIZON])
-                  expected_deadline = expected_target - timedelta(seconds=PUBLICATION_COMMIT_HEADROOM_SECONDS)
-                  expected_open = expected_deadline - timedelta(seconds=FINAL_DECISION_CAPTURE_LEAD_SECONDS)
-                  def eq_time(field, expected):
-                      try:
-                          return parse_utc(str(lock.get(field) or '')) == expected
-                      except Exception:
-                          return False
-                  if str(lock.get('lock_version') or '') != LOCK_VERSION_BY_HORIZON[PUBLIC_DECISION_HORIZON]: out.append('lock_version')
-                  if str(lock.get('horizon') or '').upper() != PUBLIC_DECISION_HORIZON: out.append('horizon')
-                  if int(lock.get('minutes_before_start') or 0) != LOCK_MINUTES_BY_HORIZON[PUBLIC_DECISION_HORIZON]: out.append('minutes_before_start')
-                  if str(lock.get('schedule_identity') or '') != schedule_identity(lock): out.append('lock_schedule_identity_self')
-                  if str(lock.get('schedule_identity') or '') != str(event.get('schedule_identity') or schedule_identity(event)): out.append('schedule_mismatch')
-                  if int(lock.get('schedule_revision') or 0) != int(event.get('schedule_revision') or 0): out.append('revision_mismatch')
-                  if not eq_time('decision_target_at', expected_target): out.append('decision_target_at')
-                  if not eq_time('capture_opens_at', expected_open): out.append('capture_opens_at')
-                  if not eq_time('lock_commit_deadline', expected_deadline): out.append('lock_commit_deadline')
-                  try:
-                      lock_at = parse_utc(str(lock.get('lock_at') or ''))
-                      if not (expected_open <= lock_at <= expected_deadline): out.append('lock_at_window')
-                      if parse_utc(str(lock.get('created_at') or '')) != lock_at: out.append('created_at_not_lock_at')
-                  except Exception:
-                      out.append('lock_at_parse')
-                  if lock.get('training_eligible') is not False: out.append('training_eligible')
-                  if lock.get('prediction_eligible') is not True: out.append('prediction_eligible')
-                  required_fields = [
-                      'coverage_certificate_version','coverage_certificate_digest','coverage_plan_digest','coverage_plan_observed_at',
-                      'coverage_completed_at','coverage_required_pairs','coverage_required_pair_count','coverage_required_pair_digest',
-                      'coverage_probe_pairs','coverage_probe_pair_count','coverage_probe_pair_digest','movement_baseline_certificate_digest',
-                      'movement_baseline_plan_digest','movement_baseline_plan_observed_at','source_slot_ids','source_payload_hashes','source_raw_uris',
-                      'movement_baseline_source_slot_ids','movement_baseline_source_payload_hashes','movement_baseline_source_raw_uris',
-                      'movement_baseline_source_observed_at_max','source_observed_at_max','frozen_features','feature_hash'
-                  ]
-                  missing = [f for f in required_fields if f not in lock]
-                  if missing: out.append('missing_fields:' + ','.join(missing))
-                  if not live_lock_coverage_provenance_valid(lock): out.append('full_provenance_validator')
-              except Exception as exc:
-                  out.append('validator_exception:' + type(exc).__name__)
-              return out
+          events = [
+              row for row in scan('SoccerEventsTable')
+              if row.get('entity_type') == 'SOCCER_EVENT'
+              and row.get('completed') is not True
+          ]
+          locks = [
+              row for row in scan('SoccerLocksTable')
+              if row.get('entity_type') == 'SOCCER_FROZEN_FEATURE_LOCK'
+          ]
+          lock_map = {
+              (
+                  str(row.get('PK') or row.get('event_key') or ''),
+                  str(row.get('SK') or ''),
+              ): row
+              for row in locks
+          }
 
           invalid = []
           missing = []
-          due = 0
           open_events = 0
+          due = 0
+
           for event in events:
               try:
                   commence = parse_utc(str(event['commence_time']))
-                  if not (observed - timedelta(hours=24) <= commence <= observed + timedelta(hours=24)):
+                  if not (
+                      observed - timedelta(hours=24)
+                      <= commence
+                      <= observed + timedelta(hours=24)
+                  ):
                       continue
                   cutoff = commence - timedelta(minutes=PUBLICATION_CUTOFF_MINUTES)
-                  deadline = cutoff - timedelta(seconds=PUBLICATION_COMMIT_HEADROOM_SECONDS)
-                  capture_open = deadline - timedelta(seconds=FINAL_DECISION_CAPTURE_LEAD_SECONDS)
+                  deadline = cutoff - timedelta(
+                      seconds=PUBLICATION_COMMIT_HEADROOM_SECONDS
+                  )
+                  capture_open = deadline - timedelta(
+                      seconds=FINAL_DECISION_CAPTURE_LEAD_SECONDS
+                  )
                   if observed < capture_open:
                       continue
                   due += 1
                   if observed <= deadline:
                       open_events += 1
-                  rev = int(event.get('schedule_revision') or 0)
-                  lk = lock_map.get((str(event['event_key']), lock_key(PUBLIC_DECISION_HORIZON, rev)))
-                  if not lk:
-                      missing.append({'event_key': event['event_key'], 'sport_key': event.get('sport_key'), 'commence_time': event.get('commence_time'), 'deadline': iso_utc(deadline)})
-                      continue
-                  if not live_lock_coverage_provenance_valid(lk) or str(lk.get('schedule_identity') or '') != str(event.get('schedule_identity') or schedule_identity(event)):
-                      invalid.append({
+                  revision = int(event.get('schedule_revision') or 0)
+                  lock = lock_map.get(
+                      (
+                          str(event['event_key']),
+                          lock_key(PUBLIC_DECISION_HORIZON, revision),
+                      )
+                  )
+                  if not lock:
+                      missing.append({
                           'event_key': event['event_key'],
                           'sport_key': event.get('sport_key'),
                           'commence_time': event.get('commence_time'),
                           'deadline': iso_utc(deadline),
-                          'reasons': reasons(lk, event),
-                          'lock_summary': {k: lk.get(k) for k in [
-                              'SK','lock_version','horizon','minutes_before_start','decision_target_at','capture_opens_at','lock_commit_deadline','lock_at','created_at',
-                              'training_eligible','prediction_eligible','coverage_certificate_version','coverage_completed_at','coverage_plan_observed_at',
-                              'source_observed_at_max','source_observed_before_lock','coverage_completed_before_lock','movement_baseline_source_observed_before_lock'
-                          ]}
                       })
+                      continue
+                  if live_lock_coverage_provenance_valid(lock) and (
+                      str(lock.get('schedule_identity') or '')
+                      == str(event.get('schedule_identity') or schedule_identity(event))
+                  ):
+                      continue
+
+                  expected_target = commence - timedelta(
+                      minutes=LOCK_MINUTES_BY_HORIZON[PUBLIC_DECISION_HORIZON]
+                  )
+                  expected_deadline = expected_target - timedelta(
+                      seconds=PUBLICATION_COMMIT_HEADROOM_SECONDS
+                  )
+                  expected_open = expected_deadline - timedelta(
+                      seconds=FINAL_DECISION_CAPTURE_LEAD_SECONDS
+                  )
+                  reasons = []
+                  if str(lock.get('lock_version') or '') != LOCK_VERSION_BY_HORIZON[PUBLIC_DECISION_HORIZON]:
+                      reasons.append('lock_version')
+                  if str(lock.get('horizon') or '').upper() != PUBLIC_DECISION_HORIZON:
+                      reasons.append('horizon')
+                  if int(lock.get('minutes_before_start') or 0) != LOCK_MINUTES_BY_HORIZON[PUBLIC_DECISION_HORIZON]:
+                      reasons.append('minutes_before_start')
+                  if str(lock.get('schedule_identity') or '') != str(event.get('schedule_identity') or schedule_identity(event)):
+                      reasons.append('schedule_identity')
+                  for field, expected in (
+                      ('decision_target_at', expected_target),
+                      ('capture_opens_at', expected_open),
+                      ('lock_commit_deadline', expected_deadline),
+                  ):
+                      try:
+                          if parse_utc(str(lock.get(field) or '')) != expected:
+                              reasons.append(field)
+                      except Exception:
+                          reasons.append(field + '_parse')
+                  if lock.get('training_eligible') is not False:
+                      reasons.append('training_eligible')
+                  if lock.get('prediction_eligible') is not True:
+                      reasons.append('prediction_eligible')
+                  required_fields = [
+                      'coverage_certificate_version',
+                      'coverage_certificate_digest',
+                      'coverage_plan_digest',
+                      'coverage_plan_observed_at',
+                      'coverage_completed_at',
+                      'movement_baseline_certificate_digest',
+                      'movement_baseline_plan_digest',
+                      'movement_baseline_plan_observed_at',
+                      'source_slot_ids',
+                      'source_payload_hashes',
+                      'source_raw_uris',
+                      'movement_baseline_source_slot_ids',
+                      'movement_baseline_source_payload_hashes',
+                      'movement_baseline_source_raw_uris',
+                      'movement_baseline_source_observed_at_max',
+                      'source_observed_at_max',
+                      'frozen_features',
+                      'feature_hash',
+                  ]
+                  absent = [field for field in required_fields if field not in lock]
+                  if absent:
+                      reasons.append('missing:' + ','.join(absent))
+                  reasons.append('full_provenance_validator')
+                  invalid.append({
+                      'event_key': event['event_key'],
+                      'sport_key': event.get('sport_key'),
+                      'commence_time': event.get('commence_time'),
+                      'deadline': iso_utc(deadline),
+                      'reasons': reasons,
+                      'lock': lock,
+                  })
               except Exception as exc:
-                  invalid.append({'event_key': event.get('event_key'), 'sport_key': event.get('sport_key'), 'reasons':['event_exception:' + repr(exc)]})
+                  invalid.append({
+                      'event_key': event.get('event_key'),
+                      'sport_key': event.get('sport_key'),
+                      'reasons': ['event_exception:' + repr(exc)],
+                  })
 
-          print('SOCCER_T10_DIAGNOSTIC', json.dumps({
-              'observed_at': iso_utc(observed), 'due_events': due, 'open_capture_events': open_events,
-              'invalid_count': len(invalid), 'missing_count': len(missing),
-              'reason_counts': Counter(reason for row in invalid for reason in row['reasons']),
-              'invalid_sample': invalid[:8], 'missing_sample': missing[:8]
-          }, default=lambda x: dict(x), indent=2))
+          reason_counts = Counter(
+              reason
+              for row in invalid
+              for reason in row.get('reasons', [])
+          )
+          print('SOCCER_T10_DIAGNOSTIC ' + json.dumps({
+              'observed_at': iso_utc(observed),
+              'due_events': due,
+              'open_capture_events': open_events,
+              'invalid_count': len(invalid),
+              'missing_count': len(missing),
+              'reason_counts': dict(reason_counts),
+              'invalid_sample': invalid[:3],
+              'missing_sample': missing[:8],
+          }, default=str, indent=2))
 
-          # Safe, Soccer-only runtime refreshes. Freeze is fail-closed and cannot create late locks.
-          for logical, payload in [
-              ('SoccerFreezeFunction', {}),
-              ('SoccerControllerFunction', {}),
-          ]:
-              fn = physical(logical)
-              response = lam.invoke(FunctionName=fn, InvocationType='RequestResponse', Payload=json.dumps(payload).encode())
+          for logical in ('SoccerFreezeFunction', 'SoccerControllerFunction'):
+              response = lam.invoke(
+                  FunctionName=physical(logical),
+                  InvocationType='RequestResponse',
+                  Payload=b'{}',
+              )
               body = json.loads(response['Payload'].read().decode() or '{}')
-              print(logical + '_RESPONSE', json.dumps(body, default=str)[:30000])
+              print(logical + '_RESPONSE ' + json.dumps(body, default=str)[:30000])
           PY
