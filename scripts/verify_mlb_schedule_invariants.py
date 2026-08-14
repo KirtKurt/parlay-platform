@@ -215,6 +215,10 @@ try:
         violations.append('durable MLB winner persistence is not prioritized ahead of optional diagnostics')
 except ValueError:
     violations.append('MLB scoring priority markers are missing from the canonical pull writer')
+if "INQSI_MLB_ML_AUTO_PROMOTE: 'true'" not in text:
+    violations.append('gated automatic MLB promotion is not enabled')
+if "INQSI_MLB_V2_INFERENCE_ENABLED: 'true'" not in text:
+    violations.append('MLB V2 inference consumer is not enabled')
 if '"days_ahead":0' not in text and '"days_ahead": 0' not in text:
     violations.append('same-day days_ahead=0 input missing')
 if "MLB_PULL_START_AT_ET: '01:00'" not in text:
@@ -260,7 +264,8 @@ required_template_strings = {
     "MLB_ML_EXPERIMENT_ID: 'mlb-v2-2026-08-03-future-prospective-r7'": 'AWS-native MLB ML trainer experiment identity is stale',
     "MLB_ML_RELEASE_CONTRACT_ID: 'mlb-v2-2026-08-03-future-prospective-r7'": 'AWS-native MLB ML trainer release contract is stale',
     "MLB_ML_RELEASE_CUTOFF_UTC: '2026-08-03T04:00:00+00:00'": 'AWS-native MLB ML trainer release cutoff is stale',
-    "INQSI_MLB_ML_AUTO_PROMOTE: 'false'": 'automatic MLB ML promotion must be disabled',
+    "INQSI_MLB_ML_AUTO_PROMOTE: 'true'": 'gated automatic MLB ML promotion must be enabled',
+    "INQSI_MLB_V2_INFERENCE_ENABLED: 'true'": 'MLB V2 gated inference consumer must be enabled',
     "INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED: 'false'": 'legacy MLB V1 runtime authority must be disabled',
     'Schedule: cron(4/15 * * * ? *)': 'AWS-native MLB ML selection capture is not staggered every 15 minutes',
     'Schedule: cron(13 6 * * ? *)': 'daily autopsy is not staggered away from minute-zero pulls',

@@ -215,6 +215,11 @@ def _selected_signal(row: Mapping[str, Any], side: str) -> Dict[str, Any]:
     return copy.deepcopy(value) if isinstance(value, Mapping) else {}
 
 
+def load_active_champion() -> Tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
+    """Return the exact validated active champion and a public-safe status."""
+    return _default_champion_loader()
+
+
 def _sync_direction(
     row: Dict[str, Any],
     *,

@@ -280,16 +280,29 @@ def _missingness_snapshot_eligible(row: Mapping[str, Any]) -> bool:
     except Exception:
         return False
     vector = row.get("frozenFeatureVector") or {}
+    freeze = row.get("mlFeatureFreeze") or {}
+    authority = row.get("canonicalLockAuthority") or {}
     exact_errors = _reasons(
         row.get("exactVectorValidationErrors")
-        or (row.get("mlFeatureFreeze") or {}).get("exactVectorValidationErrors")
+        or freeze.get("exactVectorValidationErrors")
+        or authority.get("exactVectorValidationErrors")
+    )
+    exact_verified = bool(
+        row.get("exactVectorVerified") is True
+        or freeze.get("exactVectorVerified") is True
+        or authority.get("exactLockVectorValidated") is True
+    )
+    fingerprint = (
+        vector.get("fingerprint")
+        or freeze.get("frozenFeatureVectorFingerprint")
+        or authority.get("frozenFeatureVectorFingerprint")
     )
     return bool(
         row.get("lockedPrediction") is True
-        and row.get("exactVectorVerified") is True
+        and exact_verified
         and not exact_errors
         and isinstance(vector, Mapping)
-        and vector.get("fingerprint")
+        and fingerprint
     )
 
 
@@ -694,6 +707,44 @@ def install(canonical: Any) -> Any:
 
         setattr(promote_candidate, _PROMOTE_FLAG, True)
         canonical.AwsTrainingStore.promote_candidate = promote_candidate
+
+    original_save_status = canonical.TrainingService._save_run_status
+    if not getattr(original_save_status, "_mlb_autonomy_runtime_authority_v1", False):
+
+        @functools.wraps(original_save_status)
+        def save_run_status(self: Any, payload: Dict[str, Any]) -> Dict[str, Any]:
+            value = copy.deepcopy(payload or {})
+            try:
+                champion = self.store.load_champion() or {}
+            except Exception:
+                champion = {}
+            runtime_active = bool(
+                champion.get("runtimeAuthorityActivated") is True
+                and champion.get("stableChampion") is True
+                and champion.get("shadowOnly") is False
+                and (
+                    champion.get("directionAuthorityEnabled") is True
+                    or champion.get("playabilityAuthorityEnabled") is True
+                )
+            )
+            value["liveInferenceAuthority"] = runtime_active
+            value["runtimeAuthorityChanged"] = bool(
+                runtime_active
+                and (
+                    (value.get("promotion") or {}).get("champion")
+                    or value.get("championChanged") is True
+                )
+            )
+            promotion = value.get("promotion")
+            if isinstance(promotion, dict) and runtime_active:
+                promotion = copy.deepcopy(promotion)
+                promotion["runtimeAuthorityActivated"] = True
+                promotion["shadowChampionApproved"] = True
+                value["promotion"] = promotion
+            return original_save_status(self, value)
+
+        setattr(save_run_status, "_mlb_autonomy_runtime_authority_v1", True)
+        canonical.TrainingService._save_run_status = save_run_status
 
     original_status = canonical.TrainingService.status
     if not getattr(original_status, _STATUS_FLAG, False):

@@ -7,7 +7,7 @@ from typing import Any, Dict
 # activated. Existing deployment probes use this as a compatibility envelope;
 # the extension identity below is the authoritative version for the new path.
 VERSION = (
-    "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-"
+    "MLB-ML-RUNTIME-INSTALL-v5.0-mlb-auto-v2-gated-runtime-"
     "prelock-persistence-verified-stage-promotion-authority-"
     "verified-active-model-authority"
 )
@@ -61,6 +61,7 @@ def install() -> Dict[str, Any]:
         import mlb_last_possible_prediction_gate
         import mlb_probability_actionability_guard
         import mlb_ranked_primary_v15_10
+        import mlb_ml_v2_inference_consumer_v1
         import mlb_prediction_probability_contract_v1
         import mlb_signal_policy_v12
         import mlb_slate_coverage_patch
@@ -119,6 +120,26 @@ def install() -> Dict[str, Any]:
         # final and prevents this incumbent from retaining selection authority
         # once the champion exists.
         mlb_ranked_primary_v15_10.apply_direction(engine)
+        # Install the incumbent/historical selection authority before V2.
+        # The V2 consumer is therefore the final direction authority only when
+        # an exact, gated active V2 champion exists; otherwise it is inert.
+        mlb_ranked_primary_v15_10.apply_selection_authority(engine)
+        mlb_ml_v2_inference_consumer_v1.apply_direction(engine)
+        v2_consumer_contract = mlb_ml_v2_inference_consumer_v1.contract_status()
+        v2_champion, v2_champion_status = (
+            mlb_ml_v2_inference_consumer_v1.load_active_champion()
+        )
+        status["steps"]["v2InferenceConsumerInstalled"] = bool(
+            v2_consumer_contract.get("installed") is True
+            and getattr(
+                engine,
+                "_INQSI_MLB_V2_INFERENCE_CONSUMER_V1",
+                False,
+            )
+        )
+        status["v2InferenceConsumer"] = v2_consumer_contract
+        status["v2ChampionStatus"] = v2_champion_status
+        status["v2ChampionActive"] = bool(v2_champion)
         status["steps"]["rankedWinnerV15_10DirectionInstalled"] = bool(
             getattr(
                 engine,
@@ -161,7 +182,10 @@ def install() -> Dict[str, Any]:
         status["steps"]["legacyV1AuthorityDisabled"] = bool(
             legacy_runtime_installed and not legacy_authority_enabled
         )
-        status["steps"]["v2ShadowManualFirst"] = not automatic_promotion_enabled
+        status["steps"]["v2GatedAutomaticPromotionContractInstalled"] = True
+        status["v2AutomaticPromotionEnabled"] = automatic_promotion_enabled
+        status["v2ShadowManualFirst"] = False
+        status["firstPromotionRequiresManualReview"] = False
         status["steps"]["officialSemanticsFinalized"] = hasattr(engine, "_INQSI_MLB_OFFICIAL_PREDICTION_SEMANTICS_APPLIED")
         status["steps"]["exactCleanCohortVectorPatch"] = exact_vector
         status["steps"]["officialFreezeBridge"] = official_bridge
@@ -327,6 +351,15 @@ def install() -> Dict[str, Any]:
                 else "FAIL_CLOSED_INCOHERENT"
             )
         )
+        if v2_champion:
+            status["productionAuthoritySource"] = "mlb_ml_v2_active_champion"
+            status["productionAuthorityLifecycleState"] = "V2_GATED_ACTIVE"
+            status["precisionHitRateEvidencePassed"] = bool(
+                (v2_champion.get("promotionGate") or {}).get(
+                    "promotionEligible"
+                )
+                is True
+            )
         status["winnerPickRequiredForEveryValidEvent"] = True
         status["precisionQualificationSeparateFromPick"] = True
         status["precisionHitRateEvidencePassed"] = historical_active
@@ -354,7 +387,7 @@ def install() -> Dict[str, Any]:
 
     status["ok"] = not status["errors"] and all(status["steps"].values())
     status["policy"] = (
-        "The historical whole-slate optimizer is installed as the outermost "
+        "The V2 gated champion consumer and historical whole-slate optimizer are installed. "
         "production authority but remains inert until a digest-valid champion "
         "proves at least 1,000 training games, 200 walk-forward games, 200 "
         "untouched-audit games, exact slate coverage, and at least 80% on every "

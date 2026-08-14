@@ -29,6 +29,7 @@ import boto3
 import mlb_canonical_final_labels_v1 as final_labels
 import mlb_historical_daily_optimizer_v1 as optimizer
 import mlb_historical_policy_v1 as policy_runtime
+import mlb_auto_llm_hypothesis_v1 as auto_llm
 
 
 VERSION = "MLB-HISTORICAL-OPTIMIZER-AWS-v1.8-archive-before-freshness-quarantine"
@@ -1098,6 +1099,41 @@ def _optimize(state: Dict[str, Any]) -> Dict[str, Any]:
         search_config,
         untouched_holdout_dates=fresh_dates,
     )
+    try:
+        llm_hypothesis_research = auto_llm.run_shadow_cycle(
+            records,
+            research_summary={
+                "optimizationRound": round_number,
+                "eligibleGameCount": int(state.get("eligibleGameCount") or 0),
+                "freshAuditCollectedDayCount": int(
+                    state.get("freshAuditCollectedDayCount") or 0
+                ),
+                "freshAuditCollectedGameCount": int(
+                    state.get("freshAuditCollectedGameCount") or 0
+                ),
+                "baseSearchStatus": result.get("status"),
+                "basePromotionPassed": bool(
+                    (result.get("promotionGate") or {}).get("passed") is True
+                ),
+                "baseCandidatePolicyDigest": (
+                    (result.get("candidate") or {}).get("policyDigest")
+                ),
+            },
+            model_id=os.environ.get("MLB_AUTO_LLM_MODEL_ID"),
+        )
+    except Exception as exc:
+        llm_hypothesis_research = {
+            "ok": False,
+            "version": auto_llm.VERSION,
+            "status": "HYPOTHESIS_RESEARCH_FAILED_CLOSED",
+            "errorType": type(exc).__name__,
+            "productionAuthority": False,
+            "productionWeightMutation": False,
+            "winnerSelectionMutation": False,
+            "automaticWagerAllowed": False,
+        }
+    result = copy.deepcopy(result)
+    result["llmHypothesisResearch"] = llm_hypothesis_research
     experiment_id = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:10]}"
     key = f"mlb/historical-daily-v1/experiments/{experiment_id}.json"
     # First write the immutable search result, then bind its versioned pointer

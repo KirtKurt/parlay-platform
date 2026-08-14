@@ -14,7 +14,7 @@ LAMBDA_TASK_ROOT = Path(
 
 EXPECTED_MODEL = "INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble"
 EXPECTED_RUNTIME = (
-    "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-"
+    "MLB-ML-RUNTIME-INSTALL-v5.0-mlb-auto-v2-gated-runtime-"
     "prelock-persistence-verified-stage-promotion-authority-"
     "verified-active-model-authority"
 )
@@ -46,7 +46,8 @@ def main() -> int:
             "SNAPSHOTS_TABLE": "",
             "INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION": "false",
             "INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED": "false",
-            "INQSI_MLB_ML_AUTO_PROMOTE": "false",
+            "INQSI_MLB_ML_AUTO_PROMOTE": "true",
+            "INQSI_MLB_V2_INFERENCE_ENABLED": "true",
             "INQSI_MLB_LAMBDA_TASK_ROOT": str(LAMBDA_TASK_ROOT),
             "PYTHONPATH": os.pathsep.join(inherited_pythonpath),
         }
@@ -92,10 +93,16 @@ assert body.get("automaticWagerAllowed") is False, body
 assert body.get("legacyRecommendationAuthority") is False, body
 assert body.get("legacyFallbackAllowed") is False, body
 assert body.get("precisionHitRateEvidencePassed") is False, body
-assert body.get("automaticPromotionPolicy") == "winner model fixed for release; precision/trade promotion remains disabled", body
-assert body.get("firstPromotionRequiresManualReview") is True, body
-assert body.get("manualReviewCreatesShadowApprovalOnly") is True, body
-assert body.get("runtimeAuthorityActivationAvailable") is False, body
+assert body.get("automaticPromotionPolicy") == "gated automatic V2 promotion after immutable chronological prospective, calibration, proper-scoring, deployment-identity, and runtime-consumer gates", body
+assert body.get("firstPromotionRequiresManualReview") is False, body
+assert body.get("manualReviewCreatesShadowApprovalOnly") is False, body
+assert body.get("v2InferenceConsumerInstalled") is True, body
+assert body.get("v2InferenceConsumerEnabled") is True, body
+assert body.get("runtimeAuthorityActivationAvailable") is True, body
+assert body.get("learningContinuesBelowAspirationalAccuracy") is True, body
+assert body.get("aspirationalAccuracyBlocksTraining") is False, body
+assert body.get("aspirationalAccuracyBlocksCandidateEvaluation") is False, body
+assert body.get("aspirationalAccuracyBlocksPlayableAuthority") is True, body
 assert body.get("requiredWinnerPickPolicy") == "one active-model ranked winner PICK for every valid MLB game", body
 assert body.get("readOnly") is True, body
 
@@ -107,6 +114,10 @@ assert runtime.get("winnerPickRequiredForEveryValidEvent") is True, runtime
 assert runtime.get("precisionQualificationSeparateFromPick") is True, runtime
 assert runtime.get("legacyRecommendationAuthority") is False, runtime
 assert runtime.get("automaticWagerAllowed") is False, runtime
+assert runtime.get("v2AutomaticPromotionEnabled") is True, runtime
+assert runtime.get("firstPromotionRequiresManualReview") is False, runtime
+assert (runtime.get("v2InferenceConsumer") or {{}}).get("enabled") is True, runtime
+assert runtime.get("v2ChampionActive") is False, runtime
 required = {{
     "accuracyTargetsSeparated",
     "legacyReliabilityOverlaySafety",
@@ -114,7 +125,8 @@ required = {{
     "sourceHonestFundamentalsV2",
     "legacyV1ChampionRuntimeInstalledForShadowDiagnostics",
     "legacyV1AuthorityDisabled",
-    "v2ShadowManualFirst",
+    "v2InferenceConsumerInstalled",
+    "v2GatedAutomaticPromotionContractInstalled",
     "officialSemanticsFinalized",
     "immutableFeatureFreeze",
     "immutableLockedStorageAuthority",
