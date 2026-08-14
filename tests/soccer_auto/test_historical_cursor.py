@@ -17,6 +17,7 @@ from soccer_auto.historical import (  # noqa: E402
     HistoricalTimestampError,
     HistoricalWrapperSchemaError,
     _cursor,
+    _cursor_start,
     _manifest,
     _provider_timestamps,
     _save_cursor,
@@ -300,13 +301,105 @@ class HistoricalCursorTests(unittest.TestCase):
         self.assertEqual(client.featured_calls[0][0], existing_key)
         self.assertEqual(client.featured_calls[0][1], existing_at)
         self.assertEqual(client.featured_calls[1][0], new_key)
-        self.assertEqual(client.featured_calls[1][1], "2020-06-06T00:00:00Z")
+        self.assertEqual(client.featured_calls[1][1], "2020-06-06T10:05:00Z")
         self.assertEqual(
             store.ops.rows[("HISTORICAL_CURSOR", f"FEATURED#{existing_key}")][
                 "snapshot_at"
             ],
             existing_after_first["snapshot_at"],
         )
+
+    def test_epl_zero_call_prestart_schema_quarantine_migrates_to_official_start(self) -> None:
+        sport_key = "soccer_epl"
+        store = Store(
+            [
+                cursor_row(
+                    "FEATURED",
+                    sport_key,
+                    "2020-06-06T00:00:00Z",
+                    status="QUARANTINED_PROVIDER_SCHEMA",
+                    calls_completed=0,
+                    last_error="historical_featured HTTP-200 wrapper is missing timestamp",
+                )
+            ],
+            competitions=[{"sport_key": sport_key, "has_outrights": False}],
+        )
+        client = Client()
+
+        with patch("soccer_auto.historical._client", return_value=client):
+            result = run_featured(store, max_calls=1)
+
+        migration = store.ops.writes[0]
+        persisted = store.ops.rows[("HISTORICAL_CURSOR", f"FEATURED#{sport_key}")]
+        self.assertEqual(migration["status"], "PENDING")
+        self.assertEqual(migration["snapshot_at"], "2020-06-06T10:05:00Z")
+        self.assertEqual(
+            migration["prestart_schema_quarantine_from"],
+            "2020-06-06T00:00:00Z",
+        )
+        self.assertEqual(migration["recovery_reason"], "OFFICIAL_SPORT_START_CORRECTION")
+        self.assertEqual(client.featured_calls[0][1], "2020-06-06T10:05:00Z")
+        self.assertEqual(result["calls"], 1)
+        self.assertEqual(persisted["calls_completed"], 1)
+        self.assertEqual(persisted["status"], "RUNNING")
+
+    def test_later_sport_starts_at_its_2026_snapshot_for_both_modes(self) -> None:
+        sport_key = "soccer_france_coupe_de_france"
+        official_start = "2026-02-26T13:35:37Z"
+        self.assertEqual(
+            _cursor_start("FEATURED", sport_key, "2020-06-06T10:05:00Z"),
+            (official_start, True),
+        )
+        self.assertEqual(
+            _cursor_start("ADDITIONAL", sport_key, "2023-05-03T05:30:00Z"),
+            (official_start, True),
+        )
+        self.assertEqual(
+            _cursor_start("ADDITIONAL", "soccer_epl", "2023-05-03T05:30:00Z"),
+            ("2023-05-03T05:30:00Z", True),
+        )
+
+        competition = [{"sport_key": sport_key, "has_outrights": False}]
+        observed = datetime(2026, 8, 14, tzinfo=timezone.utc)
+        featured_store = Store(competitions=competition)
+        featured_client = Client()
+        with patch(
+            "soccer_auto.historical._client", return_value=featured_client
+        ), patch("soccer_auto.historical.now_utc", return_value=observed):
+            run_featured(featured_store, max_calls=1)
+        self.assertEqual(featured_client.featured_calls[0][1], official_start)
+
+        additional_store = Store(competitions=competition, budget=[False])
+        with patch("soccer_auto.historical.now_utc", return_value=observed):
+            result = run_additional(additional_store, max_calls=1)
+        persisted = additional_store.ops.rows[
+            ("HISTORICAL_CURSOR", f"ADDITIONAL#{sport_key}")
+        ]
+        self.assertTrue(result["deferred"])
+        self.assertEqual(persisted["snapshot_at"], official_start)
+
+    def test_schema_quarantine_migration_does_not_bypass_real_malformed_response(self) -> None:
+        sport_key = "soccer_epl"
+        store = Store(
+            [
+                cursor_row(
+                    "FEATURED",
+                    sport_key,
+                    "2020-06-06T00:00:00Z",
+                    status="QUARANTINED_PROVIDER_SCHEMA",
+                    calls_completed=1,
+                )
+            ],
+            competitions=[{"sport_key": sport_key, "has_outrights": False}],
+        )
+        client = Client()
+        with patch("soccer_auto.historical._client", return_value=client):
+            result = run_featured(store, max_calls=1)
+        persisted = store.ops.rows[("HISTORICAL_CURSOR", f"FEATURED#{sport_key}")]
+        self.assertEqual(result["calls"], 0)
+        self.assertEqual(client.featured_calls, [])
+        self.assertEqual(persisted["status"], "QUARANTINED_PROVIDER_SCHEMA")
+        self.assertEqual(persisted["snapshot_at"], "2020-06-06T00:00:00Z")
 
     def test_provider_timestamps_are_normalized_and_must_advance(self) -> None:
         provider_at, next_at = _provider_timestamps(
@@ -348,6 +441,21 @@ class HistoricalCursorTests(unittest.TestCase):
                 {"timestamp": "2026-01-01T00:00:00Z", "data": {}},
                 operation="historical_event_odds",
             )
+
+    def test_schema_error_includes_bounded_provider_diagnostics(self) -> None:
+        payload = {
+            "error_code": "HISTORICAL_DATA_UNAVAILABLE",
+            "message": "no snapshot " * 100,
+            **{f"diagnostic_{index}": index for index in range(20)},
+        }
+        with self.assertRaises(HistoricalWrapperSchemaError) as caught:
+            _validated_wrapper(payload, operation="historical_featured")
+        error = caught.exception
+        self.assertLessEqual(len(error.top_level_keys), 13)
+        self.assertEqual(error.error_code, "HISTORICAL_DATA_UNAVAILABLE")
+        self.assertEqual(len(error.provider_message), 256)
+        self.assertIn("error_code='HISTORICAL_DATA_UNAVAILABLE'", str(error))
+        self.assertIn("message='no snapshot", str(error))
 
     def test_malformed_http_200_featured_wrapper_quarantines_without_advancing(self) -> None:
         sport_key = "soccer_future_league"

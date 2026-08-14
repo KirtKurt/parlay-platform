@@ -24,6 +24,7 @@ from .config import (
     FEATURED_GAME_MARKETS,
     HISTORICAL_ADDITIONAL_START,
     HISTORICAL_FEATURED_START,
+    HISTORICAL_FEATURED_START_BY_SPORT,
     SOCCER_MARKET_SEEDS,
 )
 from .odds_api import DEFAULT_MAX_ATTEMPTS, OddsApiError, chunks
@@ -65,6 +66,36 @@ class HistoricalManifestConflict(RuntimeError):
 
 class HistoricalWrapperSchemaError(ValueError):
     """An HTTP-200 historical response did not match the provider contract."""
+
+    def __init__(self, detail: str, *, payload: Any = None):
+        top_level_keys: list[str] = []
+        if isinstance(payload, Mapping):
+            for index, key in enumerate(payload):
+                if index >= 12:
+                    top_level_keys.append("<truncated>")
+                    break
+                top_level_keys.append(str(key).replace("\n", " ")[:48])
+
+        def bounded_scalar(value: Any, limit: int) -> str:
+            if value is None:
+                return ""
+            if not isinstance(value, (str, int, float, bool)):
+                return f"<{type(value).__name__}>"
+            return " ".join(str(value).split())[:limit]
+
+        self.top_level_keys = tuple(top_level_keys)
+        self.error_code = bounded_scalar(
+            payload.get("error_code") if isinstance(payload, Mapping) else None,
+            80,
+        )
+        self.provider_message = bounded_scalar(
+            payload.get("message") if isinstance(payload, Mapping) else None,
+            256,
+        )
+        super().__init__(
+            f"{detail}; top_level_keys={list(self.top_level_keys)!r}; "
+            f"error_code={self.error_code!r}; message={self.provider_message!r}"
+        )
 
 
 def _enabled() -> bool:
@@ -159,16 +190,113 @@ def _competitions(store: SoccerStore) -> list[dict[str, Any]]:
     )
 
 
+def _cursor_start(
+    name: str,
+    sport_key: str,
+    fallback_start: str,
+) -> tuple[str, bool]:
+    """Return a mode-safe cursor start and whether it is provider-published.
+
+    Featured history begins at each sport's own first snapshot. Additional
+    markets cannot precede either that snapshot or the provider-wide
+    additional-market launch. Unknown future sport keys retain the global
+    fallback and are not eligible for automatic quarantine migration.
+    """
+    featured_start = HISTORICAL_FEATURED_START_BY_SPORT.get(sport_key)
+    if featured_start is None:
+        return iso_utc(fallback_start), False
+    if name.upper() == "FEATURED":
+        return iso_utc(featured_start), True
+    if name.upper() == "ADDITIONAL":
+        additional_start = max(
+            parse_utc(fallback_start),
+            parse_utc(featured_start),
+        )
+        return iso_utc(additional_start), True
+    return iso_utc(fallback_start), False
+
+
+def _migrate_prestart_schema_quarantine(
+    store: SoccerStore,
+    cursor: dict[str, Any],
+    *,
+    expected_mode: str,
+    expected_sport_key: str,
+    official_start: str,
+) -> None:
+    """Repair only the known pre-coverage, zero-progress quarantine case."""
+    expected_mode = expected_mode.upper()
+    try:
+        eligible = bool(
+            cursor.get("_persisted") is True
+            and cursor.get("entity_type") == "SOCCER_HISTORICAL_BACKFILL_CURSOR"
+            and str(cursor.get("status") or "") == "QUARANTINED_PROVIDER_SCHEMA"
+            and int(cursor.get("calls_completed") or 0) == 0
+            and expected_mode in {"FEATURED", "ADDITIONAL"}
+            and str(cursor.get("mode") or "") == expected_mode
+            and str(cursor.get("sport_key") or "") == expected_sport_key
+            and str(cursor.get("SK") or "")
+            == _cursor_sk(expected_mode, expected_sport_key)
+            and expected_sport_key in HISTORICAL_FEATURED_START_BY_SPORT
+            and parse_utc(str(cursor["snapshot_at"])) < parse_utc(official_start)
+        )
+    except (KeyError, TypeError, ValueError):
+        eligible = False
+    if not eligible:
+        return
+
+    previous_snapshot_at = iso_utc(str(cursor["snapshot_at"]))
+    migrated_at = iso_utc(now_utc())
+    cursor["snapshot_at"] = iso_utc(official_start)
+    cursor["status"] = "PENDING"
+    cursor["updated_at"] = migrated_at
+    cursor["prestart_schema_quarantine_migrated_at"] = migrated_at
+    cursor["prestart_schema_quarantine_from"] = previous_snapshot_at
+    cursor["official_historical_start"] = iso_utc(official_start)
+    cursor["recovery_reason"] = "OFFICIAL_SPORT_START_CORRECTION"
+    for key in (
+        "pending_events",
+        "pending_event_index",
+        "pending_market_index",
+        "pending_sport_key",
+        "pending_provider_at",
+        "pending_requested_at",
+        "pending_next_timestamp",
+        "pending_market_plan",
+        "pending_market_plan_digest",
+        "last_provider_at",
+        "last_progress_at",
+        "quota_deferred_at",
+    ):
+        cursor.pop(key, None)
+    if expected_mode == "ADDITIONAL":
+        cursor["pending_events"] = []
+        cursor["pending_event_index"] = 0
+        cursor["pending_market_index"] = 0
+    _save_cursor(store, cursor)
+
+
 def _cursor_rows(
     store: SoccerStore,
     name: str,
     start: str,
     competitions: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    return [
-        _cursor(store, name, str(competition["sport_key"]), start)
-        for competition in competitions
-    ]
+    cursors: list[dict[str, Any]] = []
+    for competition in competitions:
+        sport_key = str(competition["sport_key"])
+        cursor_start, provider_published = _cursor_start(name, sport_key, start)
+        cursor = _cursor(store, name, sport_key, cursor_start)
+        if provider_published:
+            _migrate_prestart_schema_quarantine(
+                store,
+                cursor,
+                expected_mode=name,
+                expected_sport_key=sport_key,
+                official_start=cursor_start,
+            )
+        cursors.append(cursor)
+    return cursors
 
 
 def _next_active_cursor(cursors: Sequence[dict[str, Any]]) -> dict[str, Any] | None:
@@ -228,15 +356,18 @@ def _validated_wrapper(payload: Any, *, operation: str) -> Mapping[str, Any]:
     """
     if not isinstance(payload, Mapping):
         raise HistoricalWrapperSchemaError(
-            f"{operation} HTTP-200 payload must be a JSON object"
+            f"{operation} HTTP-200 payload must be a JSON object",
+            payload=payload,
         )
     if "timestamp" not in payload or not payload.get("timestamp"):
         raise HistoricalWrapperSchemaError(
-            f"{operation} HTTP-200 wrapper is missing timestamp"
+            f"{operation} HTTP-200 wrapper is missing timestamp",
+            payload=payload,
         )
     if "data" not in payload:
         raise HistoricalWrapperSchemaError(
-            f"{operation} HTTP-200 wrapper is missing data"
+            f"{operation} HTTP-200 wrapper is missing data",
+            payload=payload,
         )
     try:
         iso_utc(str(payload["timestamp"]))
@@ -245,7 +376,8 @@ def _validated_wrapper(payload: Any, *, operation: str) -> Mapping[str, Any]:
                 iso_utc(str(payload[key]))
     except (TypeError, ValueError) as exc:
         raise HistoricalWrapperSchemaError(
-            f"{operation} HTTP-200 wrapper has an invalid snapshot timestamp"
+            f"{operation} HTTP-200 wrapper has an invalid snapshot timestamp",
+            payload=payload,
         ) from exc
 
     data = payload["data"]
@@ -253,17 +385,20 @@ def _validated_wrapper(payload: Any, *, operation: str) -> Mapping[str, Any]:
     if operation in {"historical_featured", "historical_events"}:
         if not isinstance(data, list):
             raise HistoricalWrapperSchemaError(
-                f"{operation} HTTP-200 wrapper data must be an event list"
+                f"{operation} HTTP-200 wrapper data must be an event list",
+                payload=payload,
             )
         if any(not isinstance(row, Mapping) for row in data):
             raise HistoricalWrapperSchemaError(
-                f"{operation} HTTP-200 wrapper contains a non-object event"
+                f"{operation} HTTP-200 wrapper contains a non-object event",
+                payload=payload,
             )
         event_rows = list(data)
     elif operation == "historical_event_odds":
         if not isinstance(data, Mapping):
             raise HistoricalWrapperSchemaError(
-                f"{operation} HTTP-200 wrapper data must be one event object"
+                f"{operation} HTTP-200 wrapper data must be one event object",
+                payload=payload,
             )
         event_rows = [data]
     else:
@@ -272,19 +407,22 @@ def _validated_wrapper(payload: Any, *, operation: str) -> Mapping[str, Any]:
     for row in event_rows:
         if any(not str(row.get(key) or "").strip() for key in required):
             raise HistoricalWrapperSchemaError(
-                f"{operation} HTTP-200 wrapper contains an incomplete event identity"
+                f"{operation} HTTP-200 wrapper contains an incomplete event identity",
+                payload=payload,
             )
         try:
             iso_utc(str(row["commence_time"]))
         except (TypeError, ValueError) as exc:
             raise HistoricalWrapperSchemaError(
-                f"{operation} HTTP-200 wrapper contains an invalid event kickoff"
+                f"{operation} HTTP-200 wrapper contains an invalid event kickoff",
+                payload=payload,
             ) from exc
         if operation != "historical_events" and not isinstance(
             row.get("bookmakers"), list
         ):
             raise HistoricalWrapperSchemaError(
-                f"{operation} HTTP-200 wrapper event is missing bookmakers"
+                f"{operation} HTTP-200 wrapper event is missing bookmakers",
+                payload=payload,
             )
     return payload
 

@@ -11,6 +11,7 @@ install_if_needed()
 from soccer_auto.autonomous_controller import (  # noqa: E402
     COMPONENT_LIVENESS,
     _llm_state,
+    _settlement_conflict_state,
     authority_state,
     component_liveness,
 )
@@ -56,6 +57,42 @@ def function_environment() -> dict[str, str]:
 
 
 class ComponentLivenessTests(unittest.TestCase):
+    def test_settlement_conflicts_are_summarized_as_quarantined_labels(self) -> None:
+        class Ops:
+            def query(self, **kwargs):
+                return {
+                    "Items": [
+                        {
+                            "PK": "SETTLEMENT_CONFLICT",
+                            "event_key": "event-one",
+                            "reason": "SCORE_SCHEDULE_IDENTITY_MISMATCH",
+                            "observed_at": "2026-08-14T03:40:00Z",
+                            "training_blocked": True,
+                        },
+                        {
+                            "PK": "SETTLEMENT_CONFLICT",
+                            "event_key": "event-two",
+                            "observed_at": "2026-08-14T03:41:00Z",
+                            "training_blocked": True,
+                        },
+                    ]
+                }
+
+        class Store:
+            ops = Ops()
+
+        state = _settlement_conflict_state(Store())
+        self.assertEqual(state["count"], 2)
+        self.assertEqual(state["training_labels_quarantined"], 2)
+        self.assertEqual(
+            state["reason_counts"],
+            {
+                "SCORE_SCHEDULE_IDENTITY_MISMATCH": 1,
+                "SETTLEMENT_DIGEST_CONFLICT": 1,
+            },
+        )
+        self.assertEqual(state["latest_observed_at"], "2026-08-14T03:41:00Z")
+
     def test_every_scheduled_component_has_a_recent_error_free_heartbeat(self) -> None:
         values = {
             (f"soccer-{component}", "Invocations"): 1

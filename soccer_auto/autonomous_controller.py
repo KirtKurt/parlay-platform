@@ -81,6 +81,30 @@ def _queue_health(store: SoccerStore) -> dict[str, int]:
     return result
 
 
+def _settlement_conflict_state(store: SoccerStore) -> dict[str, Any]:
+    """Summarize labels already quarantined by the trainer's hard filter."""
+    response = store.ops.query(
+        KeyConditionExpression=Key("PK").eq("SETTLEMENT_CONFLICT"),
+        ConsistentRead=True,
+        Limit=1000,
+    )
+    rows = [plain(row) for row in response.get("Items") or []]
+    reason_counts: dict[str, int] = {}
+    for row in rows:
+        reason = str(row.get("reason") or "SETTLEMENT_DIGEST_CONFLICT")
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+    return {
+        "count": len(rows),
+        "count_is_lower_bound": bool(response.get("LastEvaluatedKey")),
+        "reason_counts": reason_counts,
+        "latest_observed_at": max(
+            (str(row.get("observed_at") or "") for row in rows),
+            default=None,
+        ),
+        "training_labels_quarantined": len(rows),
+    }
+
+
 def _model_state(store: SoccerStore) -> dict[str, Any]:
     rows = store.model_items()
     champion = next((row for row in rows if row.get("SK") == "CHAMPION"), None)
@@ -271,15 +295,13 @@ def run_cycle() -> dict[str, Any]:
     queues = _queue_health(store)
     if queues.get("dead_letter", 0) > 0:
         failures.append("collection_dead_letter_queue_not_empty")
-    settlement_conflict_response = store.ops.query(
-        KeyConditionExpression=Key("PK").eq("SETTLEMENT_CONFLICT"),
-        Select="COUNT",
-        ConsistentRead=True,
-        Limit=1000,
-    )
-    settlement_conflicts = int(settlement_conflict_response.get("Count") or 0)
+    settlement_conflict_state = _settlement_conflict_state(store)
+    settlement_conflicts = int(settlement_conflict_state["count"])
     if settlement_conflicts:
-        failures.append("immutable_settlement_conflicts_present")
+        # Every conflicted event is excluded from both training and prospective
+        # evaluation. Keep the integrity signal visible without permanently
+        # blocking unrelated, chronologically clean matches from promotion.
+        warnings.append("settlement_conflicts:training_labels_quarantined")
 
     llm = _llm_state(store, observed)
     validated_llm_missing = bool(llm["configured"] and not llm["fresh"])
@@ -330,6 +352,7 @@ def run_cycle() -> dict[str, Any]:
         "all_component_liveness_complete": all_liveness_complete,
         "queues": queues,
         "settlement_conflicts": settlement_conflicts,
+        "settlement_conflict_state": settlement_conflict_state,
         "counts": counts,
         "counts_are_lower_bounds_at": 1000,
         "model": model,

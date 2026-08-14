@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import unittest
 
-from soccer_auto.config import ALL_BOOKMAKER_REGIONS, PUBLISHED_KEYS, SOCCER_MARKET_SEEDS
+from soccer_auto.config import (
+    ALL_BOOKMAKER_REGIONS,
+    HISTORICAL_FEATURED_START,
+    HISTORICAL_FEATURED_START_BY_SPORT,
+    PUBLISHED_KEYS,
+    SOCCER_MARKET_SEEDS,
+)
 
 
 class ProviderCoverageContractTests(unittest.TestCase):
@@ -10,6 +16,23 @@ class ProviderCoverageContractTests(unittest.TestCase):
         self.assertEqual(len(PUBLISHED_KEYS), 67)
         self.assertEqual(len(set(PUBLISHED_KEYS)), 67)
         self.assertTrue(all(key.startswith("soccer_") for key in PUBLISHED_KEYS))
+
+    def test_every_published_soccer_key_has_an_official_historical_start(self) -> None:
+        self.assertEqual(
+            set(HISTORICAL_FEATURED_START_BY_SPORT),
+            set(PUBLISHED_KEYS),
+        )
+        self.assertEqual(HISTORICAL_FEATURED_START, "2020-06-06T10:05:00Z")
+        self.assertEqual(
+            HISTORICAL_FEATURED_START_BY_SPORT["soccer_epl"],
+            "2020-06-06T10:05:00Z",
+        )
+        self.assertEqual(
+            HISTORICAL_FEATURED_START_BY_SPORT[
+                "soccer_france_coupe_de_france"
+            ],
+            "2026-02-26T13:35:37Z",
+        )
 
     def test_all_current_bookmaker_region_groups_are_probed(self) -> None:
         self.assertEqual(
