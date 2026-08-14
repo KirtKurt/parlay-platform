@@ -9,7 +9,10 @@ from boto3.dynamodb.conditions import Key
 from .canonical import digest, iso_utc, schedule_identity
 from .market_features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION
 from .llm_analyst import BASELINE_TRIALS, latest_llm_trials
-from .historical_materializer import historical_lock_provenance_valid
+from .historical_materializer import (
+    historical_training_manifest,
+    training_candidate,
+)
 from .model import (
     CLASSES,
     TrainingRow,
@@ -18,7 +21,10 @@ from .model import (
     paired_skill_lower_bound_from_probabilities,
     select_candidate,
 )
-from .settlement import settlement_conflict_blocks_training
+from .settlement import (
+    settlement_conflict_blocks_training,
+    settlement_training_admissible,
+)
 from .storage import SoccerStore, ddb_safe, now_utc
 
 
@@ -88,10 +94,13 @@ def _settlement_conflict_events(store: SoccerStore) -> set[str]:
     }
 
 
-def training_rows(store: SoccerStore) -> tuple[list[TrainingRow], dict[str, int]]:
+def _training_rows_with_proof(
+    store: SoccerStore,
+) -> tuple[list[TrainingRow], dict[str, int], dict[str, Any]]:
     settlements = _settlements(store)
     conflicted_events = _settlement_conflict_events(store) if hasattr(store, "ops") else set()
     rows: list[TrainingRow] = []
+    historical_entries: list[Mapping[str, Any]] = []
     excluded = {
         "no_settlement": 0,
         "settlement_ineligible": 0,
@@ -103,47 +112,31 @@ def training_rows(store: SoccerStore) -> tuple[list[TrainingRow], dict[str, int]
         "settlement_conflict": 0,
     }
     for lock in store.scan_all(store.locks, ConsistentRead=True):
-        if lock.get("entity_type") != "SOCCER_FROZEN_FEATURE_LOCK":
-            continue
         settlement = settlements.get(lock.get("event_key"))
         if not settlement:
             excluded["no_settlement"] += 1
             continue
-        if str(lock.get("event_key") or "") in conflicted_events:
-            excluded["settlement_conflict"] += 1
+        candidate, reason = training_candidate(
+            lock,
+            settlement,
+            conflicted=str(lock.get("event_key") or "") in conflicted_events,
+        )
+        if candidate is None:
+            excluded[str(reason or "invalid")] += 1
             continue
-        if not settlement.get("training_eligible_1x2"):
-            excluded["settlement_ineligible"] += 1
-            continue
-        lock_schedule = _schedule_identity(lock)
-        if lock_schedule is None or lock_schedule != _schedule_identity(settlement):
-            excluded["schedule_mismatch"] += 1
-            continue
-        if not lock.get("training_eligible"):
-            excluded["lock_ineligible"] += 1
-            continue
-        if not historical_lock_provenance_valid(lock, settlement):
-            excluded["historical_provenance"] += 1
-            continue
-        features = lock.get("frozen_features") or {}
-        if lock.get("feature_schema_version") != FEATURE_SCHEMA_VERSION or tuple(features.get("feature_names") or ()) != tuple(FEATURE_NAMES):
-            excluded["schema_mismatch"] += 1
-            continue
-        try:
-            rows.append(
-                TrainingRow(
-                    event_key=lock["event_key"],
-                    commence_time=lock["commence_time"],
-                    feature_hash=lock["feature_hash"],
-                    features=tuple(float(value) for value in features["values"]),
-                    market_prior=tuple(float(value) for value in features["market_prior"]),
-                    label=CLASSES.index(settlement["result_1x2"]),
-                    competition=lock["sport_key"],
-                )
-            )
-        except (KeyError, TypeError, ValueError):
-            excluded["invalid"] += 1
-    return sorted(rows, key=lambda row: (row.timestamp, row.event_key)), excluded
+        rows.append(candidate.row)
+        if candidate.historical_manifest_entry is not None:
+            historical_entries.append(candidate.historical_manifest_entry)
+    return (
+        sorted(rows, key=lambda row: (row.timestamp, row.event_key)),
+        excluded,
+        historical_training_manifest(historical_entries),
+    )
+
+
+def training_rows(store: SoccerStore) -> tuple[list[TrainingRow], dict[str, int]]:
+    rows, excluded, _historical_manifest = _training_rows_with_proof(store)
+    return rows, excluded
 
 
 def _model_versions(store: SoccerStore) -> list[dict[str, Any]]:
@@ -196,7 +189,7 @@ def evaluate_prospective_candidate(store: SoccerStore, candidate: Mapping[str, A
     event_keys = sorted(
         key
         for key in candidate_predictions
-        if key in settlements and settlements[key].get("training_eligible_1x2")
+        if key in settlements and settlement_training_admissible(settlements[key])
     )
     labels = [CLASSES.index(settlements[key]["result_1x2"]) for key in event_keys]
     candidate_probs = [_probability_vector(candidate_predictions[key]) for key in event_keys]
@@ -384,7 +377,7 @@ def trainer_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, 
     store = SoccerStore()
     candidate = _active_candidate(store)
     prospective = maybe_promote(store, candidate) if candidate else {"promoted": False, "reason": "NO_ACTIVE_CHALLENGER"}
-    rows, excluded = training_rows(store)
+    rows, excluded, historical_manifest = _training_rows_with_proof(store)
     total_eligible_rows = len(rows)
     rows = rows[-MAX_TRAINING_ROWS:]
     # One sealed prospective experiment at a time.  New labels continue to
@@ -399,6 +392,9 @@ def trainer_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, 
         "system": "soccer_auto",
         "training_rows": len(rows),
         "total_eligible_rows": total_eligible_rows,
+        "historical_training_rows": historical_manifest["count"],
+        "historical_training_manifest_version": historical_manifest["version"],
+        "historical_training_manifest_digest": historical_manifest["digest"],
         "rolling_rows_trimmed": max(0, total_eligible_rows - len(rows)),
         "excluded": excluded,
         "prospective": prospective,

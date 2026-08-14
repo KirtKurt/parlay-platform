@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from tests.soccer_auto.aws_stubs import install_if_needed
 
@@ -43,14 +44,20 @@ class ProspectiveStore(ScanStore):
 
 
 def lock_row(revision: int):
+    final = settlement_row(revision)
     return {
         "PK": EVENT_KEY,
         "SK": f"LOCK#T45#REV#{revision}#TARGET#result_1x2",
         "entity_type": "SOCCER_FROZEN_FEATURE_LOCK",
         "event_key": EVENT_KEY,
+        "event_id": "event-id",
         "sport_key": "soccer_test",
         "commence_time": COMMENCE,
         "schedule_revision": revision,
+        "schedule_identity": final["schedule_identity"],
+        "home_team": "Home",
+        "away_team": "Away",
+        "target": "result_1x2",
         "training_eligible": True,
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
         "feature_hash": "feature-hash",
@@ -63,16 +70,23 @@ def lock_row(revision: int):
 
 
 def settlement_row(revision: int):
-    return {
-        "PK": EVENT_KEY,
-        "SK": "FINAL#v1",
-        "entity_type": "SOCCER_FINAL_SETTLEMENT",
-        "event_key": EVENT_KEY,
-        "commence_time": COMMENCE,
-        "schedule_revision": revision,
-        "training_eligible_1x2": True,
-        "result_1x2": "home",
-    }
+    return build_settlement(
+        {
+            "id": "event-id",
+            "sport_key": "soccer_test",
+            "commence_time": COMMENCE,
+            "schedule_revision": revision,
+            "home_team": "Home",
+            "away_team": "Away",
+            "completed": True,
+            "scores": [
+                {"name": "Home", "score": "2"},
+                {"name": "Away", "score": "1"},
+            ],
+        },
+        observed_at="2026-08-14T16:00:00Z",
+        regulation_ambiguous=False,
+    )
 
 
 class TrainingRevisionTests(unittest.TestCase):
@@ -99,6 +113,34 @@ class TrainingRevisionTests(unittest.TestCase):
         )
         self.assertEqual(rows, [])
         self.assertEqual(excluded["settlement_conflict"], 1)
+
+    def test_unsigned_live_eligibility_flip_is_rejected(self):
+        final = build_settlement(
+            {
+                "id": "event-id",
+                "sport_key": "soccer_test",
+                "commence_time": COMMENCE,
+                "schedule_revision": 3,
+                "home_team": "Home",
+                "away_team": "Away",
+                "completed": True,
+                "scores": [
+                    {"name": "Home", "score": "2"},
+                    {"name": "Away", "score": "1"},
+                ],
+            },
+            observed_at="2026-08-14T16:00:00Z",
+            regulation_ambiguous=True,
+        )
+        final["training_eligible_1x2"] = True
+        final["training_eligible_score_derived"] = True
+        with patch.dict(
+            "os.environ",
+            {"SOCCER_AUTO_ALLOW_UNVERIFIED_KNOCKOUT_LABELS": "false"},
+        ):
+            rows, excluded = training_rows(ScanStore([lock_row(3)], [final]))
+        self.assertEqual(rows, [])
+        self.assertEqual(excluded["settlement_ineligible"], 1)
 
     def test_settlement_conflict_is_excluded_from_prospective_promotion_gate(self):
         settlement = settlement_row(3)

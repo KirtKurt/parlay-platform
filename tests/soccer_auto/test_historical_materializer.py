@@ -12,14 +12,22 @@ from botocore.exceptions import ClientError  # noqa: E402
 from soccer_auto.canonical import digest, iso_utc, parse_utc  # noqa: E402
 from soccer_auto.historical import _manifest  # noqa: E402
 from soccer_auto.historical_materializer import (  # noqa: E402
+    _build_lock,
+    _write_state,
     historical_lock_provenance_valid,
+    historical_training_manifest,
     materialization_status,
     run_materialization,
 )
+from soccer_auto.market_features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION  # noqa: E402
 from soccer_auto.odds_api import ApiResponse  # noqa: E402
 from soccer_auto.settlement import build_settlement  # noqa: E402
 from soccer_auto.settlement import settlement_training_evidence_valid  # noqa: E402
-from soccer_auto.trainer import training_rows  # noqa: E402
+from soccer_auto.trainer import (  # noqa: E402
+    _training_rows_with_proof,
+    trainer_handler,
+    training_rows,
+)
 
 
 COMMENCE = "2026-08-14T15:00:00Z"
@@ -100,6 +108,23 @@ class Store:
         return uri, digest(payload)
 
 
+class RaceStore(Store):
+    def __init__(self, final, winner):
+        super().__init__([final])
+        self.winner = dict(winner)
+        self.get_calls = 0
+
+    def get_lock(self, *args, **kwargs):
+        self.get_calls += 1
+        if self.get_calls == 1:
+            return None
+        return super().get_lock(*args, **kwargs)
+
+    def put_lock(self, item):
+        self.locks.append(dict(self.winner))
+        return False
+
+
 def settlement():
     return build_settlement(
         {
@@ -138,6 +163,54 @@ def ambiguous_settlement():
         observed_at=iso_utc(OBSERVED),
         regulation_ambiguous=True,
     )
+
+
+def second_settlement():
+    return build_settlement(
+        {
+            "id": "event-2",
+            "sport_key": "soccer_epl",
+            "schedule_revision": 1,
+            "commence_time": "2026-08-14T16:00:00Z",
+            "completed": True,
+            "home_team": "Second Home",
+            "away_team": "Second Away",
+            "scores": [
+                {"name": "Second Home", "score": "0"},
+                {"name": "Second Away", "score": "1"},
+            ],
+        },
+        observed_at=iso_utc(OBSERVED),
+        regulation_ambiguous=False,
+    )
+
+
+def live_lock(final):
+    return {
+        "PK": final["event_key"],
+        "SK": (
+            f"LOCK#T45#REV#{int(final['schedule_revision'])}#"
+            "TARGET#result_1x2"
+        ),
+        "entity_type": "SOCCER_FROZEN_FEATURE_LOCK",
+        "event_key": final["event_key"],
+        "event_id": final["event_id"],
+        "sport_key": final["sport_key"],
+        "commence_time": final["commence_time"],
+        "schedule_revision": final["schedule_revision"],
+        "schedule_identity": final["schedule_identity"],
+        "home_team": final["home_team"],
+        "away_team": final["away_team"],
+        "target": "result_1x2",
+        "training_eligible": True,
+        "feature_schema_version": FEATURE_SCHEMA_VERSION,
+        "feature_hash": f"live-{final['event_id']}",
+        "frozen_features": {
+            "feature_names": list(FEATURE_NAMES),
+            "values": [0.0] * len(FEATURE_NAMES),
+            "market_prior": [0.34, 0.33, 0.33],
+        },
+    }
 
 
 def odds_event(*, home="Home", away="Away", book_count=3):
@@ -246,17 +319,27 @@ class HistoricalMaterializerTests(unittest.TestCase):
                 {"id": "cup-event", "sport_key": "soccer_fa_cup"}
             )
             store = Store([final])
-            client = Client(event=historical_event)
             # Reproduce the prior bug's persisted lock and terminal state.
-            with patch(
-                "soccer_auto.historical_materializer._authoritative_settlements",
-                return_value=[final],
-            ):
-                result = self.run_once(store, client)
+            lock_at = iso_utc(parse_utc(COMMENCE) - timedelta(minutes=45))
+            persisted_lock = _build_lock(
+                final,
+                historical_event,
+                provider_at=lock_at,
+                raw_uri="s3://raw/prior-bug.json",
+                payload_hash=digest(historical_event),
+                observed_at=iso_utc(OBSERVED),
+            )
+            store.locks.append(persisted_lock)
+            _write_state(
+                store,
+                final,
+                status="MATERIALIZED_ELIGIBLE",
+                observed_at=iso_utc(OBSERVED),
+                detail={"training_eligible": True},
+            )
             status = materialization_status(store)
             rows, excluded = training_rows(store)
 
-        self.assertEqual(result["materialized"], 1)
         self.assertEqual(len(store.locks), 1)
         self.assertEqual(
             next(
@@ -338,6 +421,122 @@ class HistoricalMaterializerTests(unittest.TestCase):
         self.assertEqual(second["existing_locks"], 1)
         self.assertEqual(len(client.calls), 1)
         self.assertEqual(len(store.locks), 1)
+
+    def test_valid_existing_live_lock_is_proved_without_provider_recall(self):
+        final = settlement()
+        store = Store([final])
+        store.locks.append(live_lock(final))
+        client = Client()
+
+        result = self.run_once(store, client)
+
+        self.assertEqual(result["provider_calls"], 0)
+        self.assertEqual(client.calls, [])
+        self.assertEqual(result["existing_locks"], 1)
+        self.assertEqual(result["existing_training_eligible_locks"], 1)
+        self.assertEqual(result["existing_live_training_locks"], 1)
+        self.assertEqual(result["invalid_existing_locks"], 0)
+
+    def test_malformed_existing_lock_never_satisfies_materialization_proof(self):
+        final = settlement()
+        malformed = live_lock(final)
+        malformed["feature_schema_version"] = "stale-schema"
+        store = Store([final])
+        store.locks.append(malformed)
+        client = Client()
+
+        result = self.run_once(store, client)
+        status = materialization_status(store)
+
+        self.assertEqual(result["provider_calls"], 0)
+        self.assertEqual(client.calls, [])
+        self.assertEqual(result["existing_training_eligible_locks"], 0)
+        self.assertEqual(result["invalid_existing_locks"], 1)
+        self.assertEqual(
+            result["invalid_existing_lock_reasons"], {"schema_mismatch": 1}
+        )
+        self.assertEqual(status["invalid_existing_locks"], 1)
+        self.assertEqual(status["historical_training_rows"], 0)
+
+    def test_wrong_entity_lock_cannot_be_masked_by_valid_live_row(self):
+        invalid_final = settlement()
+        live_final = second_settlement()
+        wrong_entity = live_lock(invalid_final)
+        wrong_entity["entity_type"] = "NOT_A_LOCK"
+        store = Store([invalid_final, live_final])
+        store.locks.extend([wrong_entity, live_lock(live_final)])
+
+        result = self.run_once(store, Client())
+        status = materialization_status(store)
+        rows, excluded, trainer_manifest = _training_rows_with_proof(store)
+
+        self.assertEqual(result["provider_calls"], 0)
+        self.assertEqual(result["invalid_existing_locks"], 1)
+        self.assertEqual(result["existing_training_eligible_locks"], 1)
+        self.assertEqual(status["invalid_existing_locks"], 1)
+        self.assertEqual(status["existing_live_training_locks"], 1)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(excluded["invalid"], 1)
+        self.assertEqual(trainer_manifest["count"], 0)
+
+    def test_malformed_feature_containers_fail_closed_as_invalid(self):
+        final = settlement()
+        malformed_features = (
+            "not-a-mapping",
+            {
+                "feature_names": 7,
+                "values": [0.0] * len(FEATURE_NAMES),
+                "market_prior": [0.34, 0.33, 0.33],
+            },
+            {
+                "feature_names": list(FEATURE_NAMES),
+                "values": 7,
+                "market_prior": [0.34, 0.33, 0.33],
+            },
+        )
+        for malformed in malformed_features:
+            with self.subTest(malformed=malformed):
+                lock = live_lock(final)
+                lock["frozen_features"] = malformed
+                store = Store([final])
+                store.locks.append(lock)
+
+                result = self.run_once(store, Client())
+                status = materialization_status(store)
+                rows, excluded, _manifest = _training_rows_with_proof(store)
+
+                self.assertEqual(result["invalid_existing_locks"], 1)
+                self.assertEqual(status["invalid_existing_locks"], 1)
+                self.assertEqual(rows, [])
+                self.assertEqual(excluded["invalid"], 1)
+
+    def test_conditional_write_race_validates_the_persisted_winner(self):
+        final = settlement()
+        store = RaceStore(final, live_lock(final))
+
+        result = self.run_once(store, Client())
+
+        self.assertEqual(result["provider_calls"], 1)
+        self.assertEqual(result["materialized"], 0)
+        self.assertEqual(result["existing_locks"], 1)
+        self.assertEqual(result["existing_training_eligible_locks"], 1)
+        self.assertEqual(result["existing_live_training_locks"], 1)
+        self.assertEqual(result["invalid_existing_locks"], 0)
+
+    def test_conditional_write_race_rejects_a_malformed_winner(self):
+        final = settlement()
+        malformed = live_lock(final)
+        malformed["feature_schema_version"] = "stale-schema"
+        store = RaceStore(final, malformed)
+
+        result = self.run_once(store, Client())
+        status = materialization_status(store)
+
+        self.assertEqual(result["provider_calls"], 1)
+        self.assertEqual(result["materialized"], 0)
+        self.assertEqual(result["existing_training_eligible_locks"], 0)
+        self.assertEqual(result["invalid_existing_locks"], 1)
+        self.assertEqual(status["invalid_existing_locks"], 1)
 
     def test_provider_repaint_is_quarantined_before_lock_write(self):
         final = settlement()
@@ -452,10 +651,100 @@ class HistoricalMaterializerTests(unittest.TestCase):
         store = Store([settlement()])
         self.run_once(store, Client())
         status = materialization_status(store)
+        rows, excluded, trainer_manifest = _training_rows_with_proof(store)
         self.assertEqual(status["authoritative_settlements"], 1)
         self.assertEqual(status["materialized_rows"], 1)
         self.assertEqual(status["historical_training_rows"], 1)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(excluded["invalid"], 0)
+        self.assertEqual(
+            status["historical_training_manifest_version"],
+            trainer_manifest["version"],
+        )
+        self.assertEqual(
+            status["historical_training_manifest_digest"],
+            trainer_manifest["digest"],
+        )
         self.assertEqual(status["pending_authoritative_settlements"], 0)
+
+    def test_trainer_handler_publishes_the_exact_historical_manifest(self):
+        store = Store([settlement()])
+        self.run_once(store, Client())
+        status = materialization_status(store)
+        with patch(
+            "soccer_auto.trainer.SoccerStore", return_value=store
+        ), patch(
+            "soccer_auto.trainer._active_candidate", return_value=None
+        ), patch(
+            "soccer_auto.trainer.train_challenger",
+            return_value={"trained": False, "reason": "TEST"},
+        ):
+            response = trainer_handler({}, None)
+
+        self.assertEqual(response["historical_training_rows"], 1)
+        self.assertEqual(
+            response["historical_training_manifest_version"],
+            status["historical_training_manifest_version"],
+        )
+        self.assertEqual(
+            response["historical_training_manifest_digest"],
+            status["historical_training_manifest_digest"],
+        )
+
+    def test_manifest_digest_is_order_independent_and_empty_is_stable(self):
+        entries = [
+            {
+                "PK": "EVENT#b",
+                "SK": "LOCK#b",
+                "schedule_identity": "schedule-b",
+                "feature_schema_version": FEATURE_SCHEMA_VERSION,
+                "feature_hash": "feature-b",
+                "materialization_digest": "materialization-b",
+                "source_settlement_digest": "settlement-b",
+            },
+            {
+                "PK": "EVENT#a",
+                "SK": "LOCK#a",
+                "schedule_identity": "schedule-a",
+                "feature_schema_version": FEATURE_SCHEMA_VERSION,
+                "feature_hash": "feature-a",
+                "materialization_digest": "materialization-a",
+                "source_settlement_digest": "settlement-a",
+            },
+        ]
+
+        forward = historical_training_manifest(entries)
+        reverse = historical_training_manifest(list(reversed(entries)))
+        empty = historical_training_manifest([])
+
+        self.assertEqual(forward["digest"], reverse["digest"])
+        self.assertEqual(forward["rows"], reverse["rows"])
+        self.assertEqual(empty, historical_training_manifest([]))
+        self.assertEqual(empty["count"], 0)
+        self.assertTrue(empty["digest"])
+
+    def test_stale_historical_row_cannot_be_masked_by_valid_live_row(self):
+        historical_final = settlement()
+        live_final = second_settlement()
+        store = Store([historical_final, live_final])
+        self.run_once(store, Client())
+        store.locks[0]["feature_schema_version"] = "stale-schema"
+        store.locks.append(live_lock(live_final))
+
+        status = materialization_status(store)
+        rows, excluded, trainer_manifest = _training_rows_with_proof(store)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].event_key, live_final["event_key"])
+        self.assertEqual(excluded["schema_mismatch"], 1)
+        self.assertEqual(status["invalid_existing_locks"], 1)
+        self.assertEqual(status["existing_live_training_locks"], 1)
+        self.assertEqual(status["historical_training_rows"], 0)
+        self.assertEqual(trainer_manifest["count"], 0)
+        self.assertEqual(
+            status["historical_training_manifest_digest"],
+            trainer_manifest["digest"],
+        )
 
     def test_late_settlement_conflict_removes_row_from_status_and_training(self):
         final = settlement()

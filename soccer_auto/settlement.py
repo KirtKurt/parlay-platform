@@ -287,6 +287,15 @@ def settlement_training_evidence_valid(row: Mapping[str, Any]) -> bool:
         return False
 
 
+def settlement_training_admissible(row: Mapping[str, Any]) -> bool:
+    """Require both signed evidence and an explicitly eligible 1X2 label."""
+    return bool(
+        row.get("training_eligible_1x2") is True
+        and row.get("training_eligible_score_derived") is True
+        and settlement_training_evidence_valid(row)
+    )
+
+
 def settlement_records_equivalent(
     existing: Mapping[str, Any], candidate: Mapping[str, Any]
 ) -> bool:
