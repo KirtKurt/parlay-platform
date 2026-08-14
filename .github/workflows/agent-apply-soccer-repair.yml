@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   apply-test-publish:
+    if: github.event.head_commit.message != 'Fix soccer T10 authority and training evidence'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,18 +36,14 @@ jobs:
           gzip -dc /tmp/soccer-authority-repair.patch.gz > /tmp/soccer-authority-repair.patch
           test "$(sha256sum /tmp/soccer-authority-repair.patch | awk '{print $1}')" = "ffb22e53c8c2593f0b1d1179f6aa72f22579c75ba86b6d5167d05164fa4a5511"
           git rm -f --ignore-unmatch docs/SOCCER_AUTO.md
-          git apply --check /tmp/soccer-authority-repair.patch
-          git apply --index /tmp/soccer-authority-repair.patch
+          git apply --exclude=.github/workflows/deploy-soccer-auto.yml --check /tmp/soccer-authority-repair.patch
+          git apply --exclude=.github/workflows/deploy-soccer-auto.yml --index /tmp/soccer-authority-repair.patch
 
-      - name: Remove temporary transfer files
+      - name: Remove temporary patch chunks from the code commit
         shell: bash
         run: |
           set -euo pipefail
           git rm -f .agent/soccer-patch.part*
-          git rm -f \
-            .github/workflows/agent-export-soccer-source.yml \
-            .github/workflows/agent-export-soccer-fixtures.yml \
-            .github/workflows/agent-apply-soccer-repair.yml
 
       - name: Verify soccer-only scope
         shell: bash
@@ -59,10 +56,6 @@ jobs:
               ['git', 'diff', '--cached', '--name-only'], text=True
           ).splitlines()
           exact = {
-              '.github/workflows/deploy-soccer-auto.yml',
-              '.github/workflows/agent-export-soccer-source.yml',
-              '.github/workflows/agent-export-soccer-fixtures.yml',
-              '.github/workflows/agent-apply-soccer-repair.yml',
               'soccer-auto-template.yaml',
               'docs/SOCCER_AUTO.md',
           }
@@ -75,6 +68,7 @@ jobs:
               and not path.startswith('tests/soccer_auto/')
           ]
           assert not disallowed, disallowed
+          assert '.github/workflows/deploy-soccer-auto.yml' not in changed, changed
           assert not any(
               path.startswith('hello_world/')
               or path.startswith('tennis_learning/')
