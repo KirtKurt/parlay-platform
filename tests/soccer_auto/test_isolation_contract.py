@@ -241,9 +241,14 @@ class IsolationTests(unittest.TestCase):
         self.assertIn("historical_training_rows_after_materialization", workflow)
         self.assertIn("assert validated > 0", workflow)
         self.assertIn("validated == eligible + ineligible", workflow)
+        self.assertIn("materialization['authoritative_settlements']) == eligible", workflow)
         self.assertIn("if materialization['authoritative_settlements'] > 0:", workflow)
         self.assertIn("if materialized_now > 0:", workflow)
-        self.assertIn("response['training_rows'] >= historical_training_rows", workflow)
+        self.assertIn(
+            "historical_training_rows <= response['training_rows'] <= eligible_settlements",
+            workflow,
+        )
+        self.assertIn("if eligible_settlements == 0:", workflow)
         self.assertNotIn("assert response['training_rows'] > 0", workflow)
 
     def test_lambda_memory_fits_the_production_account_ceiling(self) -> None:
