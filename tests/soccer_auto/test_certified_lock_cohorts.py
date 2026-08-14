@@ -206,7 +206,7 @@ class CertifiedLockCohortTests(unittest.TestCase):
             "COMPLETE_PRELOCK_COVERAGE_CERTIFICATE_UNAVAILABLE",
         )
 
-    def test_exact_complete_certificate_builds_plan_bound_v2_lock(self):
+    def test_exact_complete_certificate_builds_distinct_t45_and_t10_locks(self):
         certificate = complete_certificate()
         payload = odds_payload()
         pointer = certified_pointer(certificate, payload)
@@ -219,8 +219,9 @@ class CertifiedLockCohortTests(unittest.TestCase):
         )
 
         self.assertTrue(lock["write_ready"])
-        self.assertTrue(lock["prediction_eligible"])
+        self.assertFalse(lock["prediction_eligible"])
         self.assertTrue(lock["training_eligible"])
+        self.assertEqual(lock["horizon"], "T45")
         self.assertTrue(live_lock_coverage_provenance_valid(lock))
         self.assertEqual(
             lock["coverage_certificate_digest"],
@@ -236,6 +237,20 @@ class CertifiedLockCohortTests(unittest.TestCase):
             store.slot_queries,
             [(certificate["plan_digest"], certificate["plan_observed_at"])],
         )
+
+        t10_store = CohortStore([certificate], [pointer], payload)
+        final_lock = build_frozen_lock(
+            t10_store,
+            event_row(),
+            observed_at="2026-08-14T13:49:00Z",
+            horizon="T10",
+        )
+        self.assertTrue(final_lock["write_ready"])
+        self.assertTrue(final_lock["prediction_eligible"])
+        self.assertFalse(final_lock["training_eligible"])
+        self.assertEqual(final_lock["horizon"], "T10")
+        self.assertEqual(final_lock["lock_at"], "2026-08-14T13:49:00Z")
+        self.assertTrue(live_lock_coverage_provenance_valid(final_lock))
 
     def test_same_plan_certificates_fall_back_to_exact_latest_baseline(self):
         older = complete_certificate()

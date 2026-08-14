@@ -154,6 +154,17 @@ class ComponentLivenessTests(unittest.TestCase):
         )
         self.assertEqual(state, ("DEGRADED", "SCHEDULED_COMPONENT_LIVENESS_FAILED"))
 
+    def test_integrity_failure_degrades_immediately(self) -> None:
+        state = authority_state(
+            model={"automatic_prediction_allowed": True},
+            counts={"settlements": 1000},
+            consecutive_failures=1,
+            liveness_failed=False,
+            validated_llm_missing=False,
+            operational_failure=True,
+        )
+        self.assertEqual(state, ("DEGRADED", "OPERATIONAL_INTEGRITY_FAILURE"))
+
     def test_later_successful_invocation_clears_stale_error_poisoning(self) -> None:
         values = {
             (f"soccer-{component}", "Invocations"): 1

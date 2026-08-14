@@ -3579,11 +3579,17 @@ class SoccerStore:
         target: str = "result_1x2",
         *,
         schedule_revision: int | None = None,
+        horizon: str = "T45",
     ) -> dict[str, Any] | None:
+        normalized_horizon = str(horizon or "").strip().upper()
+        if normalized_horizon not in {"T45", "T10"}:
+            raise ValueError(
+                f"unsupported soccer lock horizon: {normalized_horizon or '<empty>'}"
+            )
         lock_key = (
-            f"LOCK#T45#REV#{int(schedule_revision)}#TARGET#{target}"
+            f"LOCK#{normalized_horizon}#REV#{int(schedule_revision)}#TARGET#{target}"
             if schedule_revision is not None
-            else f"LOCK#T45#TARGET#{target}"
+            else f"LOCK#{normalized_horizon}#TARGET#{target}"
         )
         row = self.locks.get_item(
             Key={"PK": event_key, "SK": lock_key}, ConsistentRead=True
@@ -3593,6 +3599,84 @@ class SoccerStore:
     def put_settlement(self, item: Mapping[str, Any]) -> bool:
         try:
             self.settlements.put_item(Item=ddb_safe(dict(item)), ConditionExpression="attribute_not_exists(SK)")
+            return True
+        except ClientError as exc:
+            if _is_conditional_failure(exc):
+                return False
+            raise
+
+    def settlement_admissibility_migration_page(
+        self,
+        *,
+        limit: int = 200,
+    ) -> dict[str, Any]:
+        """Read one bounded, strongly consistent legacy-settlement page."""
+        state_key = {
+            "PK": "MIGRATION_STATE",
+            "SK": "SETTLEMENT_ADMISSIBILITY_V1",
+        }
+        state = plain(
+            self.ops.get_item(Key=state_key, ConsistentRead=True).get("Item")
+            or {}
+        )
+        next_start_key = state.get("next_start_key")
+        cursor_digest = str(
+            state.get("cursor_digest") or digest(next_start_key or {})
+        )
+        if cursor_digest != digest(next_start_key or {}):
+            raise ValueError("settlement admissibility migration cursor is invalid")
+        kwargs: dict[str, Any] = {
+            "ConsistentRead": True,
+            "Limit": max(1, int(limit)),
+        }
+        if next_start_key:
+            kwargs["ExclusiveStartKey"] = next_start_key
+        response = self.settlements.scan(**kwargs)
+        return {
+            "rows": [plain(row) for row in response.get("Items") or []],
+            "cursor_digest": cursor_digest,
+            "next_start_key": plain(response.get("LastEvaluatedKey") or {}),
+            "cycle": int(state.get("cycle") or 0),
+            "page_index": int(state.get("page_index") or 0),
+        }
+
+    def checkpoint_settlement_admissibility_migration(
+        self,
+        *,
+        expected_cursor_digest: str,
+        next_start_key: Mapping[str, Any] | None,
+        cycle: int,
+        page_index: int,
+        observed_at: str,
+    ) -> bool:
+        """Advance the bounded scan only after the page was processed."""
+        state_key = {
+            "PK": "MIGRATION_STATE",
+            "SK": "SETTLEMENT_ADMISSIBILITY_V1",
+        }
+        normalized_next = dict(next_start_key or {})
+        cycle_complete = not normalized_next
+        item = {
+            **state_key,
+            "entity_type": "SOCCER_SETTLEMENT_ADMISSIBILITY_MIGRATION_STATE",
+            "migration_version": "soccer-auto-settlement-admissibility-migration-v1",
+            "next_start_key": normalized_next,
+            "cursor_digest": digest(normalized_next),
+            "cycle": int(cycle) + int(cycle_complete),
+            "page_index": 0 if cycle_complete else int(page_index) + 1,
+            "last_cycle_completed_at": observed_at if cycle_complete else None,
+            "updated_at": observed_at,
+        }
+        try:
+            self.ops.put_item(
+                Item=ddb_safe(item),
+                ConditionExpression=(
+                    "attribute_not_exists(SK) OR cursor_digest=:expected"
+                ),
+                ExpressionAttributeValues={
+                    ":expected": str(expected_cursor_digest),
+                },
+            )
             return True
         except ClientError as exc:
             if _is_conditional_failure(exc):
@@ -3742,6 +3826,11 @@ class SoccerStore:
             "target",
             "lock_sk",
             "lock_version",
+            "lock_at",
+            "decision_target_at",
+            "capture_opens_at",
+            "lock_commit_deadline",
+            "source_observed_at_max",
             "feature_hash",
             "coverage_certificate_version",
             "coverage_certificate_digest",
@@ -3780,6 +3869,10 @@ class SoccerStore:
             "horizon",
             "target",
             "lock_at",
+            "decision_target_at",
+            "capture_opens_at",
+            "lock_commit_deadline",
+            "source_observed_at_max",
             "lock_version",
             "feature_hash",
             "feature_schema_version",

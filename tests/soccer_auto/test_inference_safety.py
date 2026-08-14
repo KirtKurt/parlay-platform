@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from tests.soccer_auto.aws_stubs import install_if_needed
@@ -10,7 +10,14 @@ install_if_needed()
 
 from botocore.exceptions import ClientError  # noqa: E402
 
-from soccer_auto.canonical import digest, parse_utc, schedule_identity  # noqa: E402
+from soccer_auto.canonical import digest, iso_utc, parse_utc, schedule_identity  # noqa: E402
+from soccer_auto.config import (  # noqa: E402
+    FINAL_DECISION_CAPTURE_LEAD_SECONDS,
+    PUBLIC_DECISION_HORIZON,
+    PUBLICATION_COMMIT_HEADROOM_SECONDS,
+    PUBLICATION_CUTOFF_MINUTES,
+    TRAINING_LOCK_HORIZON,
+)
 from soccer_auto.inference import (  # noqa: E402
     build_frozen_lock,
     freeze_handler,
@@ -34,8 +41,42 @@ def event_row(*, revision: int = 4, commence_time: str = "2026-08-14T14:00:00Z")
     }
 
 
-def eligible_lock(*, revision: int = 4):
+def lock_fixture(
+    *,
+    revision: int = 4,
+    horizon: str = PUBLIC_DECISION_HORIZON,
+    lock_at: str | None = None,
+):
     event = event_row(revision=revision)
+    commence = parse_utc(event["commence_time"])
+    horizon = horizon.upper()
+    if horizon == PUBLIC_DECISION_HORIZON:
+        decision_target = commence - timedelta(
+            minutes=PUBLICATION_CUTOFF_MINUTES
+        )
+        commit_deadline = decision_target - timedelta(
+            seconds=PUBLICATION_COMMIT_HEADROOM_SECONDS
+        )
+        capture_opens = commit_deadline - timedelta(
+            seconds=FINAL_DECISION_CAPTURE_LEAD_SECONDS
+        )
+        lock_at_value = parse_utc(lock_at or "2026-08-14T13:49:00Z")
+        lock_version = "soccer-auto-t10-lock-v1"
+        training_eligible = False
+        prediction_eligible = True
+        minutes_before_start = PUBLICATION_CUTOFF_MINUTES
+    elif horizon == TRAINING_LOCK_HORIZON:
+        decision_target = commence - timedelta(minutes=45)
+        commit_deadline = decision_target
+        capture_opens = decision_target
+        lock_at_value = parse_utc(lock_at or iso_utc(decision_target))
+        lock_version = "soccer-auto-t45-lock-v2"
+        training_eligible = True
+        prediction_eligible = False
+        minutes_before_start = 45
+    else:
+        raise AssertionError(horizon)
+
     features = {
         "feature_names": ["signal"],
         "values": [1.0],
@@ -44,24 +85,32 @@ def eligible_lock(*, revision: int = 4):
     required_pairs = ["book|h2h"]
     source_hashes = ["a" * 64]
     certificate_digest = "b" * 64
+    source_observed = lock_at_value - timedelta(seconds=5)
+    plan_observed = source_observed - timedelta(seconds=20)
     lock = {
         "PK": EVENT_KEY,
-        "SK": f"LOCK#T45#REV#{revision}#TARGET#result_1x2",
+        "SK": f"LOCK#{horizon}#REV#{revision}#TARGET#result_1x2",
         "entity_type": "SOCCER_FROZEN_FEATURE_LOCK",
-        "lock_version": "soccer-auto-t45-lock-v2",
+        "lock_version": lock_version,
         **event,
         "schedule_identity": schedule_identity(event),
         "target": "result_1x2",
-        "lock_at": "2026-08-14T13:15:00Z",
+        "horizon": horizon,
+        "minutes_before_start": minutes_before_start,
+        "decision_target_at": iso_utc(decision_target),
+        "capture_opens_at": iso_utc(capture_opens),
+        "lock_commit_deadline": iso_utc(commit_deadline),
+        "lock_at": iso_utc(lock_at_value),
+        "created_at": iso_utc(lock_at_value),
         "feature_schema_version": "schema-v1",
-        "prediction_eligible": True,
-        "training_eligible": True,
+        "prediction_eligible": prediction_eligible,
+        "training_eligible": training_eligible,
         "frozen_features": features,
         "coverage_certificate_version": "soccer-auto-coverage-certificate-v2",
         "coverage_certificate_digest": certificate_digest,
         "coverage_plan_digest": "plan-digest",
-        "coverage_plan_observed_at": "2026-08-14T13:10:00Z",
-        "coverage_completed_at": "2026-08-14T13:14:00Z",
+        "coverage_plan_observed_at": iso_utc(plan_observed),
+        "coverage_completed_at": iso_utc(source_observed),
         "coverage_required_pairs": required_pairs,
         "coverage_required_pair_count": len(required_pairs),
         "coverage_required_pair_digest": digest(required_pairs),
@@ -71,17 +120,17 @@ def eligible_lock(*, revision: int = 4):
         "coverage_completed_before_lock": True,
         "movement_baseline_certificate_digest": certificate_digest,
         "movement_baseline_plan_digest": "plan-digest",
-        "movement_baseline_plan_observed_at": "2026-08-14T13:10:00Z",
+        "movement_baseline_plan_observed_at": iso_utc(plan_observed),
         "movement_baseline_distinct": False,
         "source_slot_ids": ["slot-one"],
         "source_payload_hashes": source_hashes,
         "source_raw_uris": ["s3://raw/slot-one.json"],
-        "source_observed_at_max": "2026-08-14T13:14:00Z",
+        "source_observed_at_max": iso_utc(source_observed),
         "source_observed_before_lock": True,
         "movement_baseline_source_slot_ids": ["slot-one"],
         "movement_baseline_source_payload_hashes": source_hashes,
         "movement_baseline_source_raw_uris": ["s3://raw/slot-one.json"],
-        "movement_baseline_source_observed_at_max": "2026-08-14T13:14:00Z",
+        "movement_baseline_source_observed_at_max": iso_utc(source_observed),
         "movement_baseline_source_observed_before_lock": True,
         "labels": None,
         "immutable": True,
@@ -93,9 +142,7 @@ def eligible_lock(*, revision: int = 4):
             "lock_at": lock["lock_at"],
             "coverage_certificate_digest": certificate_digest,
             "coverage_plan_digest": lock["coverage_plan_digest"],
-            "coverage_plan_observed_at": lock[
-                "coverage_plan_observed_at"
-            ],
+            "coverage_plan_observed_at": lock["coverage_plan_observed_at"],
             "coverage_completed_at": lock["coverage_completed_at"],
             "coverage_required_pairs": required_pairs,
             "coverage_probe_pairs": [],
@@ -124,6 +171,14 @@ def eligible_lock(*, revision: int = 4):
         }
     )
     return lock
+
+
+def eligible_lock(*, revision: int = 4):
+    return lock_fixture(revision=revision, horizon=PUBLIC_DECISION_HORIZON)
+
+
+def eligible_training_lock(*, revision: int = 4):
+    return lock_fixture(revision=revision, horizon=TRAINING_LOCK_HORIZON)
 
 
 def predict_at(store, lock, observed_at: str):
@@ -245,25 +300,36 @@ class LockBuildStore:
 
 
 class FreezeStore(PredictionStore):
-    def __init__(self, lock):
+    def __init__(self):
         super().__init__(
-            event_row(revision=lock["schedule_revision"]),
+            event_row(),
             {
                 "authority": "AUTHORITATIVE",
                 "automatic_prediction_allowed": True,
                 "promotion_blocked": False,
-                "updated_at": "2026-08-14T13:15:00Z",
+                "updated_at": "2026-08-14T13:49:00Z",
             },
         )
-        self.lock = lock
+        self.locks = {
+            TRAINING_LOCK_HORIZON: eligible_training_lock(),
+            PUBLIC_DECISION_HORIZON: eligible_lock(),
+        }
         self.put_lock_called = False
 
     def active_events_between(self, start, end):
         return [self.current_event]
 
-    def get_lock(self, event_key, target="result_1x2", *, schedule_revision=None):
-        if schedule_revision == self.lock["schedule_revision"]:
-            return self.lock
+    def get_lock(
+        self,
+        event_key,
+        target="result_1x2",
+        *,
+        schedule_revision=None,
+        horizon=TRAINING_LOCK_HORIZON,
+    ):
+        lock = self.locks.get(horizon)
+        if lock and schedule_revision == lock["schedule_revision"]:
+            return lock
         return None
 
     def put_lock(self, item):
@@ -301,7 +367,7 @@ class InferenceSafetyTests(unittest.TestCase):
         with patch("soccer_auto.inference._active_models", return_value=[CHAMPION, SHADOW]), patch(
             "soccer_auto.inference._load_model", return_value=FakeModel()
         ):
-            first = predict_at(store, eligible_lock(), "2026-08-14T13:15:01Z")
+            first = predict_at(store, eligible_lock(), "2026-08-14T13:49:01Z")
             self.assertEqual(first["predictions"], 1)
             self.assertEqual(first["blocked"][0]["reason"], "AUTONOMY_PUBLISH_NOT_ALLOWED")
             self.assertEqual(
@@ -313,9 +379,9 @@ class InferenceSafetyTests(unittest.TestCase):
                 "authority": "AUTHORITATIVE",
                 "automatic_prediction_allowed": True,
                 "promotion_blocked": False,
-                "updated_at": "2026-08-14T13:16:00Z",
+                "updated_at": "2026-08-14T13:49:10Z",
             }
-            second = predict_at(store, eligible_lock(), "2026-08-14T13:16:01Z")
+            second = predict_at(store, eligible_lock(), "2026-08-14T13:49:20Z")
 
         self.assertEqual(second["predictions"], 1)
         champion = next(
@@ -325,8 +391,8 @@ class InferenceSafetyTests(unittest.TestCase):
         self.assertIn("#REV#4#", champion["SK"])
 
     def test_existing_current_revision_lock_is_retried_by_freeze_cycle(self):
-        store = FreezeStore(eligible_lock())
-        observed = datetime(2026, 8, 14, 13, 16, tzinfo=timezone.utc)
+        store = FreezeStore()
+        observed = datetime(2026, 8, 14, 13, 49, 1, tzinfo=timezone.utc)
         with patch("soccer_auto.inference.SoccerStore", return_value=store), patch(
             "soccer_auto.inference.now_utc", return_value=observed
         ), patch("soccer_auto.inference._active_models", return_value=[CHAMPION]), patch(
@@ -335,7 +401,8 @@ class InferenceSafetyTests(unittest.TestCase):
             result = freeze_handler({}, None)
 
         self.assertEqual(result["locks_created"], 0)
-        self.assertEqual(result["locks_retried"], 1)
+        self.assertEqual(result["locks_retried"], 2)
+        self.assertEqual(result["locks_retried_by_horizon"], {"T45": 1, "T10": 1})
         self.assertEqual(result["predictions_written"], 1)
         self.assertFalse(store.put_lock_called)
 
@@ -359,7 +426,7 @@ class InferenceSafetyTests(unittest.TestCase):
         result = predict_at(
             prediction_store,
             eligible_lock(revision=7),
-            "2026-08-14T13:15:01Z",
+            "2026-08-14T13:49:01Z",
         )
         self.assertEqual(result["reason"], "STALE_SCHEDULE_IDENTITY")
         self.assertEqual(prediction_store.predictions, {})
@@ -371,7 +438,7 @@ class InferenceSafetyTests(unittest.TestCase):
                 "authority": "AUTHORITATIVE",
                 "automatic_prediction_allowed": True,
                 "promotion_blocked": False,
-                "updated_at": "2026-08-14T13:15:00Z",
+                "updated_at": "2026-08-14T13:49:00Z",
             },
         )
         with patch("soccer_auto.inference._load_model", return_value=FakeModel()):
@@ -379,13 +446,13 @@ class InferenceSafetyTests(unittest.TestCase):
                 first = predict_at(
                     store,
                     eligible_lock(),
-                    "2026-08-14T13:15:01Z",
+                    "2026-08-14T13:49:01Z",
                 )
             with patch("soccer_auto.inference._active_models", return_value=[CHAMPION]):
                 same_model_retry = predict_at(
                     store,
                     eligible_lock(),
-                    "2026-08-14T13:15:30Z",
+                    "2026-08-14T13:49:10Z",
                 )
             with patch(
                 "soccer_auto.inference._active_models",
@@ -394,7 +461,7 @@ class InferenceSafetyTests(unittest.TestCase):
                 second = predict_at(
                     store,
                     eligible_lock(),
-                    "2026-08-14T13:16:01Z",
+                    "2026-08-14T13:49:20Z",
                 )
 
         published = [
@@ -554,13 +621,13 @@ class InferenceSafetyTests(unittest.TestCase):
                 "authority": "AUTHORITATIVE",
                 "automatic_prediction_allowed": True,
                 "promotion_blocked": False,
-                "updated_at": "2026-08-14T13:19:00Z",
+                "updated_at": "2026-08-14T13:49:00Z",
             },
         )
         with patch("soccer_auto.inference._active_models", return_value=[CHAMPION]), patch(
             "soccer_auto.inference._load_model", return_value=FakeModel()
         ):
-            result = predict_at(store, eligible_lock(), "2026-08-14T13:20:00Z")
+            result = predict_at(store, eligible_lock(), "2026-08-14T13:49:20Z")
 
         self.assertEqual(result["predictions"], 0)
         self.assertEqual(result["blocked"][0]["reason"], "PUBLIC_MODEL_BINDING_UNAVAILABLE")
@@ -579,10 +646,10 @@ class InferenceSafetyTests(unittest.TestCase):
                 "authority": "AUTHORITATIVE",
                 "automatic_prediction_allowed": True,
                 "promotion_blocked": False,
-                "updated_at": "2026-08-14T13:19:00Z",
+                "updated_at": "2026-08-14T13:49:00Z",
             },
         )
-        actual = parse_utc("2026-08-14T13:20:00Z")
+        actual = parse_utc("2026-08-14T13:49:20Z")
         with patch("soccer_auto.inference._active_models", return_value=[CHAMPION]), patch(
             "soccer_auto.inference._load_model", return_value=FakeModel()
         ):
@@ -595,17 +662,17 @@ class InferenceSafetyTests(unittest.TestCase):
 
         self.assertEqual(result["predictions"], 1)
         prediction = next(iter(store.predictions.values()))
-        self.assertEqual(prediction["created_at"], "2026-08-14T13:20:00Z")
+        self.assertEqual(prediction["created_at"], "2026-08-14T13:49:20Z")
         binding = next(
             row
             for row in store.ops.rows.values()
             if row.get("entity_type") == "SOCCER_PUBLIC_PREDICTION_BINDING"
         )
-        self.assertEqual(binding["bound_at"], "2026-08-14T13:20:00Z")
+        self.assertEqual(binding["bound_at"], "2026-08-14T13:49:20Z")
         self.assertEqual(binding["event_metadata_revision"], 12)
         self.assertEqual(
             binding["autonomy_updated_at_epoch_ms"],
-            int(parse_utc("2026-08-14T13:19:00Z").timestamp() * 1000),
+            int(parse_utc("2026-08-14T13:49:00Z").timestamp() * 1000),
         )
 
     def test_stale_authority_state_blocks_champion_but_not_timely_shadow(self):
@@ -615,14 +682,14 @@ class InferenceSafetyTests(unittest.TestCase):
                 "authority": "AUTHORITATIVE",
                 "automatic_prediction_allowed": True,
                 "promotion_blocked": False,
-                "updated_at": "2026-08-14T13:00:00Z",
+                "updated_at": "2026-08-14T13:18:00Z",
             },
         )
         with patch(
             "soccer_auto.inference._active_models",
             return_value=[CHAMPION, SHADOW],
         ), patch("soccer_auto.inference._load_model", return_value=FakeModel()):
-            result = predict_at(store, eligible_lock(), "2026-08-14T13:31:00Z")
+            result = predict_at(store, eligible_lock(), "2026-08-14T13:49:01Z")
 
         self.assertEqual(result["predictions"], 1)
         self.assertEqual(result["blocked"][0]["reason"], "AUTONOMY_STATE_STALE")
@@ -630,6 +697,46 @@ class InferenceSafetyTests(unittest.TestCase):
             [row["prediction_status"] for row in store.predictions.values()],
             ["SHADOW"],
         )
+
+
+    def test_t45_training_lock_can_never_publish(self):
+        store = PredictionStore(
+            event_row(),
+            {
+                "authority": "AUTHORITATIVE",
+                "automatic_prediction_allowed": True,
+                "promotion_blocked": False,
+                "updated_at": "2026-08-14T13:49:00Z",
+            },
+        )
+        result = predict_at(
+            store,
+            eligible_training_lock(),
+            "2026-08-14T13:49:01Z",
+        )
+        self.assertEqual(result["reason"], "LOCK_NOT_FINAL_DECISION_HORIZON")
+        self.assertEqual(store.predictions, {})
+
+    def test_t10_lock_has_a_bounded_capture_window(self):
+        store = LockBuildStore()
+        before = build_frozen_lock(
+            store,
+            event_row(),
+            observed_at="2026-08-14T13:48:19Z",
+            horizon="T10",
+        )
+        self.assertEqual(before["reason"], "LOCK_NOT_DUE")
+        self.assertEqual(before["capture_opens_at"], "2026-08-14T13:48:20Z")
+        self.assertEqual(before["lock_commit_deadline"], "2026-08-14T13:49:50Z")
+
+        after = build_frozen_lock(
+            store,
+            event_row(),
+            observed_at="2026-08-14T13:49:50.001000Z",
+            horizon="T10",
+        )
+        self.assertEqual(after["reason"], "T10_FINAL_DECISION_WINDOW_CLOSED")
+        self.assertEqual(after["SK"], "LOCK#T10#REV#4#TARGET#result_1x2")
 
     def test_same_revision_and_kickoff_with_changed_team_is_stale_identity(self):
         changed = event_row()
@@ -639,7 +746,7 @@ class InferenceSafetyTests(unittest.TestCase):
         result = predict_at(
             store,
             eligible_lock(),
-            "2026-08-14T13:15:01Z",
+            "2026-08-14T13:49:01Z",
         )
 
         self.assertEqual(result["reason"], "STALE_SCHEDULE_IDENTITY")

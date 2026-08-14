@@ -104,8 +104,15 @@ An independent hourly supervised materializer bridges the recent three-day
 scores horizon: it joins only digest-validated Odds API final settlements to
 the closest provider snapshot at or before T-45, writes an immutable
 training-only lock, and never makes that reconstructed row prediction-eligible.
-The older odds-only archive remains quarantined until an authenticated
-historical results source is explicitly installed.
+A bounded, checkpointed migration reads at most 200 settlement-table items per
+five-minute cycle and attaches append-only event-scope admissibility
+certificates to legacy immutable score rows. Mixed-format group-stage matches
+can therefore become training-eligible when their stored market inventory
+contains regulation 1X2 evidence and no `to_qualify` signal; knockout or
+ambiguous fixtures remain quarantined. The migration makes no provider calls,
+never rewrites `FINAL#v1`, and retries a page until its cursor checkpoint is
+committed. The older odds-only archive remains quarantined until an
+authenticated historical results source is explicitly installed.
 
 ## Prediction system
 
@@ -114,32 +121,60 @@ The production prediction target is calibrated three-class
 
 1. Every pre-match response is stored as an immutable attempt and a
    deterministic canonical time slot.
-2. At T-45, a one-time feature lock is built only from observations finalized
-   before the lock.
-3. The feature schema includes de-vigged 1X2 consensus and movement, bookmaker
+2. At T-45, a one-time training/audit feature lock is built only from certified
+   observations finalized before that cutoff. It is never public-prediction
+   authority.
+3. In the bounded final-decision window immediately before T-10, a separate
+   immutable T-10 lock is built from the latest certified pre-cutoff cohort.
+   The first valid T-10 binding is the only public authority; a missed window
+   produces no public pick rather than falling back to or repainting T-45.
+4. The feature schema includes de-vigged 1X2 consensus and movement, bookmaker
    disagreement, totals and spread lines, league buckets, and hashed presence
    and movement features for every other dynamically returned market. This
    allows cards, corners, periods, team totals, correct score, player props, and
    future unknown market keys to contribute without changing the schema.
-4. A deterministic residual softmax model learns corrections to the same-time
+5. A deterministic residual softmax model learns corrections to the same-time
    market consensus.
-5. Training, validation, and untouched audit sets are chronological and
+6. Training, validation, and untouched audit sets are chronological and
    embargoed. Promotion requires positive lower-confidence log-loss skill over
    the market baseline, acceptable calibration, and at least 200 new
    prospective predictions. A champion must also be beaten on the same games.
-6. Promotion is atomic and fail-closed. Accuracy is reported but never used as
-   the sole promotion criterion.
+7. Promotion and public publication are atomic and fail-closed. Accuracy is
+   reported but never used as the sole promotion criterion.
 
 Every event revision carries a full schedule-identity digest over sport, event,
 kickoff, and both teams. Provider responses are revalidated after network I/O;
 late or mismatched payloads are archived but never canonicalized. The first
-champion evaluated for an event's T-45 public decision is immutably bound to
-that lock. A later champion cannot repaint the pick, stale revisions are hidden
-from the public API, and no public decision may be created after T-10.
+champion evaluated against an event's T-10 final-decision lock is atomically and
+immutably bound to that exact lock, schedule revision, coverage certificate,
+model, source timestamp, and authority-state revision. A later champion cannot
+repaint the pick, T-45 rows are suppressed from the public API, stale revisions
+are hidden, and no public or shadow prediction may be created after the T-10
+commit deadline.
 
 Knockout competitions remain quarantined from supervised 1X2 training unless
 regulation-time semantics are independently verified. Match scores cannot label
 player, card, corner, first-half, or qualification props.
+
+
+## Evidence-backed health authority
+
+`GET /v1/soccer-auto/status` includes
+`prediction_and_training_health` under contract
+`soccer-auto-health-proof-v1`. The proof uses bounded, strongly consistent
+reads and fails closed if any scan truncates. It separately reports T-10 locks
+that are due, missing, missed, or invalid; duplicate or late public authorities;
+full public-binding integrity; validated/admissible settlements; append-only
+certificates; T-45 training rows; conversion backlog; and invalid historical or
+live locks.
+
+Integrity failures immediately set controller authority to `DEGRADED`, block
+promotion/publication, and cannot be hidden behind a green Lambda invocation.
+Missing provider evidence is reported as `DEGRADED_AVAILABILITY` while remaining
+fail-closed. Bedrock daily-token deferral is advisory and visible, but it cannot
+turn a healthy deterministic collector, settlement, trainer, or T-10 authority
+red. Conversely, a deterministic integrity failure can never be masked by a
+successful Bedrock response.
 
 ## LLM boundary
 
@@ -170,8 +205,11 @@ partition, and invoke only one exact in-Region Mistral foundation model plus
 seven exact inference profiles and their exact Nova and Meta foundation-model
 resources.
 
-A fresh validated analysis is reused without another model call. Deployment
-forces a new Converse call and fully verifies any provenance-signed,
+A fresh validated analysis is reused without another model call. An active
+structured quota or transient deferral is also reused until its signed
+`retry_after` time, preventing hourly schedules from repeatedly exhausting the
+same daily token bucket. Deployment may explicitly force one bounded Converse
+probe and fully verifies any provenance-signed,
 digest-validated `LATEST` analysis with the actual selected model, context
 digest, clean stop reason, and token usage. Before any new prompt or model call,
 the analyst requires a fresh, integrity-valid dispatch manifest bound to the
@@ -285,7 +323,9 @@ or replacement.
 - `GET /v1/soccer-auto/coverage`
 - `GET /v1/soccer-auto/models`
 
-Coverage output includes known competitions, books, markets, historical
-cursors, and persisted daily window timing (`first_kickoff`,
+Status output includes the complete dual-lock, public-authority, settlement,
+and training health proof described above. Coverage output includes known
+competitions, books, markets, historical cursors, and persisted daily window
+timing (`first_kickoff`,
 `scheduled_open_at`, `actual_first_provider_call_at`, `drift_ms`, and
 `sla_state`).

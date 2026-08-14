@@ -34,6 +34,7 @@ from .settlement import (
     settlement_conflict_blocks_training,
     settlement_training_admissible,
     settlement_training_evidence_valid,
+    settlement_training_views,
 )
 from .storage import SoccerStore, ddb_safe, now_utc, plain
 
@@ -124,6 +125,7 @@ def _write_state(
 
 
 def _validated_settlements(store: SoccerStore) -> list[dict[str, Any]]:
+    rows = list(store.scan_all(store.settlements, ConsistentRead=True))
     return sorted(
         [
             {
@@ -132,7 +134,7 @@ def _validated_settlements(store: SoccerStore) -> list[dict[str, Any]]:
                     row.get("schedule_identity") or schedule_identity(row)
                 ),
             }
-            for row in store.scan_all(store.settlements, ConsistentRead=True)
+            for row in settlement_training_views(rows)
             if settlement_training_evidence_valid(row)
         ],
         key=lambda row: (str(row.get("commence_time") or ""), str(row["event_key"])),

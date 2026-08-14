@@ -7,6 +7,7 @@ from typing import Any, Iterable, Mapping, Sequence
 from boto3.dynamodb.conditions import Key
 
 from .canonical import digest, iso_utc, schedule_identity
+from .config import PUBLIC_DECISION_HORIZON
 from .market_features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION
 from .llm_analyst import BASELINE_TRIALS, latest_llm_trials
 from .historical_materializer import (
@@ -24,6 +25,7 @@ from .model import (
 from .settlement import (
     settlement_conflict_blocks_training,
     settlement_training_admissible,
+    settlement_training_views,
 )
 from .storage import SoccerStore, ddb_safe, now_utc
 
@@ -61,10 +63,10 @@ def _schedule_identity(row: Mapping[str, Any]) -> tuple[str, int, str, str] | No
 
 
 def _settlements(store: SoccerStore) -> dict[str, dict[str, Any]]:
+    rows = list(store.scan_all(store.settlements, ConsistentRead=True))
     return {
         row["event_key"]: row
-        for row in store.scan_all(store.settlements, ConsistentRead=True)
-        if row.get("entity_type") == "SOCCER_FINAL_SETTLEMENT"
+        for row in settlement_training_views(rows)
     }
 
 
@@ -113,6 +115,11 @@ def _training_rows_with_proof(
         "settlement_conflict": 0,
     }
     for lock in store.scan_all(store.locks, ConsistentRead=True):
+        # The T10 lock is a final-decision artifact, not a second training row.
+        # Retaining a single declared T45 training horizon prevents duplicate
+        # labels and keeps retrospective/prospective evaluation comparable.
+        if not str(lock.get("SK") or "").startswith("LOCK#T45#"):
+            continue
         settlement = settlements.get(lock.get("event_key"))
         if not settlement:
             excluded["no_settlement"] += 1
@@ -163,7 +170,11 @@ def _prediction_rows(
     result = {}
     for row in response.get("Items") or []:
         schedule = _schedule_identity(row)
-        if row.get("target") == TARGET and schedule is not None:
+        if (
+            row.get("target") == TARGET
+            and row.get("horizon") == PUBLIC_DECISION_HORIZON
+            and schedule is not None
+        ):
             result[schedule] = row
     return result
 

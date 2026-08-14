@@ -10,6 +10,10 @@ from boto3.dynamodb.conditions import Key
 
 from .canonical import digest, iso_utc, parse_utc, schedule_identity
 from .config import (
+    FINAL_DECISION_CAPTURE_LEAD_SECONDS,
+    LOCK_VERSION_BY_HORIZON,
+    PUBLIC_DECISION_HORIZON,
+    PUBLIC_PREDICTION_BINDING_VERSION,
     PUBLICATION_COMMIT_HEADROOM_SECONDS,
     PUBLICATION_CUTOFF_MINUTES,
 )
@@ -29,7 +33,7 @@ from .storage import (
 )
 
 
-PUBLIC_BINDING_VERSION = "soccer-auto-public-prediction-binding-v2"
+PUBLIC_BINDING_VERSION = PUBLIC_PREDICTION_BINDING_VERSION
 COVERAGE_DISPATCH_MANIFEST_MAX_AGE_SECONDS = 180
 
 
@@ -118,7 +122,7 @@ def predictions(store: SoccerStore, limit: int = 100) -> dict[str, Any]:
                 and current_identity == schedule_identity(current)
                 and str(row.get("commence_time") or "")
                 == str(current.get("commence_time") or "")
-                and horizon == "T45"
+                and horizon == PUBLIC_DECISION_HORIZON
                 and target == "result_1x2"
             )
         except (KeyError, TypeError, ValueError):
@@ -144,6 +148,14 @@ def predictions(store: SoccerStore, limit: int = 100) -> dict[str, Any]:
             commit_deadline = publication_cutoff - timedelta(
                 seconds=PUBLICATION_COMMIT_HEADROOM_SECONDS
             )
+            capture_opens_at = commit_deadline - timedelta(
+                seconds=FINAL_DECISION_CAPTURE_LEAD_SECONDS
+            )
+            lock_at = parse_utc(str(row.get("lock_at") or ""))
+            binding_lock_at = parse_utc(str(binding.get("lock_at") or ""))
+            source_observed_at = parse_utc(
+                str(row.get("source_observed_at_max") or "")
+            )
             created_at = parse_utc(str(row.get("created_at") or ""))
             bound_at = parse_utc(str(binding.get("bound_at") or ""))
             autonomy_updated_at = parse_utc(
@@ -152,6 +164,18 @@ def predictions(store: SoccerStore, limit: int = 100) -> dict[str, Any]:
             timing_matches = bool(
                 str(row.get("publication_cutoff") or "")
                 == iso_utc(publication_cutoff)
+                and str(row.get("decision_target_at") or "")
+                == iso_utc(publication_cutoff)
+                and str(binding.get("decision_target_at") or "")
+                == iso_utc(publication_cutoff)
+                and str(row.get("capture_opens_at") or "")
+                == iso_utc(capture_opens_at)
+                and str(binding.get("capture_opens_at") or "")
+                == iso_utc(capture_opens_at)
+                and str(row.get("lock_commit_deadline") or "")
+                == iso_utc(commit_deadline)
+                and str(binding.get("lock_commit_deadline") or "")
+                == iso_utc(commit_deadline)
                 and str(binding.get("publication_cutoff") or "")
                 == iso_utc(publication_cutoff)
                 and str(row.get("commit_deadline") or "")
@@ -163,7 +187,12 @@ def predictions(store: SoccerStore, limit: int = 100) -> dict[str, Any]:
                 and float(binding.get("commit_headroom_seconds"))
                 == PUBLICATION_COMMIT_HEADROOM_SECONDS
                 and created_at == bound_at
-                and created_at <= commit_deadline
+                and lock_at <= created_at <= commit_deadline
+                and capture_opens_at <= lock_at <= commit_deadline
+                and binding_lock_at == lock_at
+                and source_observed_at <= lock_at
+                and str(binding.get("source_observed_at_max") or "")
+                == str(row.get("source_observed_at_max") or "")
                 and int(row.get("autonomy_updated_at_epoch_ms") or 0)
                 == int(autonomy_updated_at.timestamp() * 1000)
             )
@@ -188,7 +217,7 @@ def predictions(store: SoccerStore, limit: int = 100) -> dict[str, Any]:
                 and str(binding.get("feature_hash") or "")
                 == str(row.get("feature_hash") or "")
                 and str(binding.get("lock_version") or "")
-                == "soccer-auto-t45-lock-v2"
+                == LOCK_VERSION_BY_HORIZON[PUBLIC_DECISION_HORIZON]
                 and str(row.get("lock_version") or "")
                 == str(binding.get("lock_version") or "")
                 and str(binding.get("coverage_certificate_version") or "")
@@ -238,7 +267,11 @@ def predictions(store: SoccerStore, limit: int = 100) -> dict[str, Any]:
         "count": len(visible),
         "predictions": visible,
         "audit_rows_suppressed": suppressed,
-        "public_contract": "one immutable current-schedule T45 public decision per event",
+        "public_contract": (
+            "one immutable current-schedule T10 final decision per event; "
+            "T45 remains training/audit only"
+        ),
+        "public_decision_horizon": PUBLIC_DECISION_HORIZON,
     }
 
 

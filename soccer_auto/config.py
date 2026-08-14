@@ -102,6 +102,30 @@ PUBLICATION_COMMIT_HEADROOM_SECONDS: Final[float] = max(
     float(os.getenv("SOCCER_AUTO_PUBLICATION_COMMIT_HEADROOM_SECONDS", "10")),
 )
 
+# Soccer deliberately keeps two immutable pre-match checkpoints.  T45 is the
+# stable training/audit horizon.  T10 is the final public-decision horizon and
+# may be captured a little early so a one-minute EventBridge schedule still has
+# enough time to finish model loading and the atomic DynamoDB write before the
+# hard T-10 publication cutoff.  The exact evidence cutoff is recorded on each
+# lock; a later invocation can never rewrite it.
+TRAINING_LOCK_HORIZON: Final[str] = "T45"
+PUBLIC_DECISION_HORIZON: Final[str] = "T10"
+LOCK_MINUTES_BY_HORIZON: Final[dict[str, int]] = {
+    TRAINING_LOCK_HORIZON: 45,
+    PUBLIC_DECISION_HORIZON: PUBLICATION_CUTOFF_MINUTES,
+}
+LOCK_VERSION_BY_HORIZON: Final[dict[str, str]] = {
+    TRAINING_LOCK_HORIZON: "soccer-auto-t45-lock-v2",
+    PUBLIC_DECISION_HORIZON: "soccer-auto-t10-lock-v1",
+}
+PUBLIC_PREDICTION_BINDING_VERSION: Final[str] = (
+    "soccer-auto-public-prediction-binding-v3"
+)
+FINAL_DECISION_CAPTURE_LEAD_SECONDS: Final[int] = max(
+    60,
+    int(os.getenv("SOCCER_AUTO_FINAL_DECISION_CAPTURE_LEAD_SECONDS", "90")),
+)
+
 # Passing all regions and omitting the bookmakers parameter is the provider's
 # supported way to request every sportsbook in those regions.  Overlapping books
 # are de-duplicated by key in canonicalization.
