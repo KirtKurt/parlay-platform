@@ -37,23 +37,83 @@ UPCOMING_DECISION_AUDIT_HOURS = 24
 
 
 def _scan(table: Any, *, limit: int = HEALTH_SCAN_LIMIT) -> tuple[list[dict[str, Any]], bool]:
-    response = table.scan(ConsistentRead=True, Limit=limit)
-    return [plain(row) for row in response.get("Items") or []], bool(
-        response.get("LastEvaluatedKey")
-    )
+    """Read up to ``limit`` rows across DynamoDB's 1 MiB response pages.
+
+    DynamoDB may return ``LastEvaluatedKey`` well before ``Limit`` is reached
+    because each Scan response is capped by bytes.  A single-page read therefore
+    turns normal table growth into a permanent fail-closed health condition.
+    Paginate while retaining the original hard item bound; if the bound is
+    actually reached, or pagination stops making progress, the proof remains
+    deliberately incomplete.
+    """
+    rows: list[dict[str, Any]] = []
+    exclusive_start_key: Mapping[str, Any] | None = None
+    seen_keys: set[str] = set()
+
+    while len(rows) < limit:
+        kwargs: dict[str, Any] = {
+            "ConsistentRead": True,
+            "Limit": max(1, limit - len(rows)),
+        }
+        if exclusive_start_key is not None:
+            kwargs["ExclusiveStartKey"] = exclusive_start_key
+        response = table.scan(**kwargs)
+        next_key = response.get("LastEvaluatedKey")
+
+        # A repeated cursor means the backend/stub is not advancing.  Do not
+        # duplicate the same page or loop forever; retain fail-closed semantics.
+        if exclusive_start_key is not None and next_key == exclusive_start_key:
+            return rows, True
+
+        rows.extend(plain(row) for row in response.get("Items") or [])
+        if not next_key:
+            return rows, False
+        if len(rows) >= limit:
+            return rows[:limit], True
+
+        fingerprint = repr(plain(next_key))
+        if fingerprint in seen_keys:
+            return rows, True
+        seen_keys.add(fingerprint)
+        exclusive_start_key = next_key
+
+    return rows[:limit], True
 
 
 def _conflicted_events(store: SoccerStore) -> tuple[set[str], bool]:
     if not hasattr(store.ops, "query"):
         rows, truncated = _scan(store.ops)
     else:
-        response = store.ops.query(
-            KeyConditionExpression=Key("PK").eq("SETTLEMENT_CONFLICT"),
-            ConsistentRead=True,
-            Limit=HEALTH_SCAN_LIMIT,
-        )
-        rows = [plain(row) for row in response.get("Items") or []]
-        truncated = bool(response.get("LastEvaluatedKey"))
+        rows: list[dict[str, Any]] = []
+        exclusive_start_key: Mapping[str, Any] | None = None
+        seen_keys: set[str] = set()
+        truncated = False
+        while len(rows) < HEALTH_SCAN_LIMIT:
+            kwargs: dict[str, Any] = {
+                "KeyConditionExpression": Key("PK").eq("SETTLEMENT_CONFLICT"),
+                "ConsistentRead": True,
+                "Limit": max(1, HEALTH_SCAN_LIMIT - len(rows)),
+            }
+            if exclusive_start_key is not None:
+                kwargs["ExclusiveStartKey"] = exclusive_start_key
+            response = store.ops.query(**kwargs)
+            next_key = response.get("LastEvaluatedKey")
+            if exclusive_start_key is not None and next_key == exclusive_start_key:
+                truncated = True
+                break
+            rows.extend(plain(row) for row in response.get("Items") or [])
+            if not next_key:
+                break
+            if len(rows) >= HEALTH_SCAN_LIMIT:
+                truncated = True
+                rows = rows[:HEALTH_SCAN_LIMIT]
+                break
+            fingerprint = repr(plain(next_key))
+            if fingerprint in seen_keys:
+                truncated = True
+                break
+            seen_keys.add(fingerprint)
+            exclusive_start_key = next_key
     return (
         {
             str(row.get("event_key") or "")
