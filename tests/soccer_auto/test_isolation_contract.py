@@ -239,6 +239,11 @@ class IsolationTests(unittest.TestCase):
         self.assertIn("historical_featured_smoke", workflow)
         self.assertIn("historical_t45_materialization_smoke", workflow)
         self.assertIn("historical_training_rows_after_materialization", workflow)
+        self.assertIn("validated == eligible + ineligible", workflow)
+        self.assertIn("if materialization['authoritative_settlements'] > 0:", workflow)
+        self.assertIn("if materialized_now > 0:", workflow)
+        self.assertIn("response['training_rows'] >= historical_training_rows", workflow)
+        self.assertNotIn("assert response['training_rows'] > 0", workflow)
 
     def test_lambda_memory_fits_the_production_account_ceiling(self) -> None:
         template = yaml.load(
