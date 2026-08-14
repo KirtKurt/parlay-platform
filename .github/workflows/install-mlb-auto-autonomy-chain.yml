@@ -3,17 +3,21 @@ name: Install MLB AUTO autonomy chain
 on:
   push:
     branches: [agent/fix-mlb-auto-autonomy-chain]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: install-mlb-auto-autonomy-chain
+  group: install-mlb-auto-autonomy-chain-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   install-and-verify:
+    if: github.head_ref == 'agent/fix-mlb-auto-autonomy-chain' || github.ref_name == 'agent/fix-mlb-auto-autonomy-chain'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
