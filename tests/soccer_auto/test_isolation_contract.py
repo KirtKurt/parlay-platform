@@ -192,7 +192,17 @@ class IsolationTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
         trigger = workflow.split("permissions:", 1)[0]
         trigger_config = yaml.load(trigger, Loader=yaml.BaseLoader)["on"]
-        self.assertEqual(set(trigger_config), {"workflow_dispatch"})
+        self.assertIn("workflow_dispatch", trigger_config)
+        self.assertEqual(
+            trigger_config["push"],
+            {
+                "branches": ["main"],
+                "paths": ["soccer_auto/.deploy-manifest-proof-once"],
+            },
+        )
+        self.assertTrue(
+            (ROOT / "soccer_auto/.deploy-manifest-proof-once").exists()
+        )
         self.assertFalse((ROOT / "soccer_auto/.deploy-repair-once").exists())
 
     def test_historical_backfill_defaults_on_and_remains_observable_with_kill_switch(self) -> None:
