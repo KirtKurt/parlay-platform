@@ -23,6 +23,10 @@ _guard_context: ContextVar[dict[str, Any] | None] = ContextVar(
 )
 
 
+def _error(exc: Exception) -> str:
+    return f'{type(exc).__name__}:{str(exc)[:500]}'
+
+
 def _prediction_error_guard(evaluation: Mapping[str, Any], exc: Exception) -> dict[str, Any]:
     return {
         **dict(evaluation),
@@ -231,25 +235,47 @@ def install(base, Store) -> None:
         return bool(original_qualifies(champion, win_probability))
 
     def guarded_ingest(*, force_reason: str | None = None):
+        effective_force_reason = force_reason
+        if not effective_force_reason:
+            try:
+                current = Store().get_state('controller')
+                if current.get('model_guard_version') != MODEL_GUARD_VERSION:
+                    effective_force_reason = 'MODEL_GUARD_ACTIVATION'
+            except Exception:
+                effective_force_reason = 'MODEL_GUARD_ACTIVATION'
+
         model_token = _guard_context.set(None)
         prior_model_from_item = base._model_from_item
         prior_qualifies = base._qualifies_official_pick
         base._model_from_item = guarded_model_from_item
         base._qualifies_official_pick = guarded_qualifies
         try:
-            result = original_ingest(force_reason=force_reason)
+            result = original_ingest(force_reason=effective_force_reason)
         finally:
             base._model_from_item = prior_model_from_item
             base._qualifies_official_pick = prior_qualifies
             _guard_context.reset(model_token)
         if not isinstance(result, dict):
             return result
-        return _postprocess_latest_ingest(
-            base=base,
-            Store=Store,
-            original_model_from_item=original_model_from_item,
-            result=result,
-        )
+        try:
+            return _postprocess_latest_ingest(
+                base=base,
+                Store=Store,
+                original_model_from_item=original_model_from_item,
+                result=result,
+            )
+        except Exception as exc:
+            error = f'MODEL_GUARD_POSTPROCESS_FAILED:{_error(exc)}'
+            try:
+                Store().put_state('controller', {
+                    'last_ingest_ok': False,
+                    'last_ingest_error': error,
+                    'model_guard_version': MODEL_GUARD_VERSION,
+                    'model_guard_enabled': True,
+                })
+            except Exception:
+                pass
+            return {'ok': False, 'action': 'INGEST_FAILED', 'error': error}
 
     base.ingest = guarded_ingest
     base._mlb_auto_model_guard_policy = policy_payload
