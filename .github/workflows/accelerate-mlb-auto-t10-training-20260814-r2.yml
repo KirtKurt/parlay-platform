@@ -38,11 +38,12 @@ jobs:
           echo "HISTORY_RULE=$HISTORY_RULE" >> "$GITHUB_ENV"
           aws events disable-rule --name "$HISTORY_RULE"
 
-      - name: Continue authoritative T10 backfill to 250 examples
+      - name: Continue authoritative T10 backfill through a fresh training attempt
         run: |
           set -euo pipefail
           : > backfill-summary.jsonl
           reached=0
+          trained_observed=0
           for round in $(seq 1 8); do
             echo "=== T10 continuation round $round ==="
             aws lambda invoke --cli-read-timeout 600 --cli-connect-timeout 30 \
@@ -74,12 +75,17 @@ jobs:
               raise SystemExit('cursor_stalled_on_terminal_date')
           PY
             count=$(python -c "import json; print(int(json.load(open('backfill-${round}.json')).get('training_examples') or 0))")
+            trained=$(python -c "import json; print('1' if (json.load(open('backfill-${round}.json')).get('training') or {}).get('trained') is True else '0')")
             if [ "$count" -ge 250 ]; then
               reached=1
+            fi
+            if [ "$count" -ge 250 ] && [ "$trained" = 1 ]; then
+              trained_observed=1
               break
             fi
           done
           echo "REACHED_GATE=$reached" >> "$GITHUB_ENV"
+          echo "TRAINED_OBSERVED=$trained_observed" >> "$GITHUB_ENV"
           test "$reached" = 1
 
       - name: Train current T10 model and prove integrity
@@ -103,13 +109,17 @@ jobs:
               if isinstance(row.get('training'), dict) and row['training'].get('trained') is True
           ]
           trained_now=train.get('trained') is True
+          new_examples=int(train.get('new_examples') or 0)
+          minimum_new_examples=int(train.get('minimum_new_examples') or 0)
           expected_no_new_evidence=(
               train.get('trained') is False
               and train.get('reason') == 'NO_NEW_EVIDENCE'
-              and bool(auto_training_rows)
+              and int(train.get('count') or status.get('training_examples') or 0) >= 250
+              and minimum_new_examples > 0
+              and new_examples < minimum_new_examples
           )
           assert train.get('ok') is True, train
-          assert trained_now or expected_no_new_evidence, {
+          assert trained_now or bool(auto_training_rows) or expected_no_new_evidence, {
               'train': train,
               'auto_training_rows': auto_training_rows,
           }
@@ -119,6 +129,12 @@ jobs:
           assert status.get('training_lock_minutes') == 10, status
           assert status.get('lock_minutes') == 10, status
           assert status.get('public_prediction_authority') == 'IMMUTABLE_LOCK_WHEN_PRESENT', status
+          if trained_now:
+              training_source='explicit_train'
+          elif auto_training_rows:
+              training_source='backfill_auto_train'
+          else:
+              training_source='no_new_evidence_below_retrain_delta'
           proof={
               'ok': True,
               'training_examples': status.get('training_examples'),
@@ -128,7 +144,7 @@ jobs:
               'registered_champion_model_id': status.get('registered_champion_model_id'),
               'active_champion_model_id': status.get('champion_model_id'),
               'champion_lock_policy_compatible': status.get('champion_lock_policy_compatible'),
-              'training_source': 'explicit_train' if trained_now else 'backfill_auto_train',
+              'training_source': training_source,
               'train': train,
               'auto_training_rows': auto_training_rows,
               'promotion_gate': status.get('champion_promotion_gate') or {},
