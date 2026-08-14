@@ -72,6 +72,7 @@ Globals:
         SOCCER_AUTO_ODDS_RATE_LIMIT_MAX_WAIT_SECONDS: '8'
         SOCCER_AUTO_ODDS_RATE_LIMIT_MAX_CONTENTION_ATTEMPTS: '128'
         SOCCER_AUTO_SCORES_CADENCE_SECONDS: '300'
+        SOCCER_AUTO_PUBLICATION_COMMIT_HEADROOM_SECONDS: '10'
         SOCCER_AUTO_LLM_MODEL_ID: !Ref SoccerLlmModelId
         SOCCER_AUTO_LLM_FALLBACK_MODEL_IDS: 'mistral.ministral-3-14b-instruct,us.meta.llama4-scout-17b-instruct-v1:0,us.meta.llama4-maverick-17b-instruct-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'
         SOCCER_AUTO_LLM_ANALYSIS_MAX_AGE_HOURS: '36'
@@ -322,6 +323,12 @@ Resources:
                   - !Sub '${SoccerPredictionsTable.Arn}/index/*'
                   - !GetAtt SoccerModelsTable.Arn
                   - !GetAtt SoccerOpsTable.Arn
+              - Effect: Allow
+                Action: [dynamodb:TransactWriteItems]
+                Resource:
+                  - !GetAtt SoccerPredictionsTable.Arn
+                  - !GetAtt SoccerOpsTable.Arn
+                  - !GetAtt SoccerEventsTable.Arn
               - Effect: Allow
                 Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject]
                 Resource:

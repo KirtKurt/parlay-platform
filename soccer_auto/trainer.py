@@ -108,6 +108,7 @@ def _training_rows_with_proof(
         "schedule_mismatch": 0,
         "schema_mismatch": 0,
         "historical_provenance": 0,
+        "live_provenance": 0,
         "invalid": 0,
         "settlement_conflict": 0,
     }

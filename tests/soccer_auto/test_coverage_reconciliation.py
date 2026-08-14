@@ -11,9 +11,13 @@ from soccer_auto.api import _latest_cycle_coverage, _latest_summary_coverage  # 
 from soccer_auto.canonical import digest  # noqa: E402
 from soccer_auto.collector import _enqueue_coverage_fanout  # noqa: E402
 from soccer_auto.storage import (  # noqa: E402
+    COVERAGE_CERTIFICATE_VERSION,
     EVENT_INVENTORY_AUTHORITY_VERSION,
     COVERAGE_PLAN_VERSION,
     SoccerStore,
+    coverage_certificate_digest,
+    coverage_certificate_integrity_valid,
+    coverage_cycle_complete,
     coverage_expected_batch_digests,
     coverage_plan_digest,
 )
@@ -156,7 +160,148 @@ class CoverageOps:
         }
 
 
+class CertificateReadOps:
+    def __init__(self, rows):
+        self.rows = [dict(row) for row in rows]
+
+    def query(self, **kwargs):
+        return {"Items": [dict(row) for row in self.rows]}
+
+
 class CoverageCycleTests(unittest.TestCase):
+    def test_complete_cycle_issues_recomputable_immutable_certificate(self) -> None:
+        summary = exact_summary(
+            commence_time="2026-08-14T14:00:00Z",
+            updated_at="2026-08-14T13:10:00Z",
+            summary_revision=7,
+            required_pairs=["book|h2h"],
+            probe_pairs=["book|totals"],
+            returned_pairs=["book|h2h"],
+            provider_unavailable_pairs=["book|totals"],
+            normalization_rejected_pairs=[],
+            attempted_incomplete_pairs=[],
+            quota_deferred_pairs=[],
+            failed_pairs=[],
+            fanout_deferred_batch_reasons={},
+            region_split_conflicts=0,
+            split_batch_conflicts=0,
+        )
+        self.assertTrue(coverage_cycle_complete(summary))
+
+        store = SoccerStore.__new__(SoccerStore)
+        store.ops = CoverageOps()
+        certificate = store._put_coverage_certificate(summary)
+
+        self.assertEqual(
+            certificate["certificate_version"],
+            COVERAGE_CERTIFICATE_VERSION,
+        )
+        self.assertEqual(
+            certificate["certificate_digest"],
+            coverage_certificate_digest(certificate),
+        )
+        self.assertTrue(coverage_cycle_complete(certificate))
+        self.assertTrue(coverage_certificate_integrity_valid(certificate))
+
+        tampered = {**certificate, "returned_pairs": []}
+        self.assertFalse(coverage_cycle_complete(tampered))
+        self.assertNotEqual(
+            tampered["certificate_digest"],
+            coverage_certificate_digest(tampered),
+        )
+
+    def test_certificate_reads_reject_tampered_envelope_and_cutoff_time(self) -> None:
+        summary = exact_summary(
+            commence_time="2026-08-14T14:00:00Z",
+            updated_at="2026-08-14T13:10:00Z",
+            summary_revision=7,
+            required_pairs=["book|h2h"],
+            returned_pairs=["book|h2h"],
+            provider_unavailable_pairs=[],
+            normalization_rejected_pairs=[],
+            attempted_incomplete_pairs=[],
+            quota_deferred_pairs=[],
+            failed_pairs=[],
+            fanout_deferred_batch_reasons={},
+            region_split_conflicts=0,
+            split_batch_conflicts=0,
+        )
+        writer = SoccerStore.__new__(SoccerStore)
+        writer.ops = CoverageOps()
+        certificate = writer._put_coverage_certificate(summary)
+
+        canonical_equivalent = {
+            **certificate,
+            "completed_at": "2026-08-14T13:10:00+00:00",
+        }
+        self.assertTrue(
+            coverage_certificate_integrity_valid(canonical_equivalent)
+        )
+        reader = SoccerStore.__new__(SoccerStore)
+        reader.ops = CertificateReadOps([canonical_equivalent])
+        self.assertEqual(
+            len(
+                reader.coverage_certificates_before(
+                    "event",
+                    "2026-08-14T13:15:00Z",
+                    schedule_revision=1,
+                    schedule_identity="identity-event",
+                )
+            ),
+            1,
+        )
+
+        tampered_rows = (
+            {**certificate, "immutable": False},
+            {**certificate, "PK": "COVERAGE_CERTIFICATE#other"},
+            {**certificate, "SK": f"{certificate['SK']}#substituted"},
+            {**certificate, "completed_at": "2026-08-14T13:09:00Z"},
+        )
+        for tampered in tampered_rows:
+            with self.subTest(tampered=tampered):
+                self.assertFalse(
+                    coverage_certificate_integrity_valid(tampered)
+                )
+                reader = SoccerStore.__new__(SoccerStore)
+                reader.ops = CertificateReadOps([tampered])
+                self.assertEqual(
+                    reader.coverage_certificates_before(
+                        "event",
+                        "2026-08-14T13:15:00Z",
+                        schedule_revision=1,
+                        schedule_identity="identity-event",
+                    ),
+                    [],
+                )
+
+    def test_required_provider_unavailability_cannot_mint_certificate(self) -> None:
+        summary = exact_summary(
+            commence_time="2026-08-14T14:00:00Z",
+            updated_at="2026-08-14T13:10:00Z",
+            summary_revision=7,
+            required_pairs=["book|h2h"],
+            returned_pairs=[],
+            provider_unavailable_pairs=["book|h2h"],
+            normalization_rejected_pairs=[],
+            attempted_incomplete_pairs=[],
+            quota_deferred_pairs=[],
+            failed_pairs=[],
+            fanout_deferred_batch_reasons={},
+            region_split_conflicts=0,
+            split_batch_conflicts=0,
+        )
+        store = SoccerStore.__new__(SoccerStore)
+        store.ops = CoverageOps()
+
+        self.assertFalse(coverage_cycle_complete(summary))
+        self.assertEqual(store._put_coverage_certificate(summary), {})
+        self.assertFalse(
+            any(
+                pk.startswith("COVERAGE_CERTIFICATE#")
+                for pk, _ in store.ops.rows
+            )
+        )
+
     def test_real_store_canonicalizes_and_completes_multi_batch_fanout(self) -> None:
         store = SoccerStore.__new__(SoccerStore)
         store.ops = CoverageOps()

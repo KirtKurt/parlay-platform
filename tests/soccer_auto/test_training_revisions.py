@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import unittest
+from datetime import timedelta
 from unittest.mock import patch
 
 from tests.soccer_auto.aws_stubs import install_if_needed
 
 install_if_needed()
 
+from soccer_auto.canonical import digest, iso_utc, parse_utc  # noqa: E402
 from soccer_auto.market_features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION  # noqa: E402
 from soccer_auto.settlement import build_settlement  # noqa: E402
 from soccer_auto.trainer import evaluate_prospective_candidate, training_rows  # noqa: E402
@@ -45,7 +47,19 @@ class ProspectiveStore(ScanStore):
 
 def lock_row(revision: int):
     final = settlement_row(revision)
-    return {
+    lock_at = iso_utc(parse_utc(COMMENCE) - timedelta(minutes=45))
+    source_at = iso_utc(parse_utc(lock_at) - timedelta(minutes=1))
+    plan_at = iso_utc(parse_utc(lock_at) - timedelta(minutes=2))
+    features = {
+        "feature_names": list(FEATURE_NAMES),
+        "values": [0.0] * len(FEATURE_NAMES),
+        "market_prior": [0.34, 0.33, 0.33],
+    }
+    required_pairs = ["book|h2h"]
+    source_hashes = [digest({"revision": revision})]
+    certificate_digest = digest({"certificate": revision})
+    plan_digest = digest({"plan": revision})
+    lock = {
         "PK": EVENT_KEY,
         "SK": f"LOCK#T45#REV#{revision}#TARGET#result_1x2",
         "entity_type": "SOCCER_FROZEN_FEATURE_LOCK",
@@ -58,15 +72,74 @@ def lock_row(revision: int):
         "home_team": "Home",
         "away_team": "Away",
         "target": "result_1x2",
+        "lock_version": "soccer-auto-t45-lock-v2",
+        "lock_at": lock_at,
+        "created_at": lock_at,
+        "labels": None,
+        "immutable": True,
         "training_eligible": True,
+        "prediction_eligible": True,
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
-        "feature_hash": "feature-hash",
-        "frozen_features": {
-            "feature_names": list(FEATURE_NAMES),
-            "values": [0.0] * len(FEATURE_NAMES),
-            "market_prior": [0.34, 0.33, 0.33],
-        },
+        "frozen_features": features,
+        "coverage_certificate_version": (
+            "soccer-auto-coverage-certificate-v2"
+        ),
+        "coverage_certificate_digest": certificate_digest,
+        "coverage_plan_digest": plan_digest,
+        "coverage_plan_observed_at": plan_at,
+        "coverage_completed_at": source_at,
+        "coverage_required_pairs": required_pairs,
+        "coverage_required_pair_count": 1,
+        "coverage_required_pair_digest": digest(required_pairs),
+        "coverage_probe_pairs": [],
+        "coverage_probe_pair_count": 0,
+        "coverage_probe_pair_digest": digest([]),
+        "coverage_completed_before_lock": True,
+        "movement_baseline_certificate_digest": certificate_digest,
+        "movement_baseline_plan_digest": plan_digest,
+        "movement_baseline_plan_observed_at": plan_at,
+        "movement_baseline_distinct": False,
+        "source_slot_ids": ["slot"],
+        "source_payload_hashes": source_hashes,
+        "source_raw_uris": ["s3://raw/live.json"],
+        "source_observed_at_max": source_at,
+        "source_observed_before_lock": True,
+        "movement_baseline_source_slot_ids": ["slot"],
+        "movement_baseline_source_payload_hashes": source_hashes,
+        "movement_baseline_source_raw_uris": ["s3://raw/live.json"],
+        "movement_baseline_source_observed_at_max": source_at,
+        "movement_baseline_source_observed_before_lock": True,
     }
+    lock["feature_hash"] = digest(
+        {
+            "event_key": lock["event_key"],
+            "schedule_revision": revision,
+            "lock_at": lock_at,
+            "coverage_certificate_digest": certificate_digest,
+            "coverage_plan_digest": plan_digest,
+            "coverage_plan_observed_at": plan_at,
+            "coverage_completed_at": source_at,
+            "coverage_required_pairs": required_pairs,
+            "coverage_probe_pairs": [],
+            "movement_baseline_certificate_digest": certificate_digest,
+            "movement_baseline_plan_digest": plan_digest,
+            "movement_baseline_plan_observed_at": plan_at,
+            "source_slot_ids": lock["source_slot_ids"],
+            "source_hashes": source_hashes,
+            "source_raw_uris": lock["source_raw_uris"],
+            "source_observed_at_max": source_at,
+            "movement_baseline_source_slot_ids": lock[
+                "movement_baseline_source_slot_ids"
+            ],
+            "movement_baseline_source_hashes": source_hashes,
+            "movement_baseline_source_raw_uris": lock[
+                "movement_baseline_source_raw_uris"
+            ],
+            "movement_baseline_source_observed_at_max": source_at,
+            "features": features,
+        }
+    )
+    return lock
 
 
 def settlement_row(revision: int):

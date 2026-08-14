@@ -68,10 +68,24 @@ def floor_slot(observed_at: str | datetime, seconds: int = 60) -> datetime:
     return datetime.fromtimestamp(epoch - epoch % seconds, tz=timezone.utc)
 
 
-def scope_hash(*, bookmakers: Sequence[str], markets: Sequence[str]) -> str:
+def scope_hash(
+    *,
+    bookmakers: Sequence[str],
+    regions: Sequence[str],
+    markets: Sequence[str],
+) -> str:
+    """Identify the provider request scope, never its mutable response shape.
+
+    A region request can legitimately return a different bookmaker set from one
+    minute to the next.  Hashing those returned bookmakers created a new
+    canonical scope for every response shape and allowed obsolete scopes to
+    survive into later feature locks.  The requested selectors are stable, and
+    region-split leaves remain distinct because their requested regions differ.
+    """
     return digest(
         {
             "bookmakers": sorted(set(bookmakers)),
+            "regions": sorted(set(regions)),
             "markets": sorted(set(markets)),
         }
     )[:20]

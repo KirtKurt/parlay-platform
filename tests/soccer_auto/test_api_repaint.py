@@ -259,10 +259,22 @@ def row(*, model: str, revision: int = 4, status: str = "PUBLISHED", created: st
         "horizon": "T45",
         "target": "result_1x2",
         "feature_hash": "feature-four",
+        "lock_version": "soccer-auto-t45-lock-v2",
+        "coverage_certificate_version": (
+            "soccer-auto-coverage-certificate-v2"
+        ),
+        "coverage_certificate_digest": "certificate-four",
+        "coverage_plan_digest": "plan-four",
         "model_digest": model,
         "model_authority": "CHAMPION",
         "prediction_status": status,
         "created_at": created,
+        "publication_cutoff": "2026-08-14T13:50:00Z",
+        "commit_deadline": "2026-08-14T13:49:50Z",
+        "commit_headroom_seconds": 10,
+        "autonomy_updated_at": "2026-08-14T13:14:00Z",
+        "autonomy_updated_at_epoch_ms": 1_786_713_240_000,
+        "event_metadata_revision": 12,
         "immutable": True,
     }
     value["schedule_identity"] = schedule_identity(value)
@@ -283,13 +295,18 @@ def current_event(*, revision: int = 4):
     return value
 
 
-def binding(*, model: str, revision: int = 4):
+def binding(
+    *,
+    model: str,
+    revision: int = 4,
+    bound_at: str = "2026-08-14T13:15:01Z",
+):
     event = current_event(revision=revision)
     return {
         "PK": "PUBLIC_PREDICTION_BINDING#EVENT#soccer_test#one",
         "SK": f"REV#{revision}#HORIZON#T45#TARGET#result_1x2",
         "entity_type": "SOCCER_PUBLIC_PREDICTION_BINDING",
-        "binding_version": "soccer-auto-public-prediction-binding-v1",
+        "binding_version": "soccer-auto-public-prediction-binding-v2",
         "event_key": event["event_key"],
         "event_id": event["event_id"],
         "sport_key": event["sport_key"],
@@ -300,7 +317,20 @@ def binding(*, model: str, revision: int = 4):
         "target": "result_1x2",
         "lock_sk": f"LOCK#T45#REV#{revision}#TARGET#result_1x2",
         "feature_hash": "feature-four",
+        "lock_version": "soccer-auto-t45-lock-v2",
+        "coverage_certificate_version": (
+            "soccer-auto-coverage-certificate-v2"
+        ),
+        "coverage_certificate_digest": "certificate-four",
+        "coverage_plan_digest": "plan-four",
         "model_digest": model,
+        "publication_cutoff": "2026-08-14T13:50:00Z",
+        "commit_deadline": "2026-08-14T13:49:50Z",
+        "commit_headroom_seconds": 10,
+        "bound_at": bound_at,
+        "autonomy_updated_at": "2026-08-14T13:14:00Z",
+        "autonomy_updated_at_epoch_ms": 1_786_713_240_000,
+        "event_metadata_revision": 12,
         "immutable": True,
     }
 
@@ -353,6 +383,39 @@ class ApiRepaintTests(unittest.TestCase):
 
         self.assertEqual(missing["count"], 0)
         self.assertEqual(mutable_result["count"], 0)
+
+    def test_public_endpoint_recomputes_and_enforces_immutable_deadline_evidence(self):
+        current = {"EVENT#soccer_test#one": current_event()}
+        valid = row(model="bound", created="2026-08-14T13:49:50Z")
+        valid_binding = binding(
+            model="bound",
+            bound_at="2026-08-14T13:49:50Z",
+        )
+        self.assertEqual(
+            predictions(Store([valid], current, [valid_binding]))["count"],
+            1,
+        )
+
+        invalid_pairs = [
+            (
+                {**valid, "created_at": "2026-08-14T13:49:50.001000Z"},
+                {
+                    **valid_binding,
+                    "bound_at": "2026-08-14T13:49:50.001000Z",
+                },
+            ),
+            ({**valid, "publication_cutoff": "2026-08-14T13:51:00Z"}, valid_binding),
+            ({**valid, "commit_deadline": "2026-08-14T13:49:59Z"}, valid_binding),
+            ({**valid, "commit_headroom_seconds": 2}, valid_binding),
+            (valid, {**valid_binding, "bound_at": "2026-08-14T13:49:49Z"}),
+        ]
+        for decision, decision_binding in invalid_pairs:
+            with self.subTest(decision=decision, binding=decision_binding):
+                result = predictions(
+                    Store([decision], current, [decision_binding])
+                )
+                self.assertEqual(result["count"], 0)
+                self.assertEqual(result["audit_rows_suppressed"], 1)
 
     def test_coverage_hot_path_has_no_unbounded_scan_all(self):
         source = inspect.getsource(coverage)

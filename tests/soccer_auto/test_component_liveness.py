@@ -11,10 +11,12 @@ install_if_needed()
 from soccer_auto.autonomous_controller import (  # noqa: E402
     COMPONENT_LIVENESS,
     _llm_state,
+    _persist_state_if_newer,
     _settlement_conflict_state,
     authority_state,
     component_liveness,
 )
+from botocore.exceptions import ClientError  # noqa: E402
 from soccer_auto.canonical import digest  # noqa: E402
 from soccer_auto.llm_analyst import (  # noqa: E402
     ANALYSIS_ORIGIN,
@@ -170,6 +172,70 @@ class ComponentLivenessTests(unittest.TestCase):
             )
         self.assertTrue(result["llm_analyst"]["healthy"])
         self.assertEqual(result["llm_analyst"]["reason"], "RECOVERED_AFTER_ERROR")
+
+    def test_zero_error_bucket_does_not_hide_latest_positive_error_time(self) -> None:
+        values = {
+            (f"soccer-{component}", "Invocations"): 1
+            for component in COMPONENT_LIVENESS
+        }
+        values[("soccer-llm_analyst", "Invocations")] = [
+            (datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc), 1),
+        ]
+        values[("soccer-llm_analyst", "Errors")] = [
+            (datetime(2026, 8, 14, 3, 0, tzinfo=timezone.utc), 1),
+            (datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc), 0),
+        ]
+        with patch.dict("os.environ", function_environment(), clear=False):
+            result = component_liveness(
+                CloudWatch(values),
+                datetime(2026, 8, 14, 4, 5, tzinfo=timezone.utc),
+            )
+
+        self.assertTrue(result["llm_analyst"]["healthy"])
+        self.assertEqual(result["llm_analyst"]["reason"], "RECOVERED_AFTER_ERROR")
+        self.assertEqual(
+            result["llm_analyst"]["latest_error_metric_bucket_at"],
+            "2026-08-14T03:00:00+00:00",
+        )
+
+    def test_older_controller_state_cannot_overwrite_newer_state(self) -> None:
+        newer = {
+            "PK": "AUTONOMY",
+            "SK": "STATE",
+            "updated_at": "2026-08-14T04:00:01Z",
+            "updated_at_epoch_ms": 1_786_680_001_000,
+            "authority": "AUTHORITATIVE",
+        }
+
+        class Ops:
+            def put_item(self, **kwargs):
+                self.condition = kwargs["ConditionExpression"]
+                self.values = kwargs["ExpressionAttributeValues"]
+                raise ClientError(
+                    {"Error": {"Code": "ConditionalCheckFailedException"}},
+                    "PutItem",
+                )
+
+            def get_item(self, **kwargs):
+                return {"Item": newer}
+
+        class Store:
+            ops = Ops()
+
+        attempted = {
+            **newer,
+            "updated_at": "2026-08-14T04:00:00Z",
+            "updated_at_epoch_ms": 1_786_680_000_000,
+            "authority": "DEGRADED",
+        }
+        persisted = _persist_state_if_newer(Store(), attempted)
+
+        self.assertEqual(persisted, newer)
+        self.assertIn("updated_at_epoch_ms <", Store.ops.condition)
+        self.assertEqual(
+            Store.ops.values[":updated_at_epoch_ms"],
+            attempted["updated_at_epoch_ms"],
+        )
 
     def test_configured_llm_requires_provenance_signed_latest_but_is_advisory(self) -> None:
         observed = datetime(2026, 8, 14, 4, 5, tzinfo=timezone.utc)

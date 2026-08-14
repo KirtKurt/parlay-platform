@@ -3,13 +3,19 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import timedelta
 from typing import Any, Mapping
 
 from boto3.dynamodb.conditions import Key
 
 from .canonical import digest, iso_utc, parse_utc, schedule_identity
+from .config import (
+    PUBLICATION_COMMIT_HEADROOM_SECONDS,
+    PUBLICATION_CUTOFF_MINUTES,
+)
 from .odds_api import provider_safety_config
 from .storage import (
+    COVERAGE_CERTIFICATE_VERSION,
     COVERAGE_DISPATCH_MANIFEST_VERSION,
     COVERAGE_EXTERNAL_QUOTA_REASONS,
     COVERAGE_PLAN_VERSION,
@@ -23,7 +29,7 @@ from .storage import (
 )
 
 
-PUBLIC_BINDING_VERSION = "soccer-auto-public-prediction-binding-v1"
+PUBLIC_BINDING_VERSION = "soccer-auto-public-prediction-binding-v2"
 COVERAGE_DISPATCH_MANIFEST_MAX_AGE_SECONDS = 180
 
 
@@ -132,8 +138,38 @@ def predictions(store: SoccerStore, limit: int = 100) -> dict[str, Any]:
             public_bindings[binding_key] = plain(binding) if binding else None
         binding = public_bindings[binding_key] or {}
         try:
+            publication_cutoff = parse_utc(
+                str(row.get("commence_time") or "")
+            ) - timedelta(minutes=PUBLICATION_CUTOFF_MINUTES)
+            commit_deadline = publication_cutoff - timedelta(
+                seconds=PUBLICATION_COMMIT_HEADROOM_SECONDS
+            )
+            created_at = parse_utc(str(row.get("created_at") or ""))
+            bound_at = parse_utc(str(binding.get("bound_at") or ""))
+            autonomy_updated_at = parse_utc(
+                str(row.get("autonomy_updated_at") or "")
+            )
+            timing_matches = bool(
+                str(row.get("publication_cutoff") or "")
+                == iso_utc(publication_cutoff)
+                and str(binding.get("publication_cutoff") or "")
+                == iso_utc(publication_cutoff)
+                and str(row.get("commit_deadline") or "")
+                == iso_utc(commit_deadline)
+                and str(binding.get("commit_deadline") or "")
+                == iso_utc(commit_deadline)
+                and float(row.get("commit_headroom_seconds"))
+                == PUBLICATION_COMMIT_HEADROOM_SECONDS
+                and float(binding.get("commit_headroom_seconds"))
+                == PUBLICATION_COMMIT_HEADROOM_SECONDS
+                and created_at == bound_at
+                and created_at <= commit_deadline
+                and int(row.get("autonomy_updated_at_epoch_ms") or 0)
+                == int(autonomy_updated_at.timestamp() * 1000)
+            )
             binding_matches = bool(
                 binding
+                and timing_matches
                 and binding.get("entity_type") == "SOCCER_PUBLIC_PREDICTION_BINDING"
                 and binding.get("binding_version") == PUBLIC_BINDING_VERSION
                 and binding.get("immutable") is True
@@ -151,6 +187,29 @@ def predictions(store: SoccerStore, limit: int = 100) -> dict[str, Any]:
                 and bool(str(row.get("feature_hash") or ""))
                 and str(binding.get("feature_hash") or "")
                 == str(row.get("feature_hash") or "")
+                and str(binding.get("lock_version") or "")
+                == "soccer-auto-t45-lock-v2"
+                and str(row.get("lock_version") or "")
+                == str(binding.get("lock_version") or "")
+                and str(binding.get("coverage_certificate_version") or "")
+                == COVERAGE_CERTIFICATE_VERSION
+                and str(row.get("coverage_certificate_version") or "")
+                == str(binding.get("coverage_certificate_version") or "")
+                and bool(str(row.get("coverage_certificate_digest") or ""))
+                and str(binding.get("coverage_certificate_digest") or "")
+                == str(row.get("coverage_certificate_digest") or "")
+                and bool(str(row.get("coverage_plan_digest") or ""))
+                and str(binding.get("coverage_plan_digest") or "")
+                == str(row.get("coverage_plan_digest") or "")
+                and bool(str(row.get("autonomy_updated_at") or ""))
+                and str(binding.get("autonomy_updated_at") or "")
+                == str(row.get("autonomy_updated_at") or "")
+                and int(row.get("autonomy_updated_at_epoch_ms") or 0) > 0
+                and int(binding.get("autonomy_updated_at_epoch_ms") or 0)
+                == int(row.get("autonomy_updated_at_epoch_ms") or 0)
+                and int(row.get("event_metadata_revision") or 0) > 0
+                and int(binding.get("event_metadata_revision") or 0)
+                == int(row.get("event_metadata_revision") or 0)
                 and bool(str(row.get("model_digest") or ""))
                 and str(binding.get("model_digest") or "")
                 == str(row.get("model_digest") or "")

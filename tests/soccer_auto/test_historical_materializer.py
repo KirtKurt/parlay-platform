@@ -186,7 +186,18 @@ def second_settlement():
 
 
 def live_lock(final):
-    return {
+    lock_at = iso_utc(parse_utc(final["commence_time"]) - timedelta(minutes=45))
+    source_at = iso_utc(parse_utc(lock_at) - timedelta(minutes=1))
+    plan_at = iso_utc(parse_utc(lock_at) - timedelta(minutes=2))
+    features = {
+        "feature_names": list(FEATURE_NAMES),
+        "values": [0.0] * len(FEATURE_NAMES),
+        "market_prior": [0.34, 0.33, 0.33],
+    }
+    required_pairs = ["book|h2h"]
+    source_hashes = [digest({"event": final["event_id"]})]
+    certificate_digest = digest({"certificate": final["event_id"]})
+    lock = {
         "PK": final["event_key"],
         "SK": (
             f"LOCK#T45#REV#{int(final['schedule_revision'])}#"
@@ -202,15 +213,78 @@ def live_lock(final):
         "home_team": final["home_team"],
         "away_team": final["away_team"],
         "target": "result_1x2",
+        "lock_version": "soccer-auto-t45-lock-v2",
+        "lock_at": lock_at,
+        "created_at": lock_at,
+        "labels": None,
+        "immutable": True,
         "training_eligible": True,
+        "prediction_eligible": True,
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
-        "feature_hash": f"live-{final['event_id']}",
-        "frozen_features": {
-            "feature_names": list(FEATURE_NAMES),
-            "values": [0.0] * len(FEATURE_NAMES),
-            "market_prior": [0.34, 0.33, 0.33],
-        },
+        "frozen_features": features,
+        "coverage_certificate_version": (
+            "soccer-auto-coverage-certificate-v2"
+        ),
+        "coverage_certificate_digest": certificate_digest,
+        "coverage_plan_digest": digest({"plan": final["event_id"]}),
+        "coverage_plan_observed_at": plan_at,
+        "coverage_completed_at": source_at,
+        "coverage_required_pairs": required_pairs,
+        "coverage_required_pair_count": 1,
+        "coverage_required_pair_digest": digest(required_pairs),
+        "coverage_probe_pairs": [],
+        "coverage_probe_pair_count": 0,
+        "coverage_probe_pair_digest": digest([]),
+        "coverage_completed_before_lock": True,
+        "movement_baseline_certificate_digest": certificate_digest,
+        "movement_baseline_plan_digest": digest(
+            {"plan": final["event_id"]}
+        ),
+        "movement_baseline_plan_observed_at": plan_at,
+        "movement_baseline_distinct": False,
+        "source_slot_ids": ["slot"],
+        "source_payload_hashes": source_hashes,
+        "source_raw_uris": ["s3://raw/live.json"],
+        "source_observed_at_max": source_at,
+        "source_observed_before_lock": True,
+        "movement_baseline_source_slot_ids": ["slot"],
+        "movement_baseline_source_payload_hashes": source_hashes,
+        "movement_baseline_source_raw_uris": ["s3://raw/live.json"],
+        "movement_baseline_source_observed_at_max": source_at,
+        "movement_baseline_source_observed_before_lock": True,
     }
+    lock["feature_hash"] = digest(
+        {
+            "event_key": lock["event_key"],
+            "schedule_revision": int(lock["schedule_revision"]),
+            "lock_at": lock_at,
+            "coverage_certificate_digest": certificate_digest,
+            "coverage_plan_digest": lock["coverage_plan_digest"],
+            "coverage_plan_observed_at": plan_at,
+            "coverage_completed_at": source_at,
+            "coverage_required_pairs": required_pairs,
+            "coverage_probe_pairs": [],
+            "movement_baseline_certificate_digest": certificate_digest,
+            "movement_baseline_plan_digest": lock[
+                "movement_baseline_plan_digest"
+            ],
+            "movement_baseline_plan_observed_at": plan_at,
+            "source_slot_ids": lock["source_slot_ids"],
+            "source_hashes": source_hashes,
+            "source_raw_uris": lock["source_raw_uris"],
+            "source_observed_at_max": source_at,
+            "movement_baseline_source_slot_ids": lock[
+                "movement_baseline_source_slot_ids"
+            ],
+            "movement_baseline_source_hashes": source_hashes,
+            "movement_baseline_source_raw_uris": lock[
+                "movement_baseline_source_raw_uris"
+            ],
+            "movement_baseline_source_observed_at_max": source_at,
+            "features": features,
+        }
+    )
+    return lock
 
 
 def odds_event(*, home="Home", away="Away", book_count=3):

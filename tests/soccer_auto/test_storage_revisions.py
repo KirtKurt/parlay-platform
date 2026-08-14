@@ -303,7 +303,11 @@ class EventRevisionTests(unittest.TestCase):
             payload=payload,
             observed_at="2026-08-14T13:00:20Z",
             bookmakers=["book"],
+            regions=[],
             markets=["h2h"],
+            coverage_plan_observed_at="2026-08-14T12:59:00Z",
+            coverage_plan_digest="plan-digest",
+            coverage_batch_digest="batch-digest",
             request_metadata={},
         )
         self.assertFalse(result["canonical_promoted"])

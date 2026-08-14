@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 import types
+from decimal import Decimal
 
 
 def install_if_needed() -> None:
@@ -17,6 +18,9 @@ def install_if_needed() -> None:
             return self
 
         def between(self, start, end):
+            return self
+
+        def lte(self, value):
             return self
 
         def begins_with(self, value):
@@ -48,7 +52,24 @@ def install_if_needed() -> None:
 
     class TypeSerializer:
         def serialize(self, value):
-            return {"S": str(value)}
+            if value is None:
+                return {"NULL": True}
+            if isinstance(value, bool):
+                return {"BOOL": value}
+            if isinstance(value, (int, Decimal)):
+                return {"N": str(value)}
+            if isinstance(value, str):
+                return {"S": value}
+            if isinstance(value, (list, tuple)):
+                return {"L": [self.serialize(item) for item in value]}
+            if isinstance(value, dict):
+                return {
+                    "M": {
+                        str(key): self.serialize(item)
+                        for key, item in value.items()
+                    }
+                }
+            raise TypeError(f"unsupported DynamoDB stub value: {value!r}")
 
     class Config:
         def __init__(self, **kwargs):

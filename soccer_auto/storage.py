@@ -28,6 +28,7 @@ from .config import ALL_BOOKMAKER_REGIONS, PUBLISHED_SCORE_SUPPORT
 
 
 COVERAGE_PLAN_VERSION = "soccer-auto-coverage-plan-v3"
+COVERAGE_CERTIFICATE_VERSION = "soccer-auto-coverage-certificate-v2"
 COVERAGE_DISPATCH_MANIFEST_VERSION = (
     "soccer-auto-coverage-dispatch-manifest-v2"
 )
@@ -47,6 +48,40 @@ COVERAGE_EXTERNAL_QUOTA_REASONS = frozenset(
 )
 COVERAGE_MARKETS_PER_REQUEST = int(
     os.getenv("SOCCER_AUTO_MARKETS_PER_REQUEST", "10")
+)
+
+
+_COVERAGE_CERTIFICATE_FIELDS = (
+    "event_key",
+    "commence_time",
+    "schedule_revision",
+    "schedule_identity",
+    "plan_version",
+    "plan_observed_at",
+    "plan_digest",
+    "discovery_observed_at",
+    "discovery_status",
+    "coverage_error",
+    "request_markets",
+    "required_pairs",
+    "probe_pairs",
+    "expected_digest",
+    "returned_pairs",
+    "provider_unavailable_pairs",
+    "normalization_rejected_pairs",
+    "attempted_incomplete_pairs",
+    "quota_deferred_pairs",
+    "failed_pairs",
+    "fanout_expected_batch_digests",
+    "fanout_enqueued_batch_digests",
+    "fanout_succeeded_batch_digests",
+    "fanout_failed_batch_digests",
+    "fanout_deferred_batch_digests",
+    "fanout_deferred_batch_reasons",
+    "region_split_conflicts",
+    "split_batch_conflicts",
+    "summary_revision",
+    "updated_at",
 )
 
 
@@ -76,6 +111,18 @@ def plain(value: Any) -> Any:
 
 def _is_conditional_failure(exc: ClientError) -> bool:
     return (exc.response.get("Error") or {}).get("Code") == "ConditionalCheckFailedException"
+
+
+def _is_transaction_condition_failure(exc: ClientError) -> bool:
+    error = exc.response.get("Error") or {}
+    if error.get("Code") == "ConditionalCheckFailedException":
+        return True
+    if error.get("Code") != "TransactionCanceledException":
+        return False
+    return any(
+        reason.get("Code") == "ConditionalCheckFailed"
+        for reason in exc.response.get("CancellationReasons") or []
+    )
 
 
 def ddb_item_size_bytes(value: Mapping[str, Any]) -> int:
@@ -183,6 +230,196 @@ def coverage_expected_batch_digests(
             )
         )
     return result
+
+
+def coverage_certificate_digest(summary: Mapping[str, Any]) -> str:
+    """Digest every field used to prove one immutable coverage cycle."""
+    return digest(
+        {
+            field: plain(summary.get(field))
+            for field in _COVERAGE_CERTIFICATE_FIELDS
+        }
+    )
+
+
+def coverage_cycle_complete(summary: Mapping[str, Any]) -> bool:
+    """Independently verify that one exact request plan completed safely.
+
+    This deliberately does not trust a stored ``coverage_complete`` boolean.
+    It recomputes the plan and top-level batch digests, validates all set
+    partitions, and requires every current required bookmaker/market pair to
+    have been returned.  Optional rolling probes may be terminally unavailable
+    or normalization-rejected without claiming that data was returned.
+    """
+
+    def exact_strings(field: str) -> tuple[list[str], set[str]] | None:
+        raw = summary.get(field) or []
+        if not isinstance(raw, (list, tuple)):
+            return None
+        values = [str(value) for value in raw if value]
+        unique = set(values)
+        if len(values) != len(unique):
+            return None
+        return values, unique
+
+    try:
+        event_key = str(summary.get("event_key") or "")
+        plan_at = str(summary.get("plan_observed_at") or "")
+        plan_digest = str(summary.get("plan_digest") or "")
+        schedule_revision = int(summary.get("schedule_revision") or 0)
+        schedule_identity_value = str(summary.get("schedule_identity") or "")
+        updated_at = str(summary.get("updated_at") or "")
+        commence_time = str(summary.get("commence_time") or "")
+        request_market_values = exact_strings("request_markets")
+        required_values = exact_strings("required_pairs")
+        probe_values = exact_strings("probe_pairs")
+        returned_values = exact_strings("returned_pairs")
+        unavailable_values = exact_strings("provider_unavailable_pairs")
+        rejected_values = exact_strings("normalization_rejected_pairs")
+        incomplete_values = exact_strings("attempted_incomplete_pairs")
+        deferred_values = exact_strings("quota_deferred_pairs")
+        failed_values = exact_strings("failed_pairs")
+        expected_batch_values = exact_strings(
+            "fanout_expected_batch_digests"
+        )
+        enqueued_batch_values = exact_strings(
+            "fanout_enqueued_batch_digests"
+        )
+        succeeded_batch_values = exact_strings(
+            "fanout_succeeded_batch_digests"
+        )
+        failed_batch_values = exact_strings("fanout_failed_batch_digests")
+        deferred_batch_values = exact_strings(
+            "fanout_deferred_batch_digests"
+        )
+        exact_values = (
+            request_market_values,
+            required_values,
+            probe_values,
+            returned_values,
+            unavailable_values,
+            rejected_values,
+            incomplete_values,
+            deferred_values,
+            failed_values,
+            expected_batch_values,
+            enqueued_batch_values,
+            succeeded_batch_values,
+            failed_batch_values,
+            deferred_batch_values,
+        )
+        if any(value is None for value in exact_values):
+            return False
+        request_markets = request_market_values[1]
+        required = required_values[1]
+        probe = probe_values[1]
+        expected = required | probe
+        returned = returned_values[1]
+        unavailable = unavailable_values[1]
+        rejected = rejected_values[1]
+        incomplete = incomplete_values[1]
+        deferred = deferred_values[1]
+        failed = failed_values[1]
+        expected_batches = expected_batch_values[1]
+        enqueued_batches = enqueued_batch_values[1]
+        succeeded_batches = succeeded_batch_values[1]
+        failed_batches = failed_batch_values[1]
+        deferred_batches = deferred_batch_values[1]
+        pair_markets = {
+            pair.rsplit("|", 1)[1] for pair in expected if "|" in pair
+        }
+        exact_batches = set(
+            coverage_expected_batch_digests(
+                plan_digest=plan_digest,
+                request_markets=request_market_values[0],
+                expected_pairs=sorted(expected),
+            )
+        )
+        deferred_reasons = summary.get("fanout_deferred_batch_reasons") or {}
+        chronology_valid = bool(
+            parse_utc(plan_at) <= parse_utc(updated_at) < parse_utc(commence_time)
+        )
+        return bool(
+            event_key
+            and schedule_revision > 0
+            and schedule_identity_value
+            and str(summary.get("plan_version") or "")
+            == COVERAGE_PLAN_VERSION
+            and str(summary.get("discovery_status") or "") == "HTTP_200"
+            and not summary.get("coverage_error")
+            and int(summary.get("summary_revision") or 0) > 0
+            and chronology_valid
+            and request_markets
+            and required
+            and expected
+            and not (required & probe)
+            and pair_markets <= request_markets
+            and str(summary.get("expected_digest") or "")
+            == digest(sorted(expected))
+            and plan_digest
+            == coverage_plan_digest(
+                event_key=event_key,
+                observed_at=plan_at,
+                schedule_revision=schedule_revision,
+                schedule_identity_value=schedule_identity_value,
+                request_markets=request_market_values[0],
+                required_pairs=sorted(required),
+                probe_pairs=sorted(probe),
+            )
+            and returned <= expected
+            and unavailable <= expected
+            and rejected <= expected
+            and not (returned & unavailable)
+            and not (returned & rejected)
+            and not (unavailable & rejected)
+            and required <= returned
+            and returned | unavailable | rejected == expected
+            and not incomplete
+            and not deferred
+            and not failed
+            and expected_batches
+            and expected_batches == exact_batches
+            and enqueued_batches == expected_batches
+            and succeeded_batches == expected_batches
+            and not failed_batches
+            and not deferred_batches
+            and isinstance(deferred_reasons, Mapping)
+            and not deferred_reasons
+            and int(summary.get("region_split_conflicts") or 0) == 0
+            and int(summary.get("split_batch_conflicts") or 0) == 0
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def coverage_certificate_integrity_valid(
+    certificate: Mapping[str, Any],
+) -> bool:
+    """Verify a certificate's immutable envelope and cutoff authority."""
+    try:
+        event_key = str(certificate.get("event_key") or "")
+        plan_digest = str(certificate.get("plan_digest") or "")
+        completed_at = iso_utc(str(certificate.get("completed_at") or ""))
+        updated_at = iso_utc(str(certificate.get("updated_at") or ""))
+        return bool(
+            certificate.get("entity_type")
+            == "SOCCER_COVERAGE_CERTIFICATE"
+            and certificate.get("certificate_version")
+            == COVERAGE_CERTIFICATE_VERSION
+            and certificate.get("immutable") is True
+            and event_key
+            and plan_digest
+            and completed_at == updated_at
+            and str(certificate.get("PK") or "")
+            == f"COVERAGE_CERTIFICATE#{event_key}"
+            and str(certificate.get("SK") or "")
+            == f"COMPLETE#{updated_at}#PLAN#{plan_digest}"
+            and str(certificate.get("certificate_digest") or "")
+            == coverage_certificate_digest(certificate)
+            and coverage_cycle_complete(certificate)
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 class SoccerStore:
@@ -825,6 +1062,11 @@ class SoccerStore:
             in set(summary.get("terminal_fetch_batch_digests") or ())
         )
         if terminal:
+            # Heal the only non-transactional boundary in certificate issue:
+            # the latest-summary CAS may have committed just before a worker
+            # crashed.  A duplicate delivery must recreate the immutable proof
+            # without making another paid provider call.
+            self._put_coverage_certificate(summary)
             return {"acquired": False, "state": "COMPLETED"}
 
         now_epoch = int(parse_utc(observed_at).timestamp())
@@ -2321,6 +2563,111 @@ class SoccerStore:
             or {}
         )
 
+    def _put_coverage_certificate(
+        self, summary: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Persist an immutable, independently verifiable completed cycle."""
+        summary = plain(dict(summary))
+        if not coverage_cycle_complete(summary):
+            return {}
+        completed_at = iso_utc(str(summary["updated_at"]))
+        plan_digest = str(summary["plan_digest"])
+        evidence = {
+            field: plain(summary.get(field))
+            for field in _COVERAGE_CERTIFICATE_FIELDS
+        }
+        certificate = {
+            "PK": f"COVERAGE_CERTIFICATE#{summary['event_key']}",
+            "SK": f"COMPLETE#{completed_at}#PLAN#{plan_digest}",
+            "entity_type": "SOCCER_COVERAGE_CERTIFICATE",
+            "certificate_version": COVERAGE_CERTIFICATE_VERSION,
+            **evidence,
+            "completed_at": completed_at,
+            "certificate_digest": coverage_certificate_digest(evidence),
+            "immutable": True,
+            "expires_at": int(
+                (parse_utc(completed_at) + timedelta(days=30)).timestamp()
+            ),
+        }
+        if not coverage_certificate_integrity_valid(certificate):
+            raise RuntimeError("soccer coverage certificate failed self-validation")
+        if ddb_item_size_bytes(certificate) > COVERAGE_DDB_ITEM_SOFT_LIMIT_BYTES:
+            raise RuntimeError("soccer coverage certificate exceeds the safe item size")
+        try:
+            self.ops.put_item(
+                Item=ddb_safe(certificate),
+                ConditionExpression="attribute_not_exists(SK)",
+            )
+            return plain(certificate)
+        except ClientError as exc:
+            if not _is_conditional_failure(exc):
+                raise
+        existing = plain(
+            self.ops.get_item(
+                Key={"PK": certificate["PK"], "SK": certificate["SK"]},
+                ConsistentRead=True,
+            ).get("Item")
+            or {}
+        )
+        if not coverage_certificate_integrity_valid(existing) or str(
+            existing.get("certificate_digest") or ""
+        ) != str(certificate["certificate_digest"]):
+            raise RuntimeError("soccer coverage certificate integrity collision")
+        return existing
+
+    def coverage_certificates_before(
+        self,
+        event_key: str,
+        cutoff: str,
+        *,
+        schedule_revision: int,
+        schedule_identity: str,
+    ) -> list[dict[str, Any]]:
+        """Return valid immutable plan certificates newest first."""
+        cutoff_key = f"COMPLETE#{iso_utc(cutoff)}#\uffff"
+        kwargs: dict[str, Any] = {
+            "KeyConditionExpression": (
+                Key("PK").eq(f"COVERAGE_CERTIFICATE#{event_key}")
+                & Key("SK").lte(cutoff_key)
+            ),
+            "ConsistentRead": True,
+            "ScanIndexForward": False,
+        }
+        rows: list[dict[str, Any]] = []
+        while True:
+            response = self.ops.query(**kwargs)
+            for item in response.get("Items") or []:
+                row = plain(item)
+                try:
+                    valid = bool(
+                        coverage_certificate_integrity_valid(row)
+                        and str(row.get("event_key") or "")
+                        == str(event_key)
+                        and int(row.get("schedule_revision") or 0)
+                        == int(schedule_revision)
+                        and str(row.get("schedule_identity") or "")
+                        == str(schedule_identity)
+                        and parse_utc(str(row.get("completed_at") or ""))
+                        <= parse_utc(cutoff)
+                    )
+                except (KeyError, TypeError, ValueError):
+                    valid = False
+                if not valid:
+                    continue
+                rows.append(row)
+            cursor = response.get("LastEvaluatedKey")
+            if not cursor:
+                break
+            kwargs["ExclusiveStartKey"] = cursor
+        return sorted(
+            rows,
+            key=lambda row: (
+                str(row.get("completed_at") or ""),
+                str(row.get("plan_digest") or ""),
+            ),
+            reverse=True,
+        )
+
     def latest_coverage_cycles(
         self,
         *,
@@ -2755,6 +3102,7 @@ class SoccerStore:
                         }
                     ),
                 )
+                self._put_coverage_certificate(merged)
                 return True
             except ClientError as exc:
                 if not _is_conditional_failure(exc):
@@ -2970,7 +3318,11 @@ class SoccerStore:
         payload: Mapping[str, Any],
         observed_at: str,
         bookmakers: Sequence[str],
+        regions: Sequence[str],
         markets: Sequence[str],
+        coverage_plan_observed_at: str,
+        coverage_plan_digest: str,
+        coverage_batch_digest: str,
         request_metadata: Mapping[str, Any],
         slot_seconds: int = 60,
         grace_seconds: int = 20,
@@ -2979,6 +3331,12 @@ class SoccerStore:
         schedule_revision = int(event.get("schedule_revision") or 0)
         if schedule_revision <= 0:
             raise ValueError("a positive schedule_revision is required for a snapshot")
+        if not (
+            str(coverage_plan_observed_at).strip()
+            and str(coverage_plan_digest).strip()
+            and str(coverage_batch_digest).strip()
+        ):
+            raise ValueError("complete coverage plan provenance is required for a snapshot")
         event_schedule_identity = str(event.get("schedule_identity") or schedule_identity(event))
         payload_schedule_identity = schedule_identity(payload)
         if payload_schedule_identity != event_schedule_identity:
@@ -2989,7 +3347,11 @@ class SoccerStore:
         ):
             raise ValueError("provider event-odds response arrived at or after kickoff")
         slot = floor_slot(observed_at, slot_seconds)
-        scope = scope_hash(bookmakers=bookmakers, markets=markets)
+        scope = scope_hash(
+            bookmakers=bookmakers,
+            regions=regions,
+            markets=markets,
+        )
         raw_uri, payload_hash = self.archive_json(
             "event_odds",
             payload,
@@ -3000,6 +3362,8 @@ class SoccerStore:
                 "scope": scope,
                 "schedule_revision": str(schedule_revision),
                 "schedule_identity": event_schedule_identity,
+                "coverage_plan_digest": str(coverage_plan_digest),
+                "coverage_batch_digest": str(coverage_batch_digest),
             },
         )
         normalized_books = payload.get("bookmakers") or []
@@ -3011,11 +3375,22 @@ class SoccerStore:
                 if market.get("key")
             }
         )
+        pair_keys = sorted(
+            {
+                f"{book.get('key')}|{market.get('key')}"
+                for book in normalized_books
+                if book.get("key")
+                for market in (book.get("markets") or [])
+                if market.get("key")
+            }
+        )
         attempt_id = digest(
             {
                 "event_key": event_key,
                 "schedule_revision": schedule_revision,
                 "observed_at": observed_at,
+                "coverage_plan_digest": str(coverage_plan_digest),
+                "coverage_batch_digest": str(coverage_batch_digest),
                 "scope": scope,
                 "payload": payload_hash,
             }
@@ -3038,7 +3413,7 @@ class SoccerStore:
             "PK": event_key,
             "SK": (
                 f"ATTEMPT#{iso_utc(slot)}#REV#{schedule_revision}#"
-                f"SCOPE#{scope}#{attempt_id}"
+                f"PLAN#{coverage_plan_digest}#SCOPE#{scope}#{attempt_id}"
             ),
             "entity_type": "SOCCER_SNAPSHOT_ATTEMPT",
             **candidate.__dict__,
@@ -3048,8 +3423,13 @@ class SoccerStore:
             "slot_seconds": slot_seconds,
             "scope_hash": scope,
             "bookmakers_requested": sorted(set(bookmakers)),
+            "regions_requested": sorted(set(regions)),
             "markets_requested": sorted(set(markets)),
             "market_keys_returned": market_keys,
+            "pair_keys_returned": pair_keys,
+            "coverage_plan_observed_at": str(coverage_plan_observed_at),
+            "coverage_plan_digest": str(coverage_plan_digest),
+            "coverage_batch_digest": str(coverage_batch_digest),
             "request_metadata": dict(request_metadata),
             "phase": (
                 "PREMATCH"
@@ -3067,7 +3447,10 @@ class SoccerStore:
 
         pointer_key = {
             "PK": event_key,
-            "SK": f"SLOT#{iso_utc(slot)}#REV#{schedule_revision}#SCOPE#{scope}",
+            "SK": (
+                f"SLOT#{iso_utc(slot)}#REV#{schedule_revision}#"
+                f"PLAN#{coverage_plan_digest}#SCOPE#{scope}"
+            ),
         }
         eligible = candidate.valid and candidate.observed <= slot + timedelta(seconds=slot_seconds + grace_seconds)
         promoted = False
@@ -3092,8 +3475,15 @@ class SoccerStore:
                     "grace_seconds": grace_seconds,
                     "scope_hash": scope,
                     "bookmakers_requested": sorted(set(bookmakers)),
+                    "regions_requested": sorted(set(regions)),
                     "markets_requested": sorted(set(markets)),
                     "market_keys_returned": market_keys,
+                    "pair_keys_returned": pair_keys,
+                    "coverage_plan_observed_at": str(
+                        coverage_plan_observed_at
+                    ),
+                    "coverage_plan_digest": str(coverage_plan_digest),
+                    "coverage_batch_digest": str(coverage_batch_digest),
                     "canonical": True,
                     "training_eligible": True,
                 }
@@ -3134,6 +3524,8 @@ class SoccerStore:
         *,
         schedule_revision: int | None = None,
         schedule_identity: str | None = None,
+        coverage_plan_digest: str | None = None,
+        coverage_plan_observed_at: str | None = None,
     ) -> list[dict[str, Any]]:
         kwargs: dict[str, Any] = {
             "KeyConditionExpression": Key("PK").eq(event_key) & Key("SK").begins_with("SLOT#"),
@@ -3152,6 +3544,14 @@ class SoccerStore:
                 if schedule_identity is not None and str(row.get("schedule_identity") or "") != str(
                     schedule_identity
                 ):
+                    continue
+                if coverage_plan_digest is not None and str(
+                    row.get("coverage_plan_digest") or ""
+                ) != str(coverage_plan_digest):
+                    continue
+                if coverage_plan_observed_at is not None and str(
+                    row.get("coverage_plan_observed_at") or ""
+                ) != str(coverage_plan_observed_at):
                     continue
                 finalized_at = parse_utc(row["slot_start"]) + timedelta(
                     seconds=int(row.get("slot_seconds", 60)) + int(row.get("grace_seconds", 20))
@@ -3207,6 +3607,287 @@ class SoccerStore:
             if _is_conditional_failure(exc):
                 return False
             raise
+
+    def put_public_prediction(
+        self,
+        *,
+        binding: Mapping[str, Any],
+        prediction: Mapping[str, Any],
+    ) -> tuple[bool, str, dict[str, Any]]:
+        """Atomically persist one public model binding and its prediction.
+
+        A same-model retry is idempotent. The recovery path exists only for a
+        binding written by the pre-transaction implementation: it conditionally
+        verifies that immutable binding before adding the missing prediction.
+        A prediction can therefore never be accompanied by a newly orphaned
+        binding, even if the transaction is cancelled.
+        """
+        serializer = TypeSerializer()
+
+        def av(value: Any) -> dict[str, Any]:
+            return serializer.serialize(ddb_safe(value))
+
+        def encoded_item(value: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+            return {str(key): av(item) for key, item in value.items()}
+
+        binding_item = dict(binding)
+        prediction_item = dict(prediction)
+        client = self.ops.meta.client
+        autonomy_key = {"PK": "AUTONOMY", "SK": "STATE"}
+        event_key = {"PK": binding_item["event_key"], "SK": "METADATA"}
+
+        autonomy_fields = {
+            "authority": "AUTHORITATIVE",
+            "automatic_prediction_allowed": True,
+            "promotion_blocked": False,
+            "updated_at": binding_item["autonomy_updated_at"],
+            "updated_at_epoch_ms": int(
+                binding_item["autonomy_updated_at_epoch_ms"]
+            ),
+        }
+        event_fields = {
+            "entity_type": "SOCCER_EVENT",
+            "metadata_revision": int(binding_item["event_metadata_revision"]),
+            "schedule_revision": int(binding_item["schedule_revision"]),
+            "schedule_identity": binding_item["schedule_identity"],
+            "commence_time": binding_item["commence_time"],
+            "completed": False,
+        }
+
+        def exact_condition(
+            *,
+            table_name: str,
+            key: Mapping[str, Any],
+            fields: Mapping[str, Any],
+        ) -> dict[str, Any]:
+            return {
+                "ConditionCheck": {
+                    "TableName": table_name,
+                    "Key": encoded_item(key),
+                    "ConditionExpression": " AND ".join(
+                        f"#{field}=:{field}" for field in fields
+                    ),
+                    "ExpressionAttributeNames": {
+                        f"#{field}": field for field in fields
+                    },
+                    "ExpressionAttributeValues": {
+                        f":{field}": av(value)
+                        for field, value in fields.items()
+                    },
+                }
+            }
+
+        authority_checks = [
+            exact_condition(
+                table_name=self.ops.name,
+                key=autonomy_key,
+                fields=autonomy_fields,
+            ),
+            exact_condition(
+                table_name=self.events.name,
+                key=event_key,
+                fields=event_fields,
+            ),
+        ]
+        try:
+            client.transact_write_items(
+                TransactItems=[
+                    *authority_checks,
+                    {
+                        "Put": {
+                            "TableName": self.ops.name,
+                            "Item": encoded_item(binding_item),
+                            "ConditionExpression": "attribute_not_exists(SK)",
+                        }
+                    },
+                    {
+                        "Put": {
+                            "TableName": self.predictions.name,
+                            "Item": encoded_item(prediction_item),
+                            "ConditionExpression": "attribute_not_exists(SK)",
+                        }
+                    },
+                ]
+            )
+            return True, "PUBLIC_PREDICTION_WRITTEN", binding_item
+        except ClientError as exc:
+            if not _is_transaction_condition_failure(exc):
+                raise
+
+        binding_key = {"PK": binding_item["PK"], "SK": binding_item["SK"]}
+        prediction_key = {
+            "PK": prediction_item["PK"],
+            "SK": prediction_item["SK"],
+        }
+        existing_binding = plain(
+            self.ops.get_item(Key=binding_key, ConsistentRead=True).get("Item")
+            or {}
+        )
+        existing_prediction = plain(
+            self.predictions.get_item(
+                Key=prediction_key,
+                ConsistentRead=True,
+            ).get("Item")
+            or {}
+        )
+        binding_identity_fields = (
+            "binding_version",
+            "event_key",
+            "event_id",
+            "sport_key",
+            "commence_time",
+            "schedule_revision",
+            "schedule_identity",
+            "horizon",
+            "target",
+            "lock_sk",
+            "lock_version",
+            "feature_hash",
+            "coverage_certificate_version",
+            "coverage_certificate_digest",
+            "coverage_plan_digest",
+            "publication_cutoff",
+            "commit_deadline",
+            "commit_headroom_seconds",
+            "bound_at",
+            "autonomy_updated_at",
+            "autonomy_updated_at_epoch_ms",
+            "event_metadata_revision",
+        )
+        binding_identity_matches = bool(existing_binding) and all(
+            existing_binding.get(field) == binding_item.get(field)
+            for field in binding_identity_fields
+        )
+        if existing_binding and not binding_identity_matches:
+            return (
+                False,
+                "PUBLIC_MODEL_BINDING_INTEGRITY_MISMATCH",
+                existing_binding,
+            )
+        if existing_binding and str(existing_binding.get("model_digest") or "") != str(
+            binding_item["model_digest"]
+        ):
+            return False, "PUBLIC_MODEL_BINDING_MISMATCH", existing_binding
+
+        prediction_identity_fields = (
+            "entity_type",
+            "event_key",
+            "event_id",
+            "sport_key",
+            "commence_time",
+            "schedule_revision",
+            "schedule_identity",
+            "horizon",
+            "target",
+            "lock_at",
+            "lock_version",
+            "feature_hash",
+            "feature_schema_version",
+            "coverage_certificate_version",
+            "coverage_certificate_digest",
+            "coverage_plan_digest",
+            "model_digest",
+            "model_authority",
+            "prediction_status",
+            "selection",
+            "highest_probability_outcome",
+            "publication_cutoff",
+            "commit_deadline",
+            "commit_headroom_seconds",
+            "created_at",
+            "autonomy_updated_at",
+            "autonomy_updated_at_epoch_ms",
+            "event_metadata_revision",
+        )
+        prediction_identity_matches = bool(existing_prediction) and all(
+            existing_prediction.get(field) == prediction_item.get(field)
+            for field in prediction_identity_fields
+        )
+        if existing_prediction and not prediction_identity_matches:
+            return False, "PUBLIC_PREDICTION_ROW_MISMATCH", existing_binding
+        if existing_binding and existing_prediction:
+            return False, "PUBLIC_PREDICTION_ALREADY_WRITTEN", existing_binding
+        if existing_prediction:
+            return False, "PUBLIC_PREDICTION_BINDING_MISSING", {}
+        current_autonomy = plain(
+            self.ops.get_item(
+                Key=autonomy_key,
+                ConsistentRead=True,
+            ).get("Item")
+            or {}
+        )
+        if not current_autonomy or any(
+            current_autonomy.get(field) != value
+            for field, value in autonomy_fields.items()
+        ):
+            return False, "AUTONOMY_STATE_CHANGED", existing_binding
+        current_event = plain(
+            self.events.get_item(
+                Key=event_key,
+                ConsistentRead=True,
+            ).get("Item")
+            or {}
+        )
+        if not current_event or any(
+            current_event.get(field) != value
+            for field, value in event_fields.items()
+        ):
+            return False, "EVENT_SCHEDULE_AUTHORITY_CHANGED", existing_binding
+        if not existing_binding:
+            # A transaction conflict may have cancelled without either writer
+            # becoming visible. A later minute safely retries the whole pair.
+            return False, "PUBLIC_MODEL_BINDING_UNAVAILABLE", {}
+
+        # Migration-only recovery for a matching orphan left by the former
+        # two-write implementation. The immutable binding is revalidated inside
+        # the same transaction that creates the missing prediction.
+        recovery_fields = (*binding_identity_fields, "model_digest")
+        try:
+            client.transact_write_items(
+                TransactItems=[
+                    *authority_checks,
+                    {
+                        "ConditionCheck": {
+                            "TableName": self.ops.name,
+                            "Key": encoded_item(binding_key),
+                            "ConditionExpression": " AND ".join(
+                                f"#{field}=:{field}" for field in recovery_fields
+                            ),
+                            "ExpressionAttributeNames": {
+                                f"#{field}": field for field in recovery_fields
+                            },
+                            "ExpressionAttributeValues": {
+                                f":{field}": av(binding_item[field])
+                                for field in recovery_fields
+                            },
+                        }
+                    },
+                    {
+                        "Put": {
+                            "TableName": self.predictions.name,
+                            "Item": encoded_item(prediction_item),
+                            "ConditionExpression": "attribute_not_exists(SK)",
+                        }
+                    },
+                ]
+            )
+            return True, "PUBLIC_PREDICTION_RECOVERED", existing_binding
+        except ClientError as exc:
+            if not _is_transaction_condition_failure(exc):
+                raise
+        recovered = plain(
+            self.predictions.get_item(
+                Key=prediction_key,
+                ConsistentRead=True,
+            ).get("Item")
+            or {}
+        )
+        if recovered and all(
+            recovered.get(field) == prediction_item.get(field)
+            for field in prediction_identity_fields
+        ):
+            return False, "PUBLIC_PREDICTION_ALREADY_WRITTEN", existing_binding
+        return False, "PUBLIC_PREDICTION_RECOVERY_FAILED", existing_binding
 
     @staticmethod
     def scan_all(table: Any, **kwargs: Any) -> Iterable[dict[str, Any]]:

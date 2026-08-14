@@ -26,6 +26,7 @@ from .historical import (
     _provider_timestamps,
     _validated_wrapper,
 )
+from .inference import live_lock_coverage_provenance_valid
 from .market_features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION, compile_features
 from .model import CLASSES, TrainingRow
 from .odds_api import DEFAULT_MAX_ATTEMPTS, OddsApiError
@@ -355,6 +356,11 @@ def training_candidate(
         return None, "invalid"
     if not schema_matches:
         return None, "schema_mismatch"
+    if (
+        not lock_has_historical_signals(lock)
+        and not live_lock_coverage_provenance_valid(lock)
+    ):
+        return None, "live_provenance"
     try:
         row = TrainingRow(
             event_key=str(lock["event_key"]),

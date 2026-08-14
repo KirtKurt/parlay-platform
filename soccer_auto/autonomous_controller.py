@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 import boto3
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 
 from .canonical import iso_utc
 from .llm_analyst import latest_validated_analysis
@@ -195,9 +196,48 @@ def _metric_sum(
     )
     points = response.get("Datapoints") or []
     total = sum(float(point.get("Sum") or 0.0) for point in points)
-    timestamps = [point.get("Timestamp") for point in points if point.get("Timestamp")]
+    # CloudWatch returns zero-valued buckets too. Such a bucket is not the
+    # timestamp of an invocation or an error and must not make an older error
+    # look simultaneous with a later successful invocation.
+    timestamps = [
+        point.get("Timestamp")
+        for point in points
+        if point.get("Timestamp") and float(point.get("Sum") or 0.0) > 0.0
+    ]
     latest = max(timestamps).isoformat() if timestamps else None
     return total, latest
+
+
+def _conditional_failure(exc: ClientError) -> bool:
+    return (exc.response.get("Error") or {}).get("Code") == (
+        "ConditionalCheckFailedException"
+    )
+
+
+def _persist_state_if_newer(store: SoccerStore, state: Mapping[str, Any]) -> dict[str, Any]:
+    """Prevent an older overlapping controller invocation from winning last."""
+    try:
+        store.ops.put_item(
+            Item=ddb_safe(state),
+            ConditionExpression=(
+                "attribute_not_exists(updated_at_epoch_ms) OR "
+                "updated_at_epoch_ms < :updated_at_epoch_ms"
+            ),
+            ExpressionAttributeValues={
+                ":updated_at_epoch_ms": int(state["updated_at_epoch_ms"]),
+            },
+        )
+        return plain(state)
+    except ClientError as exc:
+        if not _conditional_failure(exc):
+            raise
+    current = store.ops.get_item(
+        Key={"PK": "AUTONOMY", "SK": "STATE"},
+        ConsistentRead=True,
+    ).get("Item")
+    if not current:
+        raise RuntimeError("newer autonomy state was not readable after CAS rejection")
+    return plain(current)
 
 
 def component_liveness(cloudwatch: Any, observed: datetime) -> dict[str, dict[str, Any]]:
@@ -386,10 +426,9 @@ def run_cycle() -> dict[str, Any]:
         "distributed_rate_limit_state": store.rate_limit_status(),
         "provider_429_telemetry": store.provider_429_status(observed_at=observed),
         "updated_at": observed_at,
+        "updated_at_epoch_ms": int(observed.timestamp() * 1000),
     }
-    store.ops.put_item(Item=ddb_safe(state))
-
-    return plain(state)
+    return _persist_state_if_newer(store, state)
 
 
 def controller_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, Any]:
