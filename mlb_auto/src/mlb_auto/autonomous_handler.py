@@ -23,6 +23,10 @@ from .ml import promote_challenger
 from .provider_open import OpenEndedOddsApiClient
 from .runtime_hardening import install as _install_runtime_hardening
 from .storage import Store
+from .team_form import (
+    rematerialize_training_examples as _rematerialize_team_form,
+    status_payload as _team_form_status,
+)
 from .threshold_policy import qualifies as _qualifies_threshold
 from .training_integrity import run as _run_training
 
@@ -84,6 +88,10 @@ def autonomous_train() -> dict:
     return result
 
 
+def autonomous_team_form_backfill(max_rows: int | None = None) -> dict:
+    return _rematerialize_team_form(Store=Store, limit=max_rows)
+
+
 def autonomous_backfill(max_games_per_run: int | None = None) -> dict:
     inventory = _cached_market_inventory() or discover_market_inventory()
     result = run_historical_backfill(max_games_per_run=max_games_per_run)
@@ -96,7 +104,11 @@ def autonomous_backfill(max_games_per_run: int | None = None) -> dict:
         'errors': inventory.get('errors'),
         'cached': bool(inventory.get('cached')),
     }
-    result['llm_rd'] = autonomous_research(force=False)
+    team_form = autonomous_team_form_backfill()
+    result['team_form_backfill'] = team_form
+    result['llm_rd'] = autonomous_research(
+        force=bool(team_form.get('feature_family_became_ready')),
+    )
     count = int(result.get('training_examples') or 0)
     result['training'] = autonomous_train() if count >= base.MIN_TRAIN else {
         'trained': False, 'reason': 'INSUFFICIENT_EXAMPLES',
@@ -154,6 +166,7 @@ def _status_with_rd() -> dict:
         rd = _rd_status(Store=Store)
         result['llm_rd'] = rd
         result['llm_model_access'] = _model_access_status(rd)
+        result['team_form'] = _team_form_status(Store=Store)
     return result
 
 
@@ -164,6 +177,8 @@ def handler(event, context):
         return autonomous_train()
     if action in ('LLM_RD', 'MLB_AUTO_LLM_RD'):
         return autonomous_research(force=bool(event.get('force', True)))
+    if action in ('TEAM_FORM_BACKFILL', 'MLB_AUTO_TEAM_FORM_BACKFILL'):
+        return autonomous_team_form_backfill(max_rows=event.get('max_rows'))
     if action in ('LIVE_PROVIDER_PROOF', 'MLB_AUTO_LIVE_PROVIDER_PROOF'):
         return live_provider_proof()
     if action in ('MARKET_INVENTORY', 'MLB_AUTO_MARKET_INVENTORY'):
