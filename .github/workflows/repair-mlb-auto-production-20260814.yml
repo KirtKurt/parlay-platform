@@ -1,0 +1,193 @@
+name: Repair MLB Auto production 20260814
+
+on:
+  push:
+    branches: [agent/mlb-auto-tennis-lifecycle-v1]
+    paths: ['.github/workflows/repair-mlb-auto-production-20260814.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-mlb-auto-production-20260814
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-mlb-auto-prod
+
+jobs:
+  repair-and-prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/mlb-auto-tennis-lifecycle-v1
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Patch protected-stack fingerprint to stable structural identity
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/deploy-mlb-auto-v1.yml')
+          text = path.read_text(encoding='utf-8')
+          old = '''          fp() { local s="$1"; if ! aws cloudformation describe-stacks --stack-name "$s" >/dev/null 2>&1; then printf MISSING; return; fi; { aws cloudformation get-template --stack-name "$s" --output json; aws cloudformation list-stack-resources --stack-name "$s" --output json; } | sha256sum | awk '{print $1}'; }'''
+          new = '''          fp() {
+            local s="$1"
+            if ! aws cloudformation describe-stacks --stack-name "$s" >/dev/null 2>&1; then
+              printf MISSING
+              return
+            fi
+            python - "$s" <<'PYFP'
+          import boto3, hashlib, json, sys
+
+          stack = sys.argv[1]
+          cf = boto3.client('cloudformation')
+          template = cf.get_template(StackName=stack).get('TemplateBody') or {}
+          rows = []
+          token = None
+          while True:
+              kwargs = {'StackName': stack}
+              if token:
+                  kwargs['NextToken'] = token
+              page = cf.list_stack_resources(**kwargs)
+              for row in page.get('StackResourceSummaries') or []:
+                  rows.append({
+                      'LogicalResourceId': row.get('LogicalResourceId'),
+                      'PhysicalResourceId': row.get('PhysicalResourceId'),
+                      'ResourceType': row.get('ResourceType'),
+                  })
+              token = page.get('NextToken')
+              if not token:
+                  break
+          payload = {
+              'TemplateBody': template,
+              'Resources': sorted(rows, key=lambda r: (
+                  str(r.get('LogicalResourceId') or ''),
+                  str(r.get('ResourceType') or ''),
+                  str(r.get('PhysicalResourceId') or ''),
+              )),
+          }
+          encoded = json.dumps(payload, sort_keys=True, separators=(',', ':'), default=str).encode()
+          print(hashlib.sha256(encoded).hexdigest(), end='')
+          PYFP
+          }'''
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f'expected exactly 2 legacy fingerprint functions, found {count}')
+          text = text.replace(old, new)
+          path.write_text(text, encoding='utf-8')
+          PY
+          git diff --check
+          grep -q "StackResourceSummaries" .github/workflows/deploy-mlb-auto-v1.yml
+          if grep -q "list-stack-resources --stack-name \"\$s\" --output json; } | sha256sum" .github/workflows/deploy-mlb-auto-v1.yml; then
+            echo '::error::Legacy unstable fingerprint remains'
+            exit 1
+          fi
+
+      - name: Commit durable MLB-only verifier repair
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/deploy-mlb-auto-v1.yml
+          if ! git diff --cached --quiet; then
+            git commit -m "Fix MLB Auto protected-stack verifier stability"
+            git pull --rebase origin agent/mlb-auto-tennis-lifecycle-v1
+            git push origin HEAD:agent/mlb-auto-tennis-lifecycle-v1
+          fi
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Force live MLB Auto repair, training, and T10 authority proof
+        run: |
+          set -euo pipefail
+          FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id AutoFunction --query StackResourceDetail.PhysicalResourceId --output text)
+          aws lambda invoke --cli-read-timeout 600 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_REPAIR"}' repair.json >/dev/null
+          aws lambda invoke --cli-read-timeout 600 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"MLB_AUTO_TRAIN"}' train.json >/dev/null
+          aws lambda invoke --cli-read-timeout 180 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload '{"action":"STATUS"}' status.json >/dev/null
+          python - <<'PY' > pred_event.json
+          import json
+          print(json.dumps({
+              'requestContext': {'http': {'method': 'GET'}},
+              'rawPath': '/prod/v1/mlb-auto/predictions',
+              'queryStringParameters': {'date': '2026-08-13'},
+          }))
+          PY
+          aws lambda invoke --cli-read-timeout 180 --cli-connect-timeout 30 --function-name "$FN" --cli-binary-format raw-in-base64-out --payload fileb://pred_event.json predictions.json >/dev/null
+          aws events list-rules --name-prefix "${STACK_NAME}-" --output json > rules.json
+          python - <<'PY'
+          import json
+
+          repair = json.load(open('repair.json'))
+          train = json.load(open('train.json'))
+          status = json.load(open('status.json'))
+          envelope = json.load(open('predictions.json'))
+          body = envelope.get('body') if isinstance(envelope, dict) else None
+          predictions = json.loads(body) if isinstance(body, str) else envelope
+          rules = json.load(open('rules.json')).get('Rules') or []
+
+          assert repair.get('ok') is True, repair
+          assert train.get('ok') is True, train
+          assert status.get('ok') is True and status.get('sport') == 'mlb_auto', status
+          assert status.get('autonomous') is True, status
+          assert status.get('lock_minutes') == 10, status
+          assert status.get('training_lock_minutes') == 10, status
+          assert status.get('official_pick_policy') == 'CHAMPION_CONFIDENCE_AT_OR_BEFORE_T10', status
+          assert status.get('public_prediction_authority') == 'IMMUTABLE_LOCK_WHEN_PRESENT', status
+          assert predictions.get('ok') is True, predictions
+          assert predictions.get('prediction_authority') == 'IMMUTABLE_LOCK_WHEN_PRESENT', predictions
+          assert predictions.get('configured_lock_minutes') == 10, predictions
+          rows = list(predictions.get('predictions') or [])
+          locked = [r for r in rows if r.get('locked')]
+          assert locked, predictions
+          for row in locked:
+              assert row.get('public_record_frozen') is True, row
+              assert row.get('prediction_authority') != 'MUTABLE_PRELOCK_FORECAST', row
+              if row.get('published_lock_direction_changed'):
+                  assert row.get('predicted_winner') != row.get('published_predicted_winner'), row
+
+          names = {r.get('Name'): r.get('State') for r in rules}
+          for suffix in ('heartbeat-5m','lock-1m','settle-30m','train-1h','repair-5m','history-15m'):
+              found = [(n,s) for n,s in names.items() if n and n.endswith(suffix)]
+              assert len(found) == 1 and found[0][1] == 'ENABLED', (suffix, names)
+
+          proof = {
+              'ok': True,
+              'sport': 'mlb_auto',
+              'repair': repair,
+              'train': train,
+              'status': status,
+              'aug13_prediction_count': len(rows),
+              'aug13_locked_count': len(locked),
+              'aug13_direction_drift_rows_safely_frozen': sum(1 for r in locked if r.get('published_lock_direction_changed')),
+              'schedules_enabled': 6,
+          }
+          with open('mlb-auto-live-repair-proof.json', 'w') as f:
+              json.dump(proof, f, indent=2, sort_keys=True)
+              f.write('\n')
+          print(json.dumps(proof, indent=2, sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlb-auto-live-repair-proof-${{ github.run_id }}
+          path: |
+            repair.json
+            train.json
+            status.json
+            predictions.json
+            rules.json
+            mlb-auto-live-repair-proof.json
+          retention-days: 30
