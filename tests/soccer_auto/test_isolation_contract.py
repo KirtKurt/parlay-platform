@@ -125,6 +125,11 @@ class IsolationTests(unittest.TestCase):
 
     def test_runtime_smoke_prints_lambda_error_payload_before_asserting(self) -> None:
         workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
+        helper = workflow.split("invoke_and_assert_ok() {", 1)[1].split(
+            "          # Catalog and events", 1
+        )[0]
+        self.assertIn("--cli-connect-timeout 10", helper)
+        self.assertIn("--cli-read-timeout 360", helper)
         print_at = workflow.index("print(name, response)")
         function_error_at = workflow.index('assert not metadata.get("FunctionError")')
         self.assertLess(print_at, function_error_at)
@@ -184,7 +189,12 @@ class IsolationTests(unittest.TestCase):
         self.assertIn("branches: [main]", trigger)
         self.assertIn("- 'soccer_auto/.deploy-repair-once'", trigger)
         self.assertNotIn("soccer_auto/**", trigger)
-        self.assertTrue((ROOT / "soccer_auto/.deploy-repair-once").exists())
+        marker = ROOT / "soccer_auto/.deploy-repair-once"
+        self.assertTrue(marker.exists())
+        self.assertEqual(
+            marker.read_text().strip(),
+            "One-shot retry 7: bound Bedrock transport attempts and deployment smoke timeouts.",
+        )
 
     def test_historical_backfill_defaults_on_and_remains_observable_with_kill_switch(self) -> None:
         template = yaml.load(

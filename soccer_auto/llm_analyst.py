@@ -14,7 +14,8 @@ from datetime import timedelta
 from typing import Any, Mapping, Sequence
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError
 
 from .canonical import canonical_json, digest, iso_utc, parse_utc
 from .market_features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION
@@ -59,6 +60,13 @@ DIAGNOSTIC_ROW_LIMIT = int(os.getenv("SOCCER_AUTO_LLM_DIAGNOSTIC_ROW_LIMIT", "20
 MAX_CONTEXT_CANONICAL_BYTES = 3_000
 MAX_BEDROCK_REQUEST_BYTES = 4_800
 BEDROCK_MAX_OUTPUT_TOKENS = 384
+BEDROCK_CONNECT_TIMEOUT_SECONDS = 3
+BEDROCK_READ_TIMEOUT_SECONDS = 30
+BEDROCK_CLIENT_CONFIG = Config(
+    connect_timeout=BEDROCK_CONNECT_TIMEOUT_SECONDS,
+    read_timeout=BEDROCK_READ_TIMEOUT_SECONDS,
+    retries={"mode": "standard", "total_max_attempts": 1},
+)
 MAX_ANALYSIS_SUMMARY_CHARS = 240
 MAX_ANALYSIS_LIST_ITEMS = 3
 MAX_ANALYSIS_ITEM_CHARS = 160
@@ -670,6 +678,22 @@ def _bedrock_error_diagnostic(model_id: str, exc: ClientError) -> dict[str, Any]
     return result
 
 
+def _bedrock_transport_diagnostic(
+    model_id: str, exc: BotoCoreError
+) -> dict[str, Any]:
+    """Classify a client transport failure without persisting its raw payload."""
+    error_code = re.sub(r"[^A-Za-z0-9_]", "", type(exc).__name__)[:100]
+    return {
+        "model_id": model_id,
+        "error_code": error_code or "BotoCoreError",
+        "category": "TRANSIENT_CLIENT",
+        # Botocore exception text can contain endpoint URLs or credential
+        # provider details. The bounded class is enough to diagnose transport
+        # behavior without persisting any raw exception fields.
+        "message": "Bedrock Runtime client transport failure",
+    }
+
+
 def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, Any]:
     model_ids = _model_ids()
     if not model_ids:
@@ -710,7 +734,7 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
     )
     if request_byte_count > MAX_BEDROCK_REQUEST_BYTES:
         raise RuntimeError("soccer analyst request exceeds its hard byte budget")
-    bedrock = boto3.client("bedrock-runtime")
+    bedrock = boto3.client("bedrock-runtime", config=BEDROCK_CLIENT_CONFIG)
     attempted_model_ids: list[str] = []
     model_errors: list[dict[str, Any]] = []
     validated: dict[str, Any] | None = None
@@ -749,6 +773,16 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
             print(canonical_json({"event": "soccer_bedrock_model_error", **diagnostic}))
             if not _fallback_eligible_model_error(exc):
                 raise
+            model_errors.append(diagnostic)
+        except BotoCoreError as exc:
+            # One unavailable endpoint/connection must not consume the whole
+            # Lambda window or prevent the next allowlisted model candidate.
+            diagnostic = _bedrock_transport_diagnostic(model_id, exc)
+            print(
+                canonical_json(
+                    {"event": "soccer_bedrock_transport_error", **diagnostic}
+                )
+            )
             model_errors.append(diagnostic)
         except ValueError as exc:
             # A malformed response has no authority. Try another real Bedrock

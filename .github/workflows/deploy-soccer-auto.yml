@@ -173,6 +173,8 @@ jobs:
             aws lambda invoke \
               --function-name "$function_name" \
               --region "$region" \
+              --cli-connect-timeout 10 \
+              --cli-read-timeout 360 \
               --cli-binary-format raw-in-base64-out \
               --payload "$payload" \
               "/tmp/${output_name}.json" \

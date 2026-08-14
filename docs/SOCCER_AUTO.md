@@ -116,6 +116,9 @@ failure immediately tries the next independently metered model. The Mistral
 and Meta models are tried before the already-exhausted Nova-family fallback
 buckets; the Meta candidates keep their bounded diagnostics within the US
 cross-Region geography.
+The Bedrock SDK makes one bounded transport attempt per candidate before the
+application advances to the next model; it does not hide extra per-model retry
+loops inside the fallback chain.
 Global Nova 2 Lite uses its separate global quota path and may process the
 bounded soccer diagnostics in any supported commercial AWS Region.
 It receives only isolated soccer coverage summaries, immutable feature-schema

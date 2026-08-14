@@ -9,7 +9,7 @@ from tests.soccer_auto.aws_stubs import install_if_needed
 
 install_if_needed()
 
-from botocore.exceptions import ClientError  # noqa: E402
+from botocore.exceptions import ClientError, ReadTimeoutError  # noqa: E402
 from soccer_auto.canonical import canonical_json, digest  # noqa: E402
 from soccer_auto.llm_analyst import (  # noqa: E402
     ANALYSIS_ORIGIN,
@@ -316,7 +316,9 @@ class LlmBoundaryTests(unittest.TestCase):
         with (
             patch("soccer_auto.llm_analyst.MODEL_ID", "us.amazon.nova-2-lite-v1:0"),
             patch("soccer_auto.llm_analyst.SoccerStore", return_value=store),
-            patch("soccer_auto.llm_analyst.boto3.client", return_value=bedrock),
+            patch(
+                "soccer_auto.llm_analyst.boto3.client", return_value=bedrock
+            ) as client_mock,
             patch("soccer_auto.llm_analyst.now_utc", return_value=observed),
         ):
             result = llm_analyst_handler({}, None)
@@ -348,6 +350,15 @@ class LlmBoundaryTests(unittest.TestCase):
         self.assertLessEqual(result["request_byte_count"], MAX_BEDROCK_REQUEST_BYTES)
         self.assertEqual(
             ops.writes[-1]["max_output_tokens"], BEDROCK_MAX_OUTPUT_TOKENS
+        )
+        client_mock.assert_called_once()
+        self.assertEqual(client_mock.call_args.args, ("bedrock-runtime",))
+        config = client_mock.call_args.kwargs["config"]
+        self.assertEqual(config.connect_timeout, 3)
+        self.assertEqual(config.read_timeout, 30)
+        self.assertEqual(
+            config.retries,
+            {"mode": "standard", "total_max_attempts": 1},
         )
 
     def test_primary_daily_token_throttle_uses_real_bedrock_fallback(self) -> None:
@@ -434,6 +445,59 @@ class LlmBoundaryTests(unittest.TestCase):
             ],
         )
         self.assertEqual(attempt["model_errors"], result["model_errors"])
+
+    def test_transport_timeout_is_bounded_and_falls_through_to_next_model(self) -> None:
+        observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
+        ops = Ops()
+        store = Store(ops)
+        bedrock = Mock()
+        bedrock.converse.side_effect = [
+            ReadTimeoutError(
+                endpoint_url=(
+                    "https://bedrock-runtime.us-east-1.amazonaws.com/"
+                    "?sensitive-token=must-not-persist"
+                )
+            ),
+            self._response(
+                {
+                    "summary": "fallback recovered after bounded client timeout",
+                    "recommended_trials": [],
+                }
+            ),
+        ]
+        with (
+            patch("soccer_auto.llm_analyst.MODEL_ID", "us.amazon.nova-2-lite-v1:0"),
+            patch(
+                "soccer_auto.llm_analyst.FALLBACK_MODEL_IDS",
+                ("us.amazon.nova-lite-v1:0",),
+            ),
+            patch("soccer_auto.llm_analyst.SoccerStore", return_value=store),
+            patch("soccer_auto.llm_analyst.boto3.client", return_value=bedrock),
+            patch("soccer_auto.llm_analyst.now_utc", return_value=observed),
+        ):
+            result = llm_analyst_handler({}, None)
+
+        self.assertEqual(result["status"], "ANALYZED")
+        self.assertEqual(result["model_id"], "us.amazon.nova-lite-v1:0")
+        self.assertEqual(
+            result["attempted_model_ids"],
+            ["us.amazon.nova-2-lite-v1:0", "us.amazon.nova-lite-v1:0"],
+        )
+        self.assertEqual(
+            result["model_errors"],
+            [
+                {
+                    "model_id": "us.amazon.nova-2-lite-v1:0",
+                    "error_code": "ReadTimeoutError",
+                    "category": "TRANSIENT_CLIENT",
+                    "message": "Bedrock Runtime client transport failure",
+                }
+            ],
+        )
+        attempt = ops.writes[-1]
+        self.assertEqual(attempt["status"], "ANALYZED")
+        self.assertEqual(attempt["model_errors"], result["model_errors"])
+        self.assertNotIn("sensitive-token", canonical_json(attempt))
 
     def test_all_model_daily_token_throttles_are_deferred_without_latest_write(self) -> None:
         observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
