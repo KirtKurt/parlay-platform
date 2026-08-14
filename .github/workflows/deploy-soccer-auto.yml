@@ -280,8 +280,12 @@ jobs:
           assert response['component'] == 'historical_backfill', response
           assert materialization['provider_calls'] <= 5, materialization
           assert not materialization['quota_deferred'], materialization
+          assert int(materialization['invalid_existing_locks']) == 0, materialization
           if materialization['authoritative_settlements'] > 0:
-              assert materialization['materialized'] > 0 or materialization['existing_locks'] > 0, materialization
+              assert (
+                  materialization['materialized'] > 0
+                  or materialization['existing_training_eligible_locks'] > 0
+              ), materialization
           else:
               assert materialization['provider_calls'] == 0, materialization
               assert materialization['materialized'] == 0, materialization
@@ -300,18 +304,28 @@ jobs:
           eligible = int(supervised['authoritative_settlements'])
           ineligible = int(supervised['ineligible_validated_settlements'])
           training_rows = int(supervised['historical_training_rows'])
+          manifest_version = str(supervised['historical_training_manifest_version'])
+          manifest_digest = str(supervised['historical_training_manifest_digest'])
           assert validated > 0, supervised
           assert validated == eligible + ineligible, supervised
           assert int(materialization['authoritative_settlements']) == eligible, (materialization, supervised)
-          assert 0 <= training_rows <= int(supervised['materialized_rows']) <= eligible, supervised
+          assert int(supervised['classified_authoritative_settlements']) == eligible, supervised
+          assert int(supervised['invalid_existing_locks']) == 0, supervised
+          assert training_rows == int(supervised['materialized_rows']), supervised
+          assert 0 <= training_rows <= eligible, supervised
+          assert manifest_version == 'soccer-auto-historical-training-manifest-v1', supervised
+          assert manifest_digest, supervised
           if materialized_now > 0:
               assert training_rows > 0, supervised
           elif eligible == 0:
               assert training_rows == 0, supervised
               print('::warning::Validated Soccer settlements are currently regulation-ambiguous and remain training-ineligible')
           else:
-              print('::warning::Eligible Soccer settlements already had immutable locks; no new historical lock was required')
+              assert int(supervised['existing_training_eligible_locks']) > 0, supervised
+              print('::warning::Eligible Soccer settlements already had validated immutable locks; no new historical lock was required')
           open('/tmp/soccer-historical-training-rows.txt', 'w').write(str(training_rows))
+          open('/tmp/soccer-historical-training-manifest-version.txt', 'w').write(manifest_version)
+          open('/tmp/soccer-historical-training-manifest-digest.txt', 'w').write(manifest_digest)
           open('/tmp/soccer-authoritative-settlements.txt', 'w').write(str(eligible))
           print('historical_training_rows_after_materialization', supervised)
           PY
@@ -381,6 +395,23 @@ jobs:
               assert response['reason'] == 'BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE', response
               print('::warning::Bedrock daily-token quota deferred; deterministic Soccer deployment remains valid')
           PY
+          # Refresh the manifest immediately before trainer invocation so the
+          # exact cross-component proof is not comparing against a pre-Bedrock
+          # snapshot that may be several minutes old.
+          invoke_and_assert_ok SoccerHistoricalFunction '{"mode":"status"}' historical_status_before_trainer
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/historical_status_before_trainer.json'))
+          supervised = response['supervised_materialization']
+          assert int(supervised['invalid_existing_locks']) == 0, supervised
+          assert int(supervised['classified_authoritative_settlements']) == int(supervised['authoritative_settlements']), supervised
+          open('/tmp/soccer-historical-training-rows.txt', 'w').write(str(int(supervised['historical_training_rows'])))
+          open('/tmp/soccer-historical-training-manifest-version.txt', 'w').write(str(supervised['historical_training_manifest_version']))
+          open('/tmp/soccer-historical-training-manifest-digest.txt', 'w').write(str(supervised['historical_training_manifest_digest']))
+          open('/tmp/soccer-authoritative-settlements.txt', 'w').write(str(int(supervised['authoritative_settlements'])))
+          print('historical_manifest_immediately_before_trainer', supervised)
+          PY
           invoke_and_assert_ok SoccerTrainerFunction '{"action":"deployment_trainer_smoke"}' trainer
           python - <<'PY'
           import json
@@ -388,9 +419,14 @@ jobs:
           response = json.load(open('/tmp/trainer.json'))
           assert response['system'] == 'soccer_auto', response
           historical_training_rows = int(open('/tmp/soccer-historical-training-rows.txt').read())
+          historical_manifest_version = open('/tmp/soccer-historical-training-manifest-version.txt').read()
+          historical_manifest_digest = open('/tmp/soccer-historical-training-manifest-digest.txt').read()
           eligible_settlements = int(open('/tmp/soccer-authoritative-settlements.txt').read())
           total_eligible_rows = int(response['total_eligible_rows'])
           training_rows = int(response['training_rows'])
+          assert int(response['historical_training_rows']) == historical_training_rows, response
+          assert response['historical_training_manifest_version'] == historical_manifest_version, response
+          assert response['historical_training_manifest_digest'] == historical_manifest_digest, response
           assert historical_training_rows <= total_eligible_rows <= eligible_settlements, response
           assert 0 <= training_rows <= total_eligible_rows, response
           if eligible_settlements == 0:

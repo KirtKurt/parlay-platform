@@ -9,6 +9,7 @@ source is configured; prices are never converted into labels.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Mapping
 
@@ -25,10 +26,12 @@ from .historical import (
     _provider_timestamps,
     _validated_wrapper,
 )
-from .market_features import FEATURE_SCHEMA_VERSION, compile_features
+from .market_features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION, compile_features
+from .model import CLASSES, TrainingRow
 from .odds_api import DEFAULT_MAX_ATTEMPTS, OddsApiError
 from .settlement import (
     settlement_conflict_blocks_training,
+    settlement_training_admissible,
     settlement_training_evidence_valid,
 )
 from .storage import SoccerStore, ddb_safe, now_utc, plain
@@ -36,6 +39,9 @@ from .storage import SoccerStore, ddb_safe, now_utc, plain
 
 MATERIALIZATION_VERSION = "soccer-auto-historical-t45-v1"
 HISTORICAL_LOCK_VERSION = "soccer-auto-historical-t45-lock-v1"
+HISTORICAL_TRAINING_MANIFEST_VERSION = (
+    "soccer-auto-historical-training-manifest-v1"
+)
 MAX_SNAPSHOT_LAG_MINUTES = 15
 MIN_BOOKMAKERS = int(os.getenv("SOCCER_AUTO_MIN_BOOKMAKERS", "3"))
 MAX_EVENTS_PER_INVOCATION = min(
@@ -133,18 +139,10 @@ def _validated_settlements(store: SoccerStore) -> list[dict[str, Any]]:
     )
 
 
-def _settlement_training_admissible(row: Mapping[str, Any]) -> bool:
-    return bool(
-        row.get("training_eligible_1x2") is True
-        and row.get("training_eligible_score_derived") is True
-        and settlement_training_evidence_valid(row)
-    )
-
-
 def _authoritative_settlements(store: SoccerStore) -> list[dict[str, Any]]:
     return [
         row for row in _validated_settlements(store)
-        if _settlement_training_admissible(row)
+        if settlement_training_admissible(row)
     ]
 
 
@@ -168,11 +166,9 @@ def _conflicted_event_keys(store: SoccerStore) -> set[str]:
     }
 
 
-def historical_lock_provenance_valid(
-    lock: Mapping[str, Any], settlement: Mapping[str, Any]
-) -> bool:
-    """Prove that a retrospective lock is pre-match and label-independent."""
-    historical_signals = (
+def lock_has_historical_signals(lock: Mapping[str, Any]) -> bool:
+    """Identify every lock that must pass retrospective provenance checks."""
+    return bool(
         "historical_materialization" in lock
         or "materialization_version" in lock
         or "materialization_digest" in lock
@@ -180,7 +176,13 @@ def historical_lock_provenance_valid(
         or lock.get("lock_version") == HISTORICAL_LOCK_VERSION
         or lock.get("retrospective_only") is True
     )
-    if not historical_signals:
+
+
+def historical_lock_provenance_valid(
+    lock: Mapping[str, Any], settlement: Mapping[str, Any]
+) -> bool:
+    """Prove that a retrospective lock is pre-match and label-independent."""
+    if not lock_has_historical_signals(lock):
         return True
     try:
         settlement_identity = str(
@@ -223,7 +225,7 @@ def historical_lock_provenance_valid(
             "TARGET#result_1x2"
         )
         return bool(
-            _settlement_training_admissible(settlement)
+            settlement_training_admissible(settlement)
             and lock.get("historical_materialization") is True
             and lock.get("retrospective_only") is True
             and lock.get("immutable") is True
@@ -272,6 +274,151 @@ def historical_lock_provenance_valid(
         )
     except (KeyError, TypeError, ValueError):
         return False
+
+
+@dataclass(frozen=True)
+class TrainingCandidate:
+    row: TrainingRow
+    historical_manifest_entry: dict[str, Any] | None
+
+
+def _training_schedule_identity(
+    row: Mapping[str, Any],
+) -> tuple[str, int, str, str] | None:
+    try:
+        revision = int(row.get("schedule_revision") or 0)
+        if revision <= 0:
+            return None
+        identity = str(row.get("schedule_identity") or "")
+        if not identity:
+            try:
+                identity = schedule_identity(row)
+            except (KeyError, TypeError, ValueError):
+                identity = "LEGACY_IDENTITY_UNAVAILABLE"
+        return (
+            str(row["event_key"]),
+            revision,
+            iso_utc(str(row["commence_time"])),
+            identity,
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def training_candidate(
+    lock: Mapping[str, Any],
+    settlement: Mapping[str, Any],
+    *,
+    conflicted: bool,
+) -> tuple[TrainingCandidate | None, str | None]:
+    """Apply the one authoritative post-filter used by status and trainer."""
+    if lock.get("entity_type") != "SOCCER_FROZEN_FEATURE_LOCK":
+        return None, "invalid"
+    if not settlement_training_admissible(settlement):
+        return None, "settlement_ineligible"
+    if conflicted:
+        return None, "settlement_conflict"
+    lock_schedule = _training_schedule_identity(lock)
+    if (
+        lock_schedule is None
+        or lock_schedule != _training_schedule_identity(settlement)
+    ):
+        return None, "schedule_mismatch"
+    try:
+        expected_lock_sk = (
+            f"LOCK#T45#REV#{int(settlement['schedule_revision'])}#"
+            "TARGET#result_1x2"
+        )
+        if (
+            str(lock.get("PK") or "") != str(settlement["event_key"])
+            or str(lock.get("SK") or "") != expected_lock_sk
+            or str(lock.get("target") or "") != "result_1x2"
+        ):
+            return None, "invalid"
+    except (KeyError, TypeError, ValueError):
+        return None, "invalid"
+    if lock.get("training_eligible") is not True:
+        return None, "lock_ineligible"
+    if not historical_lock_provenance_valid(lock, settlement):
+        return None, "historical_provenance"
+    features = lock.get("frozen_features")
+    if not isinstance(features, Mapping):
+        return None, "invalid"
+    try:
+        schema_matches = (
+            lock.get("feature_schema_version") == FEATURE_SCHEMA_VERSION
+            and tuple(features.get("feature_names") or ())
+            == tuple(FEATURE_NAMES)
+            and len(features.get("values") or ()) == len(FEATURE_NAMES)
+        )
+    except (TypeError, ValueError):
+        return None, "invalid"
+    if not schema_matches:
+        return None, "schema_mismatch"
+    try:
+        row = TrainingRow(
+            event_key=str(lock["event_key"]),
+            commence_time=str(lock["commence_time"]),
+            feature_hash=str(lock["feature_hash"]),
+            features=tuple(float(value) for value in features["values"]),
+            market_prior=tuple(
+                float(value) for value in features["market_prior"]
+            ),
+            label=CLASSES.index(str(settlement["result_1x2"])),
+            competition=str(lock["sport_key"]),
+        )
+        historical_entry = None
+        if lock_has_historical_signals(lock):
+            historical_entry = {
+                "PK": str(lock["PK"]),
+                "SK": str(lock["SK"]),
+                "schedule_identity": str(lock["schedule_identity"]),
+                "feature_schema_version": str(lock["feature_schema_version"]),
+                "feature_hash": str(lock["feature_hash"]),
+                "materialization_digest": str(lock["materialization_digest"]),
+                "source_settlement_digest": str(
+                    lock["source_settlement_digest"]
+                ),
+            }
+    except (KeyError, TypeError, ValueError):
+        return None, "invalid"
+    return TrainingCandidate(row, historical_entry), None
+
+
+def historical_training_manifest(
+    entries: list[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Build an order-independent proof of historical rows admitted to ML."""
+    normalized = sorted(
+        (
+            {
+                "PK": str(entry["PK"]),
+                "SK": str(entry["SK"]),
+                "schedule_identity": str(entry["schedule_identity"]),
+                "feature_schema_version": str(
+                    entry["feature_schema_version"]
+                ),
+                "feature_hash": str(entry["feature_hash"]),
+                "materialization_digest": str(
+                    entry["materialization_digest"]
+                ),
+                "source_settlement_digest": str(
+                    entry["source_settlement_digest"]
+                ),
+            }
+            for entry in entries
+        ),
+        key=lambda entry: (entry["PK"], entry["SK"]),
+    )
+    payload = {
+        "version": HISTORICAL_TRAINING_MANIFEST_VERSION,
+        "rows": normalized,
+    }
+    return {
+        **payload,
+        "count": len(normalized),
+        "digest": digest(payload),
+    }
 
 
 def _matching_event(
@@ -412,6 +559,32 @@ def _build_lock(
     }
 
 
+def _record_existing_lock(
+    result: dict[str, Any],
+    lock: Mapping[str, Any],
+    settlement: Mapping[str, Any],
+) -> None:
+    result["existing_locks"] += 1
+    candidate, reason = training_candidate(
+        lock,
+        settlement,
+        conflicted=False,
+    )
+    if candidate is not None:
+        result["existing_training_eligible_locks"] += 1
+        bucket = (
+            "existing_historical_training_locks"
+            if candidate.historical_manifest_entry is not None
+            else "existing_live_training_locks"
+        )
+        result[bucket] += 1
+        return
+    result["invalid_existing_locks"] += 1
+    reason_key = str(reason or "invalid")
+    reasons = result["invalid_existing_lock_reasons"]
+    reasons[reason_key] = int(reasons.get(reason_key) or 0) + 1
+
+
 def run_materialization(
     store: SoccerStore,
     *,
@@ -435,6 +608,11 @@ def run_materialization(
         "provider_calls": 0,
         "materialized": 0,
         "existing_locks": 0,
+        "existing_training_eligible_locks": 0,
+        "existing_historical_training_locks": 0,
+        "existing_live_training_locks": 0,
+        "invalid_existing_locks": 0,
+        "invalid_existing_lock_reasons": {},
         "terminal_skips": 0,
         "conflict_skips": 0,
         "quota_deferred": False,
@@ -450,7 +628,7 @@ def run_materialization(
             schedule_revision=int(settlement["schedule_revision"]),
         )
         if existing:
-            result["existing_locks"] += 1
+            _record_existing_lock(result, existing, settlement)
             continue
         state = _state(store, settlement)
         if str(state.get("status") or "") in TERMINAL_STATES:
@@ -610,8 +788,26 @@ def run_materialization(
             status = "INELIGIBLE_MARKET_COVERAGE"
             detail = str(exc)
         else:
+            candidate, reason = training_candidate(
+                lock,
+                settlement,
+                conflicted=False,
+            )
+            if candidate is None or candidate.historical_manifest_entry is None:
+                raise RuntimeError(
+                    "built historical lock failed training proof: "
+                    f"{reason or 'historical_manifest_missing'}"
+                )
             if not store.put_lock(lock):
-                result["existing_locks"] += 1
+                winner = store.get_lock(
+                    str(settlement["event_key"]),
+                    schedule_revision=int(settlement["schedule_revision"]),
+                )
+                if not winner:
+                    raise RuntimeError(
+                        "historical lock conditional write lost without a winner"
+                    )
+                _record_existing_lock(result, winner, settlement)
                 continue
             _write_state(
                 store,
@@ -650,35 +846,58 @@ def materialization_status(store: SoccerStore) -> dict[str, Any]:
     validated_settlements = _validated_settlements(store)
     settlements = [
         row for row in validated_settlements
-        if _settlement_training_admissible(row)
+        if settlement_training_admissible(row)
     ]
     conflicted_event_keys = _conflicted_event_keys(store)
     settlements_by_key = {
         (str(row["event_key"]), int(row["schedule_revision"])): row
         for row in settlements
     }
-    all_locks = [
-        row
-        for row in store.scan_all(store.locks, ConsistentRead=True)
-        if row.get("entity_type") == "SOCCER_FROZEN_FEATURE_LOCK"
-    ]
-    historical_locks = [
-        row for row in all_locks if row.get("historical_materialization") is True
-    ]
-    joined = [
-        row
-        for row in historical_locks
+    all_locks = list(store.scan_all(store.locks, ConsistentRead=True))
+    locks_by_storage_key = {
+        (str(row.get("PK") or ""), str(row.get("SK") or "")): row
+        for row in all_locks
+    }
+    locks_by_key = {
+        key: lock
+        for key, settlement in settlements_by_key.items()
         if (
-            settlement := settlements_by_key.get(
+            lock := locks_by_storage_key.get(
                 (
-                    str(row.get("event_key") or ""),
-                    int(row.get("schedule_revision") or 0),
+                    str(settlement["event_key"]),
+                    (
+                        f"LOCK#T45#REV#{int(settlement['schedule_revision'])}#"
+                        "TARGET#result_1x2"
+                    ),
                 )
             )
         )
-        and historical_lock_provenance_valid(row, settlement)
-        and str(row.get("event_key") or "") not in conflicted_event_keys
-    ]
+        is not None
+    }
+    historical_entries: list[dict[str, Any]] = []
+    valid_live_existing_locks = 0
+    invalid_existing_locks = 0
+    invalid_existing_lock_reasons: dict[str, int] = {}
+    for key, settlement in settlements_by_key.items():
+        lock = locks_by_key.get(key)
+        if lock is None or key[0] in conflicted_event_keys:
+            continue
+        candidate, reason = training_candidate(
+            lock,
+            settlement,
+            conflicted=False,
+        )
+        if candidate is None:
+            invalid_existing_locks += 1
+            reason_key = str(reason or "invalid")
+            invalid_existing_lock_reasons[reason_key] = (
+                int(invalid_existing_lock_reasons.get(reason_key) or 0) + 1
+            )
+        elif candidate.historical_manifest_entry is not None:
+            historical_entries.append(candidate.historical_manifest_entry)
+        else:
+            valid_live_existing_locks += 1
+    historical_manifest = historical_training_manifest(historical_entries)
     states: list[dict[str, Any]] = []
     kwargs: dict[str, Any] = {
         "KeyConditionExpression": Key("PK").eq("HISTORICAL_MATERIALIZATION"),
@@ -693,15 +912,32 @@ def materialization_status(store: SoccerStore) -> dict[str, Any]:
         if not cursor:
             break
         kwargs["ExclusiveStartKey"] = cursor
-    lock_keys = {
-        (str(row.get("event_key") or ""), int(row.get("schedule_revision") or 0))
-        for row in all_locks
-    }
+    lock_keys = set(locks_by_key)
     terminal_keys = {
         (str(row.get("event_key") or ""), int(row.get("schedule_revision") or 0))
         for row in states
         if str(row.get("status") or "") in TERMINAL_STATES
     }
+    conflict_count = sum(
+        event_key in conflicted_event_keys
+        for event_key, _revision in settlements_by_key
+    )
+    terminal_without_lock = sum(
+        key not in lock_keys
+        and key in terminal_keys
+        and key[0] not in conflicted_event_keys
+        for key in settlements_by_key
+    )
+    pending = sum(
+        key not in lock_keys
+        and key not in terminal_keys
+        and key[0] not in conflicted_event_keys
+        for key in settlements_by_key
+    )
+    existing_nonconflicted = sum(
+        key in lock_keys and key[0] not in conflicted_event_keys
+        for key in settlements_by_key
+    )
     return {
         "mode": "AUTHORITATIVE_RESULT_JOINED_T45",
         "validated_settlements": len(validated_settlements),
@@ -709,19 +945,25 @@ def materialization_status(store: SoccerStore) -> dict[str, Any]:
         "ineligible_validated_settlements": (
             len(validated_settlements) - len(settlements)
         ),
-        "materialized_rows": len(joined),
-        "historical_training_rows": sum(
-            row.get("training_eligible") is True for row in joined
+        "materialized_rows": historical_manifest["count"],
+        "historical_training_rows": historical_manifest["count"],
+        "historical_training_manifest_version": historical_manifest["version"],
+        "historical_training_manifest_digest": historical_manifest["digest"],
+        "existing_training_eligible_locks": (
+            historical_manifest["count"] + valid_live_existing_locks
         ),
-        "conflict_blocked_authoritative_settlements": sum(
-            event_key in conflicted_event_keys
-            for event_key, _revision in settlements_by_key
-        ),
-        "pending_authoritative_settlements": sum(
-            key not in lock_keys
-            and key not in terminal_keys
-            and key[0] not in conflicted_event_keys
-            for key in settlements_by_key
+        "existing_historical_training_locks": historical_manifest["count"],
+        "existing_live_training_locks": valid_live_existing_locks,
+        "invalid_existing_locks": invalid_existing_locks,
+        "invalid_existing_lock_reasons": invalid_existing_lock_reasons,
+        "conflict_blocked_authoritative_settlements": conflict_count,
+        "terminal_authoritative_settlements": terminal_without_lock,
+        "pending_authoritative_settlements": pending,
+        "classified_authoritative_settlements": (
+            existing_nonconflicted
+            + conflict_count
+            + terminal_without_lock
+            + pending
         ),
         "latest_progress_at": max(
             (str(row.get("updated_at") or "") for row in states),

@@ -239,7 +239,31 @@ class IsolationTests(unittest.TestCase):
         self.assertIn("validated == eligible + ineligible", workflow)
         self.assertIn("materialization['authoritative_settlements']) == eligible", workflow)
         self.assertIn("if materialization['authoritative_settlements'] > 0:", workflow)
+        self.assertIn("materialization['existing_training_eligible_locks'] > 0", workflow)
+        self.assertNotIn(
+            "materialization['materialized'] > 0 or materialization['existing_locks'] > 0",
+            workflow,
+        )
+        self.assertIn("materialization['invalid_existing_locks']", workflow)
         self.assertIn("if materialized_now > 0:", workflow)
+        self.assertIn("supervised['invalid_existing_locks']", workflow)
+        self.assertIn("classified_authoritative_settlements", workflow)
+        self.assertIn("historical_training_manifest_version", workflow)
+        self.assertIn("historical_training_manifest_digest", workflow)
+        self.assertIn("historical_status_before_trainer", workflow)
+        self.assertIn("historical_manifest_immediately_before_trainer", workflow)
+        self.assertIn(
+            "int(response['historical_training_rows']) == historical_training_rows",
+            workflow,
+        )
+        self.assertIn(
+            "response['historical_training_manifest_version'] == historical_manifest_version",
+            workflow,
+        )
+        self.assertIn(
+            "response['historical_training_manifest_digest'] == historical_manifest_digest",
+            workflow,
+        )
         self.assertIn(
             "historical_training_rows <= total_eligible_rows <= eligible_settlements",
             workflow,
