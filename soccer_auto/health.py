@@ -16,7 +16,10 @@ from .config import (
     PUBLICATION_CUTOFF_MINUTES,
     TRAINING_LOCK_HORIZON,
 )
-from .historical_materializer import training_candidate
+from .historical_materializer import (
+    historical_training_lock_key,
+    select_training_candidate,
+)
 from .inference import live_lock_coverage_provenance_valid, lock_key
 from .settlement import (
     settlement_conflict_blocks_training,
@@ -354,32 +357,61 @@ def prediction_and_training_health(
     training_rows_ready = 0
     training_exclusion_reasons: dict[str, int] = {}
     invalid_existing_locks = 0
+    nontraining_live_locks = 0
+    duplicate_training_eligible_locks = 0
     for settlement in admissible_settlements:
         try:
-            expected_sk = lock_key(
+            live_sk = lock_key(
                 TRAINING_LOCK_HORIZON,
                 int(settlement["schedule_revision"]),
             )
-            lock = lock_rows.get((str(settlement["event_key"]), expected_sk))
-            if not lock:
+            historical_sk = historical_training_lock_key(
+                int(settlement["schedule_revision"])
+            )
+            event_key = str(settlement["event_key"])
+            live = lock_rows.get((event_key, live_sk))
+            historical = lock_rows.get((event_key, historical_sk))
+            locks = [lock for lock in (live, historical) if lock is not None]
+            if not locks:
                 training_exclusion_reasons["no_t45_lock"] = (
                     training_exclusion_reasons.get("no_t45_lock", 0) + 1
                 )
                 continue
-            candidate, reason = training_candidate(
-                lock,
+            assessment = select_training_candidate(
+                locks,
                 settlement,
-                conflicted=str(settlement["event_key"]) in conflicted_events,
+                conflicted=event_key in conflicted_events,
             )
+            for reason, count in assessment["invalid_live_reasons"].items():
+                nontraining_live_locks += int(count)
+                key = f"live:{reason}"
+                training_exclusion_reasons[key] = (
+                    training_exclusion_reasons.get(key, 0) + int(count)
+                )
+            for reason, count in assessment[
+                "invalid_historical_reasons"
+            ].items():
+                invalid_existing_locks += int(count)
+                key = f"historical:{reason}"
+                training_exclusion_reasons[key] = (
+                    training_exclusion_reasons.get(key, 0) + int(count)
+                )
+            duplicate_count = int(assessment["duplicate_eligible_locks"])
+            if duplicate_count:
+                duplicate_training_eligible_locks += duplicate_count
+                invalid_existing_locks += duplicate_count
+                training_exclusion_reasons[
+                    "duplicate_training_authority"
+                ] = (
+                    training_exclusion_reasons.get(
+                        "duplicate_training_authority", 0
+                    )
+                    + duplicate_count
+                )
+                continue
+            candidate = assessment["candidate"]
             if candidate is not None:
                 training_rows_ready += 1
-            else:
-                reason = str(reason or "invalid")
-                training_exclusion_reasons[reason] = (
-                    training_exclusion_reasons.get(reason, 0) + 1
-                )
-                if reason in {"invalid", "live_provenance", "historical_provenance"}:
-                    invalid_existing_locks += 1
         except (KeyError, TypeError, ValueError):
             invalid_existing_locks += 1
             training_exclusion_reasons["invalid"] = (
@@ -471,6 +503,10 @@ def prediction_and_training_health(
                 0, len(admissible_settlements) - training_rows_ready
             ),
             "invalid_existing_locks": invalid_existing_locks,
+            "nontraining_live_locks": nontraining_live_locks,
+            "duplicate_training_eligible_locks": (
+                duplicate_training_eligible_locks
+            ),
             "exclusion_reasons": training_exclusion_reasons,
             "state": training_state,
             "latest_certificate_at": max(

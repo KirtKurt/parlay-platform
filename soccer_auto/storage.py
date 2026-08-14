@@ -3580,6 +3580,7 @@ class SoccerStore:
         *,
         schedule_revision: int | None = None,
         horizon: str = "T45",
+        historical: bool = False,
     ) -> dict[str, Any] | None:
         normalized_horizon = str(horizon or "").strip().upper()
         if normalized_horizon not in {"T45", "T10"}:
@@ -3591,6 +3592,12 @@ class SoccerStore:
             if schedule_revision is not None
             else f"LOCK#{normalized_horizon}#TARGET#{target}"
         )
+        if historical:
+            if normalized_horizon != "T45" or schedule_revision is None:
+                raise ValueError(
+                    "historical soccer locks require an exact T45 schedule revision"
+                )
+            lock_key = f"{lock_key}#SOURCE#HISTORICAL"
         row = self.locks.get_item(
             Key={"PK": event_key, "SK": lock_key}, ConsistentRead=True
         ).get("Item")

@@ -12,7 +12,7 @@ from .market_features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION
 from .llm_analyst import BASELINE_TRIALS, latest_llm_trials
 from .historical_materializer import (
     historical_training_manifest,
-    training_candidate,
+    select_training_candidate,
 )
 from .model import (
     CLASSES,
@@ -113,24 +113,40 @@ def _training_rows_with_proof(
         "live_provenance": 0,
         "invalid": 0,
         "settlement_conflict": 0,
+        "duplicate_training_authority": 0,
     }
+    locks_by_event: dict[str, list[Mapping[str, Any]]] = {}
     for lock in store.scan_all(store.locks, ConsistentRead=True):
         # The T10 lock is a final-decision artifact, not a second training row.
         # Retaining a single declared T45 training horizon prevents duplicate
         # labels and keeps retrospective/prospective evaluation comparable.
         if not str(lock.get("SK") or "").startswith("LOCK#T45#"):
             continue
-        settlement = settlements.get(lock.get("event_key"))
+        event_key = str(lock.get("event_key") or "")
+        settlement = settlements.get(event_key)
         if not settlement:
             excluded["no_settlement"] += 1
             continue
-        candidate, reason = training_candidate(
-            lock,
+        locks_by_event.setdefault(event_key, []).append(lock)
+    for event_key, locks in locks_by_event.items():
+        settlement = settlements[event_key]
+        assessment = select_training_candidate(
+            locks,
             settlement,
-            conflicted=str(lock.get("event_key") or "") in conflicted_events,
+            conflicted=event_key in conflicted_events,
         )
+        for reasons in (
+            assessment["invalid_live_reasons"],
+            assessment["invalid_historical_reasons"],
+        ):
+            for reason, count in reasons.items():
+                excluded[str(reason or "invalid")] += int(count)
+        duplicate_count = int(assessment["duplicate_eligible_locks"])
+        if duplicate_count:
+            excluded["duplicate_training_authority"] += duplicate_count
+            continue
+        candidate = assessment["candidate"]
         if candidate is None:
-            excluded[str(reason or "invalid")] += 1
             continue
         rows.append(candidate.row)
         if candidate.historical_manifest_entry is not None:

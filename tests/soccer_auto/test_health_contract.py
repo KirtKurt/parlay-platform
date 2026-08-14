@@ -12,11 +12,13 @@ from soccer_auto.health import (  # noqa: E402
     HEALTH_CONTRACT_VERSION,
     prediction_and_training_health,
 )
+from soccer_auto.historical_materializer import _build_lock  # noqa: E402
 from soccer_auto.inference import _public_model_binding  # noqa: E402
 from soccer_auto.market_features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION  # noqa: E402
 from soccer_auto.settlement import (  # noqa: E402
     build_settlement,
     build_settlement_admissibility_certificate,
+    settlement_training_views,
 )
 from tests.soccer_auto.test_inference_safety import (  # noqa: E402
     eligible_lock,
@@ -372,6 +374,89 @@ class HealthContractTests(unittest.TestCase):
         self.assertEqual(result["training"]["admissibility_certificates"], 1)
         self.assertEqual(result["training"]["training_rows_ready"], 1)
         self.assertEqual(result["training"]["conversion_backlog"], 0)
+
+    def test_historical_lock_recovers_legacy_nontraining_live_lock(self):
+        event = current_event(
+            sport_key="soccer_uefa_champs_league",
+            event_id="historical-recovery",
+        )
+        t10 = bind_lock_to_event(eligible_lock(), event)
+        legacy_live = full_training_lock(event)
+        legacy_live["training_eligible"] = False
+        score = {
+            "id": event["event_id"],
+            "sport_key": event["sport_key"],
+            "schedule_revision": event["schedule_revision"],
+            "schedule_identity": event["schedule_identity"],
+            "commence_time": event["commence_time"],
+            "completed": True,
+            "home_team": event["home_team"],
+            "away_team": event["away_team"],
+            "scores": [
+                {"name": event["home_team"], "score": "2"},
+                {"name": event["away_team"], "score": "1"},
+            ],
+        }
+        settlement = build_settlement(
+            score,
+            observed_at="2026-08-14T16:00:00Z",
+            regulation_ambiguous=True,
+        )
+        certificate = build_settlement_admissibility_certificate(
+            settlement,
+            observed_at="2026-08-14T16:01:00Z",
+            competition={
+                "sport_key": event["sport_key"],
+                "title": "UEFA Champions League",
+            },
+            event_markets={"h2h", "totals"},
+        )
+        effective = settlement_training_views([settlement, certificate])[0]
+        historical_event = {
+            "id": event["event_id"],
+            "sport_key": event["sport_key"],
+            "commence_time": event["commence_time"],
+            "schedule_revision": event["schedule_revision"],
+            "schedule_identity": event["schedule_identity"],
+            "home_team": event["home_team"],
+            "away_team": event["away_team"],
+            "bookmakers": [
+                {
+                    "key": f"book-{index}",
+                    "markets": [
+                        {
+                            "key": "h2h",
+                            "outcomes": [
+                                {"name": event["home_team"], "price": 2.1},
+                                {"name": "Draw", "price": 3.2},
+                                {"name": event["away_team"], "price": 3.6},
+                            ],
+                        }
+                    ],
+                }
+                for index in range(3)
+            ],
+        }
+        historical = _build_lock(
+            effective,
+            historical_event,
+            provider_at="2026-08-14T13:15:00Z",
+            raw_uri="s3://raw/historical-recovery.json",
+            payload_hash=digest(historical_event),
+            observed_at="2026-08-14T16:02:00Z",
+        )
+        result = prediction_and_training_health(
+            Store(
+                events=[event],
+                locks=[t10, legacy_live, historical],
+                settlements=[settlement, certificate],
+            ),
+            observed=self.observed,
+        )
+        self.assertEqual(result["training"]["training_rows_ready"], 1)
+        self.assertEqual(result["training"]["conversion_backlog"], 0)
+        self.assertEqual(result["training"]["invalid_existing_locks"], 0)
+        self.assertEqual(result["training"]["nontraining_live_locks"], 1)
 
     def test_tampered_t10_lock_is_reported_invalid(self):
         event = current_event()
