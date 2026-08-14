@@ -123,6 +123,19 @@ def _prompt(context: Mapping[str, Any]) -> str:
     )
 
 
+def _bedrock_request(
+    context: Mapping[str, Any],
+) -> tuple[list[dict[str, str]], list[dict[str, Any]], int]:
+    """Build the exact bounded prompt envelope used by Converse."""
+    prompt_text = _prompt(context)
+    system = [{"text": SYSTEM_PROMPT}]
+    messages = [{"role": "user", "content": [{"text": prompt_text}]}]
+    request_byte_count = len(
+        canonical_json({"system": system, "messages": messages}).encode("utf-8")
+    )
+    return system, messages, request_byte_count
+
+
 def _bounded_text(value: Any, maximum: int = 500) -> str:
     return str(value or "").strip()[:maximum]
 
@@ -519,7 +532,7 @@ def _liveness_summary(value: Any) -> dict[str, Any]:
 
 
 def _compact_context_to_budget(context: dict[str, Any]) -> dict[str, Any]:
-    """Drop only bounded samples until the canonical hard ceiling is met."""
+    """Drop only bounded samples until both exact request ceilings are met."""
     sample_paths = (
         ("coverage", "failure_sample"),
         ("coverage", "missing_pair_sample"),
@@ -538,21 +551,37 @@ def _compact_context_to_budget(context: dict[str, Any]) -> dict[str, Any]:
         ("autonomy", "liveness", "unhealthy_sample"),
     )
     for path in sample_paths:
-        target: Any = context
-        for key in path:
-            if not isinstance(target, Mapping):
-                target = None
+        parent: Any = context
+        for key in path[:-1]:
+            if not isinstance(parent, Mapping):
+                parent = None
                 break
-            target = target.get(key)
+            parent = parent.get(key)
+        target = parent.get(path[-1]) if isinstance(parent, Mapping) else None
+
+        def over_budget() -> bool:
+            if (
+                len(canonical_json(context).encode("utf-8"))
+                > MAX_CONTEXT_CANONICAL_BYTES
+            ):
+                return True
+            return _bedrock_request(context)[2] > MAX_BEDROCK_REQUEST_BYTES
+
         while (
             isinstance(target, list)
             and target
-            and len(canonical_json(context).encode("utf-8"))
-            > MAX_CONTEXT_CANONICAL_BYTES
+            and over_budget()
         ):
             target.pop()
+        # Counts and completion booleans preserve the authoritative meaning of
+        # an empty sample.  Omitting the empty list avoids spending the fixed
+        # request budget on more than a dozen redundant diagnostic key names.
+        if isinstance(parent, dict) and target == []:
+            parent.pop(path[-1], None)
     if len(canonical_json(context).encode("utf-8")) > MAX_CONTEXT_CANONICAL_BYTES:
         raise RuntimeError("soccer analyst core context exceeds its hard budget")
+    if _bedrock_request(context)[2] > MAX_BEDROCK_REQUEST_BYTES:
+        raise RuntimeError("soccer analyst request exceeds its hard byte budget")
     return context
 
 
@@ -577,13 +606,24 @@ def _context(store: SoccerStore) -> dict[str, Any]:
         "feature_schema_version": _bounded_text(FEATURE_SCHEMA_VERSION, 80),
         "feature_summary": {
             "count": len(FEATURE_NAMES),
-            "direct_feature_names": [
-                _bounded_text(name, 80)
-                for name in FEATURE_NAMES
-                if not str(name).startswith(
+            # The analyst can only propose bounded optimizer settings; model
+            # output cannot add or remove features.  Bind the exact schema by
+            # digest instead of repeating every direct feature name in every
+            # Bedrock request.  The former list consumed enough fixed context
+            # bytes that a real 43-event dispatch manifest could exceed the
+            # hard request budget even after every optional sample was removed.
+            "direct_feature_count": sum(
+                not str(name).startswith(
                     ("league_bucket_", "market_bucket_", "market_bucket_movement_")
                 )
-            ],
+                for name in FEATURE_NAMES
+            ),
+            "feature_names_digest": digest(
+                {
+                    "feature_schema_version": FEATURE_SCHEMA_VERSION,
+                    "feature_names": list(FEATURE_NAMES),
+                }
+            ),
             "bucket_counts": {
                 prefix: sum(str(name).startswith(prefix) for name in FEATURE_NAMES)
                 for prefix in (
@@ -979,12 +1019,7 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
                 dispatch_manifest.get("inventory_authority_state") or "MISSING"
             ),
         }
-    prompt_text = _prompt(analysis_context)
-    system = [{"text": SYSTEM_PROMPT}]
-    messages = [{"role": "user", "content": [{"text": prompt_text}]}]
-    request_byte_count = len(
-        canonical_json({"system": system, "messages": messages}).encode("utf-8")
-    )
+    system, messages, request_byte_count = _bedrock_request(analysis_context)
     if request_byte_count > MAX_BEDROCK_REQUEST_BYTES:
         raise RuntimeError("soccer analyst request exceeds its hard byte budget")
     bedrock = boto3.client("bedrock-runtime", config=BEDROCK_CLIENT_CONFIG)

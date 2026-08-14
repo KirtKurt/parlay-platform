@@ -10,6 +10,7 @@ from tests.soccer_auto.aws_stubs import install_if_needed
 install_if_needed()
 
 from botocore.exceptions import ClientError, ReadTimeoutError  # noqa: E402
+from soccer_auto import llm_analyst as llm_analyst_module  # noqa: E402
 from soccer_auto.canonical import canonical_json, digest, iso_utc  # noqa: E402
 from soccer_auto.llm_analyst import (  # noqa: E402
     ANALYSIS_ORIGIN,
@@ -24,6 +25,7 @@ from soccer_auto.llm_analyst import (  # noqa: E402
     llm_analyst_handler,
     validate_analysis,
 )
+from soccer_auto.market_features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION  # noqa: E402
 from soccer_auto.storage import (  # noqa: E402
     COVERAGE_DISPATCH_MANIFEST_VERSION,
     COVERAGE_PLAN_VERSION,
@@ -492,9 +494,112 @@ class LlmBoundaryTests(unittest.TestCase):
             len(canonical_json(context).encode("utf-8")),
             MAX_CONTEXT_CANONICAL_BYTES,
         )
+        _, _, request_bytes = llm_analyst_module._bedrock_request(context)
         self.assertLessEqual(
-            len(context["autonomy"]["liveness"]["unhealthy_sample"]), 8
+            request_bytes,
+            MAX_BEDROCK_REQUEST_BYTES,
         )
+        self.assertLessEqual(
+            len(context["autonomy"]["liveness"].get("unhealthy_sample", [])), 8
+        )
+
+    def test_production_shape_context_fits_with_exact_authority_proof(self) -> None:
+        observed = datetime(2026, 8, 14, 9, 0, tzinfo=timezone.utc)
+        pairs = [f"book-{index}|h2h" for index in range(8)]
+        cycles = [
+            {
+                "event_key": f"event-{index:02d}-0123456789abcdef0123456789abcdef",
+                "plan_observed_at": f"2026-08-14T08:{index:02d}:00Z",
+                "discovery_observed_at": f"2026-08-14T08:{index:02d}:00Z",
+                "discovery_status": "HTTP_200",
+                "required_pairs": pairs,
+                "probe_pairs": [],
+                "expected_digest": digest(pairs),
+                "returned_pairs": pairs,
+            }
+            for index in range(43)
+        ]
+        autonomy = {
+            "authority": "SHADOW_LEARNING",
+            "reason": "INSUFFICIENT_TRAINING_ROWS",
+            "promotion_blocked": True,
+            "counts": {
+                "competitions": 67,
+                "events": 568,
+                "snapshot_slots": 512,
+                "locks": 12,
+                "settlements": 32,
+                "predictions": 0,
+                "models": 0,
+            },
+            "queues": {"collection": 0, "dead_letter": 0},
+            "latest_quota": {
+                "operation": "historical_featured",
+                "remaining": 2_081_053,
+                "used": 2_918_947,
+                "last_cost": 270,
+                "observed_at": "2026-08-14T09:00:05.203564Z",
+            },
+            "component_liveness": {
+                f"component-{index}": {"healthy": True, "reason": "HEALTHY"}
+                for index in range(18)
+            },
+            "component_liveness_complete": True,
+            "updated_at": "2026-08-14T09:00:12.615948Z",
+        }
+        class ProductionShapeStore(ExactCoverageStore):
+            def list_competitions(self):
+                return [
+                    {
+                        "sport_key": f"soccer_competition_{index}",
+                        "active": True,
+                        "has_outrights": False,
+                    }
+                    for index in range(67)
+                ]
+
+        store = ProductionShapeStore(Ops([], autonomy=autonomy), cycles)
+
+        with patch("soccer_auto.llm_analyst.now_utc", return_value=observed):
+            context = _context(store)
+            _, _, request_bytes = llm_analyst_module._bedrock_request(context)
+
+        context_bytes = len(canonical_json(context).encode("utf-8"))
+        self.assertLessEqual(context_bytes, MAX_CONTEXT_CANONICAL_BYTES)
+        self.assertLessEqual(request_bytes, MAX_BEDROCK_REQUEST_BYTES)
+        self.assertTrue(context["coverage"]["dispatch_manifest"]["authoritative"])
+        self.assertTrue(
+            context["coverage"]["dispatch_manifest"][
+                "inventory_authority_current"
+            ]
+        )
+        self.assertEqual(
+            context["coverage"]["dispatch_manifest"]["manifest_events"], 43
+        )
+        self.assertEqual(context["coverage"]["expected_pairs"], 43 * len(pairs))
+        self.assertEqual(context["coverage"]["fetched_pairs"], 43 * len(pairs))
+        self.assertEqual(
+            context["coverage"]["discovery_status_counts"], {"HTTP_200": 43}
+        )
+        self.assertEqual(
+            context["feature_summary"]["direct_feature_count"],
+            sum(
+                not str(name).startswith(
+                    ("league_bucket_", "market_bucket_", "market_bucket_movement_")
+                )
+                for name in FEATURE_NAMES
+            ),
+        )
+        self.assertEqual(
+            context["feature_summary"]["feature_names_digest"],
+            digest(
+                {
+                    "feature_schema_version": FEATURE_SCHEMA_VERSION,
+                    "feature_names": list(FEATURE_NAMES),
+                }
+            ),
+        )
+        self.assertNotIn("direct_feature_names", context["feature_summary"])
 
     def test_expired_analysis_cannot_control_a_future_training_search(self) -> None:
         validated = validate_analysis(
