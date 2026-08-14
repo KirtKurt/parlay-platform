@@ -1,0 +1,32 @@
+name: Enable MLB Auto Critical Repair Once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/enable-mlb-auto-critical-repair-once.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  enable:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable hardened MLB critical repair workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --method PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/mlb-auto-critical-repair-once.yml/enable"
+          STATE=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/mlb-auto-critical-repair-once.yml" --jq .state)
+          echo "mlb_critical_repair_state=$STATE"
+          [ "$STATE" = "active" ]
+
+      - name: Disable this one-shot enabler
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --method PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/enable-mlb-auto-critical-repair-once.yml/disable"
