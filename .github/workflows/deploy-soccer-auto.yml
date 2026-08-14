@@ -1,8 +1,8 @@
 name: Deploy Isolated Soccer Auto
 
-# Manual-only after the verified soccer repair. The main workflow ignores all
-# soccer-only paths, and this stack cannot mutate MLB, tennis, or legacy soccer
-# resources.
+# The exact marker push below is a one-shot verified repair trigger. Cleanup
+# restores manual-only operation. The main workflow ignores all soccer-only
+# paths, and this stack cannot mutate MLB, tennis, or legacy soccer resources.
 on:
   push:
     branches: [main]
