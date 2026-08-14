@@ -20,6 +20,11 @@ from .llm_rd import (
     status_payload as _rd_status,
 )
 from .ml import promote_challenger
+from .model_guard import policy_payload as _model_guard_policy
+from .model_guard_runtime import (
+    OFFICIAL_PICK_POLICY as _guard_official_pick_policy,
+    install as _install_model_guard,
+)
 from .provider_open import OpenEndedOddsApiClient
 from .runtime_hardening import install as _install_runtime_hardening
 from .storage import Store
@@ -48,6 +53,7 @@ def _build_feature_vector_with_rd(*args, **kwargs):
 
 base.build_feature_vector = _build_feature_vector_with_rd
 _install_runtime_hardening(base, Store)
+_install_model_guard(base, Store)
 
 
 def _is_period_market(key: str) -> bool:
@@ -167,6 +173,11 @@ def _status_with_rd() -> dict:
         result['llm_rd'] = rd
         result['llm_model_access'] = _model_access_status(rd)
         result['team_form'] = _team_form_status(Store=Store)
+        result['official_pick_policy'] = _guard_official_pick_policy
+        result['model_input_guard'] = _model_guard_policy()
+        controller = result.get('controller') or {}
+        if controller.get('prediction_mode'):
+            result['prediction_mode'] = controller['prediction_mode']
     return result
 
 
@@ -183,6 +194,8 @@ def handler(event, context):
         return live_provider_proof()
     if action in ('MARKET_INVENTORY', 'MLB_AUTO_MARKET_INVENTORY'):
         return discover_market_inventory()
+    if action in ('INGEST_FORCE', 'MLB_AUTO_INGEST_FORCE'):
+        return base.ingest(force_reason='DEPLOYMENT_MODEL_GUARD_PROOF')
     if action in ('HISTORICAL_BACKFILL', 'MLB_AUTO_HISTORICAL_BACKFILL'):
         return autonomous_backfill(max_games_per_run=event.get('max_games_per_run'))
     if action in ('STATUS', 'MLB_AUTO_STATUS'):
