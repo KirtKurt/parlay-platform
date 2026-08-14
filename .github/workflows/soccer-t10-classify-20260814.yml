@@ -1,0 +1,150 @@
+name: Soccer T10 Integrity Classification One Shot
+
+on:
+  push:
+    paths:
+      - '.github/workflows/soccer-t10-classify-20260814.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Classify current T10 integrity failures
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, subprocess
+          from datetime import datetime, timedelta, timezone
+
+          stack='parlay-platform-soccer-auto'
+          region=os.environ['REGION']
+          raw=subprocess.check_output(['aws','cloudformation','list-stack-resources','--stack-name',stack,'--region',region,'--output','json'], text=True)
+          resources=json.loads(raw)['StackResourceSummaries']
+          funcs=[r['PhysicalResourceId'] for r in resources if r['ResourceType']=='AWS::Lambda::Function']
+          soccer_env=None
+          env_source=None
+          for fn in funcs:
+              cfg=json.loads(subprocess.check_output(['aws','lambda','get-function-configuration','--function-name',fn,'--region',region,'--output','json'], text=True))
+              env=((cfg.get('Environment') or {}).get('Variables') or {})
+              if env.get('SOCCER_AUTO_LOCKS_TABLE') and env.get('SOCCER_AUTO_EVENTS_TABLE'):
+                  soccer_env=env; env_source=fn; break
+          if not soccer_env:
+              raise SystemExit('No Soccer Lambda with storage environment found')
+          os.environ.update({k:str(v) for k,v in soccer_env.items()})
+          print('ENV_SOURCE',env_source)
+          print('LOCKS_TABLE',os.environ['SOCCER_AUTO_LOCKS_TABLE'])
+          print('EVENTS_TABLE',os.environ['SOCCER_AUTO_EVENTS_TABLE'])
+
+          from soccer_auto.storage import SoccerStore, plain
+          from soccer_auto.health import _same_schedule, RECENT_DECISION_AUDIT_HOURS, UPCOMING_DECISION_AUDIT_HOURS
+          from soccer_auto.inference import live_lock_coverage_provenance_valid, lock_key
+          from soccer_auto.config import PUBLIC_DECISION_HORIZON, PUBLICATION_CUTOFF_MINUTES, PUBLICATION_COMMIT_HEADROOM_SECONDS, FINAL_DECISION_CAPTURE_LEAD_SECONDS
+          from soccer_auto.canonical import parse_utc, digest, iso_utc
+
+          store=SoccerStore()
+          def scan(table):
+              out=[]; kwargs={'ConsistentRead':True}
+              while True:
+                  r=table.scan(**kwargs); out += [plain(x) for x in r.get('Items',[])]
+                  lek=r.get('LastEvaluatedKey')
+                  if not lek: break
+                  kwargs['ExclusiveStartKey']=lek
+              return out
+          events=scan(store.events); locks=scan(store.locks)
+          current={str(r.get('event_key') or r.get('PK') or ''):r for r in events if r.get('entity_type')=='SOCCER_EVENT' and r.get('completed') is not True and r.get('event_key')}
+          lock_rows={(str(r.get('PK') or r.get('event_key') or ''),str(r.get('SK') or '')):r for r in locks if r.get('entity_type')=='SOCCER_FROZEN_FEATURE_LOCK'}
+          observed=datetime.now(timezone.utc)
+          fix_at=parse_utc('2026-08-14T19:31:00Z')
+
+          def expected_feature_hash(lock):
+              required={str(v) for v in lock.get('coverage_required_pairs') or [] if v}
+              probe={str(v) for v in lock.get('coverage_probe_pairs') or [] if v}
+              return digest({
+                  'event_key':lock['event_key'],
+                  'schedule_revision':int(lock['schedule_revision']),
+                  'lock_at':iso_utc(parse_utc(str(lock['lock_at']))),
+                  'coverage_certificate_digest':str(lock.get('coverage_certificate_digest') or ''),
+                  'coverage_plan_digest':lock['coverage_plan_digest'],
+                  'coverage_plan_observed_at':lock['coverage_plan_observed_at'],
+                  'coverage_completed_at':lock['coverage_completed_at'],
+                  'coverage_required_pairs':sorted(required),
+                  'coverage_probe_pairs':sorted(probe),
+                  'movement_baseline_certificate_digest':str(lock.get('movement_baseline_certificate_digest') or ''),
+                  'movement_baseline_plan_digest':lock['movement_baseline_plan_digest'],
+                  'movement_baseline_plan_observed_at':lock['movement_baseline_plan_observed_at'],
+                  'source_slot_ids':list(lock.get('source_slot_ids') or []),
+                  'source_hashes':list(lock.get('source_payload_hashes') or []),
+                  'source_raw_uris':list(lock.get('source_raw_uris') or []),
+                  'source_observed_at_max':iso_utc(parse_utc(str(lock['source_observed_at_max']))),
+                  'movement_baseline_source_slot_ids':list(lock.get('movement_baseline_source_slot_ids') or []),
+                  'movement_baseline_source_hashes':list(lock.get('movement_baseline_source_payload_hashes') or []),
+                  'movement_baseline_source_raw_uris':list(lock.get('movement_baseline_source_raw_uris') or []),
+                  'movement_baseline_source_observed_at_max':iso_utc(parse_utc(str(lock['movement_baseline_source_observed_at_max']))),
+                  'features':lock['frozen_features'],
+              })
+
+          due=[]; invalid=[]; missing=[]
+          for event_key,event in current.items():
+              try:
+                  commence=parse_utc(str(event['commence_time']))
+                  if not (observed-timedelta(hours=RECENT_DECISION_AUDIT_HOURS) <= commence <= observed+timedelta(hours=UPCOMING_DECISION_AUDIT_HOURS)):
+                      continue
+                  cutoff=commence-timedelta(minutes=PUBLICATION_CUTOFF_MINUTES)
+                  deadline=cutoff-timedelta(seconds=PUBLICATION_COMMIT_HEADROOM_SECONDS)
+                  capture_open=deadline-timedelta(seconds=FINAL_DECISION_CAPTURE_LEAD_SECONDS)
+                  if observed < capture_open: continue
+                  rev=int(event.get('schedule_revision') or 0)
+                  lk=lock_rows.get((event_key,lock_key(PUBLIC_DECISION_HORIZON,rev)))
+                  row={'event_key':event_key,'event_id':event.get('event_id'),'sport_key':event.get('sport_key'),'commence_time':event.get('commence_time'),'schedule_revision':rev,'first_seen_at':event.get('first_seen_at'),'capture_open':iso_utc(capture_open),'deadline':iso_utc(deadline)}
+                  due.append(row)
+                  if not lk:
+                      row['discovered_late']=bool(event.get('first_seen_at') and parse_utc(str(event['first_seen_at'])) > capture_open)
+                      row['deadline_missed']=observed>deadline
+                      missing.append(row); continue
+                  schedule_ok=_same_schedule(lk,event)
+                  provenance_ok=live_lock_coverage_provenance_valid(lk)
+                  if not (schedule_ok and provenance_ok):
+                      created=parse_utc(str(lk.get('created_at') or lk.get('lock_at')))
+                      try: exp=expected_feature_hash(lk); hash_match=str(lk.get('feature_hash') or '')==exp
+                      except Exception as exc: exp=f'ERROR:{type(exc).__name__}:{exc}'; hash_match=False
+                      invalid.append({**row,
+                          'created_at':lk.get('created_at'),'lock_at':lk.get('lock_at'),'lock_version':lk.get('lock_version'),
+                          'schedule_ok':schedule_ok,'provenance_ok':provenance_ok,'created_before_hash_fix':created<fix_at,
+                          'feature_hash_match_after_ddb_roundtrip':hash_match,'stored_feature_hash':lk.get('feature_hash'),'recomputed_feature_hash':exp,
+                          'coverage_completed_at':lk.get('coverage_completed_at'),'source_observed_at_max':lk.get('source_observed_at_max'),
+                          'prediction_eligible':lk.get('prediction_eligible'),'training_eligible':lk.get('training_eligible')})
+              except Exception as exc:
+                  print('EVENT_CLASSIFY_ERROR',event_key,type(exc).__name__,str(exc))
+
+          print('=== CLASSIFICATION SUMMARY ===')
+          print(json.dumps({
+              'observed_at':iso_utc(observed),'fix_deployed_at_assumed':'2026-08-14T19:31:00Z',
+              'due_events':len(due),'invalid_t10_locks':len(invalid),'missing_t10_locks':len(missing),
+              'invalid_created_before_fix':sum(1 for r in invalid if r['created_before_hash_fix']),
+              'invalid_created_at_or_after_fix':sum(1 for r in invalid if not r['created_before_hash_fix']),
+              'invalid_hash_mismatch':sum(1 for r in invalid if not r['feature_hash_match_after_ddb_roundtrip']),
+              'invalid_schedule_mismatch':sum(1 for r in invalid if not r['schedule_ok']),
+              'missing_discovered_late':sum(1 for r in missing if r.get('discovered_late')),
+              'missing_deadline_missed':sum(1 for r in missing if r.get('deadline_missed')),
+          },indent=2))
+          print('=== INVALID T10 LOCKS ===')
+          print(json.dumps(invalid,indent=2,default=str))
+          print('=== MISSING T10 LOCKS ===')
+          print(json.dumps(missing,indent=2,default=str))
+          if any(not r['created_before_hash_fix'] for r in invalid):
+              print('POST_FIX_INVALID_LOCKS_DETECTED=1')
+          else:
+              print('POST_FIX_INVALID_LOCKS_DETECTED=0')
+          PY
