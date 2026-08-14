@@ -490,6 +490,8 @@ Resources:
                   - !Sub '${SoccerPredictionsTable.Arn}/index/*'
                   - !GetAtt SoccerModelsTable.Arn
                   - !GetAtt SoccerOpsTable.Arn
+                  - !GetAtt SoccerLocksTable.Arn
+                  - !GetAtt SoccerSettlementsTable.Arn
 
   SoccerCatalogFunction:
     Type: AWS::Serverless::Function

@@ -315,6 +315,8 @@ class IsolationTests(unittest.TestCase):
         api_function = template["Resources"]["SoccerApiFunction"]
         self.assertEqual(api_function["Properties"]["Role"], "SoccerReadApiRole.Arn")
         api_policy = str(template["Resources"]["SoccerReadApiRole"])
+        for table in ("SoccerLocksTable", "SoccerSettlementsTable"):
+            self.assertIn(table, api_policy)
         for action in ("dynamodb:PutItem", "sqs:SendMessage", "secretsmanager:GetSecretValue"):
             self.assertNotIn(action, api_policy)
 
