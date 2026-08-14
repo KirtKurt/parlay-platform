@@ -1,0 +1,84 @@
+name: Probe SofaScore Tennis schedule and odds
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/probe-sofascore-tennis-odds.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - name: Probe public Tennis schedule and pre-match odds
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet requests
+          mkdir -p evidence/raw
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import requests
+
+          s=requests.Session(); s.headers.update({'user-agent':'Mozilla/5.0 tennis-platform-coverage-probe/1.0','accept':'application/json'})
+          report={'scheduleEndpoints':{},'events':[]}
+          schedules=[]
+          for host in ('https://www.sofascore.com/api/v1','https://api.sofascore.com/api/v1'):
+              for date in ('2026-07-23','2026-07-24','2026-07-25'):
+                  key=f'{host}:{date}'
+                  url=f'{host}/sport/tennis/scheduled-events/{date}'
+                  try:
+                      r=s.get(url,timeout=30)
+                      try:d=r.json()
+                      except Exception:d=None
+                      events=(d or {}).get('events') if isinstance(d,dict) else None
+                      report['scheduleEndpoints'][key]={'status':r.status_code,'contentType':r.headers.get('content-type'),'eventCount':len(events) if isinstance(events,list) else None,'topLevelKeys':sorted(d.keys()) if isinstance(d,dict) else None,'bodyPrefix':None if d is not None else r.text[:200]}
+                      if isinstance(events,list):
+                          for e in events:
+                              schedules.append((host,date,e))
+                  except Exception as exc:
+                      report['scheduleEndpoints'][key]={'error':type(exc).__name__+': '+str(exc)[:250]}
+          seen=set()
+          for host,date,e in schedules:
+              eid=str(e.get('id') or '')
+              if not eid or eid in seen: continue
+              seen.add(eid)
+              status=((e.get('status') or {}).get('type'))
+              start=e.get('startTimestamp')
+              home=(e.get('homeTeam') or {}).get('name')
+              away=(e.get('awayTeam') or {}).get('name')
+              tournament=((e.get('tournament') or {}).get('name'))
+              row={'id':eid,'date':date,'startTimestamp':start,'status':status,'home':home,'away':away,'tournament':tournament,'eventKeys':sorted(e.keys()),'oddsEndpoints':{}}
+              for suffix in ('odds/1/all','odds/1/featured','odds/1','odds'):
+                  u=f'{host}/event/{eid}/{suffix}'
+                  try:
+                      r=s.get(u,timeout=30)
+                      try:d=r.json()
+                      except Exception:d=None
+                      markets=(d or {}).get('markets') if isinstance(d,dict) else None
+                      row['oddsEndpoints'][suffix]={'status':r.status_code,'topLevelKeys':sorted(d.keys()) if isinstance(d,dict) else None,'marketCount':len(markets) if isinstance(markets,list) else None,'hasOdds':bool(d and d not in ({},[])),'bodyPrefix':None if d is not None else r.text[:150]}
+                      if d and d not in ({},[]):
+                          Path(f'evidence/raw/{eid}-{suffix.replace("/","-")}.json').write_text(json.dumps(d,indent=2,sort_keys=True))
+                  except Exception as exc:
+                      row['oddsEndpoints'][suffix]={'error':type(exc).__name__+': '+str(exc)[:200]}
+              report['events'].append(row)
+              if len(report['events'])>=30: break
+          report['uniqueEventCount']=len(seen)
+          report['sampledEventCount']=len(report['events'])
+          report['eventsWithAnyOddsPayload']=sum(any(v.get('hasOdds') for v in x['oddsEndpoints'].values()) for x in report['events'])
+          Path('evidence/sofascore-probe.json').write_text(json.dumps(report,indent=2,sort_keys=True))
+          print(json.dumps(report,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sofascore-tennis-odds-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: evidence/
