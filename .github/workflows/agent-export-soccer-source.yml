@@ -1,0 +1,37 @@
+name: Agent export soccer source
+
+on:
+  push:
+    branches:
+      - agent/soccer-authority-repair
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package isolated soccer sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          paths=(
+            soccer_auto
+            tests/soccer_auto
+            soccer-auto-template.yaml
+            .github/workflows/deploy-soccer-auto.yml
+          )
+          for optional in pyproject.toml pytest.ini requirements.txt setup.cfg tox.ini; do
+            if [[ -e "$optional" ]]; then
+              paths+=("$optional")
+            fi
+          done
+          tar -czf soccer-source.tgz "${paths[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: soccer-source
+          path: soccer-source.tgz
+          if-no-files-found: error
+          retention-days: 1
