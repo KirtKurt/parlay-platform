@@ -318,6 +318,7 @@ class IsolationTests(unittest.TestCase):
         globals_environment = template["Globals"]["Function"]["Environment"]["Variables"]
         self.assertEqual(
             globals_environment["SOCCER_AUTO_LLM_FALLBACK_MODEL_IDS"],
+            "global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,"
             "us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0",
         )
 
@@ -332,6 +333,7 @@ class IsolationTests(unittest.TestCase):
             profile_arns,
             [
                 "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${SoccerLlmModelId}",
+                "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-pro-v1:0",
                 "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-lite-v1:0",
                 "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-micro-v1:0",
             ],
@@ -346,6 +348,11 @@ class IsolationTests(unittest.TestCase):
             "InvokeOnlyNovaLiteThroughSoccerFallbackProfile": (
                 "us.amazon.nova-lite-v1:0",
                 "amazon.nova-lite-v1:0",
+                ("us-east-1", "us-east-2", "us-west-2"),
+            ),
+            "InvokeOnlyNovaProThroughSoccerFallbackProfile": (
+                "us.amazon.nova-pro-v1:0",
+                "amazon.nova-pro-v1:0",
                 ("us-east-1", "us-east-2", "us-west-2"),
             ),
             "InvokeOnlyNovaMicroThroughSoccerFallbackProfile": (
@@ -369,6 +376,47 @@ class IsolationTests(unittest.TestCase):
                 "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:"
                 f"inference-profile/{profile_id}",
             )
+
+        global_profile = (
+            "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:"
+            "inference-profile/global.amazon.nova-2-lite-v1:0"
+        )
+        global_statements = {
+            "InvokeOnlyGlobalNovaTwoLiteProfileInSourceRegion": {
+                "Action": "bedrock:InvokeModel",
+                "Resource": global_profile,
+                "Condition": {
+                    "StringEquals": {"aws:RequestedRegion": "AWS::Region"}
+                },
+            },
+            "InvokeOnlyGlobalNovaTwoLiteSourceModel": {
+                "Action": "bedrock:InvokeModel",
+                "Resource": "arn:${AWS::Partition}:bedrock:${AWS::Region}::"
+                "foundation-model/amazon.nova-2-lite-v1:0",
+                "Condition": {
+                    "StringEquals": {
+                        "aws:RequestedRegion": "AWS::Region",
+                        "bedrock:InferenceProfileArn": global_profile,
+                    }
+                },
+            },
+            "InvokeOnlyGlobalNovaTwoLiteGlobalModel": {
+                "Action": "bedrock:InvokeModel",
+                "Resource": "arn:${AWS::Partition}:bedrock:::foundation-model/"
+                "amazon.nova-2-lite-v1:0",
+                "Condition": {
+                    "StringEquals": {
+                        "aws:RequestedRegion": "unspecified",
+                        "bedrock:InferenceProfileArn": global_profile,
+                    }
+                },
+            },
+        }
+        for sid, expected_statement in global_statements.items():
+            statement = statements[sid]
+            self.assertEqual(statement["Action"], expected_statement["Action"])
+            self.assertEqual(statement["Resource"], expected_statement["Resource"])
+            self.assertEqual(statement["Condition"], expected_statement["Condition"])
 
         policy = str(template["Resources"]["SoccerLlmAnalystRole"])
         self.assertNotIn("foundation-model/*", policy)

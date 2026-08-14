@@ -17,6 +17,7 @@ from .model import (
     paired_skill_lower_bound_from_probabilities,
     select_candidate,
 )
+from .settlement import settlement_conflict_blocks_training
 from .storage import SoccerStore, ddb_safe, now_utc
 
 
@@ -59,7 +60,7 @@ def _settlement_conflict_events(store: SoccerStore) -> set[str]:
         return {
             str(row.get("event_key") or "")
             for row in store.scan_all(store.ops)
-            if row.get("training_blocked") and row.get("event_key")
+            if settlement_conflict_blocks_training(row) and row.get("event_key")
         }
     kwargs: dict[str, Any] = {
         "KeyConditionExpression": Key("PK").eq("SETTLEMENT_CONFLICT"),
@@ -76,7 +77,7 @@ def _settlement_conflict_events(store: SoccerStore) -> set[str]:
     return {
         str(row.get("event_key") or "")
         for row in rows
-        if row.get("training_blocked") and row.get("event_key")
+        if settlement_conflict_blocks_training(row) and row.get("event_key")
     }
 
 

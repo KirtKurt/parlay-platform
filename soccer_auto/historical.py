@@ -266,6 +266,8 @@ def _migrate_prestart_schema_quarantine(
         "pending_market_plan_digest",
         "last_provider_at",
         "last_progress_at",
+        "last_error",
+        "last_error_at",
         "quota_deferred_at",
     ):
         cursor.pop(key, None)
@@ -509,6 +511,8 @@ def _mark_complete(store: SoccerStore, cursor: dict[str, Any], observed_at: str)
     cursor["completed_at"] = observed_at
     cursor["updated_at"] = observed_at
     cursor.pop("quota_deferred_at", None)
+    cursor.pop("last_error", None)
+    cursor.pop("last_error_at", None)
     _save_cursor(store, cursor)
 
 
@@ -698,6 +702,8 @@ def run_featured(
         cursor["last_progress_at"] = response_observed_at
         cursor["updated_at"] = response_observed_at
         cursor.pop("quota_deferred_at", None)
+        cursor.pop("last_error", None)
+        cursor.pop("last_error_at", None)
         _save_cursor(store, cursor)
         archived.append(raw_uri)
         completed += 1
@@ -826,6 +832,8 @@ def _load_additional_snapshot(
     cursor["last_progress_at"] = response_observed_at
     cursor["updated_at"] = response_observed_at
     cursor.pop("quota_deferred_at", None)
+    cursor.pop("last_error", None)
+    cursor.pop("last_error_at", None)
     # Checkpoint the exact event and market plan before the first event-odds
     # request. A timeout can now resume without re-fetching or changing scope.
     _save_cursor(store, cursor)
@@ -1085,6 +1093,8 @@ def run_additional(
             cursor["last_progress_at"] = response_observed_at
             cursor["updated_at"] = response_observed_at
             cursor.pop("quota_deferred_at", None)
+            cursor.pop("last_error", None)
+            cursor.pop("last_error_at", None)
             _save_cursor(store, cursor)
         if int(cursor.get("pending_market_index") or 0) < len(market_plan):
             break

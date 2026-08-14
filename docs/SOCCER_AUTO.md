@@ -108,9 +108,12 @@ player, card, corner, first-half, or qualification props.
 
 ## LLM boundary
 
-The LLM analyst runs hourly and uses a real Amazon Bedrock US cross-Region
-profile chain: Nova 2 Lite, Nova Lite, then Nova Micro. A quota or transient
-failure on one model immediately tries the next independently metered model.
+The LLM analyst runs hourly and uses an ordered real Amazon Bedrock
+cross-Region profile chain: US Nova 2 Lite, global Nova 2 Lite, US Nova Pro,
+US Nova Lite, then US Nova Micro. A quota, transient, or candidate-local
+configuration failure immediately tries the next independently metered model.
+Global Nova 2 Lite uses its separate global quota path and may process the
+bounded soccer diagnostics in any supported commercial AWS Region.
 It receives only isolated soccer coverage summaries, immutable feature-schema
 metadata, and non-audit model metadata.
 It may propose a small bounded hyperparameter search and diagnostics.
@@ -121,7 +124,7 @@ prediction, alter a label or feature lock, promote a model, change deployment
 resources, or access MLB/tennis state. Deterministic chronological evaluation is
 the sole authority for accepting an LLM-proposed experiment. Its dedicated IAM
 role can read only soccer diagnostics, write only the `LLM_ANALYSIS` operations
-partition, and invoke only the three exact inference profiles and their exact
+partition, and invoke only the five exact inference profiles and their exact
 underlying Nova foundation-model resources.
 
 A fresh validated analysis is reused without another model call. Deployment
@@ -131,6 +134,8 @@ context digest, clean stop reason, and token usage. Exhaustion of every fallback
 is a visible Lambda failure rather than a false-green deferral. The analyst is
 genuine adaptive research authority for bounded trial proposals, but its prose
 or temporary unavailability cannot override deterministic promotion gates.
+Every failed model attempt stores only bounded, redacted Bedrock diagnostics;
+prompts and model responses are never written to error telemetry.
 
 ## Non-interference controls
 

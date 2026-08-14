@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import timedelta
 from typing import Any, Mapping, Sequence
 
@@ -25,6 +26,8 @@ ANALYSIS_ORIGIN = "BEDROCK_CONVERSE"
 ALLOWED_MODEL_IDS = frozenset(
     {
         "us.amazon.nova-2-lite-v1:0",
+        "global.amazon.nova-2-lite-v1:0",
+        "us.amazon.nova-pro-v1:0",
         "us.amazon.nova-lite-v1:0",
         "us.amazon.nova-micro-v1:0",
     }
@@ -34,6 +37,7 @@ FALLBACK_MODEL_IDS = tuple(
     model_id.strip()
     for model_id in os.getenv(
         "SOCCER_AUTO_LLM_FALLBACK_MODEL_IDS",
+        "global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,"
         "us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0",
     ).split(",")
     if model_id.strip()
@@ -41,7 +45,9 @@ FALLBACK_MODEL_IDS = tuple(
 MAX_TRIALS = 2
 ANALYSIS_MAX_AGE_HOURS = int(os.getenv("SOCCER_AUTO_LLM_ANALYSIS_MAX_AGE_HOURS", "36"))
 DAILY_TOKEN_RETRY_HOURS = 6
+TRANSIENT_RETRY_MINUTES = 15
 ATTEMPT_RETENTION_DAYS = 30
+MAX_BEDROCK_ERROR_MESSAGE_LENGTH = 300
 DIAGNOSTIC_SCAN_PAGE_LIMIT = int(os.getenv("SOCCER_AUTO_LLM_DIAGNOSTIC_SCAN_PAGE_LIMIT", "4"))
 DIAGNOSTIC_ROW_LIMIT = int(os.getenv("SOCCER_AUTO_LLM_DIAGNOSTIC_ROW_LIMIT", "2000"))
 BASELINE_TRIALS: tuple[dict[str, Any], ...] = (
@@ -399,6 +405,7 @@ def _record_llm_attempt(
     analysis_digest: str | None = None,
     model_id: str | None = None,
     attempted_model_ids: Sequence[str] | None = None,
+    model_errors: Sequence[Mapping[str, Any]] | None = None,
 ) -> None:
     item = {
         "PK": "LLM_ANALYSIS",
@@ -416,6 +423,8 @@ def _record_llm_attempt(
         item["retry_after"] = retry_after
     if analysis_digest:
         item["analysis_digest"] = analysis_digest
+    if model_errors:
+        item["model_errors"] = [dict(error) for error in model_errors]
     store.ops.put_item(Item=ddb_safe(item))
 
 
@@ -431,15 +440,71 @@ def _model_ids() -> tuple[str, ...]:
     return tuple(result)
 
 
-def _recoverable_model_error(exc: ClientError) -> bool:
+def _fallback_eligible_model_error(exc: ClientError) -> bool:
+    """Whether failure is scoped to this static allowlisted model candidate."""
     error = exc.response.get("Error") or {}
     return error.get("Code") in {
+        "AccessDeniedException",
+        "ValidationException",
+        "ResourceNotFoundException",
         "ThrottlingException",
         "ServiceUnavailableException",
         "InternalServerException",
+        "ModelErrorException",
         "ModelTimeoutException",
         "ModelNotReadyException",
     }
+
+
+def _bedrock_error_diagnostic(model_id: str, exc: ClientError) -> dict[str, Any]:
+    """Return a bounded diagnostic without leaking IAM or account details."""
+    error = exc.response.get("Error") or {}
+    metadata = exc.response.get("ResponseMetadata") or {}
+    code = _bounded_text(error.get("Code") or "UnknownClientError", 100)
+    raw_message = str(error.get("Message") or "")
+    message = re.sub(r"arn:[^\s,;]+", "[REDACTED_ARN]", raw_message)
+    message = re.sub(r"(?<!\d)\d{12}(?!\d)", "[REDACTED_ACCOUNT]", message)
+    message = " ".join(message.split())[:MAX_BEDROCK_ERROR_MESSAGE_LENGTH]
+    lowered = raw_message.lower()
+    if code == "ThrottlingException" and "tokens per day" in lowered:
+        category = "DAILY_TOKEN_QUOTA"
+    elif code == "ThrottlingException":
+        category = "ACCOUNT_QUOTA"
+    elif code in {
+        "ServiceUnavailableException",
+        "InternalServerException",
+        "ModelErrorException",
+        "ModelTimeoutException",
+        "ModelNotReadyException",
+    }:
+        category = "TRANSIENT_SERVICE"
+    elif code in {
+        "AccessDeniedException",
+        "ValidationException",
+        "ResourceNotFoundException",
+    }:
+        category = "CONFIGURATION_UNAVAILABLE"
+    else:
+        category = "NONRECOVERABLE_CLIENT_ERROR"
+    result: dict[str, Any] = {
+        "model_id": model_id,
+        "error_code": code,
+        "category": category,
+    }
+    if message:
+        result["message"] = message
+    try:
+        http_status = int(metadata.get("HTTPStatusCode"))
+    except (TypeError, ValueError):
+        http_status = 0
+    if 100 <= http_status <= 599:
+        result["http_status"] = http_status
+    request_id = re.sub(
+        r"[^A-Za-z0-9_-]", "", str(metadata.get("RequestId") or "")
+    )[:128]
+    if request_id:
+        result["request_id"] = request_id
+    return result
 
 
 def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, Any]:
@@ -471,8 +536,7 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
     analysis_context = _context(store)
     bedrock = boto3.client("bedrock-runtime")
     attempted_model_ids: list[str] = []
-    quota_deferred_model_ids: list[str] = []
-    invalid_responses: list[tuple[str, ValueError]] = []
+    model_errors: list[dict[str, Any]] = []
     validated: dict[str, Any] | None = None
     selected_model_id: str | None = None
     selected_stop_reason: str | None = None
@@ -499,33 +563,82 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
             }
             break
         except ClientError as exc:
-            if not _recoverable_model_error(exc):
+            diagnostic = _bedrock_error_diagnostic(model_id, exc)
+            # CloudWatch receives the same bounded diagnostic persisted in the
+            # attempt row. Never log the prompt, response body, or raw ARN.
+            print(canonical_json({"event": "soccer_bedrock_model_error", **diagnostic}))
+            if not _fallback_eligible_model_error(exc):
                 raise
-            quota_deferred_model_ids.append(model_id)
+            model_errors.append(diagnostic)
         except ValueError as exc:
             # A malformed response has no authority. Try another real Bedrock
-            # model, but fail the invocation if every model is malformed.
-            invalid_responses.append((model_id, exc))
+            # model, but persist only the bounded validation error (never the
+            # untrusted response body) if every model remains unavailable.
+            invalid_diagnostic = {
+                "model_id": model_id,
+                "error_code": "INVALID_RESPONSE",
+                "category": "INVALID_RESPONSE",
+                "message": _bounded_text(exc, MAX_BEDROCK_ERROR_MESSAGE_LENGTH),
+            }
+            print(
+                canonical_json(
+                    {"event": "soccer_bedrock_invalid_response", **invalid_diagnostic}
+                )
+            )
+            model_errors.append(invalid_diagnostic)
     if validated is None or selected_model_id is None:
-        if invalid_responses:
-            model_id, exc = invalid_responses[-1]
-            raise ValueError(
-                f"all available Bedrock analyst responses were invalid; last model={model_id}: {exc}"
-            ) from exc
         observed = now_utc()
-        retry_after = iso_utc(observed + timedelta(hours=DAILY_TOKEN_RETRY_HOURS))
+        quota_only = bool(model_errors) and all(
+            error.get("error_code") == "ThrottlingException" for error in model_errors
+        )
+        daily_quota_only = bool(model_errors) and all(
+            error.get("category") == "DAILY_TOKEN_QUOTA" for error in model_errors
+        )
+        configuration_only = bool(model_errors) and all(
+            error.get("category") == "CONFIGURATION_UNAVAILABLE"
+            for error in model_errors
+        )
+        invalid_response_only = bool(model_errors) and all(
+            error.get("category") == "INVALID_RESPONSE" for error in model_errors
+        )
+        retry_after = iso_utc(
+            observed
+            + (
+                timedelta(hours=DAILY_TOKEN_RETRY_HOURS)
+                if daily_quota_only
+                else timedelta(minutes=TRANSIENT_RETRY_MINUTES)
+            )
+        )
         _record_llm_attempt(
             store,
             observed=observed,
-            status="DEFERRED_QUOTA",
-            reason="BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE",
+            status=(
+                "DEFERRED_QUOTA"
+                if quota_only
+                else "BLOCKED_CONFIGURATION"
+                if configuration_only
+                else "BLOCKED_INVALID_RESPONSE"
+                if invalid_response_only
+                else "DEFERRED_TRANSIENT"
+            ),
+            reason=(
+                "BEDROCK_ALL_FALLBACK_MODELS_CONFIGURATION_UNAVAILABLE"
+                if configuration_only
+                else "BEDROCK_ALL_FALLBACK_MODELS_INVALID_RESPONSE"
+                if invalid_response_only
+                else "BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE"
+            ),
             retry_after=retry_after,
             model_id=model_ids[0],
             attempted_model_ids=attempted_model_ids,
+            model_errors=model_errors,
         )
         raise RuntimeError(
             "all configured real Bedrock analyst models are temporarily unavailable: "
-            + ",".join(attempted_model_ids)
+            + ",".join(
+                f"{error['model_id']}={error['error_code']}/{error['category']}"
+                for error in model_errors
+            )
         )
     observed = now_utc()
     observed_at = iso_utc(observed)
@@ -579,6 +692,7 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
         analysis_digest=analysis_digest,
         model_id=selected_model_id,
         attempted_model_ids=attempted_model_ids,
+        model_errors=model_errors,
     )
     return {
         "ok": True,
@@ -589,6 +703,7 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
         "validated_trials": len(validated["recommended_trials"]),
         "model_id": selected_model_id,
         "attempted_model_ids": attempted_model_ids,
+        "model_errors": model_errors,
         "expires_at": expires_at,
         "analysis_origin": ANALYSIS_ORIGIN,
         "context_digest": context_digest,

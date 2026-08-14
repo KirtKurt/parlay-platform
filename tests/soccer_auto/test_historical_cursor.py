@@ -285,7 +285,15 @@ class HistoricalCursorTests(unittest.TestCase):
         new_key = "soccer_a_new"
         existing_at = "2025-01-01T00:00:00Z"
         store = Store(
-            [cursor_row("FEATURED", existing_key, existing_at)],
+            [
+                cursor_row(
+                    "FEATURED",
+                    existing_key,
+                    existing_at,
+                    last_error="stale provider error",
+                    last_error_at="2025-01-01T00:00:00Z",
+                )
+            ],
             competitions=[{"sport_key": existing_key, "has_outrights": False}],
         )
         client = Client()
@@ -308,6 +316,8 @@ class HistoricalCursorTests(unittest.TestCase):
             ],
             existing_after_first["snapshot_at"],
         )
+        self.assertNotIn("last_error", existing_after_first)
+        self.assertNotIn("last_error_at", existing_after_first)
 
     def test_epl_zero_call_prestart_schema_quarantine_migrates_to_official_start(self) -> None:
         sport_key = "soccer_epl"
@@ -320,6 +330,7 @@ class HistoricalCursorTests(unittest.TestCase):
                     status="QUARANTINED_PROVIDER_SCHEMA",
                     calls_completed=0,
                     last_error="historical_featured HTTP-200 wrapper is missing timestamp",
+                    last_error_at="2026-08-14T03:36:49Z",
                 )
             ],
             competitions=[{"sport_key": sport_key, "has_outrights": False}],
@@ -338,10 +349,14 @@ class HistoricalCursorTests(unittest.TestCase):
             "2020-06-06T00:00:00Z",
         )
         self.assertEqual(migration["recovery_reason"], "OFFICIAL_SPORT_START_CORRECTION")
+        self.assertNotIn("last_error", migration)
+        self.assertNotIn("last_error_at", migration)
         self.assertEqual(client.featured_calls[0][1], "2020-06-06T10:05:00Z")
         self.assertEqual(result["calls"], 1)
         self.assertEqual(persisted["calls_completed"], 1)
         self.assertEqual(persisted["status"], "RUNNING")
+        self.assertNotIn("last_error", persisted)
+        self.assertNotIn("last_error_at", persisted)
 
     def test_later_sport_starts_at_its_2026_snapshot_for_both_modes(self) -> None:
         sport_key = "soccer_france_coupe_de_france"

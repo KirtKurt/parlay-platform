@@ -183,14 +183,126 @@ def build_settlement(
     return item
 
 
+def _settlement_digest_payload(
+    row: Mapping[str, Any], *, include_schedule_identity: bool
+) -> dict[str, Any]:
+    """Return the signed immutable result evidence for a settlement row.
+
+    ``schedule_identity`` was added to the v1 digest after the first production
+    settlements had already been written.  Keeping the two known payload forms
+    explicit lets us recognize that one schema transition without treating a
+    real score, team, kickoff, or revision change as idempotent.
+    """
+    payload = {
+        "event_key": str(row.get("event_key") or ""),
+        "schedule_revision": int(row.get("schedule_revision") or 0),
+        "commence_time": iso_utc(str(row.get("commence_time") or "")),
+        "sport_key": str(row.get("sport_key") or ""),
+        "home_team": str(row.get("home_team") or ""),
+        "away_team": str(row.get("away_team") or ""),
+        "home_score": int(row.get("home_score")),
+        "away_score": int(row.get("away_score")),
+        "result_1x2": str(row.get("result_1x2") or ""),
+        "settlement_semantics": str(row.get("settlement_semantics") or ""),
+    }
+    if include_schedule_identity:
+        payload["schedule_identity"] = str(
+            row.get("schedule_identity") or schedule_identity(row)
+        )
+    return payload
+
+
+def _has_recognized_settlement_digest(row: Mapping[str, Any]) -> bool:
+    actual = str(row.get("settlement_digest") or "")
+    if not actual:
+        return False
+    try:
+        expected = {
+            digest(
+                _settlement_digest_payload(
+                    row, include_schedule_identity=include_identity
+                )
+            )
+            for include_identity in (False, True)
+        }
+    except (KeyError, TypeError, ValueError):
+        return False
+    return actual in expected
+
+
+def settlement_records_equivalent(
+    existing: Mapping[str, Any], candidate: Mapping[str, Any]
+) -> bool:
+    """Recognize only the deployed legacy-to-identity digest transition.
+
+    Both rows must carry a valid known digest and must agree on the complete
+    schedule/result evidence plus the training-eligibility semantics.  This is
+    intentionally narrower than ignoring a digest mismatch: provider score or
+    schedule changes still become hard quarantine records.
+    """
+    if not (
+        _has_recognized_settlement_digest(existing)
+        and _has_recognized_settlement_digest(candidate)
+    ):
+        return False
+    try:
+        existing_payload = _settlement_digest_payload(
+            existing, include_schedule_identity=True
+        )
+        candidate_payload = _settlement_digest_payload(
+            candidate, include_schedule_identity=True
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+    if existing_payload != candidate_payload:
+        return False
+    return all(
+        bool(existing.get(field)) == bool(candidate.get(field))
+        for field in (
+            "regulation_time_ambiguous",
+            "training_eligible_1x2",
+            "training_eligible_score_derived",
+        )
+    )
+
+
+def settlement_conflict_blocks_training(row: Mapping[str, Any]) -> bool:
+    """Return whether an immutable conflict row represents active label risk."""
+    if not row.get("training_blocked"):
+        return False
+    if str(row.get("reason") or "") == "SCORE_SCHEDULE_IDENTITY_MISMATCH":
+        return True
+    existing = row.get("existing")
+    candidate = row.get("candidate")
+    if isinstance(existing, Mapping) and isinstance(candidate, Mapping):
+        # The August 2026 deployment added schedule_identity to the digest.
+        # Rows recording only that recognized transition are audit artifacts,
+        # not contradictory labels, and must not poison training forever.
+        if settlement_records_equivalent(existing, candidate):
+            return False
+    return True
+
+
 def _record_conflict(store: SoccerStore, existing: Mapping[str, Any], candidate: Mapping[str, Any], observed_at: str) -> None:
+    evidence_digest = digest(
+        {
+            "event_key": candidate["event_key"],
+            "reason": "SETTLEMENT_EVIDENCE_CONFLICT",
+            "existing_digest": existing.get("settlement_digest"),
+            "candidate_digest": candidate.get("settlement_digest"),
+        }
+    )
     store.ops.put_item(
         Item=ddb_safe(
             {
                 "PK": "SETTLEMENT_CONFLICT",
-                "SK": f"{candidate['event_key']}#{observed_at}",
+                # One row per distinct evidence pair prevents a five-minute
+                # provider retry from inflating health counts indefinitely.
+                "SK": f"{candidate['event_key']}#SETTLEMENT_EVIDENCE#{evidence_digest}",
                 "entity_type": "SOCCER_SETTLEMENT_CONFLICT",
                 "event_key": candidate["event_key"],
+                "reason": "SETTLEMENT_EVIDENCE_CONFLICT",
+                "conflict_evidence_digest": evidence_digest,
                 "existing_digest": existing.get("settlement_digest"),
                 "candidate_digest": candidate.get("settlement_digest"),
                 "existing": dict(existing),
@@ -209,6 +321,7 @@ def settlement_handler(event: Mapping[str, Any] | None, context: Any) -> dict[st
     written = 0
     idempotent = 0
     conflicts = 0
+    untracked_completed_scores = 0
     failures: list[dict[str, str]] = []
     observed = now_utc()
     active_events = store.active_events_between(
@@ -277,26 +390,53 @@ def settlement_handler(event: Mapping[str, Any] | None, context: Any) -> dict[st
                 # out-of-order or mismatched score response cannot repaint the
                 # event revision that collection and T-45 locking used.
                 stored_event = store.get_event(candidate_event_key)
+                if not stored_event:
+                    # Scores returns every completed match in the provider's
+                    # horizon, including matches this deployment never
+                    # inventoried or locked. The archived raw response is enough
+                    # evidence; an unjoined row is not a contradiction and has
+                    # no label that needs quarantining.
+                    untracked_completed_scores += 1
+                    continue
                 try:
+                    score_schedule_identity = schedule_identity(raw)
+                    stored_schedule_identity = str(
+                        stored_event.get("schedule_identity")
+                        or schedule_identity(stored_event)
+                    )
                     identity_matches = bool(
-                        stored_event
-                        and schedule_identity(raw)
-                        == str(
+                        score_schedule_identity == stored_schedule_identity
+                    )
+                except (KeyError, TypeError, ValueError):
+                    score_schedule_identity = "INVALID_SCORE_SCHEDULE_IDENTITY"
+                    try:
+                        stored_schedule_identity = str(
                             stored_event.get("schedule_identity")
                             or schedule_identity(stored_event)
                         )
-                    )
-                except (KeyError, TypeError, ValueError):
+                    except (KeyError, TypeError, ValueError):
+                        stored_schedule_identity = "INVALID_STORED_SCHEDULE_IDENTITY"
                     identity_matches = False
                 if not identity_matches:
+                    evidence_digest = digest(
+                        {
+                            "event_key": candidate_event_key,
+                            "reason": "SCORE_SCHEDULE_IDENTITY_MISMATCH",
+                            "score_schedule_identity": score_schedule_identity,
+                            "stored_schedule_identity": stored_schedule_identity,
+                        }
+                    )
                     store.ops.put_item(
                         Item=ddb_safe(
                             {
                                 "PK": "SETTLEMENT_CONFLICT",
-                                "SK": f"{candidate_event_key}#{score_observed_at}#SCHEDULE_IDENTITY",
+                                "SK": f"{candidate_event_key}#SCHEDULE_IDENTITY#{evidence_digest}",
                                 "entity_type": "SOCCER_SETTLEMENT_CONFLICT",
                                 "event_key": candidate_event_key,
                                 "reason": "SCORE_SCHEDULE_IDENTITY_MISMATCH",
+                                "score_schedule_identity": score_schedule_identity,
+                                "stored_schedule_identity": stored_schedule_identity,
+                                "conflict_evidence_digest": evidence_digest,
                                 "observed_at": score_observed_at,
                                 "training_blocked": True,
                             }
@@ -338,7 +478,11 @@ def settlement_handler(event: Mapping[str, Any] | None, context: Any) -> dict[st
                 ).get("Item")
                 if existing:
                     existing = plain(existing)
-                    if existing.get("settlement_digest") == candidate.get("settlement_digest"):
+                    if (
+                        existing.get("settlement_digest")
+                        == candidate.get("settlement_digest")
+                        or settlement_records_equivalent(existing, candidate)
+                    ):
                         idempotent += 1
                         store.mark_completed(candidate["event_key"], score_observed_at)
                     else:
@@ -359,6 +503,7 @@ def settlement_handler(event: Mapping[str, Any] | None, context: Any) -> dict[st
         "active_events_considered": len(active_events),
         "settlements_written": written,
         "idempotent": idempotent,
+        "untracked_completed_scores": untracked_completed_scores,
         "conflicts": conflicts,
         "failures": failures,
     }

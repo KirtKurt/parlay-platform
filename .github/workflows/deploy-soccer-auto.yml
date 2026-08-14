@@ -285,6 +285,8 @@ jobs:
           assert response['status'] == 'ANALYZED', response
           assert response['model_id'] in {
               'us.amazon.nova-2-lite-v1:0',
+              'global.amazon.nova-2-lite-v1:0',
+              'us.amazon.nova-pro-v1:0',
               'us.amazon.nova-lite-v1:0',
               'us.amazon.nova-micro-v1:0',
           }, response

@@ -12,6 +12,7 @@ from boto3.dynamodb.conditions import Key
 from .canonical import iso_utc
 from .llm_analyst import latest_validated_analysis
 from .odds_api import provider_safety_config
+from .settlement import settlement_conflict_blocks_training
 from .storage import SoccerStore, ddb_safe, now_utc, plain
 
 
@@ -87,21 +88,42 @@ def _settlement_conflict_state(store: SoccerStore) -> dict[str, Any]:
         KeyConditionExpression=Key("PK").eq("SETTLEMENT_CONFLICT"),
         ConsistentRead=True,
         Limit=1000,
+        ScanIndexForward=False,
     )
     rows = [plain(row) for row in response.get("Items") or []]
+    blocking_rows = [row for row in rows if settlement_conflict_blocks_training(row)]
+    blocking_events = {
+        str(row.get("event_key") or "")
+        for row in blocking_rows
+        if row.get("event_key")
+    }
     reason_counts: dict[str, int] = {}
-    for row in rows:
-        reason = str(row.get("reason") or "SETTLEMENT_DIGEST_CONFLICT")
-        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+    reasons_by_event: dict[str, set[str]] = {}
+    for row in blocking_rows:
+        event_key = str(row.get("event_key") or "UNKNOWN_EVENT")
+        reason = str(row.get("reason") or "SETTLEMENT_EVIDENCE_CONFLICT")
+        reasons_by_event.setdefault(event_key, set()).add(reason)
+    for reasons in reasons_by_event.values():
+        for reason in reasons:
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
     return {
-        "count": len(rows),
+        # ``count`` deliberately means affected labels/events, not repeated
+        # observations of the same provider evidence conflict.
+        "count": len(blocking_events),
         "count_is_lower_bound": bool(response.get("LastEvaluatedKey")),
         "reason_counts": reason_counts,
         "latest_observed_at": max(
+            (str(row.get("observed_at") or "") for row in blocking_rows),
+            default=None,
+        ),
+        "training_labels_quarantined": len(blocking_events),
+        "records_examined": len(rows),
+        "blocking_records_examined": len(blocking_rows),
+        "ignored_nonblocking_records": len(rows) - len(blocking_rows),
+        "latest_record_observed_at": max(
             (str(row.get("observed_at") or "") for row in rows),
             default=None,
         ),
-        "training_labels_quarantined": len(rows),
     }
 
 

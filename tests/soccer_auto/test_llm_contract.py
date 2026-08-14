@@ -14,6 +14,7 @@ from soccer_auto.canonical import digest  # noqa: E402
 from soccer_auto.llm_analyst import (  # noqa: E402
     ANALYSIS_ORIGIN,
     _context,
+    _model_ids,
     latest_llm_trials,
     llm_analyst_handler,
     validate_analysis,
@@ -83,6 +84,22 @@ class LlmBoundaryTests(unittest.TestCase):
         self.assertEqual(result["validation_status"], "VALIDATED")
         self.assertEqual(len(result["recommended_trials"]), 1)
         self.assertIn("analysis_digest", result)
+
+    def test_production_fallback_chain_is_ordered_and_allowlisted(self) -> None:
+        fallbacks = (
+            "global.amazon.nova-2-lite-v1:0",
+            "us.amazon.nova-pro-v1:0",
+            "us.amazon.nova-lite-v1:0",
+            "us.amazon.nova-micro-v1:0",
+        )
+        with (
+            patch("soccer_auto.llm_analyst.MODEL_ID", "us.amazon.nova-2-lite-v1:0"),
+            patch("soccer_auto.llm_analyst.FALLBACK_MODEL_IDS", fallbacks),
+        ):
+            self.assertEqual(
+                _model_ids(),
+                ("us.amazon.nova-2-lite-v1:0", *fallbacks),
+            )
 
     def test_trial_precision_is_canonical_before_provenance_digest(self) -> None:
         result = validate_analysis(
@@ -300,6 +317,18 @@ class LlmBoundaryTests(unittest.TestCase):
         self.assertEqual(latest["model_id"], "us.amazon.nova-lite-v1:0")
         self.assertEqual(attempt["model_id"], "us.amazon.nova-lite-v1:0")
         self.assertEqual(attempt["attempted_model_ids"], result["attempted_model_ids"])
+        self.assertEqual(
+            result["model_errors"],
+            [
+                {
+                    "model_id": "us.amazon.nova-2-lite-v1:0",
+                    "error_code": "ThrottlingException",
+                    "category": "DAILY_TOKEN_QUOTA",
+                    "message": "Too many tokens per day, please wait before trying again.",
+                }
+            ],
+        )
+        self.assertEqual(attempt["model_errors"], result["model_errors"])
 
     def test_all_model_daily_token_throttles_are_deferred_without_latest_write(self) -> None:
         observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
@@ -344,15 +373,196 @@ class LlmBoundaryTests(unittest.TestCase):
         self.assertEqual(attempt["retry_after"], "2026-08-14T10:00:00Z")
         self.assertEqual(attempt["attempted_model_ids"], expected_models)
         self.assertEqual(
+            [error["model_id"] for error in attempt["model_errors"]],
+            expected_models,
+        )
+        self.assertEqual(
+            {error["error_code"] for error in attempt["model_errors"]},
+            {"ThrottlingException"},
+        )
+        self.assertEqual(
+            {error["category"] for error in attempt["model_errors"]},
+            {"DAILY_TOKEN_QUOTA"},
+        )
+        self.assertEqual(
             attempt["expires_at"],
             int((observed + timedelta(days=30)).timestamp()),
         )
 
-    def test_nonquota_bedrock_client_error_is_reraised(self) -> None:
+    def test_mixed_recoverable_errors_are_redacted_and_not_mislabeled_quota(self) -> None:
+        observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
+        store = Store(Ops())
+        bedrock = Mock()
+        errors = [
+            ("ThrottlingException", "Account quota exceeded", 429, "quota-request"),
+            (
+                "ServiceUnavailableException",
+                "Unavailable for arn:aws:bedrock:us-east-1:123456789012:inference-profile/example",
+                503,
+                "service-request",
+            ),
+            ("ModelTimeoutException", "Timed out", 408, "timeout-request"),
+        ]
+        bedrock.converse.side_effect = [
+            ClientError(
+                {
+                    "Error": {"Code": code, "Message": message},
+                    "ResponseMetadata": {
+                        "HTTPStatusCode": status,
+                        "RequestId": request_id,
+                    },
+                },
+                "Converse",
+            )
+            for code, message, status, request_id in errors
+        ]
+        with (
+            patch("soccer_auto.llm_analyst.MODEL_ID", "us.amazon.nova-2-lite-v1:0"),
+            patch(
+                "soccer_auto.llm_analyst.FALLBACK_MODEL_IDS",
+                ("us.amazon.nova-lite-v1:0", "us.amazon.nova-micro-v1:0"),
+            ),
+            patch("soccer_auto.llm_analyst.SoccerStore", return_value=store),
+            patch("soccer_auto.llm_analyst.boto3.client", return_value=bedrock),
+            patch("soccer_auto.llm_analyst.now_utc", return_value=observed),
+            self.assertRaisesRegex(
+                RuntimeError,
+                r"nova-2-lite-v1:0=ThrottlingException/ACCOUNT_QUOTA.*"
+                r"nova-lite-v1:0=ServiceUnavailableException/TRANSIENT_SERVICE.*"
+                r"nova-micro-v1:0=ModelTimeoutException/TRANSIENT_SERVICE",
+            ),
+        ):
+            llm_analyst_handler({}, None)
+
+        attempt = store.ops.writes[0]
+        self.assertEqual(attempt["status"], "DEFERRED_TRANSIENT")
+        self.assertEqual(attempt["retry_after"], "2026-08-14T04:15:00Z")
+        self.assertEqual(
+            [error["http_status"] for error in attempt["model_errors"]],
+            [429, 503, 408],
+        )
+        self.assertEqual(
+            [error["request_id"] for error in attempt["model_errors"]],
+            ["quota-request", "service-request", "timeout-request"],
+        )
+        service_message = attempt["model_errors"][1]["message"]
+        self.assertIn("[REDACTED_ARN]", service_message)
+        self.assertNotIn("123456789012", service_message)
+
+    def test_generic_account_throttle_uses_short_retry_not_daily_retry(self) -> None:
+        observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
         store = Store(Ops())
         bedrock = Mock()
         bedrock.converse.side_effect = ClientError(
-            {"Error": {"Code": "AccessDeniedException", "Message": "denied"}},
+            {
+                "Error": {
+                    "Code": "ThrottlingException",
+                    "Message": "Account request quota exceeded",
+                }
+            },
+            "Converse",
+        )
+        with (
+            patch("soccer_auto.llm_analyst.MODEL_ID", "us.amazon.nova-2-lite-v1:0"),
+            patch("soccer_auto.llm_analyst.FALLBACK_MODEL_IDS", ()),
+            patch("soccer_auto.llm_analyst.SoccerStore", return_value=store),
+            patch("soccer_auto.llm_analyst.boto3.client", return_value=bedrock),
+            patch("soccer_auto.llm_analyst.now_utc", return_value=observed),
+            self.assertRaises(RuntimeError),
+        ):
+            llm_analyst_handler({}, None)
+
+        attempt = store.ops.writes[0]
+        self.assertEqual(attempt["status"], "DEFERRED_QUOTA")
+        self.assertEqual(attempt["retry_after"], "2026-08-14T04:15:00Z")
+        self.assertEqual(attempt["model_errors"][0]["category"], "ACCOUNT_QUOTA")
+
+    def test_global_profile_access_denial_falls_through_to_nova_pro(self) -> None:
+        observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
+        store = Store(Ops())
+        bedrock = Mock()
+
+        def converse(**kwargs):
+            if kwargs["modelId"] == "global.amazon.nova-2-lite-v1:0":
+                raise ClientError(
+                    {
+                        "Error": {
+                            "Code": "AccessDeniedException",
+                            "Message": "Global CRIS is blocked by account policy",
+                        }
+                    },
+                    "Converse",
+                )
+            return self._response(
+                {"summary": "Nova Pro recovered the bounded analysis"}
+            )
+
+        bedrock.converse.side_effect = converse
+        with (
+            patch("soccer_auto.llm_analyst.MODEL_ID", "global.amazon.nova-2-lite-v1:0"),
+            patch(
+                "soccer_auto.llm_analyst.FALLBACK_MODEL_IDS",
+                ("us.amazon.nova-pro-v1:0",),
+            ),
+            patch("soccer_auto.llm_analyst.SoccerStore", return_value=store),
+            patch("soccer_auto.llm_analyst.boto3.client", return_value=bedrock),
+            patch("soccer_auto.llm_analyst.now_utc", return_value=observed),
+        ):
+            result = llm_analyst_handler({}, None)
+
+        self.assertEqual(result["status"], "ANALYZED")
+        self.assertEqual(result["model_id"], "us.amazon.nova-pro-v1:0")
+        self.assertEqual(
+            result["attempted_model_ids"],
+            ["global.amazon.nova-2-lite-v1:0", "us.amazon.nova-pro-v1:0"],
+        )
+        self.assertEqual(
+            result["model_errors"][0]["category"],
+            "CONFIGURATION_UNAVAILABLE",
+        )
+
+    def test_all_configuration_failures_are_persisted_as_blocked(self) -> None:
+        observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
+        store = Store(Ops())
+        bedrock = Mock()
+        bedrock.converse.side_effect = ClientError(
+            {
+                "Error": {
+                    "Code": "AccessDeniedException",
+                    "Message": "Candidate profile is unavailable",
+                }
+            },
+            "Converse",
+        )
+        with (
+            patch("soccer_auto.llm_analyst.MODEL_ID", "global.amazon.nova-2-lite-v1:0"),
+            patch(
+                "soccer_auto.llm_analyst.FALLBACK_MODEL_IDS",
+                ("us.amazon.nova-pro-v1:0",),
+            ),
+            patch("soccer_auto.llm_analyst.SoccerStore", return_value=store),
+            patch("soccer_auto.llm_analyst.boto3.client", return_value=bedrock),
+            patch("soccer_auto.llm_analyst.now_utc", return_value=observed),
+            self.assertRaisesRegex(
+                RuntimeError,
+                "AccessDeniedException/CONFIGURATION_UNAVAILABLE",
+            ),
+        ):
+            llm_analyst_handler({}, None)
+
+        attempt = store.ops.writes[0]
+        self.assertEqual(attempt["status"], "BLOCKED_CONFIGURATION")
+        self.assertEqual(
+            attempt["reason"],
+            "BEDROCK_ALL_FALLBACK_MODELS_CONFIGURATION_UNAVAILABLE",
+        )
+        self.assertEqual(len(attempt["model_errors"]), 2)
+
+    def test_non_candidate_client_error_is_reraised(self) -> None:
+        store = Store(Ops())
+        bedrock = Mock()
+        bedrock.converse.side_effect = ClientError(
+            {"Error": {"Code": "UnrecognizedClientException", "Message": "denied"}},
             "Converse",
         )
         with (
@@ -364,7 +574,7 @@ class LlmBoundaryTests(unittest.TestCase):
             llm_analyst_handler({}, None)
         self.assertEqual(store.ops.writes, [])
 
-    def test_malformed_model_json_is_reraised_fail_closed(self) -> None:
+    def test_malformed_model_json_is_persisted_and_raised_fail_closed(self) -> None:
         store = Store(Ops())
         bedrock = Mock()
         bedrock.converse.return_value = {
@@ -372,12 +582,20 @@ class LlmBoundaryTests(unittest.TestCase):
         }
         with (
             patch("soccer_auto.llm_analyst.MODEL_ID", "us.amazon.nova-2-lite-v1:0"),
+            patch("soccer_auto.llm_analyst.FALLBACK_MODEL_IDS", ()),
             patch("soccer_auto.llm_analyst.SoccerStore", return_value=store),
             patch("soccer_auto.llm_analyst.boto3.client", return_value=bedrock),
-            self.assertRaises(ValueError),
+            self.assertRaisesRegex(RuntimeError, "INVALID_RESPONSE"),
         ):
             llm_analyst_handler({}, None)
-        self.assertEqual(store.ops.writes, [])
+        self.assertEqual(len(store.ops.writes), 1)
+        attempt = store.ops.writes[0]
+        self.assertEqual(attempt["status"], "BLOCKED_INVALID_RESPONSE")
+        self.assertEqual(
+            attempt["reason"],
+            "BEDROCK_ALL_FALLBACK_MODELS_INVALID_RESPONSE",
+        )
+        self.assertEqual(attempt["model_errors"][0]["error_code"], "INVALID_RESPONSE")
 
     def test_fresh_validated_latest_is_reused_before_context_or_converse(self) -> None:
         observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
