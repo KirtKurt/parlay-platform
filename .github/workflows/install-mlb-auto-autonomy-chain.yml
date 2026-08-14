@@ -79,14 +79,40 @@ jobs:
           AWS_EC2_METADATA_DISABLED: 'true'
         run: python scripts/verify_mlb_schedule_invariants.py
 
-      - name: Validate SAM templates
+      - name: Validate SAM template YAML syntax
         run: |
           python - <<'PY'
-          import yaml
           from pathlib import Path
+          import yaml
+
+          class CloudFormationLoader(yaml.SafeLoader):
+              pass
+
+          def intrinsic(loader, tag_suffix, node):
+              tag = f"!{tag_suffix}"
+              if isinstance(node, yaml.ScalarNode):
+                  value = loader.construct_scalar(node)
+              elif isinstance(node, yaml.SequenceNode):
+                  value = loader.construct_sequence(node, deep=True)
+              elif isinstance(node, yaml.MappingNode):
+                  value = loader.construct_mapping(node, deep=True)
+              else:
+                  raise TypeError(f"Unsupported CloudFormation node for {tag}")
+              return {tag: value}
+
+          CloudFormationLoader.add_multi_constructor("!", intrinsic)
           for name in ("template.yaml", "mlb_historical_optimizer/template.yaml"):
-              yaml.safe_load(Path(name).read_text(encoding="utf-8"))
-              print(f"YAML parsed: {name}")
+              payload = yaml.load(
+                  Path(name).read_text(encoding="utf-8"),
+                  Loader=CloudFormationLoader,
+              )
+              if not isinstance(payload, dict):
+                  raise SystemExit(f"SAM template is not a mapping: {name}")
+              if payload.get("Transform") != "AWS::Serverless-2016-10-31":
+                  raise SystemExit(f"SAM transform missing: {name}")
+              if not isinstance(payload.get("Resources"), dict):
+                  raise SystemExit(f"SAM resources missing: {name}")
+              print(f"CloudFormation YAML parsed: {name}")
           PY
 
       - name: Commit installed canonical sources
