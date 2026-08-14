@@ -1,0 +1,94 @@
+{
+  "audit_status": "PARTIAL_OUTCOMES_AND_FAILED_LOCK_AUTHORITY",
+  "audited_at_et": "2026-08-13T21:43:31.081095-04:00",
+  "card_date_et": "2026-08-13",
+  "daily_card": {
+    "generated_at": "2026-08-14T00:02:07.859991+00:00",
+    "source": "inqis_tennis_learning DynamoDB latest pre-match records",
+    "match_count": 37,
+    "strong_count": 25,
+    "watch_count": 2,
+    "pass_count": 10
+  },
+  "outcomes_resolved_by_internal_settlement_and_odds_api": {
+    "total": 2,
+    "wins": 2,
+    "losses": 0,
+    "unresolved": 35,
+    "rows": [
+      {
+        "band": "STRONG",
+        "pick": "Iga Swiatek",
+        "opponent": "Elena Rybakina",
+        "confidence_pct": 73.83,
+        "winner": "Iga Swiatek",
+        "result": "WIN",
+        "lead_minutes_vs_stored_commence": -91.384,
+        "t45_or_earlier": false
+      },
+      {
+        "band": "WATCH",
+        "pick": "Ben Shelton",
+        "opponent": "Brandon Nakashima",
+        "confidence_pct": 58.58,
+        "winner": "Ben Shelton",
+        "result": "WIN",
+        "lead_minutes_vs_stored_commence": -1.376,
+        "t45_or_earlier": false
+      }
+    ]
+  },
+  "timing_integrity": {
+    "all_rows_recorded_at_or_before_stored_commence": 10,
+    "all_rows_recorded_after_stored_commence": 27,
+    "all_rows_t45_or_earlier": 7,
+    "strong_rows_recorded_at_or_before_stored_commence": 5,
+    "strong_rows_recorded_after_stored_commence": 20,
+    "strong_rows_t45_or_earlier": 5,
+    "strong_t45_rows_with_resolved_outcome": 0,
+    "interpretation": "A negative lead means the selected daily-card prediction timestamp is after the event's stored provider commencement time. This does not by itself prove the match was in play because tennis start times can move, but it fails the immutable pre-match/T-45 proof."
+  },
+  "strong_t45_or_earlier_unresolved": [
+    {"pick": "Michael Zheng", "opponent": "Trevor Svajda", "confidence_pct": 64.38, "lead_minutes": 718.623},
+    {"pick": "Hubert Hurkacz", "opponent": "Corentin Moutet", "confidence_pct": 61.29, "lead_minutes": 853.631},
+    {"pick": "Ella Seidel", "opponent": "Nadia Podoroska", "confidence_pct": 61.23, "lead_minutes": 888.723},
+    {"pick": "Aliaksandra Sasnovich", "opponent": "Emiliana Arango", "confidence_pct": 60.13, "lead_minutes": 888.727},
+    {"pick": "Kayla Day", "opponent": "Yue Yuan", "confidence_pct": 60.02, "lead_minutes": 888.722}
+  ],
+  "immutable_lock_authority": {
+    "stack": "parlay-platform-tennis-ml-prod",
+    "provider_mode": "polymarket",
+    "model_version": "INQSI-TENNIS-PER-MATCH-LOCK-v5.2-tminus45-no-rescore-keyed-reads",
+    "slate_date": "2026-08-13",
+    "manifest_complete": true,
+    "pull_count": 123,
+    "match_count": 9,
+    "locked_count": 0,
+    "pick_count": 0,
+    "missed_count": 0,
+    "terminal_count": 0,
+    "lock_status_complete": false,
+    "due_not_locked_count": 5,
+    "waiting_for_t45_count": 4,
+    "due_not_locked_blockers": [
+      "NO_PERSISTED_PRELOCK_PREDICTION_AT_OR_BEFORE_CUTOFF",
+      "POST_CUTOFF_RESCORING_FORBIDDEN"
+    ]
+  },
+  "authority_mismatch": {
+    "daily_card_authority": "inqis_tennis_learning / Odds API event IDs",
+    "immutable_lock_authority": "parlay-platform-tennis-ml-prod / Polymarket event IDs",
+    "same_card": false,
+    "consequence": "The 25 STRONG daily-card predictions cannot be represented as today's immutable T-45 locked official picks."
+  },
+  "conclusion": {
+    "daily_card_partial_record": "2-0 among two internally resolved rows; 35 unresolved",
+    "valid_locked_pick_accuracy": null,
+    "valid_locked_pick_accuracy_reason": "No immutable picks were locked for the audited slate snapshot.",
+    "do_not_report_as": [
+      "100 percent daily accuracy",
+      "25 official locked picks",
+      "verified T-45 accuracy"
+    ]
+  }
+}
