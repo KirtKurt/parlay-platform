@@ -190,14 +190,20 @@ class IsolationTests(unittest.TestCase):
         self.assertIn("provider_429_baseline", workflow)
         self.assertIn("distributed_rate_limit_state", workflow)
 
-    def test_verified_soccer_deployment_is_manual_only(self) -> None:
+    def test_verified_soccer_deployment_has_only_the_one_shot_trigger(self) -> None:
         workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
         trigger = workflow.split("permissions:", 1)[0]
         trigger_config = yaml.load(trigger, Loader=yaml.BaseLoader)["on"]
-        self.assertEqual(set(trigger_config), {"workflow_dispatch"})
-        self.assertFalse(
-            (ROOT / "soccer_auto/.deploy-manifest-proof-once").exists()
+        self.assertEqual(set(trigger_config), {"workflow_dispatch", "push"})
+        self.assertEqual(trigger_config["push"]["branches"], ["main"])
+        self.assertEqual(
+            trigger_config["push"]["paths"],
+            ["soccer_auto/.deploy-coverage-authority-once"],
         )
+        self.assertTrue(
+            (ROOT / "soccer_auto/.deploy-coverage-authority-once").exists()
+        )
+        self.assertFalse((ROOT / "soccer_auto/.deploy-manifest-proof-once").exists())
         self.assertFalse((ROOT / "soccer_auto/.deploy-repair-once").exists())
 
     def test_historical_backfill_defaults_on_and_remains_observable_with_kill_switch(self) -> None:

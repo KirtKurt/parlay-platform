@@ -4,6 +4,10 @@ name: Deploy Isolated Soccer Auto
 # soccer-only paths, and this stack cannot mutate MLB, tennis, or legacy soccer
 # resources.
 on:
+  push:
+    branches: [main]
+    paths:
+      - soccer_auto/.deploy-coverage-authority-once
   workflow_dispatch:
     inputs:
       shared_quota_reserve_percent:
