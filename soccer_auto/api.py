@@ -181,6 +181,8 @@ def _query_partition(table: Any, pk: str, *, limit: int = 1000) -> tuple[list[di
 
 
 def _historical_status(store: SoccerStore) -> dict[str, Any]:
+    from .historical_materializer import materialization_status
+
     cursors, truncated = _query_partition(store.ops, "HISTORICAL_CURSOR", limit=1000)
     detail = [row for row in cursors if not str(row.get("SK") or "").endswith("#SUMMARY")]
     completed = [row for row in detail if row.get("status") == "COMPLETE"]
@@ -193,18 +195,26 @@ def _historical_status(store: SoccerStore) -> dict[str, Any]:
         (str(row.get("last_progress_at") or row.get("updated_at") or "") for row in detail),
         default="",
     )
+    materialization = materialization_status(store)
     return {
         "enabled": os.getenv("SOCCER_AUTO_HISTORICAL_BACKFILL_ENABLED", "true").lower()
         == "true",
-        "mode": "RAW_ARCHIVE_ONLY",
+        "mode": "RAW_ARCHIVE_PLUS_AUTHORITATIVE_T45",
         "state": "COMPLETE" if detail and len(completed) == len(detail) else "RUNNING" if progressing else "PENDING",
         "cursor_rows": len(detail),
         "completed_cursor_rows": len(completed),
         "calls_completed": sum(int(row.get("calls_completed") or 0) for row in detail),
         "latest_progress_at": latest_progress or None,
         "cursors_truncated": truncated,
-        "historical_training_rows": 0,
-        "training_note": "Raw historical odds remain ineligible until joined to authoritative final results with point-in-time T45 materialization.",
+        "historical_training_rows": int(
+            materialization.get("historical_training_rows") or 0
+        ),
+        "training_note": (
+            "Recent rows are admitted only after immutable Odds API final-score "
+            "evidence is joined to a point-in-time T45 snapshot; older odds-only "
+            "archives remain training-ineligible."
+        ),
+        "supervised_materialization": materialization,
     }
 
 

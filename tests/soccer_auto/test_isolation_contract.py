@@ -133,6 +133,13 @@ class IsolationTests(unittest.TestCase):
         print_at = workflow.index("print(name, response)")
         function_error_at = workflow.index('assert not metadata.get("FunctionError")')
         self.assertLess(print_at, function_error_at)
+        self.assertIn('policy == "allow_daily_quota"', helper)
+        self.assertIn('response.get("status") == "DEFERRED_QUOTA"', helper)
+        self.assertIn('row.get("category") == "DAILY_TOKEN_QUOTA"', helper)
+        self.assertIn('row.get("error_code") == "ThrottlingException"', helper)
+        self.assertIn('attempted == expected_models', helper)
+        self.assertIn('[row.get("model_id") for row in errors] == attempted', helper)
+        self.assertNotIn("continue-on-error", helper)
 
     def test_coverage_first_defaults_keep_shared_key_safety_controls(self) -> None:
         template = yaml.load(
@@ -199,9 +206,24 @@ class IsolationTests(unittest.TestCase):
         resource = template["Resources"]["SoccerHistoricalFunction"]
         self.assertNotIn("Condition", resource)
         events = resource["Properties"]["Events"]
-        self.assertEqual(set(events), {"FeaturedHistoricalHourly", "AdditionalHistoricalHourly"})
+        self.assertEqual(
+            set(events),
+            {
+                "FeaturedHistoricalHourly",
+                "AdditionalHistoricalHourly",
+                "MaterializeHistoricalT45Hourly",
+            },
+        )
         for event in events.values():
             self.assertEqual(event["Properties"]["Enabled"], ["HistoricalBackfillEnabled", True, False])
+        self.assertEqual(
+            events["MaterializeHistoricalT45Hourly"]["Properties"]["Schedule"],
+            "cron(27 * * * ? *)",
+        )
+        self.assertEqual(
+            events["MaterializeHistoricalT45Hourly"]["Properties"]["Input"],
+            '{"mode":"materialize","max_events":5}',
+        )
         self.assertEqual(
             template["Globals"]["Function"]["Environment"]["Variables"][
                 "SOCCER_AUTO_HISTORICAL_BACKFILL_ENABLED"
@@ -212,7 +234,10 @@ class IsolationTests(unittest.TestCase):
         self.assertNotIn("enable_historical_backfill:", workflow)
         self.assertIn('EnableHistoricalBackfill="true"', workflow)
         self.assertIn("historical_rules_enabled", workflow)
+        self.assertIn("assert len(names) == 3", workflow)
         self.assertIn("historical_featured_smoke", workflow)
+        self.assertIn("historical_t45_materialization_smoke", workflow)
+        self.assertIn("historical_training_rows_after_materialization", workflow)
 
     def test_lambda_memory_fits_the_production_account_ceiling(self) -> None:
         template = yaml.load(
@@ -474,7 +499,10 @@ class IsolationTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
         self.assertIn("response['status'] == 'ANALYZED'", workflow)
         self.assertIn('"force_refresh":true', workflow)
-        self.assertNotIn("status in {'ANALYZED', 'FRESH_ANALYSIS_REUSED', 'DEFERRED_QUOTA'}", workflow)
+        self.assertIn("allow_daily_quota", workflow)
+        self.assertIn("BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE", workflow)
+        self.assertIn("controller_validated_bedrock_quota_deferral", workflow)
+        self.assertNotIn("continue-on-error", workflow)
         self.assertIn("response['analysis_origin'] == 'BEDROCK_CONVERSE'", workflow)
         self.assertIn("bedrock_cris_smoke", workflow)
 

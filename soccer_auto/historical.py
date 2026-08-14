@@ -1121,6 +1121,10 @@ def run_additional(
 
 def historical_status(store: SoccerStore) -> dict[str, Any]:
     """Return cursor progress using DynamoDB only; never instantiate a client."""
+    # Imported lazily because the materializer intentionally reuses the strict
+    # raw-wrapper and manifest validators in this module.
+    from .historical_materializer import materialization_status
+
     kwargs: dict[str, Any] = {
         "KeyConditionExpression": Key("PK").eq("HISTORICAL_CURSOR"),
         "ConsistentRead": True,
@@ -1151,6 +1155,7 @@ def historical_status(store: SoccerStore) -> dict[str, Any]:
         "enabled": _enabled(),
         "provider_calls": 0,
         "modes": by_mode,
+        "supervised_materialization": materialization_status(store),
     }
 
 
@@ -1182,7 +1187,7 @@ def historical_handler(event: Mapping[str, Any] | None, context: Any) -> dict[st
             "provider_calls": 0,
             "reason": "SOCCER_AUTO_HISTORICAL_BACKFILL_DISABLED",
         }
-    if mode not in {"both", "featured", "additional"}:
+    if mode not in {"both", "featured", "additional", "materialize"}:
         raise ValueError("unsupported historical backfill mode")
     remaining = _event_max_calls(payload)
     sport_key = str(payload.get("sport_key") or "").strip() or None
@@ -1195,6 +1200,21 @@ def historical_handler(event: Mapping[str, Any] | None, context: Any) -> dict[st
         "enabled": True,
         "max_calls": remaining,
     }
+    if mode == "materialize":
+        from .historical_materializer import run_materialization
+
+        event_key = str(payload.get("event_key") or "").strip() or None
+        if event_key is not None and not event_key.startswith("EVENT#soccer_"):
+            raise ValueError("historical event_key must be soccer-only")
+        requested_events = int(payload.get("max_events", remaining))
+        if requested_events < 0:
+            raise ValueError("historical max_events cannot be negative")
+        result["materialization"] = run_materialization(
+            store,
+            max_events=min(remaining, requested_events),
+            event_key=event_key,
+        )
+        remaining -= int(result["materialization"].get("provider_calls") or 0)
     if mode in {"both", "featured"}:
         result["featured"] = run_featured(
             store, max_calls=remaining, sport_key=sport_key
