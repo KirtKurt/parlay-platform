@@ -1,0 +1,182 @@
+name: Tennis Prediction Publication Report
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/tennis-prediction-publication-report.yml'
+  schedule:
+    # Run shortly after each direct or autonomous Tennis prediction cycle.
+    - cron: '3,13,18,28,33,43,48,58 * * * *'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: tennis-prediction-publication-report
+  cancel-in-progress: false
+
+env:
+  REPORT_ISSUE: '515'
+  TABLE_NAME: inqis_tennis_learning
+  OFFICIAL_THRESHOLD: '0.60'
+  PUBLISH_CUTOFF_MINUTES: '10'
+  ACTIVE_PAST_DAYS: '3'
+  ACTIVE_FUTURE_DAYS: '30'
+  LIVE_UPDATE_OVERLAP_MINUTES: '20'
+  DISCOVER_SHA256: '2bf0dd74214b5a989e3f4204978aae6ff2896001418e1bd18b8a90a228ba80c3'
+  DELIVER_SHA256: '9665c66ec2c6ca06efbf6f7f9dd6de16e59b979ea35484ee522cbbd091471fd1'
+  # Self-contained Python helpers, gzip-compressed and base64-encoded.
+  DISCOVER_B64: >-
+    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
+    fmKFzKvjTfvKaBByM4Hs+V/YM6lBfTEAAA==
+  DELIVER_B64: >-
+    H4sIAO+IfmoC/5WSwW7cIBCG7zwFN4xk+dKbJR+2XRqtunVXm832UEUIx7MprQ0W4DTbqu/ewV7HTqKqKgebgW+G/x/QbWddoN+8
+    NUSPc+vJydmW1ipA0C3Qy/oUpzR+f1oDI9ep8LXR1YTtMCRTrcoG+4aQoKoGaDGGmQNve3cHCaE4WH02qrV1xVLq4F5bIzGGwvoM
+    zIN21nxhq8/Xci+uNp9KeVxtbwS7JTw7xKLJEjus3m6FLFcfEeCkhkY/gINaqoBnT/IzY38kk4OsD3c8096erGtVSDj5DmePdGxI
+    1lhV+yQaSlgHptbmXsb9LO4yjkZULQM8Yh4nWIHiJtUm/nw+mBuMZ30XD5c6QDt6juMDnAsE06eFm4ESjx32x2Mbipkd+nQtDvTi
+    6Sx9UKH3Rf5kMqVLv0WuQkrZ8wIO4p3IE9oA1zltEFsEM81nUe8s2g6oZqGLvVJxaQ6b82Z8FYLTVR/gqJoefPHruajZAcspW4vt
+    5ij2Yr0oNWLTEQjtRLnelFevEBVwd9mFl8DSbE6XL+c91hP73X5THtjtnPZ7nHIy5Iz3MbyMum87P9/PC09LSw2YJL4Hnv6Fkf+S
+    /f+qL6I5+QNzW/tc3gMAAA==
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Decode and verify reporting helpers
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64, gzip, hashlib, os
+          from pathlib import Path
+          for name in ('DISCOVER', 'DELIVER'):
+              payload = gzip.decompress(base64.b64decode(os.environ[f'{name}_B64']))
+              actual = hashlib.sha256(payload).hexdigest()
+              expected = os.environ[f'{name}_SHA256']
+              if actual != expected:
+                  raise SystemExit(f'{name} helper checksum mismatch')
+              Path(f'/tmp/{name.lower()}.py').write_bytes(payload)
+          PY
+          python -m py_compile /tmp/discover.py /tmp/deliver.py
+
+      - name: Discover and freeze new official predictions
+        id: discover
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python /tmp/discover.py
+
+      - name: Check whether this report was already posted
+        if: steps.discover.outputs.count != '0'
+        id: dedupe
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FINGERPRINT: ${{ steps.discover.outputs.fingerprint }}
+        run: |
+          set -euo pipefail
+          marker="<!-- tennis-prediction-report:${FINGERPRINT} -->"
+          gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/issues/${REPORT_ISSUE}/comments?per_page=100" \
+            --jq '.[].body' > /tmp/tennis-report-comments.txt
+          if grep -Fq "$marker" /tmp/tennis-report-comments.txt; then
+            echo 'already_posted=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'already_posted=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish immediate prediction report
+        if: steps.discover.outputs.count != '0' && steps.dedupe.outputs.already_posted != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh issue comment "$REPORT_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body-file report.md
+
+      - name: Mark reported predictions delivered
+        if: steps.discover.outputs.count != '0' && success()
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          FINGERPRINT: ${{ steps.discover.outputs.fingerprint }}
+        run: |
+          set -euo pipefail
+          python /tmp/deliver.py
+
+      - name: Publish workflow summary
+        if: always()
+        run: |
+          {
+            echo '## Tennis prediction publication reporter'
+            echo
+            echo "- New official picks pending in this run: ${{ steps.discover.outputs.count || '0' }}"
+            echo "- Existing picks initialized without duplicate alerting: ${{ steps.discover.outputs.bootstrapped || '0' }}"
+            echo '- Delivery channel: GitHub issue #515'
+            echo '- Delivery cadence: roughly two minutes after each scheduled prediction cycle'
+            echo '- WATCH/PASS: excluded'
+          } >> "$GITHUB_STEP_SUMMARY"
