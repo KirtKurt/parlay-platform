@@ -65,6 +65,30 @@ class IsolationTests(unittest.TestCase):
                 used.update(row["AttributeName"] for row in index.get("KeySchema", []))
             self.assertEqual(defined, used, f"{name} has invalid DynamoDB attribute definitions")
 
+    def test_public_prediction_transaction_has_deadline_headroom_and_narrow_authority(self) -> None:
+        template = yaml.load(
+            (ROOT / "soccer-auto-template.yaml").read_text(),
+            Loader=CloudFormationLoader,
+        )
+        variables = template["Globals"]["Function"]["Environment"]["Variables"]
+        self.assertEqual(
+            variables["SOCCER_AUTO_PUBLICATION_COMMIT_HEADROOM_SECONDS"],
+            "10",
+        )
+        statements = template["Resources"]["SoccerAutoRuntimeRole"]["Properties"][
+            "Policies"
+        ][0]["PolicyDocument"]["Statement"]
+        transaction_statement = next(
+            statement
+            for statement in statements
+            if "dynamodb:TransactWriteItems" in statement.get("Action", [])
+        )
+        self.assertIn("SoccerPredictionsTable.Arn", transaction_statement["Resource"])
+        self.assertIn("SoccerOpsTable.Arn", transaction_statement["Resource"])
+        self.assertIn("SoccerEventsTable.Arn", transaction_statement["Resource"])
+        self.assertNotIn("SoccerModelsTable.Arn", transaction_statement["Resource"])
+        self.assertNotIn("*", transaction_statement["Resource"])
+
     def test_durable_resources_survive_established_stack_deletion_not_create_rollback(self) -> None:
         template = yaml.load(
             (ROOT / "soccer-auto-template.yaml").read_text(),
@@ -190,11 +214,19 @@ class IsolationTests(unittest.TestCase):
         self.assertIn("provider_429_baseline", workflow)
         self.assertIn("distributed_rate_limit_state", workflow)
 
-    def test_verified_soccer_deployment_is_manual_only(self) -> None:
+    def test_publication_authority_repair_has_exact_one_shot_deploy_trigger(self) -> None:
         workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
         trigger = workflow.split("permissions:", 1)[0]
         trigger_config = yaml.load(trigger, Loader=yaml.BaseLoader)["on"]
-        self.assertEqual(set(trigger_config), {"workflow_dispatch"})
+        self.assertEqual(set(trigger_config), {"push", "workflow_dispatch"})
+        self.assertEqual(trigger_config["push"]["branches"], ["main"])
+        self.assertEqual(
+            trigger_config["push"]["paths"],
+            ["soccer_auto/.deploy-publication-authority-v2-once"],
+        )
+        self.assertTrue(
+            (ROOT / "soccer_auto/.deploy-publication-authority-v2-once").exists()
+        )
         self.assertFalse(
             (ROOT / "soccer_auto/.deploy-coverage-authority-once").exists()
         )

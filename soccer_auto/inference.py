@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 import os
-from datetime import timedelta
-from typing import Any, Mapping
-
-from botocore.exceptions import ClientError
+from datetime import datetime, timedelta
+from typing import Any, Callable, Mapping
 
 from .canonical import (
     digest,
@@ -14,16 +12,26 @@ from .canonical import (
     parse_utc,
     schedule_identity,
 )
+from .config import (
+    PUBLICATION_COMMIT_HEADROOM_SECONDS,
+    PUBLICATION_CUTOFF_MINUTES,
+)
 from .market_features import FEATURE_SCHEMA_VERSION, compile_features
 from .model import CLASSES, ResidualSoftmaxModel
-from .storage import SoccerStore, now_utc, plain
+from .storage import (
+    COVERAGE_CERTIFICATE_VERSION,
+    SoccerStore,
+    now_utc,
+    plain,
+)
 
 
-LOCK_VERSION = "soccer-auto-t45-lock-v1"
-PUBLIC_BINDING_VERSION = "soccer-auto-public-prediction-binding-v1"
+LOCK_VERSION = "soccer-auto-t45-lock-v2"
+PUBLIC_BINDING_VERSION = "soccer-auto-public-prediction-binding-v2"
 MIN_BOOKMAKERS = int(os.getenv("SOCCER_AUTO_MIN_BOOKMAKERS", "3"))
 PUBLISH_CONFIDENCE = float(os.getenv("SOCCER_AUTO_PUBLISH_CONFIDENCE", "0.50"))
-PUBLICATION_CUTOFF_MINUTES = 10
+AUTONOMY_STATE_MAX_AGE_MINUTES = 30
+AUTONOMY_STATE_MAX_FUTURE_SKEW_MINUTES = 2
 
 
 def _latest_and_earliest_by_scope(slots: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -40,7 +48,72 @@ def _latest_and_earliest_by_scope(slots: list[dict[str, Any]]) -> tuple[list[dic
 
 
 def _merged_from_pointers(store: SoccerStore, pointers: list[dict[str, Any]]) -> dict[str, Any]:
-    return merge_event_payloads(store.read_json(pointer["raw_uri"]) for pointer in pointers)
+    payloads = []
+    for pointer in pointers:
+        payload = store.read_json(pointer["raw_uri"])
+        if digest(payload) != str(pointer.get("payload_sha256") or ""):
+            raise ValueError("canonical snapshot payload digest mismatch")
+        payloads.append(payload)
+    return merge_event_payloads(payloads)
+
+
+def _payload_pairs(payload: Mapping[str, Any]) -> set[str]:
+    return {
+        f"{book.get('key')}|{market.get('key')}"
+        for book in payload.get("bookmakers") or []
+        if book.get("key")
+        for market in book.get("markets") or []
+        if market.get("key")
+    }
+
+
+def _certified_cohort(
+    store: SoccerStore,
+    *,
+    event_key: str,
+    schedule_revision: int,
+    schedule_identity_value: str,
+    lock_at: str,
+    certificate: Mapping[str, Any],
+) -> tuple[list[dict[str, Any]], dict[str, Any]] | None:
+    """Load only canonical slots bound to one completed coverage plan."""
+    plan_digest = str(certificate.get("plan_digest") or "")
+    plan_observed_at = str(certificate.get("plan_observed_at") or "")
+    required_pairs = {
+        str(pair) for pair in certificate.get("required_pairs") or [] if pair
+    }
+    slots = store.canonical_slots_before(
+        event_key,
+        lock_at,
+        schedule_revision=schedule_revision,
+        schedule_identity=schedule_identity_value,
+        coverage_plan_digest=plan_digest,
+        coverage_plan_observed_at=plan_observed_at,
+    )
+    if not slots:
+        return None
+    completed_at = parse_utc(str(certificate.get("completed_at") or ""))
+    if any(
+        str(row.get("coverage_plan_digest") or "") != plan_digest
+        or str(row.get("coverage_plan_observed_at") or "")
+        != plan_observed_at
+        or parse_utc(str(row.get("observed_at") or "")) > completed_at
+        for row in slots
+    ):
+        return None
+    pointers, _ = _latest_and_earliest_by_scope(slots)
+    reported_pairs = {
+        str(pair)
+        for row in pointers
+        for pair in row.get("pair_keys_returned") or []
+        if pair
+    }
+    if not required_pairs or not required_pairs <= reported_pairs:
+        return None
+    payload = _merged_from_pointers(store, pointers)
+    if not required_pairs <= _payload_pairs(payload):
+        return None
+    return pointers, payload
 
 
 def build_frozen_lock(store: SoccerStore, event: Mapping[str, Any], *, observed_at: str) -> dict[str, Any]:
@@ -70,29 +143,75 @@ def build_frozen_lock(store: SoccerStore, event: Mapping[str, Any], *, observed_
         "lock_at": iso_utc(lock_at),
         "created_at": observed_at,
         "labels": None,
+        "immutable": True,
     }
     if parse_utc(observed_at) < lock_at:
         return {**base, "write_ready": False, "reason": "LOCK_NOT_DUE"}
-    slots = store.canonical_slots_before(
+    certificates = store.coverage_certificates_before(
         event_key,
         iso_utc(lock_at),
         schedule_revision=schedule_revision,
         schedule_identity=event_schedule_identity,
     )
-    if not slots:
+    if not certificates:
         return {
             **base,
-            "write_ready": True,
-            "training_eligible": False,
-            "prediction_eligible": False,
-            "exclusion_reasons": ["NO_FINALIZED_PRELOCK_CANONICAL_SLOTS"],
-            "source_slot_ids": [],
-            "source_payload_hashes": [],
+            "write_ready": False,
+            "reason": "COMPLETE_PRELOCK_COVERAGE_CERTIFICATE_UNAVAILABLE",
         }
-    latest_pointers, earliest_pointers = _latest_and_earliest_by_scope(slots)
+    cohort_cache: dict[
+        tuple[str, str, str, str],
+        tuple[list[dict[str, Any]], dict[str, Any]] | None,
+    ] = {}
+
+    def cohort_for(
+        certificate: Mapping[str, Any],
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]] | None:
+        certificate_identity = (
+            str(certificate.get("certificate_digest") or ""),
+            str(certificate.get("plan_digest") or ""),
+            str(certificate.get("plan_observed_at") or ""),
+            str(certificate.get("completed_at") or ""),
+        )
+        if certificate_identity not in cohort_cache:
+            cohort_cache[certificate_identity] = _certified_cohort(
+                store,
+                event_key=event_key,
+                schedule_revision=schedule_revision,
+                schedule_identity_value=event_schedule_identity,
+                lock_at=iso_utc(lock_at),
+                certificate=certificate,
+            )
+        return cohort_cache[certificate_identity]
+
+    latest_certificate: Mapping[str, Any] | None = None
+    latest_cohort: tuple[list[dict[str, Any]], dict[str, Any]] | None = None
+    for certificate in certificates:
+        latest_cohort = cohort_for(certificate)
+        if latest_cohort:
+            latest_certificate = certificate
+            break
+    if latest_certificate is None or latest_cohort is None:
+        return {
+            **base,
+            "write_ready": False,
+            "reason": "NO_FINALIZED_CERTIFIED_PRELOCK_CANONICAL_COHORT",
+        }
+    baseline_certificate = latest_certificate
+    baseline_cohort = latest_cohort
+    for certificate in reversed(certificates):
+        if str(certificate.get("plan_digest") or "") == str(
+            latest_certificate.get("plan_digest") or ""
+        ):
+            continue
+        candidate = cohort_for(certificate)
+        if candidate:
+            baseline_certificate = certificate
+            baseline_cohort = candidate
+            break
+    latest_pointers, latest = latest_cohort
+    baseline_pointers, earliest = baseline_cohort
     try:
-        latest = _merged_from_pointers(store, latest_pointers)
-        earliest = _merged_from_pointers(store, earliest_pointers)
         features = compile_features(
             latest,
             earliest=earliest,
@@ -118,7 +237,47 @@ def build_frozen_lock(store: SoccerStore, event: Mapping[str, Any], *, observed_
             "event_key": event_key,
             "schedule_revision": schedule_revision,
             "lock_at": iso_utc(lock_at),
+            "coverage_certificate_digest": latest_certificate[
+                "certificate_digest"
+            ],
+            "coverage_plan_digest": latest_certificate["plan_digest"],
+            "coverage_plan_observed_at": latest_certificate[
+                "plan_observed_at"
+            ],
+            "coverage_completed_at": latest_certificate["completed_at"],
+            "coverage_required_pairs": sorted(
+                latest_certificate.get("required_pairs") or []
+            ),
+            "coverage_probe_pairs": sorted(
+                latest_certificate.get("probe_pairs") or []
+            ),
+            "movement_baseline_certificate_digest": baseline_certificate[
+                "certificate_digest"
+            ],
+            "movement_baseline_plan_digest": baseline_certificate[
+                "plan_digest"
+            ],
+            "movement_baseline_plan_observed_at": baseline_certificate[
+                "plan_observed_at"
+            ],
+            "source_slot_ids": [row["SK"] for row in latest_pointers],
             "source_hashes": source_hashes,
+            "source_raw_uris": [row["raw_uri"] for row in latest_pointers],
+            "source_observed_at_max": max(
+                row["observed_at"] for row in latest_pointers
+            ),
+            "movement_baseline_source_slot_ids": [
+                row["SK"] for row in baseline_pointers
+            ],
+            "movement_baseline_source_hashes": [
+                row["payload_sha256"] for row in baseline_pointers
+            ],
+            "movement_baseline_source_raw_uris": [
+                row["raw_uri"] for row in baseline_pointers
+            ],
+            "movement_baseline_source_observed_at_max": max(
+                row["observed_at"] for row in baseline_pointers
+            ),
             "features": features,
         }
     )
@@ -131,12 +290,227 @@ def build_frozen_lock(store: SoccerStore, event: Mapping[str, Any], *, observed_
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
         "feature_hash": feature_hash,
         "frozen_features": features,
+        "coverage_certificate_version": COVERAGE_CERTIFICATE_VERSION,
+        "coverage_certificate_digest": latest_certificate[
+            "certificate_digest"
+        ],
+        "coverage_plan_digest": latest_certificate["plan_digest"],
+        "coverage_plan_observed_at": latest_certificate[
+            "plan_observed_at"
+        ],
+        "coverage_completed_at": latest_certificate["completed_at"],
+        "coverage_required_pairs": sorted(
+            latest_certificate.get("required_pairs") or []
+        ),
+        "coverage_required_pair_count": len(
+            latest_certificate.get("required_pairs") or []
+        ),
+        "coverage_required_pair_digest": digest(
+            sorted(latest_certificate.get("required_pairs") or [])
+        ),
+        "coverage_probe_pairs": sorted(
+            latest_certificate.get("probe_pairs") or []
+        ),
+        "coverage_probe_pair_count": len(
+            latest_certificate.get("probe_pairs") or []
+        ),
+        "coverage_probe_pair_digest": digest(
+            sorted(latest_certificate.get("probe_pairs") or [])
+        ),
+        "coverage_completed_before_lock": parse_utc(
+            str(latest_certificate["completed_at"])
+        )
+        <= lock_at,
+        "movement_baseline_certificate_digest": baseline_certificate[
+            "certificate_digest"
+        ],
+        "movement_baseline_plan_digest": baseline_certificate[
+            "plan_digest"
+        ],
+        "movement_baseline_plan_observed_at": baseline_certificate[
+            "plan_observed_at"
+        ],
+        "movement_baseline_distinct": (
+            baseline_certificate["plan_digest"]
+            != latest_certificate["plan_digest"]
+        ),
+        "movement_baseline_limitation": (
+            None
+            if baseline_certificate["plan_digest"]
+            != latest_certificate["plan_digest"]
+            else "NO_DISTINCT_EARLIER_CERTIFIED_PLAN"
+        ),
         "source_slot_ids": [row["SK"] for row in latest_pointers],
         "source_payload_hashes": source_hashes,
         "source_raw_uris": [row["raw_uri"] for row in latest_pointers],
+        "movement_baseline_source_slot_ids": [
+            row["SK"] for row in baseline_pointers
+        ],
+        "movement_baseline_source_payload_hashes": [
+            row["payload_sha256"] for row in baseline_pointers
+        ],
+        "movement_baseline_source_raw_uris": [
+            row["raw_uri"] for row in baseline_pointers
+        ],
+        "movement_baseline_source_observed_at_max": max(
+            row["observed_at"] for row in baseline_pointers
+        ),
+        "movement_baseline_source_observed_before_lock": all(
+            parse_utc(row["observed_at"]) <= lock_at
+            for row in baseline_pointers
+        ),
         "source_observed_at_max": max(row["observed_at"] for row in latest_pointers),
         "source_observed_before_lock": all(parse_utc(row["observed_at"]) <= lock_at for row in latest_pointers),
     }
+
+
+def live_lock_coverage_provenance_valid(lock: Mapping[str, Any]) -> bool:
+    """Recompute the immutable v2 live-lock binding before use."""
+    try:
+        if lock.get("lock_version") != LOCK_VERSION:
+            return False
+        if (
+            lock.get("coverage_certificate_version")
+            != COVERAGE_CERTIFICATE_VERSION
+        ):
+            return False
+        lock_at = parse_utc(str(lock["lock_at"]))
+        completed_at = parse_utc(str(lock["coverage_completed_at"]))
+        plan_observed_at = parse_utc(
+            str(lock["coverage_plan_observed_at"])
+        )
+        baseline_plan_observed_at = parse_utc(
+            str(lock["movement_baseline_plan_observed_at"])
+        )
+        source_observed_at = parse_utc(str(lock["source_observed_at_max"]))
+        baseline_observed_at = parse_utc(
+            str(lock["movement_baseline_source_observed_at_max"])
+        )
+        required_values = list(lock.get("coverage_required_pairs") or [])
+        probe_values = list(lock.get("coverage_probe_pairs") or [])
+        required = {str(value) for value in required_values if value}
+        probe = {str(value) for value in probe_values if value}
+        source_ids = list(lock.get("source_slot_ids") or [])
+        source_hashes = list(lock.get("source_payload_hashes") or [])
+        source_uris = list(lock.get("source_raw_uris") or [])
+        baseline_ids = list(
+            lock.get("movement_baseline_source_slot_ids") or []
+        )
+        baseline_hashes = list(
+            lock.get("movement_baseline_source_payload_hashes") or []
+        )
+        baseline_uris = list(
+            lock.get("movement_baseline_source_raw_uris") or []
+        )
+        certificate_digest = str(
+            lock.get("coverage_certificate_digest") or ""
+        )
+        baseline_certificate_digest = str(
+            lock.get("movement_baseline_certificate_digest") or ""
+        )
+        expected_feature_hash = digest(
+            {
+                "event_key": lock["event_key"],
+                "schedule_revision": int(lock["schedule_revision"]),
+                "lock_at": iso_utc(lock_at),
+                "coverage_certificate_digest": certificate_digest,
+                "coverage_plan_digest": lock["coverage_plan_digest"],
+                "coverage_plan_observed_at": lock[
+                    "coverage_plan_observed_at"
+                ],
+                "coverage_completed_at": lock["coverage_completed_at"],
+                "coverage_required_pairs": sorted(required),
+                "coverage_probe_pairs": sorted(probe),
+                "movement_baseline_certificate_digest": (
+                    baseline_certificate_digest
+                ),
+                "movement_baseline_plan_digest": lock[
+                    "movement_baseline_plan_digest"
+                ],
+                "movement_baseline_plan_observed_at": lock[
+                    "movement_baseline_plan_observed_at"
+                ],
+                "source_slot_ids": source_ids,
+                "source_hashes": source_hashes,
+                "source_raw_uris": source_uris,
+                "source_observed_at_max": iso_utc(source_observed_at),
+                "movement_baseline_source_slot_ids": baseline_ids,
+                "movement_baseline_source_hashes": baseline_hashes,
+                "movement_baseline_source_raw_uris": baseline_uris,
+                "movement_baseline_source_observed_at_max": iso_utc(
+                    baseline_observed_at
+                ),
+                "features": lock["frozen_features"],
+            }
+        )
+        baseline_distinct = bool(lock.get("movement_baseline_distinct"))
+
+        def valid_sha256(value: Any) -> bool:
+            text = str(value)
+            return len(text) == 64 and int(text, 16) >= 0
+
+        return bool(
+            lock.get("entity_type") == "SOCCER_FROZEN_FEATURE_LOCK"
+            and lock.get("immutable") is True
+            and lock.get("labels") is None
+            and str(lock.get("target") or "") == "result_1x2"
+            and str(lock.get("PK") or "") == str(lock["event_key"])
+            and str(lock.get("SK") or "")
+            == (
+                f"LOCK#T45#REV#{int(lock['schedule_revision'])}#"
+                "TARGET#result_1x2"
+            )
+            and str(lock.get("schedule_identity") or "")
+            == schedule_identity(lock)
+            and baseline_plan_observed_at <= plan_observed_at <= completed_at
+            and completed_at <= lock_at
+            and lock.get("coverage_completed_before_lock") is True
+            and source_observed_at <= lock_at
+            and lock.get("source_observed_before_lock") is True
+            and baseline_observed_at <= lock_at
+            and lock.get("movement_baseline_source_observed_before_lock")
+            is True
+            and valid_sha256(certificate_digest)
+            and valid_sha256(baseline_certificate_digest)
+            and bool(str(lock.get("coverage_plan_digest") or ""))
+            and bool(str(lock.get("coverage_plan_observed_at") or ""))
+            and len(required_values) == len(required)
+            and len(probe_values) == len(probe)
+            and bool(required)
+            and not (required & probe)
+            and all("|" in pair for pair in required | probe)
+            and int(lock.get("coverage_required_pair_count") or 0)
+            == len(required)
+            and str(lock.get("coverage_required_pair_digest") or "")
+            == digest(sorted(required))
+            and int(lock.get("coverage_probe_pair_count") or 0)
+            == len(probe)
+            and str(lock.get("coverage_probe_pair_digest") or "")
+            == digest(sorted(probe))
+            and len(source_ids) == len(source_hashes) == len(source_uris) > 0
+            and len(baseline_ids)
+            == len(baseline_hashes)
+            == len(baseline_uris)
+            > 0
+            and all(str(uri).startswith("s3://") for uri in source_uris)
+            and all(str(uri).startswith("s3://") for uri in baseline_uris)
+            and all(valid_sha256(value) for value in source_hashes)
+            and all(valid_sha256(value) for value in baseline_hashes)
+            and (
+                baseline_distinct
+                == (
+                    str(lock.get("movement_baseline_plan_digest") or "")
+                    != str(lock.get("coverage_plan_digest") or "")
+                )
+            )
+            and (
+                baseline_distinct
+                or baseline_certificate_digest == certificate_digest
+            )
+            and str(lock.get("feature_hash") or "") == expected_feature_hash
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def _active_models(store: SoccerStore) -> list[dict[str, Any]]:
@@ -180,10 +554,6 @@ def _same_schedule(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
         return False
 
 
-def _conditional_failure(exc: ClientError) -> bool:
-    return (exc.response.get("Error") or {}).get("Code") == "ConditionalCheckFailedException"
-
-
 def _public_binding_key(lock: Mapping[str, Any]) -> dict[str, str]:
     return {
         "PK": f"PUBLIC_PREDICTION_BINDING#{lock['event_key']}",
@@ -194,24 +564,15 @@ def _public_binding_key(lock: Mapping[str, Any]) -> dict[str, str]:
     }
 
 
-def _claim_public_model_binding(
-    store: SoccerStore,
+def _public_model_binding(
     lock: Mapping[str, Any],
     *,
     model_digest: str,
-    observed_at: str,
-) -> tuple[bool, str, dict[str, Any]]:
-    """Bind the first publishable champion to this exact frozen schedule.
-
-    Prediction rows remain append-only per model, so their model-specific keys
-    alone cannot prevent two successive champions from both being marked
-    ``PUBLISHED`` for one match.  This conditional operations-table row is the
-    single public authority.  A retry by the same model is idempotent; a later
-    model, altered feature lock, or colliding schedule revision fails closed.
-    """
+) -> dict[str, Any]:
+    """Build the static binding written atomically with its prediction."""
     key = _public_binding_key(lock)
     lock_identity = str(lock.get("schedule_identity") or schedule_identity(lock))
-    binding = {
+    return {
         **key,
         "entity_type": "SOCCER_PUBLIC_PREDICTION_BINDING",
         "binding_version": PUBLIC_BINDING_VERSION,
@@ -224,51 +585,30 @@ def _claim_public_model_binding(
         "horizon": "T45",
         "target": "result_1x2",
         "lock_sk": lock["SK"],
+        "lock_version": lock["lock_version"],
         "feature_hash": lock["feature_hash"],
+        "coverage_certificate_version": lock[
+            "coverage_certificate_version"
+        ],
+        "coverage_certificate_digest": lock[
+            "coverage_certificate_digest"
+        ],
+        "coverage_plan_digest": lock["coverage_plan_digest"],
         "model_digest": model_digest,
-        "bound_at": observed_at,
         "immutable": True,
     }
-    try:
-        store.ops.put_item(
-            Item=binding,
-            ConditionExpression="attribute_not_exists(SK)",
-        )
-        return True, "PUBLIC_MODEL_BOUND", binding
-    except ClientError as exc:
-        if not _conditional_failure(exc):
-            raise
-    existing = store.ops.get_item(Key=key, ConsistentRead=True).get("Item")
-    existing = plain(existing) if existing else {}
-    if not existing:
-        return False, "PUBLIC_MODEL_BINDING_UNAVAILABLE", {}
-    immutable_fields = (
-        "binding_version",
-        "event_key",
-        "event_id",
-        "sport_key",
-        "commence_time",
-        "schedule_revision",
-        "schedule_identity",
-        "horizon",
-        "target",
-        "lock_sk",
-        "feature_hash",
-    )
-    if any(existing.get(field) != binding.get(field) for field in immutable_fields):
-        return False, "PUBLIC_MODEL_BINDING_INTEGRITY_MISMATCH", existing
-    if str(existing.get("model_digest") or "") != model_digest:
-        return False, "PUBLIC_MODEL_BINDING_MISMATCH", existing
-    return True, "PUBLIC_MODEL_ALREADY_BOUND", existing
 
 
-def _champion_publish_permission(store: SoccerStore) -> tuple[bool, str, dict[str, Any]]:
+def _champion_publish_permission(
+    store: SoccerStore,
+    *,
+    observed: datetime,
+) -> tuple[bool, str, dict[str, Any]]:
     """Read the health authority immediately before champion inference.
 
-    A missing, unreadable, degraded, or promotion-blocked state is a normal
-    fail-closed condition.  The champion row is left missing so a later freeze
-    cycle can retry it after authority recovers; challenger shadows are still
-    written in the same cycle.
+    A missing, unreadable, stale, degraded, or promotion-blocked state is a
+    normal fail-closed condition. The champion row is left missing so a later
+    freeze cycle can retry it after authority recovers.
     """
     try:
         state = store.ops.get_item(
@@ -277,17 +617,75 @@ def _champion_publish_permission(store: SoccerStore) -> tuple[bool, str, dict[st
         state = plain(state) if state else {}
     except Exception:
         return False, "AUTONOMY_STATE_UNAVAILABLE", {}
-    allowed = bool(
+    authority_allowed = bool(
         state.get("authority") == "AUTHORITATIVE"
         and state.get("automatic_prediction_allowed") is True
         and not state.get("promotion_blocked")
     )
-    return allowed, "" if allowed else "AUTONOMY_PUBLISH_NOT_ALLOWED", state
+    if not authority_allowed:
+        return False, "AUTONOMY_PUBLISH_NOT_ALLOWED", state
+    try:
+        updated_at = parse_utc(str(state["updated_at"]))
+        updated_at_epoch_ms = int(state["updated_at_epoch_ms"])
+    except (KeyError, TypeError, ValueError):
+        return False, "AUTONOMY_STATE_STALE", state
+    if updated_at_epoch_ms != int(updated_at.timestamp() * 1000):
+        return False, "AUTONOMY_STATE_STALE", state
+    age = observed - updated_at
+    if age > timedelta(minutes=AUTONOMY_STATE_MAX_AGE_MINUTES) or age < -timedelta(
+        minutes=AUTONOMY_STATE_MAX_FUTURE_SKEW_MINUTES
+    ):
+        return False, "AUTONOMY_STATE_STALE", state
+    return True, "", state
 
 
-def predict_lock(store: SoccerStore, lock: Mapping[str, Any], *, observed_at: str) -> dict[str, Any]:
+def _deadline_block(
+    model_row: Mapping[str, Any],
+    *,
+    authority: str,
+    observed: datetime,
+    publication_cutoff: datetime,
+    commit_deadline: datetime,
+) -> dict[str, Any] | None:
+    if observed <= commit_deadline:
+        return None
+    return {
+        "model_digest": model_row.get("model_digest"),
+        "model_authority": authority,
+        "reason": (
+            "PUBLICATION_AFTER_T10_CUTOFF"
+            if observed > publication_cutoff
+            else "PUBLICATION_COMMIT_HEADROOM_EXCEEDED"
+        ),
+        "publication_cutoff": iso_utc(publication_cutoff),
+        "commit_deadline": iso_utc(commit_deadline),
+        "commit_headroom_seconds": PUBLICATION_COMMIT_HEADROOM_SECONDS,
+        "observed_at": iso_utc(observed),
+    }
+
+
+def predict_lock(
+    store: SoccerStore,
+    lock: Mapping[str, Any],
+    *,
+    observed_at: str,
+    clock: Callable[[], datetime] | None = None,
+) -> dict[str, Any]:
+    """Run inference while treating only the wall clock as deadline authority.
+
+    ``observed_at`` remains the freeze invocation's audit timestamp. It must
+    never authorize a later prediction write, because model loading and other
+    work can cross the T-10 boundary after the handler starts.
+    """
+    wall_clock = clock or now_utc
     if not lock.get("prediction_eligible"):
         return {"models": 0, "predictions": 0, "reason": "LOCK_NOT_PREDICTION_ELIGIBLE"}
+    if not live_lock_coverage_provenance_valid(lock):
+        return {
+            "models": 0,
+            "predictions": 0,
+            "reason": "LOCK_COVERAGE_CERTIFICATE_INVALID",
+        }
     current_event = store.get_event(str(lock["event_key"]))
     if not current_event or not _same_schedule(lock, current_event):
         return {"models": 0, "predictions": 0, "reason": "STALE_SCHEDULE_IDENTITY"}
@@ -299,30 +697,42 @@ def predict_lock(store: SoccerStore, lock: Mapping[str, Any], *, observed_at: st
     publication_cutoff = parse_utc(str(lock["commence_time"])) - timedelta(
         minutes=PUBLICATION_CUTOFF_MINUTES
     )
+    commit_deadline = publication_cutoff - timedelta(
+        seconds=PUBLICATION_COMMIT_HEADROOM_SECONDS
+    )
     written = 0
     failures = []
     blocked = []
     active_models = _active_models(store)
-    publish_allowed, publish_block_reason, autonomy = _champion_publish_permission(store)
     for model_row in active_models:
         try:
             authority = model_row["authority_state"]
-            if authority == "CHAMPION" and not publish_allowed:
+            inference_observed = wall_clock()
+            deadline_block = _deadline_block(
+                model_row,
+                authority=authority,
+                observed=inference_observed,
+                publication_cutoff=publication_cutoff,
+                commit_deadline=commit_deadline,
+            )
+            if deadline_block:
+                blocked.append(deadline_block)
+                continue
+            if authority == "CHAMPION":
+                publish_allowed, publish_block_reason, autonomy = (
+                    _champion_publish_permission(
+                        store,
+                        observed=inference_observed,
+                    )
+                )
+            else:
+                publish_allowed, publish_block_reason, autonomy = True, "", {}
+            if not publish_allowed:
                 blocked.append(
                     {
                         "model_digest": model_row.get("model_digest"),
                         "reason": publish_block_reason,
                         "autonomy_authority": autonomy.get("authority"),
-                    }
-                )
-                continue
-            if authority == "CHAMPION" and parse_utc(observed_at) > publication_cutoff:
-                blocked.append(
-                    {
-                        "model_digest": model_row.get("model_digest"),
-                        "reason": "PUBLICATION_AFTER_T10_CUTOFF",
-                        "publication_cutoff": iso_utc(publication_cutoff),
-                        "observed_at": iso_utc(observed_at),
                     }
                 )
                 continue
@@ -351,18 +761,29 @@ def predict_lock(store: SoccerStore, lock: Mapping[str, Any], *, observed_at: st
                         }
                     )
                     continue
-                bound, binding_reason, binding = _claim_public_model_binding(
-                    store,
-                    lock,
-                    model_digest=str(model_row["model_digest"]),
-                    observed_at=observed_at,
+                binding_observed = wall_clock()
+                deadline_block = _deadline_block(
+                    model_row,
+                    authority=authority,
+                    observed=binding_observed,
+                    publication_cutoff=publication_cutoff,
+                    commit_deadline=commit_deadline,
                 )
-                if not bound:
+                if deadline_block:
+                    blocked.append(deadline_block)
+                    continue
+                publish_allowed, publish_block_reason, autonomy = (
+                    _champion_publish_permission(
+                        store,
+                        observed=binding_observed,
+                    )
+                )
+                if not publish_allowed:
                     blocked.append(
                         {
                             "model_digest": model_row.get("model_digest"),
-                            "reason": binding_reason,
-                            "bound_model_digest": binding.get("model_digest"),
+                            "reason": publish_block_reason,
+                            "autonomy_authority": autonomy.get("authority"),
                         }
                     )
                     continue
@@ -390,11 +811,20 @@ def predict_lock(store: SoccerStore, lock: Mapping[str, Any], *, observed_at: st
                 "away_team": lock.get("away_team"),
                 "target": "result_1x2",
                 "horizon": "T45",
-                "created_at": observed_at,
                 "lock_at": lock["lock_at"],
                 "publication_cutoff": iso_utc(publication_cutoff),
+                "commit_deadline": iso_utc(commit_deadline),
+                "commit_headroom_seconds": PUBLICATION_COMMIT_HEADROOM_SECONDS,
                 "feature_hash": lock["feature_hash"],
                 "feature_schema_version": lock["feature_schema_version"],
+                "lock_version": lock["lock_version"],
+                "coverage_certificate_version": lock[
+                    "coverage_certificate_version"
+                ],
+                "coverage_certificate_digest": lock[
+                    "coverage_certificate_digest"
+                ],
+                "coverage_plan_digest": lock["coverage_plan_digest"],
                 "model_digest": model_row["model_digest"],
                 "model_authority": authority,
                 "probabilities": {CLASSES[index]: probabilities[index] for index in range(3)},
@@ -406,16 +836,100 @@ def predict_lock(store: SoccerStore, lock: Mapping[str, Any], *, observed_at: st
                 "abstention_reasons": abstention_reasons,
                 "immutable": True,
                 "GSI1PK": "SOCCER_PREDICTIONS",
-                "GSI1SK": (
-                    f"{lock['commence_time']}#REV#{schedule_revision}#{observed_at}#"
-                    f"{lock['event_key']}#{model_row['model_digest']}"
-                ),
                 "GSI2PK": f"MODEL#{model_row['model_digest']}",
                 "GSI2SK": (
                     f"{lock['commence_time']}#REV#{schedule_revision}#{lock['event_key']}"
                 ),
             }
-            written += int(store.put_prediction(prediction))
+            binding = (
+                _public_model_binding(
+                    lock,
+                    model_digest=str(model_row["model_digest"]),
+                )
+                if authority == "CHAMPION"
+                else None
+            )
+            # This is deliberately the final clock read and deadline check,
+            # immediately adjacent to the immutable write. Both champion and
+            # shadow rows are forbidden after T-10, and their timestamps record
+            # this actual write attempt rather than the handler's start time.
+            write_observed = wall_clock()
+            deadline_block = _deadline_block(
+                model_row,
+                authority=authority,
+                observed=write_observed,
+                publication_cutoff=publication_cutoff,
+                commit_deadline=commit_deadline,
+            )
+            if deadline_block:
+                blocked.append(deadline_block)
+                continue
+            prediction["created_at"] = iso_utc(write_observed)
+            prediction["GSI1SK"] = (
+                f"{lock['commence_time']}#REV#{schedule_revision}#"
+                f"{prediction['created_at']}#{lock['event_key']}#"
+                f"{model_row['model_digest']}"
+            )
+            if authority == "CHAMPION":
+                assert binding is not None
+                try:
+                    event_metadata_revision = int(
+                        latest_event["metadata_revision"]
+                    )
+                    autonomy_updated_at_epoch_ms = int(
+                        autonomy["updated_at_epoch_ms"]
+                    )
+                    if event_metadata_revision <= 0:
+                        raise ValueError("event metadata revision is not positive")
+                except (KeyError, TypeError, ValueError):
+                    blocked.append(
+                        {
+                            "model_digest": model_row.get("model_digest"),
+                            "reason": "PUBLICATION_AUTHORITY_REVISION_UNAVAILABLE",
+                        }
+                    )
+                    continue
+                binding["bound_at"] = prediction["created_at"]
+                binding["publication_cutoff"] = prediction[
+                    "publication_cutoff"
+                ]
+                binding["commit_deadline"] = prediction["commit_deadline"]
+                binding["commit_headroom_seconds"] = prediction[
+                    "commit_headroom_seconds"
+                ]
+                authority_evidence = {
+                    "autonomy_updated_at": str(autonomy["updated_at"]),
+                    "autonomy_updated_at_epoch_ms": (
+                        autonomy_updated_at_epoch_ms
+                    ),
+                    "event_metadata_revision": event_metadata_revision,
+                }
+                binding.update(authority_evidence)
+                prediction.update(authority_evidence)
+                prediction_written, binding_reason, existing_binding = (
+                    store.put_public_prediction(
+                        binding=binding,
+                        prediction=prediction,
+                    )
+                )
+                if binding_reason not in {
+                    "PUBLIC_PREDICTION_WRITTEN",
+                    "PUBLIC_PREDICTION_RECOVERED",
+                    "PUBLIC_PREDICTION_ALREADY_WRITTEN",
+                }:
+                    blocked.append(
+                        {
+                            "model_digest": model_row.get("model_digest"),
+                            "reason": binding_reason,
+                            "bound_model_digest": existing_binding.get(
+                                "model_digest"
+                            ),
+                        }
+                    )
+                    continue
+                written += int(prediction_written)
+            else:
+                written += int(store.put_prediction(prediction))
         except Exception as exc:
             failures.append({"model_digest": model_row.get("model_digest"), "error": str(exc)})
     return {

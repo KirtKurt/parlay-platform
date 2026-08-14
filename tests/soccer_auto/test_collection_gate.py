@@ -846,6 +846,59 @@ class DeepGateTests(unittest.TestCase):
             "2026-08-14T13:15:01Z",
         )
 
+    def test_region_snapshot_scope_uses_request_not_returned_bookmakers(self) -> None:
+        class AlternateBookClient(SuccessfulOddsClient):
+            def event_odds(self, sport_key, event_id, markets, **kwargs):
+                response = super().event_odds(
+                    sport_key, event_id, markets, **kwargs
+                )
+                payload = dict(response.data)
+                payload["bookmakers"] = [
+                    {
+                        **response.data["bookmakers"][0],
+                        "key": "different_returned_book",
+                    }
+                ]
+                return ApiResponse(
+                    data=payload,
+                    status=response.status,
+                    request_url=response.request_url,
+                )
+
+        row = event_at()
+        job = fetch_job(
+            row,
+            bookmakers=[],
+            regions=ALL_BOOKMAKER_REGIONS,
+            markets=["new_runtime_market"],
+            planned_pairs=["new_book|new_runtime_market"],
+        )
+        scopes = []
+        for client in (SuccessfulOddsClient(), AlternateBookClient()):
+            store = FakeStore(row)
+            with patch(
+                "soccer_auto.collector._observed_at",
+                side_effect=[
+                    "2026-08-14T13:10:00Z",
+                    "2026-08-14T13:10:01Z",
+                ],
+            ):
+                _fetch_event(store, client, job)
+            snapshot = store.snapshot_writes[-1]
+            scopes.append(
+                (
+                    tuple(snapshot["bookmakers"]),
+                    tuple(snapshot["regions"]),
+                    tuple(snapshot["markets"]),
+                    snapshot["coverage_plan_digest"],
+                    snapshot["coverage_batch_digest"],
+                )
+            )
+
+        self.assertEqual(scopes[0], scopes[1])
+        self.assertEqual(scopes[0][0], ())
+        self.assertEqual(scopes[0][1], tuple(ALL_BOOKMAKER_REGIONS))
+
     def test_provider_identity_change_is_archived_but_never_canonicalized(self) -> None:
         row = event_at()
         store = FakeStore(row)

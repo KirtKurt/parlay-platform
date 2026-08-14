@@ -1,9 +1,13 @@
 name: Deploy Isolated Soccer Auto
 
-# Soccer deployment remains manual-only after the verified repair. The main
-# workflow ignores all soccer-only paths, and this stack cannot mutate MLB,
-# tennis, or legacy soccer resources.
+# One-shot isolated deployment for the publication-authority repair. The main
+# workflow ignores every path below, and this stack cannot mutate MLB, tennis,
+# or legacy soccer resources. A follow-up cleanup restores manual-only mode.
 on:
+  push:
+    branches: [main]
+    paths:
+      - soccer_auto/.deploy-publication-authority-v2-once
   workflow_dispatch:
     inputs:
       shared_quota_reserve_percent:

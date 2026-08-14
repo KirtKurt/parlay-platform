@@ -1,6 +1,7 @@
 """Static safety boundaries and dynamic-discovery fallbacks for soccer_auto."""
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Final
 
@@ -90,6 +91,16 @@ PUBLISHED_KEYS: Final[tuple[str, ...]] = tuple(row.key for row in PUBLISHED_COMP
 PUBLISHED_SCORE_SUPPORT: Final[dict[str, bool]] = {
     row.key: row.scores_supported for row in PUBLISHED_COMPETITIONS
 }
+
+# A public decision must be attempted materially before T-10.  DynamoDB does
+# not expose server time to condition expressions, so every writer and reader
+# shares this conservative client-side deadline and the API independently
+# rejects rows whose immutable timing evidence does not match it.
+PUBLICATION_CUTOFF_MINUTES: Final[int] = 10
+PUBLICATION_COMMIT_HEADROOM_SECONDS: Final[float] = max(
+    10.0,
+    float(os.getenv("SOCCER_AUTO_PUBLICATION_COMMIT_HEADROOM_SECONDS", "10")),
+)
 
 # Passing all regions and omitting the bookmakers parameter is the provider's
 # supported way to request every sportsbook in those regions.  Overlapping books
