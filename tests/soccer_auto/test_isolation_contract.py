@@ -191,11 +191,12 @@ class IsolationTests(unittest.TestCase):
     def test_verified_soccer_deployment_is_manual_only(self) -> None:
         workflow = (ROOT / ".github/workflows/deploy-soccer-auto.yml").read_text()
         trigger = workflow.split("permissions:", 1)[0]
-        self.assertIn("workflow_dispatch:", trigger)
-        self.assertIn("push:", trigger)
-        self.assertIn("branches: [main]", trigger)
-        self.assertIn("soccer_auto/.deploy-repair-once", trigger)
-        self.assertNotIn("soccer_auto/**", trigger)
+        trigger_config = yaml.load(trigger, Loader=yaml.BaseLoader)["on"]
+        self.assertIn("workflow_dispatch", trigger_config)
+        self.assertEqual(
+            trigger_config["push"],
+            {"branches": ["main"], "paths": ["soccer_auto/.deploy-repair-once"]},
+        )
         self.assertTrue((ROOT / "soccer_auto/.deploy-repair-once").exists())
 
     def test_historical_backfill_defaults_on_and_remains_observable_with_kill_switch(self) -> None:
@@ -314,9 +315,28 @@ class IsolationTests(unittest.TestCase):
         self.assertIn("LLM_ANALYSIS", analyst_policy)
         api_function = template["Resources"]["SoccerApiFunction"]
         self.assertEqual(api_function["Properties"]["Role"], "SoccerReadApiRole.Arn")
-        api_policy = str(template["Resources"]["SoccerReadApiRole"])
-        for action in ("dynamodb:PutItem", "sqs:SendMessage", "secretsmanager:GetSecretValue"):
-            self.assertNotIn(action, api_policy)
+        api_role = template["Resources"]["SoccerReadApiRole"]
+        statements = api_role["Properties"]["Policies"][0]["PolicyDocument"]["Statement"]
+        status_statements = [
+            statement
+            for statement in statements
+            if "SoccerLocksTable.Arn" in statement["Resource"]
+        ]
+        self.assertEqual(len(status_statements), 1)
+        self.assertEqual(status_statements[0]["Action"], ["dynamodb:Scan"])
+        self.assertEqual(
+            set(status_statements[0]["Resource"]),
+            {"SoccerLocksTable.Arn", "SoccerSettlementsTable.Arn"},
+        )
+        api_actions = {
+            action
+            for statement in statements
+            for action in statement["Action"]
+        }
+        self.assertEqual(
+            api_actions,
+            {"dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan"},
+        )
 
     def test_nova_2_uses_cris_profile_and_narrow_underlying_model_authority(self) -> None:
         template = yaml.load(
