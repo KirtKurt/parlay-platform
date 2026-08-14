@@ -6,9 +6,10 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from boto3.dynamodb.conditions import Key
 
-from .canonical import digest, iso_utc
+from .canonical import digest, iso_utc, schedule_identity
 from .market_features import FEATURE_NAMES, FEATURE_SCHEMA_VERSION
 from .llm_analyst import BASELINE_TRIALS, latest_llm_trials
+from .historical_materializer import historical_lock_provenance_valid
 from .model import (
     CLASSES,
     TrainingRow,
@@ -37,11 +38,17 @@ def _schedule_identity(row: Mapping[str, Any]) -> tuple[str, int, str, str] | No
         revision = int(row.get("schedule_revision") or 0)
         if revision <= 0:
             return None
+        identity = str(row.get("schedule_identity") or "")
+        if not identity:
+            try:
+                identity = schedule_identity(row)
+            except (KeyError, TypeError, ValueError):
+                identity = "LEGACY_IDENTITY_UNAVAILABLE"
         return (
             str(row["event_key"]),
             revision,
             iso_utc(str(row["commence_time"])),
-            str(row.get("schedule_identity") or "LEGACY_IDENTITY_UNAVAILABLE"),
+            identity,
         )
     except (KeyError, TypeError, ValueError):
         return None
@@ -50,7 +57,7 @@ def _schedule_identity(row: Mapping[str, Any]) -> tuple[str, int, str, str] | No
 def _settlements(store: SoccerStore) -> dict[str, dict[str, Any]]:
     return {
         row["event_key"]: row
-        for row in store.scan_all(store.settlements)
+        for row in store.scan_all(store.settlements, ConsistentRead=True)
         if row.get("entity_type") == "SOCCER_FINAL_SETTLEMENT"
     }
 
@@ -91,10 +98,11 @@ def training_rows(store: SoccerStore) -> tuple[list[TrainingRow], dict[str, int]
         "lock_ineligible": 0,
         "schedule_mismatch": 0,
         "schema_mismatch": 0,
+        "historical_provenance": 0,
         "invalid": 0,
         "settlement_conflict": 0,
     }
-    for lock in store.scan_all(store.locks):
+    for lock in store.scan_all(store.locks, ConsistentRead=True):
         if lock.get("entity_type") != "SOCCER_FROZEN_FEATURE_LOCK":
             continue
         settlement = settlements.get(lock.get("event_key"))
@@ -113,6 +121,9 @@ def training_rows(store: SoccerStore) -> tuple[list[TrainingRow], dict[str, int]
             continue
         if not lock.get("training_eligible"):
             excluded["lock_ineligible"] += 1
+            continue
+        if not historical_lock_provenance_valid(lock, settlement):
+            excluded["historical_provenance"] += 1
             continue
         features = lock.get("frozen_features") or {}
         if lock.get("feature_schema_version") != FEATURE_SCHEMA_VERSION or tuple(features.get("feature_names") or ()) != tuple(FEATURE_NAMES):

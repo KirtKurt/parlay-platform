@@ -76,6 +76,7 @@ Globals:
         SOCCER_AUTO_LLM_FALLBACK_MODEL_IDS: 'mistral.ministral-3-14b-instruct,us.meta.llama4-scout-17b-instruct-v1:0,us.meta.llama4-maverick-17b-instruct-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'
         SOCCER_AUTO_LLM_ANALYSIS_MAX_AGE_HOURS: '36'
         SOCCER_AUTO_HISTORICAL_BACKFILL_ENABLED: !Ref EnableHistoricalBackfill
+        SOCCER_AUTO_HISTORICAL_MATERIALIZATION_EVENTS_PER_INVOCATION: '5'
 
 Resources:
   SoccerOddsApiSecret:
@@ -667,6 +668,13 @@ Resources:
             Schedule: cron(47 * * * ? *)
             Enabled: !If [HistoricalBackfillEnabled, true, false]
             Input: '{"mode":"additional"}'
+            RetryPolicy: {MaximumEventAgeInSeconds: 1800, MaximumRetryAttempts: 0}
+        MaterializeHistoricalT45Hourly:
+          Type: Schedule
+          Properties:
+            Schedule: cron(27 * * * ? *)
+            Enabled: !If [HistoricalBackfillEnabled, true, false]
+            Input: '{"mode":"materialize","max_events":5}'
             RetryPolicy: {MaximumEventAgeInSeconds: 1800, MaximumRetryAttempts: 0}
 
   SoccerControllerFunction:

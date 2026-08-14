@@ -230,6 +230,63 @@ def _has_recognized_settlement_digest(row: Mapping[str, Any]) -> bool:
     return actual in expected
 
 
+def settlement_training_evidence_valid(row: Mapping[str, Any]) -> bool:
+    """Validate one immutable Odds API final-score row before ML admission.
+
+    Historical odds are never labels.  A supervised row may only use the
+    separately persisted final-score authority, and every identity/result
+    field must still agree with its signed settlement digest.
+    """
+    try:
+        if row.get("entity_type") != "SOCCER_FINAL_SETTLEMENT":
+            return False
+        if row.get("settlement_version") != SETTLEMENT_VERSION:
+            return False
+        if row.get("source") != "the_odds_api_scores":
+            return False
+        expected_event_key = stable_event_key(
+            str(row.get("sport_key") or ""), str(row.get("event_id") or "")
+        )
+        if (
+            str(row.get("event_key") or "") != expected_event_key
+            or str(row.get("PK") or "") != expected_event_key
+            or str(row.get("SK") or "") != "FINAL#v1"
+        ):
+            return False
+        ambiguous = row.get("regulation_time_ambiguous") is True
+        expected_semantics = (
+            "provider_final_score_regulation_semantics_unverified"
+            if ambiguous
+            else "provider_final_score_league_match"
+        )
+        allow_ambiguous = (
+            os.getenv("SOCCER_AUTO_ALLOW_UNVERIFIED_KNOCKOUT_LABELS", "false").lower()
+            == "true"
+        )
+        expected_eligibility = not ambiguous or allow_ambiguous
+        if row.get("settlement_semantics") != expected_semantics:
+            return False
+        if row.get("training_eligible_1x2") is not expected_eligibility:
+            return False
+        if row.get("training_eligible_score_derived") is not expected_eligibility:
+            return False
+        if int(row.get("schedule_revision") or 0) <= 0:
+            return False
+        expected_identity = schedule_identity(row)
+        if row.get("schedule_identity") and str(row["schedule_identity"]) != expected_identity:
+            return False
+        home_score = int(row.get("home_score"))
+        away_score = int(row.get("away_score"))
+        expected_result = (
+            "home" if home_score > away_score else "away" if away_score > home_score else "draw"
+        )
+        if str(row.get("result_1x2") or "") != expected_result:
+            return False
+        return _has_recognized_settlement_digest(row)
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def settlement_records_equivalent(
     existing: Mapping[str, Any], candidate: Mapping[str, Any]
 ) -> bool:

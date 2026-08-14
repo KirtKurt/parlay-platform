@@ -135,7 +135,7 @@ jobs:
           import subprocess
 
           names = json.load(open('/tmp/soccer-historical-rules.json'))['RuleNames']
-          assert len(names) == 2, names
+          assert len(names) == 3, names
           for name in names:
               state = subprocess.check_output([
                   'aws', 'events', 'describe-rule', '--name', name,
@@ -163,6 +163,7 @@ jobs:
             logical_id="$1"
             payload="$2"
             output_name="$3"
+            response_policy="${4:-strict}"
             function_name=$(physical_function "$logical_id")
             test -n "$function_name"
             aws lambda invoke \
@@ -174,17 +175,50 @@ jobs:
               --payload "$payload" \
               "/tmp/${output_name}.json" \
               > "/tmp/${output_name}-meta.json"
-            python - "$output_name" <<'PY'
+            python - "$output_name" "$response_policy" <<'PY'
           import json
           import pathlib
           import sys
+          from datetime import datetime, timezone
 
           name = sys.argv[1]
+          policy = sys.argv[2]
           metadata = json.loads(pathlib.Path(f"/tmp/{name}-meta.json").read_text())
           response = json.loads(pathlib.Path(f"/tmp/{name}.json").read_text())
           print(name, response)
           assert not metadata.get("FunctionError"), metadata
-          assert response.get("ok") is True, response
+          if response.get("ok") is True:
+              raise SystemExit(0)
+          assert policy == "allow_daily_quota", (policy, response)
+          assert response.get("ok") is False, response
+          assert response.get("status") == "DEFERRED_QUOTA", response
+          assert response.get("reason") == "BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE", response
+          assert response.get("analysis_available") is False, response
+          assert int(response.get("validated_trials") or 0) == 0, response
+          errors = response.get("model_errors") or []
+          attempted = response.get("attempted_model_ids") or []
+          expected_models = [
+              "us.amazon.nova-2-lite-v1:0",
+              "mistral.ministral-3-14b-instruct",
+              "us.meta.llama4-scout-17b-instruct-v1:0",
+              "us.meta.llama4-maverick-17b-instruct-v1:0",
+              "global.amazon.nova-2-lite-v1:0",
+              "us.amazon.nova-pro-v1:0",
+              "us.amazon.nova-lite-v1:0",
+              "us.amazon.nova-micro-v1:0",
+          ]
+          assert errors, response
+          assert attempted == expected_models, response
+          assert all(
+              row.get("error_code") == "ThrottlingException"
+              and row.get("category") == "DAILY_TOKEN_QUOTA"
+              for row in errors
+          ), response
+          assert [row.get("model_id") for row in errors] == attempted, response
+          retry_after = datetime.fromisoformat(
+              str(response["retry_after"]).replace("Z", "+00:00")
+          )
+          assert retry_after > datetime.now(timezone.utc), response
           PY
           }
 
@@ -238,6 +272,28 @@ jobs:
           assert any(int(row.get('calls_completed') or 0) > 0 for row in featured['cursors']), response
           print('historical_featured_smoke', featured['calls'], featured['remaining_competitions'])
           PY
+          invoke_and_assert_ok SoccerHistoricalFunction '{"mode":"materialize","max_events":5}' historical_materialize
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/historical_materialize.json'))
+          materialization = response['materialization']
+          assert response['component'] == 'historical_backfill', response
+          assert materialization['authoritative_settlements'] > 0, materialization
+          assert materialization['provider_calls'] <= 5, materialization
+          assert not materialization['quota_deferred'], materialization
+          assert materialization['materialized'] > 0 or materialization['existing_locks'] > 0, materialization
+          print('historical_t45_materialization_smoke', materialization)
+          PY
+          invoke_and_assert_ok SoccerHistoricalFunction '{"mode":"status"}' historical_status_after_materialize
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/historical_status_after_materialize.json'))
+          supervised = response['supervised_materialization']
+          assert supervised['historical_training_rows'] > 0, supervised
+          print('historical_training_rows_after_materialization', supervised)
+          PY
           printf '%s' '${{ inputs.shared_quota_reserve_percent || '0' }}' > /tmp/soccer-reserve-percent.txt
           invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_controller_smoke"}' controller_before_llm
           python - <<'PY'
@@ -271,16 +327,16 @@ jobs:
           PY
 
           # Force one genuine Bedrock Converse analysis. Primary quota or
-          # transient faults must fall through to an independently metered
-          # Bedrock model; no deferred-quota response is accepted as green.
-          invoke_and_assert_ok SoccerLlmAnalystFunction '{"action":"deployment_llm_smoke","force_refresh":true}' llm
+          # transient faults must fall through the complete allowlisted chain.
+          # Exact all-model daily-token exhaustion is visible degradation; any
+          # other failure remains fatal to deployment proof.
+          invoke_and_assert_ok SoccerLlmAnalystFunction '{"action":"deployment_llm_smoke","force_refresh":true}' llm allow_daily_quota
           python - <<'PY'
           import json
 
           response = json.load(open('/tmp/llm.json'))
           assert response['component'] == 'llm_analyst', response
-          assert response['status'] == 'ANALYZED', response
-          assert response['model_id'] in {
+          allowed_models = {
               'us.amazon.nova-2-lite-v1:0',
               'mistral.ministral-3-14b-instruct',
               'us.meta.llama4-scout-17b-instruct-v1:0',
@@ -289,13 +345,20 @@ jobs:
               'us.amazon.nova-pro-v1:0',
               'us.amazon.nova-lite-v1:0',
               'us.amazon.nova-micro-v1:0',
-          }, response
-          assert response['analysis_origin'] == 'BEDROCK_CONVERSE', response
-          assert response.get('analysis_digest'), response
-          assert response.get('context_digest'), response
-          assert response.get('stop_reason') == 'end_turn', response
-          assert response.get('usage'), response
-          print('bedrock_cris_smoke', response['model_id'], response['status'])
+          }
+          assert response['model_id'] in allowed_models, response
+          if response['status'] == 'ANALYZED':
+              assert response['analysis_origin'] == 'BEDROCK_CONVERSE', response
+              assert response.get('analysis_digest'), response
+              assert response.get('context_digest'), response
+              assert response.get('stop_reason') == 'end_turn', response
+              assert response.get('usage'), response
+              print('bedrock_cris_smoke', response['model_id'], response['status'])
+          else:
+              assert response['status'] == 'DEFERRED_QUOTA', response
+              assert response['analysis_available'] is False, response
+              assert response['reason'] == 'BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE', response
+              print('::warning::Bedrock daily-token quota deferred; deterministic Soccer deployment remains valid')
           PY
           invoke_and_assert_ok SoccerTrainerFunction '{"action":"deployment_trainer_smoke"}' trainer
           python - <<'PY'
@@ -303,7 +366,7 @@ jobs:
 
           response = json.load(open('/tmp/trainer.json'))
           assert response['system'] == 'soccer_auto', response
-          assert response['training_rows'] >= 0, response
+          assert response['training_rows'] > 0, response
           training = response['training']
           assert training.get('trained') is True or training.get('reason') in {
               'INSUFFICIENT_TRAINING_ROWS',
@@ -318,12 +381,27 @@ jobs:
           import json
 
           llm = json.load(open('/tmp/llm.json'))
+          before = json.load(open('/tmp/controller_before_llm.json'))['llm_analyst']
           controller = json.load(open('/tmp/controller_after_llm.json'))
           state = controller['llm_analyst']
-          assert state['fresh'] is True, controller
-          assert state['analysis_digest'] == llm['analysis_digest'], (state, llm)
-          assert state['model_id'] == llm['model_id'], (state, llm)
-          print('controller_validated_bedrock_analysis', state)
+          if llm['status'] == 'ANALYZED':
+              assert state['fresh'] is True, controller
+              assert state['analysis_digest'] == llm['analysis_digest'], (state, llm)
+              assert state['model_id'] == llm['model_id'], (state, llm)
+              print('controller_validated_bedrock_analysis', state)
+          else:
+              attempt = state['last_attempt']
+              assert attempt['status'] == 'DEFERRED_QUOTA', (attempt, llm)
+              assert attempt['reason'] == llm['reason'], (attempt, llm)
+              assert attempt['retry_after'] == llm['retry_after'], (attempt, llm)
+              assert attempt['model_errors'] == llm['model_errors'], (attempt, llm)
+              if before.get('fresh'):
+                  assert state['fresh'] is True, (before, state)
+                  assert state.get('analysis_digest') == before.get('analysis_digest'), (before, state)
+              else:
+                  assert state['fresh'] is False, state
+                  assert int(state.get('analyses') or 0) == 0, state
+              print('controller_validated_bedrock_quota_deferral', state)
           PY
 
           # Dispatch is provider-call-free. Its deep worker gate remains the

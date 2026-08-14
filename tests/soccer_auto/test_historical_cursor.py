@@ -78,6 +78,8 @@ class Ops:
 class Store:
     def __init__(self, rows=None, competitions=None, budget=None):
         self.ops = Ops(rows)
+        self.settlements = []
+        self.locks = []
         self.competitions = list(
             competitions
             or [{"sport_key": "soccer_future_league", "has_outrights": False}]
@@ -86,6 +88,10 @@ class Store:
         self.budget_checks = []
         self.quota_observations = []
         self.archives = []
+
+    @staticmethod
+    def scan_all(table, **kwargs):
+        yield from table
 
     def list_competitions(self):
         return list(self.competitions)
@@ -549,6 +555,34 @@ class HistoricalCursorTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["max_calls"], MAX_CALLS_PER_INVOCATION)
         self.assertEqual(captured, [MAX_CALLS_PER_INVOCATION])
+
+    def test_materialization_cannot_exceed_event_call_budget(self) -> None:
+        store = Store()
+        captured = []
+
+        def materialize(_store, *, max_events, event_key=None):
+            captured.append((max_events, event_key))
+            return {"provider_calls": 0}
+
+        with patch("soccer_auto.historical.SoccerStore", return_value=store), patch(
+            "soccer_auto.historical_materializer.run_materialization",
+            side_effect=materialize,
+        ), patch.dict(
+            os.environ,
+            {"SOCCER_AUTO_HISTORICAL_BACKFILL_ENABLED": "true"},
+            clear=False,
+        ):
+            result = historical_handler(
+                {
+                    "mode": "materialize",
+                    "max_calls": 0,
+                    "max_events": 5,
+                    "event_key": "EVENT#soccer_epl#one",
+                },
+                None,
+            )
+        self.assertEqual(captured, [(0, "EVENT#soccer_epl#one")])
+        self.assertEqual(result["provider_calls"], 0)
 
     def test_historical_manifest_is_never_training_eligible(self) -> None:
         store = Store()

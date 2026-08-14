@@ -37,6 +37,15 @@ def install_if_needed() -> None:
             super().__init__(str(error_response or {}))
             self.response = error_response or {"Error": {}}
 
+    class BotoCoreError(Exception):
+        pass
+
+    class ReadTimeoutError(BotoCoreError):
+        def __init__(self, endpoint_url=None, error=None, **kwargs):
+            super().__init__(f"Read timeout on endpoint URL: {endpoint_url}")
+            self.endpoint_url = endpoint_url
+            self.error = error
+
     class TypeSerializer:
         def serialize(self, value):
             return {"S": str(value)}
@@ -44,6 +53,8 @@ def install_if_needed() -> None:
     class Config:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
+            for key, value in kwargs.items():
+                setattr(self, key, value)
 
     boto3 = types.ModuleType("boto3")
     boto3.client = lambda *args, **kwargs: None
@@ -57,6 +68,8 @@ def install_if_needed() -> None:
     botocore = types.ModuleType("botocore")
     exceptions = types.ModuleType("botocore.exceptions")
     exceptions.ClientError = ClientError
+    exceptions.BotoCoreError = BotoCoreError
+    exceptions.ReadTimeoutError = ReadTimeoutError
     config = types.ModuleType("botocore.config")
     config.Config = Config
     sys.modules.update(
