@@ -1,0 +1,162 @@
+name: MLB Auto Critical Repair Once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-auto-critical-repair-once.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: mlb-auto-critical-repair-once
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AWS_REGION: us-east-1
+      STACK_NAME: parlay-platform-dev
+      ROGUE_RULE: parlay-platform-mlb-auto-prod-train-1h
+      SNAPSHOTS_TABLE: parlay_platform_snapshots
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Disable exact noncanonical MLB Auto training writer
+        run: |
+          set -euo pipefail
+          if aws events describe-rule --name "$ROGUE_RULE" --region "$AWS_REGION" >/tmp/rogue_before.json 2>/tmp/rogue_err.txt; then
+            BEFORE=$(python -c 'import json; print(json.load(open("/tmp/rogue_before.json")).get("State","UNKNOWN"))')
+            echo "rogue_rule_before=$BEFORE"
+            if [ "$BEFORE" = "ENABLED" ]; then
+              aws events disable-rule --name "$ROGUE_RULE" --region "$AWS_REGION"
+            fi
+            AFTER=$(aws events describe-rule --name "$ROGUE_RULE" --region "$AWS_REGION" --query State --output text)
+            echo "rogue_rule_after=$AFTER"
+            [ "$AFTER" = "DISABLED" ] || { echo "::error::Rogue MLB Auto training rule is still $AFTER"; exit 1; }
+          else
+            echo "rogue_rule_absent=true"
+          fi
+
+      - name: Resolve and verify canonical MLB ingest authority
+        run: |
+          set -euo pipefail
+          PULL_FN=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBAuditedPullFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          [ -n "$PULL_FN" ] && [ "$PULL_FN" != "None" ]
+          echo "PULL_FN=$PULL_FN" >> "$GITHUB_ENV"
+          aws lambda get-function --function-name "$PULL_FN" --region "$AWS_REGION" \
+            --query '{state:Configuration.State,lastUpdateStatus:Configuration.LastUpdateStatus,lastModified:Configuration.LastModified}' \
+            --output json
+          STATE=$(aws lambda get-function-configuration --function-name "$PULL_FN" --region "$AWS_REGION" --query State --output text)
+          UPDATE=$(aws lambda get-function-configuration --function-name "$PULL_FN" --region "$AWS_REGION" --query LastUpdateStatus --output text)
+          [ "$STATE" = "Active" ] && [ "$UPDATE" = "Successful" ] || { echo "::error::Canonical ingest Lambda is not healthy"; exit 1; }
+          RULES=$(aws events list-rule-names-by-target --target-arn "$(aws lambda get-function --function-name "$PULL_FN" --region "$AWS_REGION" --query 'Configuration.FunctionArn' --output text)" --region "$AWS_REGION" --query 'RuleNames' --output json)
+          echo "canonical_ingest_rules=$RULES"
+          python - <<'PY'
+          import json, os, subprocess, sys
+          rules=json.loads(os.environ.get('RULES_JSON','[]')) if os.environ.get('RULES_JSON') else []
+          PY
+        env:
+          RULES_JSON: ''
+
+      - name: Force one canonical live MLB ingest
+        run: |
+          set -euo pipefail
+          aws lambda invoke \
+            --function-name "$PULL_FN" \
+            --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"force":true,"run":"critical_recovery"}' \
+            /tmp/mlb_pull_response.json > /tmp/mlb_pull_meta.json
+          cat /tmp/mlb_pull_meta.json
+          python - <<'PY'
+          import json
+          meta=json.load(open('/tmp/mlb_pull_meta.json'))
+          if meta.get('FunctionError'):
+              raise SystemExit('Canonical MLB ingest Lambda returned FunctionError: '+str(meta.get('FunctionError')))
+          raw=open('/tmp/mlb_pull_response.json', encoding='utf-8').read().strip()
+          print('canonical_pull_response_present=', bool(raw))
+          if raw:
+              obj=json.loads(raw)
+              status=obj.get('statusCode') if isinstance(obj,dict) else None
+              body=obj.get('body') if isinstance(obj,dict) else None
+              if status is not None and int(status) >= 400:
+                  raise SystemExit('Canonical MLB ingest returned HTTP-style failure status '+str(status)+': '+str(body)[:500])
+              if isinstance(body,str):
+                  try:
+                      parsed=json.loads(body)
+                  except Exception:
+                      parsed={}
+                  if parsed.get('ok') is False:
+                      raise SystemExit('Canonical MLB ingest returned ok=false: '+str(parsed)[:700])
+          PY
+
+      - name: Verify fresh canonical pull reached DynamoDB
+        run: |
+          set -euo pipefail
+          sleep 5
+          SLATE_DATE=$(TZ=America/New_York date +%F)
+          PK="PULLS#mlb#${SLATE_DATE}"
+          aws dynamodb query \
+            --region "$AWS_REGION" \
+            --table-name "$SNAPSHOTS_TABLE" \
+            --key-condition-expression 'PK = :pk' \
+            --expression-attribute-values "{\":pk\":{\"S\":\"$PK\"}}" \
+            --consistent-read \
+            --output json > /tmp/mlb_pulls_after.json
+          python scripts/mlb_pull_guard_status.py \
+            --slate-date "$SLATE_DATE" \
+            --pulls-json /tmp/mlb_pulls_after.json \
+            --aws-ok true \
+            --output /tmp/mlb_pull_after.json
+          cat /tmp/mlb_pull_after.json
+          python - <<'PY'
+          import json
+          p=json.load(open('/tmp/mlb_pull_after.json'))
+          if p.get('fresh') is not True:
+              raise SystemExit('Canonical MLB ingest is still stale after forced recovery: '+json.dumps({k:p.get(k) for k in ['latestRawPullAt','latestRawPullAgeMinutes','watchdogReason','errorSummary']}))
+          print('canonical_ingest_fresh=true')
+          print('latest_pull=',p.get('latestRawPullAt'))
+          print('missing_historical_slots=',len(p.get('missingCleanScheduledSlots') or []))
+          PY
+
+      - name: Verify no MLB alarms are currently ALARM
+        run: |
+          set -euo pipefail
+          aws cloudwatch describe-alarms --state-value ALARM --region "$AWS_REGION" --output json > /tmp/alarms.json
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/alarms.json'))
+          rows=[]
+          for key in ('MetricAlarms','CompositeAlarms'):
+              for a in d.get(key) or []:
+                  n=str(a.get('AlarmName') or '')
+                  if 'mlb' in n.lower():
+                      rows.append(n)
+          print('active_mlb_alarms=', rows)
+          if rows:
+              raise SystemExit('Active MLB alarms remain: '+', '.join(rows))
+          PY
+
+      - name: Disable this one-shot repair workflow
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/mlb-auto-critical-repair-once.yml/disable"
