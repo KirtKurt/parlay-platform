@@ -1,0 +1,170 @@
+name: Soccer Critical Watch One Shot
+
+on:
+  push:
+    paths:
+      - '.github/workflows/soccer-critical-watch-20260814.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Verify Soccer runtime and external boundaries
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-soccer-auto
+          echo '=== NOW ==='
+          date -u +%FT%TZ
+          echo '=== STACK ==='
+          aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" \
+            --query 'Stacks[0].{Status:StackStatus,LastUpdated:LastUpdatedTime,Parameters:Parameters,Outputs:Outputs}' --output json
+
+          aws cloudformation list-stack-resources --stack-name "$stack" --region "$REGION" --output json > /tmp/resources.json
+          echo '=== LAMBDAS ==='
+          python - <<'PY'
+          import json, subprocess, os
+          region=os.environ['REGION']
+          resources=json.load(open('/tmp/resources.json'))['StackResourceSummaries']
+          funcs=[r['PhysicalResourceId'] for r in resources if r['ResourceType']=='AWS::Lambda::Function']
+          rows=[]
+          for fn in funcs:
+              raw=subprocess.check_output(['aws','lambda','get-function-configuration','--function-name',fn,'--region',region,'--output','json'], text=True)
+              c=json.loads(raw)
+              rows.append({'name':fn,'state':c.get('State'),'last_update_status':c.get('LastUpdateStatus'),'last_modified':c.get('LastModified')})
+          print(json.dumps({'count':len(rows),'rows':rows}, indent=2))
+          PY
+
+          echo '=== EVENT RULES ==='
+          python - <<'PY'
+          import json, subprocess, os
+          region=os.environ['REGION']
+          resources=json.load(open('/tmp/resources.json'))['StackResourceSummaries']
+          names=[r['PhysicalResourceId'] for r in resources if r['ResourceType']=='AWS::Events::Rule']
+          rows=[]
+          for name in names:
+              raw=subprocess.check_output(['aws','events','describe-rule','--name',name,'--region',region,'--output','json'], text=True)
+              r=json.loads(raw)
+              rows.append({'name':name,'state':r.get('State'),'schedule':r.get('ScheduleExpression')})
+          print(json.dumps({'count':len(rows),'rows':rows}, indent=2))
+          PY
+
+          echo '=== ALARMS ==='
+          python - <<'PY'
+          import json, subprocess, os
+          region=os.environ['REGION']
+          resources=json.load(open('/tmp/resources.json'))['StackResourceSummaries']
+          names=[r['PhysicalResourceId'] for r in resources if r['ResourceType']=='AWS::CloudWatch::Alarm']
+          rows=[]
+          for name in names:
+              raw=subprocess.check_output(['aws','cloudwatch','describe-alarms','--alarm-names',name,'--region',region,'--output','json'], text=True)
+              alarms=json.loads(raw).get('MetricAlarms',[])+json.loads(raw).get('CompositeAlarms',[])
+              for a in alarms:
+                  rows.append({'name':a.get('AlarmName'),'state':a.get('StateValue'),'reason':a.get('StateReason'),'updated':str(a.get('StateUpdatedTimestamp'))})
+          print(json.dumps({'count':len(rows),'rows':rows}, indent=2))
+          PY
+
+          echo '=== LAMBDA ERRORS LAST 20M ==='
+          python - <<'PY'
+          import json, subprocess, os, datetime
+          region=os.environ['REGION']
+          resources=json.load(open('/tmp/resources.json'))['StackResourceSummaries']
+          funcs=[r['PhysicalResourceId'] for r in resources if r['ResourceType']=='AWS::Lambda::Function']
+          end=datetime.datetime.now(datetime.timezone.utc)
+          start=end-datetime.timedelta(minutes=20)
+          rows=[]
+          total_inv=total_err=0.0
+          for fn in funcs:
+              vals={}
+              for metric in ('Invocations','Errors'):
+                  raw=subprocess.check_output(['aws','cloudwatch','get-metric-statistics','--namespace','AWS/Lambda','--metric-name',metric,'--dimensions',f'Name=FunctionName,Value={fn}','--statistics','Sum','--period','1200','--start-time',start.isoformat(),'--end-time',end.isoformat(),'--region',region,'--output','json'], text=True)
+                  vals[metric]=sum(float(p.get('Sum',0)) for p in json.loads(raw).get('Datapoints',[]))
+              total_inv+=vals['Invocations']; total_err+=vals['Errors']
+              rows.append({'name':fn,'invocations':vals['Invocations'],'errors':vals['Errors']})
+          print(json.dumps({'window_start':start.isoformat(),'window_end':end.isoformat(),'total_invocations':total_inv,'total_errors':total_err,'rows':rows}, indent=2))
+          PY
+
+          echo '=== DLQ ==='
+          python - <<'PY'
+          import json, subprocess, os
+          region=os.environ['REGION']
+          resources=json.load(open('/tmp/resources.json'))['StackResourceSummaries']
+          queues=[r['PhysicalResourceId'] for r in resources if r['ResourceType']=='AWS::SQS::Queue']
+          rows=[]
+          for q in queues:
+              if q.startswith('https://'):
+                  url=q
+              else:
+                  try:
+                      raw=subprocess.check_output(['aws','sqs','get-queue-url','--queue-name',q,'--region',region,'--output','json'], text=True)
+                      url=json.loads(raw)['QueueUrl']
+                  except subprocess.CalledProcessError:
+                      continue
+              raw=subprocess.check_output(['aws','sqs','get-queue-attributes','--queue-url',url,'--attribute-names','ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible','--region',region,'--output','json'], text=True)
+              rows.append({'queue':q,'attributes':json.loads(raw).get('Attributes',{})})
+          print(json.dumps({'count':len(rows),'rows':rows}, indent=2))
+          PY
+
+          physical_function() {
+            aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id "$1" --region "$REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text
+          }
+          invoke() {
+            fn=$(physical_function "$1")
+            aws lambda invoke --function-name "$fn" --region "$REGION" --cli-connect-timeout 10 --cli-read-timeout 360 --cli-binary-format raw-in-base64-out --payload "$2" "/tmp/$3.json" > "/tmp/$3-meta.json"
+            echo "=== $3 META ==="; cat "/tmp/$3-meta.json"; echo
+            echo "=== $3 RESPONSE ==="; cat "/tmp/$3.json"; echo
+          }
+
+          status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" --output text)
+          echo '=== STATUS BEFORE ==='
+          curl --fail --max-time 60 "$status_url" | tee /tmp/status-before.json
+          echo
+
+          invoke SoccerHistoricalFunction '{"mode":"status"}' historical_status
+          invoke SoccerHistoricalFunction '{"mode":"featured","sport_key":"soccer_epl","max_calls":1}' historical_featured_probe
+          invoke SoccerLlmAnalystFunction '{"action":"critical_watch_probe","force_refresh":true}' llm_probe
+          invoke SoccerControllerFunction '{"action":"critical_watch_health_refresh"}' controller_probe
+
+          echo '=== STATUS AFTER ==='
+          curl --fail --max-time 60 "$status_url" | tee /tmp/status-after.json
+          echo
+          coverage_url="${status_url%/status}/coverage"
+          echo '=== COVERAGE AFTER ==='
+          curl --fail --max-time 60 "$coverage_url" | tee /tmp/coverage-after.json
+          echo
+
+          echo '=== SUMMARY ==='
+          python - <<'PY'
+          import json
+          s=json.load(open('/tmp/status-after.json'))
+          h=s.get('prediction_and_training_health') or {}
+          llm=s.get('llm_analyst') or {}
+          hist=s.get('historical_backfill') or {}
+          print(json.dumps({
+            'updated_at':s.get('updated_at'),
+            'authority':s.get('authority'),
+            'automatic_prediction_allowed':s.get('automatic_prediction_allowed'),
+            'failures':s.get('failures'),
+            'operational_warnings':s.get('operational_warnings'),
+            'counts':s.get('counts'),
+            'queues':s.get('queues'),
+            'health':{
+              'healthy':h.get('healthy'),'state':h.get('state'),'integrity_failures':h.get('integrity_failures'),'availability_warnings':h.get('availability_warnings'),
+              't10_decisions':h.get('t10_decisions'),'public_authority':h.get('public_authority'),'training':h.get('training')},
+            'historical':hist,
+            'llm':llm,
+            'latest_quota':s.get('latest_quota') or (s.get('provider_quota') or {}).get('latest'),
+            'component_liveness':s.get('component_liveness')
+          }, indent=2, default=str))
+          PY
