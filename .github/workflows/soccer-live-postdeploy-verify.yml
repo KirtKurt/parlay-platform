@@ -1,0 +1,174 @@
+name: Soccer Live Postdeploy Verify
+
+on:
+  push:
+    branches:
+      - agent/soccer-authority-repair
+    paths:
+      - .github/workflows/soccer-live-postdeploy-verify.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify-live-soccer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/soccer-authority-repair
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Verify stack, schedules, alarms, Lambda errors, queues, and T10 locks
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          python - <<'PY'
+          import datetime as dt
+          import json
+          import os
+          import boto3
+          from soccer_auto.inference import live_lock_coverage_provenance_valid
+          from soccer_auto.storage import plain
+
+          region = os.environ['AWS_REGION_VALUE']
+          stack = 'parlay-platform-soccer-auto'
+          cf = boto3.client('cloudformation', region_name=region)
+          lam = boto3.client('lambda', region_name=region)
+          events = boto3.client('events', region_name=region)
+          cw = boto3.client('cloudwatch', region_name=region)
+          sqs = boto3.client('sqs', region_name=region)
+          ddb = boto3.resource('dynamodb', region_name=region)
+
+          stack_info = cf.describe_stacks(StackName=stack)['Stacks'][0]
+          resources = []
+          token = None
+          while True:
+              kwargs = {'StackName': stack}
+              if token:
+                  kwargs['NextToken'] = token
+              page = cf.list_stack_resources(**kwargs)
+              resources.extend(page.get('StackResourceSummaries', []))
+              token = page.get('NextToken')
+              if not token:
+                  break
+
+          def by_type(t):
+              return [r for r in resources if r.get('ResourceType') == t]
+
+          print('STACK=' + json.dumps({
+              'status': stack_info['StackStatus'],
+              'last_updated': stack_info.get('LastUpdatedTime', stack_info.get('CreationTime')).isoformat(),
+          }))
+
+          function_rows = []
+          now = dt.datetime.now(dt.timezone.utc)
+          start = now - dt.timedelta(minutes=20)
+          for r in by_type('AWS::Lambda::Function'):
+              name = r['PhysicalResourceId']
+              cfg = lam.get_function_configuration(FunctionName=name)
+              error_points = cw.get_metric_statistics(
+                  Namespace='AWS/Lambda', MetricName='Errors',
+                  Dimensions=[{'Name': 'FunctionName', 'Value': name}],
+                  StartTime=start, EndTime=now, Period=300, Statistics=['Sum'],
+              ).get('Datapoints', [])
+              invoke_points = cw.get_metric_statistics(
+                  Namespace='AWS/Lambda', MetricName='Invocations',
+                  Dimensions=[{'Name': 'FunctionName', 'Value': name}],
+                  StartTime=start, EndTime=now, Period=300, Statistics=['Sum'],
+              ).get('Datapoints', [])
+              env = cfg.get('Environment', {}).get('Variables', {})
+              function_rows.append({
+                  'logical_id': r['LogicalResourceId'],
+                  'name': name,
+                  'state': cfg.get('State'),
+                  'last_update_status': cfg.get('LastUpdateStatus'),
+                  'last_modified': cfg.get('LastModified'),
+                  'errors_20m': int(sum(float(p.get('Sum', 0)) for p in error_points)),
+                  'invocations_20m': int(sum(float(p.get('Sum', 0)) for p in invoke_points)),
+                  'historical_backfill_enabled': env.get('SOCCER_AUTO_HISTORICAL_BACKFILL_ENABLED'),
+                  'collection_lead_hours': env.get('SOCCER_AUTO_COLLECTION_LEAD_HOURS'),
+                  'llm_model_id': env.get('SOCCER_AUTO_LLM_MODEL_ID'),
+              })
+          print('LAMBDA=' + json.dumps(function_rows, default=str))
+
+          rules = []
+          for r in by_type('AWS::Events::Rule'):
+              name = r['PhysicalResourceId']
+              desc = events.describe_rule(Name=name)
+              targets = events.list_targets_by_rule(Rule=name).get('Targets', [])
+              rules.append({
+                  'logical_id': r['LogicalResourceId'],
+                  'name': name,
+                  'state': desc.get('State'),
+                  'schedule': desc.get('ScheduleExpression'),
+                  'targets': len(targets),
+              })
+          print('SCHEDULES=' + json.dumps(rules))
+
+          stack_alarm_names = [r['PhysicalResourceId'] for r in by_type('AWS::CloudWatch::Alarm')]
+          alarm_rows = []
+          for i in range(0, len(stack_alarm_names), 100):
+              names = stack_alarm_names[i:i+100]
+              if not names:
+                  continue
+              for a in cw.describe_alarms(AlarmNames=names).get('MetricAlarms', []):
+                  alarm_rows.append({
+                      'name': a['AlarmName'],
+                      'state': a['StateValue'],
+                      'reason': a.get('StateReason'),
+                      'updated': a.get('StateUpdatedTimestamp').isoformat() if a.get('StateUpdatedTimestamp') else None,
+                  })
+          print('ALARMS=' + json.dumps(alarm_rows, default=str))
+
+          queue_rows = []
+          for r in by_type('AWS::SQS::Queue'):
+              url = r['PhysicalResourceId']
+              attrs = sqs.get_queue_attributes(
+                  QueueUrl=url,
+                  AttributeNames=['ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible','ApproximateNumberOfMessagesDelayed'],
+              )['Attributes']
+              queue_rows.append({'logical_id': r['LogicalResourceId'], **attrs})
+          print('QUEUES=' + json.dumps(queue_rows))
+
+          lock_resource = next(r for r in resources if r['LogicalResourceId'] == 'SoccerLocksTable')
+          locks = ddb.Table(lock_resource['PhysicalResourceId'])
+          rows = []
+          kwargs = {}
+          while True:
+              page = locks.scan(**kwargs)
+              rows.extend(plain(x) for x in page.get('Items', []))
+              key = page.get('LastEvaluatedKey')
+              if not key:
+                  break
+              kwargs = {'ExclusiveStartKey': key}
+          t10 = [x for x in rows if x.get('entity_type') == 'SOCCER_FROZEN_FEATURE_LOCK' and x.get('horizon') == 'T10']
+          valid = [x for x in t10 if live_lock_coverage_provenance_valid(x)]
+          invalid = [x for x in t10 if not live_lock_coverage_provenance_valid(x)]
+          print('T10=' + json.dumps({
+              'total': len(t10),
+              'valid': len(valid),
+              'invalid_pre_fix_immutable': len(invalid),
+              'newest_created_at': max((str(x.get('created_at') or '') for x in t10), default=None),
+          }))
+
+          active_alarms = [a for a in alarm_rows if a['state'] == 'ALARM']
+          disabled_rules = [r for r in rules if r['state'] != 'ENABLED']
+          failed_functions = [r for r in function_rows if r['state'] != 'Active' or r['last_update_status'] == 'Failed']
+          print('SUMMARY=' + json.dumps({
+              'active_stack_alarms': len(active_alarms),
+              'disabled_schedules': len(disabled_rules),
+              'failed_functions': len(failed_functions),
+              'lambda_errors_20m': sum(r['errors_20m'] for r in function_rows),
+              'lambda_invocations_20m': sum(r['invocations_20m'] for r in function_rows),
+          }))
+          PY
