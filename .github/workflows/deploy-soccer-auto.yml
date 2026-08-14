@@ -394,9 +394,14 @@ jobs:
           assert response['system'] == 'soccer_auto', response
           historical_training_rows = int(open('/tmp/soccer-historical-training-rows.txt').read())
           eligible_settlements = int(open('/tmp/soccer-authoritative-settlements.txt').read())
-          assert historical_training_rows <= response['training_rows'] <= eligible_settlements, response
+          total_eligible_rows = int(response['total_eligible_rows'])
+          training_rows = int(response['training_rows'])
+          assert historical_training_rows <= total_eligible_rows <= eligible_settlements, response
+          assert 0 <= training_rows <= total_eligible_rows, response
           if eligible_settlements == 0:
-              assert response['training_rows'] == 0, response
+              assert total_eligible_rows == 0 and training_rows == 0, response
+          else:
+              assert total_eligible_rows > 0 and training_rows > 0, response
           training = response['training']
           assert training.get('trained') is True or training.get('reason') in {
               'INSUFFICIENT_TRAINING_ROWS',
@@ -406,7 +411,7 @@ jobs:
           }, response
           if eligible_settlements == 0:
               print('::warning::Trainer correctly remains at zero until an eligible authoritative settlement is available')
-          print('deterministic_trainer_smoke', response['training_rows'], training)
+          print('deterministic_trainer_smoke', training_rows, training)
           PY
           invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_controller_post_llm"}' controller_after_llm
           python - <<'PY'
