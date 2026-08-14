@@ -458,12 +458,8 @@ class LlmBoundaryTests(unittest.TestCase):
             patch("soccer_auto.llm_analyst.SoccerStore", return_value=store),
             patch("soccer_auto.llm_analyst.boto3.client", return_value=bedrock),
             patch("soccer_auto.llm_analyst.now_utc", return_value=observed),
-            self.assertRaisesRegex(
-                RuntimeError,
-                "all configured real Bedrock analyst models are temporarily unavailable",
-            ),
         ):
-            llm_analyst_handler({}, None)
+            result = llm_analyst_handler({}, None)
 
         expected_models = [
             "us.amazon.nova-2-lite-v1:0",
@@ -473,6 +469,13 @@ class LlmBoundaryTests(unittest.TestCase):
         self.assertEqual(bedrock.converse.call_count, 3)
         self.assertEqual([row["SK"] for row in ops.writes], ["LAST_ATTEMPT"])
         attempt = ops.writes[0]
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["analysis_available"])
+        self.assertEqual(result["validated_trials"], 0)
+        self.assertEqual(result["status"], "DEFERRED_QUOTA")
+        self.assertEqual(result["reason"], "BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE")
+        self.assertEqual(result["retry_after"], "2026-08-14T10:00:00Z")
+        self.assertEqual(result["attempted_model_ids"], expected_models)
         self.assertEqual(attempt["status"], "DEFERRED_QUOTA")
         self.assertEqual(attempt["reason"], "BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE")
         self.assertEqual(attempt["retry_after"], "2026-08-14T10:00:00Z")
@@ -489,6 +492,7 @@ class LlmBoundaryTests(unittest.TestCase):
             {error["category"] for error in attempt["model_errors"]},
             {"DAILY_TOKEN_QUOTA"},
         )
+        self.assertEqual(result["model_errors"], attempt["model_errors"])
         self.assertEqual(
             attempt["expires_at"],
             int((observed + timedelta(days=30)).timestamp()),
@@ -573,11 +577,12 @@ class LlmBoundaryTests(unittest.TestCase):
             patch("soccer_auto.llm_analyst.SoccerStore", return_value=store),
             patch("soccer_auto.llm_analyst.boto3.client", return_value=bedrock),
             patch("soccer_auto.llm_analyst.now_utc", return_value=observed),
-            self.assertRaises(RuntimeError),
         ):
-            llm_analyst_handler({}, None)
+            result = llm_analyst_handler({}, None)
 
         attempt = store.ops.writes[0]
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status"], "DEFERRED_QUOTA")
         self.assertEqual(attempt["status"], "DEFERRED_QUOTA")
         self.assertEqual(attempt["retry_after"], "2026-08-14T04:15:00Z")
         self.assertEqual(attempt["model_errors"][0]["category"], "ACCOUNT_QUOTA")

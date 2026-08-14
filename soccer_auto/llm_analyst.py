@@ -789,25 +789,27 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
                 else timedelta(minutes=TRANSIENT_RETRY_MINUTES)
             )
         )
+        attempt_status = (
+            "DEFERRED_QUOTA"
+            if quota_only
+            else "BLOCKED_CONFIGURATION"
+            if configuration_only
+            else "BLOCKED_INVALID_RESPONSE"
+            if invalid_response_only
+            else "DEFERRED_TRANSIENT"
+        )
+        attempt_reason = (
+            "BEDROCK_ALL_FALLBACK_MODELS_CONFIGURATION_UNAVAILABLE"
+            if configuration_only
+            else "BEDROCK_ALL_FALLBACK_MODELS_INVALID_RESPONSE"
+            if invalid_response_only
+            else "BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE"
+        )
         _record_llm_attempt(
             store,
             observed=observed,
-            status=(
-                "DEFERRED_QUOTA"
-                if quota_only
-                else "BLOCKED_CONFIGURATION"
-                if configuration_only
-                else "BLOCKED_INVALID_RESPONSE"
-                if invalid_response_only
-                else "DEFERRED_TRANSIENT"
-            ),
-            reason=(
-                "BEDROCK_ALL_FALLBACK_MODELS_CONFIGURATION_UNAVAILABLE"
-                if configuration_only
-                else "BEDROCK_ALL_FALLBACK_MODELS_INVALID_RESPONSE"
-                if invalid_response_only
-                else "BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE"
-            ),
+            status=attempt_status,
+            reason=attempt_reason,
             retry_after=retry_after,
             model_id=model_ids[0],
             attempted_model_ids=attempted_model_ids,
@@ -815,6 +817,26 @@ def llm_analyst_handler(event: Mapping[str, Any] | None, context: Any) -> dict[s
             context_byte_count=context_byte_count,
             request_byte_count=request_byte_count,
         )
+        # Exhausted Bedrock quota is an expected external capacity state, not
+        # a Lambda runtime defect. Keep it fail-closed for analysis authority
+        # (`ok` remains false and no LATEST analysis is written), but return a
+        # structured deferral so AWS/Lambda Errors and the runtime-error alarm
+        # remain reserved for code, configuration, invalid-output, and service
+        # failures. The hourly schedule will retry the real Bedrock chain.
+        if quota_only:
+            return {
+                "ok": False,
+                "system": "soccer_auto",
+                "component": "llm_analyst",
+                "status": attempt_status,
+                "reason": attempt_reason,
+                "analysis_available": False,
+                "validated_trials": 0,
+                "model_id": model_ids[0],
+                "attempted_model_ids": attempted_model_ids,
+                "model_errors": model_errors,
+                "retry_after": retry_after,
+            }
         raise RuntimeError(
             "all configured real Bedrock analyst models are temporarily unavailable: "
             + ",".join(

@@ -136,7 +136,11 @@ A fresh validated analysis is reused without another model call. Deployment
 forces a new Converse call and succeeds only after a provenance-signed,
 digest-validated `LATEST` analysis is stored with the actual selected model,
 context digest, clean stop reason, and token usage. Exhaustion of every fallback
-is a visible Lambda failure rather than a false-green deferral. The analyst is
+is recorded as a structured `DEFERRED_QUOTA` result with `ok=false`, no `LATEST`
+write, and a bounded retry time. This expected provider-capacity state does not
+increment the Lambda runtime-error metric, while deployment proof remains red
+because no valid analysis was produced. Configuration errors, malformed model
+output, and non-quota service failures still raise and alarm. The analyst is
 genuine adaptive research authority for bounded trial proposals, but its prose
 or temporary unavailability cannot override deterministic promotion gates.
 Every failed model attempt stores only bounded, redacted Bedrock diagnostics;
