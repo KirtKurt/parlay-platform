@@ -35,47 +35,64 @@ jobs:
 
           source = Path('soccer_auto/inference.py')
           text = source.read_text()
-          old_import = '''from .storage import (\n    COVERAGE_CERTIFICATE_VERSION,\n    SoccerStore,\n    now_utc,\n    plain,\n)'''
-          new_import = '''from .storage import (\n    COVERAGE_CERTIFICATE_VERSION,\n    SoccerStore,\n    ddb_safe,\n    now_utc,\n    plain,\n)'''
+          old_import = '''from .storage import (
+              COVERAGE_CERTIFICATE_VERSION,
+              SoccerStore,
+              now_utc,
+              plain,
+          )'''
+          new_import = '''from .storage import (
+              COVERAGE_CERTIFICATE_VERSION,
+              SoccerStore,
+              ddb_safe,
+              now_utc,
+              plain,
+          )'''
+          # Dedent the literals to match the source's module-level import block.
+          old_import = '\n'.join(line[12:] if line.startswith('            ') else line for line in old_import.splitlines())
+          new_import = '\n'.join(line[12:] if line.startswith('            ') else line for line in new_import.splitlines())
           assert old_import in text, 'storage import block changed unexpectedly'
           text = text.replace(old_import, new_import, 1)
 
-          marker = '    exclusion_reasons = []\n'
+          marker = '    exclusion_reasons = []' + chr(10)
           assert text.count(marker) == 1, text.count(marker)
-          text = text.replace(
-              marker,
-              '    # Bind the immutable feature hash to the exact numeric representation\\n'
-              '    # that DynamoDB will persist. ddb_safe rounds floats to 12 decimals;\\n'
-              '    # hashing full-precision floats before that conversion makes a valid\\n'
-              '    # lock fail provenance validation after a storage round trip.\\n'
-              '    features = plain(ddb_safe(features))\\n'
-              + marker,
-              1,
-          )
+          inserted = chr(10).join([
+              '    # Bind the immutable feature hash to the exact numeric representation',
+              '    # that DynamoDB will persist. ddb_safe rounds floats to 12 decimals;',
+              '    # hashing full-precision floats before that conversion makes a valid',
+              '    # lock fail provenance validation after a storage round trip.',
+              '    features = plain(ddb_safe(features))',
+              '    exclusion_reasons = []',
+          ]) + chr(10)
+          text = text.replace(marker, inserted, 1)
           source.write_text(text)
 
           test = Path('tests/soccer_auto/test_certified_lock_cohorts.py')
           t = test.read_text()
-          old_tail = '    coverage_plan_digest,\n)'
-          new_tail = '    coverage_plan_digest,\n    ddb_safe,\n    plain,\n)'
+          old_tail = '    coverage_plan_digest,' + chr(10) + ')'
+          new_tail = chr(10).join([
+              '    coverage_plan_digest,',
+              '    ddb_safe,',
+              '    plain,',
+              ')',
+          ])
           assert old_tail in t, 'storage test import block changed unexpectedly'
           t = t.replace(old_tail, new_tail, 1)
 
-          assertion = '        self.assertTrue(live_lock_coverage_provenance_valid(final_lock))\n'
+          assertion = '        self.assertTrue(live_lock_coverage_provenance_valid(final_lock))' + chr(10)
           assert t.count(assertion) == 1, t.count(assertion)
-          t = t.replace(
-              assertion,
-              assertion
-              + '        persisted_round_trip = plain(ddb_safe(final_lock))\n'
-              + '        self.assertTrue(\n'
-              + '            live_lock_coverage_provenance_valid(persisted_round_trip)\n'
-              + '        )\n'
-              + '        self.assertEqual(\n'
-              + '            final_lock["feature_hash"],\n'
-              + '            persisted_round_trip["feature_hash"],\n'
-              + '        )\n',
-              1,
-          )
+          regression = chr(10).join([
+              '        self.assertTrue(live_lock_coverage_provenance_valid(final_lock))',
+              '        persisted_round_trip = plain(ddb_safe(final_lock))',
+              '        self.assertTrue(',
+              '            live_lock_coverage_provenance_valid(persisted_round_trip)',
+              '        )',
+              '        self.assertEqual(',
+              '            final_lock["feature_hash"],',
+              '            persisted_round_trip["feature_hash"],',
+              '        )',
+          ]) + chr(10)
+          t = t.replace(assertion, regression, 1)
           test.write_text(t)
           PY
 
@@ -128,13 +145,16 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
 
-      - name: Verify deployed Soccer runtime and blockers
+      - name: Verify deployed Soccer runtime and persisted lock contract
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json, os, boto3
+          import base64
+          import json
+          import os
+          import boto3
           from soccer_auto.inference import live_lock_coverage_provenance_valid
           from soccer_auto.storage import plain
 
@@ -149,23 +169,30 @@ jobs:
                   StackName=stack, LogicalResourceId=logical
               )['StackResourceDetail']['PhysicalResourceId']
 
-          controller = resource('SoccerControllerFunction')
-          freeze = resource('SoccerFreezeFunction')
-          controller_cfg = lam.get_function_configuration(FunctionName=controller)
-          freeze_cfg = lam.get_function_configuration(FunctionName=freeze)
-          print(json.dumps({
-              'controller_last_modified': controller_cfg['LastModified'],
-              'freeze_last_modified': freeze_cfg['LastModified'],
-          }, indent=2))
-
-          for name, payload in ((freeze, {}), (controller, {})):
-              out = '/tmp/' + name.replace(':','_').replace('/','_') + '.json'
-              lam.invoke(
+          def invoke(name):
+              response = lam.invoke(
                   FunctionName=name,
                   InvocationType='RequestResponse',
-                  Payload=json.dumps(payload).encode(),
+                  Payload=b'{}',
                   LogType='Tail',
               )
+              payload = json.loads(response['Payload'].read() or b'{}')
+              tail = base64.b64decode(response.get('LogResult', '')).decode('utf-8', 'replace')[-3000:]
+              return {
+                  'status_code': response['StatusCode'],
+                  'function_error': response.get('FunctionError'),
+                  'payload': payload,
+                  'log_tail': tail,
+              }
+
+          controller = resource('SoccerControllerFunction')
+          freeze = resource('SoccerFreezeFunction')
+          print(json.dumps({
+              'controller_last_modified': lam.get_function_configuration(FunctionName=controller)['LastModified'],
+              'freeze_last_modified': lam.get_function_configuration(FunctionName=freeze)['LastModified'],
+          }, indent=2))
+          print('FREEZE_INVOKE=' + json.dumps(invoke(freeze), default=str))
+          print('CONTROLLER_INVOKE=' + json.dumps(invoke(controller), default=str))
 
           locks_table = ddb.Table(resource('SoccerLocksTable'))
           rows = []
@@ -186,12 +213,24 @@ jobs:
           print(json.dumps({
               'persisted_t10_total': len(t10),
               'persisted_t10_valid': valid,
-              'persisted_t10_invalid_legacy': len(t10) - valid,
-              'note': 'Existing immutable pre-fix T10 rows are not rewritten after deadline.'
+              'persisted_t10_invalid_pre_fix_immutable': len(t10) - valid,
+              'note': 'Existing immutable pre-fix T10 rows are deliberately not rewritten after their publication deadlines.'
           }, indent=2))
 
-          health_table = ddb.Table(resource('SoccerHealthTable'))
-          health = health_table.scan().get('Items', [])
-          provider_rows = [plain(x) for x in health if str(x.get('PK','')).startswith('PROVIDER') or 'quota' in str(x).lower()]
-          print(json.dumps({'provider_health_rows_tail': provider_rows[-5:]}, indent=2, default=str))
+          ops_table = ddb.Table(resource('SoccerOpsTable'))
+          ops = []
+          kwargs = {}
+          while True:
+              page = ops_table.scan(**kwargs)
+              ops.extend(plain(x) for x in page.get('Items', []))
+              key = page.get('LastEvaluatedKey')
+              if not key:
+                  break
+              kwargs = {'ExclusiveStartKey': key}
+          provider_rows = [
+              x for x in ops
+              if 'provider' in json.dumps(x, default=str).lower()
+              or 'quota' in json.dumps(x, default=str).lower()
+          ]
+          print(json.dumps({'provider_or_quota_ops_tail': provider_rows[-8:]}, indent=2, default=str))
           PY
