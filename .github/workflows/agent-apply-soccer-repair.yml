@@ -34,6 +34,7 @@ jobs:
           test "$(sha256sum /tmp/soccer-authority-repair.patch.gz | awk '{print $1}')" = "7583eac563db678302fe869b19f54d937898a797b7b8dd4a83a3882e69e75bdd"
           gzip -dc /tmp/soccer-authority-repair.patch.gz > /tmp/soccer-authority-repair.patch
           test "$(sha256sum /tmp/soccer-authority-repair.patch | awk '{print $1}')" = "ffb22e53c8c2593f0b1d1179f6aa72f22579c75ba86b6d5167d05164fa4a5511"
+          git rm -f --ignore-unmatch docs/SOCCER_AUTO.md
           git apply --check /tmp/soccer-authority-repair.patch
           git apply --index /tmp/soccer-authority-repair.patch
 
