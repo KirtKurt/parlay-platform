@@ -12,6 +12,8 @@ def test_autonomous_controller_contracts_present():
         'MAX_LIVE_BRIER',
         'automatic_prediction_allowed',
         'pipeline_failure_circuit_breaker',
+        'TENNIS_PREDICTION_CUTOFF_MINUTES',
+        'late_prediction_records_ignored',
     ]
     for token in required:
         assert token in source
@@ -31,9 +33,10 @@ def test_autonomy_is_fail_closed():
     source = Path('tennis_learning/autonomous_controller.py').read_text()
     assert 'authority == "AUTHORITATIVE"' in source
     assert 'insufficient_total_training_samples' in source
-    assert 'insufficient_live_audit_samples' in source
-    assert 'live_accuracy_below_gate' in source
-    assert 'live_calibration_below_gate' in source
+    assert 'insufficient_t10_live_audit_samples' in source
+    assert 't10_live_accuracy_below_gate' in source
+    assert 't10_live_calibration_below_gate' in source
+    assert 'all_t10_autonomous_promotion_gates_passed' in source
 
 
 def test_optional_history_does_not_open_live_circuit_breaker():
