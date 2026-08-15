@@ -628,6 +628,28 @@ def dispatch_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str,
             "skipped": len(prepared),
             "schedule_races": 0,
         }
+    # Stop paid-work fanout while the shared provider is externally quota-blocked.
+    # Free inventory refreshes keep quota state current, so dispatch resumes automatically.
+    budget_probe_available = (
+        callable(getattr(store, "provider_budget_admission", None))
+        or callable(getattr(store, "provider_budget_available", None))
+    )
+    if prepared and budget_probe_available:
+        dispatch_admission = _provider_budget_admission(
+            store, "event_odds", dispatch_observed_at, estimated_cost=1
+        )
+        if (not dispatch_admission["available"] and dispatch_admission["external_capacity"]):
+            return {
+                "ok": True, "system": "soccer_auto", "quota_deferred": True,
+                "quota_reason": str(dispatch_admission["reason"]),
+                "observed_at": dispatch_observed_at,
+                "coverage_manifest_digest": manifest["manifest_digest"],
+                "coverage_manifest_events": manifest["event_count"],
+                "events_seen": len(events), "before_window": before_window,
+                "enqueued": 0, "skipped": len(prepared),
+                "schedule_races": 0, "recovered_plans": 0,
+            }
+
     for item in prepared:
         row = item["row"]
         status = item["status"]
@@ -1830,6 +1852,15 @@ def worker_handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
                             "receive_count": receive_count,
                         }
                     )
+                    continue
+                # Bound external quota retries; the dispatcher becomes recovery authority.
+                if isinstance(exc, ProviderBudgetDeferred) and deferral_count >= 3:
+                    processed.append({
+                        **exc.result, "retry_reenqueued": False,
+                        "retry_via_dispatcher": True,
+                        "receive_count": receive_count,
+                        "quota_deferral_count": deferral_count,
+                    })
                     continue
                 replacement_enqueued = False
                 try:
