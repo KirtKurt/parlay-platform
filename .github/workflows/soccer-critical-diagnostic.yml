@@ -55,7 +55,7 @@ jobs:
             if [[ -n "$q" && "$q" != None ]]; then
               if [[ "$q" == http* ]]; then url="$q"; else url=$(aws sqs get-queue-url --queue-name "$q" --region "$REGION" --query QueueUrl --output text 2>/dev/null || true); fi
               echo "$logical $url"
-              aws sqs get-queue-attributes --queue-url "$url" --region "$REGION" --attribute-names ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible ApproximateNumberOfMessagesDelayed RedrivePolicy --output json || true
+              aws sqs get-queue-attributes --queue-url "$url" --region "$REGION" --attribute-names ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible ApproximateNumberOfMessagesDelayed RedrivePolicy CreatedTimestamp LastModifiedTimestamp --output json || true
             fi
           done
 
@@ -71,18 +71,20 @@ jobs:
             cat /tmp/historical-meta.json 2>/dev/null || true; cat /tmp/historical.json 2>/dev/null || true; echo; cat /tmp/historical-err.txt 2>/dev/null || true
           fi
 
-          echo '=== DLQ MESSAGE INSPECTION ==='
-          dlq=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionDeadLetterQueue --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text 2>/dev/null || true)
-          if [[ -n "$dlq" && "$dlq" != None ]]; then
-            if [[ "$dlq" == http* ]]; then dlq_url="$dlq"; else dlq_url=$(aws sqs get-queue-url --queue-name "$dlq" --region "$REGION" --query QueueUrl --output text); fi
-            aws sqs receive-message --queue-url "$dlq_url" --region "$REGION" --max-number-of-messages 10 --visibility-timeout 0 --attribute-names All --message-attribute-names All --output json >/tmp/dlq-messages.json 2>/tmp/dlq-error.txt
-            rc=$?
-            if [[ $rc -eq 0 ]]; then cat /tmp/dlq-messages.json; else echo "DLQ_INSPECTION_BLOCKED rc=$rc"; cat /tmp/dlq-error.txt; fi
-          fi
-
           echo '=== RECENT WORKER ERRORS ==='
           worker=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionWorkerFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text 2>/dev/null || true)
           if [[ -n "$worker" && "$worker" != None ]]; then
             start_ms=$(( ($(date +%s)-21600)*1000 ))
-            aws logs filter-log-events --log-group-name "/aws/lambda/$worker" --region "$REGION" --start-time "$start_ms" --filter-pattern '?ERROR ?Error ?Exception ?Traceback ?failed ?FAILED' --limit 100 --query 'events[*].{timestamp:timestamp,message:message}' --output json || true
+            aws logs filter-log-events --log-group-name "/aws/lambda/$worker" --region "$REGION" --start-time "$start_ms" --filter-pattern '?ERROR ?Error ?Exception ?Traceback ?failed ?FAILED ?QUOTA_DEFERRED' --limit 100 --query 'events[*].{timestamp:timestamp,message:message}' --output json || true
+          fi
+
+          echo '=== DLQ MESSAGE INSPECTION ==='
+          dlq=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionDeadLetterQueue --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text 2>/dev/null || true)
+          if [[ -n "$dlq" && "$dlq" != None ]]; then
+            if [[ "$dlq" == http* ]]; then dlq_url="$dlq"; else dlq_url=$(aws sqs get-queue-url --queue-name "$dlq" --region "$REGION" --query QueueUrl --output text); fi
+            set +e
+            aws sqs receive-message --queue-url "$dlq_url" --region "$REGION" --max-number-of-messages 10 --visibility-timeout 0 --attribute-names All --message-attribute-names All --output json >/tmp/dlq-messages.json 2>/tmp/dlq-error.txt
+            rc=$?
+            set -e
+            if [[ $rc -eq 0 ]]; then cat /tmp/dlq-messages.json; else echo "DLQ_INSPECTION_BLOCKED rc=$rc"; cat /tmp/dlq-error.txt; fi
           fi
