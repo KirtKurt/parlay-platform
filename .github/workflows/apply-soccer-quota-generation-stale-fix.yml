@@ -1,0 +1,211 @@
+name: Apply Soccer Quota Generation-Stale Fix
+
+on:
+  push:
+    branches:
+      - agent/fix-soccer-quota-generation-stale-20260815
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-soccer-quota-generation-stale-20260815
+      - name: Patch quota backpressure evidence contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('soccer_auto/collector.py')
+          text = path.read_text()
+          old = '''    if quota_snapshot["exhausted"] and dispatch_required_count:
+        # Do not manufacture queue pressure while the shared provider is
+        # definitively out of credits.  We intentionally do not advance
+        # last_dispatched_at here, so the very next dispatcher tick can resume
+        # immediately after a fresh positive quota observation arrives.
+        return {
+            "ok": True,
+            "system": "soccer_auto",
+            "match_day_timezone": DAY_TIMEZONE,
+            "daily_lead_hours": COLLECTION_LEAD_HOURS,
+            "daily_windows": {key: value.__dict__ for key, value in windows.items()},
+            "events_seen": len(events),
+            "observed_at": dispatch_observed_at,
+            "coverage_manifest_digest": manifest["manifest_digest"],
+            "coverage_manifest_events": manifest["event_count"],
+            "before_window": before_window,
+            "enqueued": 0,
+            "skipped": len(prepared),
+            "schedule_races": 0,
+            "recovered_plans": 0,
+            "provider_quota_deferred": True,
+            "quota_remaining": quota_snapshot["remaining"],
+            "quota_used": quota_snapshot["used"],
+            "quota_observed_at": quota_snapshot["observed_at"],
+        }
+'''
+          new = '''    if quota_snapshot["exhausted"] and dispatch_required_count:
+        # Do not manufacture queue pressure while the shared provider is
+        # definitively out of credits.  The dispatch manifest still requires
+        # the current cadence generation, so materialize an explicit external-
+        # quota deferral for every fresh generation instead of leaving the
+        # previous cycle behind it.  Otherwise /coverage correctly sees the
+        # manifest advance but can only classify every event as
+        # DISCOVERY_GENERATION_STALE, turning an external capacity boundary
+        # into a false non-quota integrity failure.
+        quota_deferred = 0
+        for item in prepared:
+            if not item["dispatch_required"] or item["recoverable_plan"]:
+                continue
+            row = item["row"]
+            dispatched_event = {
+                key: row.get(key)
+                for key in (
+                    "event_key", "event_id", "sport_key", "sport_title",
+                    "commence_time", "home_team", "away_team",
+                    "schedule_revision", "schedule_identity",
+                )
+            }
+            deferred = store.put_coverage_discovery_attempt(
+                dispatched_event,
+                discovery_observed_at=str(item["generation_at"]),
+                status="QUOTA_DEFERRED",
+                observed_at=dispatch_observed_at,
+                budget_reason="SHARED_SUBSCRIPTION_RESERVE_REACHED",
+            )
+            quota_deferred += int(bool(deferred.get("latest_summary_updated")))
+        # Intentionally do not advance last_dispatched_at.  The next dispatcher
+        # tick can resume immediately after a fresh positive quota observation.
+        return {
+            "ok": True,
+            "system": "soccer_auto",
+            "match_day_timezone": DAY_TIMEZONE,
+            "daily_lead_hours": COLLECTION_LEAD_HOURS,
+            "daily_windows": {key: value.__dict__ for key, value in windows.items()},
+            "events_seen": len(events),
+            "observed_at": dispatch_observed_at,
+            "coverage_manifest_digest": manifest["manifest_digest"],
+            "coverage_manifest_events": manifest["event_count"],
+            "before_window": before_window,
+            "enqueued": 0,
+            "skipped": len(prepared),
+            "schedule_races": 0,
+            "recovered_plans": 0,
+            "provider_quota_deferred": True,
+            "quota_deferred_generations": quota_deferred,
+            "quota_remaining": quota_snapshot["remaining"],
+            "quota_used": quota_snapshot["used"],
+            "quota_observed_at": quota_snapshot["observed_at"],
+        }
+'''
+          if new in text:
+              print('collector already patched')
+          else:
+              if old not in text:
+                  raise SystemExit('expected collector quota block not found')
+              path.write_text(text.replace(old, new, 1))
+
+          test = Path('tests/soccer_auto/test_quota_backpressure.py')
+          t = test.read_text()
+          marker = 'def test_dispatch_materializes_quota_deferred_generation_instead_of_stale_manifest'
+          if marker not in t:
+              t += r'''
+
+
+def test_dispatch_materializes_quota_deferred_generation_instead_of_stale_manifest(monkeypatch):
+    class Store:
+        def __init__(self):
+            self.ops = _Ops({
+                "remaining": Decimal("0"),
+                "used": Decimal("5000000"),
+                "observed_at": "2026-08-15T12:00:00Z",
+            })
+            self.deferred = []
+            self.enqueued = []
+
+        def authoritative_active_events_between(self, *args, **kwargs):
+            return ([{
+                "event_key": "event-1",
+                "event_id": "provider-1",
+                "sport_key": "soccer_epl",
+                "sport_title": "EPL",
+                "commence_time": "2026-08-15T20:00:00Z",
+                "home_team": "A",
+                "away_team": "B",
+                "schedule_revision": 1,
+                "schedule_identity": "stable-identity",
+                "last_dispatched_at": "2026-08-15T11:00:00Z",
+            }], {
+                "valid": True,
+                "authority_version": "soccer-auto-event-inventory-authority-v1",
+                "generation_id": "g1",
+                "completed_at": "2026-08-15T12:00:00Z",
+                "authority_revision": 1,
+            })
+
+        def get_collection_window(self, match_day):
+            return None
+
+        def put_collection_window(self, *args, **kwargs):
+            return None
+
+        def latest_coverage_summary(self, event_key):
+            return {}
+
+        def put_coverage_dispatch_manifest(self, entries, **kwargs):
+            self.manifest = entries
+            return {
+                "latest_manifest_updated": True,
+                "manifest_digest": "manifest-1",
+                "event_count": len(entries),
+            }
+
+        def put_coverage_discovery_attempt(self, event, **kwargs):
+            self.deferred.append((event, kwargs))
+            return {"latest_summary_updated": True}
+
+        def enqueue(self, job, **kwargs):
+            self.enqueued.append(job)
+
+    store = Store()
+    monkeypatch.setattr(collector, "SoccerStore", lambda: store)
+    monkeypatch.setattr(collector, "now_utc", lambda: collector.parse_utc("2026-08-15T12:05:00Z"))
+    monkeypatch.setattr(collector, "_fresh_schedule_events", lambda events, observed: list(events))
+    monkeypatch.setattr(collector, "_stabilize_windows", lambda store, windows: {"2026-08-15": object()})
+    monkeypatch.setattr(collector, "collection_status", lambda row, windows, observed_at: {"open": True})
+    monkeypatch.setattr(collector, "_cadence_seconds", lambda commence, observed: 300)
+
+    result = collector.dispatch_handler({}, None)
+
+    assert result["provider_quota_deferred"] is True
+    assert result["quota_deferred_generations"] == 1
+    assert result["enqueued"] == 0
+    assert store.enqueued == []
+    assert len(store.deferred) == 1
+    _, kwargs = store.deferred[0]
+    assert kwargs["status"] == "QUOTA_DEFERRED"
+    assert kwargs["budget_reason"] == "SHARED_SUBSCRIPTION_RESERVE_REACHED"
+    required = store.manifest[0]["required_discovery_observed_at"]
+    assert kwargs["discovery_observed_at"] == required
+'''
+              test.write_text(t)
+          PY
+      - name: Run focused Soccer tests
+        run: |
+          python -m py_compile soccer_auto/collector.py
+          pytest -q tests/soccer_auto/test_quota_backpressure.py tests/soccer_auto/test_collection_gate.py tests/soccer_auto/test_coverage_reconciliation.py
+      - name: Commit patched Soccer files
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit'
+            exit 0
+          fi
+          git config user.name 'Kurt Soccer Repair Agent'
+          git config user.email 'actions@users.noreply.github.com'
+          git add soccer_auto/collector.py tests/soccer_auto/test_quota_backpressure.py
+          git commit -m 'Fix Soccer quota-deferred discovery generation evidence'
+          git push origin HEAD:agent/fix-soccer-quota-generation-stale-20260815
