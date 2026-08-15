@@ -14,27 +14,75 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Inspect exact Soccer DLQ
+      - name: Inspect Soccer production health
         env:
           REGION: ${{ secrets.AWS_REGION }}
         run: |
-          set -euo pipefail
+          set -u
           stack=parlay-platform-soccer-auto
-          DLQ=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionDeadLetterQueue --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
-          WORKER=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionWorkerFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
-          if [[ "$DLQ" == http* ]]; then dlq_url="$DLQ"; else dlq_url=$(aws sqs get-queue-url --queue-name "$DLQ" --region "$REGION" --query QueueUrl --output text); fi
-          aws sqs get-queue-attributes --queue-url "$dlq_url" --region "$REGION" --attribute-names All > /tmp/attrs.json
-          aws sqs receive-message --queue-url "$dlq_url" --region "$REGION" --max-number-of-messages 10 --visibility-timeout 0 --attribute-names All --message-attribute-names All > /tmp/messages.json
-          end=$(date +%s); start_ms=$(( (end-172800)*1000 ))
-          aws logs filter-log-events --log-group-name "/aws/lambda/$WORKER" --region "$REGION" --start-time "$start_ms" --limit 100 > /tmp/logs.json || true
-          python - <<'PY'
+          echo '=== STACK ==='
+          aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query 'Stacks[0].{Status:StackStatus,Updated:LastUpdatedTime,Params:Parameters,Outputs:Outputs}' --output json || true
+
+          echo '=== LAMBDAS ==='
+          aws cloudformation list-stack-resources --stack-name "$stack" --region "$REGION" --output json > /tmp/resources.json
+          python - <<'PY' >/tmp/lambdas.txt
           import json
-          a=json.load(open('/tmp/attrs.json')).get('Attributes',{})
-          ms=json.load(open('/tmp/messages.json')).get('Messages',[])
-          es=json.load(open('/tmp/logs.json')).get('events',[])
-          def body(m):
-              try:return json.loads(m.get('Body',''))
-              except:return m.get('Body','')[:4000]
-          out={'attrs':{k:a.get(k) for k in ['ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible','ApproximateNumberOfMessagesDelayed','QueueArn']},'messages':[{'id':m.get('MessageId'),'attrs':m.get('Attributes'),'body':body(m)} for m in ms],'recent_worker_logs':[{'ts':e.get('timestamp'),'msg':e.get('message','')[:2000]} for e in es[-50:]]}
-          t=json.dumps(out,sort_keys=True,default=str);print(t);print('::error title=Soccer DLQ Exact::'+t[:20000].replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
+          r=json.load(open('/tmp/resources.json'))['StackResourceSummaries']
+          for x in r:
+              if x.get('ResourceType')=='AWS::Lambda::Function': print(x['LogicalResourceId'],x['PhysicalResourceId'])
           PY
+          while read -r logical fn; do
+            aws lambda get-function-configuration --function-name "$fn" --region "$REGION" --query '{Logical:`'"$logical"'`,FunctionName:FunctionName,State:State,LastUpdateStatus:LastUpdateStatus,LastModified:LastModified}' --output json || true
+          done </tmp/lambdas.txt
+
+          echo '=== EVENTBRIDGE RULES ==='
+          python - <<'PY' >/tmp/rules.txt
+          import json
+          r=json.load(open('/tmp/resources.json'))['StackResourceSummaries']
+          for x in r:
+              if x.get('ResourceType')=='AWS::Events::Rule': print(x['LogicalResourceId'],x['PhysicalResourceId'])
+          PY
+          while read -r logical rule; do
+            aws events describe-rule --name "$rule" --region "$REGION" --query '{Logical:`'"$logical"'`,Name:Name,State:State,ScheduleExpression:ScheduleExpression}' --output json || true
+          done </tmp/rules.txt
+
+          echo '=== CLOUDWATCH ALARMS ==='
+          aws cloudwatch describe-alarms --region "$REGION" --query 'MetricAlarms[?contains(AlarmName, `Soccer`) || contains(AlarmName, `soccer`)].{AlarmName:AlarmName,StateValue:StateValue,StateReason:StateReason,StateUpdatedTimestamp:StateUpdatedTimestamp}' --output json || true
+
+          echo '=== QUEUES ==='
+          for logical in SoccerCollectionQueue SoccerCollectionDeadLetterQueue; do
+            q=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id "$logical" --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text 2>/dev/null || true)
+            if [[ -n "$q" && "$q" != None ]]; then
+              if [[ "$q" == http* ]]; then url="$q"; else url=$(aws sqs get-queue-url --queue-name "$q" --region "$REGION" --query QueueUrl --output text 2>/dev/null || true); fi
+              echo "$logical $url"
+              aws sqs get-queue-attributes --queue-url "$url" --region "$REGION" --attribute-names ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible ApproximateNumberOfMessagesDelayed RedrivePolicy --output json || true
+            fi
+          done
+
+          echo '=== PUBLIC STATUS ==='
+          status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" --output text 2>/dev/null || true)
+          echo "status_url=$status_url"
+          if [[ -n "$status_url" && "$status_url" != None ]]; then curl --fail --silent --show-error --max-time 45 "$status_url" || true; echo; fi
+
+          echo '=== HISTORICAL STATUS ==='
+          hist=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerHistoricalFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text 2>/dev/null || true)
+          if [[ -n "$hist" && "$hist" != None ]]; then
+            aws lambda invoke --function-name "$hist" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"mode":"status"}' /tmp/historical.json >/tmp/historical-meta.json 2>/tmp/historical-err.txt || true
+            cat /tmp/historical-meta.json 2>/dev/null || true; cat /tmp/historical.json 2>/dev/null || true; echo; cat /tmp/historical-err.txt 2>/dev/null || true
+          fi
+
+          echo '=== DLQ MESSAGE INSPECTION ==='
+          dlq=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionDeadLetterQueue --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text 2>/dev/null || true)
+          if [[ -n "$dlq" && "$dlq" != None ]]; then
+            if [[ "$dlq" == http* ]]; then dlq_url="$dlq"; else dlq_url=$(aws sqs get-queue-url --queue-name "$dlq" --region "$REGION" --query QueueUrl --output text); fi
+            aws sqs receive-message --queue-url "$dlq_url" --region "$REGION" --max-number-of-messages 10 --visibility-timeout 0 --attribute-names All --message-attribute-names All --output json >/tmp/dlq-messages.json 2>/tmp/dlq-error.txt
+            rc=$?
+            if [[ $rc -eq 0 ]]; then cat /tmp/dlq-messages.json; else echo "DLQ_INSPECTION_BLOCKED rc=$rc"; cat /tmp/dlq-error.txt; fi
+          fi
+
+          echo '=== RECENT WORKER ERRORS ==='
+          worker=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionWorkerFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text 2>/dev/null || true)
+          if [[ -n "$worker" && "$worker" != None ]]; then
+            start_ms=$(( ($(date +%s)-21600)*1000 ))
+            aws logs filter-log-events --log-group-name "/aws/lambda/$worker" --region "$REGION" --start-time "$start_ms" --filter-pattern '?ERROR ?Error ?Exception ?Traceback ?failed ?FAILED' --limit 100 --query 'events[*].{timestamp:timestamp,message:message}' --output json || true
+          fi
