@@ -4,85 +4,69 @@ on:
   push:
     paths:
       - '.github/workflows/soccer-critical-diagnostic.yml'
-
 permissions:
   contents: read
-
 jobs:
   diagnose:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Diagnose Soccer production state
+      - name: Inspect Soccer DLQ and quota guards
         env:
           REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           stack=parlay-platform-soccer-auto
           aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" > /tmp/stack.json
+          aws cloudformation describe-stack-resources --stack-name "$stack" --region "$REGION" > /tmp/resources.json
           status_url=$(python - <<'PY'
           import json
           d=json.load(open('/tmp/stack.json'))
-          o={x['OutputKey']:x['OutputValue'] for x in d['Stacks'][0].get('Outputs',[])}
-          print(o.get('SoccerAutoStatusUrl',''))
+          print({x['OutputKey']:x['OutputValue'] for x in d['Stacks'][0].get('Outputs',[])}.get('SoccerAutoStatusUrl',''))
           PY
           )
-          coverage_url="${status_url%/status}/coverage"
-          models_url="${status_url%/status}/models"
-          predictions_url="${status_url%/status}/predictions"
-          curl --fail --retry 4 --retry-delay 3 "$status_url" > /tmp/status.json
-          curl --fail --retry 4 --retry-delay 3 "$coverage_url" > /tmp/coverage.json
-          curl --fail --retry 4 --retry-delay 3 "$models_url" > /tmp/models.json
-          curl --fail --retry 4 --retry-delay 3 "$predictions_url" > /tmp/predictions.json
-          aws cloudformation describe-stack-resources --stack-name "$stack" --region "$REGION" > /tmp/resources.json
-          aws cloudwatch describe-alarms --region "$REGION" --state-value ALARM > /tmp/alarms.json
+          curl --fail "$status_url" > /tmp/status.json
+          python - <<'PY' > /tmp/ids.env
+          import json
+          r=json.load(open('/tmp/resources.json'))['StackResources']
+          for x in r:
+              if x['ResourceType']=='AWS::SQS::Queue' and ('Dlq' in x['LogicalResourceId'] or 'DLQ' in x['LogicalResourceId']): print('DLQ='+x['PhysicalResourceId'])
+              if x['ResourceType']=='AWS::Lambda::Function' and x['LogicalResourceId']=='SoccerCollectionWorkerFunction': print('WORKER='+x['PhysicalResourceId'])
+          PY
+          source /tmp/ids.env
+          test -n "${DLQ:-}"
+          dlq_url=$(aws sqs get-queue-url --queue-name "$DLQ" --region "$REGION" --query QueueUrl --output text)
+          aws sqs get-queue-attributes --queue-url "$dlq_url" --region "$REGION" --attribute-names All > /tmp/dlq_attrs.json
+          aws sqs receive-message --queue-url "$dlq_url" --region "$REGION" --max-number-of-messages 10 --visibility-timeout 0 --attribute-names All --message-attribute-names All > /tmp/dlq_messages.json
+          log_group="/aws/lambda/$WORKER"
+          start_ms=$(( ($(date +%s)-86400)*1000 ))
+          aws logs filter-log-events --log-group-name "$log_group" --region "$REGION" --start-time "$start_ms" --filter-pattern 'ERROR' --limit 50 > /tmp/worker_errors.json || true
           python - <<'PY'
-          import json, subprocess, os
+          import json
           status=json.load(open('/tmp/status.json'))
-          coverage=json.load(open('/tmp/coverage.json'))
-          models=json.load(open('/tmp/models.json'))
-          preds=json.load(open('/tmp/predictions.json'))
-          resources=json.load(open('/tmp/resources.json'))['StackResources']
-          inv=coverage.get('live_inventory',{})
-          manifest=inv.get('dispatch_manifest',{})
-          health=status.get('prediction_and_training_health',{})
-          hist=coverage.get('historical_backfill',{})
-          alarm_rows=json.load(open('/tmp/alarms.json')).get('MetricAlarms',[])+json.load(open('/tmp/alarms.json')).get('CompositeAlarms',[])
-          stack_phys={r.get('PhysicalResourceId') for r in resources if r.get('PhysicalResourceId')}
-          soccer_alarms=[]
-          for a in alarm_rows:
-              name=a.get('AlarmName','')
-              dims=a.get('Dimensions') or []
-              if 'soccer' in name.lower() or any(d.get('Value') in stack_phys for d in dims): soccer_alarms.append(name)
-          lambdas=[]
-          rules=[]
-          for r in resources:
-              if r['ResourceType']=='AWS::Lambda::Function':
-                  n=r['PhysicalResourceId']; c=json.loads(subprocess.check_output(['aws','lambda','get-function-configuration','--function-name',n,'--region',os.environ['REGION'],'--output','json']))
-                  lambdas.append({'logical':r['LogicalResourceId'],'name':n,'state':c.get('State'),'last_update':c.get('LastUpdateStatus')})
-              if r['ResourceType']=='AWS::Events::Rule':
-                  n=r['PhysicalResourceId']; c=json.loads(subprocess.check_output(['aws','events','describe-rule','--name',n,'--region',os.environ['REGION'],'--output','json']))
-                  rules.append({'logical':r['LogicalResourceId'],'name':n,'state':c.get('State'),'schedule':c.get('ScheduleExpression')})
-          summary={
+          attrs=json.load(open('/tmp/dlq_attrs.json')).get('Attributes',{})
+          msgs=json.load(open('/tmp/dlq_messages.json')).get('Messages',[])
+          errs=json.load(open('/tmp/worker_errors.json')).get('events',[])
+          def parse_body(m):
+              b=m.get('Body','')
+              try: return json.loads(b)
+              except: return b[:3000]
+          out={
             'authority':status.get('authority'),
-            'automatic_prediction_allowed':status.get('automatic_prediction_allowed'),
-            'status_failures':status.get('failures'),
-            'provider_429':status.get('provider_429_telemetry'),
-            'health_state':health.get('state'),'health_healthy':health.get('healthy'),'health_proof_complete':health.get('proof_complete'),'health_integrity_failures':health.get('integrity_failures'),'t10':health.get('t10_decisions'),'training':health.get('training'),
-            'historical':hist,
-            'manifest':manifest,
-            'inventory_counts':{k:inv.get(k) for k in ['expected_event_bookmaker_market_pairs','required_current_event_bookmaker_market_pairs','rolling_probe_event_bookmaker_market_pairs','fetched_event_bookmaker_market_pairs','missing_event_bookmaker_market_pairs','provider_unavailable_event_bookmaker_market_pairs','normalization_rejected_event_bookmaker_market_pairs','attempted_incomplete_event_bookmaker_market_pairs','quota_deferred_event_bookmaker_market_pairs','failed_event_bookmaker_market_pairs','never_attempted_event_bookmaker_market_pairs','unresolved_event_bookmaker_market_pairs','coverage_integrity_failures','coverage_error_cycles','incomplete_request_cycles','quota_only_incomplete_request_cycles','non_quota_incomplete_request_cycles']},
-            'discovery_status_counts':inv.get('discovery_status_counts'),
-            'models_count':models.get('count'),'prediction_count':preds.get('count'),
-            'soccer_alarms':soccer_alarms,'lambdas':lambdas,'rules':rules
+            'failures':status.get('failures'),
+            'shared_provider_safety':status.get('shared_provider_safety'),
+            'distributed_rate_limit_state':status.get('distributed_rate_limit_state'),
+            'provider_429_telemetry':status.get('provider_429_telemetry'),
+            'dlq_attributes':{k:attrs.get(k) for k in ['ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible','ApproximateNumberOfMessagesDelayed','RedrivePolicy','CreatedTimestamp','LastModifiedTimestamp']},
+            'dlq_messages':[{'MessageId':m.get('MessageId'),'Attributes':m.get('Attributes'),'Body':parse_body(m)} for m in msgs],
+            'worker_error_events':[{'timestamp':e.get('timestamp'),'message':e.get('message','')[:3000]} for e in errs]
           }
-          text=json.dumps(summary,sort_keys=True,default=str)
+          text=json.dumps(out,sort_keys=True,default=str)
           print(text)
-          print('::error title=Soccer Production Diagnostic::'+text[:15000].replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
+          print('::error title=Soccer DLQ Diagnostic::'+text[:20000].replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
           PY
