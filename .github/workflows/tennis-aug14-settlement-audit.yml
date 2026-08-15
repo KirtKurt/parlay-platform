@@ -1,0 +1,120 @@
+name: Tennis Aug 14 Settlement Audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/tennis-aug14-settlement-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tennis-aug14-settlement-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Query Odds API settled Tennis results
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          python - <<'PY'
+          import json, os, re, urllib.parse, urllib.request
+          from datetime import datetime, timezone
+
+          key=os.environ['ODDS_API_KEY']
+          base='https://api.the-odds-api.com/v4'
+          def get(path, params):
+              q=dict(params); q['apiKey']=key
+              url=f"{base}{path}?{urllib.parse.urlencode(q)}"
+              req=urllib.request.Request(url,headers={'User-Agent':'inqis-tennis-scorecard-audit/1.0'})
+              with urllib.request.urlopen(req,timeout=45) as r:
+                  return json.loads(r.read().decode())
+          def norm(s):
+              return re.sub(r'[^a-z0-9]+','',str(s).lower())
+
+          targets=[
+            {'slate':'2026-08-13','a':'Corentin Moutet','b':'Hubert Hurkacz','pick':'Hubert Hurkacz','probability':61.29,'type':'Singles'},
+            {'slate':'2026-08-14','a':'Sho Shimabukuro','b':'Hubert Hurkacz','pick':'Hubert Hurkacz','probability':67.29,'type':'Singles'},
+            {'slate':'2026-08-14','a':'Vit Kopriva','b':'Quentin Halys','pick':'Quentin Halys','probability':64.47,'type':'Singles'},
+            {'slate':'2026-08-14','a':'Titouan Droguet','b':'Matteo Berrettini','pick':'Matteo Berrettini','probability':60.89,'type':'Singles'},
+            {'slate':'2026-08-14','a':"Christopher O'Connell",'b':'Kamil Majchrzak','pick':'Kamil Majchrzak','probability':61.29,'type':'Singles'},
+            {'slate':'2026-08-14','a':'Maria Timofeeva','b':'Xiyu Wang','pick':'Xiyu Wang','probability':62.46,'type':'Singles'},
+            {'slate':'2026-08-14','a':'Mary Stoiana','b':'Tereza Valentova','pick':'Tereza Valentova','probability':62.27,'type':'Singles'},
+            {'slate':'2026-08-14','a':'Hamad Medjedovic','b':'Marco Trungelliti','pick':'Hamad Medjedovic','probability':61.01,'type':'Singles'},
+            {'slate':'2026-08-14','a':'Nikola Bartunkova','b':'Alina Charaeva','pick':'Nikola Bartunkova','probability':62.97,'type':'Singles'},
+            {'slate':'2026-08-14','a':'Elisabetta Cocciaretto','b':'Lucrezia Stefanini','pick':'Elisabetta Cocciaretto','probability':62.02,'type':'Singles'},
+            {'slate':'2026-08-14','a':'Emiliana Arango','b':'Venus Williams','pick':'Emiliana Arango','probability':60.74,'type':'Singles'},
+            {'slate':'2026-08-14','a':'Peyton Stearns','b':'Harriet Dart','pick':'Peyton Stearns','probability':61.59,'type':'Singles'},
+            {'slate':'2026-08-14','a':'Maya Joint','b':'Tamara Korpatsch','pick':'Maya Joint','probability':62.67,'type':'Singles'},
+          ]
+          sports=get('/sports/',{'all':'false'})
+          keys=sorted({str(x.get('key') or '') for x in sports if str(x.get('key') or '').startswith('tennis_') and bool(x.get('active',False)) and not bool(x.get('has_outrights',False))})
+          events=[]; errors={}
+          for sport in keys:
+              try:
+                  rows=get(f'/sports/{sport}/scores/',{'daysFrom':3,'dateFormat':'iso'})
+                  if isinstance(rows,list):
+                      for e in rows:
+                          e['_sport_key']=sport
+                      events.extend(rows)
+              except Exception as exc:
+                  errors[sport]=str(exc)
+          out=[]
+          for t in targets:
+              want={norm(t['a']),norm(t['b'])}
+              matches=[]
+              for e in events:
+                  names={norm(e.get('home_team')),norm(e.get('away_team'))}
+                  if names==want:
+                      matches.append(e)
+              # newest commence time first if provider duplicated a pairing
+              matches.sort(key=lambda e:str(e.get('commence_time') or ''), reverse=True)
+              row=dict(t)
+              if not matches:
+                  row.update({'provider_match_found':False,'completed':False,'winner':None,'result':'unresolved'})
+              else:
+                  e=matches[0]
+                  scores=e.get('scores') or []
+                  winner=None
+                  if e.get('completed') and len(scores)==2:
+                      try:
+                          s0=int(scores[0].get('score')); s1=int(scores[1].get('score'))
+                          if s0!=s1: winner=str(scores[0].get('name') if s0>s1 else scores[1].get('name'))
+                      except Exception: pass
+                  row.update({'provider_match_found':True,'completed':bool(e.get('completed')),'winner':winner,'scores':scores,'event_id':e.get('id'),'commence_time':e.get('commence_time'),'sport_key':e.get('_sport_key')})
+                  if winner:
+                      row['result']='win' if norm(winner)==norm(t['pick']) else 'loss'
+                  else:
+                      row['result']='unresolved'
+              out.append(row)
+          payload={'checked_at':datetime.now(timezone.utc).isoformat(),'source':'The Odds API v4 scores endpoint','sport_keys_checked':len(keys),'provider_errors':errors,'targets':out}
+          os.makedirs('runtime',exist_ok=True)
+          with open('runtime/tennis_aug14_settled_audit.json','w') as f:
+              json.dump(payload,f,indent=2,sort_keys=True); f.write('\n')
+          print(json.dumps(payload,indent=2))
+          PY
+      - name: Commit audit snapshot
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          cp runtime/tennis_aug14_settled_audit.json /tmp/tennis_aug14_settled_audit.json
+          for attempt in $(seq 1 20); do
+            git fetch origin main
+            git reset --hard origin/main
+            mkdir -p runtime
+            cp /tmp/tennis_aug14_settled_audit.json runtime/tennis_aug14_settled_audit.json
+            git add runtime/tennis_aug14_settled_audit.json
+            if git diff --cached --quiet; then exit 0; fi
+            git commit -m 'Publish Aug 14 Tennis settlement audit [skip ci]'
+            if git push origin HEAD:main; then exit 0; fi
+            sleep 3
+          done
+          exit 1
