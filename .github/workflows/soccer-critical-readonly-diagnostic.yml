@@ -1,0 +1,198 @@
+name: Soccer Critical Readonly Diagnostic
+
+on:
+  push:
+    branches:
+      - agent/soccer-critical-diagnostic-20260815
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Capture Soccer runtime state
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-soccer-auto
+          region="$AWS_REGION_VALUE"
+
+          aws cloudformation describe-stacks --stack-name "$stack" --region "$region" --output json > /tmp/stack.json
+          aws cloudformation list-stack-resources --stack-name "$stack" --region "$region" --output json > /tmp/resources.json
+
+          python - "$region" <<'PY'
+          import json, pathlib, subprocess, sys
+          region=sys.argv[1]
+          resources=json.load(open('/tmp/resources.json'))['StackResourceSummaries']
+
+          def aws(*args):
+              return json.loads(subprocess.check_output(['aws', *args, '--region', region, '--output', 'json'], text=True))
+
+          functions=[]
+          for row in resources:
+              if row.get('ResourceType')=='AWS::Lambda::Function' and row.get('PhysicalResourceId'):
+                  name=row['PhysicalResourceId']
+                  cfg=aws('lambda','get-function-configuration','--function-name',name)
+                  functions.append({
+                      'logical_id':row.get('LogicalResourceId'), 'name':name,
+                      'state':cfg.get('State'), 'last_update_status':cfg.get('LastUpdateStatus'),
+                      'last_modified':cfg.get('LastModified'), 'runtime':cfg.get('Runtime')
+                  })
+          pathlib.Path('/tmp/functions.json').write_text(json.dumps(functions))
+
+          rules=[]
+          for row in resources:
+              if row.get('ResourceType')=='AWS::Events::Rule' and row.get('PhysicalResourceId'):
+                  name=row['PhysicalResourceId']
+                  cfg=aws('events','describe-rule','--name',name)
+                  rules.append({'logical_id':row.get('LogicalResourceId'),'name':name,'state':cfg.get('State'),'schedule':cfg.get('ScheduleExpression')})
+          pathlib.Path('/tmp/rules.json').write_text(json.dumps(rules))
+
+          alarms=[]
+          for row in resources:
+              if row.get('ResourceType')=='AWS::CloudWatch::Alarm' and row.get('PhysicalResourceId'):
+                  name=row['PhysicalResourceId']
+                  cfg=aws('cloudwatch','describe-alarms','--alarm-names',name)
+                  vals=cfg.get('MetricAlarms') or cfg.get('CompositeAlarms') or []
+                  if vals:
+                      a=vals[0]
+                      alarms.append({'logical_id':row.get('LogicalResourceId'),'name':name,'state':a.get('StateValue'),'reason':a.get('StateReason'),'updated':a.get('StateUpdatedTimestamp')})
+          pathlib.Path('/tmp/alarms.json').write_text(json.dumps(alarms, default=str))
+          PY
+
+          status_url=$(python - <<'PY'
+          import json
+          s=json.load(open('/tmp/stack.json'))['Stacks'][0]
+          outputs={x['OutputKey']:x['OutputValue'] for x in s.get('Outputs',[])}
+          print(outputs.get('SoccerAutoStatusUrl',''))
+          PY
+          )
+          test -n "$status_url"
+          coverage_url="${status_url%/status}/coverage"
+          curl --fail --max-time 60 --retry 3 --retry-all-errors --retry-delay 3 "$status_url" > /tmp/status.json
+          curl --fail --max-time 60 --retry 3 --retry-all-errors --retry-delay 3 "$coverage_url" > /tmp/coverage.json
+
+          historical_name=$(python - <<'PY'
+          import json
+          for r in json.load(open('/tmp/resources.json'))['StackResourceSummaries']:
+              if r.get('LogicalResourceId')=='SoccerHistoricalFunction':
+                  print(r.get('PhysicalResourceId','')); break
+          PY
+          )
+          test -n "$historical_name"
+          aws lambda invoke --function-name "$historical_name" --region "$region" --cli-binary-format raw-in-base64-out --payload '{"mode":"status"}' /tmp/historical.json >/tmp/historical-meta.json
+
+          python - <<'PY'
+          import json
+
+          stack=json.load(open('/tmp/stack.json'))['Stacks'][0]
+          funcs=json.load(open('/tmp/functions.json'))
+          rules=json.load(open('/tmp/rules.json'))
+          alarms=json.load(open('/tmp/alarms.json'))
+          status=json.load(open('/tmp/status.json'))
+          coverage=json.load(open('/tmp/coverage.json'))
+          hist=json.load(open('/tmp/historical.json'))
+          hmeta=json.load(open('/tmp/historical-meta.json'))
+
+          critical=[]
+          warnings=[]
+          def compact(v): return json.dumps(v,separators=(',',':'),default=str)[:12000]
+          def notice(title,v): print(f'::notice title={title}::{compact(v)}')
+          def warn(title,v): print(f'::warning title={title}::{compact(v)}')
+          def err(title,v): print(f'::error title={title}::{compact(v)}')
+
+          notice('SOCCER_STACK', {'status':stack.get('StackStatus'),'updated':stack.get('LastUpdatedTime'),'created':stack.get('CreationTime')})
+          bad_funcs=[f for f in funcs if f.get('state')!='Active' or f.get('last_update_status')!='Successful']
+          notice('SOCCER_LAMBDAS', {'count':len(funcs),'bad':bad_funcs,'functions':funcs})
+          if bad_funcs: critical.append(('SOCCER_LAMBDA_FAILURE',bad_funcs))
+
+          disabled=[r for r in rules if r.get('state')!='ENABLED']
+          notice('SOCCER_SCHEDULES', {'count':len(rules),'disabled':disabled,'rules':rules})
+          if disabled: critical.append(('SOCCER_SCHEDULE_FAILURE',disabled))
+
+          alarmed=[a for a in alarms if a.get('state')=='ALARM']
+          unknown=[a for a in alarms if a.get('state') not in {'OK','ALARM'}]
+          notice('SOCCER_ALARMS', {'count':len(alarms),'alarm':alarmed,'non_ok_non_alarm':unknown})
+          if alarmed: critical.append(('SOCCER_ACTIVE_ALARMS',alarmed))
+          if unknown: warnings.append(('SOCCER_ALARM_UNKNOWN',unknown))
+
+          health=status.get('prediction_and_training_health') or {}
+          llm=status.get('llm_analyst') or {}
+          provider={k:status.get(k) for k in ('authority','automatic_prediction_allowed','failures','provider_quota','shared_provider_safety','provider_429_telemetry') if k in status}
+          health_selected={
+              'state':health.get('state'),'contract_version':health.get('contract_version'),
+              'proof_complete':health.get('proof_complete'),'scan_truncated':health.get('scan_truncated'),
+              'healthy':health.get('healthy'),'integrity_failures':health.get('integrity_failures'),
+              'availability_warnings':health.get('availability_warnings'),
+              't10_decisions':health.get('t10_decisions'),'public_authority':health.get('public_authority'),
+              'training':health.get('training')
+          }
+          notice('SOCCER_HEALTH', health_selected)
+          notice('SOCCER_PROVIDER', provider)
+          notice('SOCCER_LLM', llm)
+
+          if status.get('failures'): critical.append(('SOCCER_STATUS_FAILURES',status.get('failures')))
+          if health:
+              if health.get('proof_complete') is not True or health.get('scan_truncated') is True or health.get('healthy') is not True or int(health.get('integrity_failures') or 0)>0:
+                  critical.append(('SOCCER_HEALTH_PROOF_FAILURE',health_selected))
+              pub=health.get('public_authority') or {}
+              if any(int(pub.get(k) or 0)>0 for k in ('duplicate_public_authorities','public_prediction_after_cutoff','public_prediction_after_commit_deadline','binding_integrity_failures')):
+                  critical.append(('SOCCER_PREDICTION_AUTHORITY_FAILURE',pub))
+              t10=health.get('t10_decisions') or {}
+              if int(t10.get('invalid_locks') or 0)>0:
+                  critical.append(('SOCCER_T10_INVALID_LOCKS',t10))
+          if status.get('authority')=='DEGRADED': warnings.append(('SOCCER_AUTHORITY_DEGRADED',provider))
+          if llm.get('status')=='DEFERRED_QUOTA' or (llm.get('last_attempt') or {}).get('status')=='DEFERRED_QUOTA':
+              warnings.append(('SOCCER_BEDROCK_QUOTA',llm))
+
+          live=(coverage.get('live_inventory') or {})
+          manifest=(live.get('dispatch_manifest') or {})
+          cov_selected={
+              'ok':coverage.get('ok'),'historical_backfill':coverage.get('historical_backfill'),
+              'manifest':{k:manifest.get(k) for k in ('authoritative','manifest_error','manifest_fresh','manifest_integrity_valid','inventory_authority_current','inventory_authority_state','manifest_events','missing_event_summaries','schedule_identity_mismatches','schedule_revision_mismatches','stale_discovery_generations')},
+              'coverage_complete':live.get('coverage_complete'),'request_cycles_complete':live.get('request_cycles_complete'),
+              'incomplete_request_cycles':live.get('incomplete_request_cycles'),'quota_only_incomplete_request_cycles':live.get('quota_only_incomplete_request_cycles'),
+              'non_quota_incomplete_request_cycles':live.get('non_quota_incomplete_request_cycles'),
+              'discovery_status_counts':live.get('discovery_status_counts'),
+              'coverage_integrity_failures':live.get('coverage_integrity_failures'),'coverage_error_cycles':live.get('coverage_error_cycles'),
+              'unresolved_event_bookmaker_market_pairs':live.get('unresolved_event_bookmaker_market_pairs'),
+              'quota_deferred_event_bookmaker_market_pairs':live.get('quota_deferred_event_bookmaker_market_pairs'),
+              'failed_event_bookmaker_market_pairs':live.get('failed_event_bookmaker_market_pairs'),
+              'never_attempted_event_bookmaker_market_pairs':live.get('never_attempted_event_bookmaker_market_pairs'),
+              'failed_request_batches':live.get('failed_request_batches'),'unresolved_request_batches':live.get('unresolved_request_batches'),'deferred_request_batches':live.get('deferred_request_batches')
+          }
+          notice('SOCCER_COVERAGE',cov_selected)
+          if coverage.get('ok') is not True: critical.append(('SOCCER_COVERAGE_ENDPOINT_FAILURE',cov_selected))
+          if int(live.get('coverage_integrity_failures') or 0)>0 or int(live.get('coverage_error_cycles') or 0)>0:
+              critical.append(('SOCCER_COVERAGE_INTEGRITY_FAILURE',cov_selected))
+          if not (manifest.get('authoritative') and manifest.get('manifest_fresh') and manifest.get('manifest_integrity_valid') and manifest.get('inventory_authority_current') and manifest.get('inventory_authority_state')=='COMPLETED'):
+              critical.append(('SOCCER_MANIFEST_NOT_AUTHORITATIVE',cov_selected))
+          non_quota=int(live.get('non_quota_incomplete_request_cycles') or 0)
+          failed_pairs=int(live.get('failed_event_bookmaker_market_pairs') or 0)
+          never=int(live.get('never_attempted_event_bookmaker_market_pairs') or 0)
+          failed_batches=int(live.get('failed_request_batches') or 0)
+          if non_quota or failed_pairs or never or failed_batches:
+              critical.append(('SOCCER_NON_QUOTA_COLLECTION_FAILURE',cov_selected))
+          elif int(live.get('incomplete_request_cycles') or 0)>0:
+              warnings.append(('SOCCER_COLLECTION_QUOTA_DEFERRED',cov_selected))
+
+          notice('SOCCER_HISTORICAL',hist)
+          if hmeta.get('FunctionError'): critical.append(('SOCCER_HISTORICAL_LAMBDA_ERROR',hmeta))
+          if hist.get('enabled') is not True: critical.append(('SOCCER_HISTORICAL_DISABLED',hist))
+          if hist.get('failures'): critical.append(('SOCCER_HISTORICAL_FAILURES',hist.get('failures')))
+
+          for title,payload in warnings: warn(title,payload)
+          for title,payload in critical: err(title,payload)
+          if critical:
+              raise SystemExit(1)
+          PY
