@@ -1,72 +1,39 @@
 name: Soccer Critical Diagnostic One Shot
-
 on:
   push:
-    paths:
-      - '.github/workflows/soccer-critical-diagnostic.yml'
+    paths: ['.github/workflows/soccer-critical-diagnostic.yml']
 permissions:
   contents: read
 jobs:
   diagnose:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Inspect Soccer DLQ and quota guards
+      - name: Inspect exact Soccer DLQ
         env:
           REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           stack=parlay-platform-soccer-auto
-          aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" > /tmp/stack.json
-          aws cloudformation describe-stack-resources --stack-name "$stack" --region "$REGION" > /tmp/resources.json
-          status_url=$(python - <<'PY'
-          import json
-          d=json.load(open('/tmp/stack.json'))
-          print({x['OutputKey']:x['OutputValue'] for x in d['Stacks'][0].get('Outputs',[])}.get('SoccerAutoStatusUrl',''))
-          PY
-          )
-          curl --fail "$status_url" > /tmp/status.json
-          python - <<'PY' > /tmp/ids.env
-          import json
-          r=json.load(open('/tmp/resources.json'))['StackResources']
-          for x in r:
-              if x['ResourceType']=='AWS::SQS::Queue' and ('Dlq' in x['LogicalResourceId'] or 'DLQ' in x['LogicalResourceId']): print('DLQ='+x['PhysicalResourceId'])
-              if x['ResourceType']=='AWS::Lambda::Function' and x['LogicalResourceId']=='SoccerCollectionWorkerFunction': print('WORKER='+x['PhysicalResourceId'])
-          PY
-          source /tmp/ids.env
-          test -n "${DLQ:-}"
+          DLQ=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionDeadLetterQueue --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+          WORKER=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionWorkerFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
           dlq_url=$(aws sqs get-queue-url --queue-name "$DLQ" --region "$REGION" --query QueueUrl --output text)
-          aws sqs get-queue-attributes --queue-url "$dlq_url" --region "$REGION" --attribute-names All > /tmp/dlq_attrs.json
-          aws sqs receive-message --queue-url "$dlq_url" --region "$REGION" --max-number-of-messages 10 --visibility-timeout 0 --attribute-names All --message-attribute-names All > /tmp/dlq_messages.json
-          log_group="/aws/lambda/$WORKER"
-          start_ms=$(( ($(date +%s)-86400)*1000 ))
-          aws logs filter-log-events --log-group-name "$log_group" --region "$REGION" --start-time "$start_ms" --filter-pattern 'ERROR' --limit 50 > /tmp/worker_errors.json || true
+          aws sqs get-queue-attributes --queue-url "$dlq_url" --region "$REGION" --attribute-names All > /tmp/attrs.json
+          aws sqs receive-message --queue-url "$dlq_url" --region "$REGION" --max-number-of-messages 10 --visibility-timeout 0 --attribute-names All --message-attribute-names All > /tmp/messages.json
+          end=$(date +%s); start_ms=$(( (end-172800)*1000 ))
+          aws logs filter-log-events --log-group-name "/aws/lambda/$WORKER" --region "$REGION" --start-time "$start_ms" --limit 100 > /tmp/logs.json || true
           python - <<'PY'
           import json
-          status=json.load(open('/tmp/status.json'))
-          attrs=json.load(open('/tmp/dlq_attrs.json')).get('Attributes',{})
-          msgs=json.load(open('/tmp/dlq_messages.json')).get('Messages',[])
-          errs=json.load(open('/tmp/worker_errors.json')).get('events',[])
-          def parse_body(m):
-              b=m.get('Body','')
-              try: return json.loads(b)
-              except: return b[:3000]
-          out={
-            'authority':status.get('authority'),
-            'failures':status.get('failures'),
-            'shared_provider_safety':status.get('shared_provider_safety'),
-            'distributed_rate_limit_state':status.get('distributed_rate_limit_state'),
-            'provider_429_telemetry':status.get('provider_429_telemetry'),
-            'dlq_attributes':{k:attrs.get(k) for k in ['ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible','ApproximateNumberOfMessagesDelayed','RedrivePolicy','CreatedTimestamp','LastModifiedTimestamp']},
-            'dlq_messages':[{'MessageId':m.get('MessageId'),'Attributes':m.get('Attributes'),'Body':parse_body(m)} for m in msgs],
-            'worker_error_events':[{'timestamp':e.get('timestamp'),'message':e.get('message','')[:3000]} for e in errs]
-          }
-          text=json.dumps(out,sort_keys=True,default=str)
-          print(text)
-          print('::error title=Soccer DLQ Diagnostic::'+text[:20000].replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
+          a=json.load(open('/tmp/attrs.json')).get('Attributes',{})
+          ms=json.load(open('/tmp/messages.json')).get('Messages',[])
+          es=json.load(open('/tmp/logs.json')).get('events',[])
+          def body(m):
+              try:return json.loads(m.get('Body',''))
+              except:return m.get('Body','')[:4000]
+          out={'attrs':{k:a.get(k) for k in ['ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible','ApproximateNumberOfMessagesDelayed','QueueArn']},'messages':[{'id':m.get('MessageId'),'attrs':m.get('Attributes'),'body':body(m)} for m in ms],'recent_worker_logs':[{'ts':e.get('timestamp'),'msg':e.get('message','')[:2000]} for e in es[-50:]]}
+          t=json.dumps(out,sort_keys=True,default=str);print(t);print('::error title=Soccer DLQ Exact::'+t[:20000].replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
           PY
