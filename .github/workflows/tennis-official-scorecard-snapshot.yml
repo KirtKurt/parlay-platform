@@ -1,0 +1,132 @@
+name: Tennis Official Scorecard Snapshot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/tennis-official-scorecard-snapshot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tennis-official-scorecard-snapshot
+  cancel-in-progress: false
+
+env:
+  TABLE_NAME: inqis_tennis_learning
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Build immutable-official scorecard snapshot
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from collections import defaultdict
+          from datetime import datetime, timezone
+          from decimal import Decimal
+          import boto3
+          from boto3.dynamodb.conditions import Attr
+
+          table=boto3.resource('dynamodb',region_name=os.environ['AWS_REGION_VALUE']).Table(os.environ['TABLE_NAME'])
+          def scan_prefix(prefix):
+              rows=[]; kwargs={'FilterExpression':Attr('PK').begins_with(prefix)}
+              while True:
+                  page=table.scan(**kwargs); rows.extend(page.get('Items',[]))
+                  key=page.get('LastEvaluatedKey')
+                  if not key: return rows
+                  kwargs['ExclusiveStartKey']=key
+
+          official=scan_prefix('OFFICIAL_PICK#')
+          settlements={str(x.get('PK','')).split('#',1)[-1]:x for x in scan_prefix('SETTLEMENT#')}
+          rows=[]
+          for o in official:
+              eid=str(o.get('event_id') or str(o.get('PK','')).split('#',1)[-1])
+              s=settlements.get(eid)
+              winner=None; result='pending'
+              if s is not None and s.get('label') is not None:
+                  try:
+                      label=int(s.get('label'))
+                      winner=str(s.get('player')) if label==1 else str(s.get('opponent'))
+                      result='win' if winner==str(o.get('pick')) else 'loss'
+                  except Exception:
+                      result='pending'
+              rows.append({
+                  'event_id':eid,
+                  'original_slate_date':str(o.get('original_slate_date') or ''),
+                  'original_slate_day':str(o.get('original_slate_day') or ''),
+                  'match_type':str(o.get('match_type') or ''),
+                  'player':str(o.get('player') or ''),
+                  'opponent':str(o.get('opponent') or ''),
+                  'pick':str(o.get('pick') or ''),
+                  'probability_pct':float(o.get('probability_pct') or 0),
+                  'probability_band':str(o.get('probability_band') or ''),
+                  'published_at':str(o.get('published_at') or ''),
+                  'original_commence_time':str(o.get('original_commence_time') or ''),
+                  'result':result,
+                  'winner':winner,
+                  'settlement_found':s is not None,
+                  'settlement_trained_at':str(s.get('trained_at') or '') if s else None,
+              })
+          rows.sort(key=lambda r:(r['original_slate_date'],r['original_commence_time'],r['event_id']))
+
+          def bucket(keyfn):
+              out={}
+              for r in rows:
+                  k=keyfn(r)
+                  if not k: continue
+                  b=out.setdefault(k,{'wins':0,'losses':0,'pending':0,'settled':0,'accuracy':None})
+                  if r['result']=='win': b['wins']+=1; b['settled']+=1
+                  elif r['result']=='loss': b['losses']+=1; b['settled']+=1
+                  else: b['pending']+=1
+              for b in out.values():
+                  b['accuracy']=round(b['wins']/b['settled'],6) if b['settled'] else None
+              return out
+          overall={'wins':sum(r['result']=='win' for r in rows),'losses':sum(r['result']=='loss' for r in rows),'pending':sum(r['result']=='pending' for r in rows)}
+          overall['settled']=overall['wins']+overall['losses']; overall['accuracy']=round(overall['wins']/overall['settled'],6) if overall['settled'] else None
+          payload={
+              'checked_at':datetime.now(timezone.utc).isoformat(),
+              'official_pick_count':len(rows),
+              'settlement_count':len(settlements),
+              'overall':overall,
+              'by_band':bucket(lambda r:r['probability_band']),
+              'by_day':bucket(lambda r:r['original_slate_day']),
+              'by_match_type':bucket(lambda r:r['match_type'].title()),
+              'rows':rows,
+          }
+          os.makedirs('runtime',exist_ok=True)
+          with open('runtime/tennis_official_scorecard_snapshot.json','w') as f:
+              json.dump(payload,f,indent=2,sort_keys=True,default=lambda v:float(v) if isinstance(v,Decimal) else str(v)); f.write('\n')
+          print(json.dumps({k:payload[k] for k in ('checked_at','official_pick_count','settlement_count','overall','by_band','by_day','by_match_type')},indent=2))
+          PY
+      - name: Commit scorecard snapshot
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          cp runtime/tennis_official_scorecard_snapshot.json /tmp/tennis_official_scorecard_snapshot.json
+          for attempt in $(seq 1 20); do
+            git fetch origin main
+            git reset --hard origin/main
+            mkdir -p runtime
+            cp /tmp/tennis_official_scorecard_snapshot.json runtime/tennis_official_scorecard_snapshot.json
+            git add runtime/tennis_official_scorecard_snapshot.json
+            if git diff --cached --quiet; then exit 0; fi
+            git commit -m 'Publish Tennis official scorecard snapshot [skip ci]'
+            if git push origin HEAD:main; then exit 0; fi
+            sleep 3
+          done
+          exit 1
