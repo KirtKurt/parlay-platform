@@ -17,6 +17,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Redeploy current main after restoring paginated health evidence scans.
           gh workflow run deploy-soccer-auto.yml \
             --repo "${GITHUB_REPOSITORY}" \
             --ref main \
