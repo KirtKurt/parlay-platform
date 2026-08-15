@@ -668,9 +668,34 @@ def dispatch_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str,
     )
     if quota_snapshot["exhausted"] and dispatch_required_count:
         # Do not manufacture queue pressure while the shared provider is
-        # definitively out of credits.  We intentionally do not advance
-        # last_dispatched_at here, so the very next dispatcher tick can resume
-        # immediately after a fresh positive quota observation arrives.
+        # definitively out of credits. The dispatch manifest still requires
+        # the current cadence generation, so materialize an explicit external-
+        # quota deferral for every fresh generation instead of leaving the
+        # previous cycle behind it. Otherwise /coverage sees the manifest
+        # advance but can only classify each event as DISCOVERY_GENERATION_STALE.
+        quota_deferred = 0
+        for item in prepared:
+            if not item["dispatch_required"] or item["recoverable_plan"]:
+                continue
+            row = item["row"]
+            dispatched_event = {
+                key: row.get(key)
+                for key in (
+                    "event_key", "event_id", "sport_key", "sport_title",
+                    "commence_time", "home_team", "away_team",
+                    "schedule_revision", "schedule_identity",
+                )
+            }
+            deferred = store.put_coverage_discovery_attempt(
+                dispatched_event,
+                discovery_observed_at=str(item["generation_at"]),
+                status="QUOTA_DEFERRED",
+                observed_at=dispatch_observed_at,
+                budget_reason="SHARED_SUBSCRIPTION_RESERVE_REACHED",
+            )
+            quota_deferred += int(bool(deferred.get("latest_summary_updated")))
+        # Intentionally do not advance last_dispatched_at. The next dispatcher
+        # tick can resume immediately after a fresh positive quota observation.
         return {
             "ok": True,
             "system": "soccer_auto",
@@ -687,6 +712,7 @@ def dispatch_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str,
             "schedule_races": 0,
             "recovered_plans": 0,
             "provider_quota_deferred": True,
+            "quota_deferred_generations": quota_deferred,
             "quota_remaining": quota_snapshot["remaining"],
             "quota_used": quota_snapshot["used"],
             "quota_observed_at": quota_snapshot["observed_at"],

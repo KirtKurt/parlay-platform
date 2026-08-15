@@ -132,3 +132,81 @@ def test_worker_retires_quota_blocked_discovery_and_rearms_dispatch(monkeypatch)
     assert processed["retry_via_dispatcher"] is True
     assert processed["retry_reenqueued"] is False
     assert processed["dispatch_rearmed"] is True
+
+
+
+def test_dispatch_materializes_quota_deferred_generation_instead_of_stale_manifest(monkeypatch):
+    class Store:
+        def __init__(self):
+            self.ops = _Ops({
+                "remaining": Decimal("0"),
+                "used": Decimal("5000000"),
+                "observed_at": "2026-08-15T12:00:00Z",
+            })
+            self.deferred = []
+            self.enqueued = []
+
+        def authoritative_active_events_between(self, *args, **kwargs):
+            return ([{
+                "event_key": "event-1",
+                "event_id": "provider-1",
+                "sport_key": "soccer_epl",
+                "sport_title": "EPL",
+                "commence_time": "2026-08-15T20:00:00Z",
+                "home_team": "A",
+                "away_team": "B",
+                "schedule_revision": 1,
+                "schedule_identity": "stable-identity",
+                "last_dispatched_at": "2026-08-15T11:00:00Z",
+            }], {
+                "valid": True,
+                "authority_version": "soccer-auto-event-inventory-authority-v1",
+                "generation_id": "g1",
+                "completed_at": "2026-08-15T12:00:00Z",
+                "authority_revision": 1,
+            })
+
+        def get_collection_window(self, match_day):
+            return None
+
+        def put_collection_window(self, *args, **kwargs):
+            return None
+
+        def latest_coverage_summary(self, event_key):
+            return {}
+
+        def put_coverage_dispatch_manifest(self, entries, **kwargs):
+            self.manifest = entries
+            return {
+                "latest_manifest_updated": True,
+                "manifest_digest": "manifest-1",
+                "event_count": len(entries),
+            }
+
+        def put_coverage_discovery_attempt(self, event, **kwargs):
+            self.deferred.append((event, kwargs))
+            return {"latest_summary_updated": True}
+
+        def enqueue(self, job, **kwargs):
+            self.enqueued.append(job)
+
+    store = Store()
+    monkeypatch.setattr(collector, "SoccerStore", lambda: store)
+    monkeypatch.setattr(collector, "now_utc", lambda: collector.parse_utc("2026-08-15T12:05:00Z"))
+    monkeypatch.setattr(collector, "_fresh_schedule_events", lambda events, observed: list(events))
+    monkeypatch.setattr(collector, "_stabilize_windows", lambda store, windows: {"2026-08-15": type("Window", (), {})()})
+    monkeypatch.setattr(collector, "collection_status", lambda row, windows, observed_at: {"open": True})
+    monkeypatch.setattr(collector, "_cadence_seconds", lambda commence, observed: 300)
+
+    result = collector.dispatch_handler({}, None)
+
+    assert result["provider_quota_deferred"] is True
+    assert result["quota_deferred_generations"] == 1
+    assert result["enqueued"] == 0
+    assert store.enqueued == []
+    assert len(store.deferred) == 1
+    _, kwargs = store.deferred[0]
+    assert kwargs["status"] == "QUOTA_DEFERRED"
+    assert kwargs["budget_reason"] == "SHARED_SUBSCRIPTION_RESERVE_REACHED"
+    required = store.manifest[0]["required_discovery_observed_at"]
+    assert kwargs["discovery_observed_at"] == required
