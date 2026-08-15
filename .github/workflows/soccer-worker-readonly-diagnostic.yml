@@ -1,0 +1,57 @@
+name: Soccer Worker Readonly Diagnostic
+
+on:
+  push:
+    branches: [agent/soccer-critical-diagnostic-20260815]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Inspect worker logs and metrics
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-soccer-auto
+          worker=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionWorkerFunction --region "$REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          echo "::notice title=SOCCER_WORKER::$worker"
+          end=$(date -u +%s)
+          start=$((end-43200))
+          aws cloudwatch get-metric-statistics --namespace AWS/Lambda --metric-name Errors --dimensions Name=FunctionName,Value="$worker" --start-time "$(date -u -d @${start} +%Y-%m-%dT%H:%M:%SZ)" --end-time "$(date -u -d @${end} +%Y-%m-%dT%H:%M:%SZ)" --period 300 --statistics Sum --region "$REGION" --output json > /tmp/errors.json
+          aws cloudwatch get-metric-statistics --namespace AWS/Lambda --metric-name Invocations --dimensions Name=FunctionName,Value="$worker" --start-time "$(date -u -d @${start} +%Y-%m-%dT%H:%M:%SZ)" --end-time "$(date -u -d @${end} +%Y-%m-%dT%H:%M:%SZ)" --period 300 --statistics Sum --region "$REGION" --output json > /tmp/invocations.json
+          python - <<'PY'
+          import json
+          e=json.load(open('/tmp/errors.json')).get('Datapoints',[])
+          i=json.load(open('/tmp/invocations.json')).get('Datapoints',[])
+          print('::notice title=SOCCER_WORKER_METRICS::'+json.dumps({'errors_sum':sum(float(x.get('Sum',0)) for x in e),'invocations_sum':sum(float(x.get('Sum',0)) for x in i),'error_points':sorted(e,key=lambda x:str(x.get('Timestamp')))[-20:]},default=str,separators=(',',':')))
+          PY
+          group="/aws/lambda/$worker"
+          startms=$((start*1000))
+          set +e
+          aws logs filter-log-events --log-group-name "$group" --start-time "$startms" --filter-pattern 'ERROR' --limit 200 --region "$REGION" --output json > /tmp/errorlogs.json
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "::warning title=SOCCER_WORKER_LOGS::CloudWatch Logs read unavailable"
+            exit 0
+          fi
+          python - <<'PY'
+          import json,re
+          rows=json.load(open('/tmp/errorlogs.json')).get('events',[])
+          out=[]
+          for r in rows[-100:]:
+              msg=r.get('message','')
+              msg=re.sub(r'(?i)(api[_-]?key|authorization|token)(\s*[:=]\s*)\S+',r'\1\2<redacted>',msg)
+              out.append({'timestamp':r.get('timestamp'),'message':msg[:3000]})
+          print('::warning title=SOCCER_WORKER_ERROR_LOGS::'+json.dumps({'count':len(rows),'latest':out},separators=(',',':')))
+          PY
