@@ -21,7 +21,7 @@ jobs:
           stack=parlay-platform-soccer-auto
           DLQ=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionDeadLetterQueue --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
           WORKER=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionWorkerFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
-          dlq_url=$(aws sqs get-queue-url --queue-name "$DLQ" --region "$REGION" --query QueueUrl --output text)
+          if [[ "$DLQ" == http* ]]; then dlq_url="$DLQ"; else dlq_url=$(aws sqs get-queue-url --queue-name "$DLQ" --region "$REGION" --query QueueUrl --output text); fi
           aws sqs get-queue-attributes --queue-url "$dlq_url" --region "$REGION" --attribute-names All > /tmp/attrs.json
           aws sqs receive-message --queue-url "$dlq_url" --region "$REGION" --max-number-of-messages 10 --visibility-timeout 0 --attribute-names All --message-attribute-names All > /tmp/messages.json
           end=$(date +%s); start_ms=$(( (end-172800)*1000 ))
