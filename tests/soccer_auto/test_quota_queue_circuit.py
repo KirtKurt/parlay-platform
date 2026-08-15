@@ -18,7 +18,7 @@ class QuotaBlockedDispatchStore(FailedEnqueueStore):
     def provider_budget_admission(self, operation, observed_at, *, estimated_cost):
         return {
             "available": False,
-            "reason": "PROVIDER_QUOTA_EXHAUSTED",
+            "reason": "ATOMIC_SOCCER_ALLOWANCE_EXHAUSTED",
             "external_capacity": True,
         }
 
