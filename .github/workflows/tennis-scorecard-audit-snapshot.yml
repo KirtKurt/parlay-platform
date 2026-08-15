@@ -1,0 +1,99 @@
+name: Tennis Scorecard Audit Snapshot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/tennis-scorecard-audit-snapshot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tennis-scorecard-audit-snapshot
+  cancel-in-progress: false
+
+env:
+  TABLE_NAME: inqis_tennis_learning
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Build audit-only DynamoDB snapshot
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from collections import Counter, defaultdict
+          from datetime import datetime, timezone
+          from decimal import Decimal
+          import boto3
+
+          table=boto3.resource('dynamodb', region_name=os.environ['AWS_REGION_VALUE']).Table(os.environ['TABLE_NAME'])
+          items=[]
+          kwargs={}
+          while True:
+              page=table.scan(**kwargs)
+              items.extend(page.get('Items', []))
+              key=page.get('LastEvaluatedKey')
+              if not key: break
+              kwargs['ExclusiveStartKey']=key
+
+          def prefix(pk):
+              s=str(pk or '')
+              return s.split('#',1)[0] if '#' in s else s
+          counts=Counter(prefix(x.get('PK')) for x in items)
+          samples=defaultdict(list)
+          interesting={'OFFICIAL','PUBLISHED','PUBLICATION','PREDICTION','SETTLEMENT','LIVE','LOCK','AUDIT'}
+          for x in items:
+              p=prefix(x.get('PK'))
+              if p in interesting and len(samples[p]) < 8:
+                  samples[p].append(x)
+          # Also capture any prefix whose name suggests immutable/reporting semantics.
+          for p in counts:
+              if any(k in p.upper() for k in ('OFFICIAL','PUBLISH','REPORT','LOCK')) and p not in samples:
+                  rows=[x for x in items if prefix(x.get('PK'))==p][:8]
+                  samples[p]=rows
+
+          payload={
+              'checked_at': datetime.now(timezone.utc).isoformat(),
+              'table': os.environ['TABLE_NAME'],
+              'item_count': len(items),
+              'prefix_counts': dict(sorted(counts.items())),
+              'samples': dict(samples),
+          }
+          os.makedirs('runtime', exist_ok=True)
+          with open('runtime/tennis_scorecard_audit_snapshot.json','w') as f:
+              json.dump(payload,f,indent=2,sort_keys=True,default=lambda v: float(v) if isinstance(v,Decimal) else str(v))
+              f.write('\n')
+          print(json.dumps({'item_count':len(items),'prefix_counts':dict(sorted(counts.items()))},indent=2))
+          PY
+      - name: Commit snapshot
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          cp runtime/tennis_scorecard_audit_snapshot.json /tmp/tennis_scorecard_audit_snapshot.json
+          for attempt in $(seq 1 20); do
+            git fetch origin main
+            git reset --hard origin/main
+            mkdir -p runtime
+            cp /tmp/tennis_scorecard_audit_snapshot.json runtime/tennis_scorecard_audit_snapshot.json
+            git add runtime/tennis_scorecard_audit_snapshot.json
+            if git diff --cached --quiet; then exit 0; fi
+            git commit -m 'Publish Tennis scorecard audit snapshot [skip ci]'
+            if git push origin HEAD:main; then exit 0; fi
+            sleep 3
+          done
+          exit 1
