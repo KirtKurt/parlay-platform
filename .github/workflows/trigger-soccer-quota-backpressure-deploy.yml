@@ -1,0 +1,23 @@
+name: Trigger Soccer Quota Backpressure Deploy
+
+on:
+  push:
+    paths:
+      - '.github/workflows/trigger-soccer-quota-backpressure-deploy.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch isolated Soccer deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run deploy-soccer-auto.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref main \
+            -f shared_quota_reserve_percent=0
