@@ -1,0 +1,61 @@
+name: Soccer DLQ Readonly Inspect
+on:
+  push:
+    branches: [agent/soccer-critical-diagnostic-20260815]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Inspect DLQ and quota
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-soccer-auto
+          aws cloudformation list-stack-resources --stack-name "$stack" --region "$REGION" --output json > /tmp/resources.json
+          python - <<'PY'
+          import json, os, subprocess
+          region=os.environ['REGION']
+          resources=json.load(open('/tmp/resources.json'))['StackResourceSummaries']
+          queues=[]
+          for r in resources:
+              if r.get('ResourceType')!='AWS::SQS::Queue': continue
+              name=r.get('PhysicalResourceId')
+              if not name: continue
+              if str(name).startswith('https://'): url=name
+              else:
+                  raw=subprocess.check_output(['aws','sqs','get-queue-url','--queue-name',name,'--region',region,'--output','json'],text=True)
+                  url=json.loads(raw)['QueueUrl']
+              attrs=json.loads(subprocess.check_output(['aws','sqs','get-queue-attributes','--queue-url',url,'--attribute-names','All','--region',region,'--output','json'],text=True)).get('Attributes',{})
+              queues.append({'logical_id':r.get('LogicalResourceId'),'name':name,'url':url,'attrs':{k:attrs.get(k) for k in ('ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible','ApproximateNumberOfMessagesDelayed','RedrivePolicy')}})
+          print('::notice title=SOCCER_QUEUES::'+json.dumps(queues,separators=(',',':')))
+          for q in queues:
+              if 'dlq' not in str(q['logical_id']).lower() and 'dead' not in str(q['logical_id']).lower(): continue
+              raw=subprocess.check_output(['aws','sqs','receive-message','--queue-url',q['url'],'--max-number-of-messages','10','--visibility-timeout','0','--wait-time-seconds','0','--attribute-names','All','--message-attribute-names','All','--region',region,'--output','json'],text=True)
+              messages=json.loads(raw).get('Messages',[])
+              safe=[]
+              for m in messages:
+                  body=m.get('Body','')
+                  try: body=json.loads(body)
+                  except Exception: pass
+                  safe.append({'message_id':m.get('MessageId'),'attributes':m.get('Attributes',{}),'body':body})
+              print('::warning title=SOCCER_DLQ_MESSAGES::'+json.dumps(safe,separators=(',',':')))
+          # Find the ops table from Lambda env, then read exact shared quota state.
+          fn=next(r['PhysicalResourceId'] for r in resources if r.get('LogicalResourceId')=='SoccerDispatchFunction')
+          cfg=json.loads(subprocess.check_output(['aws','lambda','get-function-configuration','--function-name',fn,'--region',region,'--output','json'],text=True))
+          env=cfg.get('Environment',{}).get('Variables',{})
+          table=env.get('SOCCER_AUTO_OPS_TABLE') or env.get('SOCCER_OPS_TABLE')
+          if table:
+              raw=subprocess.check_output(['aws','dynamodb','get-item','--table-name',table,'--key','{"PK":{"S":"QUOTA_STATE"},"SK":{"S":"LATEST"}}','--consistent-read','--region',region,'--output','json'],text=True)
+              print('::notice title=SOCCER_QUOTA_STATE::'+raw.replace('\n',''))
+          else:
+              print('::warning title=SOCCER_QUOTA_STATE::Ops table env not found')
+          PY
