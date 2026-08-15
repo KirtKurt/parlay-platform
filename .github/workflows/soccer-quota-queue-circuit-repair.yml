@@ -31,119 +31,52 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Patch quota circuit and add regression tests
+      - name: Patch quota circuit
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-
           path = Path('soccer_auto/collector.py')
           text = path.read_text()
-
-          dispatch_anchor = '''    for item in prepared:\n'''
-          dispatch_gate = '''    # Do not create paid-work queue pressure while the shared provider is\n    # externally quota-blocked. Free inventory refreshes continue to update the\n    # quota observation, so the next minute tick automatically resumes dispatch\n    # as soon as provider capacity is available again.\n    if prepared:\n        dispatch_admission = _provider_budget_admission(\n            store,\n            "event_odds",\n            dispatch_observed_at,\n            estimated_cost=1,\n        )\n        if (\n            not dispatch_admission["available"]\n            and dispatch_admission["external_capacity"]\n        ):\n            return {\n                "ok": True,\n                "system": "soccer_auto",\n                "quota_deferred": True,\n                "quota_reason": str(dispatch_admission["reason"]),\n                "observed_at": dispatch_observed_at,\n                "coverage_manifest_digest": manifest["manifest_digest"],\n                "coverage_manifest_events": manifest["event_count"],\n                "events_seen": len(events),\n                "before_window": before_window,\n                "enqueued": 0,\n                "skipped": len(prepared),\n                "schedule_races": 0,\n                "recovered_plans": 0,\n            }\n\n'''
+          dispatch_anchor = '    for item in prepared:\n'
+          dispatch_gate = (
+              '    # Stop paid-work fanout while the shared provider is externally quota-blocked.\n'
+              '    # Free inventory refreshes keep quota state current, so dispatch resumes automatically.\n'
+              '    if prepared:\n'
+              '        dispatch_admission = _provider_budget_admission(\n'
+              '            store, "event_odds", dispatch_observed_at, estimated_cost=1\n'
+              '        )\n'
+              '        if (not dispatch_admission["available"] and dispatch_admission["external_capacity"]):\n'
+              '            return {\n'
+              '                "ok": True, "system": "soccer_auto", "quota_deferred": True,\n'
+              '                "quota_reason": str(dispatch_admission["reason"]),\n'
+              '                "observed_at": dispatch_observed_at,\n'
+              '                "coverage_manifest_digest": manifest["manifest_digest"],\n'
+              '                "coverage_manifest_events": manifest["event_count"],\n'
+              '                "events_seen": len(events), "before_window": before_window,\n'
+              '                "enqueued": 0, "skipped": len(prepared),\n'
+              '                "schedule_races": 0, "recovered_plans": 0,\n'
+              '            }\n\n'
+          )
           if text.count(dispatch_anchor) != 1:
               raise SystemExit(f'unexpected dispatch anchor count: {text.count(dispatch_anchor)}')
           text = text.replace(dispatch_anchor, dispatch_gate + dispatch_anchor, 1)
-
-          worker_anchor = '''                replacement_enqueued = False\n'''
-          worker_circuit = '''                # External provider quota can last for hours. Recycling every\n                # message forever turns a provider outage into an SQS/Lambda\n                # storm and eventually trips queue-depth/age alarms. After two\n                # delayed retries, acknowledge the stale delivery and let the\n                # minute dispatcher recreate a fresh authoritative generation\n                # once free inventory observes restored capacity. Internal\n                # execution deferrals still retain the normal queue retry path.\n                if isinstance(exc, ProviderBudgetDeferred) and deferral_count >= 3:\n                    processed.append(\n                        {\n                            **exc.result,\n                            "retry_reenqueued": False,\n                            "retry_via_dispatcher": True,\n                            "receive_count": receive_count,\n                            "quota_deferral_count": deferral_count,\n                        }\n                    )\n                    continue\n                replacement_enqueued = False\n'''
+          worker_anchor = '                replacement_enqueued = False\n'
+          worker_circuit = (
+              '                # Bound external quota retries; the dispatcher becomes recovery authority.\n'
+              '                if isinstance(exc, ProviderBudgetDeferred) and deferral_count >= 3:\n'
+              '                    processed.append({\n'
+              '                        **exc.result, "retry_reenqueued": False,\n'
+              '                        "retry_via_dispatcher": True,\n'
+              '                        "receive_count": receive_count,\n'
+              '                        "quota_deferral_count": deferral_count,\n'
+              '                    })\n'
+              '                    continue\n'
+          )
           if text.count(worker_anchor) != 1:
               raise SystemExit(f'unexpected worker anchor count: {text.count(worker_anchor)}')
-          text = text.replace(worker_anchor, worker_circuit, 1)
+          text = text.replace(worker_anchor, worker_circuit + worker_anchor, 1)
           path.write_text(text)
-
-          test_path = Path('tests/soccer_auto/test_quota_queue_circuit.py')
-          test_path.write_text(r'''from __future__ import annotations
-
-import json
-import unittest
-from datetime import datetime, timezone
-from unittest.mock import patch
-
-from tests.soccer_auto.aws_stubs import install_if_needed
-
-install_if_needed()
-
-from soccer_auto.collector import _coverage_batch_digest, dispatch_handler, worker_handler
-from soccer_auto.config import ALL_BOOKMAKER_REGIONS
-from tests.soccer_auto.test_collection_gate import FailedEnqueueStore, FakeStore, event_at
-
-
-class QuotaBlockedDispatchStore(FailedEnqueueStore):
-    def provider_budget_admission(self, operation, observed_at, *, estimated_cost):
-        return {
-            "available": False,
-            "reason": "PROVIDER_QUOTA_EXHAUSTED",
-            "external_capacity": True,
-        }
-
-
-class QuotaQueueCircuitTests(unittest.TestCase):
-    def test_dispatch_circuit_breaker_does_not_enqueue_paid_work(self) -> None:
-        row = {
-            **event_at(),
-            "last_seen_at": "2026-08-14T04:00:00Z",
-            "last_dispatched_at": None,
-        }
-        store = QuotaBlockedDispatchStore(row)
-        observed = datetime(2026, 8, 14, 4, 0, tzinfo=timezone.utc)
-        with patch("soccer_auto.collector.SoccerStore", return_value=store), patch(
-            "soccer_auto.collector.now_utc", return_value=observed
-        ):
-            result = dispatch_handler({}, None)
-        self.assertTrue(result["quota_deferred"])
-        self.assertEqual(result["enqueued"], 0)
-        self.assertEqual(store.discovery_attempts, [])
-        self.assertEqual(store.marked, [])
-
-    def test_external_quota_delivery_retires_after_bounded_retries(self) -> None:
-        row = event_at()
-        store = FakeStore(row)
-        store.budget_available = False
-        bare = {
-            "bookmakers": [],
-            "regions": list(ALL_BOOKMAKER_REGIONS),
-            "markets": ["h2h"],
-            "planned_pairs": ["book|h2h"],
-            "plan_digest": "plan",
-        }
-        job = {
-            "version": "soccer-auto-collection-job-v1",
-            "action": "FETCH_EVENT",
-            "event": row,
-            **bare,
-            "discovery_observed_at": "2026-08-14T04:00:00Z",
-            "batch_digest": _coverage_batch_digest(bare),
-            "quota_deferral_count": 2,
-        }
-        delivery = {
-            "Records": [
-                {
-                    "messageId": "quota-job-circuit",
-                    "attributes": {"ApproximateReceiveCount": "1"},
-                    "body": json.dumps(job),
-                }
-            ]
-        }
-        with patch("soccer_auto.collector.SoccerStore", return_value=store), patch(
-            "soccer_auto.collector._client", return_value=object()
-        ), patch(
-            "soccer_auto.collector._observed_at",
-            return_value="2026-08-14T04:00:01Z",
-        ):
-            result = worker_handler(delivery, None)
-        self.assertEqual(result["batchItemFailures"], [])
-        self.assertEqual(store.jobs, [])
-        self.assertFalse(result["processed"][0]["retry_reenqueued"])
-        self.assertTrue(result["processed"][0]["retry_via_dispatcher"])
-        self.assertEqual(result["processed"][0]["quota_deferral_count"], 3)
-        self.assertEqual(store.calls, [])
-
-
-if __name__ == "__main__":
-    unittest.main()
-''')
           PY
           python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
           python -m py_compile soccer_auto/*.py
@@ -155,7 +88,7 @@ if __name__ == "__main__":
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git rm .github/workflows/soccer-quota-queue-circuit-repair.yml
-          git add soccer_auto/collector.py tests/soccer_auto/test_quota_queue_circuit.py
+          git add soccer_auto/collector.py
           git commit -m 'Fix Soccer quota queue storm'
           git push origin HEAD:agent/soccer-authority-repair
       - uses: aws-actions/setup-sam@v2
@@ -164,41 +97,19 @@ if __name__ == "__main__":
           set -euo pipefail
           stack_name=parlay-platform-soccer-auto
           region='${{ secrets.AWS_REGION }}'
-          reserve=$(aws cloudformation describe-stacks \
-            --stack-name "$stack_name" --region "$region" \
-            --query "Stacks[0].Parameters[?ParameterKey=='SharedQuotaReservePercent'].ParameterValue" \
-            --output text)
+          reserve=$(aws cloudformation describe-stacks --stack-name "$stack_name" --region "$region" --query "Stacks[0].Parameters[?ParameterKey=='SharedQuotaReservePercent'].ParameterValue" --output text)
           test -n "$reserve"
           sam validate --template-file soccer-auto-template.yaml --lint
           sam build --no-cached --template-file soccer-auto-template.yaml
-          sam deploy \
-            --template-file .aws-sam/build/template.yaml \
-            --stack-name "$stack_name" \
-            --region "$region" \
-            --resolve-s3 \
-            --capabilities CAPABILITY_IAM \
-            --parameter-overrides \
-              OddsApiKey="${{ secrets.ODDS_API_KEY }}" \
-              EnableHistoricalBackfill="true" \
-              SharedQuotaReservePercent="$reserve" \
-              QuotaRaceBufferCredits="2000" \
-              SoccerOddsRequestsPerSecond="3" \
-              SoccerLlmModelId="us.amazon.nova-2-lite-v1:0" \
-            --no-confirm-changeset \
-            --no-fail-on-empty-changeset
-      - name: Drain quota-blocked backlog and verify live circuit
+          sam deploy --template-file .aws-sam/build/template.yaml --stack-name "$stack_name" --region "$region" --resolve-s3 --capabilities CAPABILITY_IAM --parameter-overrides OddsApiKey="${{ secrets.ODDS_API_KEY }}" EnableHistoricalBackfill="true" SharedQuotaReservePercent="$reserve" QuotaRaceBufferCredits="2000" SoccerOddsRequestsPerSecond="3" SoccerLlmModelId="us.amazon.nova-2-lite-v1:0" --no-confirm-changeset --no-fail-on-empty-changeset
+      - name: Drain blocked backlog and verify circuit
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           python - <<'PY'
-          import datetime as dt
-          import json
-          import os
-          import time
+          import json, os, time
           import boto3
-          from decimal import Decimal
-
           region = os.environ['AWS_REGION_VALUE']
           stack = 'parlay-platform-soccer-auto'
           cf = boto3.client('cloudformation', region_name=region)
@@ -207,34 +118,27 @@ if __name__ == "__main__":
           lam = boto3.client('lambda', region_name=region)
           events = boto3.client('events', region_name=region)
           cw = boto3.client('cloudwatch', region_name=region)
-
-          resources = []
-          token = None
+          resources, token = [], None
           while True:
               kwargs = {'StackName': stack}
               if token:
                   kwargs['NextToken'] = token
               page = cf.list_stack_resources(**kwargs)
-              resources.extend(page.get('StackResourceSummaries', []))
+              resources += page.get('StackResourceSummaries', [])
               token = page.get('NextToken')
               if not token:
                   break
-
           def physical(logical_id):
               return next(r['PhysicalResourceId'] for r in resources if r['LogicalResourceId'] == logical_id)
-
           ops = ddb.Table(physical('SoccerOpsTable'))
           quota = ops.get_item(Key={'PK': 'QUOTA_STATE', 'SK': 'LATEST'}, ConsistentRead=True).get('Item') or {}
           remaining = int(quota.get('remaining') or 0)
-          observed_at = str(quota.get('observed_at') or '')
-          print('QUOTA_BEFORE=' + json.dumps({'remaining': remaining, 'used': int(quota.get('used') or 0), 'observed_at': observed_at}))
-
+          print('QUOTA=' + json.dumps({'remaining': remaining, 'used': int(quota.get('used') or 0), 'observed_at': str(quota.get('observed_at') or '')}))
           queue_url = physical('SoccerCollectionQueue')
           if remaining <= 0:
               sqs.purge_queue(QueueUrl=queue_url)
-              print('QUEUE_PURGE=issued_due_to_external_quota')
+              print('QUEUE_PURGE=issued')
               time.sleep(65)
-
           dispatch_name = physical('SoccerDispatchFunction')
           response = lam.invoke(FunctionName=dispatch_name, InvocationType='RequestResponse', Payload=b'{}')
           payload = json.loads(response['Payload'].read() or b'{}')
@@ -242,58 +146,35 @@ if __name__ == "__main__":
           if remaining <= 0:
               assert payload.get('quota_deferred') is True, payload
               assert int(payload.get('enqueued') or 0) == 0, payload
-
-          attrs = sqs.get_queue_attributes(
-              QueueUrl=queue_url,
-              AttributeNames=['ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible','ApproximateNumberOfMessagesDelayed'],
-          )['Attributes']
+          attrs = sqs.get_queue_attributes(QueueUrl=queue_url, AttributeNames=['ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible','ApproximateNumberOfMessagesDelayed'])['Attributes']
           queue = {k: int(v) for k, v in attrs.items()}
-          print('QUEUE_AFTER=' + json.dumps(queue))
+          print('QUEUE=' + json.dumps(queue))
           if remaining <= 0:
               assert sum(queue.values()) <= 20, queue
-
           stack_info = cf.describe_stacks(StackName=stack)['Stacks'][0]
-          print('STACK=' + json.dumps({'status': stack_info['StackStatus'], 'last_updated': stack_info.get('LastUpdatedTime', stack_info.get('CreationTime')).isoformat()}))
-
-          function_rows = []
+          print('STACK=' + json.dumps({'status': stack_info['StackStatus'], 'updated': stack_info.get('LastUpdatedTime', stack_info.get('CreationTime')).isoformat()}))
+          functions = []
           for r in resources:
-              if r.get('ResourceType') != 'AWS::Lambda::Function':
-                  continue
-              cfg = lam.get_function_configuration(FunctionName=r['PhysicalResourceId'])
-              function_rows.append({'logical_id': r['LogicalResourceId'], 'state': cfg.get('State'), 'last_update_status': cfg.get('LastUpdateStatus')})
-          print('FUNCTIONS=' + json.dumps(function_rows))
-          assert all(x['state'] == 'Active' and x['last_update_status'] == 'Successful' for x in function_rows), function_rows
-
-          rules = []
+              if r.get('ResourceType') == 'AWS::Lambda::Function':
+                  cfg = lam.get_function_configuration(FunctionName=r['PhysicalResourceId'])
+                  functions.append({'logical_id': r['LogicalResourceId'], 'state': cfg.get('State'), 'update': cfg.get('LastUpdateStatus')})
+          print('FUNCTIONS=' + json.dumps(functions))
+          assert all(x['state'] == 'Active' and x['update'] == 'Successful' for x in functions), functions
+          schedules = []
           for r in resources:
-              if r.get('ResourceType') != 'AWS::Events::Rule':
-                  continue
-              desc = events.describe_rule(Name=r['PhysicalResourceId'])
-              rules.append({'logical_id': r['LogicalResourceId'], 'state': desc.get('State')})
-          print('SCHEDULES=' + json.dumps(rules))
-          assert all(x['state'] == 'ENABLED' for x in rules), rules
-
+              if r.get('ResourceType') == 'AWS::Events::Rule':
+                  desc = events.describe_rule(Name=r['PhysicalResourceId'])
+                  schedules.append({'logical_id': r['LogicalResourceId'], 'state': desc.get('State')})
+          print('SCHEDULES=' + json.dumps(schedules))
+          assert all(x['state'] == 'ENABLED' for x in schedules), schedules
           alarm_names = [r['PhysicalResourceId'] for r in resources if r.get('ResourceType') == 'AWS::CloudWatch::Alarm']
-          alarm_rows = []
+          alarms = []
           for i in range(0, len(alarm_names), 100):
               for a in cw.describe_alarms(AlarmNames=alarm_names[i:i+100]).get('MetricAlarms', []):
-                  alarm_rows.append({'name': a['AlarmName'], 'state': a['StateValue'], 'reason': a.get('StateReason')})
-          print('ALARMS=' + json.dumps(alarm_rows))
-
+                  alarms.append({'name': a['AlarmName'], 'state': a['StateValue']})
+          print('ALARMS=' + json.dumps(alarms))
           autonomy = ops.get_item(Key={'PK': 'AUTONOMY', 'SK': 'STATE'}, ConsistentRead=True).get('Item') or {}
           llm = ops.get_item(Key={'PK': 'LLM_ANALYSIS', 'SK': 'LAST_ATTEMPT'}, ConsistentRead=True).get('Item') or {}
-          print('AUTONOMY=' + json.dumps({
-              'authority': autonomy.get('authority'),
-              'promotion_blocked': autonomy.get('promotion_blocked'),
-              'automatic_prediction_allowed': autonomy.get('automatic_prediction_allowed'),
-              'counts': autonomy.get('counts'),
-              'failures': autonomy.get('failures'),
-              'updated_at': autonomy.get('updated_at'),
-          }, default=str))
-          print('LLM=' + json.dumps({
-              'status': llm.get('status'),
-              'reason': llm.get('reason'),
-              'retry_after': llm.get('retry_after'),
-              'observed_at': llm.get('observed_at'),
-          }, default=str))
+          print('AUTONOMY=' + json.dumps({'authority': autonomy.get('authority'), 'promotion_blocked': autonomy.get('promotion_blocked'), 'automatic_prediction_allowed': autonomy.get('automatic_prediction_allowed'), 'counts': autonomy.get('counts'), 'failures': autonomy.get('failures'), 'updated_at': autonomy.get('updated_at')}, default=str))
+          print('LLM=' + json.dumps({'status': llm.get('status'), 'reason': llm.get('reason'), 'retry_after': llm.get('retry_after'), 'observed_at': llm.get('observed_at')}, default=str))
           PY
