@@ -4,32 +4,34 @@
     "currentDate": "2026-08-14",
     "currentSlotIndex": 0,
     "eligibleGameCount": 4234,
-    "lastError": null,
+    "lastError": "historical quota/cost guard stopped paid requests",
     "networkRequestCount": 27046,
-    "phase": "BACKFILLING",
-    "revision": 6183,
+    "phase": "PAUSED_QUOTA",
+    "revision": 6212,
     "stateUpdatedAtUtc": null,
     "targetSettledGames": 4355,
-    "updatedAtUtc": "2026-08-15T07:36:45.701331+00:00"
+    "updatedAtUtc": "2026-08-15T08:36:44.954731+00:00"
   },
   "before": {
     "completeSlateCount": 341,
     "currentDate": "2026-08-14",
     "currentSlotIndex": 0,
     "eligibleGameCount": 4234,
-    "lastError": null,
+    "lastError": "historical quota/cost guard stopped paid requests",
     "networkRequestCount": 27046,
-    "phase": "BACKFILLING",
-    "revision": 6183,
+    "phase": "PAUSED_QUOTA",
+    "revision": 6212,
     "stateUpdatedAtUtc": null,
     "targetSettledGames": 4355,
-    "updatedAtUtc": "2026-08-15T07:36:45.701331+00:00"
+    "updatedAtUtc": "2026-08-15T08:36:44.954731+00:00"
   },
-  "blockers": [],
-  "createdAtUtc": "2026-08-15T07:37:06.330078+00:00",
-  "heartbeatAtUtc": "2026-08-15T07:37:06.292406+00:00",
+  "blockers": [
+    "paused_quota"
+  ],
+  "createdAtUtc": "2026-08-15T08:37:56.794852+00:00",
+  "heartbeatAtUtc": "2026-08-15T08:37:56.757343+00:00",
   "livenessPolicyVersion": "MLB-HISTORICAL-LIVENESS-POLICY-v3-settled-evidence",
-  "livenessStatus": "HEALTHY_IDLE",
+  "livenessStatus": "BLOCKED",
   "movement": {
     "completeSlateDelta": 0,
     "dateChanged": false,
@@ -39,7 +41,7 @@
     "revisionDelta": 0,
     "slotChanged": false
   },
-  "ok": true,
+  "ok": false,
   "proofType": "MLB_HISTORICAL_HOURLY_LIVENESS_V1",
   "recoveryInvoked": false,
   "recoveryRequired": false,
@@ -56,11 +58,11 @@
     }
   ],
   "runAttempt": "1",
-  "runId": "31872392635",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/31872392635",
-  "sourceSha": "c98470a016b671083435f27e7cad3f251b23a75b",
+  "runId": "31874941455",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/31874941455",
+  "sourceSha": "c83df65ef36c64977fc98e35d825be1c634eee56",
   "sourceStateStale": false,
-  "sourceStateUpdatedAtUtc": "2026-08-15T07:36:45.701331+00:00",
-  "stateAgeMinutes": 0.34318458333333335,
+  "sourceStateUpdatedAtUtc": "2026-08-15T08:36:44.954731+00:00",
+  "stateAgeMinutes": 1.1967101999999998,
   "waitingHealthy": false
 }
