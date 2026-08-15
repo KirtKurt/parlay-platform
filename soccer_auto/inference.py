@@ -33,6 +33,7 @@ from .model import CLASSES, ResidualSoftmaxModel
 from .storage import (
     COVERAGE_CERTIFICATE_VERSION,
     SoccerStore,
+    ddb_safe,
     now_utc,
     plain,
 )
@@ -337,6 +338,11 @@ def build_frozen_lock(
             "source_slot_ids": [row["SK"] for row in latest_pointers],
             "source_payload_hashes": [row["payload_sha256"] for row in latest_pointers],
         }
+    # Bind the immutable feature hash to the exact numeric representation
+    # that DynamoDB persists. ddb_safe rounds floats to 12 decimals;
+    # hashing full-precision floats before that conversion makes a valid
+    # lock fail provenance validation after a storage round trip.
+    features = plain(ddb_safe(features))
     exclusion_reasons = []
     if int(features["book_count"]) < MIN_BOOKMAKERS:
         exclusion_reasons.append("INSUFFICIENT_THREE_WAY_BOOKMAKER_COVERAGE")

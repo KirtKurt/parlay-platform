@@ -19,6 +19,8 @@ from soccer_auto.storage import (  # noqa: E402
     coverage_cycle_complete,
     coverage_expected_batch_digests,
     coverage_plan_digest,
+    ddb_safe,
+    plain,
 )
 
 
@@ -251,6 +253,14 @@ class CertifiedLockCohortTests(unittest.TestCase):
         self.assertEqual(final_lock["horizon"], "T10")
         self.assertEqual(final_lock["lock_at"], "2026-08-14T13:49:00Z")
         self.assertTrue(live_lock_coverage_provenance_valid(final_lock))
+        persisted_round_trip = plain(ddb_safe(final_lock))
+        self.assertTrue(
+            live_lock_coverage_provenance_valid(persisted_round_trip)
+        )
+        self.assertEqual(
+            final_lock["feature_hash"],
+            persisted_round_trip["feature_hash"],
+        )
 
     def test_same_plan_certificates_fall_back_to_exact_latest_baseline(self):
         older = complete_certificate()
