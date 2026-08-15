@@ -8,22 +8,20 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write
   contents: read
 
 concurrency:
   group: mlb-auto-critical-repair-once
   cancel-in-progress: false
 
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-mlb-auto-prod
+
 jobs:
   repair:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      AWS_REGION: us-east-1
-      STACK_NAME: parlay-platform-dev
-      ROGUE_RULE: parlay-platform-mlb-auto-prod-train-1h
-      SNAPSHOTS_TABLE: parlay_platform_snapshots
     steps:
       - uses: actions/checkout@v4
 
@@ -31,173 +29,245 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Disable exact noncanonical MLB Auto training writer
+      - name: Resolve and verify isolated MLB Auto runtime
         run: |
           set -euo pipefail
-          if aws events describe-rule --name "$ROGUE_RULE" --region "$AWS_REGION" >/tmp/rogue_before.json 2>/tmp/rogue_err.txt; then
-            BEFORE=$(python -c 'import json; print(json.load(open("/tmp/rogue_before.json")).get("State","UNKNOWN"))')
-            echo "rogue_rule_before=$BEFORE"
-            if [ "$BEFORE" = "ENABLED" ]; then
-              aws events disable-rule --name "$ROGUE_RULE" --region "$AWS_REGION"
-            fi
-            AFTER=$(aws events describe-rule --name "$ROGUE_RULE" --region "$AWS_REGION" --query State --output text)
-            echo "rogue_rule_after=$AFTER"
-            [ "$AFTER" = "DISABLED" ] || { echo "::error::Rogue MLB Auto training rule is still $AFTER"; exit 1; }
-          else
-            echo "rogue_rule_absent=true"
-          fi
-
-      - name: Resolve and verify canonical MLB ingest authority
-        run: |
-          set -euo pipefail
-          PULL_FN=$(aws cloudformation describe-stack-resource \
+          FN=$(aws cloudformation describe-stack-resource \
             --stack-name "$STACK_NAME" \
-            --logical-resource-id MLBAuditedPullFunction \
+            --logical-resource-id AutoFunction \
             --region "$AWS_REGION" \
             --query 'StackResourceDetail.PhysicalResourceId' \
             --output text)
-          [ -n "$PULL_FN" ] && [ "$PULL_FN" != "None" ]
-          echo "PULL_FN=$PULL_FN" >> "$GITHUB_ENV"
-          aws lambda get-function --function-name "$PULL_FN" --region "$AWS_REGION" \
-            --query '{state:Configuration.State,lastUpdateStatus:Configuration.LastUpdateStatus,lastModified:Configuration.LastModified}' \
+          [ -n "$FN" ] && [ "$FN" != "None" ]
+          echo "FN=$FN" >> "$GITHUB_ENV"
+          aws lambda get-function --function-name "$FN" --region "$AWS_REGION" \
+            --query '{state:Configuration.State,lastUpdateStatus:Configuration.LastUpdateStatus,lastModified:Configuration.LastModified,runtime:Configuration.Runtime}' \
             --output json
-          STATE=$(aws lambda get-function-configuration --function-name "$PULL_FN" --region "$AWS_REGION" --query State --output text)
-          UPDATE=$(aws lambda get-function-configuration --function-name "$PULL_FN" --region "$AWS_REGION" --query LastUpdateStatus --output text)
-          [ "$STATE" = "Active" ] && [ "$UPDATE" = "Successful" ] || { echo "::error::Canonical ingest Lambda is not healthy"; exit 1; }
-          FN_ARN=$(aws lambda get-function --function-name "$PULL_FN" --region "$AWS_REGION" --query 'Configuration.FunctionArn' --output text)
-          RULES=$(aws events list-rule-names-by-target --target-arn "$FN_ARN" --region "$AWS_REGION" --query 'RuleNames' --output json)
-          echo "canonical_ingest_rules=$RULES"
-          [ "$(printf '%s' "$RULES" | jq 'length')" -gt 0 ] || { echo "::error::No EventBridge rule targets canonical MLB ingest"; exit 1; }
-          ENABLED=0
-          while IFS= read -r rule; do
-            STATE=$(aws events describe-rule --name "$rule" --region "$AWS_REGION" --query State --output text)
-            SCHEDULE=$(aws events describe-rule --name "$rule" --region "$AWS_REGION" --query ScheduleExpression --output text)
-            echo "canonical_rule=$rule state=$STATE schedule=$SCHEDULE"
-            [ "$STATE" = "ENABLED" ] && ENABLED=$((ENABLED+1))
-          done < <(printf '%s' "$RULES" | jq -r '.[]')
-          [ "$ENABLED" -gt 0 ] || { echo "::error::Canonical MLB ingest has no enabled EventBridge schedule"; exit 1; }
+          STATE=$(aws lambda get-function-configuration --function-name "$FN" --region "$AWS_REGION" --query State --output text)
+          UPDATE=$(aws lambda get-function-configuration --function-name "$FN" --region "$AWS_REGION" --query LastUpdateStatus --output text)
+          [ "$STATE" = "Active" ] && [ "$UPDATE" = "Successful" ] || { echo "::error::Isolated MLB Auto Lambda is not healthy"; exit 1; }
 
-      - name: Force one canonical live MLB ingest and capture failure diagnostics
-        id: force_ingest
+      - name: Repair and verify all six isolated MLB Auto schedules
+        run: |
+          set -euo pipefail
+          aws events list-rules --name-prefix "${STACK_NAME}-" --region "$AWS_REGION" --output json > /tmp/mlb_auto_rules.json
+          python - <<'PY' > /tmp/mlb_auto_rule_names.txt
+          import json
+          rules=json.load(open('/tmp/mlb_auto_rules.json')).get('Rules') or []
+          suffixes=('heartbeat-5m','lock-1m','settle-30m','train-1h','repair-5m','history-15m')
+          for suffix in suffixes:
+              matches=[r for r in rules if str(r.get('Name') or '').endswith(suffix)]
+              if len(matches) != 1:
+                  raise SystemExit(f'Expected exactly one MLB Auto {suffix} rule, found {len(matches)}')
+              print(matches[0]['Name'])
+          PY
+          while IFS= read -r rule; do
+            [ -n "$rule" ] || continue
+            state=$(aws events describe-rule --name "$rule" --region "$AWS_REGION" --query State --output text)
+            schedule=$(aws events describe-rule --name "$rule" --region "$AWS_REGION" --query ScheduleExpression --output text)
+            echo "rule=$rule state_before=$state schedule=$schedule"
+            if [ "$state" != "ENABLED" ]; then
+              aws events enable-rule --name "$rule" --region "$AWS_REGION"
+            fi
+            after=$(aws events describe-rule --name "$rule" --region "$AWS_REGION" --query State --output text)
+            echo "rule=$rule state_after=$after"
+            [ "$after" = "ENABLED" ] || { echo "::error::Failed to enable $rule"; exit 1; }
+          done < /tmp/mlb_auto_rule_names.txt
+
+      - name: Verify isolated MLB Auto status and T10 authority before provider calls
+        id: status_before
+        run: |
+          set -euo pipefail
+          aws lambda invoke --cli-read-timeout 180 --cli-connect-timeout 30 \
+            --function-name "$FN" --region "$AWS_REGION" --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"STATUS"}' /tmp/mlb_auto_status_before.json >/tmp/mlb_auto_status_before_meta.json
+          python - <<'PY'
+          import json
+          meta=json.load(open('/tmp/mlb_auto_status_before_meta.json'))
+          status=json.load(open('/tmp/mlb_auto_status_before.json'))
+          if meta.get('FunctionError'):
+              raise SystemExit('STATUS Lambda FunctionError: '+str(meta.get('FunctionError')))
+          assert status.get('ok') is True, status
+          assert status.get('sport') == 'mlb_auto', status
+          assert status.get('autonomous') is True, status
+          assert int(status.get('lock_minutes') or 0) == 10, status
+          assert int(status.get('training_lock_minutes') or 0) == 10, status
+          assert status.get('official_pick_policy') == 'CHAMPION_CONFIDENCE_AT_OR_BEFORE_T10', status
+          assert status.get('public_prediction_authority') == 'IMMUTABLE_LOCK_WHEN_PRESENT', status
+          summary={
+              'ok': status.get('ok'),
+              'sport': status.get('sport'),
+              'platform_version': status.get('platform_version'),
+              'prediction_mode': status.get('prediction_mode'),
+              'lock_minutes': status.get('lock_minutes'),
+              'training_lock_minutes': status.get('training_lock_minutes'),
+              'training_examples': status.get('training_examples'),
+              'training_examples_all_lock_horizons': status.get('training_examples_all_lock_horizons'),
+              'minimum_training_examples': status.get('minimum_training_examples'),
+              'registered_champion_model_id': status.get('registered_champion_model_id'),
+              'active_champion_model_id': status.get('champion_model_id'),
+              'champion_lock_policy_compatible': status.get('champion_lock_policy_compatible'),
+              'champion_promotion_gate': status.get('champion_promotion_gate') or {},
+              'today_prediction_count': status.get('today_prediction_count'),
+              'today_locked_count': status.get('today_locked_count'),
+              'today_official_pick_count': status.get('today_official_pick_count'),
+              'official_pick_policy': status.get('official_pick_policy'),
+              'public_prediction_authority': status.get('public_prediction_authority'),
+              'controller': status.get('controller') or {},
+              'repair': status.get('repair') or {},
+          }
+          print('isolated_mlb_auto_status_before=',json.dumps(summary,sort_keys=True,default=str))
+          with open('/tmp/mlb_auto_status_summary_before.json','w') as f:
+              json.dump(summary,f,indent=2,sort_keys=True,default=str); f.write('\n')
+          PY
+
+      - name: Probe live provider ingest
+        id: live_ingest
         continue-on-error: true
         run: |
           set -euo pipefail
-          aws lambda invoke \
-            --function-name "$PULL_FN" \
-            --region "$AWS_REGION" \
-            --log-type Tail \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{"force":true,"run":"critical_recovery"}' \
-            /tmp/mlb_pull_response.json > /tmp/mlb_pull_meta.json
+          aws lambda invoke --cli-read-timeout 600 --cli-connect-timeout 30 \
+            --function-name "$FN" --region "$AWS_REGION" --log-type Tail --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"MLB_AUTO_HEARTBEAT"}' \
+            /tmp/mlb_auto_ingest.json > /tmp/mlb_auto_ingest_meta.json
           python - <<'PY'
-          import base64, json, re
-          meta=json.load(open('/tmp/mlb_pull_meta.json'))
-          raw=open('/tmp/mlb_pull_response.json', encoding='utf-8').read().strip()
+          import base64,json,re
+          meta=json.load(open('/tmp/mlb_auto_ingest_meta.json'))
+          raw=open('/tmp/mlb_auto_ingest.json',encoding='utf-8').read().strip()
           log=''
           if meta.get('LogResult'):
               try: log=base64.b64decode(meta['LogResult']).decode('utf-8','replace')
               except Exception: pass
           def clean(s):
-              s=re.sub(r'(?i)(api[_-]?key|authorization|token)(\s*[:=]\s*)[^\s,;]+', r'\1\2[REDACTED]', s)
-              return s[-7000:]
-          print('invoke_status=', meta.get('StatusCode'))
-          print('function_error=', meta.get('FunctionError'))
-          print('tail_log_start')
-          print(clean(log))
-          print('tail_log_end')
+              return re.sub(r'(?i)(api[_-]?key|authorization|token)(\s*[:=]\s*)[^\s,;]+',r'\1\2[REDACTED]',s)
+          print('invoke_status=',meta.get('StatusCode'))
+          print('function_error=',meta.get('FunctionError'))
+          if log: print('tail_log=',clean(log[-7000:]))
           if raw:
               try: obj=json.loads(raw)
               except Exception: obj={'raw':raw[:1500]}
-              print('response_summary=', clean(json.dumps(obj, default=str))[:3000])
+              print('response_summary=',clean(json.dumps(obj,default=str))[:5000])
           if meta.get('FunctionError'):
-              raise SystemExit('Canonical MLB ingest Lambda returned FunctionError: '+str(meta.get('FunctionError')))
-          if raw:
-              obj=json.loads(raw)
-              status=obj.get('statusCode') if isinstance(obj,dict) else None
-              body=obj.get('body') if isinstance(obj,dict) else None
-              if status is not None and int(status) >= 400:
-                  raise SystemExit('Canonical MLB ingest returned HTTP-style failure status '+str(status))
-              if isinstance(body,str):
-                  try: parsed=json.loads(body)
-                  except Exception: parsed={}
-                  if parsed.get('ok') is False:
-                      raise SystemExit('Canonical MLB ingest returned ok=false')
+              raise SystemExit('MLB Auto live ingest FunctionError: '+str(meta.get('FunctionError')))
+          obj=json.loads(raw) if raw else {}
+          if isinstance(obj,dict) and obj.get('ok') is False:
+              raise SystemExit('MLB Auto live ingest returned ok=false')
           PY
 
-      - name: Verify fresh canonical pull reached DynamoDB
-        id: verify_fresh
+      - name: Run isolated MLB Auto self-repair
+        id: self_repair
         if: always()
         continue-on-error: true
         run: |
           set -euo pipefail
-          sleep 5
-          SLATE_DATE=$(TZ=America/New_York date +%F)
-          PK="PULLS#mlb#${SLATE_DATE}"
-          aws dynamodb query \
-            --region "$AWS_REGION" \
-            --table-name "$SNAPSHOTS_TABLE" \
-            --key-condition-expression 'PK = :pk' \
-            --expression-attribute-values "{\":pk\":{\"S\":\"$PK\"}}" \
-            --consistent-read \
-            --output json > /tmp/mlb_pulls_after.json
-          python scripts/mlb_pull_guard_status.py \
-            --slate-date "$SLATE_DATE" \
-            --pulls-json /tmp/mlb_pulls_after.json \
-            --aws-ok true \
-            --output /tmp/mlb_pull_after.json
+          aws lambda invoke --cli-read-timeout 600 --cli-connect-timeout 30 \
+            --function-name "$FN" --region "$AWS_REGION" --log-type Tail --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"MLB_AUTO_REPAIR"}' \
+            /tmp/mlb_auto_repair.json > /tmp/mlb_auto_repair_meta.json
           python - <<'PY'
-          import json
-          p=json.load(open('/tmp/mlb_pull_after.json'))
-          print(json.dumps({k:p.get(k) for k in ['fresh','latestRawPullAt','latestRawPullAgeMinutes','watchdogReason','missingCleanScheduledSlots']}, indent=2))
-          if p.get('fresh') is not True:
-              raise SystemExit('Canonical MLB ingest is still stale after forced recovery')
+          import base64,json,re
+          meta=json.load(open('/tmp/mlb_auto_repair_meta.json'))
+          raw=open('/tmp/mlb_auto_repair.json',encoding='utf-8').read().strip()
+          log=''
+          if meta.get('LogResult'):
+              try: log=base64.b64decode(meta['LogResult']).decode('utf-8','replace')
+              except Exception: pass
+          def clean(s):
+              return re.sub(r'(?i)(api[_-]?key|authorization|token)(\s*[:=]\s*)[^\s,;]+',r'\1\2[REDACTED]',s)
+          print('invoke_status=',meta.get('StatusCode'))
+          print('function_error=',meta.get('FunctionError'))
+          if log: print('tail_log=',clean(log[-7000:]))
+          if raw:
+              try: obj=json.loads(raw)
+              except Exception: obj={'raw':raw[:1500]}
+              print('repair_summary=',clean(json.dumps(obj,default=str))[:5000])
+          if meta.get('FunctionError'):
+              raise SystemExit('MLB Auto self-repair FunctionError: '+str(meta.get('FunctionError')))
+          obj=json.loads(raw) if raw else {}
+          if isinstance(obj,dict) and obj.get('ok') is False:
+              raise SystemExit('MLB Auto self-repair returned ok=false')
           PY
 
-      - name: Verify no MLB alarms are currently ALARM
-        id: verify_alarms
+      - name: Verify post-repair status and T10 authority
+        id: status_after
+        if: always()
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          aws lambda invoke --cli-read-timeout 180 --cli-connect-timeout 30 \
+            --function-name "$FN" --region "$AWS_REGION" --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"STATUS"}' /tmp/mlb_auto_status_after.json >/tmp/mlb_auto_status_after_meta.json
+          python - <<'PY'
+          import json
+          meta=json.load(open('/tmp/mlb_auto_status_after_meta.json'))
+          status=json.load(open('/tmp/mlb_auto_status_after.json'))
+          if meta.get('FunctionError'):
+              raise SystemExit('STATUS Lambda FunctionError: '+str(meta.get('FunctionError')))
+          assert status.get('ok') is True, status
+          assert status.get('sport') == 'mlb_auto', status
+          assert int(status.get('lock_minutes') or 0) == 10, status
+          assert int(status.get('training_lock_minutes') or 0) == 10, status
+          assert status.get('official_pick_policy') == 'CHAMPION_CONFIDENCE_AT_OR_BEFORE_T10', status
+          assert status.get('public_prediction_authority') == 'IMMUTABLE_LOCK_WHEN_PRESENT', status
+          summary={
+              'platform_version': status.get('platform_version'),
+              'prediction_mode': status.get('prediction_mode'),
+              'lock_minutes': status.get('lock_minutes'),
+              'training_lock_minutes': status.get('training_lock_minutes'),
+              'training_examples': status.get('training_examples'),
+              'training_examples_all_lock_horizons': status.get('training_examples_all_lock_horizons'),
+              'registered_champion_model_id': status.get('registered_champion_model_id'),
+              'active_champion_model_id': status.get('champion_model_id'),
+              'champion_lock_policy_compatible': status.get('champion_lock_policy_compatible'),
+              'champion_promotion_gate': status.get('champion_promotion_gate') or {},
+              'today_prediction_count': status.get('today_prediction_count'),
+              'today_locked_count': status.get('today_locked_count'),
+              'today_official_pick_count': status.get('today_official_pick_count'),
+              'controller': status.get('controller') or {},
+              'repair': status.get('repair') or {},
+          }
+          print('isolated_mlb_auto_status_after=',json.dumps(summary,sort_keys=True,default=str))
+          with open('/tmp/mlb_auto_status_summary_after.json','w') as f:
+              json.dump(summary,f,indent=2,sort_keys=True,default=str); f.write('\n')
+          PY
+
+      - name: Verify isolated MLB Auto alarms
+        id: alarms
         if: always()
         continue-on-error: true
         run: |
           set -euo pipefail
           aws cloudwatch describe-alarms --state-value ALARM --region "$AWS_REGION" --output json > /tmp/alarms.json
           python - <<'PY'
-          import json
+          import json,os
+          fn=os.environ['FN']
           d=json.load(open('/tmp/alarms.json'))
           rows=[]
-          for key in ('MetricAlarms','CompositeAlarms'):
-              for a in d.get(key) or []:
-                  n=str(a.get('AlarmName') or '')
-                  if 'mlb' in n.lower(): rows.append(n)
-          print('active_mlb_alarms=', rows)
-          if rows: raise SystemExit('Active MLB alarms remain: '+', '.join(rows))
+          for a in d.get('MetricAlarms') or []:
+              dims={str(x.get('Name')):str(x.get('Value')) for x in a.get('Dimensions') or []}
+              name=str(a.get('AlarmName') or '')
+              if dims.get('FunctionName') == fn or 'mlb-auto-prod' in name.lower():
+                  rows.append({'name':name,'state':a.get('StateValue'),'reason':a.get('StateReason')})
+          for a in d.get('CompositeAlarms') or []:
+              name=str(a.get('AlarmName') or '')
+              if 'mlb-auto-prod' in name.lower():
+                  rows.append({'name':name,'state':a.get('StateValue'),'reason':a.get('StateReason')})
+          print('active_isolated_mlb_auto_alarms=',json.dumps(rows,sort_keys=True,default=str))
+          if rows:
+              raise SystemExit('One or more isolated MLB Auto alarms remain active')
           PY
 
-      - name: Fail if recovery is incomplete after collecting diagnostics
+      - name: Final recovery classification
         if: always()
         run: |
           set -euo pipefail
-          echo "force_ingest_outcome=${{ steps.force_ingest.outcome }}"
-          echo "fresh_pull_outcome=${{ steps.verify_fresh.outcome }}"
-          echo "alarm_check_outcome=${{ steps.verify_alarms.outcome }}"
-          if [ "${{ steps.force_ingest.outcome }}" != "success" ]; then
-            echo "::error::Canonical MLB ingest recovery is still failing"
-            exit 1
-          fi
-          if [ "${{ steps.verify_fresh.outcome }}" != "success" ]; then
-            echo "::error::Canonical MLB pull is still stale"
-            exit 1
-          fi
-          if [ "${{ steps.verify_alarms.outcome }}" != "success" ]; then
-            echo "::error::One or more MLB alarms remain active"
-            exit 1
-          fi
-
-      - name: Disable this one-shot repair workflow
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh api --method PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/mlb-auto-critical-repair-once.yml/disable"
-
-# recovery proof rerun 2026-08-14
+          echo "live_ingest_outcome=${{ steps.live_ingest.outcome }}"
+          echo "self_repair_outcome=${{ steps.self_repair.outcome }}"
+          echo "status_after_outcome=${{ steps.status_after.outcome }}"
+          echo "alarms_outcome=${{ steps.alarms.outcome }}"
+          [ "${{ steps.status_after.outcome }}" = "success" ] || { echo "::error::Isolated MLB Auto runtime/T10 status verification failed"; exit 1; }
+          [ "${{ steps.live_ingest.outcome }}" = "success" ] || { echo "::error::Isolated MLB Auto live provider ingest remains unavailable"; exit 1; }
+          [ "${{ steps.self_repair.outcome }}" = "success" ] || { echo "::error::Isolated MLB Auto self-repair remains incomplete"; exit 1; }
+          [ "${{ steps.alarms.outcome }}" = "success" ] || { echo "::error::One or more isolated MLB Auto alarms remain active"; exit 1; }
