@@ -151,7 +151,7 @@ def test_dispatch_materializes_quota_deferred_generation_instead_of_stale_manife
     monkeypatch.setattr(collector, "SoccerStore", lambda: store)
     monkeypatch.setattr(collector, "now_utc", lambda: collector.parse_utc("2026-08-15T12:05:00Z"))
     monkeypatch.setattr(collector, "_fresh_schedule_events", lambda events, observed: list(events))
-    monkeypatch.setattr(collector, "_stabilize_windows", lambda store, windows: {"2026-08-15": object()})
+    monkeypatch.setattr(collector, "_stabilize_windows", lambda store, windows: {"2026-08-15": type("Window", (), {})()})
     monkeypatch.setattr(collector, "collection_status", lambda row, windows, observed_at: {"open": True})
     monkeypatch.setattr(collector, "_cadence_seconds", lambda commence, observed: 300)
 
