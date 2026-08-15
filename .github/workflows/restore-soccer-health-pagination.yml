@@ -1,0 +1,33 @@
+name: Restore Soccer Health Pagination
+on:
+  push:
+    branches: ['agent/restore-soccer-health-pagination']
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply repair
+        run: python scripts/restore_soccer_health_pagination.py
+      - name: Verify
+        run: |
+          python -m pip install --quiet 'pytest>=8,<9' boto3 botocore
+          python -m pytest -q tests/soccer_auto/test_health_contract.py
+          python -m py_compile soccer_auto/health.py
+      - name: Commit repair
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add soccer_auto/health.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'Restore paginated Soccer health evidence scans'
+            git push origin HEAD:${GITHUB_REF_NAME}
+          fi
