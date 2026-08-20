@@ -9,7 +9,7 @@
     ],
     "ok": false
   },
-  "checkedAt": "2026-08-20T20:37:36.459138+00:00",
+  "checkedAt": "2026-08-20T21:36:12.591162+00:00",
   "completeSlateCount": 341,
   "configuredCeilingDate": "2026-12-31",
   "creditsConsumed": 270460,
@@ -35,7 +35,7 @@
   "freshAuditExpansionRequired": true,
   "freshAuditStartDate": "2026-08-08",
   "gamesUntilNextOptimization": 121,
-  "lastError": "historical quota/cost guard stopped paid requests",
+  "lastError": null,
   "lastErrorAtUtc": "2026-08-10T08:34:58.160924+00:00",
   "lastQuota": {
     "x-requests-last": 0,
@@ -198,10 +198,10 @@
   "networkRequestCount": 27046,
   "nextEligibleSlateDate": null,
   "nextOptimizationReady": false,
-  "ok": false,
+  "ok": true,
   "optimizationCompletedAtUtc": "2026-08-08T05:14:32.575699+00:00",
   "optimizationRound": 11,
-  "phase": "PAUSED_QUOTA",
+  "phase": "BACKFILLING",
   "productionAuthority": {
     "automaticLegacyFallbackAllowed": false,
     "historicalChampionOnly": false,
@@ -209,16 +209,13 @@
   },
   "provisionalFreshAuditCollectedDayCount": 6,
   "provisionalFreshAuditCollectedGameCount": 79,
-  "revision": 9900,
-  "runtimeBlockers": [
-    "optimizer_persisted_error:historical quota/cost guard stopped paid requests",
-    "historical_provider_quota_paused"
-  ],
+  "revision": 9927,
+  "runtimeBlockers": [],
   "safeSettledHorizonDate": null,
-  "sourceStateAgeSeconds": 51.545751,
+  "sourceStateAgeSeconds": 266.698444,
   "sourceStateStaleButHealthyWait": false,
-  "stalledStage": "RUNTIME_BLOCKED",
-  "stateUpdatedAtUtc": "2026-08-20T20:36:44.913387+00:00",
+  "stalledStage": "MODEL_PROMOTION_GATE",
+  "stateUpdatedAtUtc": "2026-08-20T21:31:45.892718+00:00",
   "statusVersion": "MLB-HISTORICAL-LIVE-STATUS-v2-evidence-honest",
   "targetSettledGames": 4355,
   "waitingHealthy": false
