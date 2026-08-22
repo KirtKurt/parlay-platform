@@ -1,4 +1,4 @@
-name: Export tested MLB shadow authority repair
+name: Publish tested MLB shadow authority repair
 
 on:
   pull_request:
@@ -7,17 +7,18 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  actions: write
 
 concurrency:
-  group: export-mlb-shadow-authority-repair-${{ github.run_id }}
+  group: publish-tested-mlb-shadow-authority-repair
   cancel-in-progress: false
 
 jobs:
   repair:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,10 +29,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install validators
+      - name: Install focused validators
         run: python -m pip install --quiet 'PyYAML>=6,<7' 'pytest>=8,<9'
 
-      - name: Align canonical deployment and source verifier with fail-closed authority
+      - name: Align deploy smoke and repository verifier with fail-closed authority
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -47,20 +48,24 @@ jobs:
                   "            \"'runtimeAuthorityActivationAvailable': False\": (",
               ),
           }
+
           for path, (old, new) in replacements.items():
               text = path.read_text(encoding='utf-8')
-              if text.count(new) == 1 and text.count(old) == 0:
-                  print(f'{path}: fail-closed shadow authority contract already installed')
-                  continue
-              if text.count(old) != 1 or text.count(new) != 0:
+              old_count = text.count(old)
+              new_count = text.count(new)
+              if old_count == 1 and new_count == 0:
+                  path.write_text(text.replace(old, new, 1), encoding='utf-8')
+                  print(f'{path}: installed fail-closed shadow authority expectation')
+              elif old_count == 0 and new_count == 1:
+                  print(f'{path}: repair already installed')
+              else:
                   raise SystemExit(
-                      f'{path} drifted: old matches={text.count(old)}, '
-                      f'new matches={text.count(new)}'
+                      f'{path} authority contract drifted: '
+                      f'old matches={old_count}, new matches={new_count}'
                   )
-              path.write_text(text.replace(old, new, 1), encoding='utf-8')
           PY
 
-      - name: Validate repair without weakening MLB gates
+      - name: Validate repair without weakening learning or promotion gates
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -69,6 +74,8 @@ jobs:
 
           deploy = Path('.github/workflows/deploy.yml').read_text(encoding='utf-8')
           verifier = Path('scripts/verify_mlb_workflow_authority.py').read_text(encoding='utf-8')
+          read_api = Path('hello_world/mlb_v3_read_api.py').read_text(encoding='utf-8')
+
           yaml.safe_load(deploy)
           assert deploy.count("'runtimeAuthorityActivationAvailable': False,") == 1
           assert deploy.count("'runtimeAuthorityActivationAvailable': True,") == 0
@@ -78,19 +85,58 @@ jobs:
           assert "'manualReviewCreatesShadowApprovalOnly': True," in deploy
           assert "'v2InferenceConsumerInstalled': False," in deploy
           assert "'automaticWagerAllowed': False," in deploy
+          assert '"runtimeAuthorityActivationAvailable": historical_active' in read_api
           PY
+          python -m py_compile scripts/verify_mlb_workflow_authority.py
           python scripts/verify_mlb_workflow_authority.py
           python -m pytest -q \
             tests/unit/test_mlb_workflow_authority.py \
-            tests/unit/test_mlb_shadow_authority_deploy_gate.py
+            tests/unit/test_mlb_shadow_authority_deploy_gate.py \
+            tests/unit/test_mlb_historical_read_api_contract.py \
+            tests/unit/test_mlb_trainer_deploy_response.py
           git diff --check
 
-      - name: Upload tested repair files
-        uses: actions/upload-artifact@v4
-        with:
-          name: mlb-shadow-authority-repair-${{ github.run_id }}
-          path: |
-            .github/workflows/deploy.yml
-            scripts/verify_mlb_workflow_authority.py
-          if-no-files-found: error
-          retention-days: 1
+      - name: Publish tested repair and remove failed one-shot
+        id: publish
+        run: |
+          set -euo pipefail
+          one_shot='.github/workflows/repair-mlb-deploy-shadow-authority-smoke-once.yml'
+          rm -f "$one_shot"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            .github/workflows/deploy.yml \
+            scripts/verify_mlb_workflow_authority.py \
+            "$one_shot"
+
+          if git diff --cached --quiet; then
+            echo 'Repair already installed; dispatching verification deployment.'
+            echo "published_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git commit -m 'fix(mlb): align deploy smoke with fail-closed shadow authority'
+
+          for attempt in $(seq 1 40); do
+            git fetch origin main
+            if git rebase origin/main && git push origin HEAD:main; then
+              echo "published_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+              echo 'Published tested MLB deploy authority repair.'
+              exit 0
+            fi
+            git rebase --abort >/dev/null 2>&1 || true
+            echo "Concurrent main update blocked publish attempt ${attempt}; retrying"
+            sleep 3
+          done
+
+          echo 'Unable to publish tested MLB deploy authority repair.' >&2
+          exit 1
+
+      - name: Dispatch verification deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "Dispatching deploy.yml after repaired source publication at ${{ steps.publish.outputs.published_sha }}"
+          gh workflow run deploy.yml --ref main
