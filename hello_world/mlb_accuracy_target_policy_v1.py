@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict
 
-VERSION = "MLB-ACCURACY-TARGET-POLICY-v4-dashboard-only-v2-manual-first"
+VERSION = "MLB-ACCURACY-TARGET-POLICY-v5-dashboard-only-v2-gated-auto"
 ROLLING_24H_ALL_GAMES_AUDIT_TARGET_PCT = 90.0
 RECOMMENDATION_RELIABILITY_THRESHOLD_PCT = 90.0
 MIN_OUTCOME_UNTOUCHED_ACCURACY_PCT = 90.0
@@ -116,8 +116,13 @@ def install() -> Dict[str, Any]:
         "rolling24hSlateAccuracyProgressMilestonesPct": list(RELIABILITY_PROGRESS_MILESTONES_PCT),
         "rolling24hSlateAccuracyProgressMilestonesReportingOnly": True,
         "rolling24hAccuracyAffectsPromotion": False,
-        "automaticPromotionAfterApplicableGates": False,
-        "firstPromotionRequiresManualReview": True,
+        "automaticPromotionAfterApplicableGates": True,
+        "firstPromotionRequiresManualReview": False,
+        "manualReviewCreatesShadowApprovalOnly": False,
+        "learningContinuesBelowAspirationalAccuracy": True,
+        "aspirationalAccuracyBlocksTraining": False,
+        "aspirationalAccuracyBlocksCandidateEvaluation": False,
+        "aspirationalAccuracyBlocksPlayableAuthority": True,
         "legacyV1AuthorityEnabled": False,
         "v2AwsNativeShadowTraining": True,
         "roiPromotionGateRequired": False,
@@ -132,6 +137,6 @@ def install() -> Dict[str, Any]:
             "Every game retains a visible immutable winner record. Audit-target eligibility begins at 60% and "
             "requires direction integrity; multi-reversal, divergent, compressed, resistance, or late-conflict rows "
             "require independent book agreement plus steam or run-line confirmation. The 90% values are dashboard "
-            "aspirations only. V2 promotion uses fixed prospective market-skill gates and manual first review."
+            "aspirations only. V2 continuously trains and evaluates challengers below the target; a champion activates automatically only after immutable prospective, calibration, proper-scoring, deployment-identity, and runtime-consumer gates pass. Automatic wagering remains disabled."
         ),
     }

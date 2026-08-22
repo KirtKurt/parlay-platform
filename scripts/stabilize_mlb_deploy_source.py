@@ -57,6 +57,68 @@ for required in [
     path.write_text(text, encoding="utf-8")
 
 
+def _source_contract_errors() -> list[str]:
+    contracts = {
+        "template.yaml": [
+            "INQSI_MLB_ML_AUTO_PROMOTE: 'true'",
+            "INQSI_MLB_V2_INFERENCE_ENABLED: 'true'",
+        ],
+        "hello_world/mlb_ml_autonomy_chain_v1.py": [
+            "MLB-ML-AUTONOMY-CHAIN-v1-gap-tolerant-missingness-auto-runtime",
+            "trainingMayContinuePastQuarantinedDates",
+            "learningContinuesBelowAspirationalAccuracy",
+            "firstPromotionRequiresManualReview",
+        ],
+        "hello_world/mlb_ml_v2_inference_consumer_v1.py": [
+            "MLB-ML-V2-INFERENCE-CONSUMER-v1-gated-active-champion",
+            "INQSI_MLB_V2_INFERENCE_ENABLED",
+            "promotion_gate_not_passed",
+            "automaticWagerAllowed",
+        ],
+        "hello_world/mlb_auto_llm_hypothesis_v1.py": [
+            "MLB-AUTO-LLM-HYPOTHESIS-v1-bounded-walk-forward-shadow",
+            "BEDROCK_BOUNDED_HYPOTHESIS_GENERATOR",
+            "wholeSlateChronologyPreserved",
+            "untouchedHoldoutUsedForSelection",
+            "productionWeightMutation",
+        ],
+        "hello_world/mlb_ml_runtime_install_v3.py": [
+            "mlb_ml_v2_inference_consumer_v1.apply_direction(engine)",
+            "v2GatedAutomaticPromotionContractInstalled",
+        ],
+        "hello_world/mlb_ml_aws_training_v1_compat.py": [
+            "mlb_ml_autonomy_chain_v1.install(canonical)",
+        ],
+        "scripts/verify_mlb_trainer_deploy_response.py": [
+            "first_promotion_still_requires_manual_review",
+            "v2_inference_consumer_not_installed",
+            "learning_still_bound_to_aspirational_accuracy",
+        ],
+        "scripts/reconcile_mlb_prospective_backlog_v6.py": [
+            "laterFinalizedSlatesContinuePastGaps",
+            "postStartPredictionCreationAllowed",
+            "immutablePredictionRewriteAllowed",
+        ],
+        "scripts/synchronize_mlb_ml_deployment_identity.py": [
+            "allRuntimeIdentitiesSynchronized",
+            "runtime_authority_activation_not_available",
+        ],
+    }
+    errors: list[str] = []
+    for relative, tokens in contracts.items():
+        path = ROOT / relative
+        if not path.exists():
+            errors.append(f"autonomy source missing: {relative}")
+            continue
+        text = path.read_text(encoding="utf-8")
+        errors.extend(
+            f"autonomy source contract missing: {relative}:{token}"
+            for token in tokens
+            if token not in text
+        )
+    return errors
+
+
 def _validate_deploy_workflow() -> None:
     path = ROOT / ".github" / "workflows" / "deploy.yml"
     text = path.read_text(encoding="utf-8")
@@ -118,6 +180,7 @@ def _validate_deploy_workflow() -> None:
         "test_mlb_lambda_artifact_identity.py",
     ]
     missing = [token for token in required if token not in text]
+    missing.extend(_source_contract_errors())
     cold_start = text.find("Verify built MLB Lambda cold start")
     build_manifest = text.find(
         "Bind the verified clean SAM build to the deployment identity"
@@ -175,7 +238,7 @@ def main() -> None:
     _patch_manual_pull()
     _patch_invariants()
     _validate_deploy_workflow()
-    print("MLB deployment source is canonical, identity-bound, provider-neutral, and non-polluting.")
+    print("MLB deployment source is canonical, identity-bound, provider-neutral, non-polluting, and autonomy-gated.")
 
 
 if __name__ == "__main__":

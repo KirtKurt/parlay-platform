@@ -1,7 +1,7 @@
 """Fail-closed compatibility handler for the canonical MLB AWS trainer.
 
 The canonical implementation remains in ``mlb_ml_aws_training_v1.py``. This
-uniquely named Lambda entrypoint installs three narrow normalizations:
+uniquely named Lambda entrypoint installs the canonical continuity, missingness, and autonomy normalizations:
 
 * unresolved canonical-slate continuity is represented as a healthy,
   non-authoritative wait at both persistence and return boundaries;
@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 import mlb_prospective_trainer_read_repair as prospective_trainer_read_repair
+import mlb_ml_autonomy_chain_v1 as mlb_ml_autonomy_chain_v1
 
 
 COMPAT_VERSION = "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v5-persisted-return"
@@ -119,6 +120,7 @@ def persisted_run_response(service: Any, payload: Mapping[str, Any]) -> Dict[str
 
 canonical = _load_canonical_module()
 prospective_trainer_read_repair.install()
+mlb_ml_autonomy_chain_v1.install(canonical)
 
 _original_save_run_status = canonical.TrainingService._save_run_status
 if not getattr(_original_save_run_status, "_mlb_unique_continuity_wait_patch", False):

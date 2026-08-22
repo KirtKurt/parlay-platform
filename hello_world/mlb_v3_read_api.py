@@ -29,6 +29,8 @@ except Exception:
 
 MODEL_VERSION = "INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble"
 HISTORICAL_MODEL_VERSION = "INQSI-MLB-v5.1.1-historical-daily-only-cutover-wager-disabled"
+V2_MODEL_VERSION = "INQSI-MLB-v6.0-auto-v2-gated-champion"
+V2_SELECTOR = "MLB-ML-V2-ACTIVE-CHAMPION"
 VERSION = "MLB-V3-READ-API-v7-exact-persisted-prelock-public-read"
 HISTORICAL_API_EXTENSION_VERSION = "MLB-V3-HISTORICAL-EXTENSION-v1.4-append-only-cutover-wager-disabled"
 
@@ -82,15 +84,25 @@ def _model_body() -> Dict[str, Any]:
     historical_active = runtime.get("historicalDailyChampionActive") is True
     cutover_active = runtime.get("historicalProductionCutoverActive") is True
     authority_coherent = steps.get("historicalAuthorityStateCoherent") is True
+    v2_consumer = runtime.get("v2InferenceConsumer") or {}
+    v2_installed = steps.get("v2InferenceConsumerInstalled") is True
+    v2_enabled = v2_consumer.get("enabled") is True
+    v2_active = runtime.get("v2ChampionActive") is True
+    v2_activation_available = bool(v2_installed and v2_enabled)
     runtime_ready = bool(
         ENGINE_IMPORT_OK
         and runtime.get("ok") is True
         and steps.get("rankedWinnerV15_10SelectionInstalled") is True
         and runtime.get("historicalDailyChampionOutermostAuthorityInstalled") is True
         and authority_coherent
+        and v2_installed
         and ranked_version
     )
-    primary = historical_version if historical_active else (ranked_version or MODEL_VERSION)
+    primary = (
+        V2_SELECTOR
+        if v2_active
+        else historical_version if historical_active else (ranked_version or MODEL_VERSION)
+    )
     authority_source = runtime.get("productionAuthoritySource") or (
         "mlb_historical_daily_champion_only"
         if historical_active
@@ -99,7 +111,7 @@ def _model_body() -> Dict[str, Any]:
     return {
         "ok": runtime_ready,
         "sport": "mlb",
-        "model_version": HISTORICAL_MODEL_VERSION if historical_active else MODEL_VERSION,
+        "model_version": V2_MODEL_VERSION if v2_active else HISTORICAL_MODEL_VERSION if historical_active else MODEL_VERSION,
         "primaryAlgorithm": primary,
         "primaryAlgorithmActive": runtime_ready,
         "historicalDailyChampionActive": historical_active,
@@ -120,8 +132,8 @@ def _model_body() -> Dict[str, Any]:
         ),
         "rankedWinnerPolicyVersion": ranked_policy,
         "rankedWinnerFirstSlateDateEt": runtime.get("rankedWinnerFirstSlateDate") or "2026-07-24",
-        "precisionHitRateEvidencePassed": historical_active,
-        "dailySlateAccuracyEvidencePassed": historical_active,
+        "precisionHitRateEvidencePassed": bool(v2_active or historical_active),
+        "dailySlateAccuracyEvidencePassed": bool(v2_active or historical_active),
         "dailySlateAccuracyRequirement": 0.80,
         "dailySlateAccuracyTargetHigh": 0.90,
         "accuracyEvidenceScope": "complete_day_slate_not_individual_game",
@@ -162,7 +174,9 @@ def _model_body() -> Dict[str, Any]:
             else "individual_game_moneyline_ranked_pick"
         ),
         "requiredWinnerPickPolicy": (
-            "one winner PICK for every valid MLB game on the complete slate"
+            "one V2 champion winner PICK for every valid MLB game"
+            if v2_active
+            else "one winner PICK for every valid MLB game on the complete slate"
             if historical_active
             else "one active-model ranked winner PICK for every valid MLB game"
         ),
@@ -172,9 +186,11 @@ def _model_body() -> Dict[str, Any]:
             else "winner prediction is always returned; precision and trade qualification are separate"
         ),
         "mlDirectionPolicy": (
-            "the historical daily champion is the sole outermost direction authority; the prior selector is quarantined and has no automatic fallback path"
+            "the exact promoted V2 champion is the outermost direction authority; downstream deterministic signal and integrity gates remain mandatory"
+            if v2_active
+            else "the historical daily champion is the sole outermost direction authority; the prior selector is quarantined and has no automatic fallback path"
             if historical_active
-            else "active exported ensemble is sole direction authority until the immutable historical daily gate passes"
+            else "active exported ensemble remains direction authority until a V2 or historical champion passes its immutable gate"
         ),
         "mlReliabilityPolicy": (
             "the 80 percent requirement applies only to complete-day held-out slate accuracy, never to an individual game label"
@@ -186,22 +202,29 @@ def _model_body() -> Dict[str, Any]:
             "HISTORICAL_DAILY_ONLY" if historical_active else "INCUMBENT_UNTIL_HISTORICAL_GATE"
         ),
         "automaticPromotionPolicy": (
-            "automatic atomic fail-closed champion plus historical-only cutover after the immutable 1000/200/200 every-day gate passes"
-            if historical_active
-            else "winner model fixed for release; precision/trade promotion remains disabled"
+            "gated automatic V2 promotion after immutable chronological prospective, calibration, proper-scoring, deployment-identity, and runtime-consumer gates"
+            if not historical_active
+            else "automatic atomic fail-closed champion plus historical-only cutover after the immutable 1000/200/200 every-day gate passes"
         ),
         "legacyV1AuthorityEnabled": False,
         "awsNativeTrainingInstalled": True,
-        "awsNativeTrainingAuthority": historical_active,
+        "awsNativeTrainingAuthority": bool(v2_active or historical_active),
         "awsNativeTrainingHealthSource": (
             "mlb_historical_optimizer_status_and_versioned_champion_artifact"
             if historical_active
             else "separate_mode_specific_status_contract"
         ),
-        "firstPromotionRequiresManualReview": not historical_active,
-        "manualReviewCreatesShadowApprovalOnly": not historical_active,
-        "v2InferenceConsumerInstalled": historical_active,
-        "runtimeAuthorityActivationAvailable": historical_active,
+        "firstPromotionRequiresManualReview": False,
+        "manualReviewCreatesShadowApprovalOnly": False,
+        "v2InferenceConsumerInstalled": v2_installed,
+        "v2InferenceConsumerEnabled": v2_enabled,
+        "v2ChampionActive": v2_active,
+        "v2ChampionStatus": runtime.get("v2ChampionStatus"),
+        "runtimeAuthorityActivationAvailable": v2_activation_available,
+        "learningContinuesBelowAspirationalAccuracy": True,
+        "aspirationalAccuracyBlocksTraining": False,
+        "aspirationalAccuracyBlocksCandidateEvaluation": False,
+        "aspirationalAccuracyBlocksPlayableAuthority": True,
         "parlaysEnabled": False,
         "readOnly": True,
         "sourcePolicy": (

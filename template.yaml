@@ -45,7 +45,8 @@ Globals:
         INQSI_DEPLOY_RUN_ID: !Ref DeployRunId
         INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION: 'false'
         INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED: 'false'
-        INQSI_MLB_ML_AUTO_PROMOTE: 'false'
+        INQSI_MLB_ML_AUTO_PROMOTE: 'true'
+        INQSI_MLB_V2_INFERENCE_ENABLED: 'true'
         MLB_MIN_EV_FOR_PROMOTION: '0.0'
         MLB_PROMOTION_FALLBACK_EDGE_THRESHOLD: '0.0005'
         MLB_PROMOTION_EDGE_THRESHOLD: '0.0015'
@@ -844,7 +845,7 @@ Resources:
           MLB_ML_RELEASE_CUTOFF_UTC: '2026-08-03T04:00:00+00:00'
           MLB_ML_FEATURE_VECTOR_VERSION: 'MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness'
           MLB_ML_EXECUTION_LEASE_SECONDS: '960'
-          INQSI_MLB_ML_AUTO_PROMOTE: 'false'
+          INQSI_MLB_ML_AUTO_PROMOTE: 'true'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
