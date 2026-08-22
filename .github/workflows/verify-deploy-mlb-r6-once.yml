@@ -1,0 +1,400 @@
+name: Verify and Deploy MLB R6 Once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-deploy-mlb-r6-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: parlay-platform-deploy
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-dev
+  SOURCE_SHA: 9524d81ca43c61979e7e2e9eeef4139cc675b124
+
+jobs:
+  verify-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout verifier branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Checkout exact merged production source
+        uses: actions/checkout@v4
+        with:
+          repository: KirtKurt/parlay-platform
+          ref: ${{ env.SOURCE_SHA }}
+          path: source
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Install verification dependencies
+        run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7' 'requests>=2.31,<3'
+
+      - name: Wait for any normal deployment and inspect AWS
+        id: inspect
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 80); do
+            status=$(aws cloudformation describe-stacks \
+              --stack-name "$STACK_NAME" \
+              --region "$AWS_REGION_VALUE" \
+              --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_MISSING)
+            echo "CloudFormation status: $status"
+            case "$status" in
+              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|STACK_MISSING) break ;;
+              *_IN_PROGRESS) sleep 20 ;;
+              *) echo "::error::Stack is not updateable: $status"; exit 1 ;;
+            esac
+          done
+          python - <<'PY'
+          import json, os
+          import boto3
+
+          region=os.environ['AWS_REGION_VALUE']
+          stack=os.environ['STACK_NAME']
+          cf=boto3.client('cloudformation', region_name=region)
+          lam=boto3.client('lambda', region_name=region)
+
+          def physical(logical):
+              return cf.describe_stack_resource(StackName=stack, LogicalResourceId=logical)['StackResourceDetail']['PhysicalResourceId']
+
+          stale=True
+          evidence={}
+          try:
+              results=lam.get_function_configuration(FunctionName=physical('MLBResultsSchedulerFunction'))
+              trainer=lam.get_function_configuration(FunctionName=physical('MLBMLTrainingFunction'))
+              env=((trainer.get('Environment') or {}).get('Variables') or {})
+              evidence={
+                  'resultsTimeout': results.get('Timeout'),
+                  'resultsMemorySize': results.get('MemorySize'),
+                  'experimentId': env.get('MLB_ML_EXPERIMENT_ID'),
+                  'releaseContractId': env.get('MLB_ML_RELEASE_CONTRACT_ID'),
+                  'releaseCutoffUtc': env.get('MLB_ML_RELEASE_CUTOFF_UTC'),
+                  'automaticPromotion': env.get('INQSI_MLB_ML_AUTO_PROMOTE'),
+              }
+              stale=not (
+                  results.get('Timeout') == 600
+                  and results.get('MemorySize') == 2048
+                  and env.get('MLB_ML_EXPERIMENT_ID') == 'mlb-v2-2026-08-02-future-prospective-r6'
+                  and env.get('MLB_ML_RELEASE_CONTRACT_ID') == 'mlb-v2-2026-08-02-future-prospective-r6'
+                  and env.get('MLB_ML_RELEASE_CUTOFF_UTC') == '2026-08-02T04:00:00+00:00'
+                  and str(env.get('INQSI_MLB_ML_AUTO_PROMOTE')).lower() == 'false'
+              )
+          except Exception as exc:
+              evidence={'inspectionError': f'{type(exc).__name__}:{exc}'}
+              stale=True
+          print(json.dumps({'stale': stale, 'evidence': evidence}, indent=2, sort_keys=True))
+          with open('/tmp/mlb-r6-stale.txt','w') as f:
+              f.write('true' if stale else 'false')
+          PY
+          echo "stale=$(cat /tmp/mlb-r6-stale.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Validate and build exact merged source
+        if: steps.inspect.outputs.stale == 'true'
+        working-directory: source
+        run: |
+          set -euo pipefail
+          python scripts/stabilize_mlb_deploy_source.py
+          python scripts/patch_template_mlb_v1.py
+          python scripts/patch_template_mlb_security.py
+          python scripts/patch_template_mlb_results_routes.py
+          git diff --exit-code -- template.yaml hello_world scripts tests/unit
+          python -m compileall -q hello_world scripts
+          python -m pytest -q \
+            tests/unit/test_mlb_r6_recovery_contract.py \
+            tests/unit/test_mlb_canonical_final_labels_v1.py \
+            tests/unit/test_mlb_daily_per_game_lock.py \
+            tests/unit/test_mlb_pull_guard_status.py \
+            tests/unit/test_mlb_ml_aws_training_v1.py \
+            tests/unit/test_mlb_deploy_identity.py
+          sam validate --template-file template.yaml
+          rm -rf .aws-sam
+          sam build --no-cached --template-file template.yaml
+
+      - name: Deploy exact merged source when AWS is stale
+        if: steps.inspect.outputs.stale == 'true'
+        working-directory: source
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          template_sha=$(sha256sum template.yaml | awk '{print $1}')
+          test -n "$template_sha"
+          python scripts/verify_mlb_release_activation_predeploy.py \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION_VALUE" \
+            --output /tmp/mlb-r6-release-activation.json
+          parameter_overrides=(
+            "OddsApiKey=${ODDS_API_KEY_VALUE}"
+            "BbsApiKey=${BBS_API_KEY_VALUE}"
+            "InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}"
+            "DeployGitSha=${SOURCE_SHA}"
+            "DeployTemplateSha256=${template_sha}"
+            "DeployRunId=r6-verifier-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          )
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION_VALUE" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides "${parameter_overrides[@]}"
+
+      - name: Collect fresh MLB production and learning evidence
+        if: always()
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json, math, os, urllib.parse, urllib.request
+          from datetime import datetime, timedelta, timezone
+          from decimal import Decimal
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          import boto3
+          from boto3.dynamodb.conditions import Key
+          from botocore.config import Config
+
+          region=os.environ['AWS_REGION_VALUE']
+          stack=os.environ['STACK_NAME']
+          source_sha=os.environ['SOURCE_SHA']
+          now=datetime.now(timezone.utc)
+          et=ZoneInfo('America/New_York')
+          now_et=now.astimezone(et)
+          slate_date=now_et.date().isoformat()
+
+          cf=boto3.client('cloudformation',region_name=region)
+          lam=boto3.client('lambda',region_name=region,config=Config(read_timeout=1200,connect_timeout=20,retries={'max_attempts':1}))
+          ddb=boto3.resource('dynamodb',region_name=region)
+
+          def physical(logical):
+              return cf.describe_stack_resource(StackName=stack,LogicalResourceId=logical)['StackResourceDetail']['PhysicalResourceId']
+
+          def plain(value):
+              if isinstance(value,Decimal):
+                  return int(value) if value == value.to_integral_value() else float(value)
+              if isinstance(value,dict): return {str(k):plain(v) for k,v in value.items()}
+              if isinstance(value,list): return [plain(v) for v in value]
+              return value
+
+          def query_all(table,pk,prefix=None):
+              expr=Key('PK').eq(pk)
+              if prefix: expr=expr & Key('SK').begins_with(prefix)
+              rows=[]; kwargs={'KeyConditionExpression':expr,'ConsistentRead':True}
+              while True:
+                  page=table.query(**kwargs); rows.extend(page.get('Items') or [])
+                  cursor=page.get('LastEvaluatedKey')
+                  if not cursor: return rows
+                  kwargs['ExclusiveStartKey']=cursor
+
+          def invoke(logical,payload):
+              fn=physical(logical)
+              try:
+                  response=lam.invoke(FunctionName=fn,InvocationType='RequestResponse',Payload=json.dumps(payload).encode())
+                  raw=response['Payload'].read().decode('utf-8','replace')
+                  try: body=json.loads(raw or '{}')
+                  except Exception: body={'rawPayload':raw[:12000]}
+                  if isinstance(body,dict) and isinstance(body.get('body'),str):
+                      try: body=json.loads(body['body'])
+                      except Exception: pass
+                  return {'functionName':fn,'functionError':response.get('FunctionError'),'statusCode':response.get('StatusCode'),'result':body}
+              except Exception as exc:
+                  return {'functionName':fn,'clientError':f'{type(exc).__name__}:{exc}'}
+
+          def official_schedule(date_value):
+              query=urllib.parse.urlencode({'sportId':'1','startDate':date_value,'endDate':date_value,'hydrate':'linescore'})
+              request=urllib.request.Request(f'https://statsapi.mlb.com/api/v1/schedule?{query}',headers={'user-agent':'inqsi-mlb-r6-verifier/1.0','accept':'application/json'})
+              with urllib.request.urlopen(request,timeout=30) as response:
+                  payload=json.loads(response.read().decode())
+              games=[g for d in payload.get('dates') or [] for g in d.get('games') or []]
+              finals=[g for g in games if str((g.get('status') or {}).get('abstractGameState') or '').upper()=='FINAL']
+              return {'gameCount':len(games),'finalCount':len(finals),'allFinal':bool(games and len(games)==len(finals)),'gamePks':sorted(str(g.get('gamePk')) for g in games)}
+
+          stack_status=cf.describe_stacks(StackName=stack)['Stacks'][0]['StackStatus']
+          results_cfg=lam.get_function_configuration(FunctionName=physical('MLBResultsSchedulerFunction'))
+          trainer_cfg=lam.get_function_configuration(FunctionName=physical('MLBMLTrainingFunction'))
+          lock_cfg=lam.get_function_configuration(FunctionName=physical('MLBDailyPickLockFunction'))
+          trainer_env=((trainer_cfg.get('Environment') or {}).get('Variables') or {})
+
+          snapshots=ddb.Table(physical('SnapshotsTable'))
+          outcomes=ddb.Table(physical('OutcomesTable'))
+          pulls=query_all(snapshots,f'PULLS#mlb#{slate_date}')
+          canonical=[r for r in pulls if str(r.get('SK') or '').startswith('PULL#SLOT#')]
+          slots=[str(r.get('SK'))[len('PULL#SLOT#'):] for r in canonical]
+          duplicates=sorted({s for s in slots if slots.count(s)>1})
+          latest=max(slots) if slots else None
+          latest_age=None
+          if latest:
+              try: latest_age=(now-datetime.fromisoformat(latest.replace('Z','+00:00'))).total_seconds()/60
+              except Exception: pass
+
+          start=now_et.replace(hour=1,minute=0,second=0,microsecond=0)
+          expected=0
+          if now_et>=start:
+              expected=int((now_et-start).total_seconds()//900)+1
+
+          lock_rows=query_all(snapshots,f'GAME_WINNERS#mlb#{slate_date}','LOCKED#GAME#')
+          lock_unique={}
+          frozen=eligible=explicit_t45=0
+          for item in lock_rows:
+              data=item.get('data') if isinstance(item.get('data'),dict) else {}
+              authority=data.get('canonicalLockAuthority') if isinstance(data.get('canonicalLockAuthority'),dict) else {}
+              identity=str(data.get('officialGamePk') or authority.get('officialGamePk') or item.get('SK'))
+              lock_unique[identity]=item
+              vector=data.get('frozenFeatureVector') if isinstance(data.get('frozenFeatureVector'),dict) else {}
+              if vector.get('fingerprint'): frozen+=1
+              if authority.get('learningEligible') is True and data.get('trainingEligible') is True: eligible+=1
+              if 'TMINUS45' in str(item.get('SK')) or data.get('tMinusMinutes')==45 or data.get('lockMinutesBeforeStart')==45: explicit_t45+=1
+
+          labels=query_all(outcomes,f'MLB_CANONICAL_FINAL_LABEL#{slate_date}','GAME_PK#')
+          schedule=official_schedule(slate_date)
+          lock_status=invoke('MLBDailyPickLockFunction',{'httpMethod':'GET','path':'/v1/mlb/locks/status','queryStringParameters':{}})
+          trainer_run=invoke('MLBMLTrainingFunction',{'sport':'mlb','mode':'scheduled','run':'r6_postdeploy_verification'})
+          trainer_status=invoke('MLBMLTrainingFunction',{'sport':'mlb','mode':'status','run':'r6_postdeploy_status'})
+          model_version=invoke('MLBV3ReadFunction',{'httpMethod':'GET','path':'/v1/mlb/model/version','queryStringParameters':{}})
+
+          trainer_result=trainer_run.get('result') if isinstance(trainer_run.get('result'),dict) else {}
+          status_result=trainer_status.get('result') if isinstance(trainer_status.get('result'),dict) else {}
+          source=status_result if status_result.get('ok') is True else trainer_result
+          milestones=source.get('milestones') if isinstance(source.get('milestones'),dict) else {}
+          counts=milestones.get('counts') if isinstance(milestones.get('counts'),dict) else {}
+
+          report={
+              'proofType':'MLB_R6_POSTDEPLOY_PRODUCTION_AND_LEARNING_STATUS',
+              'createdAtUtc':now.isoformat(),
+              'createdAtEt':now_et.isoformat(),
+              'sourceGitSha':source_sha,
+              'stackStatus':stack_status,
+              'deployment':{
+                  'resultsSchedulerTimeout':results_cfg.get('Timeout'),
+                  'resultsSchedulerMemorySize':results_cfg.get('MemorySize'),
+                  'resultsSchedulerLastUpdateStatus':results_cfg.get('LastUpdateStatus'),
+                  'lockTimeout':lock_cfg.get('Timeout'),
+                  'lockMemorySize':lock_cfg.get('MemorySize'),
+                  'trainerLastUpdateStatus':trainer_cfg.get('LastUpdateStatus'),
+                  'experimentId':trainer_env.get('MLB_ML_EXPERIMENT_ID'),
+                  'releaseContractId':trainer_env.get('MLB_ML_RELEASE_CONTRACT_ID'),
+                  'releaseCutoffUtc':trainer_env.get('MLB_ML_RELEASE_CUTOFF_UTC'),
+                  'automaticPromotionEnabled':str(trainer_env.get('INQSI_MLB_ML_AUTO_PROMOTE')).lower()=='true',
+              },
+              'collection':{
+                  'slateDateEt':slate_date,
+                  'expectedCanonicalPullCountThroughNow':expected,
+                  'rawPullCount':len(pulls),
+                  'canonicalPullCount':len(canonical),
+                  'duplicateCanonicalSlotCount':len(duplicates),
+                  'duplicateCanonicalSlots':duplicates,
+                  'latestCanonicalPullAt':latest,
+                  'latestCanonicalPullAgeMinutes':latest_age,
+                  'collectionWindowStarted':now_et>=start,
+              },
+              'officialSchedule':schedule,
+              'locks':{
+                  'rawImmutableLockRows':len(lock_rows),
+                  'uniqueImmutableLockCount':len(lock_unique),
+                  'frozenVectorFingerprintCount':frozen,
+                  'learningEligibleLockCount':eligible,
+                  'explicitTMinus45Count':explicit_t45,
+                  'readOnlyStatus':lock_status,
+              },
+              'settlement':{
+                  'canonicalFinalLabelCount':len(labels),
+                  'officialFinalCount':schedule['finalCount'],
+                  'allOfficialGamesFinal':schedule['allFinal'],
+              },
+              'training':{
+                  'run':trainer_run,
+                  'statusQuery':trainer_status,
+                  'status':source.get('status'),
+                  'version':source.get('version'),
+                  'acceptedRowCount':source.get('acceptedRowCount'),
+                  'partitionCounts':source.get('partitionCounts'),
+                  'milestoneCounts':counts,
+                  'modelTrained':source.get('modelTrained'),
+                  'championChanged':source.get('championChanged'),
+                  'liveInferenceAuthority':source.get('liveInferenceAuthority'),
+                  'automaticPromotionEnabled':source.get('automaticPromotionEnabled'),
+              },
+              'modelVersion':model_version,
+              'secretExposed':False,
+          }
+          Path('runtime_reports/mlb_r6_postdeploy_status_latest.json').write_text(json.dumps(plain(report),indent=2,sort_keys=True,default=str)+'\n',encoding='utf-8')
+          print(json.dumps(plain(report),indent=2,sort_keys=True,default=str))
+          PY
+
+      - name: Enforce fail-closed deployment acceptance
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('runtime_reports/mlb_r6_postdeploy_status_latest.json').read_text())
+          dep=report['deployment']; collection=report['collection']; training=report['training']
+          assert report['stackStatus']=='UPDATE_COMPLETE', report['stackStatus']
+          assert dep['resultsSchedulerTimeout']==600, dep
+          assert dep['resultsSchedulerMemorySize']==2048, dep
+          assert dep['experimentId']=='mlb-v2-2026-08-02-future-prospective-r6', dep
+          assert dep['releaseContractId']=='mlb-v2-2026-08-02-future-prospective-r6', dep
+          assert dep['releaseCutoffUtc']=='2026-08-02T04:00:00+00:00', dep
+          assert dep['automaticPromotionEnabled'] is False, dep
+          assert collection['duplicateCanonicalSlotCount']==0, collection
+          if collection['collectionWindowStarted'] and collection['expectedCanonicalPullCountThroughNow']>0:
+              assert collection['latestCanonicalPullAt'] is not None, collection
+              assert collection['latestCanonicalPullAgeMinutes'] is not None and collection['latestCanonicalPullAgeMinutes']<=30, collection
+          assert training['run'].get('functionError') is None, training['run']
+          assert training['run'].get('clientError') is None, training['run']
+          result=training['run'].get('result') or {}
+          assert isinstance(result,dict) and result.get('ok') is True, result
+          assert training['automaticPromotionEnabled'] in (False,None), training
+          print('MLB r6 deployment acceptance passed')
+          PY
+
+      - name: Publish redacted runtime evidence
+        if: always()
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          test -f runtime_reports/mlb_r6_postdeploy_status_latest.json || exit 0
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add runtime_reports/mlb_r6_postdeploy_status_latest.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'Publish MLB r6 post-deploy runtime evidence'
+          git push origin HEAD:"$HEAD_BRANCH"
