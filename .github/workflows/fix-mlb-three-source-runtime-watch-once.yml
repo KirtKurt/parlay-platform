@@ -1,0 +1,120 @@
+name: Fix MLB Three-Source Runtime Watch Once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-mlb-three-source-runtime-watch-once.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: fix-mlb-three-source-runtime-watch-once
+  cancel-in-progress: false
+
+jobs:
+  repair-and-dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Repair the runtime status calculation
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/mlb-three-source-runtime-watch.yml')
+          text = path.read_text()
+          old = """          report={
+              'ok': bool(all(config_checks.values()) and schedule_healthy and invocation_healthy and deadline_requirement_met),
+"""
+          new = """          predeadline_healthy = bool(
+              not full_card_due
+              and all(config_checks.values())
+              and schedule_healthy
+              and invocation_healthy
+          )
+          report={
+              'ok': bool(all(config_checks.values()) and schedule_healthy and invocation_healthy and deadline_requirement_met),
+"""
+          if old in text and 'predeadline_healthy = bool(' not in text:
+              text = text.replace(old, new, 1)
+
+          old_status = """              'status': (
+                  'HEALTHY_AUTHORITATIVE' if full_card_due and deadline_requirement_met
+                  else 'HEALTHY_AWAITING_FULL_CARD_DEADLINE' if report_condition := (not full_card_due and all(config_checks.values()) and schedule_healthy and invocation_healthy)
+                  else 'DEGRADED'
+              ),
+"""
+          new_status = """              'status': (
+                  'HEALTHY_AUTHORITATIVE'
+                  if full_card_due and deadline_requirement_met
+                  else 'HEALTHY_AWAITING_FULL_CARD_DEADLINE'
+                  if predeadline_healthy
+                  else 'DEGRADED'
+              ),
+"""
+          if old_status in text:
+              text = text.replace(old_status, new_status, 1)
+          if 'report_condition :=' in text:
+              raise SystemExit('walrus status expression remains after repair')
+          if 'predeadline_healthy = bool(' not in text:
+              raise SystemExit('predeadline health calculation was not installed')
+          path.write_text(text)
+          PY
+
+      - name: Validate workflow YAML and embedded Python
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'PyYAML>=6,<7'
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          import yaml
+
+          path=Path('.github/workflows/mlb-three-source-runtime-watch.yml')
+          text=path.read_text()
+          parsed=yaml.safe_load(text)
+          assert isinstance(parsed, dict)
+          marker="          from __future__ import annotations\n"
+          start=text.index(marker)
+          end=text.index("\n          PY\n", start)
+          block=text[start:end]
+          source='\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in block.splitlines()
+          )
+          ast.parse(source)
+          print('workflow_yaml_and_embedded_python_valid')
+          PY
+
+      - name: Remove this one-time workflow
+        run: rm -f .github/workflows/fix-mlb-three-source-runtime-watch-once.yml
+
+      - name: Publish repair without triggering unrelated push workflows
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && { echo 'No repair required.'; exit 0; }
+          git commit -m 'Fix MLB three-source runtime watchdog [skip ci]'
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then
+              break
+            fi
+            sleep $((attempt * 5))
+          done
+
+      - name: Dispatch corrected runtime verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run mlb-three-source-runtime-watch.yml --repo "$GITHUB_REPOSITORY" --ref main
