@@ -1,0 +1,261 @@
+name: Reconcile MLB continuity from August 4 now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/reconcile-mlb-continuity-from-aug4-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: reconcile-mlb-continuity-from-aug4-now
+  cancel-in-progress: false
+
+jobs:
+  reconcile-and-train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Install reconciliation runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Reconcile only the unresolved protected slates
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports /tmp/mlb-continuity
+          PYTHONPATH="scripts:${PYTHONPATH:-}" python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          from datetime import date, datetime, timedelta, timezone
+          from pathlib import Path
+
+          import boto3
+          import reconcile_mlb_prospective_backlog as base
+          import reconcile_mlb_prospective_backlog_v4 as v4
+          import reconcile_mlb_prospective_backlog_v5 as v5
+
+          START = date(2026, 8, 4)
+          END = date(2026, 8, 23)
+          dates = []
+          current = START
+          while current <= END:
+              dates.append(current.isoformat())
+              current += timedelta(days=1)
+
+          session = boto3.session.Session(region_name='us-east-1')
+          cloudformation = session.client(
+              'cloudformation',
+              config=v4.control_plane_config(),
+          )
+          lambdas = session.client(
+              'lambda',
+              config=v4.durable_lambda_config(),
+          )
+
+          original = base.prospective_slate_dates
+          base.prospective_slate_dates = lambda *args, **kwargs: list(dates)
+          try:
+              report = v5.reconcile(
+                  cloudformation,
+                  lambdas,
+                  stack_name='parlay-platform-dev',
+                  now_utc=datetime.now(timezone.utc),
+                  max_slate_days=len(dates),
+              )
+          except Exception as exc:
+              report = {
+                  'ok': False,
+                  'error': f'{type(exc).__name__}:{exc}',
+                  'requestedSlateDates': dates,
+              }
+          finally:
+              base.prospective_slate_dates = original
+
+          report.update({
+              'proofType': 'MLB_PROTECTED_CONTINUITY_REPLAY_FROM_AUG4',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'requestedFirstSlateDateEt': dates[0],
+              'requestedLastSlateDateEt': dates[-1],
+              'directTableWrite': False,
+              'postStartPredictionCreationAllowed': False,
+              'immutablePredictionRewriteAllowed': False,
+              'productionAuthorityChanged': False,
+              'automaticWagerAllowed': False,
+              'secretExposed': False,
+          })
+          Path('/tmp/mlb-continuity/reconcile.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True, default=str) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(report, indent=2, sort_keys=True, default=str)[:60000])
+          if report.get('ok') is not True:
+              raise SystemExit('Protected MLB continuity replay did not complete')
+          PY
+
+      - name: Run trainer after canonical continuity repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          TRAINER_ARN=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --region us-east-1 \
+            --query "Stacks[0].Outputs[?OutputKey=='MLBMLTrainingFunctionArn'].OutputValue" \
+            --output text)
+          test -n "$TRAINER_ARN"
+          test "$TRAINER_ARN" != "None"
+
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region us-east-1 \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"protected_continuity_replay_from_aug4"}' \
+            --response /tmp/mlb-continuity/training.json \
+            --invocation /tmp/mlb-continuity/training-invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 2400 \
+            --retry-delay-seconds 20
+
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region us-east-1 \
+            --payload '{"sport":"mlb","mode":"selection_capture","run":"protected_continuity_selection_capture_from_aug4"}' \
+            --response /tmp/mlb-continuity/selection.json \
+            --invocation /tmp/mlb-continuity/selection-invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 2400 \
+            --retry-delay-seconds 20
+
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region us-east-1 \
+            --status-training-result /tmp/mlb-continuity/training.json \
+            --status-selection-capture-result /tmp/mlb-continuity/selection.json \
+            --response /tmp/mlb-continuity/status.json \
+            --invocation /tmp/mlb-continuity/status-invocation.json
+
+      - name: Build and enforce durable repair proof
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          RUN_ID: ${{ github.run_id }}
+          SOURCE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def load(path):
+              value=Path(path)
+              if not value.exists():
+                  return None
+              try:
+                  return json.loads(value.read_text(encoding='utf-8'))
+              except Exception as exc:
+                  return {'parseError': f'{type(exc).__name__}:{exc}'}
+
+          reconciliation=load('/tmp/mlb-continuity/reconcile.json')
+          training=load('/tmp/mlb-continuity/training.json')
+          selection=load('/tmp/mlb-continuity/selection.json')
+          status=load('/tmp/mlb-continuity/status.json')
+
+          body=status.get('body') if isinstance(status, dict) else None
+          if isinstance(body, str):
+              try:
+                  body=json.loads(body)
+              except Exception:
+                  body={}
+          elif not isinstance(body, dict):
+              body=status if isinstance(status, dict) else {}
+
+          health=(body.get('trainingHealth') or {}) if isinstance(body, dict) else {}
+          continuity=health.get('canonicalSlateContinuity') or body.get('canonicalSlateContinuity') or {}
+          accepted=int(
+              health.get('acceptedRowCount')
+              or body.get('acceptedRowCount')
+              or (training or {}).get('acceptedRowCount')
+              or 0
+          )
+          processed=str(continuity.get('processedThroughSlateDate') or '')
+          blocked=continuity.get('blockedSlateDate')
+          report={
+              'proofType':'MLB_PROTECTED_CONTINUITY_REPAIR_AND_TRAINING',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'runId':os.environ.get('RUN_ID'),
+              'sourceSha':os.environ.get('SOURCE_SHA'),
+              'jobStatus':os.environ.get('JOB_STATUS'),
+              'reconciliation':reconciliation,
+              'training':training,
+              'selectionCapture':selection,
+              'statusAfter':status,
+              'acceptedRowCount':accepted,
+              'processedThroughSlateDate':processed or None,
+              'blockedSlateDate':blocked,
+              'liveInferenceAuthority':bool(body.get('liveInferenceAuthority')) if isinstance(body,dict) else False,
+              'directTableWrite':False,
+              'postStartPredictionCreationAllowed':False,
+              'immutablePredictionRewriteAllowed':False,
+              'productionAuthorityChanged':False,
+              'automaticWagerAllowed':False,
+              'secretExposed':False,
+          }
+          report['ok']=bool(
+              reconciliation
+              and reconciliation.get('ok') is True
+              and accepted > 0
+              and processed >= '2026-08-23'
+              and not blocked
+              and report['liveInferenceAuthority'] is False
+          )
+          Path('runtime_reports/mlb_continuity_from_aug4_latest.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True, default=str)+'\n',
+              encoding='utf-8',
+          )
+          Path('/tmp/mlb-continuity/final.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True, default=str)+'\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(report, indent=2, sort_keys=True, default=str)[:60000])
+          PY
+
+          cp runtime_reports/mlb_continuity_from_aug4_latest.json /tmp/mlb_continuity_from_aug4_latest.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main
+            cp /tmp/mlb_continuity_from_aug4_latest.json runtime_reports/mlb_continuity_from_aug4_latest.json
+            git add runtime_reports/mlb_continuity_from_aug4_latest.json
+            git diff --cached --quiet || git commit -m 'Publish MLB protected continuity repair proof [skip ci]'
+            git push origin HEAD:main && break
+            sleep $((attempt * 2))
+          done
+
+          python - <<'PY'
+          import json
+          report=json.load(open('/tmp/mlb-continuity/final.json'))
+          assert report.get('ok') is True, report
+          print('MLB continuity and training repair passed')
+          PY
