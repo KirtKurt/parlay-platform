@@ -1,23 +1,20 @@
-name: Trigger Soccer Quota Backpressure Deploy
-
-# Lightweight live proof while the full recovery path is running.
+name: Trigger Soccer Recovery Stack Deploy
 on:
   push:
     paths:
       - '.github/workflows/trigger-soccer-quota-backpressure-deploy.yml'
-
 permissions:
   contents: read
   actions: write
-
 jobs:
   trigger:
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch Soccer live proof
+      - name: Dispatch isolated Soccer deployment with recovery Lambda
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh workflow run soccer-live-proof.yml \
+          gh workflow run deploy-soccer-auto.yml \
             --repo "${GITHUB_REPOSITORY}" \
-            --ref main
+            --ref main \
+            -f shared_quota_reserve_percent=0
