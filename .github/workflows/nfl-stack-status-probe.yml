@@ -16,7 +16,7 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Query NFL stack
+      - name: Query NFL stack and failure events
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
         run: |
@@ -24,6 +24,7 @@ jobs:
           stack=parlay-platform-nfl-auto
           status=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$AWS_REGION_VALUE" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo MISSING)
           url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='NflAutoStatusUrl'].OutputValue" --output text 2>/dev/null || true)
+          aws cloudformation describe-stack-events --stack-name "$stack" --region "$AWS_REGION_VALUE" --max-items 30 --output json >/tmp/events.json 2>/dev/null || echo '{"StackEvents":[]}' >/tmp/events.json
           echo "STACK_STATUS=$status" >> "$GITHUB_ENV"
           echo "STATUS_URL=$url" >> "$GITHUB_ENV"
       - name: Publish probe
@@ -36,9 +37,16 @@ jobs:
           mkdir -p runtime_reports
           python - <<'PY'
           import json,os
-          r={'run_id':os.environ.get('GITHUB_RUN_ID'),'commit':os.environ.get('GITHUB_SHA'),'stack':'parlay-platform-nfl-auto','stack_status':os.environ.get('STACK_STATUS','UNKNOWN'),'status_url':os.environ.get('STATUS_URL',''),'region_configured':bool(os.environ.get('AWS_REGION_VALUE'))}
+          raw=json.load(open('/tmp/events.json'))
+          events=[]
+          for e in raw.get('StackEvents',[]):
+              status=str(e.get('ResourceStatus') or '')
+              reason=str(e.get('ResourceStatusReason') or '')
+              if 'FAILED' in status or reason:
+                  events.append({'logical_id':e.get('LogicalResourceId'),'type':e.get('ResourceType'),'status':status,'reason':reason[:1500]})
+          r={'run_id':os.environ.get('GITHUB_RUN_ID'),'commit':os.environ.get('GITHUB_SHA'),'stack':'parlay-platform-nfl-auto','stack_status':os.environ.get('STACK_STATUS','UNKNOWN'),'status_url':os.environ.get('STATUS_URL',''),'failed_events':events[:12]}
           open('runtime_reports/nfl_stack_probe_latest.json','w').write(json.dumps(r,indent=2,sort_keys=True)+'\n')
           PY
           git add runtime_reports/nfl_stack_probe_latest.json
-          git commit -m 'Publish NFL Auto AWS stack probe [skip ci]' || true
+          git commit -m 'Publish NFL Auto rollback diagnostic [skip ci]' || true
           git push origin HEAD:main || true
