@@ -1,27 +1,17 @@
 {
   "blockers": [
-    "post_deploy_verification_incomplete"
+    "deploy_workflow_terminal_failure"
   ],
-  "createdAtUtc": "2026-08-24T22:05:29.024153Z",
-  "deployedCommit": "7a5bb01d567040998810fe1956b5611d59b0be9a",
-  "deploymentBlockers": [
-    "post_deploy_verification_incomplete"
-  ],
-  "deploymentHealthy": false,
+  "createdAtUtc": "2026-08-24T22:08:41.968416Z",
+  "deployWorkflowConclusion": "failure",
+  "deployWorkflowRunId": "32782637379",
+  "deployWorkflowRunUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/32782637379",
+  "deployedCommit": "c8574ceffc3b1dfc6698b888681d89c34a32a383",
+  "nonTerminalCancellationIsFailure": false,
   "ok": false,
-  "productionAuthorityChanged": false,
-  "promotionReady": false,
   "proofType": "MLB_SCORING_FIX_POST_DEPLOY_ACCEPTANCE",
-  "readinessBlockers": [],
-  "runId": "32782838281",
+  "scoringGuardPassed": false,
   "secretExposed": false,
-  "sourceSha": "794d9c2901fa8d25053308e17d1050358204621a",
-  "status": "DEPLOYMENT_HEALTH_UNVERIFIED",
-  "version": "MLB-SCORING-FIX-POST-DEPLOY-v3-health-readiness-separated",
-  "workflowSteps": {
-    "acceptanceBuild": "skipped",
-    "runtimeDiagnostic": "skipped",
-    "scheduledPullObservation": "cancelled",
-    "scoringStatus": "skipped"
-  }
+  "terminalDeployFailure": true,
+  "version": "MLB-SCORING-FIX-POST-DEPLOY-v2-terminal-failures-only"
 }
