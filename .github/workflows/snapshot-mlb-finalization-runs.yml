@@ -26,14 +26,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/mlb-finalization runtime_reports
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          report={'workflows':{}}
-          Path('/tmp/mlb-finalization/base.json').write_text(json.dumps(report))
-          PY
           for workflow in \
             finalize-mlb-auto-production-once.yml \
+            probe-mlb-auto-bedrock-capacity-now.yml \
+            launch-mlb-v5-after-repaired-root-now.yml \
             finalize-mlb-root-settlement-training-now.yml \
             isolate-mlb-root-deploy-concurrency-now.yml \
             deploy.yml \
