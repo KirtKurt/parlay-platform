@@ -2,7 +2,6 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: Isolated autonomous MLB winner-prediction stack using MLB Stats API, The Odds API, Big Balls Sports Data Pro, and Bedrock.
 
-# Deployment trigger: validate normal account concurrency after reserved-concurrency removal.
 Parameters:
   OddsApiKey:
     Type: String
@@ -18,7 +17,7 @@ Parameters:
     Default: 45
   BedrockModels:
     Type: String
-    Default: 'us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'
+    Default: 'openai.gpt-5.6-sol,anthropic.claude-opus-4-8,anthropic.claude-opus-4-7,anthropic.claude-opus-4-6-v1,anthropic.claude-sonnet-4-6-v1,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'
 
 Resources:
   MLBAutoLLMTable:
@@ -52,7 +51,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: mlb_auto_llm/
-      Handler: orchestrator.lambda_handler
+      Handler: orchestrator_v2.lambda_handler
       Runtime: python3.11
       Timeout: 900
       MemorySize: 3008
@@ -65,7 +64,7 @@ Resources:
           MLB_AUTO_CARD_LEAD_MINUTES_BEFORE_SECOND_GAME: !Ref CardLeadMinutesBeforeSecondGame
           MLB_AUTO_FIRST_GAME_SAFETY_MINUTES: '10'
           MLB_AUTO_FINAL_COLLECTION_WINDOW_MINUTES: '20'
-          MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
+          MLB_AUTO_BEDROCK_MODELS: 'openai.gpt-5.6-sol,anthropic.claude-opus-4-8,anthropic.claude-opus-4-7,anthropic.claude-opus-4-6-v1,anthropic.claude-sonnet-4-6-v1,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref MLBAutoLLMTable
@@ -78,6 +77,21 @@ Resources:
               Action:
                 - bedrock:InvokeModel
                 - bedrock:InvokeModelWithResponseStream
+                - bedrock:CallWithBearerToken
+                - bedrock-mantle:CallWithBearerToken
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - aws-marketplace:Subscribe
+              Resource: '*'
+              Condition:
+                StringEquals:
+                  aws-marketplace:ProductId:
+                    - prod-bk5rjg4eo2pke
+                    - prod-d2ik6zgct5hxi
+            - Effect: Allow
+              Action:
+                - aws-marketplace:ViewSubscriptions
               Resource: '*'
       Events:
         AutonomousCycle:
@@ -115,13 +129,28 @@ Resources:
       MemorySize: 512
       Environment:
         Variables:
-          MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
+          MLB_AUTO_BEDROCK_MODELS: 'openai.gpt-5.6-sol,anthropic.claude-opus-4-8,anthropic.claude-opus-4-7,anthropic.claude-opus-4-6-v1,anthropic.claude-sonnet-4-6-v1,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'
       Policies:
         - Statement:
             - Effect: Allow
               Action:
                 - bedrock:InvokeModel
                 - bedrock:InvokeModelWithResponseStream
+                - bedrock:CallWithBearerToken
+                - bedrock-mantle:CallWithBearerToken
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - aws-marketplace:Subscribe
+              Resource: '*'
+              Condition:
+                StringEquals:
+                  aws-marketplace:ProductId:
+                    - prod-bk5rjg4eo2pke
+                    - prod-d2ik6zgct5hxi
+            - Effect: Allow
+              Action:
+                - aws-marketplace:ViewSubscriptions
               Resource: '*'
 
 Outputs:
