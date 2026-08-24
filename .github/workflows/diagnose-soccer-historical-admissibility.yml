@@ -1,0 +1,72 @@
+name: Diagnose Soccer Historical Admissibility
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/diagnose-soccer-historical-admissibility.yml']
+permissions:
+  contents: write
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Reproduce patch and tests with durable output
+        run: |
+          set +e
+          mkdir -p runtime_reports /tmp/soccer-hist-diag
+          python - <<'PY' >/tmp/soccer-hist-diag/patch.out 2>/tmp/soccer-hist-diag/patch.err
+          from pathlib import Path
+          p=Path('soccer_auto/historical_materializer.py')
+          s=p.read_text()
+          old='''from .settlement import (\n    settlement_conflict_blocks_training,\n    settlement_training_admissible,\n    settlement_training_evidence_valid,\n    settlement_training_views,\n)'''
+          new='''from .settlement import (\n    ALWAYS_REGULATION_AMBIGUOUS_KEYS,\n    MIXED_FORMAT_TOURNAMENT_KEYS,\n    build_settlement_admissibility_certificate,\n    regulation_time_ambiguous,\n    settlement_conflict_blocks_training,\n    settlement_training_admissible,\n    settlement_training_evidence_valid,\n    settlement_training_views,\n)'''
+          assert old in s or new in s, 'import anchor missing'
+          s=s.replace(old,new,1)
+          anchor='''def _authoritative_settlements(store: SoccerStore) -> list[dict[str, Any]]:\n    return [\n        row for row in _validated_settlements(store)\n        if settlement_training_admissible(row)\n    ]\n\n'''
+          helper='''def _historical_market_keys(event: Mapping[str, Any]) -> set[str]:\n    return {str(market.get("key")) for bookmaker in event.get("bookmakers") or [] if isinstance(bookmaker, Mapping) for market in bookmaker.get("markets") or [] if isinstance(market, Mapping) and market.get("key")}\n\ndef _historical_certification_scope_safe(settlement: Mapping[str, Any], competition: Mapping[str, Any] | None) -> bool:\n    sport_key=str(settlement.get("sport_key") or "")\n    if sport_key in ALWAYS_REGULATION_AMBIGUOUS_KEYS or sport_key in MIXED_FORMAT_TOURNAMENT_KEYS:\n        return False\n    return not regulation_time_ambiguous(sport_key, competition=competition, event_markets={"h2h"})\n\ndef _certify_settlement_from_historical_t45(store: SoccerStore, settlement: Mapping[str, Any], event: Mapping[str, Any], *, competition: Mapping[str, Any] | None, observed_at: str) -> dict[str, Any]:\n    markets=_historical_market_keys(event)\n    if not markets.intersection({"h2h","h2h_3_way"}):\n        raise ValueError("historical T45 snapshot lacks regulation moneyline evidence")\n    certificate=build_settlement_admissibility_certificate(settlement, observed_at=observed_at, competition=competition, event_markets=markets)\n    if certificate.get("training_eligible_1x2") is not True:\n        raise ValueError("historical T45 event remains regulation-time ambiguous")\n    store.put_settlement(certificate)\n    view=settlement_training_views([dict(settlement),certificate])[0]\n    if not settlement_training_admissible(view):\n        raise RuntimeError("historical admissibility certificate failed validation")\n    return view\n\n'''
+          assert anchor in s, 'authoritative anchor missing'
+          if '_historical_certification_scope_safe(' not in s:
+              s=s.replace(anchor,anchor+helper,1)
+          old2='''    settlements = _authoritative_settlements(store)\n    if event_key:\n        settlements = [row for row in settlements if row["event_key"] == event_key]\n    conflicts = _conflicted_event_keys(store)\n    result: dict[str, Any] = {\n        "mode": "MATERIALIZE",\n        "authoritative_settlements": len(settlements),'''
+          new2='''    validated_settlements = _validated_settlements(store)\n    if event_key:\n        validated_settlements = [row for row in validated_settlements if row["event_key"] == event_key]\n    initially_authoritative = sum(1 for row in validated_settlements if settlement_training_admissible(row))\n    competition_rows = {str(row["sport_key"]): row for row in store.list_competitions()}\n    settlements = [row for row in validated_settlements if settlement_training_admissible(row) or _historical_certification_scope_safe(row, competition_rows.get(str(row.get("sport_key") or "")))]\n    conflicts = _conflicted_event_keys(store)\n    result: dict[str, Any] = {\n        "mode": "MATERIALIZE",\n        "validated_settlements": len(validated_settlements),\n        "authoritative_settlements": initially_authoritative,\n        "historical_certification_candidates": max(0, len(settlements) - initially_authoritative),\n        "historical_certificates_written": 0,'''
+          assert old2 in s or new2 in s, 'run materialization anchor missing'
+          s=s.replace(old2,new2,1)
+          marker='''            lock = _build_lock(\n                settlement,\n                event,'''
+          insertion='''            if not settlement_training_admissible(settlement):\n                settlement = _certify_settlement_from_historical_t45(store, settlement, event, competition=competition_rows.get(str(settlement["sport_key"])), observed_at=response_observed_at)\n                result["historical_certificates_written"] += 1\n            lock = _build_lock(\n                settlement,\n                event,'''
+          assert marker in s or insertion in s, 'lock anchor missing'
+          s=s.replace(marker,insertion,1)
+          p.write_text(s)
+          print('patch_ok')
+          PY
+          patch_rc=$?
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' >/tmp/soccer-hist-diag/pip.out 2>/tmp/soccer-hist-diag/pip.err
+          cat > /tmp/test_bridge.py <<'PY'
+          from soccer_auto.historical_materializer import _historical_certification_scope_safe,_historical_market_keys
+          def test_market_keys(): assert _historical_market_keys({'bookmakers':[{'markets':[{'key':'h2h'},{'key':'totals'}]}]})=={'h2h','totals'}
+          def test_league(): assert _historical_certification_scope_safe({'sport_key':'soccer_epl'},{'sport_key':'soccer_epl','title':'Premier League','description':''})
+          def test_cup(): assert not _historical_certification_scope_safe({'sport_key':'soccer_fa_cup'},{'sport_key':'soccer_fa_cup','title':'FA Cup','description':''})
+          def test_mixed(): assert not _historical_certification_scope_safe({'sport_key':'soccer_uefa_champs_league'},{'sport_key':'soccer_uefa_champs_league','title':'UEFA Champions League','description':''})
+          PY
+          PYTHONPATH=. pytest -q /tmp/test_bridge.py >/tmp/soccer-hist-diag/focused.out 2>/tmp/soccer-hist-diag/focused.err; focused_rc=$?
+          pytest -q tests/soccer_auto/test_historical_materializer.py tests/soccer_auto/test_settlement_cadence.py >/tmp/soccer-hist-diag/regression.out 2>/tmp/soccer-hist-diag/regression.err; regression_rc=$?
+          export PATCH_RC=$patch_rc FOCUSED_RC=$focused_rc REGRESSION_RC=$regression_rc
+          python - <<'PY'
+          import json,pathlib,datetime,os
+          root=pathlib.Path('/tmp/soccer-hist-diag')
+          t=lambda n:(root/n).read_text() if (root/n).exists() else ''
+          report={'proofType':'SOCCER_HISTORICAL_ADMISSIBILITY_DIAGNOSTIC','observedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'patchRc':int(os.environ['PATCH_RC']),'focusedRc':int(os.environ['FOCUSED_RC']),'regressionRc':int(os.environ['REGRESSION_RC']),'patchOut':t('patch.out'),'patchErr':t('patch.err'),'focusedOut':t('focused.out'),'focusedErr':t('focused.err'),'regressionOut':t('regression.out'),'regressionErr':t('regression.err')}
+          pathlib.Path('runtime_reports/soccer_historical_admissibility_diagnostic.json').write_text(json.dumps(report,indent=2)+'\n')
+          print(json.dumps(report,indent=2))
+          PY
+      - name: Publish diagnostic
+        run: |
+          set -euo pipefail
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add runtime_reports/soccer_historical_admissibility_diagnostic.json
+          git commit -m 'runtime: publish Soccer historical admissibility diagnostic [skip ci]' || exit 0
+          for i in 1 2 3 4 5 6 7 8; do git pull --rebase origin main && git push origin HEAD:main && exit 0 || { git rebase --abort 2>/dev/null || true; sleep $((i*2)); }; done
+          exit 1
