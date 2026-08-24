@@ -1,0 +1,46 @@
+name: Retire Pre-V3 MLB Runtime Monitors Once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/retire-mlb-runtime-watch-pre-v3-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Keep only the timing-certified V3 monitor
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/mlb-three-source-runtime-watch.yml
+          rm -f .github/workflows/mlb-three-source-runtime-watch-v2.yml
+          rm -f .github/workflows/fix-mlb-three-source-runtime-watch-once.yml
+          rm -f .github/workflows/retire-mlb-three-source-runtime-watch-v1-once.yml
+          rm -f .github/workflows/publish-mlb-runtime-markers-once.yml
+          rm -f .github/workflows/retire-mlb-runtime-watch-pre-v3-once.yml
+          test -f .github/workflows/mlb-three-source-runtime-watch-v3.yml
+
+      - name: Commit cleanup without triggering push workflows
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'Keep only MLB timing-certified runtime monitor [skip ci]'
+          for attempt in 1 2 3 4; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+            sleep $((attempt * 5))
+          done
+          exit 1
