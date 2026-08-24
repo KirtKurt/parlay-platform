@@ -7,6 +7,7 @@ on:
       - 'scripts/verify_mlb_no_bbd_runtime.py'
       - 'tests/unit/test_verify_mlb_no_bbd_runtime.py'
       - 'tests/unit/test_mlb_auto_model_gateway.py'
+      - 'tests/unit/test_mlb_auto_ml_authority.py'
       - 'mlb_auto_llm/**'
       - 'mlb-auto-llm-template.yaml'
       - '.github/workflows/deploy-mlb-auto-llm.yml'
@@ -40,6 +41,9 @@ jobs:
             mlb_auto_llm/model_gateway.py \
             mlb_auto_llm/orchestrator.py \
             mlb_auto_llm/orchestrator_v2.py \
+            mlb_auto_llm/orchestrator_v3.py \
+            mlb_auto_llm/ml_authority.py \
+            mlb_auto_llm/ml_authority_smoke.py \
             mlb_auto_llm/bedrock_smoke.py
       - name: Verify provider boundary, quota recovery, and immutable authority
         run: |
@@ -47,12 +51,16 @@ jobs:
           python scripts/verify_mlb_no_bbd_runtime.py
           python -m pytest -q \
             tests/unit/test_verify_mlb_no_bbd_runtime.py \
-            tests/unit/test_mlb_auto_model_gateway.py
+            tests/unit/test_mlb_auto_model_gateway.py \
+            tests/unit/test_mlb_auto_ml_authority.py
           sam validate --template-file mlb-auto-llm-template.yaml --lint
           grep -q 'list_inference_profiles' mlb_auto_llm/model_gateway.py
           grep -q 'list_foundation_models' mlb_auto_llm/model_gateway.py
           grep -q 'BEDROCK_BATCH_CARD_AUTHORITY_REQUIRED' mlb_auto_llm/orchestrator_v2.py
           grep -q 'AUTHORITATIVE_CARD_DEADLINE_MISSED' mlb_auto_llm/orchestrator_v2.py
+          grep -q 'AWS_ML_RANKED_ENSEMBLE' mlb_auto_llm/ml_authority.py
+          grep -q 'MODEL_DECISION_AUTHORITY_REQUIRED' mlb_auto_llm/orchestrator_v3.py
+          grep -q 'Handler: orchestrator_v3.lambda_handler' mlb-auto-llm-template.yaml
           grep -q 'bedrock:ListInferenceProfiles' mlb-auto-llm-template.yaml
           grep -q 'bedrock:ListFoundationModels' mlb-auto-llm-template.yaml
           if grep -q 'FALLBACK_MARKET_CONSENSUS' mlb_auto_llm/orchestrator_v2.py; then
