@@ -4,10 +4,20 @@
     "attemptedModelIds": [
       "us-west-2::meta.llama3-2-1b-instruct-v1:0",
       "us-west-2::meta.llama3-2-3b-instruct-v1:0",
+      "us-west-2::mistral.mistral-small-2402-v1:0",
+      "us-west-2::mistral.ministral-3-3b-instruct",
+      "us-west-2::ai21.jamba-1-5-mini-v1:0",
+      "us-west-2::openai.gpt-oss-20b-1:0",
+      "us-west-2::amazon.nova-micro-v1:0",
+      "us-west-2::amazon.nova-lite-v1:0",
       "us-east-2::meta.llama3-2-1b-instruct-v1:0",
       "us-east-2::meta.llama3-2-3b-instruct-v1:0",
+      "us-east-2::amazon.nova-micro-v1:0",
+      "us-east-2::amazon.nova-lite-v1:0",
       "meta.llama3-2-1b-instruct-v1:0",
       "meta.llama3-2-3b-instruct-v1:0",
+      "mistral.mistral-small-2402-v1:0",
+      "mistral.ministral-3-3b-instruct",
       "ai21.jamba-1-5-mini-v1:0",
       "google.gemma-3-4b-it",
       "google.gemma-3n-e2b-it",
@@ -17,90 +27,34 @@
       "us-east-2::global.anthropic.claude-haiku-4-5-20251001-v1:0",
       "us-east-2::google.gemma-3-12b-it",
       "us-east-2::google.gemma-3-27b-it",
-      "us-east-2::google.gemma-3-4b-it"
+      "us-east-2::google.gemma-3-4b-it",
+      "us-east-2::minimax.minimax-m2",
+      "us-east-2::minimax.minimax-m2.1",
+      "us-east-2::minimax.minimax-m2.5",
+      "us-east-2::mistral.devstral-2-123b",
+      "us-east-2::mistral.magistral-small-2509",
+      "us-east-2::mistral.ministral-3-14b-instruct",
+      "us-east-2::mistral.ministral-3-3b-instruct",
+      "us-east-2::mistral.ministral-3-8b-instruct",
+      "us-east-2::mistral.voxtral-mini-3b-2507",
+      "us-east-2::mistral.voxtral-small-24b-2507",
+      "us-east-2::nvidia.nemotron-nano-12b-v2",
+      "us-east-2::nvidia.nemotron-nano-9b-v2",
+      "us-east-2::nvidia.nemotron-super-3-120b",
+      "us-east-2::openai.gpt-oss-120b-1:0",
+      "us-east-2::openai.gpt-oss-20b-1:0",
+      "us-east-2::openai.gpt-oss-safeguard-120b",
+      "us-east-2::openai.gpt-oss-safeguard-20b",
+      "us-east-2::qwen.qwen3-235b-a22b-2507-v1:0",
+      "us-east-2::qwen.qwen3-32b-v1:0",
+      "us-east-2::qwen.qwen3-coder-30b-a3b-v1:0",
+      "us-east-2::qwen.qwen3-next-80b-a3b",
+      "us-east-2::qwen.qwen3-vl-235b-a22b",
+      "us-east-2::us.amazon.nova-2-lite-v1:0",
+      "us-east-2::us.amazon.nova-lite-v1:0"
     ],
     "endpointFamily": null,
     "errors": [
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "MODEL_COOLDOWN",
-        "message": "retryAfterEpoch=1787627283",
-        "modelId": "mistral.mistral-small-2402-v1:0",
-        "region": "us-west-2",
-        "routeId": "us-west-2::mistral.mistral-small-2402-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "MODEL_COOLDOWN",
-        "message": "retryAfterEpoch=1787607483",
-        "modelId": "mistral.ministral-3-3b-instruct",
-        "region": "us-west-2",
-        "routeId": "us-west-2::mistral.ministral-3-3b-instruct"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "MODEL_COOLDOWN",
-        "message": "retryAfterEpoch=1787627283",
-        "modelId": "ai21.jamba-1-5-mini-v1:0",
-        "region": "us-west-2",
-        "routeId": "us-west-2::ai21.jamba-1-5-mini-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "MODEL_COOLDOWN",
-        "message": "retryAfterEpoch=1787607483",
-        "modelId": "openai.gpt-oss-20b-1:0",
-        "region": "us-west-2",
-        "routeId": "us-west-2::openai.gpt-oss-20b-1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "MODEL_COOLDOWN",
-        "message": "retryAfterEpoch=1787627283",
-        "modelId": "amazon.nova-micro-v1:0",
-        "region": "us-west-2",
-        "routeId": "us-west-2::amazon.nova-micro-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "MODEL_COOLDOWN",
-        "message": "retryAfterEpoch=1787607483",
-        "modelId": "amazon.nova-lite-v1:0",
-        "region": "us-west-2",
-        "routeId": "us-west-2::amazon.nova-lite-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "MODEL_COOLDOWN",
-        "message": "retryAfterEpoch=1787627283",
-        "modelId": "amazon.nova-micro-v1:0",
-        "region": "us-east-2",
-        "routeId": "us-east-2::amazon.nova-micro-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "MODEL_COOLDOWN",
-        "message": "retryAfterEpoch=1787607483",
-        "modelId": "amazon.nova-lite-v1:0",
-        "region": "us-east-2",
-        "routeId": "us-east-2::amazon.nova-lite-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "MODEL_COOLDOWN",
-        "message": "retryAfterEpoch=1787607483",
-        "modelId": "mistral.mistral-small-2402-v1:0",
-        "region": "us-east-1",
-        "routeId": "mistral.mistral-small-2402-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "MODEL_COOLDOWN",
-        "message": "retryAfterEpoch=1787607483",
-        "modelId": "mistral.ministral-3-3b-instruct",
-        "region": "us-east-1",
-        "routeId": "mistral.ministral-3-3b-instruct"
-      },
       {
         "endpointFamily": "bedrock-runtime-converse",
         "errorCode": "ResourceNotFoundException",
@@ -116,6 +70,54 @@
         "modelId": "meta.llama3-2-3b-instruct-v1:0",
         "region": "us-west-2",
         "routeId": "us-west-2::meta.llama3-2-3b-instruct-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ValidationException",
+        "message": "An error occurred (ValidationException) when calling the Converse operation: The provided model identifier is invalid.",
+        "modelId": "mistral.mistral-small-2402-v1:0",
+        "region": "us-west-2",
+        "routeId": "us-west-2::mistral.mistral-small-2402-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "mistral.ministral-3-3b-instruct",
+        "region": "us-west-2",
+        "routeId": "us-west-2::mistral.ministral-3-3b-instruct"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ValidationException",
+        "message": "An error occurred (ValidationException) when calling the Converse operation: The provided model identifier is invalid.",
+        "modelId": "ai21.jamba-1-5-mini-v1:0",
+        "region": "us-west-2",
+        "routeId": "us-west-2::ai21.jamba-1-5-mini-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "openai.gpt-oss-20b-1:0",
+        "region": "us-west-2",
+        "routeId": "us-west-2::openai.gpt-oss-20b-1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ValidationException",
+        "message": "An error occurred (ValidationException) when calling the Converse operation: Invocation of model ID amazon.nova-micro-v1:0 with on-demand throughput isn\u2019t supported. Retry your request with the ID or ARN of an inference profile that contains this model.",
+        "modelId": "amazon.nova-micro-v1:0",
+        "region": "us-west-2",
+        "routeId": "us-west-2::amazon.nova-micro-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "amazon.nova-lite-v1:0",
+        "region": "us-west-2",
+        "routeId": "us-west-2::amazon.nova-lite-v1:0"
       },
       {
         "endpointFamily": "bedrock-runtime-converse",
@@ -135,6 +137,22 @@
       },
       {
         "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ValidationException",
+        "message": "An error occurred (ValidationException) when calling the Converse operation: Invocation of model ID amazon.nova-micro-v1:0 with on-demand throughput isn\u2019t supported. Retry your request with the ID or ARN of an inference profile that contains this model.",
+        "modelId": "amazon.nova-micro-v1:0",
+        "region": "us-east-2",
+        "routeId": "us-east-2::amazon.nova-micro-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "amazon.nova-lite-v1:0",
+        "region": "us-east-2",
+        "routeId": "us-east-2::amazon.nova-lite-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
         "errorCode": "ResourceNotFoundException",
         "message": "An error occurred (ResourceNotFoundException) when calling the Converse operation: This model version has reached the end of its life. Please refer to the AWS documentation for more details.",
         "modelId": "meta.llama3-2-1b-instruct-v1:0",
@@ -151,8 +169,24 @@
       },
       {
         "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "mistral.mistral-small-2402-v1:0",
+        "region": "us-east-1",
+        "routeId": "mistral.mistral-small-2402-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "mistral.ministral-3-3b-instruct",
+        "region": "us-east-1",
+        "routeId": "mistral.ministral-3-3b-instruct"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
         "errorCode": "AccessDeniedException",
-        "message": "An error occurred (AccessDeniedException) when calling the Converse operation (reached max retries: 1): Model access is denied due to IAM user or service role is not authorized to perform the required AWS Marketplace actions (aws-marketplace:ViewSubscriptions, aws-marketplace:Subscribe) to enable access to this model. Refer to the Amazon Bedrock documentation for further details. Your AWS Marketplace subscription for this model cannot be completed at this time. If you recentl",
+        "message": "An error occurred (AccessDeniedException) when calling the Converse operation: Model access is denied due to IAM user or service role is not authorized to perform the required AWS Marketplace actions (aws-marketplace:ViewSubscriptions, aws-marketplace:Subscribe) to enable access to this model. Refer to the Amazon Bedrock documentation for further details. Your AWS Marketplace subscription for this model cannot be completed at this time. If you recently fixed this issue, try a",
         "modelId": "ai21.jamba-1-5-mini-v1:0",
         "region": "us-east-1",
         "routeId": "ai21.jamba-1-5-mini-v1:0"
@@ -199,8 +233,8 @@
       },
       {
         "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "errorCode": "AccessDeniedException",
+        "message": "An error occurred (AccessDeniedException) when calling the Converse operation: Model access is denied due to IAM user or service role is not authorized to perform the required AWS Marketplace actions (aws-marketplace:ViewSubscriptions, aws-marketplace:Subscribe) to enable access to this model. Refer to the Amazon Bedrock documentation for further details. Your AWS Marketplace subscription for this model cannot be completed at this time. If you recently fixed this issue, try a",
         "modelId": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
         "region": "us-east-2",
         "routeId": "us-east-2::global.anthropic.claude-haiku-4-5-20251001-v1:0"
@@ -228,6 +262,198 @@
         "modelId": "google.gemma-3-4b-it",
         "region": "us-east-2",
         "routeId": "us-east-2::google.gemma-3-4b-it"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "minimax.minimax-m2",
+        "region": "us-east-2",
+        "routeId": "us-east-2::minimax.minimax-m2"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "minimax.minimax-m2.1",
+        "region": "us-east-2",
+        "routeId": "us-east-2::minimax.minimax-m2.1"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "minimax.minimax-m2.5",
+        "region": "us-east-2",
+        "routeId": "us-east-2::minimax.minimax-m2.5"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "mistral.devstral-2-123b",
+        "region": "us-east-2",
+        "routeId": "us-east-2::mistral.devstral-2-123b"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "mistral.magistral-small-2509",
+        "region": "us-east-2",
+        "routeId": "us-east-2::mistral.magistral-small-2509"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "mistral.ministral-3-14b-instruct",
+        "region": "us-east-2",
+        "routeId": "us-east-2::mistral.ministral-3-14b-instruct"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "mistral.ministral-3-3b-instruct",
+        "region": "us-east-2",
+        "routeId": "us-east-2::mistral.ministral-3-3b-instruct"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "mistral.ministral-3-8b-instruct",
+        "region": "us-east-2",
+        "routeId": "us-east-2::mistral.ministral-3-8b-instruct"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "mistral.voxtral-mini-3b-2507",
+        "region": "us-east-2",
+        "routeId": "us-east-2::mistral.voxtral-mini-3b-2507"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many requests, please wait before trying again.",
+        "modelId": "mistral.voxtral-small-24b-2507",
+        "region": "us-east-2",
+        "routeId": "us-east-2::mistral.voxtral-small-24b-2507"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "nvidia.nemotron-nano-12b-v2",
+        "region": "us-east-2",
+        "routeId": "us-east-2::nvidia.nemotron-nano-12b-v2"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "nvidia.nemotron-nano-9b-v2",
+        "region": "us-east-2",
+        "routeId": "us-east-2::nvidia.nemotron-nano-9b-v2"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "nvidia.nemotron-super-3-120b",
+        "region": "us-east-2",
+        "routeId": "us-east-2::nvidia.nemotron-super-3-120b"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "openai.gpt-oss-120b-1:0",
+        "region": "us-east-2",
+        "routeId": "us-east-2::openai.gpt-oss-120b-1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "openai.gpt-oss-20b-1:0",
+        "region": "us-east-2",
+        "routeId": "us-east-2::openai.gpt-oss-20b-1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "openai.gpt-oss-safeguard-120b",
+        "region": "us-east-2",
+        "routeId": "us-east-2::openai.gpt-oss-safeguard-120b"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "openai.gpt-oss-safeguard-20b",
+        "region": "us-east-2",
+        "routeId": "us-east-2::openai.gpt-oss-safeguard-20b"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "qwen.qwen3-235b-a22b-2507-v1:0",
+        "region": "us-east-2",
+        "routeId": "us-east-2::qwen.qwen3-235b-a22b-2507-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "qwen.qwen3-32b-v1:0",
+        "region": "us-east-2",
+        "routeId": "us-east-2::qwen.qwen3-32b-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "qwen.qwen3-coder-30b-a3b-v1:0",
+        "region": "us-east-2",
+        "routeId": "us-east-2::qwen.qwen3-coder-30b-a3b-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "qwen.qwen3-next-80b-a3b",
+        "region": "us-east-2",
+        "routeId": "us-east-2::qwen.qwen3-next-80b-a3b"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "qwen.qwen3-vl-235b-a22b",
+        "region": "us-east-2",
+        "routeId": "us-east-2::qwen.qwen3-vl-235b-a22b"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "us.amazon.nova-2-lite-v1:0",
+        "region": "us-east-2",
+        "routeId": "us-east-2::us.amazon.nova-2-lite-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "us.amazon.nova-lite-v1:0",
+        "region": "us-east-2",
+        "routeId": "us-east-2::us.amazon.nova-lite-v1:0"
       }
     ],
     "errorsBeforeSuccess": [],
@@ -254,11 +480,11 @@
     "targetDailyAccuracy": null,
     "threeSourcePolicy": null
   },
-  "publishedAtUtc": "2026-08-24T21:09:30.404206+00:00",
-  "runAttempt": "2",
-  "runId": "32777112898",
+  "publishedAtUtc": "2026-08-24T21:13:11.409776+00:00",
+  "runAttempt": "1",
+  "runId": "32778111118",
   "secretExposed": false,
   "service": "mlb-auto-llm",
-  "sourceSha": "f3fae80d35d0267965a7f2e0291ccdb98b96ed5e",
+  "sourceSha": "eae71e188146a82fa2bbb762122a3152e6bea486",
   "workflow": "Deploy MLB Auto LLM"
 }
