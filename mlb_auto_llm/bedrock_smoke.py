@@ -7,10 +7,14 @@ from model_gateway import (
     configured_regions,
     discovered_models,
     invoke_chain_text,
+    reset_model_state,
 )
 
 
 def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
+    # A deployment smoke must test current capacity, not inherit a stale
+    # warm-container cooldown from an earlier scheduled or acceptance attempt.
+    reset_model_state(clear_discovery=False)
     discovered = discovered_models()
     models = configured_models()
     result = invoke_chain_text(
