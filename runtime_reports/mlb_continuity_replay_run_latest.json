@@ -1,0 +1,124 @@
+{
+  "conclusion": "failure",
+  "createdAt": "2026-08-24T23:00:47Z",
+  "databaseId": 32787367878,
+  "event": "workflow_dispatch",
+  "headSha": "056b391524f7368ff277a572c7cf45264ae9e379",
+  "jobs": [
+    {
+      "completedAt": "2026-08-24T23:02:17Z",
+      "conclusion": "failure",
+      "databaseId": 97621919823,
+      "name": "reconcile-and-train",
+      "startedAt": "2026-08-24T23:00:52Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-08-24T23:00:54Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-08-24T23:00:53Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-24T23:01:04Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-08-24T23:00:54Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-24T23:01:04Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-08-24T23:01:04Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-24T23:01:04Z",
+          "conclusion": "success",
+          "name": "Run aws-actions/configure-aws-credentials@v4",
+          "number": 4,
+          "startedAt": "2026-08-24T23:01:04Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-24T23:01:07Z",
+          "conclusion": "success",
+          "name": "Install reconciliation runtime",
+          "number": 5,
+          "startedAt": "2026-08-24T23:01:04Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-24T23:02:00Z",
+          "conclusion": "failure",
+          "name": "Reconcile only the unresolved protected slates",
+          "number": 6,
+          "startedAt": "2026-08-24T23:01:07Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-24T23:02:00Z",
+          "conclusion": "skipped",
+          "name": "Run trainer after canonical continuity repair",
+          "number": 7,
+          "startedAt": "2026-08-24T23:02:00Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-24T23:02:14Z",
+          "conclusion": "failure",
+          "name": "Build and enforce durable repair proof",
+          "number": 8,
+          "startedAt": "2026-08-24T23:02:00Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-24T23:02:14Z",
+          "conclusion": "success",
+          "name": "Post Run aws-actions/configure-aws-credentials@v4",
+          "number": 14,
+          "startedAt": "2026-08-24T23:02:14Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-24T23:02:14Z",
+          "conclusion": "skipped",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 15,
+          "startedAt": "2026-08-24T23:02:14Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-24T23:02:14Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 16,
+          "startedAt": "2026-08-24T23:02:14Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-08-24T23:02:14Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 17,
+          "startedAt": "2026-08-24T23:02:14Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/32787367878/job/97621919823"
+    }
+  ],
+  "name": "Reconcile MLB continuity from August 4 now",
+  "startedAt": "2026-08-24T23:00:47Z",
+  "status": "completed",
+  "updatedAt": "2026-08-24T23:02:18Z",
+  "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/32787367878",
+  "generatedAtUtc": "2026-08-24T23:03:01Z",
+  "watchExitCode": 1,
+  "ok": false
+}
