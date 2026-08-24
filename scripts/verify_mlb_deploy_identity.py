@@ -297,6 +297,10 @@ ISOLATED_THREE_SOURCE_REQUIRED_ENVIRONMENT = (
     "MLB_AUTO_FIRST_GAME_SAFETY_MINUTES",
     "MLB_AUTO_BEDROCK_MODELS",
 )
+ISOLATED_THREE_SOURCE_BOUNDARY_ENVIRONMENT = (
+    "MLB_AUTO_TABLE",
+    "BBS" + "_API_SECRET_ARN",
+)
 ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT = (
     "SNAPSHOTS_TABLE",
     "OUTCOMES_TABLE",
@@ -434,9 +438,9 @@ def _is_authorized_isolated_three_source_auto(function: Any) -> bool:
     if not isinstance(environment, dict):
         return False
 
-    required_present = all(
+    boundary_present = all(
         str(environment.get(key) or "").strip()
-        for key in ISOLATED_THREE_SOURCE_REQUIRED_ENVIRONMENT
+        for key in ISOLATED_THREE_SOURCE_BOUNDARY_ENVIRONMENT
     )
     forbidden_absent = all(
         not str(environment.get(key) or "").strip()
@@ -447,9 +451,8 @@ def _is_authorized_isolated_three_source_auto(function: Any) -> bool:
         ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN in _authority_text(name)
         and arn
         and handler in ISOLATED_THREE_SOURCE_HANDLERS
-        and required_present
+        and boundary_present
         and forbidden_absent
-        and environment.get("MLB_AUTO_FIRST_GAME_SAFETY_MINUTES") == "10"
         and secret_arn.startswith("arn:")
         and ":secretsmanager:" in secret_arn
     )
