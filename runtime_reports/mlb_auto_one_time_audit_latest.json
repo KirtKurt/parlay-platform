@@ -1,0 +1,238 @@
+{
+  "auditedAtUtc": "2026-08-24T22:40:54.200364+00:00",
+  "card": {
+    "deadlineUtc": null,
+    "decisionAuthorities": [],
+    "firstGameUtc": "2026-08-24T22:40:00+00:00",
+    "modelAuthorityComplete": null,
+    "officialGameCount": 10,
+    "pickCount": 0,
+    "present": false,
+    "publishedAtUtc": null,
+    "threeSourceCoverageComplete": null
+  },
+  "checks": {
+    "authoritativeCard": false,
+    "autonomousRulesEnabled": true,
+    "freshAutonomousExecution": true,
+    "immutableTMinus10": false,
+    "modelAuthority": true,
+    "modelAuthorityOnEveryPick": false,
+    "officialSchedule": true,
+    "providerCredentials": true,
+    "publicAutonomyContract": true,
+    "stackDeployed": true,
+    "threeSourceCoverage": false,
+    "trainerContinuity": false
+  },
+  "collectionAndAutonomy": {
+    "lambdaErrorsLast35Minutes": 23.0,
+    "lambdaInvocationsLast35Minutes": 23.0,
+    "latestPacketAgeMinutes": null,
+    "latestPacketAtUtc": null,
+    "rules": [
+      {
+        "name": "parlay-platform-mlb-auto--MLBAutoLLMFunctionAutonom-2Fnhw1x0m9iq",
+        "scheduleExpression": "cron(2/5 * * * ? *)",
+        "state": "ENABLED"
+      }
+    ]
+  },
+  "deployment": {
+    "functionState": "Active",
+    "handler": "orchestrator_v3.lambda_handler",
+    "lastModified": "2026-08-24T22:09:57.000+0000",
+    "lastUpdateStatus": "Successful",
+    "stackName": "parlay-platform-mlb-auto-llm",
+    "stackStatus": "UPDATE_COMPLETE"
+  },
+  "modelAuthority": {
+    "bedrockAvailable": false,
+    "decisionAuthority": "AWS_ML_RANKED_ENSEMBLE",
+    "endpointFamily": "aws-ml-readonly-api",
+    "functionError": null,
+    "modelId": "INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble",
+    "ok": true
+  },
+  "overall": "UNHEALTHY",
+  "proofType": "MLB_AUTO_ONE_TIME_PRODUCTION_AUDIT",
+  "providers": {
+    "coverage": {
+      "bigBallsDataPro": {
+        "eventsReturned": 4,
+        "matchedGames": 4,
+        "missingGamePks": [
+          "823992",
+          "825041",
+          "823260",
+          "824964",
+          "823097",
+          "823183"
+        ],
+        "ok": false
+      },
+      "mlbStatsApi": {
+        "gamePks": [
+          "824235",
+          "823828",
+          "822695",
+          "824557",
+          "823992",
+          "825041",
+          "823260",
+          "824964",
+          "823097",
+          "823183"
+        ],
+        "ok": true,
+        "scheduledGames": 10
+      },
+      "theOddsApi": {
+        "eventsReturned": 22,
+        "matchedGames": 10,
+        "missingGamePks": [],
+        "ok": true
+      }
+    },
+    "credentialAuthentication": {
+      "bigBallsDataPro": true,
+      "theOddsApi": true
+    }
+  },
+  "publicStatus": {
+    "audit": null,
+    "autonomyState": {
+      "marketAnchorWeight": 0.55,
+      "policy": "If recent accuracy is below target, constrain the LLM more tightly to multi-book market consensus while still considering independent baseball context.",
+      "recentAccuracy": null,
+      "recentCorrectPicks": 0,
+      "recentDays": 0,
+      "recentGradedPicks": 0,
+      "targetDailyAccuracy": 0.7
+    },
+    "bedrockModels": [
+      "us.anthropic.claude-sonnet-4-20250514-v1:0",
+      "us.meta.llama3-3-70b-instruct-v1:0",
+      "meta.llama3-3-70b-instruct-v1:0",
+      "mistral.mistral-large-2402-v1:0",
+      "mistral.mistral-small-2402-v1:0",
+      "cohere.command-r-v1:0",
+      "cohere.command-r-plus-v1:0",
+      "openai.gpt-5.6-sol",
+      "anthropic.claude-opus-4-8",
+      "anthropic.claude-opus-4-7",
+      "anthropic.claude-opus-4-6-v1",
+      "anthropic.claude-sonnet-4-6-v1",
+      "us.amazon.nova-2-lite-v1:0",
+      "global.amazon.nova-2-lite-v1:0",
+      "us.amazon.nova-pro-v1:0",
+      "us.amazon.nova-lite-v1:0",
+      "us.amazon.nova-micro-v1:0"
+    ],
+    "card": null,
+    "cardLeadMinutesBeforeSecondGame": 45,
+    "cardPublished": false,
+    "deadline": {
+      "firstGameSafetyDeadlineUtc": "2026-08-24T22:30:00+00:00",
+      "firstGameUtc": "2026-08-24T22:40:00+00:00",
+      "publishDeadlineUtc": "2026-08-24T21:55:00+00:00",
+      "requestedDeadlineUtc": "2026-08-24T21:55:00+00:00",
+      "requestedSecondGameLeadMinutes": 45,
+      "secondGameUtc": "2026-08-24T22:40:00+00:00"
+    },
+    "fullyAutonomous": true,
+    "ok": true,
+    "scheduleOk": true,
+    "scheduledGames": 10,
+    "service": "mlb-auto-llm",
+    "slateDateEt": "2026-08-24",
+    "targetDailyAccuracy": 0.7,
+    "targetIsGoalNotGuarantee": true,
+    "threeSourcePolicy": [
+      "MLB Stats API",
+      "The Odds API",
+      "Big Balls Sports Data Pro"
+    ],
+    "version": "MLB-AUTO-LLM-v1-three-source-autonomous"
+  },
+  "publicToday": {
+    "card": null,
+    "ok": true,
+    "status": {
+      "audit": null,
+      "autonomyState": {
+        "marketAnchorWeight": 0.55,
+        "policy": "If recent accuracy is below target, constrain the LLM more tightly to multi-book market consensus while still considering independent baseball context.",
+        "recentAccuracy": null,
+        "recentCorrectPicks": 0,
+        "recentDays": 0,
+        "recentGradedPicks": 0,
+        "targetDailyAccuracy": 0.7
+      },
+      "bedrockModels": [
+        "us.anthropic.claude-sonnet-4-20250514-v1:0",
+        "us.meta.llama3-3-70b-instruct-v1:0",
+        "meta.llama3-3-70b-instruct-v1:0",
+        "mistral.mistral-large-2402-v1:0",
+        "mistral.mistral-small-2402-v1:0",
+        "cohere.command-r-v1:0",
+        "cohere.command-r-plus-v1:0",
+        "openai.gpt-5.6-sol",
+        "anthropic.claude-opus-4-8",
+        "anthropic.claude-opus-4-7",
+        "anthropic.claude-opus-4-6-v1",
+        "anthropic.claude-sonnet-4-6-v1",
+        "us.amazon.nova-2-lite-v1:0",
+        "global.amazon.nova-2-lite-v1:0",
+        "us.amazon.nova-pro-v1:0",
+        "us.amazon.nova-lite-v1:0",
+        "us.amazon.nova-micro-v1:0"
+      ],
+      "card": null,
+      "cardLeadMinutesBeforeSecondGame": 45,
+      "cardPublished": false,
+      "deadline": {
+        "firstGameSafetyDeadlineUtc": "2026-08-24T22:30:00+00:00",
+        "firstGameUtc": "2026-08-24T22:40:00+00:00",
+        "publishDeadlineUtc": "2026-08-24T21:55:00+00:00",
+        "requestedDeadlineUtc": "2026-08-24T21:55:00+00:00",
+        "requestedSecondGameLeadMinutes": 45,
+        "secondGameUtc": "2026-08-24T22:40:00+00:00"
+      },
+      "fullyAutonomous": true,
+      "ok": true,
+      "scheduleOk": true,
+      "scheduledGames": 10,
+      "service": "mlb-auto-llm",
+      "slateDateEt": "2026-08-24",
+      "targetDailyAccuracy": 0.7,
+      "targetIsGoalNotGuarantee": true,
+      "threeSourcePolicy": [
+        "MLB Stats API",
+        "The Odds API",
+        "Big Balls Sports Data Pro"
+      ],
+      "version": "MLB-AUTO-LLM-v1-three-source-autonomous"
+    }
+  },
+  "requestedAuditTimeEt": "2026-08-24T18:38:30-04:00",
+  "rootRuntime": {
+    "engineImportOk": true,
+    "healthOk": true,
+    "modelVersion": "INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble",
+    "primaryAlgorithm": "INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble"
+  },
+  "secretExposed": false,
+  "settlement": {
+    "officialFinalGames": 0,
+    "reason": "No official finals are due yet.",
+    "status": "WAITING"
+  },
+  "training": {
+    "acceptedRowCount": 0,
+    "blockedSlateDate": null,
+    "functionError": null,
+    "processedThroughSlateDate": null,
+    "status": ""
+  }
+}
