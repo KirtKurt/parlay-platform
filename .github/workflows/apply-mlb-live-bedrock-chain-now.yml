@@ -1,0 +1,59 @@
+name: Apply MLB live Bedrock chain now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-mlb-live-bedrock-chain-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-mlb-live-bedrock-chain-now
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and verify live model chain
+        run: |
+          set -euo pipefail
+          python scripts/set_mlb_auto_bedrock_model_chain.py
+          python -m py_compile \
+            scripts/set_mlb_auto_bedrock_model_chain.py \
+            mlb_auto_llm/model_gateway.py \
+            mlb_auto_llm/orchestrator_v2.py \
+            mlb_auto_llm/bedrock_smoke.py
+          grep -q 'us.anthropic.claude-sonnet-4-20250514-v1:0' mlb-auto-llm-template.yaml
+          grep -q 'us.meta.llama3-3-70b-instruct-v1:0' mlb-auto-llm-template.yaml
+          grep -q 'orchestrator_v2.py mlb_auto_llm/model_gateway.py' .github/workflows/deploy-mlb-auto-llm.yml
+          git diff --check
+      - name: Publish chain and trigger canonical isolated deployment
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mlb-auto-llm-template.yaml .github/workflows/deploy-mlb-auto-llm.yml
+          if git diff --cached --quiet; then
+            echo 'Live Bedrock chain already installed.'
+            exit 0
+          fi
+          git commit -m 'Use live Bedrock profiles for MLB AUTO authority'
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then exit 0; fi
+            test "$attempt" != 5 || exit 1
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 2))
+          done
