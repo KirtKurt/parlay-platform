@@ -1,0 +1,83 @@
+{
+  "backlog": {
+    "automaticWagerAllowed": false,
+    "directTableWrite": false,
+    "error": "ReconciliationError:lambda_application_status_not_success:{\"applicationStatusCode\":409,\"eventKind\":\"prospective_backlog_settlement_v4\",\"slateDateEt\":\"2026-08-03\",\"status\":\"FAILED_CLOSED\"}",
+    "immutablePredictionRewriteAllowed": false,
+    "mutatingNonSuccessStatusesStillFailClosed": true,
+    "ok": false,
+    "postStartPredictionCreationAllowed": false,
+    "productionAuthorityChanged": false,
+    "promotionAuthorityChanged": false,
+    "readOnlyNonSuccessStatusBodiesPreserved": true,
+    "stackName": "parlay-platform-dev",
+    "version": "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5-readable-incomplete-status"
+  },
+  "conclusion": "FAIL",
+  "createdAtUtc": "2026-08-24T20:00:47.681151+00:00",
+  "directTableWrite": false,
+  "immutablePredictionRewriteAllowed": false,
+  "ok": false,
+  "postStartPredictionCreationAllowed": false,
+  "proofType": "MLB_PROSPECTIVE_CONTINUITY_V5_PRODUCTION_REPAIR",
+  "reconcileOutcome": "failure",
+  "runId": "32771094228",
+  "secretExposed": false,
+  "sourceSha": "27286323c0095e95e1f4e0b0762bb6d6e5d6aaf5",
+  "trainer": {
+    "acceptedRowCount": 0,
+    "canonicalSlateContinuity": {
+      "blockedSlateDate": "2026-08-04",
+      "blocker": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+      "finalizedGameSlateDates": [
+        "2026-08-03"
+      ],
+      "finalizedSlateAuthorities": {
+        "2026-08-03": {
+          "authorityFingerprint": "a561ddecbf4d6d64c318183335ee8b10eb3287bdce4c89a31f159c5d7b8c2658",
+          "officialGameCount": 8,
+          "officialGamePks": [
+            "822867",
+            "823431",
+            "823520",
+            "823757",
+            "824160",
+            "824324",
+            "824647",
+            "825095"
+          ],
+          "officialGameSetFingerprint": "23e4a80cef84566d70bc7d76d56e6f2bc8f52fdadd3743f2d274b55e2ed7838b",
+          "officialGameSetFingerprintVersion": "MLB-ML-OFFICIAL-GAME-PK-SET-SHA256-v1",
+          "scheduleSource": "MLB Stats API exact-date official FINAL",
+          "scheduleSourceUrl": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-08-03&endDate=2026-08-03&hydrate=linescore",
+          "slateDateEt": "2026-08-03",
+          "slateFinalized": true,
+          "version": "MLB-ML-OFFICIAL-FINALIZED-SLATE-AUTHORITY-v1-exact-game-pk-set"
+        }
+      },
+      "ok": false,
+      "policy": "Training stops at the first unresolved official slate; only an exact official zero-game schedule may be crossed as an off-day.",
+      "processedSlateDates": [
+        "2026-08-03"
+      ],
+      "processedThroughSlateDate": "2026-08-03",
+      "provenZeroGameSlateDates": [],
+      "version": "MLB-ML-CANONICAL-SLATE-CONTINUITY-v2-exact-official-game-set"
+    },
+    "liveInferenceAuthority": false,
+    "modelTrained": false,
+    "partitionCounts": {
+      "prospectiveTest": 0,
+      "train": 0,
+      "validation": 0
+    },
+    "productionAuthorityChanged": false,
+    "rejectedRowCount": 8,
+    "rejectionReasonCounts": {
+      "current_canonical_row_not_training_eligible": 8
+    },
+    "requiredProcessedThroughSlateDate": "2026-08-23",
+    "status": "WAITING_FOR_CANONICAL_SLATE_CONTINUITY"
+  },
+  "trainerOutcome": "success"
+}
