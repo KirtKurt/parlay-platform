@@ -1,0 +1,213 @@
+name: Repair MLB continuity after settlement deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-continuity-after-settlement-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-mlb-continuity-after-settlement-deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-dev
+  REQUIRED_SETTLEMENT_ANCESTOR: 6ed143b3c152d5345d5837437c230e531185bf9d
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install reconciliation runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+          python -m py_compile \
+            scripts/reconcile_mlb_prospective_backlog_v5.py \
+            scripts/invoke_mlb_trainer_with_retry.py
+          python -m pytest -q \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v5.py \
+            tests/unit/test_mlb_terminal_status_idempotency.py
+
+      - name: Wait for the repaired settlement Lambda revision
+        id: deployed_revision
+        run: |
+          set -euo pipefail
+          function_name=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBResultsSchedulerFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$function_name"
+          test "$function_name" != 'None'
+          for attempt in $(seq 1 180); do
+            deployed_sha=$(aws lambda get-function-configuration \
+              --function-name "$function_name" \
+              --region "$AWS_REGION" \
+              --query 'Environment.Variables.INQSI_DEPLOY_GIT_SHA' \
+              --output text 2>/dev/null || true)
+            if [ -n "$deployed_sha" ] && [ "$deployed_sha" != 'None' ]; then
+              git fetch --quiet origin main
+              if git cat-file -e "${deployed_sha}^{commit}" 2>/dev/null && \
+                 git merge-base --is-ancestor "$REQUIRED_SETTLEMENT_ANCESTOR" "$deployed_sha"; then
+                echo "deployed_sha=$deployed_sha" >> "$GITHUB_OUTPUT"
+                echo "Repaired settlement revision is active: $deployed_sha"
+                exit 0
+              fi
+            fi
+            sleep 20
+          done
+          echo '::error::Repaired settlement revision did not become active'
+          exit 1
+
+      - name: Reconcile protected prospective lifecycle through yesterday
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-continuity runtime_reports
+          python scripts/reconcile_mlb_prospective_backlog_v5.py \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --max-slate-days 30 \
+            --output /tmp/mlb-continuity/backlog.json
+
+      - name: Invoke trainer and require admitted rows
+        env:
+          AWS_MAX_ATTEMPTS: '10'
+          AWS_RETRY_MODE: standard
+        run: |
+          set -euo pipefail
+          trainer=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBMLTrainingFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$trainer"
+          test "$trainer" != 'None'
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$trainer" \
+            --region "$AWS_REGION" \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"post_settlement_repair_training"}' \
+            --response /tmp/mlb-continuity/training.json \
+            --invocation /tmp/mlb-continuity/training-invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 1800 \
+            --retry-delay-seconds 30
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$trainer" \
+            --region "$AWS_REGION" \
+            --payload '{"sport":"mlb","mode":"selection_capture","run":"post_settlement_repair_selection"}' \
+            --response /tmp/mlb-continuity/selection.json \
+            --invocation /tmp/mlb-continuity/selection-invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 1800 \
+            --retry-delay-seconds 30
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$trainer" \
+            --region "$AWS_REGION" \
+            --status-training-result /tmp/mlb-continuity/training.json \
+            --status-selection-capture-result /tmp/mlb-continuity/selection.json \
+            --response /tmp/mlb-continuity/status.json \
+            --invocation /tmp/mlb-continuity/status-invocation.json
+
+      - name: Publish strict continuity and training proof
+        env:
+          DEPLOYED_SETTLEMENT_SHA: ${{ steps.deployed_revision.outputs.deployed_sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          base=Path('/tmp/mlb-continuity')
+          backlog=json.loads((base/'backlog.json').read_text())
+          training=json.loads((base/'training.json').read_text())
+          status=json.loads((base/'status.json').read_text())
+          latest=((status.get('trainingHealth') or {}).get('latestRun') or training)
+          continuity=latest.get('canonicalSlateContinuity') or {}
+          yesterday=(datetime.now(ZoneInfo('America/New_York')).date()-timedelta(days=1)).isoformat()
+          processed=str(continuity.get('processedThroughSlateDate') or '')
+          accepted=int(latest.get('acceptedRowCount') or training.get('acceptedRowCount') or 0)
+          report={
+              'proofType':'MLB_POST_SETTLEMENT_CANONICAL_CONTINUITY_REPAIR',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'deployedSettlementSha':os.environ.get('DEPLOYED_SETTLEMENT_SHA'),
+              'requiredSettlementAncestor':os.environ.get('REQUIRED_SETTLEMENT_ANCESTOR'),
+              'backlog':backlog,
+              'trainer':{
+                  'acceptedRowCount':accepted,
+                  'rejectedRowCount':latest.get('rejectedRowCount', training.get('rejectedRowCount')),
+                  'status':latest.get('status', training.get('status')),
+                  'canonicalSlateContinuity':continuity,
+                  'partitionCounts':latest.get('partitionCounts', training.get('partitionCounts')),
+                  'rejectionReasonCounts':latest.get('rejectionReasonCounts', training.get('rejectionReasonCounts')),
+                  'modelTrained':latest.get('modelTrained', training.get('modelTrained')),
+                  'liveInferenceAuthority':latest.get('liveInferenceAuthority', training.get('liveInferenceAuthority')),
+                  'productionAuthorityChanged':latest.get('productionAuthorityChanged', training.get('productionAuthorityChanged')),
+              },
+              'requiredProcessedThroughSlateDate':yesterday,
+              'directTableWrite':False,
+              'postStartPredictionCreationAllowed':False,
+              'immutablePredictionRewriteAllowed':False,
+              'productionAuthorityChanged':False,
+              'secretExposed':False,
+          }
+          report['ok']=(
+              backlog.get('ok') is True
+              and accepted > 0
+              and not continuity.get('blockedSlateDate')
+              and processed >= yesterday
+              and report['trainer']['liveInferenceAuthority'] is not True
+              and report['trainer']['productionAuthorityChanged'] is not True
+          )
+          report['conclusion']='PASS' if report['ok'] else 'FAIL'
+          Path('runtime_reports/mlb_training_continuity_repair_latest.json').write_text(
+              json.dumps(report,indent=2,sort_keys=True,default=str)+'\n', encoding='utf-8')
+          print(json.dumps(report,indent=2,sort_keys=True,default=str))
+          if not report['ok']:
+              raise SystemExit('MLB continuity/training acceptance did not pass')
+          PY
+
+      - name: Persist recovery proof
+        if: always()
+        run: |
+          set -euo pipefail
+          test -f runtime_reports/mlb_training_continuity_repair_latest.json
+          cp runtime_reports/mlb_training_continuity_repair_latest.json /tmp/mlb-training-continuity-proof.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-continuity-proof origin/main
+            cp /tmp/mlb-training-continuity-proof.json runtime_reports/mlb_training_continuity_repair_latest.json
+            git add runtime_reports/mlb_training_continuity_repair_latest.json
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish repaired MLB continuity and training proof [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
