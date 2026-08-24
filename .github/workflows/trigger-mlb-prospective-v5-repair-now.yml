@@ -1,0 +1,26 @@
+name: Trigger MLB prospective v5 repair now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/trigger-mlb-prospective-v5-repair-now.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch protected continuity repair
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run repair-mlb-prospective-v5-now.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+          echo 'Protected MLB continuity repair dispatched.'
