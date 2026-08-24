@@ -1,0 +1,214 @@
+name: Repair MLB prospective continuity v5 now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-prospective-v5-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-mlb-prospective-v5-now
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-dev
+  REPORT_PATH: runtime_reports/mlb_prospective_v5_repair_latest.json
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Install repair runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Run readable-status reconciliation v5
+        id: reconcile
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/mlb-v5 runtime_reports
+          python scripts/reconcile_mlb_prospective_backlog_v5.py \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --max-slate-days 30 \
+            --output /tmp/mlb-v5/backlog.json
+
+      - name: Invoke trainer after protected reconciliation
+        id: trainer
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/mlb-v5
+          trainer=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBMLTrainingFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$trainer"
+          test "$trainer" != "None"
+          printf '%s' "$trainer" > /tmp/mlb-v5/trainer-name.txt
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$trainer" \
+            --region "$AWS_REGION" \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"prospective_v5_production_repair"}' \
+            --response /tmp/mlb-v5/training.json \
+            --invocation /tmp/mlb-v5/training-invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 1800 \
+            --retry-delay-seconds 30
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$trainer" \
+            --region "$AWS_REGION" \
+            --payload '{"sport":"mlb","mode":"selection_capture","run":"prospective_v5_production_repair"}' \
+            --response /tmp/mlb-v5/selection.json \
+            --invocation /tmp/mlb-v5/selection-invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 1800 \
+            --retry-delay-seconds 30
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$trainer" \
+            --region "$AWS_REGION" \
+            --status-training-result /tmp/mlb-v5/training.json \
+            --status-selection-capture-result /tmp/mlb-v5/selection.json \
+            --response /tmp/mlb-v5/status.json \
+            --invocation /tmp/mlb-v5/status-invocation.json
+
+      - name: Build redacted durable recovery proof
+        if: always()
+        env:
+          RECONCILE_OUTCOME: ${{ steps.reconcile.outcome }}
+          TRAINER_OUTCOME: ${{ steps.trainer.outcome }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone, timedelta
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          root=Path('/tmp/mlb-v5')
+          def load(name):
+              path=root/name
+              if not path.exists():
+                  return {'_missing': name}
+              try:
+                  value=json.loads(path.read_text())
+                  return value if isinstance(value, dict) else {'_invalidType': type(value).__name__}
+              except Exception as exc:
+                  return {'_parseError': type(exc).__name__}
+
+          backlog=load('backlog.json')
+          training=load('training.json')
+          status=load('status.json')
+          latest=((status.get('trainingHealth') or {}).get('latestRun') or {})
+          continuity=latest.get('canonicalSlateContinuity') or training.get('canonicalSlateContinuity') or {}
+          accepted=latest.get('acceptedRowCount', training.get('acceptedRowCount', 0))
+          try:
+              accepted=int(accepted)
+          except (TypeError, ValueError):
+              accepted=0
+          yesterday=(datetime.now(ZoneInfo('America/New_York')).date()-timedelta(days=1)).isoformat()
+          processed=str(continuity.get('processedThroughSlateDate') or '')
+          report={
+              'proofType':'MLB_PROSPECTIVE_CONTINUITY_V5_PRODUCTION_REPAIR',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ.get('GITHUB_SHA'),
+              'runId':os.environ.get('GITHUB_RUN_ID'),
+              'reconcileOutcome':os.environ.get('RECONCILE_OUTCOME'),
+              'trainerOutcome':os.environ.get('TRAINER_OUTCOME'),
+              'backlog':backlog,
+              'trainer':{
+                  'acceptedRowCount':accepted,
+                  'rejectedRowCount':latest.get('rejectedRowCount', training.get('rejectedRowCount')),
+                  'status':latest.get('status', training.get('status')),
+                  'canonicalSlateContinuity':continuity,
+                  'partitionCounts':latest.get('partitionCounts', training.get('partitionCounts')),
+                  'rejectionReasonCounts':latest.get('rejectionReasonCounts', training.get('rejectionReasonCounts')),
+                  'modelTrained':latest.get('modelTrained', training.get('modelTrained')),
+                  'liveInferenceAuthority':latest.get('liveInferenceAuthority', training.get('liveInferenceAuthority')),
+                  'productionAuthorityChanged':latest.get('productionAuthorityChanged', training.get('productionAuthorityChanged')),
+                  'requiredProcessedThroughSlateDate':yesterday,
+              },
+              'directTableWrite':False,
+              'immutablePredictionRewriteAllowed':False,
+              'postStartPredictionCreationAllowed':False,
+              'secretExposed':False,
+          }
+          report['ok']=(
+              backlog.get('ok') is True
+              and accepted > 0
+              and not continuity.get('blockedSlateDate')
+              and processed >= yesterday
+              and report['trainer']['liveInferenceAuthority'] is not True
+              and report['trainer']['productionAuthorityChanged'] is not True
+          )
+          report['conclusion']='PASS' if report['ok'] else 'FAIL'
+          Path(os.environ['REPORT_PATH']).write_text(
+              json.dumps(report, indent=2, sort_keys=True, default=str)+'\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(report, indent=2, sort_keys=True, default=str))
+          PY
+
+      - name: Publish durable recovery proof
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-prospective-v5-proof origin/main
+            git reset --hard origin/main
+            mkdir -p runtime_reports
+            cp "$GITHUB_WORKSPACE/$REPORT_PATH" "/tmp/mlb-v5/report-copy.json" 2>/dev/null || true
+            if [ -s /tmp/mlb-v5/report-copy.json ]; then
+              cp /tmp/mlb-v5/report-copy.json "$REPORT_PATH"
+            fi
+            test -s "$REPORT_PATH"
+            python -m json.tool "$REPORT_PATH" >/dev/null
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB prospective v5 repair proof [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
+
+      - name: Require repaired continuity and admitted rows
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('runtime_reports/mlb_prospective_v5_repair_latest.json').read_text())
+          if report.get('ok') is not True:
+              raise SystemExit(json.dumps(report, sort_keys=True))
+          print('MLB prospective continuity v5 repair: PASS')
+          PY
