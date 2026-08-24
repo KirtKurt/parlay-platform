@@ -266,12 +266,158 @@ def _bbs_get(path: str, params: Optional[Dict[str, Any]] = None) -> Any:
     return payload
 
 
-def _bbs_matches(slate: str) -> Dict[str, Any]:
-    payload = _bbs_get("/v1/matches", {"sport": "baseball", "league": "mlb", "date": slate, "limit": 100})
-    rows = payload.get("data") or []
+def _bbs_payload_rows(payload: Any) -> List[Dict[str, Any]]:
+    rows = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         raise RuntimeError("BBS_MATCHES_NOT_LIST")
-    return {"source": "Big Balls Sports Data", "events": rows, "meta": payload.get("meta") or {}}
+    return [copy.deepcopy(row) for row in rows if isinstance(row, dict)]
+
+
+def _bbs_event_identity(row: Dict[str, Any]) -> str:
+    for key in (
+        "id", "match_id", "matchId", "event_id", "eventId",
+        "fixture_id", "fixtureId", "game_id", "gameId", "uuid",
+    ):
+        if row.get(key):
+            return f"id:{row[key]}"
+    home = _team_name(row.get("home") or row.get("home_team") or row.get("homeTeam"))
+    away = _team_name(row.get("away") or row.get("away_team") or row.get("awayTeam"))
+    start = (
+        row.get("kickoff_utc")
+        or row.get("start_time")
+        or row.get("startTime")
+        or row.get("commence_time")
+        or row.get("commenceTime")
+        or row.get("scheduled_at")
+        or row.get("scheduledAt")
+        or row.get("game_date")
+        or row.get("gameDate")
+        or row.get("date")
+    )
+    return "fallback:" + json.dumps(
+        [_normalize(home), _normalize(away), str(start or "")],
+        separators=(",", ":"),
+    )
+
+
+def _dedupe_bbs_events(rows: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    events: List[Dict[str, Any]] = []
+    seen = set()
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        identity = _bbs_event_identity(row)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        events.append(copy.deepcopy(row))
+    return events
+
+
+def _official_utc_dates(slate: str, official: Dict[str, Any]) -> List[str]:
+    values = set()
+    for game in official.get("games") or []:
+        if not isinstance(game, dict):
+            continue
+        start = _parse(game.get("gameDate"))
+        if start is not None:
+            values.add(start.date().isoformat())
+    return sorted(values or {slate})
+
+
+def _bbs_official_coverage(
+    official: Dict[str, Any], rows: Iterable[Dict[str, Any]]
+) -> Tuple[List[str], List[str]]:
+    matched: List[str] = []
+    missing: List[str] = []
+    for game in official.get("games") or []:
+        if not isinstance(game, dict):
+            continue
+        game_pk = str(game.get("gamePk") or "")
+        if _match_event(game, rows, provider="bbs") is not None:
+            matched.append(game_pk)
+        else:
+            missing.append(game_pk)
+    return matched, missing
+
+
+def _bbs_matches(
+    slate: str, official: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    official = official if isinstance(official, dict) else {"games": []}
+    utc_dates = _official_utc_dates(slate, official)
+    rows: List[Dict[str, Any]] = []
+    queries: List[Dict[str, Any]] = []
+    provider_meta: List[Dict[str, Any]] = []
+
+    def collect(label: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        payload = _bbs_get("/v1/matches", params)
+        found = _bbs_payload_rows(payload)
+        rows.extend(found)
+        queries.append({
+            "label": label,
+            "params": copy.deepcopy(params),
+            "count": len(found),
+        })
+        meta = payload.get("meta") if isinstance(payload, dict) else None
+        if isinstance(meta, dict):
+            provider_meta.append(copy.deepcopy(meta))
+        return found
+
+    # BBD's documented date filter is UTC. An Eastern MLB slate can therefore
+    # span two UTC dates, so use the official MLB gameDate values as the query
+    # authority rather than treating the ET slate date as a UTC date.
+    for date_value in utc_dates:
+        collect(
+            "official_utc_date",
+            {
+                "sport": "baseball",
+                "league": "mlb",
+                "date": date_value,
+                "limit": 200,
+                "offset": 0,
+            },
+        )
+
+    events = _dedupe_bbs_events(rows)
+    matched, missing = _bbs_official_coverage(official, events)
+    fallback_used = False
+
+    # The documented unfiltered league view is a bounded recovery path for a
+    # delayed/misdated provider row. A row is admitted only after the existing
+    # official team/start-time crosswalk succeeds.
+    for offset in (0, 200, 400):
+        if not missing:
+            break
+        fallback_used = True
+        found = collect(
+            "league_unfiltered_offset",
+            {
+                "sport": "baseball",
+                "league": "mlb",
+                "limit": 200,
+                "offset": offset,
+            },
+        )
+        events = _dedupe_bbs_events(rows)
+        matched, missing = _bbs_official_coverage(official, events)
+        if len(found) < 200:
+            break
+
+    return {
+        "source": "Big Balls Sports Data",
+        "events": events,
+        "meta": {
+            "resolver": "official_utc_date_union_v1",
+            "officialUtcDates": utc_dates,
+            "queries": queries,
+            "providerMeta": provider_meta,
+            "unfilteredFallbackUsed": fallback_used,
+            "expectedOfficialGameCount": len(official.get("games") or []),
+            "matchedOfficialGameCount": len(matched),
+            "missingOfficialGamePks": missing,
+        },
+    }
 
 
 def _safe_bbs(path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -508,7 +654,7 @@ def _bedrock_decision(game: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, 
 def _assemble(slate: str, *, expanded: bool) -> Dict[str, Any]:
     official = _official_schedule(slate)
     odds = _odds_core()
-    bbs = _bbs_matches(slate)
+    bbs = _bbs_matches(slate, official)
     games: List[Dict[str, Any]] = []
     for official_game in official.get("games") or []:
         odds_event = _match_event(official_game, odds.get("events") or [], provider="odds")

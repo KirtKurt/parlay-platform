@@ -3,6 +3,14 @@ from __future__ import annotations
 from scripts import verify_mlb_deploy_identity as deploy_identity
 
 
+class _LambdaClient:
+    def __init__(self, functions: list[dict]) -> None:
+        self._functions = functions
+
+    def list_functions(self, **_kwargs) -> dict:
+        return {"Functions": self._functions}
+
+
 def _isolated_function() -> dict:
     return {
         "FunctionName": (
@@ -32,7 +40,7 @@ def test_authorized_isolated_three_source_auto_is_outside_root_scan() -> None:
     function = _isolated_function()
 
     assert deploy_identity._is_authorized_isolated_three_source_auto(function) is True
-    assert deploy_identity._root_authority_lambda_functions([function]) == []
+    assert deploy_identity._root_authority_lambda_functions(_LambdaClient([function])) == []
 
 
 def test_isolated_lookalike_with_root_authority_table_is_rejected() -> None:
@@ -40,7 +48,7 @@ def test_isolated_lookalike_with_root_authority_table_is_rejected() -> None:
     function["Environment"]["Variables"]["SNAPSHOTS_TABLE"] = "root-snapshots"
 
     assert deploy_identity._is_authorized_isolated_three_source_auto(function) is False
-    assert deploy_identity._root_authority_lambda_functions([function]) == [function]
+    assert deploy_identity._root_authority_lambda_functions(_LambdaClient([function])) == [function]
 
 
 def test_isolated_lookalike_without_secret_manager_arn_is_rejected() -> None:

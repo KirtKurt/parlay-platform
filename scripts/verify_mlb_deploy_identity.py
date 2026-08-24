@@ -289,6 +289,7 @@ ISOLATED_THREE_SOURCE_HANDLER = "orchestrator.lambda_handler"
 ISOLATED_THREE_SOURCE_HANDLERS = (
     ISOLATED_THREE_SOURCE_HANDLER,
     "orchestrator_v2.lambda_handler",
+    "orchestrator_v3.lambda_handler",
 )
 ISOLATED_THREE_SOURCE_REQUIRED_ENVIRONMENT = (
     "MLB_AUTO_TABLE",
