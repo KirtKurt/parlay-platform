@@ -1,0 +1,598 @@
+name: MLB Three-Source Runtime and Timing Watch V3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-three-source-runtime-watch-v3.yml'
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-three-source-runtime-watch-v3
+  cancel-in-progress: false
+
+jobs:
+  certify-runtime-and-timing:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+      AWS_EC2_METADATA_DISABLED: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Install verifier dependencies
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Wait for stable MLB stack
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 100); do
+            state=$(aws cloudformation describe-stacks \
+              --stack-name parlay-platform-dev \
+              --region "$AWS_REGION" \
+              --query 'Stacks[0].StackStatus' \
+              --output text 2>/dev/null || echo STACK_MISSING)
+            echo "stack_state=$state"
+            case "$state" in
+              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE)
+                exit 0 ;;
+              *_IN_PROGRESS)
+                sleep 15 ;;
+              *)
+                echo "::error::Stack is not stable: $state"
+                exit 1 ;;
+            esac
+          done
+          echo '::error::Timed out waiting for stack'
+          exit 1
+
+      - name: Certify immutable predictions, sources, and cutoff timing
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import copy
+          import json
+          import os
+          import shutil
+          from datetime import datetime, timezone
+          from decimal import Decimal
+          from pathlib import Path
+          from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+          import boto3
+          from boto3.dynamodb.conditions import Key
+
+          REGION = os.environ['AWS_REGION']
+          STACK = 'parlay-platform-dev'
+          REPORT = Path('runtime_reports/mlb_three_source_runtime_v3_latest.json')
+          CERT = Path('runtime_reports/mlb_three_source_runtime_timing_certified.json')
+          MARKERS = Path('runtime_reports/mlb_runtime_v3_markers')
+          cfn = boto3.client('cloudformation', region_name=REGION)
+          lam = boto3.client('lambda', region_name=REGION)
+          eventbridge = boto3.client('events', region_name=REGION)
+          ddb_client = boto3.client('dynamodb', region_name=REGION)
+          ddb = boto3.resource('dynamodb', region_name=REGION)
+
+          def plain(value: Any) -> Any:
+              if isinstance(value, Decimal):
+                  return int(value) if value == value.to_integral_value() else float(value)
+              if isinstance(value, dict):
+                  return {str(key): plain(item) for key, item in value.items()}
+              if isinstance(value, list):
+                  return [plain(item) for item in value]
+              return value
+
+          def parse_dt(value: Any) -> Optional[datetime]:
+              if value in (None, ''):
+                  return None
+              try:
+                  parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+              except Exception:
+                  return None
+              if parsed.tzinfo is None:
+                  parsed = parsed.replace(tzinfo=timezone.utc)
+              return parsed.astimezone(timezone.utc)
+
+          def first(row: Dict[str, Any], keys: Iterable[str]) -> Any:
+              for key in keys:
+                  value = row.get(key)
+                  if value not in (None, ''):
+                      return value
+              return None
+
+          def resource(logical_id: str) -> str:
+              return cfn.describe_stack_resource(
+                  StackName=STACK,
+                  LogicalResourceId=logical_id,
+              )['StackResourceDetail']['PhysicalResourceId']
+
+          def config(function_name: str) -> Dict[str, Any]:
+              return lam.get_function_configuration(FunctionName=function_name)
+
+          def environment(configuration: Dict[str, Any]) -> Dict[str, str]:
+              return ((configuration.get('Environment') or {}).get('Variables') or {})
+
+          orchestrator_name = resource('MLBAutonomousOrchestratorFunction')
+          lock_name = resource('MLBDailyPickLockFunction')
+          pull_name = resource('MLBAuditedPullFunction')
+          orchestrator_config = config(orchestrator_name)
+          lock_config = config(lock_name)
+          pull_config = config(pull_name)
+          lock_env = environment(lock_config)
+          pull_env = environment(pull_config)
+
+          invocation_response = lam.invoke(
+              FunctionName=orchestrator_name,
+              InvocationType='RequestResponse',
+              Payload=b'{}',
+          )
+          raw = invocation_response['Payload'].read()
+          invocation = json.loads(raw.decode('utf-8')) if raw else {}
+          function_error = invocation_response.get('FunctionError')
+
+          rule_names = eventbridge.list_rule_names_by_target(
+              TargetArn=orchestrator_config['FunctionArn']
+          ).get('RuleNames') or []
+          rules = []
+          for name in rule_names:
+              rule = eventbridge.describe_rule(Name=name)
+              rules.append({
+                  'name': name,
+                  'state': rule.get('State'),
+                  'scheduleExpression': rule.get('ScheduleExpression'),
+              })
+          schedule_healthy = bool(rules) and all(
+              row.get('state') == 'ENABLED'
+              and row.get('scheduleExpression') == 'rate(5 minutes)'
+              for row in rules
+          )
+          invocation_healthy = function_error is None and invocation.get('ok') is True
+          configuration_checks = {
+              'oddsApiKeyPresent': bool(lock_env.get('ODDS_API_KEY') or pull_env.get('ODDS_API_KEY')),
+              'bbdProApiKeyPresent': bool(lock_env.get('BIG_BALLS_DATA_API_KEY') or pull_env.get('BIG_BALLS_DATA_API_KEY')),
+              'autonomousLlmEnabled': str(lock_env.get('MLB_AUTONOMOUS_LLM_ENABLED') or '').lower() == 'true',
+              'dailyAccuracyGoal70Pct': str(lock_env.get('MLB_DAILY_ACCURACY_TARGET') or '') in {'0.7', '0.70'},
+              'leadTimeAtLeast45Minutes': int(lock_env.get('MLB_CARD_LEAD_MINUTES') or 0) >= 45,
+          }
+
+          slate_date = str(invocation.get('slateDate') or datetime.now(timezone.utc).date().isoformat())
+          official_schedule = invocation.get('officialSchedule') or {}
+          official_count = int(official_schedule.get('officialGameCount') or 0)
+          official_ids = [str(value) for value in official_schedule.get('officialGameIds') or []]
+          timing = invocation.get('timing') or {}
+          first_game_id = str(timing.get('firstGameId') or '')
+          second_game_id = str(timing.get('secondGameId') or '')
+          first_pick_deadline = parse_dt(timing.get('firstPickDeadlineUtc'))
+          full_card_deadline = parse_dt(timing.get('fullCardDeadlineUtc'))
+          full_card_due = bool(timing.get('fullCardDue'))
+
+          table_names: List[str] = []
+          for source_env in (lock_env, pull_env):
+              for key, value in source_env.items():
+                  if 'TABLE' in key.upper() and value and value not in table_names:
+                      table_names.append(value)
+
+          stored_items: List[Dict[str, Any]] = []
+          table_errors: List[Dict[str, Any]] = []
+          for table_name in table_names:
+              try:
+                  description = ddb_client.describe_table(TableName=table_name)['Table']
+                  partition_key = next(
+                      (
+                          row['AttributeName']
+                          for row in description.get('KeySchema') or []
+                          if row.get('KeyType') == 'HASH'
+                      ),
+                      None,
+                  )
+                  if partition_key != 'PK':
+                      continue
+                  table = ddb.Table(table_name)
+                  for pk in (
+                      f'LOCKED_PICKS#mlb#{slate_date}',
+                      f'GAME_WINNERS#mlb#{slate_date}',
+                  ):
+                      response = table.query(
+                          KeyConditionExpression=Key('PK').eq(pk),
+                          ConsistentRead=True,
+                      )
+                      for item in response.get('Items') or []:
+                          stored_items.append({
+                              'table': table_name,
+                              'item': plain(item),
+                          })
+              except Exception as exc:
+                  table_errors.append({
+                      'table': table_name,
+                      'errorType': type(exc).__name__,
+                      'error': str(exc)[:500],
+                  })
+
+          def prediction_rows(value: Any) -> List[Dict[str, Any]]:
+              rows: List[Dict[str, Any]] = []
+              seen: set[int] = set()
+
+              def walk(node: Any) -> None:
+                  if isinstance(node, dict):
+                      object_id = id(node)
+                      if object_id in seen:
+                          return
+                      seen.add(object_id)
+                      home = first(node, ('homeTeam', 'home_team'))
+                      away = first(node, ('awayTeam', 'away_team'))
+                      winner = first(node, ('predictedWinner', 'predicted_winner', 'pick'))
+                      if home and away and winner:
+                          rows.append(copy.deepcopy(node))
+                          return
+                      for child in node.values():
+                          walk(child)
+                  elif isinstance(node, list):
+                      for child in node:
+                          walk(child)
+
+              walk(value)
+              return rows
+
+          def official_game_pk(row: Dict[str, Any]) -> str:
+              value = first(row, ('officialGamePk', 'official_game_pk'))
+              if value not in (None, ''):
+                  return str(value)
+              for container_key in ('canonicalLockAuthority', 'providerAliasCrosswalk'):
+                  container = row.get(container_key)
+                  if isinstance(container, dict):
+                      value = first(container, ('officialGamePk', 'official_game_pk'))
+                      if value not in (None, ''):
+                          return str(value)
+              return ''
+
+          def identity(row: Dict[str, Any]) -> str:
+              return str(first(
+                  row,
+                  (
+                      'officialGamePk',
+                      'official_game_pk',
+                      'providerEventId',
+                      'provider_event_id',
+                      'gameId',
+                      'game_id',
+                      'id',
+                      'gameIdentity',
+                  ),
+              ) or '')
+
+          def prediction_time(row: Dict[str, Any]) -> Optional[datetime]:
+              decision = row.get('autonomousLLMDecision')
+              if isinstance(decision, dict):
+                  parsed = parse_dt(decision.get('checkedAtUtc'))
+                  if parsed is not None:
+                      return parsed
+              for key in (
+                  'predictedAtUtc',
+                  'predictionAtUtc',
+                  'predictionPersistedAtUtc',
+                  'lockedAtUtc',
+                  'publishedAtUtc',
+                  'createdAtUtc',
+                  'generatedAtUtc',
+              ):
+                  parsed = parse_dt(row.get(key))
+                  if parsed is not None:
+                      return parsed
+              return None
+
+          def game_start(row: Dict[str, Any]) -> Optional[datetime]:
+              for key in (
+                  'officialCommenceTime',
+                  'official_commence_time',
+                  'commenceTime',
+                  'commence_time',
+                  'gameDate',
+              ):
+                  parsed = parse_dt(row.get(key))
+                  if parsed is not None:
+                      return parsed
+              return None
+
+          picks_by_key: Dict[str, Dict[str, Any]] = {}
+          for wrapped in stored_items:
+              item = wrapped.get('item') or {}
+              source = item.get('data') if isinstance(item.get('data'), dict) else item
+              for row in prediction_rows(source):
+                  key = official_game_pk(row) or identity(row)
+                  if not key:
+                      continue
+                  existing = picks_by_key.get(key)
+                  candidate_decision = row.get('autonomousLLMDecision')
+                  existing_decision = (existing or {}).get('autonomousLLMDecision')
+                  candidate_score = int(isinstance(candidate_decision, dict)) + int(prediction_time(row) is not None)
+                  existing_score = int(isinstance(existing_decision, dict)) + int(prediction_time(existing or {}) is not None)
+                  if existing is None or candidate_score >= existing_score:
+                      picks_by_key[key] = row
+
+          prediction_proofs: List[Dict[str, Any]] = []
+          prediction_times: List[datetime] = []
+          all_prediction_times_proven = True
+          all_predictions_pregame = True
+          for key, row in sorted(picks_by_key.items()):
+              decision = row.get('autonomousLLMDecision')
+              decision = decision if isinstance(decision, dict) else {}
+              source_use = decision.get('sourceUse')
+              source_use = source_use if isinstance(source_use, dict) else {}
+              predicted_at = prediction_time(row)
+              start_at = game_start(row)
+              if predicted_at is None:
+                  all_prediction_times_proven = False
+              else:
+                  prediction_times.append(predicted_at)
+              pregame = bool(predicted_at and start_at and predicted_at < start_at)
+              if not pregame:
+                  all_predictions_pregame = False
+              prediction_proofs.append({
+                  'gameId': identity(row),
+                  'officialGamePk': official_game_pk(row),
+                  'homeTeam': first(row, ('homeTeam', 'home_team')),
+                  'awayTeam': first(row, ('awayTeam', 'away_team')),
+                  'predictedWinner': first(row, ('predictedWinner', 'predicted_winner', 'pick')),
+                  'predictionTimeUtc': predicted_at.isoformat() if predicted_at else None,
+                  'gameStartUtc': start_at.isoformat() if start_at else None,
+                  'pregame': pregame,
+                  'decisionVersion': decision.get('version'),
+                  'decisionStatus': decision.get('status'),
+                  'threeSourceReady': decision.get('threeSourceReady'),
+                  'sourceUse': source_use,
+                  'coveragePolicy': decision.get('coveragePolicy'),
+                  'dailyAccuracyGoal': decision.get('dailyAccuracyGoal'),
+              })
+
+          all_games_no_pass = all(
+              bool(row.get('predictedWinner'))
+              for row in prediction_proofs
+          )
+          all_predictions_three_source_ready = bool(prediction_proofs) and all(
+              row.get('threeSourceReady') is True
+              and (row.get('sourceUse') or {}).get('mlbOfficial') is True
+              and (row.get('sourceUse') or {}).get('theOddsApi') is True
+              and (row.get('sourceUse') or {}).get('bigBallsDataPro') is True
+              for row in prediction_proofs
+          )
+          predicted_official_ids = {
+              str(row.get('officialGamePk') or '')
+              for row in prediction_proofs
+              if row.get('officialGamePk') not in (None, '')
+          }
+          official_coverage_complete = (
+              official_count == 0
+              or (
+                  len(prediction_proofs) >= official_count
+                  and set(official_ids).issubset(predicted_official_ids)
+              )
+          )
+          card_complete = bool(
+              official_coverage_complete
+              and all_games_no_pass
+          )
+
+          first_pick = next(
+              (
+                  row
+                  for row in prediction_proofs
+                  if str(row.get('officialGamePk') or row.get('gameId') or '') == first_game_id
+              ),
+              None,
+          )
+          first_pick_time = parse_dt((first_pick or {}).get('predictionTimeUtc'))
+          first_pick_timing_met = bool(
+              official_count == 0
+              or (
+                  first_pick_deadline
+                  and first_pick_time
+                  and first_pick_time <= first_pick_deadline
+              )
+          )
+          full_card_prediction_time = max(prediction_times) if prediction_times and len(prediction_times) == len(prediction_proofs) else None
+          full_card_timing_met = bool(
+              official_count == 0
+              or (
+                  card_complete
+                  and full_card_deadline
+                  and full_card_prediction_time
+                  and full_card_prediction_time <= full_card_deadline
+              )
+          )
+          timing_certified = bool(
+              first_pick_timing_met
+              and full_card_timing_met
+              and all_prediction_times_proven
+              and all_predictions_pregame
+          )
+          infrastructure_healthy = bool(
+              all(configuration_checks.values())
+              and schedule_healthy
+              and invocation_healthy
+          )
+          authoritative_card_healthy = bool(
+              card_complete
+              and all_predictions_three_source_ready
+              and timing_certified
+          )
+          deadline_requirement_met = bool(
+              not full_card_due
+              or authoritative_card_healthy
+          )
+          overall_healthy = bool(
+              infrastructure_healthy
+              and deadline_requirement_met
+          )
+          if full_card_due and overall_healthy:
+              status = 'HEALTHY_AUTHORITATIVE_TIMING_CERTIFIED'
+          elif not full_card_due and infrastructure_healthy:
+              status = 'HEALTHY_AWAITING_FULL_CARD_DEADLINE'
+          else:
+              status = 'DEGRADED'
+
+          report = {
+              'ok': overall_healthy,
+              'version': 'MLB-THREE-SOURCE-RUNTIME-WATCH-v3-immutable-timing',
+              'checkedAtUtc': datetime.now(timezone.utc).isoformat(),
+              'stackName': STACK,
+              'stackStatus': cfn.describe_stacks(StackName=STACK)['Stacks'][0]['StackStatus'],
+              'status': status,
+              'configuration': configuration_checks,
+              'eventBridgeRules': rules,
+              'scheduleHealthy': schedule_healthy,
+              'orchestratorInvocation': invocation,
+              'orchestratorFunctionError': function_error,
+              'invocationHealthy': invocation_healthy,
+              'slateDate': slate_date,
+              'officialGameCount': official_count,
+              'officialGameIds': official_ids,
+              'firstGameId': first_game_id,
+              'secondGameId': second_game_id,
+              'firstPickDeadlineUtc': first_pick_deadline.isoformat() if first_pick_deadline else None,
+              'fullCardDeadlineUtc': full_card_deadline.isoformat() if full_card_deadline else None,
+              'fullCardDue': full_card_due,
+              'predictionCount': len(prediction_proofs),
+              'cardComplete': card_complete,
+              'allGamesNoPass': all_games_no_pass,
+              'allPredictionsThreeSourceReady': all_predictions_three_source_ready,
+              'allPredictionTimesProven': all_prediction_times_proven,
+              'allPredictionsPregame': all_predictions_pregame,
+              'firstPickTimeUtc': first_pick_time.isoformat() if first_pick_time else None,
+              'fullCardPredictionTimeUtc': full_card_prediction_time.isoformat() if full_card_prediction_time else None,
+              'firstPickTimingMet': first_pick_timing_met,
+              'fullCardTimingMet': full_card_timing_met,
+              'timingCertified': timing_certified,
+              'infrastructureHealthy': infrastructure_healthy,
+              'authoritativeCardHealthy': authoritative_card_healthy,
+              'deadlineRequirementMet': deadline_requirement_met,
+              'predictionProofs': prediction_proofs,
+              'tableNamesInspected': table_names,
+              'tableErrors': table_errors,
+              'dailyAccuracyGoal': 0.70,
+              'accuracyGoalIsNotGuarantee': True,
+          }
+          REPORT.parent.mkdir(parents=True, exist_ok=True)
+          REPORT.write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
+
+          if overall_healthy:
+              certificate = {
+                  'certified': True,
+                  'version': report['version'],
+                  'checkedAtUtc': report['checkedAtUtc'],
+                  'status': status,
+                  'slateDate': slate_date,
+                  'officialGameCount': official_count,
+                  'predictionCount': len(prediction_proofs),
+                  'fullCardDue': full_card_due,
+                  'cardComplete': card_complete,
+                  'allGamesNoPass': all_games_no_pass,
+                  'allPredictionsThreeSourceReady': all_predictions_three_source_ready,
+                  'firstPickTimingMet': first_pick_timing_met,
+                  'fullCardTimingMet': full_card_timing_met,
+                  'timingCertified': timing_certified,
+                  'dailyAccuracyGoal': 0.70,
+              }
+              CERT.write_text(json.dumps(certificate, indent=2, sort_keys=True) + '\n')
+          elif CERT.exists():
+              CERT.unlink()
+
+          if MARKERS.exists():
+              shutil.rmtree(MARKERS)
+          MARKERS.mkdir(parents=True, exist_ok=True)
+
+          def marker(name: str, payload: Dict[str, Any]) -> None:
+              (MARKERS / f'{name}.cert').write_text(
+                  json.dumps(payload, indent=2, sort_keys=True) + '\n'
+              )
+
+          marker(f'status_{status}', {'status': status})
+          marker(f'official_game_count_{official_count}', {'officialGameCount': official_count})
+          marker(f'prediction_count_{len(prediction_proofs)}', {'predictionCount': len(prediction_proofs)})
+          if infrastructure_healthy:
+              marker('infrastructure_healthy', {'infrastructureHealthy': True})
+          if card_complete:
+              marker('card_complete', {'cardComplete': True})
+          if all_games_no_pass:
+              marker('all_games_no_pass', {'allGamesNoPass': True})
+          if all_predictions_three_source_ready:
+              marker('all_predictions_three_source_ready', {'allPredictionsThreeSourceReady': True})
+          if first_pick_timing_met:
+              marker('first_pick_timing_met', {'firstPickTimingMet': True})
+          if full_card_timing_met:
+              marker('full_card_timing_met', {'fullCardTimingMet': True})
+          if all_predictions_pregame:
+              marker('all_predictions_pregame', {'allPredictionsPregame': True})
+          if timing_certified:
+              marker('timing_certified', {'timingCertified': True})
+          else:
+              marker('timing_not_certified', {
+                  'timingCertified': False,
+                  'firstPickTimingMet': first_pick_timing_met,
+                  'fullCardTimingMet': full_card_timing_met,
+                  'allPredictionTimesProven': all_prediction_times_proven,
+                  'allPredictionsPregame': all_predictions_pregame,
+              })
+          if deadline_requirement_met:
+              marker('deadline_requirement_met', {'deadlineRequirementMet': True})
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+
+      - name: Publish sanitized proof even when degraded
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A \
+            runtime_reports/mlb_three_source_runtime_v3_latest.json \
+            runtime_reports/mlb_three_source_runtime_timing_certified.json \
+            runtime_reports/mlb_runtime_v3_markers 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo 'No proof change.'
+            exit 0
+          fi
+          git commit -m 'Publish immutable MLB three-source timing proof [skip ci]'
+          for attempt in 1 2 3 4; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+            sleep $((attempt * 5))
+          done
+          exit 1
+
+      - name: Enforce current deadline state
+        run: |
+          set -euo pipefail
+          test -f runtime_reports/mlb_three_source_runtime_timing_certified.json
+          python - <<'PY'
+          import json
+          certificate=json.load(open('runtime_reports/mlb_three_source_runtime_timing_certified.json'))
+          assert certificate.get('certified') is True, certificate
+          if certificate.get('fullCardDue') is True:
+              assert certificate.get('cardComplete') is True, certificate
+              assert certificate.get('allGamesNoPass') is True, certificate
+              assert certificate.get('allPredictionsThreeSourceReady') is True, certificate
+              assert certificate.get('timingCertified') is True, certificate
+          print(certificate['status'])
+          PY
