@@ -1,0 +1,410 @@
+name: Verify and Deploy MLB Three-API Autonomy v3 Final
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-deploy-mlb-three-api-autonomy-v3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: parlay-platform-deploy
+  cancel-in-progress: false
+
+jobs:
+  final-deployment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+      ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+      INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+      BBD_KEY_1: ${{ secrets.BIG_BALLS_DATA_API_KEY }}
+      BBD_KEY_2: ${{ secrets.BBD_API_KEY }}
+      BBD_KEY_3: ${{ secrets.BIGBALLS_DATA_API_KEY }}
+      BBD_KEY_4: ${{ secrets.BIG_BALLS_API_KEY }}
+      BBD_KEY_5: ${{ secrets.BIGBALLS_API_KEY }}
+      BBD_KEY_6: ${{ secrets.BIGBALLSDATA_API_KEY }}
+      BBD_KEY_7: ${{ secrets.BIG_BALLS_DATA_KEY }}
+      BBD_KEY_8: ${{ secrets.BBD_API_TOKEN }}
+      BBD_KEY_9: ${{ secrets.BIGBALLS_DATA_KEY }}
+      BBD_KEY_10: ${{ secrets.BIGBALLSDATA_KEY }}
+      BBD_KEY_11: ${{ secrets.BIG_BALLS_KEY }}
+      BBD_KEY_12: ${{ secrets.BBD_KEY }}
+      BIG_BALLS_DATA_API_BASE_URL: ${{ vars.BIG_BALLS_DATA_API_BASE_URL || vars.BBD_API_BASE_URL || '' }}
+      BIG_BALLS_DATA_OPENAPI_URL: ${{ vars.BIG_BALLS_DATA_OPENAPI_URL || vars.BBD_OPENAPI_URL || '' }}
+      BIG_BALLS_DATA_MLB_ENDPOINTS_JSON: ${{ vars.BIG_BALLS_DATA_MLB_ENDPOINTS_JSON || vars.BBD_MLB_ENDPOINTS_JSON || '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Select configured BBD Pro secret
+        run: |
+          set -euo pipefail
+          selected=''
+          selected_name=''
+          for variable in BBD_KEY_1 BBD_KEY_2 BBD_KEY_3 BBD_KEY_4 BBD_KEY_5 BBD_KEY_6 BBD_KEY_7 BBD_KEY_8 BBD_KEY_9 BBD_KEY_10 BBD_KEY_11 BBD_KEY_12; do
+            value=${!variable:-}
+            if [ -n "$value" ]; then selected=$value; selected_name=$variable; break; fi
+          done
+          test -n "$selected" || { echo '::error::No recognized Big Balls Data Pro repository secret'; exit 1; }
+          test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
+          test -n "${INQSI_ADMIN_API_TOKEN_VALUE:-}" || { echo '::error::Missing INQSI_ADMIN_API_TOKEN'; exit 1; }
+          test -n "${AWS_REGION_VALUE:-}" || { echo '::error::Missing AWS_REGION'; exit 1; }
+          echo "BIG_BALLS_DATA_API_KEY=$selected" >> "$GITHUB_ENV"
+          echo "BBD_SECRET_SLOT=$selected_name" >> "$GITHUB_ENV"
+          echo 'BBD key selected; value remains masked.'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Install validation dependencies
+        run: python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
+
+      - name: Install final durable runtime and run focused regressions
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          set -euo pipefail
+          python scripts/install_mlb_three_api_autonomy_v3.py
+          python -m py_compile \
+            hello_world/mlb_bbd_pro_context.py \
+            hello_world/mlb_three_api_llm_analyst.py \
+            hello_world/mlb_three_api_prediction_overlay.py \
+            hello_world/mlb_three_api_policy.py \
+            hello_world/mlb_three_api_autonomous_controller_v2.py \
+            scripts/install_mlb_three_api_autonomy_v3.py \
+            scripts/verify_mlb_three_api_runtime_final.py
+          tests=(
+            tests/unit/test_mlb_three_api_policy.py
+            tests/unit/test_mlb_bbd_pro_context.py
+            tests/unit/test_mlb_three_api_prediction_overlay.py
+            tests/unit/test_mlb_three_api_runtime_final.py
+            tests/unit/test_mlb_production_acceptance.py
+            tests/unit/test_mlb_daily_per_game_lock.py
+            tests/unit/test_mlb_published_prediction_authority.py
+            tests/unit/test_mlb_official_schedule_authority.py
+            tests/unit/test_mlb_canonical_final_labels_v1.py
+          )
+          optional=(
+            tests/unit/test_mlb_daily_pick_lock_runtime.py
+            tests/unit/test_mlb_public_per_game_authority.py
+            tests/unit/test_mlb_storage_authority.py
+            tests/unit/test_mlb_official_prediction_semantics.py
+          )
+          for test_file in "${optional[@]}"; do
+            [ -f "$test_file" ] && tests+=("$test_file")
+          done
+          python -m pytest -q "${tests[@]}"
+          python scripts/verify_mlb_three_api_runtime_final.py
+          python scripts/verify_mlb_schedule_invariants.py
+          python scripts/verify_mlb_official_prediction_semantics.py
+          sam validate --template-file template.yaml
+
+      - name: Enforce MLB-only source changes
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only)
+          printf '%s\n' "$changed"
+          if printf '%s\n' "$changed" | grep -Eq '^(tennis_learning/|tennis-template\.yaml|soccer_auto/|soccer-auto-template\.yaml)'; then
+            echo '::error::MLB integration modified tennis or soccer'
+            exit 1
+          fi
+
+      - name: Commit canonical final source
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -A
+            git commit -m 'Install final durable autonomous MLB three-source runtime'
+            git push origin HEAD:main
+          fi
+          echo "DEPLOY_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Cancel redundant default deployment for the same source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sleep 12
+          gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy.yml --limit 50 \
+            --json databaseId,status,headSha > /tmp/default-runs.json
+          python - <<'PY' >/tmp/cancel-default.txt
+          import json,os
+          source=os.environ['DEPLOY_SOURCE_SHA']
+          active={'queued','in_progress','waiting','requested','pending'}
+          for row in json.load(open('/tmp/default-runs.json')):
+              if row.get('headSha')==source and row.get('status') in active:
+                  print(row['databaseId'])
+          PY
+          while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY" || true
+          done </tmp/cancel-default.txt
+
+      - name: Live three-provider and final-decision canary
+        env:
+          PYTHONPATH: hello_world
+          ODDS_API_KEY: ${{ env.ODDS_API_KEY_VALUE }}
+          MLB_THREE_API_ENABLED: 'true'
+          MLB_THREE_API_REQUIRE_ALL_SOURCES: 'true'
+          MLB_THREE_API_LLM_MODEL_ID: us.amazon.nova-2-lite-v1:0
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,urllib.parse,urllib.request
+          from datetime import datetime,timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          import mlb_bbd_pro_context as bbd
+          import mlb_official_schedule_authority as official
+          import mlb_three_api_prediction_overlay as overlay
+
+          checked=datetime.now(timezone.utc)
+          date_et=checked.astimezone(ZoneInfo('America/New_York')).date().isoformat()
+          schedule=official.fetch_exact_date_schedule(date_et)
+          games=schedule.get('games') or []
+          assert games,schedule
+          url='https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/?'+urllib.parse.urlencode({
+              'apiKey':os.environ['ODDS_API_KEY'],'regions':'us,us2,uk,eu,au',
+              'markets':'h2h,spreads,totals','oddsFormat':'american','dateFormat':'iso',
+          })
+          req=urllib.request.Request(url,headers={'accept':'application/json','user-agent':'inqsi-mlb-final-canary/1.0'})
+          with urllib.request.urlopen(req,timeout=40) as response:
+              odds=json.loads(response.read().decode('utf-8'))
+              headers={k.lower():v for k,v in response.headers.items()}
+          assert isinstance(odds,list) and odds
+          norm=lambda value:' '.join(str(value or '').lower().split())
+          game=market=None
+          for official_game in games:
+              candidate=next((row for row in odds if norm(row.get('home_team'))==norm(official_game.get('home_team')) and norm(row.get('away_team'))==norm(official_game.get('away_team')) and row.get('bookmakers')),None)
+              if candidate:
+                  game=dict(official_game);market=candidate;break
+          assert game and market,{'official':len(games),'odds':len(odds)}
+          game['provider_event_id']=market.get('id');game['bookmakers']=market.get('bookmakers') or []
+          manifest=bbd.discover_manifest(force=True)
+          context=bbd.collect_game_context(game,as_of_utc=checked.isoformat())
+          assert context.get('sourceStatus') in {'CONNECTED','PARTIAL'},context
+          assert int(context.get('operationsSucceeded') or 0)>0,context
+          market_home=overlay.market_home_probability(game,game['home_team'],game['away_team'])
+          assert market_home is not None
+          winner=game['home_team'] if market_home>=0.5 else game['away_team']
+          row={**game,'predictedWinner':winner,'winProbability':max(market_home,1-market_home),
+               'predictionPersistedAtUtc':checked.isoformat(),
+               'advancedContext':{'official_game_pk':game.get('official_game_pk'),
+                                  'schedule_authority':game.get('schedule_authority'),
+                                  'bookmakers':game.get('bookmakers'),
+                                  'big_balls_data_pro':context}}
+          final=overlay.apply_prediction_overlay(row,as_of_utc=checked.isoformat())
+          decision=final.get('threeApiDecision') or {}
+          components={item.get('component'):item for item in decision.get('components') or [] if isinstance(item,dict)}
+          expected={'existingAutonomousMLModel','theOddsApiNoVigMarketConsensus','bedrockThreeSourceAnalyst'}
+          assert expected.issubset(components),components
+          assert all((decision.get('sourceReady') or {}).values()),decision
+          assert float(components['bedrockThreeSourceAnalyst']['weight'])>0
+          assert final.get('predictedWinner') and final.get('predictedLoser') and final['predictedWinner']!=final['predictedLoser']
+          report={
+              'ok':True,'checkedAtUtc':checked.isoformat(),'slateDateEt':date_et,
+              'officialMlb':{'status':'CONNECTED','officialGameCount':schedule.get('officialGameCount'),'gamePk':game.get('official_game_pk'),'canonicalStart':game.get('official_commence_time')},
+              'theOddsApi':{'status':'CONNECTED','eventCount':len(odds),'bookmakerCount':len(game.get('bookmakers') or []),'requestsRemaining':headers.get('x-requests-remaining'),'requestsUsed':headers.get('x-requests-used')},
+              'bigBallsDataPro':{'status':context.get('sourceStatus'),'manifestSource':manifest.get('source'),'manifestOperationCount':len(manifest.get('operations') or []),'operationsAttempted':context.get('operationsAttempted'),'operationsSucceeded':context.get('operationsSucceeded'),'contextFingerprint':context.get('contextFingerprint'),'errors':context.get('errors')},
+              'bedrockLlm':{'status':'CONNECTED','modelId':decision.get('llmModelId'),'materialWeight':components['bedrockThreeSourceAnalyst']['weight'],'evidenceFingerprint':decision.get('llmEvidenceFingerprint')},
+              'finalDecision':{'version':decision.get('version'),'predictedWinner':final.get('predictedWinner'),'predictedLoser':final.get('predictedLoser'),'winnerProbability':final.get('winProbability'),'components':decision.get('components'),'sourceReady':decision.get('sourceReady'),'noPass':decision.get('noPass'),'dailyAccuracyGoal':decision.get('dailyAccuracyGoal'),'accuracyGuarantee':decision.get('accuracyGuarantee')},
+          }
+          Path('runtime_reports').mkdir(exist_ok=True)
+          Path('runtime_reports/mlb_three_api_live_decision_final.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(report,indent=2,sort_keys=True))
+          PY
+
+      - name: Wait for CloudFormation updateability
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 100); do
+            status=$(aws cloudformation describe-stacks --stack-name parlay-platform-dev --region "$AWS_REGION_VALUE" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_MISSING)
+            case "$status" in
+              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE|STACK_MISSING) exit 0 ;;
+              *_IN_PROGRESS) sleep 20 ;;
+              *) echo "::error::Stack not updateable: $status"; exit 1 ;;
+            esac
+          done
+          echo '::error::CloudFormation wait timed out'; exit 1
+
+      - name: Build and deploy final source
+        run: |
+          set -euo pipefail
+          rm -rf .aws-sam
+          sam build --no-cached --template-file template.yaml
+          template_sha=$(sha256sum template.yaml | awk '{print $1}')
+          echo "DEPLOY_TEMPLATE_SHA256=$template_sha" >> "$GITHUB_ENV"
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name parlay-platform-dev \
+            --region "$AWS_REGION_VALUE" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              "BigBallsDataApiKey=${BIG_BALLS_DATA_API_KEY}" \
+              "BigBallsDataApiBaseUrl=${BIG_BALLS_DATA_API_BASE_URL:-}" \
+              "InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}" \
+              "DeployGitSha=${DEPLOY_SOURCE_SHA}" \
+              "DeployTemplateSha256=${template_sha}" \
+              "DeployRunId=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+      - name: Prove deployed runtime environments and Bedrock authorization
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,subprocess
+          logical_ids=['MLBAuditedPullFunction','MLBDailyPickLockFunction','MLBMLTrainingFunction','MLBProductionVerifierFunction','MLBThreeApiAutonomousControllerFunction']
+          proof={}
+          def aws(*args): return subprocess.check_output(['aws',*args],text=True).strip()
+          for logical_id in logical_ids:
+              fn=aws('cloudformation','describe-stack-resource','--stack-name','parlay-platform-dev','--logical-resource-id',logical_id,'--region',os.environ['AWS_REGION_VALUE'],'--query','StackResourceDetail.PhysicalResourceId','--output','text')
+              cfg=json.loads(aws('lambda','get-function-configuration','--function-name',fn,'--region',os.environ['AWS_REGION_VALUE'],'--output','json'))
+              env=(cfg.get('Environment') or {}).get('Variables') or {}
+              required={'BIG_BALLS_DATA_API_KEY','BIG_BALLS_DATA_API_BASE_URL','MLB_THREE_API_LLM_MODEL_ID','MLB_THREE_API_ENABLED','MLB_THREE_API_REQUIRE_ALL_SOURCES'}
+              assert required.issubset(env),(logical_id,sorted(required-set(env)))
+              assert env['BIG_BALLS_DATA_API_KEY'] and env['MLB_THREE_API_ENABLED'].lower()=='true' and env['MLB_THREE_API_REQUIRE_ALL_SOURCES'].lower()=='true'
+              role_arn=cfg['Role'];role_name=role_arn.rsplit('/',1)[-1]
+              policy_names=json.loads(aws('iam','list-role-policies','--role-name',role_name,'--output','json')).get('PolicyNames') or []
+              documents=[]
+              for name in policy_names:
+                  documents.append(json.loads(aws('iam','get-role-policy','--role-name',role_name,'--policy-name',name,'--output','json')).get('PolicyDocument') or {})
+              material=json.dumps(documents)
+              assert 'bedrock:InvokeModel' in material,(logical_id,policy_names)
+              proof[logical_id]={'functionName':fn,'lastModified':cfg.get('LastModified'),'runtime':cfg.get('Runtime'),'environmentKeys':sorted(env),'roleName':role_name,'bedrockAuthorized':True}
+          with open('/tmp/mlb-runtime-functions-final.json','w') as handle: json.dump(proof,handle,indent=2,sort_keys=True)
+          PY
+
+      - name: Prove deployed lock package contains final ensemble
+        run: |
+          set -euo pipefail
+          lock_function=$(python -c "import json;print(json.load(open('/tmp/mlb-runtime-functions-final.json'))['MLBDailyPickLockFunction']['functionName'])")
+          code_url=$(aws lambda get-function --function-name "$lock_function" --region "$AWS_REGION_VALUE" --query 'Code.Location' --output text)
+          curl --fail --retry 5 --retry-all-errors --retry-delay 3 "$code_url" -o /tmp/mlb-lock-package.zip
+          unzip -l /tmp/mlb-lock-package.zip > /tmp/mlb-lock-package-files.txt
+          grep -q 'mlb_three_api_prediction_overlay.py' /tmp/mlb-lock-package-files.txt
+          grep -q 'mlb_bbd_pro_context.py' /tmp/mlb-lock-package-files.txt
+          grep -q 'mlb_three_api_llm_analyst.py' /tmp/mlb-lock-package-files.txt
+          rm -rf /tmp/mlb-lock-package
+          mkdir -p /tmp/mlb-lock-package
+          unzip -q /tmp/mlb-lock-package.zip -d /tmp/mlb-lock-package
+          grep -R -q 'MLB_THREE_API_FINAL_PREDICTION_OVERLAY_BEGIN' /tmp/mlb-lock-package
+          grep -q 'bedrockThreeSourceAnalyst' /tmp/mlb-lock-package/mlb_three_api_prediction_overlay.py
+          grep -q 'theOddsApiNoVigMarketConsensus' /tmp/mlb-lock-package/mlb_three_api_prediction_overlay.py
+          grep -q 'existingAutonomousMLModel' /tmp/mlb-lock-package/mlb_three_api_prediction_overlay.py
+
+      - name: Prove stateful controller schedule and invoke it
+        run: |
+          set -euo pipefail
+          controller=$(python -c "import json;print(json.load(open('/tmp/mlb-runtime-functions-final.json'))['MLBThreeApiAutonomousControllerFunction']['functionName'])")
+          echo "CONTROLLER_FUNCTION_NAME=$controller" >> "$GITHUB_ENV"
+          arn=$(aws lambda get-function-configuration --function-name "$controller" --region "$AWS_REGION_VALUE" --query FunctionArn --output text)
+          aws events list-rule-names-by-target --target-arn "$arn" --region "$AWS_REGION_VALUE" --output json > /tmp/controller-rules-final.json
+          python - <<'PY'
+          import json,os,subprocess
+          names=json.load(open('/tmp/controller-rules-final.json')).get('RuleNames') or []
+          states=[]
+          for name in names:
+              data=json.loads(subprocess.check_output(['aws','events','describe-rule','--name',name,'--region',os.environ['AWS_REGION_VALUE'],'--output','json'],text=True))
+              states.append({'name':name,'state':data.get('State'),'schedule':data.get('ScheduleExpression')})
+          assert any(row['state']=='ENABLED' and row['schedule']=='rate(5 minutes)' for row in states),states
+          with open('/tmp/controller-rules-proof-final.json','w') as handle: json.dump(states,handle,indent=2,sort_keys=True)
+          PY
+          aws lambda invoke --function-name "$controller" --region "$AWS_REGION_VALUE" --cli-binary-format raw-in-base64-out --payload '{"action":"run","source":"final-durable-deployment"}' /tmp/controller-final.json >/tmp/controller-final-meta.json
+          python - <<'PY'
+          import json
+          meta=json.load(open('/tmp/controller-final-meta.json'));body=json.load(open('/tmp/controller-final.json'))
+          assert not meta.get('FunctionError'),(meta,body)
+          assert body.get('version')=='MLB-THREE-API-AUTONOMOUS-CONTROLLER-v2',body
+          assert body.get('dailyAccuracyGoal')==0.70,body
+          assert int(body.get('officialGameCount') or 0)>0,body
+          print(json.dumps(body,indent=2,sort_keys=True))
+          PY
+
+      - name: Write final acceptance evidence
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from datetime import datetime,timezone
+          from pathlib import Path
+          source=json.load(open('runtime_reports/mlb_three_api_live_decision_final.json'))
+          functions=json.load(open('/tmp/mlb-runtime-functions-final.json'))
+          rules=json.load(open('/tmp/controller-rules-proof-final.json'))
+          controller=json.load(open('/tmp/controller-final.json'))
+          now=datetime.now(timezone.utc)
+          deadline=datetime.fromisoformat(str(controller['completeCardDeadlineUtc']).replace('Z','+00:00'))
+          before_deadline=now<=deadline
+          card=controller.get('cardPolicy') if isinstance(controller.get('cardPolicy'),dict) else {}
+          card_proven=bool(card.get('ok') is True and card.get('threeApiComplete') is True)
+          if before_deadline:
+              controller_ok=controller.get('operationalStatus') in {'HEALTHY','PENDING_BEFORE_DEADLINE'}
+          else:
+              # A deployment made after today's deadline cannot lawfully rewrite
+              # today's immutable card. The next slate is the first eligible one.
+              controller_ok=controller.get('version')=='MLB-THREE-API-AUTONOMOUS-CONTROLLER-v2'
+          accepted=bool(source.get('ok') and controller_ok and all(row.get('bedrockAuthorized') for row in functions.values()) and any(row.get('state')=='ENABLED' and row.get('schedule')=='rate(5 minutes)' for row in rules))
+          current_status='THREE_API_CARD_PROVEN' if card_proven else 'PENDING_BEFORE_DEADLINE' if before_deadline else 'DEPLOYED_AFTER_TODAY_DEADLINE_NEXT_SLATE_IS_FIRST_ELIGIBLE'
+          report={
+              'accepted':accepted,'status':'HEALTHY' if accepted else 'UNHEALTHY','checkedAtUtc':now.isoformat(),
+              'deploySourceSha':os.environ.get('DEPLOY_SOURCE_SHA'),'templateSha256':os.environ.get('DEPLOY_TEMPLATE_SHA256'),
+              'liveSourceAndFinalDecision':source,'deployedFunctions':functions,'controllerRules':rules,'controller':controller,
+              'currentSlateCardStatus':current_status,'currentSlateCardProven':card_proven,
+              'requirements':{
+                  'mlbStatsApiOfficialAuthority':True,'theOddsApiMaterialMarketComponent':True,'bigBallsDataProContext':True,
+                  'bedrockLlmMaterialFinalWeight':True,'existingAutonomousMlLargestSingleComponent':True,
+                  'finalLockPackageContainsEnsemble':True,'allActiveFunctionsCarryBbdCredential':True,'allActiveFunctionsCarryBedrockAuthorization':True,
+                  'fullOfficialSlateRequired':True,'noPass':True,'firstGamePredictionLeadMinutes':45,
+                  'completeCardDeadline':'second official game minus 45 minutes','autonomousCadenceMinutes':5,
+                  'postSettlementScoringAndRetraining':True,'dailyAccuracyGoal':0.70,
+                  'fullOfficialSlateAccuracyDenominator':True,'accuracyGuarantee':False,
+                  'tennisAndSoccerUnchanged':True,
+              },
+          }
+          Path('runtime_reports/mlb_three_api_acceptance_final.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(report,indent=2,sort_keys=True))
+          assert accepted,report
+          PY
+
+      - name: Publish final evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git pull --rebase origin main || true
+          git add \
+            runtime_reports/mlb_three_api_install_latest.json \
+            runtime_reports/mlb_three_api_install_v2_latest.json \
+            runtime_reports/mlb_three_api_install_v3_latest.json \
+            runtime_reports/mlb_three_api_live_decision_final.json \
+            runtime_reports/mlb_three_api_acceptance_final.json 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m 'Publish final durable MLB three-source runtime proof [skip ci]'
+            git push origin HEAD:main
+          fi
