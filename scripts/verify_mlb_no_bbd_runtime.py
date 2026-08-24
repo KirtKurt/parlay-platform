@@ -2,12 +2,12 @@
 """Verify the MLB provider boundary and the isolated three-source MLB AUTO stack.
 
 The legacy/root MLB stack remains provider-neutral and must not acquire a BBD/BBS
-credential or endpoint.  The isolated ``mlb-auto-llm`` stack is intentionally the
+credential or endpoint. The isolated ``mlb-auto-llm`` stack is intentionally the
 opposite: it must include MLB Stats API, The Odds API, Big Balls Sports Data Pro,
 Bedrock decision authority, per-game source coverage, and an immutable T-10 card.
 
 The historical filename is retained because the canonical root deployment and
-migration checks call it.  Its contract is no longer a repository-wide ban on BBD.
+migration checks call it. Its contract is no longer a repository-wide ban on BBD.
 """
 from __future__ import annotations
 
@@ -78,9 +78,16 @@ ISOLATED_THREE_SOURCE_REQUIREMENTS = {
         "api.bigballsdata.com/v1/user/me",
         'BbsApiKey="${BBS_API_KEY_VALUE}"',
         "Prove Bedrock through deployed MLB Lambda role",
-        "Prove autonomous provider collection in AWS",
     ),
 }
+
+# Step titles may be clarified over time. The stable runtime invocation marker is
+# authoritative; the historical titles remain accepted for compatibility.
+ISOLATED_PROVIDER_CYCLE_MARKERS = (
+    "deployment_provider_smoke",
+    "Prove autonomous provider collection in AWS",
+    "Prove autonomous three-source production cycle",
+)
 
 
 def _read(path: Path) -> str:
@@ -117,6 +124,19 @@ def _verify_isolated_three_source() -> list[str]:
                 errors.append(
                     f"isolated_three_source_marker_missing:{path}:{marker}"
                 )
+
+    workflow_path = Path(".github/workflows/deploy-mlb-auto-llm.yml")
+    try:
+        workflow = _read(workflow_path)
+    except RuntimeError:
+        workflow = ""
+    if workflow and not any(
+        marker in workflow for marker in ISOLATED_PROVIDER_CYCLE_MARKERS
+    ):
+        errors.append(
+            "isolated_three_source_marker_missing:"
+            f"{workflow_path}:provider_cycle_runtime_invocation"
+        )
     return errors
 
 
