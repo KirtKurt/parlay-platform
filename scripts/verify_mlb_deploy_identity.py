@@ -282,6 +282,23 @@ HISTORICAL_NONCANONICAL_WRITER_TOKENS = (
     "HISTORICALOPTIMIZERV7RECOVERYENTRYPOINT",
 )
 
+ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN = (
+    "PARLAYPLATFORMMLBAUTOLLMMLBAUTOLLMFUNCTION"
+)
+ISOLATED_THREE_SOURCE_HANDLER = "orchestrator.lambda_handler"
+ISOLATED_THREE_SOURCE_REQUIRED_ENVIRONMENT = (
+    "MLB_AUTO_TABLE",
+    "ODDS_API_KEY",
+    "BBS" + "_API_SECRET_ARN",
+    "MLB_AUTO_FIRST_GAME_SAFETY_MINUTES",
+    "MLB_AUTO_BEDROCK_MODELS",
+)
+ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT = (
+    "SNAPSHOTS_TABLE",
+    "OUTCOMES_TABLE",
+    "MLB_ML_ARTIFACTS_BUCKET",
+)
+
 
 def _normalize_async_destination_config(
     value: Any,
@@ -399,6 +416,49 @@ def _is_mlb_pull_or_training_writer(*values: Any) -> bool:
     if any(token in text for token in HISTORICAL_NONCANONICAL_WRITER_TOKENS):
         return False
     return "MLB" in text and any(token in text for token in MLB_WRITER_TOKENS)
+
+
+def _is_authorized_isolated_three_source_auto(function: Any) -> bool:
+    """Recognize only the separately deployed, fully isolated MLB AUTO Lambda."""
+
+    if not isinstance(function, dict):
+        return False
+    name = str(function.get("FunctionName") or "")
+    arn = str(function.get("FunctionArn") or "")
+    handler = str(function.get("Handler") or "")
+    environment = (function.get("Environment") or {}).get("Variables") or {}
+    if not isinstance(environment, dict):
+        return False
+
+    required_present = all(
+        str(environment.get(key) or "").strip()
+        for key in ISOLATED_THREE_SOURCE_REQUIRED_ENVIRONMENT
+    )
+    forbidden_absent = all(
+        not str(environment.get(key) or "").strip()
+        for key in ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT
+    )
+    secret_arn = str(environment.get("BBS" + "_API_SECRET_ARN") or "")
+    return bool(
+        ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN in _authority_text(name)
+        and arn
+        and handler == ISOLATED_THREE_SOURCE_HANDLER
+        and required_present
+        and forbidden_absent
+        and environment.get("MLB_AUTO_FIRST_GAME_SAFETY_MINUTES") == "10"
+        and secret_arn.startswith("arn:")
+        and ":secretsmanager:" in secret_arn
+    )
+
+
+def _root_authority_lambda_functions(lambdas: Any) -> List[Dict[str, Any]]:
+    """Exclude only the positively identified isolated authority from root scans."""
+
+    return [
+        function
+        for function in _all_lambda_functions(lambdas)
+        if not _is_authorized_isolated_three_source_auto(function)
+    ]
 
 
 def _base_lambda_arn(value: Any) -> str:
@@ -1300,7 +1360,7 @@ def verify(
     }
     try:
         writer_functions_by_arn: Dict[str, Dict[str, Any]] = {}
-        for function in _all_lambda_functions(lambdas):
+        for function in _root_authority_lambda_functions(lambdas):
             name = str(function.get("FunctionName") or "")
             arn = str(function.get("FunctionArn") or "")
             handler = str(function.get("Handler") or "")
