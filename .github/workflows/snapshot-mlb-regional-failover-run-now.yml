@@ -28,13 +28,14 @@ jobs:
           mkdir -p runtime_reports /tmp/mlb-run-snapshot
           workflows=(
             deploy-mlb-auto-llm.yml
-            diagnose-mlb-canonical-settlement-gap-now.yml
             deploy.yml
             mlb-prospective-backlog-reconcile-v5-once.yml
             repair-mlb-prospective-v5-now.yml
-            trigger-mlb-prospective-v5-repair-now.yml
             reconcile-mlb-continuity-from-aug4-now.yml
             finalize-mlb-root-settlement-training-now.yml
+            trigger-mlb-root-finalizer-now.yml
+            install-mlb-titan-native-recovery-now.yml
+            fix-mlb-finalizer-syntax-now.yml
           )
           for workflow in "${workflows[@]}"; do
             safe=${workflow//[^A-Za-z0-9]/_}
@@ -49,13 +50,14 @@ jobs:
 
           workflows=(
               'deploy-mlb-auto-llm.yml',
-              'diagnose-mlb-canonical-settlement-gap-now.yml',
               'deploy.yml',
               'mlb-prospective-backlog-reconcile-v5-once.yml',
               'repair-mlb-prospective-v5-now.yml',
-              'trigger-mlb-prospective-v5-repair-now.yml',
               'reconcile-mlb-continuity-from-aug4-now.yml',
               'finalize-mlb-root-settlement-training-now.yml',
+              'trigger-mlb-root-finalizer-now.yml',
+              'install-mlb-titan-native-recovery-now.yml',
+              'fix-mlb-finalizer-syntax-now.yml',
           )
 
           def key(name: str) -> str:
