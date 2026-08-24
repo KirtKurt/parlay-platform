@@ -1,0 +1,107 @@
+name: Soccer Runtime Role DLQ Recovery
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/soccer-runtime-role-dlq-recovery.yml']
+permissions:
+  contents: write
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Execute DLQ recovery inside Soccer runtime role
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-soccer-auto
+          worker=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionWorkerFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+          mapping=$(aws lambda list-event-source-mappings --function-name "$worker" --region "$REGION" --query 'EventSourceMappings[0].UUID' --output text)
+          mkdir -p /tmp/soccer-runtime-role/pkg/soccer_auto runtime_reports
+          cp soccer_auto/*.py /tmp/soccer-runtime-role/pkg/soccer_auto/
+          (cd /tmp/soccer-runtime-role/pkg && zip -qr /tmp/soccer-runtime-role/worker.zip soccer_auto)
+          aws lambda update-function-code --function-name "$worker" --region "$REGION" --zip-file fileb:///tmp/soccer-runtime-role/worker.zip >/tmp/soccer-runtime-role/update-code.json
+          aws lambda wait function-updated-v2 --function-name "$worker" --region "$REGION"
+          if [[ -n "$mapping" && "$mapping" != None ]]; then
+            aws lambda update-event-source-mapping --uuid "$mapping" --region "$REGION" --enabled false --scaling-config MaximumConcurrency=3 >/tmp/soccer-runtime-role/mapping-disable.json
+            for i in $(seq 1 60); do
+              state=$(aws lambda get-event-source-mapping --uuid "$mapping" --region "$REGION" --query State --output text)
+              [[ "$state" == Disabled ]] && break
+              sleep 2
+            done
+          fi
+          aws lambda update-function-configuration --function-name "$worker" --region "$REGION" --handler soccer_auto.dlq_recovery.handler >/tmp/soccer-runtime-role/handler-recovery.json
+          aws lambda wait function-updated-v2 --function-name "$worker" --region "$REGION"
+          aws lambda invoke --function-name "$worker" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"recover_collection_dlq","max_messages":5000}' /tmp/soccer-runtime-role/recovery.json >/tmp/soccer-runtime-role/recovery-meta.json
+          python - <<'PY'
+          import json
+          meta=json.load(open('/tmp/soccer-runtime-role/recovery-meta.json')); r=json.load(open('/tmp/soccer-runtime-role/recovery.json'))
+          assert not meta.get('FunctionError'), (meta,r)
+          assert r.get('ok') is True, r
+          assert int(r.get('remaining_visible') or 0) == 0, r
+          print(json.dumps(r,indent=2))
+          PY
+          aws lambda update-function-configuration --function-name "$worker" --region "$REGION" --handler soccer_auto.collector.worker_handler >/tmp/soccer-runtime-role/handler-restore.json
+          aws lambda wait function-updated-v2 --function-name "$worker" --region "$REGION"
+          if [[ -n "$mapping" && "$mapping" != None ]]; then
+            aws lambda update-event-source-mapping --uuid "$mapping" --region "$REGION" --enabled true --scaling-config MaximumConcurrency=3 >/tmp/soccer-runtime-role/mapping-enable.json
+            for i in $(seq 1 60); do
+              state=$(aws lambda get-event-source-mapping --uuid "$mapping" --region "$REGION" --query State --output text)
+              [[ "$state" == Enabled ]] && break
+              sleep 2
+            done
+          fi
+          aws lambda get-function-configuration --function-name "$worker" --region "$REGION" --query '{Handler:Handler,State:State,LastUpdateStatus:LastUpdateStatus,LastModified:LastModified,CodeSha256:CodeSha256}' --output json >/tmp/soccer-runtime-role/worker-final.json
+          aws lambda get-event-source-mapping --uuid "$mapping" --region "$REGION" --query '{State:State,ScalingConfig:ScalingConfig,FunctionResponseTypes:FunctionResponseTypes}' --output json >/tmp/soccer-runtime-role/mapping-final.json
+      - name: Exercise recovered Soccer runtime and prove
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-soccer-auto
+          physical() { aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id "$1" --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text; }
+          dispatch=$(physical SoccerDispatchFunction)
+          freeze=$(physical SoccerFreezeFunction)
+          controller=$(physical SoccerControllerFunction)
+          worker=$(physical SoccerCollectionWorkerFunction)
+          aws lambda invoke --function-name "$dispatch" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"runtime_role_recovery_dispatch"}' /tmp/soccer-runtime-role/dispatch.json >/tmp/soccer-runtime-role/dispatch-meta.json
+          sleep 45
+          aws lambda invoke --function-name "$freeze" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"runtime_role_recovery_freeze"}' /tmp/soccer-runtime-role/freeze.json >/tmp/soccer-runtime-role/freeze-meta.json
+          aws lambda invoke --function-name "$controller" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"runtime_role_recovery_controller"}' /tmp/soccer-runtime-role/controller.json >/tmp/soccer-runtime-role/controller-meta.json
+          status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" --output text)
+          curl --fail --silent --show-error --max-time 60 "$status_url" >/tmp/soccer-runtime-role/status.json
+          start_ms=$(( ($(date +%s)-600)*1000 ))
+          aws logs filter-log-events --log-group-name "/aws/lambda/$worker" --region "$REGION" --start-time "$start_ms" --filter-pattern '?Unauthorized ?HTTP_401 ?DISTRIBUTED_RATE_LIMIT_CONTENTION' --limit 100 --output json >/tmp/soccer-runtime-role/targeted.json || echo '{"events":[]}' >/tmp/soccer-runtime-role/targeted.json
+          python - <<'PY'
+          import json,pathlib,datetime
+          load=lambda p: json.load(open(p))
+          recovery=load('/tmp/soccer-runtime-role/recovery.json'); status=load('/tmp/soccer-runtime-role/status.json'); targeted=load('/tmp/soccer-runtime-role/targeted.json')
+          report={'proofType':'SOCCER_RUNTIME_ROLE_DLQ_RECOVERY','observedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'recovery':recovery,'workerFinal':load('/tmp/soccer-runtime-role/worker-final.json'),'mappingFinal':load('/tmp/soccer-runtime-role/mapping-final.json'),'publicStatus':status,'dispatch':load('/tmp/soccer-runtime-role/dispatch.json'),'freeze':load('/tmp/soccer-runtime-role/freeze.json'),'controller':load('/tmp/soccer-runtime-role/controller.json'),'targetedWorkerEvents':targeted.get('events') or []}
+          report['recoveryComplete']=int(recovery.get('remaining_visible') or 0)==0 and int(recovery.get('remaining_inflight') or 0)==0
+          pathlib.Path('runtime_reports/soccer_runtime_role_dlq_recovery_latest.json').write_text(json.dumps(report,indent=2,default=str)+'\n')
+          print(json.dumps(report,indent=2,default=str))
+          assert report['recoveryComplete'], report
+          assert report['workerFinal']['Handler']=='soccer_auto.collector.worker_handler', report['workerFinal']
+          assert report['mappingFinal']['State']=='Enabled', report['mappingFinal']
+          assert int(report['mappingFinal']['ScalingConfig']['MaximumConcurrency'])==3, report['mappingFinal']
+          PY
+      - name: Publish recovery proof
+        run: |
+          set -euo pipefail
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add runtime_reports/soccer_runtime_role_dlq_recovery_latest.json
+          git commit -m 'runtime: publish Soccer runtime-role DLQ recovery proof [skip ci]' || exit 0
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            git rebase --abort 2>/dev/null || true
+            sleep $((attempt*2))
+          done
+          exit 1
