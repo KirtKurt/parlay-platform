@@ -1,0 +1,165 @@
+name: Install Autonomous MLB Three-Source Authority
+
+on:
+  push:
+    branches:
+      - agent/mlb-multisource-autonomy-v1
+    paths:
+      - '.github/workflows/install-mlb-multisource-autonomy-v1.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: install-mlb-multisource-autonomy-v1
+  cancel-in-progress: false
+
+jobs:
+  install-test-and-publish:
+    runs-on: ubuntu-latest
+    env:
+      BIG_BALLS_DATA_API_KEY: ${{ secrets.BIG_BALLS_DATA_API_KEY || secrets.BIG_BALLS_API_KEY || secrets.BBD_API_KEY || secrets.BIGBALLS_API_KEY || secrets.BBD_PRO_API_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+      AWS_EC2_METADATA_DISABLED: 'true'
+      PYTHONPATH: hello_world
+    steps:
+      - name: Checkout exact installer branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/mlb-multisource-autonomy-v1
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Install validation dependencies
+        run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
+
+      - name: Rebase installer branch onto current main
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+          git rebase origin/main
+
+      - name: Require the new Pro credential without exposing it
+        run: |
+          set -euo pipefail
+          test -n "${BIG_BALLS_DATA_API_KEY:-}" || {
+            echo '::error::No supported Big Balls Data repository secret was found. Expected BIG_BALLS_DATA_API_KEY, BIG_BALLS_API_KEY, BBD_API_KEY, BIGBALLS_API_KEY, or BBD_PRO_API_KEY.'
+            exit 1
+          }
+
+      - name: Install the scoped MLB-only change
+        run: python scripts/install_mlb_multisource_autonomy_v1.py
+
+      - name: Compile new and patched MLB runtime
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            hello_world/mlb_bbd_pro_context.py \
+            hello_world/mlb_autonomous_llm_decision_v1.py \
+            hello_world/mlb_autonomous_orchestrator_v1.py \
+            hello_world/mlb_daily_card_deadline_v1.py \
+            scripts/verify_mlb_three_source_authority.py
+          python - <<'PY'
+          import ast
+          import pathlib
+          marker = 'MLB-MULTISOURCE-AUTONOMY-WRAPPER-v1'
+          paths=[]
+          for path in pathlib.Path('hello_world').glob('mlb*.py'):
+              text=path.read_text(errors='ignore')
+              if marker in text:
+                  ast.parse(text)
+                  paths.append(str(path))
+          assert paths, 'No production predictor wrapper was installed'
+          print({'wrapped_predictors': paths})
+          PY
+
+      - name: Run focused regressions and new contracts
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/unit/test_verify_mlb_no_bbd_runtime.py \
+            tests/unit/test_mlb_bbd_pro_context.py \
+            tests/unit/test_mlb_daily_card_deadline_v1.py \
+            tests/unit/test_mlb_autonomous_llm_decision_v1.py \
+            tests/unit/test_mlb_autonomous_orchestrator_v1.py \
+            tests/unit/test_mlb_ranked_primary_v15_10.py \
+            tests/unit/test_mlb_production_acceptance.py \
+            tests/unit/test_mlb_official_schedule_authority.py \
+            tests/unit/test_mlb_canonical_final_labels_v1.py
+
+      - name: Prove the new BBD Pro key and three-source production contract
+        run: |
+          set -euo pipefail
+          python scripts/verify_mlb_three_source_authority.py \
+            --require-live \
+            --output runtime_reports/mlb_three_source_deploy_verification_latest.json
+
+      - name: Validate the complete SAM template
+        run: sam validate --template-file template.yaml --lint
+
+      - name: Prove no credential was written to the repository
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import pathlib
+          key=os.environ['BIG_BALLS_DATA_API_KEY']
+          assert key
+          contaminated=[]
+          for path in pathlib.Path('.').rglob('*'):
+              if not path.is_file() or '.git' in path.parts:
+                  continue
+              try:
+                  data=path.read_bytes()
+              except OSError:
+                  continue
+              if key.encode() in data:
+                  contaminated.append(str(path))
+          assert not contaminated, f'BBD credential was written to files: {contaminated}'
+          print('credential_not_present_in_repository_files')
+          PY
+
+      - name: Remove one-time installer machinery
+        run: |
+          set -euo pipefail
+          rm -f scripts/install_mlb_multisource_autonomy_v1.py
+          rm -f .github/workflows/install-mlb-multisource-autonomy-v1.yml
+
+      - name: Commit one verified production change
+        run: |
+          set -euo pipefail
+          git add -A
+          git diff --cached --quiet && { echo '::error::Installer produced no change'; exit 1; }
+          git commit -m 'Install autonomous MLB three-source decision pipeline'
+
+      - name: Publish atomically to main
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            git fetch origin main
+            if ! git merge-base --is-ancestor origin/main HEAD; then
+              git rebase origin/main
+              python -m pytest -q \
+                tests/unit/test_verify_mlb_no_bbd_runtime.py \
+                tests/unit/test_mlb_bbd_pro_context.py \
+                tests/unit/test_mlb_daily_card_deadline_v1.py \
+                tests/unit/test_mlb_autonomous_llm_decision_v1.py \
+                tests/unit/test_mlb_autonomous_orchestrator_v1.py
+              sam validate --template-file template.yaml --lint
+            fi
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          echo '::error::Could not fast-forward main after three attempts'
+          exit 1
