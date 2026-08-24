@@ -1,0 +1,114 @@
+name: Repair MLB AUTO model authority fallback v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-auto-ml-authority-fallback-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-auto-ml-authority-fallback-repair-v2
+  cancel-in-progress: false
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Reapply installer and correct generated source
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import re
+          import textwrap
+          from pathlib import Path
+
+          installer = Path('.github/workflows/repair-mlb-auto-ml-authority-fallback-once.yml')
+          source = installer.read_text(encoding='utf-8')
+          match = re.search(
+              r"(?ms)^      - name: Install Bedrock-first AWS ML fallback without weakening three-source authority\n"
+              r"        run: \|\n"
+              r"          set -euo pipefail\n"
+              r"          python - <<'PY'\n"
+              r"(?P<body>.*?)"
+              r"^          PY\n",
+              source,
+          )
+          if match is None:
+              raise RuntimeError('ORIGINAL_INSTALLER_BODY_NOT_FOUND')
+          body = textwrap.dedent(match.group('body'))
+          exec(compile(body, str(installer) + ':embedded-python', 'exec'), {'__name__': '__main__'})
+
+          target = Path('mlb_auto_llm/orchestrator_v3.py')
+          text = target.read_text(encoding='utf-8')
+          bad = 'ALLOWED_MODEL_AUTHORITIES = {"BEDROCK_LLM", ML_AUTHORITY]'
+          good = 'ALLOWED_MODEL_AUTHORITIES = {"BEDROCK_LLM", ML_AUTHORITY}'
+          if bad not in text and good not in text:
+              raise RuntimeError('MODEL_AUTHORITY_SET_ANCHOR_MISSING')
+          target.write_text(text.replace(bad, good), encoding='utf-8')
+          print('Corrected generated MLB AUTO model authority source.')
+          PY
+
+      - name: Verify source, tests, SAM, and sport isolation
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
+          python -m py_compile \
+            mlb_auto_llm/handler.py \
+            mlb_auto_llm/model_gateway.py \
+            mlb_auto_llm/orchestrator.py \
+            mlb_auto_llm/orchestrator_v2.py \
+            mlb_auto_llm/orchestrator_v3.py \
+            mlb_auto_llm/ml_authority.py \
+            mlb_auto_llm/ml_authority_smoke.py \
+            mlb_auto_llm/bedrock_smoke.py
+          PYTHONPATH=mlb_auto_llm python -m pytest -q \
+            tests/unit/test_mlb_auto_model_gateway.py \
+            tests/unit/test_mlb_auto_ml_authority.py
+          python scripts/verify_mlb_no_bbd_runtime.py
+          sam validate --template-file mlb-auto-llm-template.yaml --lint
+          changed=$(git diff --name-only)
+          printf '%s\n' "$changed"
+          if printf '%s\n' "$changed" | grep -Eq '^(tennis_learning/|tennis-template\.yaml|soccer_auto/|soccer-auto-template\.yaml|nfl_auto/|nfl-auto-template\.yaml)'; then
+            echo '::error::Sport isolation violation'
+            exit 1
+          fi
+
+      - name: Commit repaired production source to main
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            mlb_auto_llm/ml_authority.py \
+            mlb_auto_llm/ml_authority_smoke.py \
+            mlb_auto_llm/orchestrator_v3.py \
+            tests/unit/test_mlb_auto_ml_authority.py \
+            mlb-auto-llm-template.yaml \
+            .github/workflows/deploy-mlb-auto-llm.yml \
+            .github/workflows/verify-mlb-auto-production-chain.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'Repair MLB AUTO with Bedrock-first AWS ML authority fallback'
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
