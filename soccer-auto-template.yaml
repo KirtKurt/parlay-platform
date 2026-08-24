@@ -591,6 +591,16 @@ Resources:
             FunctionResponseTypes: [ReportBatchItemFailures]
             ScalingConfig: {MaximumConcurrency: 3}
 
+  SoccerDlqRecoveryFunction:
+    Type: AWS::Serverless::Function
+    Metadata: {BuildMethod: makefile}
+    Properties:
+      CodeUri: soccer_auto/
+      Handler: soccer_auto.dlq_recovery.handler
+      Role: !GetAtt SoccerAutoRuntimeRole.Arn
+      Timeout: 300
+      MemorySize: 512
+
   SoccerFreezeFunction:
     Type: AWS::Serverless::Function
     Metadata: {BuildMethod: makefile}
