@@ -1,0 +1,64 @@
+name: Patch comprehensive MLB repair to reconciliation v5
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/patch-mlb-comprehensive-repair-to-v5.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: patch-mlb-comprehensive-repair-to-v5
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Replace obsolete v4 reconciliation call
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path=Path('.github/workflows/repair-mlb-production-now.yml')
+          text=path.read_text(encoding='utf-8')
+          old='python scripts/reconcile_mlb_prospective_backlog_v4.py \\\n'
+          new='python scripts/reconcile_mlb_prospective_backlog_v5.py \\\n'
+          if new in text:
+              print('Comprehensive repair already uses reconciliation v5.')
+          else:
+              count=text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one v4 reconciliation call, found {count}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          python -m py_compile \
+            scripts/reconcile_mlb_prospective_backlog_v4.py \
+            scripts/reconcile_mlb_prospective_backlog_v5.py
+          git diff --check
+      - name: Publish permanent workflow repair
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/repair-mlb-production-now.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'Use reconciliation v5 in comprehensive MLB repair'
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then exit 0; fi
+            test "$attempt" != 5 || exit 1
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 2))
+          done
