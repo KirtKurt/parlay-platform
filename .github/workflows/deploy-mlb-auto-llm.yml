@@ -83,6 +83,33 @@ jobs:
       - name: Build isolated MLB Auto LLM stack
         run: sam build --no-cached --template-file mlb-auto-llm-template.yaml
 
+      - name: Recover unsuccessful first creation
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-mlb-auto-llm
+          region='${{ secrets.AWS_REGION }}'
+          status=$(aws cloudformation describe-stacks \
+            --stack-name "$stack" --region "$region" \
+            --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)
+          case "$status" in
+            ROLLBACK_COMPLETE|ROLLBACK_FAILED)
+              echo "Recovering failed first creation from $status"
+              aws cloudformation delete-stack --stack-name "$stack" --region "$region"
+              aws cloudformation wait stack-delete-complete --stack-name "$stack" --region "$region"
+              ;;
+            *_IN_PROGRESS)
+              echo "::error::MLB Auto LLM stack is busy in $status"
+              exit 1
+              ;;
+            *_FAILED)
+              echo "::error::MLB Auto LLM stack requires review in $status"
+              exit 1
+              ;;
+            *)
+              echo "MLB Auto LLM stack pre-deploy state: ${status:-STACK_MISSING}"
+              ;;
+          esac
+
       - name: Deploy isolated MLB Auto LLM stack
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
