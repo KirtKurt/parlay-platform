@@ -1,0 +1,185 @@
+name: Repair MLB Canonical Ingest Now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-canonical-ingest-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-mlb-canonical-ingest-now
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Patch scheduled failure semantics and manifest recovery
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('hello_world/mlb_manual_pull_protected.py')
+          text = path.read_text(encoding='utf-8')
+
+          old = '''                if result.get("ok") is not True:\n                    candidate_failures.append(\n                        f"winner_prediction_failed:{game_date or 'unknown'}"\n                    )\n\n                lifecycle_aware = result.get("preLockStorageLifecycleAware") is True\n'''
+          new = '''                lifecycle_aware = result.get("preLockStorageLifecycleAware") is True\n                lifecycle_complete_for_result = (\n                    result.get("displayStatusCoverageComplete") is True\n                    and result.get("lifecycleCoverageComplete") is True\n                    and result.get("preLockStorageComplete") is True\n                    and result.get("preLockStorageDispositionComplete") is True\n                )\n                # A recommendation can be intentionally non-actionable (for example\n                # NEGATIVE_EV_GUARD) without being an operational persistence failure.\n                # Only fail the scheduled ingest when the result is explicitly an\n                # operational defect or its lifecycle/storage contract is incomplete.\n                hard_winner_failure = bool(\n                    result.get("operationalDefect") is True\n                    or (result.get("ok") is not True and not lifecycle_complete_for_result)\n                )\n                if hard_winner_failure:\n                    candidate_failures.append(\n                        f"winner_prediction_failed:{game_date or 'unknown'}"\n                    )\n\n'''
+          if old not in text and new not in text:
+              raise RuntimeError('winner failure semantics anchor missing')
+          text = text.replace(old, new, 1)
+
+          old_tail = '''    response = _attach_runtime_status(mlb_manual_pull.lambda_handler(event, context))\n    _raise_scheduled_delegate_failure(event, response)\n    return response\n'''
+          new_tail = '''    response = _attach_runtime_status(mlb_manual_pull.lambda_handler(event, context))\n    try:\n        _raise_scheduled_delegate_failure(event, response)\n    except RuntimeError as exc:\n        message = str(exc)\n        manifest_failure = (\n            "provider_schedule_manifest_authority_invalid" in message\n            or "provider_schedule_manifest_incomplete" in message\n            or "provider_schedule_manifest_missing" in message\n        )\n        if not _is_scheduled(event) or not manifest_failure:\n            raise\n        # The canonical writer is intrinsically idempotent by 15-minute slot.\n        # Re-running the same scheduled event once allows a transient authority-\n        # binding race to converge without creating a second canonical observation.\n        retry_event = dict(event)\n        retry_event["force"] = True\n        retry_event["manifest_binding_retry"] = True\n        response = _attach_runtime_status(\n            mlb_manual_pull.lambda_handler(retry_event, context)\n        )\n        _raise_scheduled_delegate_failure(retry_event, response)\n    return response\n'''
+          if old_tail not in text and new_tail not in text:
+              raise RuntimeError('lambda handler recovery anchor missing')
+          text = text.replace(old_tail, new_tail, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Add focused regression tests
+        run: |
+          cat > tests/unit/test_mlb_ingest_alarm_repair.py <<'PY'
+          from __future__ import annotations
+          import importlib.util
+          import json
+          import sys
+          import uuid
+          from contextlib import contextmanager
+          from pathlib import Path
+          from types import ModuleType
+
+          ROOT = Path(__file__).resolve().parents[2]
+          HELLO = ROOT / 'hello_world'
+          HANDLER = HELLO / 'mlb_manual_pull_protected.py'
+          if str(HELLO) not in sys.path:
+              sys.path.insert(0, str(HELLO))
+
+          REQUIRED = {
+              'accuracyTargetsSeparated','legacyReliabilityOverlaySafety','sourceHonestFundamentals',
+              'sourceHonestFundamentalsV2','legacyV1ChampionRuntimeInstalledForShadowDiagnostics',
+              'legacyV1AuthorityDisabled','v2ShadowManualFirst','officialSemanticsFinalized',
+              'exactCleanCohortVectorPatch','officialFreezeBridge','immutableFeatureFreeze',
+              'immutableLockedStorageAuthority','canonicalLockedStorageFinalizer',
+              'lastPrelockPromotionAuthority','canonicalProbabilityAndPersistedPrelockAuthority',
+              'providerNeutralCalibrationAndActionability','legacyFinalGateDisabled',
+          }
+
+          def manifest(bound=True):
+              return {
+                  'game_date_et':'2026-08-24','gameCount':1,'version':'v','fingerprint':'a'*64,
+                  'pk':'p','sk':'s','immutable':True,'fullProviderSchedule':True,
+                  'boundToCanonicalPull':bound,'ok':bound,
+              }
+
+          def winner(ok=False, operational=False):
+              return {
+                  'game_date_et':'2026-08-24','ok':ok,'operationalDefect':operational,
+                  'gameCount':1,'allGamesPredicted':True,'displayStatusCoverageComplete':True,
+                  'lifecycleCoverageComplete':True,'preLockStorageLifecycleAware':True,
+                  'preLockStorageCandidateCount':1,'preLockStoredCount':1,
+                  'preLockStorageComplete':True,'preLockStorageDispositionCount':1,
+                  'preLockStorageDispositionComplete':True,
+              }
+
+          def payload(*, bound=True, winner_row=None):
+              return {
+                  'ok':True,'count':1,'providerScheduleManifestComplete':bound,
+                  'provider_schedule_manifests':[manifest(bound)],
+                  'game_winner_predictions':[winner_row or winner()],
+              }
+
+          @contextmanager
+          def loaded(responses):
+              responses = list(responses)
+              manual = ModuleType('mlb_manual_pull')
+              calls=[]
+              def call(event, context):
+                  calls.append(dict(event))
+                  value = responses.pop(0)
+                  return {'statusCode':200,'body':json.dumps(value)}
+              manual.lambda_handler=call
+              runtime=ModuleType('mlb_ml_runtime_install_v3')
+              runtime.VERSION='test-v'
+              def install():
+                  sys.modules['mlb_manual_pull']=manual
+                  return {'applied':True,'ok':True,'version':'test-v','steps':{k:True for k in REQUIRED},'errors':[]}
+              runtime.install=install
+              old_r=sys.modules.get('mlb_ml_runtime_install_v3'); old_m=sys.modules.get('mlb_manual_pull')
+              name='_alarm_repair_'+uuid.uuid4().hex
+              try:
+                  sys.modules['mlb_ml_runtime_install_v3']=runtime
+                  sys.modules.pop('mlb_manual_pull',None)
+                  spec=importlib.util.spec_from_file_location(name,HANDLER)
+                  mod=importlib.util.module_from_spec(spec); sys.modules[name]=mod; spec.loader.exec_module(mod)
+                  yield mod,calls
+              finally:
+                  sys.modules.pop(name,None)
+                  if old_r is None: sys.modules.pop('mlb_ml_runtime_install_v3',None)
+                  else: sys.modules['mlb_ml_runtime_install_v3']=old_r
+                  if old_m is None: sys.modules.pop('mlb_manual_pull',None)
+                  else: sys.modules['mlb_manual_pull']=old_m
+
+          def test_negative_ev_nonactionable_result_does_not_raise_when_storage_complete():
+              with loaded([payload(winner_row=winner(ok=False, operational=False))]) as (handler,calls):
+                  response=handler.lambda_handler({'sport':'mlb'},None)
+              assert response['statusCode']==200
+              assert len(calls)==1
+
+          def test_operational_winner_failure_still_raises():
+              with loaded([payload(winner_row=winner(ok=False, operational=True))]) as (handler,calls):
+                  try: handler.lambda_handler({'sport':'mlb'},None)
+                  except RuntimeError as exc: message=str(exc)
+                  else: raise AssertionError('expected operational failure')
+              assert 'winner_prediction_failed:2026-08-24' in message
+              assert len(calls)==1
+
+          def test_manifest_binding_failure_retries_once_and_requires_valid_retry():
+              with loaded([payload(bound=False),payload(bound=True,winner_row=winner(ok=True))]) as (handler,calls):
+                  response=handler.lambda_handler({'sport':'mlb'},None)
+              assert response['statusCode']==200
+              assert len(calls)==2
+              assert calls[1].get('manifest_binding_retry') is True
+              assert calls[1].get('force') is True
+          PY
+
+      - name: Run MLB-only regression suite
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
+          python -m py_compile hello_world/mlb_manual_pull_protected.py
+          pytest -q \
+            tests/unit/test_mlb_ingest_alarm_repair.py \
+            tests/unit/test_mlb_postcutoff_storage_contract.py \
+            tests/unit/test_mlb_manual_pull_protected_runtime.py \
+            tests/unit/test_mlb_scoring_runtime_capacity.py
+          python scripts/verify_mlb_schedule_invariants.py
+
+      - name: Commit repaired MLB source
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add hello_world/mlb_manual_pull_protected.py tests/unit/test_mlb_ingest_alarm_repair.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'Fix MLB ingest alarm persistence and manifest binding semantics'
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
