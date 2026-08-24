@@ -68,13 +68,42 @@ jobs:
             --stack-name "$TENNIS_STACK_NAME" --output json \
             > /tmp/live-tennis-evidence/stack-resources.json
 
+          archive_bucket=$(aws cloudformation describe-stack-resource \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --logical-resource-id TennisArchiveBucket \
+            --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          test -n "$archive_bucket" && test "$archive_bucket" != None
+          printf '%s\n' "$archive_bucket" > /tmp/live-tennis-evidence/archive-bucket.txt
+          aws s3api list-objects-v2 --bucket "$archive_bucket" --prefix tennis/raw/ --output json \
+            > /tmp/live-tennis-evidence/raw-objects.json
+          RAW_OBJECTS=/tmp/live-tennis-evidence/raw-objects.json \
+          RAW_KEY=/tmp/live-tennis-evidence/latest-raw-key.txt \
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          payload=json.loads(Path(os.environ['RAW_OBJECTS']).read_text())
+          rows=payload.get('Contents') or []
+          if not rows:
+              raise SystemExit('No Tennis raw archive objects found')
+          latest=max(rows,key=lambda row:str(row.get('LastModified') or ''))
+          Path(os.environ['RAW_KEY']).write_text(str(latest['Key'])+'\n')
+          Path('/tmp/live-tennis-evidence/latest-raw-metadata.json').write_text(
+              json.dumps({k:latest.get(k) for k in ('Key','LastModified','Size','ETag','StorageClass')},indent=2,sort_keys=True)
+          )
+          PY
+          latest_raw_key=$(cat /tmp/live-tennis-evidence/latest-raw-key.txt)
+          aws s3api get-object --bucket "$archive_bucket" --key "$latest_raw_key" \
+            /tmp/live-tennis-evidence/latest-raw.json \
+            > /tmp/live-tennis-evidence/latest-raw-get-object.json
+          python -m json.tool /tmp/live-tennis-evidence/latest-raw.json >/dev/null
+
           test -f /tmp/live-tennis-code/tennis_storage.py
           test -f /tmp/live-tennis-code/tennis_pull_history.py
-          test -f /tmp/live-tennis-code/tennis_ingest.py
+          test -f /tmp/live-tennis-code/tennis_ingest_handler.py
           python -m py_compile \
             /tmp/live-tennis-code/tennis_storage.py \
             /tmp/live-tennis-code/tennis_pull_history.py \
-            /tmp/live-tennis-code/tennis_ingest.py
+            /tmp/live-tennis-code/tennis_ingest_handler.py
 
       - name: Upload exact live Tennis code and sanitized evidence
         if: always()
