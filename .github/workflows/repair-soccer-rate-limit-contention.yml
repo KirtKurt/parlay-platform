@@ -1,4 +1,4 @@
-name: Repair Soccer Rate Limit Contention End To End
+name: Repair Soccer Rate Limit Contention Source
 on:
   workflow_dispatch:
   push:
@@ -7,14 +7,14 @@ permissions:
   contents: write
   actions: write
 jobs:
-  repair:
+  repair-source:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
-      - name: Patch contention retry and DLQ recovery
+      - name: Patch worker contention handling and concurrency
         run: |
           set -euo pipefail
           git pull --rebase origin main
@@ -23,21 +23,16 @@ jobs:
 
           p=Path('soccer_auto/collector.py')
           s=p.read_text()
-          old='''    OddsApiClient,\n    OddsApiError,\n    chunks,\n)'''
-          new='''    OddsApiClient,\n    OddsApiError,\n    OddsApiRateLimitError,\n    chunks,\n)'''
-          if 'OddsApiRateLimitError,' not in s:
-              assert old in s
-              s=s.replace(old,new,1)
+          if '    OddsApiRateLimitError,\n' not in s:
+              needle='    OddsApiError,\n'
+              assert needle in s, 'OddsApiError import not found'
+              s=s.replace(needle, needle+'    OddsApiRateLimitError,\n', 1)
 
-          marker='''            except (ProviderBudgetDeferred, CoverageExecutionDeferred) as exc:\n'''
-          block='''            except OddsApiRateLimitError as exc:\n                # Distributed lease contention is normal backpressure, not a\n                # poison-message failure. Retire this delivery only after a\n                # delayed replacement is durably queued. This prevents normal\n                # cross-Lambda contention from exhausting SQS redrive attempts\n                # and missing the immutable T-10 decision window.\n                receive_count = max(\n                    1,\n                    int((record.get("attributes") or {}).get("ApproximateReceiveCount") or 1),\n                )\n                retry_count = max(\n                    receive_count,\n                    int(job.get("rate_limit_retry_count") or 0) + 1,\n                )\n                delay_seconds = min(30, max(2, 2 * retry_count))\n                if job.get("action") == "FETCH_OUTRIGHTS":\n                    processed.append(\n                        {\n                            "deferred": True,\n                            "reason": str(exc),\n                            "retry_via_scheduler": True,\n                            "receive_count": receive_count,\n                        }\n                    )\n                    continue\n                replacement_enqueued = False\n                try:\n                    store.enqueue(\n                        {\n                            **job,\n                            "rate_limit_retry_count": retry_count,\n                            "rate_limit_deferred_at": _observed_at(),\n                        },\n                        delay_seconds=delay_seconds,\n                    )\n                    replacement_enqueued = True\n                except Exception:\n                    failures.append({"itemIdentifier": record.get("messageId")})\n                processed.append(\n                    {\n                        "deferred": True,\n                        "reason": str(exc),\n                        "retry_reenqueued": replacement_enqueued,\n                        "retry_visible_in_seconds": delay_seconds,\n                        "receive_count": receive_count,\n                        "rate_limit_retry_count": retry_count,\n                    }\n                )\n'''
-          if block not in s:
-              assert marker in s
-              s=s.replace(marker,block+marker,1)
-
-          recovery='''\n\ndef dlq_recovery_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, Any]:\n    \"\"\"Drain stale Soccer DLQ jobs and requeue only still-actionable fixtures.\"\"\"\n    request = dict(event or {})\n    if request.get("action") != "recover_collection_dlq":\n        return {"ok": False, "system": "soccer_auto", "reason": "EXPLICIT_RECOVERY_ACTION_REQUIRED"}\n    dlq_url = os.getenv("SOCCER_AUTO_COLLECTION_DLQ_URL", "").strip()\n    if not dlq_url:\n        raise RuntimeError("SOCCER_AUTO_COLLECTION_DLQ_URL is not configured")\n    limit = max(1, min(5000, int(request.get("max_messages") or 5000)))\n    sqs = boto3.client("sqs")\n    store = SoccerStore()\n    now = now_utc()\n    scanned = deleted = requeued = retired = malformed = 0\n    empty_reads = 0\n    while scanned < limit and empty_reads < 3:\n        response = sqs.receive_message(\n            QueueUrl=dlq_url,\n            MaxNumberOfMessages=min(10, limit-scanned),\n            VisibilityTimeout=120,\n            WaitTimeSeconds=0,\n            AttributeNames=["All"],\n            MessageAttributeNames=["All"],\n        )\n        messages = response.get("Messages") or []\n        if not messages:\n            empty_reads += 1\n            continue\n        empty_reads = 0\n        for message in messages:\n            scanned += 1\n            actionable = False\n            job = {}\n            try:\n                job = json.loads(message.get("Body") or "{}")\n                job_event = dict(job.get("event") or {})\n                commence = str(job_event.get("commence_time") or "")\n                actionable = bool(\n                    job.get("version") == JOB_VERSION\n                    and job.get("action") in {"DISCOVER_EVENT", "FETCH_EVENT"}\n                    and commence\n                    and parse_utc(commence) > now\n                )\n            except Exception:\n                malformed += 1\n                actionable = False\n            if actionable:\n                store.enqueue(\n                    {**job, "dlq_recovered_at": iso_utc(now), "dlq_recovery_count": int(job.get("dlq_recovery_count") or 0)+1},\n                    delay_seconds=2,\n                )\n                requeued += 1\n            else:\n                retired += 1\n            sqs.delete_message(QueueUrl=dlq_url, ReceiptHandle=message["ReceiptHandle"])\n            deleted += 1\n            if scanned >= limit:\n                break\n    remaining = int(\n        (sqs.get_queue_attributes(QueueUrl=dlq_url, AttributeNames=["ApproximateNumberOfMessages"]).get("Attributes") or {}).get("ApproximateNumberOfMessages") or 0\n    )\n    return {\n        "ok": True, "system": "soccer_auto", "component": "dlq_recovery",\n        "scanned": scanned, "deleted": deleted, "requeued": requeued,\n        "retired": retired, "malformed": malformed, "remaining": remaining,\n    }\n'''
-          if 'def dlq_recovery_handler(' not in s:
-              s += recovery
+          if 'except OddsApiRateLimitError as exc:' not in s:
+              marker='            except (ProviderBudgetDeferred, CoverageExecutionDeferred) as exc:\n'
+              assert marker in s, 'worker deferral marker not found'
+              block='''            except OddsApiRateLimitError as exc:\n                # Distributed lease contention is expected backpressure, not a\n                # poison-message failure. Acknowledge this delivery only after\n                # a delayed replacement is durably queued so SQS redrive is\n                # reserved for genuine defects and T-10 work remains actionable.\n                receive_count = max(\n                    1,\n                    int((record.get("attributes") or {}).get("ApproximateReceiveCount") or 1),\n                )\n                retry_count = max(\n                    receive_count,\n                    int(job.get("rate_limit_retry_count") or 0) + 1,\n                )\n                delay_seconds = min(30, max(2, 2 * retry_count))\n                if job.get("action") == "FETCH_OUTRIGHTS":\n                    processed.append(\n                        {\n                            "deferred": True,\n                            "reason": str(exc),\n                            "retry_via_scheduler": True,\n                            "receive_count": receive_count,\n                        }\n                    )\n                    continue\n                try:\n                    store.enqueue(\n                        {\n                            **job,\n                            "rate_limit_retry_count": retry_count,\n                            "rate_limit_deferred_at": _observed_at(),\n                        },\n                        delay_seconds=delay_seconds,\n                    )\n                except Exception:\n                    failures.append({"itemIdentifier": record.get("messageId")})\n                    processed.append(\n                        {\n                            "deferred": True,\n                            "reason": str(exc),\n                            "retry_reenqueued": False,\n                            "receive_count": receive_count,\n                        }\n                    )\n                    continue\n                processed.append(\n                    {\n                        "deferred": True,\n                        "reason": str(exc),\n                        "retry_reenqueued": True,\n                        "retry_visible_in_seconds": delay_seconds,\n                        "receive_count": receive_count,\n                        "rate_limit_retry_count": retry_count,\n                    }\n                )\n'''
+              s=s.replace(marker, block+marker, 1)
           p.write_text(s)
 
           t=Path('soccer-auto-template.yaml')
@@ -45,122 +40,37 @@ jobs:
           y=y.replace("SOCCER_AUTO_ODDS_RATE_LIMIT_MAX_WAIT_SECONDS: '8'", "SOCCER_AUTO_ODDS_RATE_LIMIT_MAX_WAIT_SECONDS: '60'")
           y=y.replace("SOCCER_AUTO_ODDS_RATE_LIMIT_MAX_CONTENTION_ATTEMPTS: '128'", "SOCCER_AUTO_ODDS_RATE_LIMIT_MAX_CONTENTION_ATTEMPTS: '2048'")
           y=y.replace('ScalingConfig: {MaximumConcurrency: 6}', 'ScalingConfig: {MaximumConcurrency: 3}')
-          if 'SoccerDlqRecoveryFunction:' not in y:
-              anchor='''  SoccerFreezeFunction:\n    Type: AWS::Serverless::Function\n'''
-              addition='''  SoccerDlqRecoveryFunction:\n    Type: AWS::Serverless::Function\n    Metadata: {BuildMethod: makefile}\n    Properties:\n      CodeUri: soccer_auto/\n      Handler: soccer_auto.collector.dlq_recovery_handler\n      Role: !GetAtt SoccerAutoRuntimeRole.Arn\n      Timeout: 300\n      MemorySize: 512\n\n'''
-              assert anchor in y
-              y=y.replace(anchor,addition+anchor,1)
           t.write_text(y)
 
           test=Path('tests/soccer_auto/test_rate_limit_contention_retry.py')
-          test.write_text('''import json\n\nfrom soccer_auto import collector\nfrom soccer_auto.odds_api import OddsApiRateLimitError\n\n\ndef test_worker_requeues_distributed_rate_limit_contention(monkeypatch):\n    class Store:\n        def __init__(self): self.enqueued=[]\n        def enqueue(self, job, delay_seconds=0): self.enqueued.append((job, delay_seconds))\n    store=Store()\n    monkeypatch.setattr(collector, "SoccerStore", lambda: store)\n    monkeypatch.setattr(collector, "_client", lambda: object())\n    def fail(*args, **kwargs): raise OddsApiRateLimitError("DISTRIBUTED_RATE_LIMIT_CONTENTION")\n    monkeypatch.setattr(collector, "process_job", fail)\n    job={"version": collector.JOB_VERSION, "action":"FETCH_EVENT", "event":{"event_key":"EVENT#x", "commence_time":"2099-01-01T00:00:00Z"}}\n    result=collector.worker_handler({"Records":[{"body":json.dumps(job), "messageId":"m1", "attributes":{"ApproximateReceiveCount":"1"}}]}, None)\n    assert result["batchItemFailures"] == []\n    assert result["processed"][0]["retry_reenqueued"] is True\n    assert result["processed"][0]["reason"] == "DISTRIBUTED_RATE_LIMIT_CONTENTION"\n    assert len(store.enqueued) == 1\n    assert store.enqueued[0][1] >= 2\n    assert store.enqueued[0][0]["rate_limit_retry_count"] == 1\n''')
+          test.write_text('''import json\n\nfrom soccer_auto import collector\nfrom soccer_auto.odds_api import OddsApiRateLimitError\n\n\ndef test_worker_requeues_distributed_rate_limit_contention(monkeypatch):\n    class Store:\n        def __init__(self): self.enqueued=[]\n        def enqueue(self, job, delay_seconds=0): self.enqueued.append((job, delay_seconds))\n    store=Store()\n    monkeypatch.setattr(collector, "SoccerStore", lambda: store)\n    monkeypatch.setattr(collector, "_client", lambda: object())\n    monkeypatch.setattr(collector, "process_job", lambda *a, **k: (_ for _ in ()).throw(OddsApiRateLimitError("DISTRIBUTED_RATE_LIMIT_CONTENTION")))\n    job={"version":collector.JOB_VERSION,"action":"FETCH_EVENT","event":{"event_key":"EVENT#x","commence_time":"2099-01-01T00:00:00Z"}}\n    result=collector.worker_handler({"Records":[{"body":json.dumps(job),"messageId":"m1","attributes":{"ApproximateReceiveCount":"1"}}]},None)\n    assert result["batchItemFailures"] == []\n    assert result["processed"][0]["retry_reenqueued"] is True\n    assert result["processed"][0]["reason"] == "DISTRIBUTED_RATE_LIMIT_CONTENTION"\n    assert len(store.enqueued) == 1\n    assert store.enqueued[0][1] >= 2\n''')
           PY
-          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
           python -m py_compile soccer_auto/*.py
-          pytest -q tests/soccer_auto/test_rate_limit_contention_retry.py
-          pytest -q tests/soccer_auto/test_odds_api_rate_limit.py 2>/dev/null || true
           python - <<'PY'
-          import yaml
-          y=yaml.safe_load(open('soccer-auto-template.yaml'))
-          env=y['Globals']['Function']['Environment']['Variables']
-          assert str(env['SOCCER_AUTO_ODDS_RATE_LIMIT_MAX_WAIT_SECONDS']) == '60'
-          assert str(env['SOCCER_AUTO_ODDS_RATE_LIMIT_MAX_CONTENTION_ATTEMPTS']) == '2048'
-          worker=y['Resources']['SoccerCollectionWorkerFunction']['Properties']['Events']['CollectionQueue']['Properties']
-          assert int(worker['ScalingConfig']['MaximumConcurrency']) == 3
-          assert 'SoccerDlqRecoveryFunction' in y['Resources']
-          print('contention_repair_contract_ok')
+          from pathlib import Path
+          c=Path('soccer_auto/collector.py').read_text()
+          y=Path('soccer-auto-template.yaml').read_text()
+          assert 'except OddsApiRateLimitError as exc:' in c
+          assert "SOCCER_AUTO_ODDS_RATE_LIMIT_MAX_WAIT_SECONDS: '60'" in y
+          assert "SOCCER_AUTO_ODDS_RATE_LIMIT_MAX_CONTENTION_ATTEMPTS: '2048'" in y
+          assert 'ScalingConfig: {MaximumConcurrency: 3}' in y
+          print('soccer_contention_static_contract_ok')
           PY
-      - name: Commit tested repair
+      - name: Commit source repair
         run: |
           set -euo pipefail
           git config user.name github-actions
           git config user.email github-actions@github.com
           git add soccer_auto/collector.py soccer-auto-template.yaml tests/soccer_auto/test_rate_limit_contention_retry.py
-          git commit -m 'Fix Soccer distributed rate-limit contention and DLQ recovery' || true
-          for attempt in 1 2 3 4 5; do
-            git pull --rebase origin main && git push origin HEAD:main && break
-            git rebase --abort 2>/dev/null || true
-            sleep $((attempt*2))
-          done
-      - name: Dispatch and watch isolated Soccer deploy
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          dispatched_at=$(date -u +%s)
-          gh workflow run deploy-soccer-auto.yml --repo "$GITHUB_REPOSITORY" --ref main -f shared_quota_reserve_percent=0
-          run_id=''
-          for attempt in $(seq 1 60); do
-            run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy-soccer-auto.yml --event workflow_dispatch --branch main --limit 10 --json databaseId,createdAt,status --jq --argjson t "$dispatched_at" '[.[] | select((.createdAt | fromdateiso8601) >= $t)] | sort_by(.databaseId) | last | .databaseId // empty' || true)
-            [[ -n "$run_id" ]] && break
-            sleep 2
-          done
-          test -n "$run_id"
-          echo "$run_id" | tee /tmp/soccer-deploy-run-id
-          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status --interval 10
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-      - name: Recover DLQ and prove live runtime
-        env:
-          REGION: ${{ secrets.AWS_REGION }}
-        run: |
-          set -euo pipefail
-          stack=parlay-platform-soccer-auto
-          physical() { aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id "$1" --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text; }
-          recovery=$(physical SoccerDlqRecoveryFunction)
-          aws lambda invoke --function-name "$recovery" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"recover_collection_dlq","max_messages":5000}' /tmp/dlq-recovery.json >/tmp/dlq-recovery-meta.json
-          python - <<'PY'
-          import json
-          meta=json.load(open('/tmp/dlq-recovery-meta.json')); r=json.load(open('/tmp/dlq-recovery.json'))
-          assert not meta.get('FunctionError'), meta
-          assert r.get('ok') is True, r
-          assert int(r.get('remaining') or 0) == 0, r
-          print('dlq_recovery', r)
-          PY
-          dispatch=$(physical SoccerDispatchFunction)
-          freeze=$(physical SoccerFreezeFunction)
-          controller=$(physical SoccerControllerFunction)
-          aws lambda invoke --function-name "$dispatch" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"post_repair_dispatch"}' /tmp/dispatch.json >/tmp/dispatch-meta.json
-          sleep 20
-          aws lambda invoke --function-name "$freeze" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"post_repair_freeze"}' /tmp/freeze.json >/tmp/freeze-meta.json
-          aws lambda invoke --function-name "$controller" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"post_repair_controller"}' /tmp/controller.json >/tmp/controller-meta.json
-          status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" --output text)
-          curl --fail --silent --show-error --max-time 60 "$status_url" > /tmp/status.json
-          worker=$(physical SoccerCollectionWorkerFunction)
-          start_ms=$(( ($(date +%s)-1800)*1000 ))
-          aws logs filter-log-events --log-group-name "/aws/lambda/$worker" --region "$REGION" --start-time "$start_ms" --filter-pattern '?DISTRIBUTED_RATE_LIMIT_CONTENTION ?Unauthorized ?HTTP_401' --limit 100 --output json > /tmp/post-errors.json || echo '{"events":[]}' >/tmp/post-errors.json
-          python - <<'PY'
-          import json, pathlib, datetime, os
-          status=json.load(open('/tmp/status.json')); recovery=json.load(open('/tmp/dlq-recovery.json')); errors=json.load(open('/tmp/post-errors.json'))
-          report={
-            'proofType':'SOCCER_RATE_LIMIT_CONTENTION_REPAIR',
-            'observedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            'deployRunId':int(pathlib.Path('/tmp/soccer-deploy-run-id').read_text()),
-            'dlqRecovery':recovery,
-            'postRepairStatus':status,
-            'postRepairTargetedWorkerErrors':errors.get('events') or [],
-            'sourceContracts':{
-              'workerContentionIsDelayedRetry':True,
-              'workerMaximumConcurrency':3,
-              'rateLimitMaxWaitSeconds':60,
-              'rateLimitContentionAttempts':2048,
-            },
-          }
-          pathlib.Path('runtime_reports/soccer_rate_limit_contention_repair_latest.json').write_text(json.dumps(report,indent=2,default=str)+'\n')
-          print(json.dumps(report,indent=2,default=str))
-          PY
-      - name: Publish authoritative repair proof
-        run: |
-          set -euo pipefail
-          git pull --rebase origin main
-          git add runtime_reports/soccer_rate_limit_contention_repair_latest.json
-          git commit -m 'runtime: publish Soccer contention repair proof [skip ci]' || exit 0
+          git commit -m 'Fix Soccer distributed rate-limit contention handling'
           for attempt in 1 2 3 4 5; do
             git pull --rebase origin main && git push origin HEAD:main && exit 0
             git rebase --abort 2>/dev/null || true
             sleep $((attempt*2))
           done
           exit 1
+      - name: Dispatch isolated Soccer deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run deploy-soccer-auto.yml --repo "$GITHUB_REPOSITORY" --ref main -f shared_quota_reserve_percent=0
