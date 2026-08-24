@@ -1,0 +1,99 @@
+name: Finalize MLB Three-API Sequence v3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/finalize-mlb-three-api-sequence-v3.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: finalize-mlb-three-api-sequence-v3
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - name: Cancel obsolete and redundant MLB deployment attempts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run list --repo "$GITHUB_REPOSITORY" --limit 150 \
+            --json databaseId,workflowName,status > /tmp/runs.json
+          python - <<'PY' >/tmp/cancel-ids.txt
+          import json, os
+          current=int(os.environ['GITHUB_RUN_ID'])
+          obsolete={
+              'Deploy SAM to AWS',
+              'Install MLB Three-API Autonomy v1',
+              'Install MLB Three-API Autonomy v2',
+              'Verify and Deploy MLB Three-API Autonomy v1',
+              'MLB Three-API Runtime Acceptance v1',
+              'Discover BBD Pro MLB Endpoints v1',
+              'Clear Obsolete Three-API Deploys and Run Final Sequence',
+              'Finalize MLB Three-API Sequence v2',
+              'Verify and Deploy MLB Three-API Autonomy v2',
+          }
+          active={'queued','in_progress','waiting','requested','pending'}
+          for row in json.load(open('/tmp/runs.json')):
+              run_id=int(row['databaseId'])
+              if run_id!=current and row.get('workflowName') in obsolete and row.get('status') in active:
+                  print(run_id)
+          PY
+          while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY" || true
+          done </tmp/cancel-ids.txt
+          sleep 25
+
+      - name: Dispatch exactly one final v2 deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          dispatch_time=$(date -u +%s)
+          gh workflow run verify-deploy-mlb-three-api-autonomy-v2.yml \
+            --repo "$GITHUB_REPOSITORY" --ref main
+          echo "DISPATCH_TIME=$dispatch_time" >> "$GITHUB_ENV"
+          sleep 12
+
+      - name: Identify and watch the dispatched final deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" \
+            --workflow verify-deploy-mlb-three-api-autonomy-v2.yml \
+            --event workflow_dispatch --limit 10 \
+            --json databaseId,createdAt,status \
+            --jq 'sort_by(.createdAt) | reverse | .[0].databaseId')
+          test -n "$run_id"
+          echo "FINAL_DEPLOY_RUN_ID=$run_id" >> "$GITHUB_ENV"
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status --interval 20
+
+      - name: Cancel any redundant default deployment left behind
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy.yml --limit 50 \
+            --json databaseId,status > /tmp/default-runs.json
+          python - <<'PY' >/tmp/default-cancel-ids.txt
+          import json
+          active={'queued','in_progress','waiting','requested','pending'}
+          for row in json.load(open('/tmp/default-runs.json')):
+              if row.get('status') in active:
+                  print(row['databaseId'])
+          PY
+          while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY" || true
+          done </tmp/default-cancel-ids.txt
