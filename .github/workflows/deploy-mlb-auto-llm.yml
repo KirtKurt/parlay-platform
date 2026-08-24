@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -35,6 +37,9 @@ jobs:
 
       - uses: aws-actions/setup-sam@v2
 
+      - name: Install verification runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+
       - name: Verify required credentials and source contracts
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
@@ -45,13 +50,15 @@ jobs:
           test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
           test -n "${BBS_API_KEY_VALUE:-}" || { echo '::error::Missing BBS_API_KEY'; exit 1; }
           aws sts get-caller-identity
-          python -m py_compile mlb_auto_llm/handler.py
+          python -m py_compile mlb_auto_llm/handler.py mlb_auto_llm/orchestrator.py
           sam validate --template-file mlb-auto-llm-template.yaml --lint
           grep -q 'MLB_AUTO_CARD_LEAD_MINUTES_BEFORE_SECOND_GAME' mlb_auto_llm/handler.py
           grep -q 'Big Balls Sports Data Pro' mlb_auto_llm/handler.py
           grep -q 'The Odds API' mlb_auto_llm/handler.py
           grep -q 'MLB Stats API' mlb_auto_llm/handler.py
           grep -q 'BEDROCK_LLM' mlb_auto_llm/handler.py
+          grep -q 'playerRollingStats' mlb_auto_llm/orchestrator.py
+          grep -q 'teamRecentForm' mlb_auto_llm/orchestrator.py
 
       - name: Authenticate both paid data providers
         env:
@@ -88,6 +95,11 @@ jobs:
           client=boto3.client('bedrock-runtime')
           models=[
               'us.amazon.nova-2-lite-v1:0',
+              'mistral.ministral-3-14b-instruct',
+              'us.meta.llama4-scout-17b-instruct-v1:0',
+              'us.meta.llama4-maverick-17b-instruct-v1:0',
+              'global.amazon.nova-2-lite-v1:0',
+              'us.amazon.nova-pro-v1:0',
               'us.amazon.nova-lite-v1:0',
               'us.amazon.nova-micro-v1:0',
           ]
@@ -133,6 +145,7 @@ jobs:
               BbsApiKey="${BBS_API_KEY_VALUE}" \
               TargetDailyAccuracy='0.70' \
               CardLeadMinutesBeforeSecondGame='45' \
+              BedrockModels='us.amazon.nova-2-lite-v1:0,mistral.ministral-3-14b-instruct,us.meta.llama4-scout-17b-instruct-v1:0,us.meta.llama4-maverick-17b-instruct-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0' \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
 
@@ -169,6 +182,7 @@ jobs:
               assert (source.get('theOddsApi') or {}).get('ok') is True, source
               assert (source.get('bigBallsDataPro') or {}).get('ok') is True, source
           print('AWS autonomous MLB cycle:', status)
+          print(json.dumps(response, sort_keys=True)[:6000])
           PY
 
       - name: Verify public status contract
@@ -189,6 +203,7 @@ jobs:
           assert float(status['targetDailyAccuracy']) == 0.70, status
           assert int(status['cardLeadMinutesBeforeSecondGame']) == 45, status
           print('MLB Auto LLM production status contract: OK')
+          print(json.dumps(status, sort_keys=True)[:6000])
           PY
 
       - name: Publish durable deployment proof
@@ -220,4 +235,5 @@ jobs:
           git add runtime_reports/mlb_auto_llm_deploy_latest.json
           git diff --cached --quiet && exit 0
           git commit -m 'Publish MLB Auto LLM deployment proof [skip ci]'
+          git pull --rebase origin main
           git push
