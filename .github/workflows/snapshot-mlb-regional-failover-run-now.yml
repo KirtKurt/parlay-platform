@@ -32,6 +32,8 @@ jobs:
             deploy.yml
             mlb-prospective-backlog-reconcile-v5-once.yml
             repair-mlb-prospective-v5-now.yml
+            trigger-mlb-prospective-v5-repair-now.yml
+            reconcile-mlb-continuity-from-aug4-now.yml
           )
           for workflow in "${workflows[@]}"; do
             safe=${workflow//[^A-Za-z0-9]/_}
@@ -50,6 +52,8 @@ jobs:
               'deploy.yml',
               'mlb-prospective-backlog-reconcile-v5-once.yml',
               'repair-mlb-prospective-v5-now.yml',
+              'trigger-mlb-prospective-v5-repair-now.yml',
+              'reconcile-mlb-continuity-from-aug4-now.yml',
           )
 
           def key(name: str) -> str:
