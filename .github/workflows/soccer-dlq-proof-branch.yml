@@ -1,0 +1,76 @@
+name: Soccer DLQ Proof Branch
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/soccer-dlq-proof-branch.yml']
+permissions:
+  contents: write
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Drain DLQ with Soccer runtime role and prove restoration
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set +e
+          mkdir -p /tmp/soccer-proof/pkg/soccer_auto runtime_reports
+          stack=parlay-platform-soccer-auto
+          worker=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionWorkerFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+          mapping=$(aws lambda list-event-source-mappings --function-name "$worker" --region "$REGION" --query 'EventSourceMappings[0].UUID' --output text)
+          cp soccer_auto/*.py /tmp/soccer-proof/pkg/soccer_auto/
+          (cd /tmp/soccer-proof/pkg && zip -qr /tmp/soccer-proof/worker.zip soccer_auto)
+          aws lambda update-function-code --function-name "$worker" --region "$REGION" --zip-file fileb:///tmp/soccer-proof/worker.zip >/tmp/soccer-proof/code.json 2>/tmp/soccer-proof/code.err
+          aws lambda wait function-updated-v2 --function-name "$worker" --region "$REGION" 2>/tmp/soccer-proof/code-wait.err
+          if [[ -n "$mapping" && "$mapping" != None ]]; then
+            aws lambda update-event-source-mapping --uuid "$mapping" --region "$REGION" --enabled false --scaling-config MaximumConcurrency=3 >/tmp/soccer-proof/disable.json 2>/tmp/soccer-proof/disable.err
+            for i in $(seq 1 60); do s=$(aws lambda get-event-source-mapping --uuid "$mapping" --region "$REGION" --query State --output text 2>/dev/null); [[ "$s" == Disabled ]] && break; sleep 1; done
+          fi
+          aws lambda update-function-configuration --function-name "$worker" --region "$REGION" --handler soccer_auto.dlq_recovery.handler >/tmp/soccer-proof/set-handler.json 2>/tmp/soccer-proof/set-handler.err
+          aws lambda wait function-updated-v2 --function-name "$worker" --region "$REGION" 2>/tmp/soccer-proof/set-wait.err
+          aws lambda invoke --function-name "$worker" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"recover_collection_dlq","max_messages":5000}' /tmp/soccer-proof/recovery.json >/tmp/soccer-proof/recovery-meta.json 2>/tmp/soccer-proof/recovery.err
+          aws lambda update-function-configuration --function-name "$worker" --region "$REGION" --handler soccer_auto.collector.worker_handler >/tmp/soccer-proof/restore.json 2>/tmp/soccer-proof/restore.err
+          aws lambda wait function-updated-v2 --function-name "$worker" --region "$REGION" 2>/tmp/soccer-proof/restore-wait.err
+          if [[ -n "$mapping" && "$mapping" != None ]]; then
+            aws lambda update-event-source-mapping --uuid "$mapping" --region "$REGION" --enabled true --scaling-config MaximumConcurrency=3 >/tmp/soccer-proof/enable.json 2>/tmp/soccer-proof/enable.err
+            for i in $(seq 1 60); do s=$(aws lambda get-event-source-mapping --uuid "$mapping" --region "$REGION" --query State --output text 2>/dev/null); [[ "$s" == Enabled ]] && break; sleep 1; done
+          fi
+          aws lambda get-function-configuration --function-name "$worker" --region "$REGION" --query '{Handler:Handler,State:State,LastUpdateStatus:LastUpdateStatus,LastModified:LastModified,CodeSha256:CodeSha256}' --output json >/tmp/soccer-proof/worker.json 2>/tmp/soccer-proof/worker.err
+          aws lambda get-event-source-mapping --uuid "$mapping" --region "$REGION" --query '{State:State,ScalingConfig:ScalingConfig}' --output json >/tmp/soccer-proof/mapping.json 2>/tmp/soccer-proof/mapping.err
+          status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" --output text 2>/dev/null)
+          curl --silent --show-error --max-time 60 "$status_url" >/tmp/soccer-proof/status.json 2>/tmp/soccer-proof/status.err
+          python - <<'PY'
+          import json,pathlib,datetime
+          root=pathlib.Path('/tmp/soccer-proof')
+          def t(n):
+              p=root/n; return p.read_text() if p.exists() else ''
+          def j(n):
+              p=root/n
+              if not p.exists() or not p.read_text().strip(): return None
+              try:return json.loads(p.read_text())
+              except:return {'raw':p.read_text()[:20000]}
+          r=j('recovery.json') or {}; w=j('worker.json') or {}; m=j('mapping.json') or {}
+          report={'proofType':'SOCCER_DLQ_PROOF_BRANCH','observedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'recovery':r,'recoveryMeta':j('recovery-meta.json'),'recoveryError':t('recovery.err'),'workerFinal':w,'workerError':t('worker.err'),'mappingFinal':m,'mappingError':t('mapping.err'),'publicStatus':j('status.json'),'statusError':t('status.err')}
+          report['dlqClear']=bool(r.get('ok')) and int(r.get('remaining_visible') or 0)==0 and int(r.get('remaining_inflight') or 0)==0
+          report['workerRestored']=w.get('Handler')=='soccer_auto.collector.worker_handler' and w.get('LastUpdateStatus')=='Successful'
+          report['mappingRestored']=m.get('State')=='Enabled' and int((m.get('ScalingConfig') or {}).get('MaximumConcurrency') or 0)==3
+          pathlib.Path('runtime_reports/soccer_dlq_proof_branch.json').write_text(json.dumps(report,indent=2,default=str)+'\n')
+          print(json.dumps(report,indent=2,default=str))
+          PY
+      - name: Publish proof to dedicated branch
+        run: |
+          set -euo pipefail
+          branch="runtime-soccer-dlq-proof-${GITHUB_RUN_ID}"
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git checkout -b "$branch"
+          git add runtime_reports/soccer_dlq_proof_branch.json
+          git commit -m 'runtime: Soccer DLQ proof'
+          git push origin "$branch"
