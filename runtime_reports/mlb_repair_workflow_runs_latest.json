@@ -1,8 +1,8 @@
 {
-  "createdAtUtc": "2026-08-24T21:53:02.869770+00:00",
+  "createdAtUtc": "2026-08-24T21:58:16.004845+00:00",
   "proofType": "MLB_REPAIR_WORKFLOW_RUN_SNAPSHOT",
   "secretExposed": false,
-  "sourceSha": "55b4b8b31ff31cf15096ebd971b0b92bdf6e213b",
+  "sourceSha": "7a5bb01d567040998810fe1956b5611d59b0be9a",
   "workflows": {
     "correct_mlb_auto_live_model_chain_now_yml": [
       {
@@ -179,13 +179,37 @@
     "deploy_yml": [
       {
         "conclusion": "",
+        "createdAt": "2026-08-24T21:58:00Z",
+        "databaseId": 32782270058,
+        "event": "push",
+        "headBranch": "main",
+        "headSha": "7a5bb01d567040998810fe1956b5611d59b0be9a",
+        "status": "pending",
+        "updatedAt": "2026-08-24T21:58:02Z",
+        "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/32782270058",
+        "workflowName": "Deploy SAM to AWS"
+      },
+      {
+        "conclusion": "cancelled",
+        "createdAt": "2026-08-24T21:54:28Z",
+        "databaseId": 32781963044,
+        "event": "push",
+        "headBranch": "main",
+        "headSha": "952317f7eb402e15179a8f3e12a426c80a8d77c7",
+        "status": "completed",
+        "updatedAt": "2026-08-24T21:58:02Z",
+        "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/32781963044",
+        "workflowName": "Deploy SAM to AWS"
+      },
+      {
+        "conclusion": "",
         "createdAt": "2026-08-24T21:52:46Z",
         "databaseId": 32781815824,
         "event": "push",
         "headBranch": "main",
         "headSha": "55b4b8b31ff31cf15096ebd971b0b92bdf6e213b",
-        "status": "pending",
-        "updatedAt": "2026-08-24T21:52:46Z",
+        "status": "in_progress",
+        "updatedAt": "2026-08-24T21:53:06Z",
         "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/32781815824",
         "workflowName": "Deploy SAM to AWS"
       },
@@ -238,14 +262,14 @@
         "workflowName": "Deploy SAM to AWS"
       },
       {
-        "conclusion": "",
+        "conclusion": "success",
         "createdAt": "2026-08-24T21:46:19Z",
         "databaseId": 32781268851,
         "event": "push",
         "headBranch": "main",
         "headSha": "198ba44d9fc1b1c27ecf416a28d966a606c9cf2e",
-        "status": "in_progress",
-        "updatedAt": "2026-08-24T21:46:27Z",
+        "status": "completed",
+        "updatedAt": "2026-08-24T21:53:03Z",
         "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/32781268851",
         "workflowName": "Deploy SAM to AWS"
       },
@@ -295,30 +319,6 @@
         "status": "completed",
         "updatedAt": "2026-08-24T21:44:36Z",
         "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/32781025848",
-        "workflowName": "Deploy SAM to AWS"
-      },
-      {
-        "conclusion": "cancelled",
-        "createdAt": "2026-08-24T21:42:10Z",
-        "databaseId": 32780895525,
-        "event": "push",
-        "headBranch": "main",
-        "headSha": "fd0d3806bfe205bd90aa9bc3b60d486bd01e598b",
-        "status": "completed",
-        "updatedAt": "2026-08-24T21:43:38Z",
-        "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/32780895525",
-        "workflowName": "Deploy SAM to AWS"
-      },
-      {
-        "conclusion": "cancelled",
-        "createdAt": "2026-08-24T21:41:29Z",
-        "databaseId": 32780835487,
-        "event": "push",
-        "headBranch": "main",
-        "headSha": "0401bfe5d45bf4d627037a4e54468867ecf07d68",
-        "status": "completed",
-        "updatedAt": "2026-08-24T21:42:11Z",
-        "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/32780835487",
         "workflowName": "Deploy SAM to AWS"
       }
     ],
@@ -583,6 +583,18 @@
     "repair_mlb_auto_ml_authority_fallback_v2_yml": [
       {
         "conclusion": "failure",
+        "createdAt": "2026-08-24T21:54:28Z",
+        "databaseId": 32781963142,
+        "event": "push",
+        "headBranch": "main",
+        "headSha": "952317f7eb402e15179a8f3e12a426c80a8d77c7",
+        "status": "completed",
+        "updatedAt": "2026-08-24T21:56:19Z",
+        "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/32781963142",
+        "workflowName": "Repair MLB AUTO model authority fallback v2"
+      },
+      {
+        "conclusion": "failure",
         "createdAt": "2026-08-24T21:50:18Z",
         "databaseId": 32781607239,
         "event": "push",
@@ -631,6 +643,30 @@
       }
     ],
     "verify_mlb_auto_production_chain_yml": [
+      {
+        "conclusion": "success",
+        "createdAt": "2026-08-24T21:54:24Z",
+        "databaseId": 32781956790,
+        "event": "pull_request",
+        "headBranch": "fix/mlb-auto-endpoint-native-bedrock-20260824",
+        "headSha": "7a64066fe30ecb9b04a8fabad37588c529541061",
+        "status": "completed",
+        "updatedAt": "2026-08-24T21:55:09Z",
+        "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/32781956790",
+        "workflowName": "Verify MLB AUTO production chain"
+      },
+      {
+        "conclusion": "success",
+        "createdAt": "2026-08-24T21:54:04Z",
+        "databaseId": 32781927402,
+        "event": "pull_request",
+        "headBranch": "fix/mlb-auto-endpoint-native-bedrock-20260824",
+        "headSha": "a754cfefa0cbd165e24f0ef72551196bc95d91b1",
+        "status": "completed",
+        "updatedAt": "2026-08-24T21:54:49Z",
+        "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/32781927402",
+        "workflowName": "Verify MLB AUTO production chain"
+      },
       {
         "conclusion": "success",
         "createdAt": "2026-08-24T21:50:16Z",
@@ -749,30 +785,6 @@
         "status": "completed",
         "updatedAt": "2026-08-24T20:48:40Z",
         "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/32775922248",
-        "workflowName": "Verify MLB AUTO production chain"
-      },
-      {
-        "conclusion": "success",
-        "createdAt": "2026-08-24T20:44:59Z",
-        "databaseId": 32775645933,
-        "event": "pull_request",
-        "headBranch": "fix/mlb-bedrock-quota-aware-20260824",
-        "headSha": "840e5fa8a85dc758296522ddcd5949b94055f29d",
-        "status": "completed",
-        "updatedAt": "2026-08-24T20:45:45Z",
-        "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/32775645933",
-        "workflowName": "Verify MLB AUTO production chain"
-      },
-      {
-        "conclusion": "success",
-        "createdAt": "2026-08-24T20:44:06Z",
-        "databaseId": 32775562861,
-        "event": "pull_request",
-        "headBranch": "fix/mlb-bedrock-quota-aware-20260824",
-        "headSha": "e40e86aa225e18db651308b2f2ee6344cd50a040",
-        "status": "completed",
-        "updatedAt": "2026-08-24T20:44:53Z",
-        "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/32775562861",
         "workflowName": "Verify MLB AUTO production chain"
       }
     ]
