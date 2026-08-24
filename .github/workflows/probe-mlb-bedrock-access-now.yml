@@ -1,0 +1,272 @@
+name: Probe MLB Bedrock access now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/probe-mlb-bedrock-access-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: probe-mlb-bedrock-access-now
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Install probe runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Discover and minimally invoke usable text authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import re
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from typing import Any
+
+          import boto3
+          from botocore.config import Config
+
+          REGIONS = ('us-east-1', 'us-west-2', 'us-east-2')
+          PREFERRED_HINTS = (
+              'titan-text-lite',
+              'titan-text-express',
+              'llama3-2-1b',
+              'llama3-2-3b',
+              'llama3-1-8b',
+              'llama3-8b',
+              'mistral-7b',
+              'ministral',
+              'nova-micro',
+              'nova-lite',
+              'llama3-3-70b',
+              'mistral-small',
+              'jamba-mini',
+              'command-r',
+          )
+          EXCLUDED = (
+              'embed', 'embedding', 'rerank', 'image', 'canvas', 'video',
+              'audio', 'speech', 'transcribe', 'moderation', 'guardrail',
+          )
+          config = Config(retries={'max_attempts': 0, 'mode': 'standard'}, connect_timeout=5, read_timeout=30)
+
+          def safe_message(exc: Exception) -> str:
+              text = str(exc).replace('\n', ' ')
+              text = re.sub(r'arn:aws[^ ]+', '<redacted-arn>', text)
+              text = re.sub(r'\b\d{12}\b', '<redacted-account>', text)
+              return text[:700]
+
+          def priority(model_id: str) -> tuple[int, str]:
+              lower = model_id.lower()
+              for index, hint in enumerate(PREFERRED_HINTS):
+                  if hint in lower:
+                      return index, lower
+              return len(PREFERRED_HINTS), lower
+
+          def converse_probe(runtime: Any, model_id: str) -> dict[str, Any]:
+              response = runtime.converse(
+                  modelId=model_id,
+                  messages=[{'role': 'user', 'content': [{'text': 'Return only OK.'}]}],
+                  inferenceConfig={'maxTokens': 4, 'temperature': 0.0},
+              )
+              blocks = (((response.get('output') or {}).get('message') or {}).get('content') or [])
+              text = ''.join(str(block.get('text') or '') for block in blocks if isinstance(block, dict)).strip()
+              return {'endpointFamily': 'converse', 'output': text[:80]}
+
+          def native_probe(runtime: Any, model_id: str) -> dict[str, Any]:
+              lower = model_id.lower()
+              if lower.startswith('amazon.titan-text'):
+                  body = {
+                      'inputText': 'Return only OK.',
+                      'textGenerationConfig': {
+                          'maxTokenCount': 4,
+                          'temperature': 0.0,
+                          'topP': 0.9,
+                      },
+                  }
+              elif 'meta.llama' in lower:
+                  body = {
+                      'prompt': 'Return only OK.',
+                      'max_gen_len': 4,
+                      'temperature': 0.0,
+                      'top_p': 0.9,
+                  }
+              elif 'mistral' in lower or 'mixtral' in lower:
+                  body = {
+                      'prompt': '<s>[INST] Return only OK. [/INST]',
+                      'max_tokens': 4,
+                      'temperature': 0.0,
+                      'top_p': 0.9,
+                  }
+              else:
+                  raise RuntimeError('NATIVE_SCHEMA_NOT_IMPLEMENTED')
+              response = runtime.invoke_model(
+                  modelId=model_id,
+                  contentType='application/json',
+                  accept='application/json',
+                  body=json.dumps(body).encode('utf-8'),
+              )
+              payload = json.loads(response['body'].read().decode('utf-8'))
+              return {'endpointFamily': 'invoke_model', 'output': json.dumps(payload, sort_keys=True)[:160]}
+
+          report: dict[str, Any] = {
+              'service': 'mlb-auto-llm',
+              'probe': 'bedrock-authority-access',
+              'startedAtUtc': datetime.now(timezone.utc).isoformat(),
+              'regions': {},
+              'attempts': [],
+              'success': None,
+              'ok': False,
+          }
+
+          for region in REGIONS:
+              control = boto3.client('bedrock', region_name=region, config=config)
+              runtime = boto3.client('bedrock-runtime', region_name=region, config=config)
+              candidates: list[dict[str, str]] = []
+              region_meta: dict[str, Any] = {
+                  'foundationModelCount': 0,
+                  'inferenceProfileCount': 0,
+                  'discoveryErrors': [],
+              }
+              try:
+                  models = control.list_foundation_models(byOutputModality='TEXT').get('modelSummaries') or []
+                  region_meta['foundationModelCount'] = len(models)
+                  for model in models:
+                      model_id = str(model.get('modelId') or '').strip()
+                      if not model_id or any(token in model_id.lower() for token in EXCLUDED):
+                          continue
+                      inference_types = {str(value) for value in (model.get('inferenceTypesSupported') or [])}
+                      input_modalities = {str(value) for value in (model.get('inputModalities') or [])}
+                      output_modalities = {str(value) for value in (model.get('outputModalities') or [])}
+                      if 'ON_DEMAND' not in inference_types or 'TEXT' not in input_modalities or 'TEXT' not in output_modalities:
+                          continue
+                      candidates.append({'modelId': model_id, 'source': 'foundation_model'})
+              except Exception as exc:
+                  region_meta['discoveryErrors'].append({'operation': 'list_foundation_models', 'error': type(exc).__name__, 'message': safe_message(exc)})
+
+              try:
+                  token = None
+                  profiles = []
+                  while True:
+                      args = {'maxResults': 1000}
+                      if token:
+                          args['nextToken'] = token
+                      response = control.list_inference_profiles(**args)
+                      profiles.extend(response.get('inferenceProfileSummaries') or [])
+                      token = response.get('nextToken')
+                      if not token:
+                          break
+                  region_meta['inferenceProfileCount'] = len(profiles)
+                  for profile in profiles:
+                      profile_id = str(profile.get('inferenceProfileId') or profile.get('inferenceProfileArn') or '').strip()
+                      if not profile_id or any(token in profile_id.lower() for token in EXCLUDED):
+                          continue
+                      if str(profile.get('status') or 'ACTIVE').upper() not in {'ACTIVE', 'AVAILABLE'}:
+                          continue
+                      candidates.append({'modelId': profile_id, 'source': 'inference_profile'})
+              except Exception as exc:
+                  region_meta['discoveryErrors'].append({'operation': 'list_inference_profiles', 'error': type(exc).__name__, 'message': safe_message(exc)})
+
+              deduped: dict[str, dict[str, str]] = {}
+              for candidate in candidates:
+                  deduped.setdefault(candidate['modelId'], candidate)
+              ordered = sorted(deduped.values(), key=lambda item: (priority(item['modelId']), 0 if item['source'] == 'inference_profile' else 1))
+              region_meta['candidateCount'] = len(ordered)
+              region_meta['candidateIds'] = [item['modelId'] for item in ordered[:120]]
+              report['regions'][region] = region_meta
+
+              for candidate in ordered:
+                  if report['success'] is not None:
+                      break
+                  model_id = candidate['modelId']
+                  attempt: dict[str, Any] = {
+                      'region': region,
+                      'modelId': model_id,
+                      'source': candidate['source'],
+                      'ok': False,
+                  }
+                  try:
+                      attempt.update(converse_probe(runtime, model_id))
+                      attempt['ok'] = True
+                  except Exception as converse_exc:
+                      attempt['converseError'] = {
+                          'error': type(converse_exc).__name__,
+                          'message': safe_message(converse_exc),
+                      }
+                      try:
+                          attempt.update(native_probe(runtime, model_id))
+                          attempt['ok'] = True
+                      except Exception as native_exc:
+                          attempt['nativeError'] = {
+                              'error': type(native_exc).__name__,
+                              'message': safe_message(native_exc),
+                          }
+                  report['attempts'].append(attempt)
+                  if attempt['ok']:
+                      report['success'] = {
+                          'region': region,
+                          'modelId': model_id,
+                          'source': candidate['source'],
+                          'endpointFamily': attempt.get('endpointFamily'),
+                      }
+                      report['ok'] = True
+                      break
+
+          report['completedAtUtc'] = datetime.now(timezone.utc).isoformat()
+          path = Path('runtime_reports/mlb_bedrock_access_probe_latest.json')
+          path.write_text(json.dumps(report, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print(json.dumps(report, indent=2, sort_keys=True)[:30000])
+          if not report['ok']:
+              raise SystemExit('No invokable Bedrock text authority was discovered in the probed US regions')
+          PY
+
+      - name: Publish durable Bedrock access proof
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime_reports/mlb_bedrock_access_probe_latest.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'Publish MLB Bedrock access probe [skip ci]'
+          for attempt in 1 2 3 4 5; do
+            if git pull --rebase origin main && git push origin HEAD:main; then
+              exit 0
+            fi
+            git rebase --abort >/dev/null 2>&1 || true
+            git fetch origin main
+            git reset --hard origin/main
+            git cherry-pick ORIG_HEAD >/dev/null 2>&1 || true
+            sleep $((attempt * 2))
+          done
+          echo '::error::Unable to publish Bedrock access proof'
+          exit 1
