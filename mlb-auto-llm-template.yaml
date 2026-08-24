@@ -17,7 +17,7 @@ Parameters:
     Default: 45
   BedrockModels:
     Type: String
-    Default: 'amazon.nova-micro-v1:0,amazon.nova-lite-v1:0,amazon.nova-pro-v1:0,amazon.nova-2-lite-v1:0,global.anthropic.claude-sonnet-4-20250514-v1:0,us.anthropic.claude-sonnet-4-20250514-v1:0,us.meta.llama3-3-70b-instruct-v1:0,meta.llama3-3-70b-instruct-v1:0,mistral.mistral-large-3-675b-instruct,mistral.ministral-3-3b-instruct,openai.gpt-5.6-sol,anthropic.claude-opus-4-8,anthropic.claude-opus-4-7,anthropic.claude-opus-4-6-v1,anthropic.claude-sonnet-4-6,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'
+    Default: 'openai.gpt-oss-20b-1:0,openai.gpt-oss-120b-1:0,amazon.nova-micro-v1:0,amazon.nova-lite-v1:0,amazon.nova-pro-v1:0,amazon.nova-2-lite-v1:0,us.amazon.nova-micro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0'
 
 Resources:
   MLBAutoLLMTable:
@@ -51,7 +51,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: mlb_auto_llm/
-      Handler: orchestrator_v2.lambda_handler
+      Handler: orchestrator_v3.lambda_handler
       Runtime: python3.11
       Timeout: 900
       MemorySize: 3008
@@ -65,9 +65,12 @@ Resources:
           MLB_AUTO_FIRST_GAME_SAFETY_MINUTES: '10'
           MLB_AUTO_FINAL_COLLECTION_WINDOW_MINUTES: '20'
           MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
-          MLB_AUTO_BEDROCK_DISCOVERY: 'true'
+          MLB_AUTO_BEDROCK_MANTLE_DISCOVERY: 'true'
+          MLB_AUTO_BEDROCK_RUNTIME_DISCOVERY: 'true'
           MLB_AUTO_BEDROCK_REGIONS: 'us-east-1,us-west-2,us-east-2'
-          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '200'
+          MLB_AUTO_BEDROCK_RUNTIME_PROVIDERS: 'amazon,openai'
+          MLB_AUTO_BEDROCK_ROUTE_CATALOG_LIMIT: '64'
+          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '8'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref MLBAutoLLMTable
@@ -89,7 +92,6 @@ Resources:
               Resource: '*'
             - Effect: Allow
               Action:
-                - aws-marketplace:Subscribe
                 - aws-marketplace:ViewSubscriptions
               Resource: '*'
       Events:
@@ -129,9 +131,12 @@ Resources:
       Environment:
         Variables:
           MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
-          MLB_AUTO_BEDROCK_DISCOVERY: 'true'
+          MLB_AUTO_BEDROCK_MANTLE_DISCOVERY: 'true'
+          MLB_AUTO_BEDROCK_RUNTIME_DISCOVERY: 'true'
           MLB_AUTO_BEDROCK_REGIONS: 'us-east-1,us-west-2,us-east-2'
-          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '200'
+          MLB_AUTO_BEDROCK_RUNTIME_PROVIDERS: 'amazon,openai'
+          MLB_AUTO_BEDROCK_ROUTE_CATALOG_LIMIT: '64'
+          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '8'
       Policies:
         - Statement:
             - Effect: Allow
@@ -147,7 +152,6 @@ Resources:
               Resource: '*'
             - Effect: Allow
               Action:
-                - aws-marketplace:Subscribe
                 - aws-marketplace:ViewSubscriptions
               Resource: '*'
 
