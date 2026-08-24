@@ -1,0 +1,506 @@
+{
+  "proofType": "SOCCER_DLQ_PROOF_BRANCH",
+  "observedAtUtc": "2026-08-24T18:37:40.557625+00:00",
+  "recovery": {
+    "ok": true,
+    "system": "soccer_auto",
+    "component": "dlq_recovery",
+    "scanned": 0,
+    "deleted": 0,
+    "requeued_future": 0,
+    "retired_stale": 0,
+    "malformed": 0,
+    "remaining_visible": 0,
+    "remaining_inflight": 0
+  },
+  "recoveryMeta": {
+    "StatusCode": 200,
+    "ExecutedVersion": "$LATEST"
+  },
+  "recoveryError": "",
+  "workerFinal": {
+    "Handler": "soccer_auto.collector.worker_handler",
+    "State": "Active",
+    "LastUpdateStatus": "Successful",
+    "LastModified": "2026-08-24T18:37:31.000+0000",
+    "CodeSha256": "bB9oCV49gOiz/pXaN1WefEDga9IwKeaWEd29lvZxie8="
+  },
+  "workerError": "",
+  "mappingFinal": {
+    "State": "Enabled",
+    "ScalingConfig": {
+      "MaximumConcurrency": 3
+    }
+  },
+  "mappingError": "",
+  "publicStatus": {
+    "PK": "AUTONOMY",
+    "SK": "STATE",
+    "actions": {
+      "catalog": {
+        "invoked_by_controller": false,
+        "registry_empty": false,
+        "scheduled": true
+      },
+      "dispatch": {
+        "invoked_by_controller": false,
+        "liveness": {
+          "errors": 0,
+          "function_name": "parlay-platform-soccer-auto-SoccerDispatchFunction-1ifvUl8Yj5dK",
+          "healthy": true,
+          "invocations": 14,
+          "latest_error_metric_bucket_at": null,
+          "latest_metric_bucket_at": "2026-08-24T18:35:00+00:00",
+          "lookback_minutes": 10,
+          "reason": "HEALTHY"
+        },
+        "scheduled": true
+      },
+      "freeze": {
+        "invoked_by_controller": false,
+        "liveness": {
+          "errors": 0,
+          "function_name": "parlay-platform-soccer-auto-SoccerFreezeFunction-POXp2e3u5Hg2",
+          "healthy": true,
+          "invocations": 13,
+          "latest_error_metric_bucket_at": null,
+          "latest_metric_bucket_at": "2026-08-24T18:35:00+00:00",
+          "lookback_minutes": 10,
+          "reason": "HEALTHY"
+        },
+        "scheduled": true
+      },
+      "historical": {
+        "invoked_by_controller": false,
+        "liveness": {
+          "errors": 0,
+          "function_name": "parlay-platform-soccer-au-SoccerHistoricalFunction-SFTGZ2pWfUG2",
+          "healthy": true,
+          "invocations": 20,
+          "latest_error_metric_bucket_at": null,
+          "latest_metric_bucket_at": "2026-08-24T18:27:00+00:00",
+          "lookback_minutes": 130,
+          "reason": "HEALTHY"
+        },
+        "scheduled": true
+      },
+      "inventory": {
+        "invoked_by_controller": false,
+        "liveness": {
+          "errors": 0,
+          "function_name": "parlay-platform-soccer-aut-SoccerInventoryFunction-PBamjII6AKMy",
+          "healthy": true,
+          "invocations": 4,
+          "latest_error_metric_bucket_at": null,
+          "latest_metric_bucket_at": "2026-08-24T18:32:00+00:00",
+          "lookback_minutes": 45,
+          "reason": "HEALTHY"
+        },
+        "scheduled": true
+      },
+      "llm_analyst": {
+        "invoked_by_controller": false,
+        "liveness": {
+          "errors": 0,
+          "function_name": "parlay-platform-soccer-au-SoccerLlmAnalystFunction-qdW6oFhUcgLS",
+          "healthy": true,
+          "invocations": 4,
+          "latest_error_metric_bucket_at": null,
+          "latest_metric_bucket_at": "2026-08-24T18:22:00+00:00",
+          "lookback_minutes": 130,
+          "reason": "HEALTHY"
+        },
+        "scheduled": true
+      },
+      "settlement": {
+        "invoked_by_controller": false,
+        "liveness": {
+          "errors": 0,
+          "function_name": "parlay-platform-soccer-au-SoccerSettlementFunction-gEgL7wF6quPi",
+          "healthy": true,
+          "invocations": 4,
+          "latest_error_metric_bucket_at": null,
+          "latest_metric_bucket_at": "2026-08-24T18:33:00+00:00",
+          "lookback_minutes": 20,
+          "reason": "HEALTHY"
+        },
+        "scheduled": true
+      },
+      "trainer": {
+        "invoked_by_controller": false,
+        "liveness": {
+          "errors": 0,
+          "function_name": "parlay-platform-soccer-auto-SoccerTrainerFunction-TWBv5lurcuf3",
+          "healthy": true,
+          "invocations": 5,
+          "latest_error_metric_bucket_at": null,
+          "latest_metric_bucket_at": "2026-08-24T18:08:00+00:00",
+          "lookback_minutes": 780,
+          "reason": "HEALTHY"
+        },
+        "scheduled": true
+      }
+    },
+    "all_component_liveness_complete": true,
+    "authority": "SHADOW_LEARNING",
+    "automatic_prediction_allowed": false,
+    "component_liveness": {
+      "dispatch": {
+        "errors": 0,
+        "function_name": "parlay-platform-soccer-auto-SoccerDispatchFunction-1ifvUl8Yj5dK",
+        "healthy": true,
+        "invocations": 14,
+        "latest_error_metric_bucket_at": null,
+        "latest_metric_bucket_at": "2026-08-24T18:35:00+00:00",
+        "lookback_minutes": 10,
+        "reason": "HEALTHY"
+      },
+      "freeze": {
+        "errors": 0,
+        "function_name": "parlay-platform-soccer-auto-SoccerFreezeFunction-POXp2e3u5Hg2",
+        "healthy": true,
+        "invocations": 13,
+        "latest_error_metric_bucket_at": null,
+        "latest_metric_bucket_at": "2026-08-24T18:35:00+00:00",
+        "lookback_minutes": 10,
+        "reason": "HEALTHY"
+      },
+      "historical": {
+        "errors": 0,
+        "function_name": "parlay-platform-soccer-au-SoccerHistoricalFunction-SFTGZ2pWfUG2",
+        "healthy": true,
+        "invocations": 20,
+        "latest_error_metric_bucket_at": null,
+        "latest_metric_bucket_at": "2026-08-24T18:27:00+00:00",
+        "lookback_minutes": 130,
+        "reason": "HEALTHY"
+      },
+      "inventory": {
+        "errors": 0,
+        "function_name": "parlay-platform-soccer-aut-SoccerInventoryFunction-PBamjII6AKMy",
+        "healthy": true,
+        "invocations": 4,
+        "latest_error_metric_bucket_at": null,
+        "latest_metric_bucket_at": "2026-08-24T18:32:00+00:00",
+        "lookback_minutes": 45,
+        "reason": "HEALTHY"
+      },
+      "llm_analyst": {
+        "errors": 0,
+        "function_name": "parlay-platform-soccer-au-SoccerLlmAnalystFunction-qdW6oFhUcgLS",
+        "healthy": true,
+        "invocations": 4,
+        "latest_error_metric_bucket_at": null,
+        "latest_metric_bucket_at": "2026-08-24T18:22:00+00:00",
+        "lookback_minutes": 130,
+        "reason": "HEALTHY"
+      },
+      "settlement": {
+        "errors": 0,
+        "function_name": "parlay-platform-soccer-au-SoccerSettlementFunction-gEgL7wF6quPi",
+        "healthy": true,
+        "invocations": 4,
+        "latest_error_metric_bucket_at": null,
+        "latest_metric_bucket_at": "2026-08-24T18:33:00+00:00",
+        "lookback_minutes": 20,
+        "reason": "HEALTHY"
+      },
+      "trainer": {
+        "errors": 0,
+        "function_name": "parlay-platform-soccer-auto-SoccerTrainerFunction-TWBv5lurcuf3",
+        "healthy": true,
+        "invocations": 5,
+        "latest_error_metric_bucket_at": null,
+        "latest_metric_bucket_at": "2026-08-24T18:08:00+00:00",
+        "lookback_minutes": 780,
+        "reason": "HEALTHY"
+      }
+    },
+    "component_liveness_complete": true,
+    "consecutive_failures": 0,
+    "counts": {
+      "admissibility_certificates": 34,
+      "competitions": 67,
+      "events": 1000,
+      "locks": 86,
+      "models": 0,
+      "predictions": 0,
+      "settlement_table_items": 358,
+      "settlements": 324,
+      "snapshot_slots": 394,
+      "training_rows_ready": 9
+    },
+    "counts_are_lower_bounds_at": 1000,
+    "distributed_rate_limit_state": {
+      "PK": "RATE_LIMIT",
+      "SK": "ODDS_API_REQUESTS",
+      "burst_capacity": 1,
+      "configured_rps": 3,
+      "entity_type": "SOCCER_DISTRIBUTED_RATE_LIMIT_STATE",
+      "last_granted_slot_ms": 1787596532498,
+      "last_operation": "sports/soccer_chile_campeonato/events/82cf39d47afb8c88c83a92924ecdeb61/odds",
+      "last_provider_attempt": 1,
+      "minimum_spacing_ms": 334,
+      "next_allowed_ms": 1787596532832,
+      "updated_at": "2026-08-24T18:35:32.498000Z"
+    },
+    "entity_type": "SOCCER_AUTONOMY_STATE",
+    "failures": [],
+    "historical_backfill": {
+      "calls_completed": 473,
+      "completed_cursor_rows": 0,
+      "cursor_rows": 17,
+      "cursors_truncated": false,
+      "enabled": true,
+      "historical_training_rows": 8,
+      "latest_progress_at": "2026-08-24T18:17:24.145145Z",
+      "mode": "RAW_ARCHIVE_PLUS_AUTHORITATIVE_T45",
+      "state": "RUNNING",
+      "supervised_materialization": {
+        "authoritative_settlements": 10,
+        "classified_authoritative_settlements": 10,
+        "conflict_blocked_authoritative_settlements": 0,
+        "duplicate_training_eligible_locks": 0,
+        "existing_historical_training_locks": 8,
+        "existing_live_training_locks": 1,
+        "existing_training_eligible_locks": 9,
+        "historical_training_manifest_digest": "e6c24fc2617a81e96a0767faa6e2799e4a6aab38c07358231fd5a840858cbfb6",
+        "historical_training_manifest_version": "soccer-auto-historical-training-manifest-v1",
+        "historical_training_rows": 8,
+        "ineligible_validated_settlements": 314,
+        "invalid_existing_lock_reasons": {},
+        "invalid_existing_locks": 0,
+        "label_policy": "Only immutable, trainer-eligible The Odds API final-score settlements are admitted; regulation-ambiguous results and older odds-only archives remain training-ineligible.",
+        "latest_progress_at": "2026-08-24T18:08:23.909800Z",
+        "materialized_rows": 8,
+        "mode": "AUTHORITATIVE_RESULT_JOINED_T45",
+        "nontraining_live_lock_reasons": {
+          "live_provenance": 4,
+          "lock_ineligible": 2
+        },
+        "nontraining_live_locks": 6,
+        "pending_authoritative_settlements": 0,
+        "state_query_pages": 1,
+        "state_rows": 14,
+        "state_rows_truncated": false,
+        "terminal_authoritative_settlements": 1,
+        "validated_settlements": 324
+      },
+      "training_note": "Recent rows are admitted only after immutable Odds API final-score evidence is joined to a point-in-time T45 snapshot; older odds-only archives remain training-ineligible."
+    },
+    "latest_quota": {
+      "PK": "QUOTA",
+      "SK": "OBSERVED#2026-08-24T18:35:32.617687Z#ddde37136c57",
+      "entity_type": "SOCCER_AUTO_QUOTA_OBSERVATION",
+      "expires_at": 1795372532,
+      "last_cost": 36,
+      "observed_at": "2026-08-24T18:35:32.617687Z",
+      "operation": "event_odds",
+      "remaining": 24828533,
+      "used": 171467
+    },
+    "llm_analyst": {
+      "analyses": 0,
+      "configured": true,
+      "fresh": false,
+      "last_attempt": {
+        "PK": "LLM_ANALYSIS",
+        "SK": "LAST_ATTEMPT",
+        "attempt_id": "2026-08-24T18:08:45.082075Z#7df4d84578c5456a8fab5838d535625b",
+        "attempt_started_at": "2026-08-24T18:08:45.082075Z",
+        "attempt_started_order": 1787594925082075,
+        "attempted_model_ids": [
+          "us.amazon.nova-2-lite-v1:0",
+          "mistral.ministral-3-14b-instruct",
+          "us.meta.llama4-scout-17b-instruct-v1:0",
+          "us.meta.llama4-maverick-17b-instruct-v1:0",
+          "global.amazon.nova-2-lite-v1:0",
+          "us.amazon.nova-pro-v1:0",
+          "us.amazon.nova-lite-v1:0",
+          "us.amazon.nova-micro-v1:0"
+        ],
+        "context_byte_count": 2706,
+        "entity_type": "SOCCER_LLM_ATTEMPT",
+        "expires_at": 1790186929,
+        "max_output_tokens": 384,
+        "model_errors": [
+          {
+            "category": "DAILY_TOKEN_QUOTA",
+            "error_code": "ThrottlingException",
+            "http_status": 429,
+            "message": "Too many tokens per day, please wait before trying again.",
+            "model_id": "us.amazon.nova-2-lite-v1:0",
+            "request_id": "7c26f68f-0338-4723-bbad-8ab0d1bd1e74"
+          },
+          {
+            "category": "DAILY_TOKEN_QUOTA",
+            "error_code": "ThrottlingException",
+            "http_status": 429,
+            "message": "Too many tokens per day, please wait before trying again.",
+            "model_id": "mistral.ministral-3-14b-instruct",
+            "request_id": "1de63b6f-c09a-490c-b883-791f2cd4fd03"
+          },
+          {
+            "category": "DAILY_TOKEN_QUOTA",
+            "error_code": "ThrottlingException",
+            "http_status": 429,
+            "message": "Too many tokens per day, please wait before trying again.",
+            "model_id": "us.meta.llama4-scout-17b-instruct-v1:0",
+            "request_id": "f643fb79-d110-4a47-9423-3ae41151bc81"
+          },
+          {
+            "category": "DAILY_TOKEN_QUOTA",
+            "error_code": "ThrottlingException",
+            "http_status": 429,
+            "message": "Too many tokens per day, please wait before trying again.",
+            "model_id": "us.meta.llama4-maverick-17b-instruct-v1:0",
+            "request_id": "f9b0fdd1-567a-4536-82bb-5b3ee639504a"
+          },
+          {
+            "category": "DAILY_TOKEN_QUOTA",
+            "error_code": "ThrottlingException",
+            "http_status": 429,
+            "message": "Too many tokens per day, please wait before trying again.",
+            "model_id": "global.amazon.nova-2-lite-v1:0",
+            "request_id": "431c8d7c-e94a-41ef-b96e-6bcbdb22e184"
+          },
+          {
+            "category": "DAILY_TOKEN_QUOTA",
+            "error_code": "ThrottlingException",
+            "http_status": 429,
+            "message": "Too many tokens per day, please wait before trying again.",
+            "model_id": "us.amazon.nova-pro-v1:0",
+            "request_id": "e47d9911-400a-4d28-84ff-c5c94cbdad76"
+          },
+          {
+            "category": "DAILY_TOKEN_QUOTA",
+            "error_code": "ThrottlingException",
+            "http_status": 429,
+            "message": "Too many tokens per day, please wait before trying again.",
+            "model_id": "us.amazon.nova-lite-v1:0",
+            "request_id": "f462bd37-71ec-4403-9f38-83e9d95e01f0"
+          },
+          {
+            "category": "DAILY_TOKEN_QUOTA",
+            "error_code": "ThrottlingException",
+            "http_status": 429,
+            "message": "Too many tokens per day, please wait before trying again.",
+            "model_id": "us.amazon.nova-micro-v1:0",
+            "request_id": "76613785-b23e-4fef-b90d-32ba77bd38e2"
+          }
+        ],
+        "model_id": "us.amazon.nova-2-lite-v1:0",
+        "observed_at": "2026-08-24T18:08:49.309074Z",
+        "reason": "BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE",
+        "request_byte_count": 4342,
+        "retry_after": "2026-08-25T00:08:49.309074Z",
+        "status": "DEFERRED_QUOTA"
+      }
+    },
+    "model": {
+      "automatic_prediction_allowed": false,
+      "challenger_digests": [],
+      "champion_digest": null,
+      "prospective_challengers": 0
+    },
+    "ok": true,
+    "operational_warnings": [
+      "llm_analyst:daily_token_quota_deferred",
+      "evidence_health:availability_warnings"
+    ],
+    "prediction_and_training_health": {
+      "availability_warnings": 4,
+      "contract_version": "soccer-auto-health-proof-v1",
+      "healthy": true,
+      "integrity_failures": 0,
+      "observed_at": "2026-08-24T18:36:49.793995Z",
+      "proof_complete": true,
+      "public_authority": {
+        "binding_integrity_failures": 0,
+        "duplicate_public_authorities": 0,
+        "legacy_t45_rows_suppressed": 0,
+        "public_prediction_after_commit_deadline": 0,
+        "public_prediction_after_cutoff": 0,
+        "t10_public_rows": 0
+      },
+      "scan_truncated": false,
+      "state": "DEGRADED_AVAILABILITY",
+      "t10_decisions": {
+        "capture_lead_seconds": 90,
+        "commit_headroom_seconds": 10,
+        "due_events": 16,
+        "invalid_locks": 0,
+        "invalid_sample": [],
+        "late_discovered_due_events": 0,
+        "missed_locks": 3,
+        "missing_locks": 3,
+        "missing_sample": [
+          "EVENT#soccer_germany_dfb_pokal#9c38455237e91d888607e09268a54369",
+          "EVENT#soccer_spain_segunda_division#01ee1a08d04bfdee4284dfc5689e609d",
+          "EVENT#soccer_sweden_superettan#8a8102dcf34b9433db6730e7c095b0bc"
+        ],
+        "open_capture_events": 0,
+        "publication_cutoff_minutes": 10,
+        "valid_or_present_locks": 13
+      },
+      "training": {
+        "admissibility_certificates": 34,
+        "admissible_final_score_rows": 10,
+        "conversion_backlog": 1,
+        "duplicate_training_eligible_locks": 0,
+        "exclusion_reasons": {
+          "live:live_provenance": 4,
+          "live:lock_ineligible": 2,
+          "no_t45_lock": 1
+        },
+        "invalid_existing_locks": 0,
+        "latest_certificate_at": "2026-08-24T18:13:18.429243Z",
+        "nontraining_live_locks": 6,
+        "state": "CONVERTING_ADMISSIBLE_SETTLEMENTS",
+        "training_rows_ready": 9,
+        "validated_final_score_rows": 324
+      }
+    },
+    "promotion_blocked": false,
+    "provider_429_telemetry": {
+      "count_cap": 1000,
+      "count_is_lower_bound": false,
+      "latest_rows": [],
+      "lookback_hours": 24,
+      "rolling_count": 0
+    },
+    "queues": {
+      "collection": 0,
+      "dead_letter": 0
+    },
+    "reason": "ACCUMULATING_OR_EVALUATING_TRAINING_EVIDENCE",
+    "settlement_conflict_state": {
+      "blocking_records_examined": 0,
+      "count": 0,
+      "count_is_lower_bound": false,
+      "ignored_nonblocking_records": 102,
+      "latest_observed_at": null,
+      "latest_record_observed_at": "2026-08-14T04:08:19.596686Z",
+      "reason_counts": {},
+      "records_examined": 102,
+      "training_labels_quarantined": 0
+    },
+    "settlement_conflicts": 0,
+    "shared_provider_safety": {
+      "burst_capacity": 1,
+      "distributed_lease": true,
+      "fail_closed": true,
+      "minimum_spacing_ms": 334,
+      "quota_race_buffer_credits": 2000,
+      "shared_quota_reserve_percent": 0.0,
+      "soccer_request_limit_per_second": 3
+    },
+    "system": "soccer_auto",
+    "updated_at": "2026-08-24T18:36:49.793995Z",
+    "updated_at_epoch_ms": 1787596609793
+  },
+  "statusError": "",
+  "dlqClear": true,
+  "workerRestored": true,
+  "mappingRestored": true
+}
