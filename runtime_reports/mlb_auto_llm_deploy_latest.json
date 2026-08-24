@@ -1,14 +1,88 @@
 {
   "autonomousRules": [],
   "bedrockSmoke": {
-    "attemptedModelIds": [],
+    "attemptedModelIds": [
+      "openai.gpt-oss-20b-1:0",
+      "us-east-2::openai.gpt-oss-20b-1:0",
+      "us-west-2::openai.gpt-oss-20b-1:0",
+      "amazon.nova-lite-v1:0",
+      "us-east-2::amazon.nova-lite-v1:0",
+      "us-west-2::amazon.nova-lite-v1:0",
+      "amazon.nova-micro-v1:0",
+      "openai.gpt-oss-120b-1:0"
+    ],
     "bedrockAvailable": false,
-    "decisionAuthority": "AWS_ML_RANKED_ENSEMBLE",
-    "endpointFamily": "aws-ml-readonly-api",
-    "errors": [],
+    "decisionAuthority": "BEDROCK_LLM",
+    "endpointFamily": null,
+    "errors": [
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "openai.gpt-oss-20b-1:0",
+        "region": "us-east-1",
+        "routeId": "openai.gpt-oss-20b-1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "openai.gpt-oss-20b-1:0",
+        "region": "us-east-2",
+        "routeId": "us-east-2::openai.gpt-oss-20b-1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "openai.gpt-oss-20b-1:0",
+        "region": "us-west-2",
+        "routeId": "us-west-2::openai.gpt-oss-20b-1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "amazon.nova-lite-v1:0",
+        "region": "us-east-1",
+        "routeId": "amazon.nova-lite-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "amazon.nova-lite-v1:0",
+        "region": "us-east-2",
+        "routeId": "us-east-2::amazon.nova-lite-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "amazon.nova-lite-v1:0",
+        "region": "us-west-2",
+        "routeId": "us-west-2::amazon.nova-lite-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "amazon.nova-micro-v1:0",
+        "region": "us-east-1",
+        "routeId": "amazon.nova-micro-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "openai.gpt-oss-120b-1:0",
+        "region": "us-east-1",
+        "routeId": "openai.gpt-oss-120b-1:0"
+      }
+    ],
     "errorsBeforeSuccess": [],
-    "modelId": "INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble",
-    "ok": true
+    "modelId": null,
+    "ok": false
   },
   "conclusion": "FAIL",
   "jobStatus": "failure",
@@ -22,38 +96,11 @@
     "mlDecisionCount": 0,
     "modelAuthorityComplete": null,
     "modelDecisionCount": 0,
-    "ok": true,
+    "ok": null,
     "pickCount": 0,
-    "sourceStatus": {
-      "bigBallsDataPro": {
-        "events": 19,
-        "matchedGames": 10,
-        "missingGamePks": [],
-        "ok": true,
-        "scheduledGames": 10
-      },
-      "mlbStatsApi": {
-        "games": 10,
-        "matchedGames": 10,
-        "missingGamePks": [],
-        "ok": true,
-        "scheduledGames": 10
-      },
-      "theOddsApi": {
-        "events": 22,
-        "matchedGames": 10,
-        "missingGamePks": [],
-        "ok": true,
-        "quota": {
-          "last": "15",
-          "remaining": "24752125",
-          "used": "247875"
-        },
-        "scheduledGames": 10
-      }
-    },
-    "status": "COLLECTING",
-    "threeSourceCoverageComplete": true
+    "sourceStatus": {},
+    "status": null,
+    "threeSourceCoverageComplete": null
   },
   "publicStatus": {
     "cardLeadMinutesBeforeSecondGame": null,
@@ -62,11 +109,11 @@
     "targetDailyAccuracy": null,
     "threeSourcePolicy": null
   },
-  "publishedAtUtc": "2026-08-24T22:56:34.005590+00:00",
+  "publishedAtUtc": "2026-08-24T23:05:00.008681+00:00",
   "runAttempt": "1",
-  "runId": "32786522982",
+  "runId": "32787524251",
   "secretExposed": false,
   "service": "mlb-auto-llm",
-  "sourceSha": "50254ac6780e047d0803229e4d92716087577055",
+  "sourceSha": "135ea6fbd769b6777719cb67073710acd5e0186d",
   "workflow": "Deploy MLB Auto LLM"
 }
