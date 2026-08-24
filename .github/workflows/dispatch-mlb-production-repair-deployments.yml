@@ -1,0 +1,32 @@
+name: Dispatch verified MLB production repair deployments
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/dispatch-mlb-production-repair-deployments.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch isolated MLB AUTO deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-mlb-auto-llm.yml --ref main
+
+      - name: Dispatch root production deployment and verifier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy.yml --ref main
+
+      - name: Record dispatched source
+        run: |
+          echo "source_sha=$(gh api repos/${GITHUB_REPOSITORY}/commits/main --jq .sha)"
+        env:
+          GH_TOKEN: ${{ github.token }}
