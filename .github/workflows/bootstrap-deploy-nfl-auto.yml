@@ -29,19 +29,15 @@ jobs:
       BBD_KEY_7: ${{ secrets.BIG_BALLS_DATA_KEY }}
       BBD_KEY_8: ${{ secrets.BBD_API_TOKEN }}
       BBD_KEY_9: ${{ secrets.BBS_API_KEY }}
-
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - uses: aws-actions/setup-sam@v2
-
       - name: Restore exact tested NFL source
         run: |
           set -euo pipefail
@@ -50,7 +46,6 @@ jobs:
           test -f nfl-auto-template.yaml
           test -f nfl_auto/controller.py
           test -f scripts/verify_nfl_auto_bundle.py
-
       - name: Select provider credentials
         run: |
           set -euo pipefail
@@ -62,14 +57,12 @@ jobs:
           done
           test -n "$selected" || { echo '::error::No recognized BBD API secret'; exit 1; }
           echo "NFL_BBD_KEY=$selected" >> "$GITHUB_ENV"
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-
       - name: Verify isolated source and contracts
         run: |
           set -euo pipefail
@@ -80,11 +73,9 @@ jobs:
           sam validate --template-file nfl-auto-template.yaml --lint
           ! grep -Eqi 'soccer_auto|tennis|mlb_auto|parlay_platform_' nfl-auto-template.yaml
           aws sts get-caller-identity
-
       - name: Build isolated artifact
         run: sam build --no-cached --template-file nfl-auto-template.yaml
-
-      - name: Recover unsuccessful first creation
+      - name: Deploy isolated NFL Auto stack
         run: |
           set -euo pipefail
           stack_name=parlay-platform-nfl-auto
@@ -97,13 +88,9 @@ jobs:
           elif [[ "$status" == *"_FAILED" ]]; then
             echo "::error::NFL stack requires operator review: $status"; exit 1
           fi
-
-      - name: Deploy isolated NFL Auto stack
-        run: |
-          set -euo pipefail
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
-            --stack-name parlay-platform-nfl-auto \
+            --stack-name "$stack_name" \
             --region "$AWS_REGION_VALUE" \
             --resolve-s3 \
             --capabilities CAPABILITY_IAM \
@@ -121,31 +108,22 @@ jobs:
               MinAuditRows='180' \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
-
       - name: Prove runtime gates and start historical training
         run: |
           set -euo pipefail
           stack_name=parlay-platform-nfl-auto
           physical_function() {
-            aws cloudformation describe-stack-resource \
-              --stack-name "$stack_name" \
-              --logical-resource-id "$1" \
-              --region "$AWS_REGION_VALUE" \
-              --query 'StackResourceDetail.PhysicalResourceId' \
-              --output text
+            aws cloudformation describe-stack-resource --stack-name "$stack_name" --logical-resource-id "$1" --region "$AWS_REGION_VALUE" --query 'StackResourceDetail.PhysicalResourceId' --output text
           }
           autonomous=$(physical_function NflAutonomousFunction)
           live=$(physical_function NflLiveFunction)
-
           aws lambda invoke --function-name "$autonomous" --region "$AWS_REGION_VALUE" --cli-binary-format raw-in-base64-out --payload '{"action":"credential_smoke"}' /tmp/credentials.json >/tmp/credentials-meta.json
           aws lambda invoke --function-name "$live" --region "$AWS_REGION_VALUE" --cli-binary-format raw-in-base64-out --payload '{"action":"live_tick"}' /tmp/live.json >/tmp/live-meta.json
           aws lambda invoke --function-name "$autonomous" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"action":"autonomous_tick"}' /tmp/tick.json >/tmp/tick-meta.json
-
           python - <<'PY'
           import json
           for name in ('credentials','live','tick'):
-              meta=json.load(open(f'/tmp/{name}-meta.json'))
-              body=json.load(open(f'/tmp/{name}.json'))
+              meta=json.load(open(f'/tmp/{name}-meta.json')); body=json.load(open(f'/tmp/{name}.json'))
               assert not meta.get('FunctionError'), (name,meta,body)
               assert body.get('ok') is True, (name,body)
               print(name, json.dumps(body, sort_keys=True))
@@ -155,9 +133,7 @@ jobs:
           creds=json.load(open('/tmp/credentials.json'))
           assert creds.get('status') == 'PROVIDERS_AUTHENTICATED', creds
           PY
-
           status_url=$(aws cloudformation describe-stacks --stack-name "$stack_name" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='NflAutoStatusUrl'].OutputValue" --output text)
-          test -n "$status_url"
           curl --fail --retry 5 --retry-all-errors --retry-delay 5 "$status_url" | tee /tmp/nfl-status.json
           python - <<'PY'
           import json
@@ -169,7 +145,6 @@ jobs:
           print(json.dumps(s, indent=2, sort_keys=True))
           PY
           echo "NFL_STATUS_URL=$status_url" >> "$GITHUB_ENV"
-
       - name: Publish deployed NFL source to main
         run: |
           set -euo pipefail
@@ -181,13 +156,7 @@ jobs:
             git pull --rebase origin main
             git push origin HEAD:main
           fi
-
       - name: Deployment summary
         run: |
-          {
-            echo '## Isolated NFL Auto deployed'
-            echo
-            echo "Status URL: $NFL_STATUS_URL"
-            echo
-            echo 'Historical-only until 2026-09-09T04:00:00Z. Preseason collection and predictions remain disabled.'
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "NFL Auto deployed. Status URL: $NFL_STATUS_URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "Historical-only until 2026-09-09T04:00:00Z; preseason disabled." >> "$GITHUB_STEP_SUMMARY"
