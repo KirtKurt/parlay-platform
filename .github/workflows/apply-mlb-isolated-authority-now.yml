@@ -31,10 +31,13 @@ jobs:
           set -euo pipefail
           python scripts/repair_mlb_isolated_authority_boundary.py
           python scripts/authorize_mlb_auto_v2_handler.py
+          python scripts/repair_mlb_isolated_scope_identity.py
           python -m py_compile \
             scripts/verify_mlb_deploy_identity.py \
-            scripts/authorize_mlb_auto_v2_handler.py
+            scripts/authorize_mlb_auto_v2_handler.py \
+            scripts/repair_mlb_isolated_scope_identity.py
           grep -q 'orchestrator_v2.lambda_handler' scripts/verify_mlb_deploy_identity.py
+          grep -q 'ISOLATED_THREE_SOURCE_BOUNDARY_ENVIRONMENT' scripts/verify_mlb_deploy_identity.py
           git diff --check
       - name: Publish repaired verifier
         run: |
@@ -46,7 +49,7 @@ jobs:
             echo 'Verifier already repaired.'
             exit 0
           fi
-          git commit -m 'Authorize strict isolated MLB AUTO v2 handler'
+          git commit -m 'Scope isolated MLB authority independently of readiness'
           for attempt in 1 2 3 4 5; do
             if git push origin HEAD:main; then exit 0; fi
             test "$attempt" != 5 || exit 1
@@ -55,4 +58,4 @@ jobs:
             sleep $((attempt * 2))
           done
 
-# Trigger revision: 2026-08-24T20:02Z
+# Trigger revision: 2026-08-24T20:18Z
