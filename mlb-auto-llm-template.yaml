@@ -52,7 +52,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: mlb_auto_llm/
-      Handler: handler.lambda_handler
+      Handler: orchestrator.lambda_handler
       Runtime: python3.11
       Timeout: 900
       MemorySize: 3072
