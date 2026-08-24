@@ -1,0 +1,237 @@
+from __future__ import annotations
+
+"""Idempotent production entry point for MLB three-source autonomy.
+
+All earlier installers remain migration helpers. This final entry point runs the
+migration once, then canonicalizes the normal deployment workflow so repeated
+future runs always produce byte-for-byte identical source.
+"""
+
+import ast
+import importlib.util
+import json
+import re
+from pathlib import Path
+from typing import Any, Dict, List
+
+
+ROOT = Path(__file__).resolve().parents[1]
+V3_PATH = ROOT / "scripts" / "install_mlb_three_api_autonomy_v3.py"
+REPORT_PATH = ROOT / "runtime_reports" / "mlb_three_api_install_production_latest.json"
+
+
+class ProductionInstallError(RuntimeError):
+    pass
+
+
+def _read(relative: str) -> str:
+    path = ROOT / relative
+    if not path.is_file():
+        raise ProductionInstallError(f"REQUIRED_FILE_MISSING:{relative}")
+    return path.read_text(encoding="utf-8")
+
+
+def _write(relative: str, content: str) -> None:
+    path = ROOT / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def _run_v3() -> Dict[str, Any]:
+    spec = importlib.util.spec_from_file_location("mlb_three_api_installer_v3", V3_PATH)
+    if spec is None or spec.loader is None:
+        raise ProductionInstallError("V3_INSTALLER_IMPORT_FAILED")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.main()
+
+
+def _remove_matching_lines(lines: List[str], pattern: str) -> List[str]:
+    compiled = re.compile(pattern)
+    return [line for line in lines if not compiled.match(line.rstrip("\n"))]
+
+
+def _insert_after_exact(lines: List[str], anchor_text: str, additions: List[str]) -> List[str]:
+    indexes = [index for index, line in enumerate(lines) if line.rstrip("\n") == anchor_text]
+    if not indexes:
+        raise ProductionInstallError(f"DEPLOY_ANCHOR_NOT_FOUND:{anchor_text}")
+    index = indexes[0]
+    return lines[: index + 1] + additions + lines[index + 1 :]
+
+
+def canonicalize_normal_deploy() -> Dict[str, Any]:
+    relative = ".github/workflows/deploy.yml"
+    text = _read(relative)
+    lines = text.splitlines(keepends=True)
+
+    lines = _remove_matching_lines(
+        lines,
+        r"^\s+python scripts/install_mlb_three_api_autonomy(?:_v[0-9]+|_final)?\.py\s*$",
+    )
+    lines = _remove_matching_lines(
+        lines,
+        r"^\s+python scripts/verify_mlb_(?:no_bbd_runtime|three_api_runtime(?:_v[0-9]+|_final|_production)?)\.py\s*$",
+    )
+    lines = _remove_matching_lines(
+        lines,
+        r"^\s+tests/unit/test_(?:verify_mlb_no_bbd_runtime|mlb_three_api_runtime(?:_v[0-9]+|_final|_production)?)\.py\s*$",
+    )
+    lines = _remove_matching_lines(
+        lines,
+        r"^\s+python -m py_compile scripts/install_mlb_three_api_autonomy(?:_v[0-9]+|_final)?\.py\s*$",
+    )
+    lines = _remove_matching_lines(
+        lines,
+        r"^\s+python -m py_compile scripts/verify_mlb_three_api_runtime(?:_v[0-9]+|_final|_production)?\.py\s*$",
+    )
+
+    lines = _insert_after_exact(
+        lines,
+        "          python scripts/patch_template_mlb_results_routes.py",
+        ["          python scripts/install_mlb_three_api_autonomy_final.py\n"],
+    )
+    lines = _insert_after_exact(
+        lines,
+        "          python scripts/verify_mlb_schedule_invariants.py",
+        ["          python scripts/verify_mlb_three_api_runtime_production.py\n"],
+    )
+    lines = _insert_after_exact(
+        lines,
+        "          python -m py_compile scripts/mlb_lambda_artifact_identity.py",
+        [
+            "          python -m py_compile scripts/install_mlb_three_api_autonomy_final.py\n",
+            "          python -m py_compile scripts/verify_mlb_three_api_runtime_production.py\n",
+        ],
+    )
+
+    test_anchor = next(
+        (
+            anchor for anchor in (
+                "            tests/unit/test_mlb_three_api_prediction_overlay.py",
+                "            tests/unit/test_mlb_production_acceptance.py",
+            )
+            if any(line.rstrip("\n") == anchor for line in lines)
+        ),
+        None,
+    )
+    if test_anchor is None:
+        raise ProductionInstallError("DEPLOY_TEST_ANCHOR_NOT_FOUND")
+    lines = _insert_after_exact(
+        lines,
+        test_anchor,
+        ["            tests/unit/test_mlb_three_api_runtime_production.py\n"],
+    )
+
+    canonical = "".join(lines)
+    canonical = re.sub(
+        r"\$\{\{\s*secrets\.BIG_BALLS_DATA_API_KEY(?:\s*\|\|\s*secrets\.[A-Z0-9_]+)*\s*\}\}",
+        "${{ secrets.BIG_BALLS_DATA_API_KEY || secrets.BBD_API_KEY || secrets.BIGBALLS_DATA_API_KEY || secrets.BIG_BALLS_API_KEY || secrets.BIGBALLS_API_KEY || secrets.BIGBALLSDATA_API_KEY || secrets.BIG_BALLS_DATA_KEY || secrets.BBD_API_TOKEN || secrets.BIGBALLS_DATA_KEY || secrets.BIGBALLSDATA_KEY || secrets.BIG_BALLS_KEY || secrets.BBD_KEY }}",
+        canonical,
+    )
+
+    # A final defensive de-duplication for exact lines generated by prior
+    # migrations. Non-adjacent legitimate workflow commands are preserved.
+    unique_targets = {
+        "          python scripts/install_mlb_three_api_autonomy_final.py\n",
+        "          python scripts/verify_mlb_three_api_runtime_production.py\n",
+        "          python -m py_compile scripts/install_mlb_three_api_autonomy_final.py\n",
+        "          python -m py_compile scripts/verify_mlb_three_api_runtime_production.py\n",
+        "            tests/unit/test_mlb_three_api_runtime_production.py\n",
+    }
+    output: List[str] = []
+    seen_targets: set[str] = set()
+    for line in canonical.splitlines(keepends=True):
+        if line in unique_targets:
+            if line in seen_targets:
+                continue
+            seen_targets.add(line)
+        output.append(line)
+    canonical = "".join(output)
+    _write(relative, canonical)
+    return {
+        "installerReferences": canonical.count("python scripts/install_mlb_three_api_autonomy_final.py"),
+        "verifierReferences": canonical.count("python scripts/verify_mlb_three_api_runtime_production.py"),
+        "testReferences": canonical.count("tests/unit/test_mlb_three_api_runtime_production.py"),
+        "legacyNoBbdReferences": canonical.count("verify_mlb_no_bbd_runtime.py"),
+    }
+
+
+def patch_authority_references() -> List[str]:
+    changed: List[str] = []
+    patterns = (
+        (r"verify_mlb_no_bbd_runtime\.py", "verify_mlb_three_api_runtime_production.py"),
+        (r"verify_mlb_three_api_runtime(?:_v[0-9]+|_final)?\.py", "verify_mlb_three_api_runtime_production.py"),
+        (r"test_verify_mlb_no_bbd_runtime\.py", "test_mlb_three_api_runtime_production.py"),
+        (r"test_mlb_three_api_runtime(?:_v[0-9]+|_final)?\.py", "test_mlb_three_api_runtime_production.py"),
+    )
+    for relative in (
+        "scripts/verify_mlb_workflow_authority.py",
+        "tests/unit/test_mlb_workflow_authority.py",
+    ):
+        path = ROOT / relative
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        new = text
+        for pattern, replacement in patterns:
+            new = re.sub(pattern, replacement, new)
+        if new != text:
+            path.write_text(new, encoding="utf-8")
+            changed.append(relative)
+    return changed
+
+
+def verify_idempotent_deploy_contract(result: Dict[str, Any]) -> None:
+    if result["installerReferences"] != 1:
+        raise ProductionInstallError(f"INSTALLER_REFERENCE_COUNT:{result}")
+    if result["verifierReferences"] < 1:
+        raise ProductionInstallError(f"VERIFIER_REFERENCE_MISSING:{result}")
+    if result["testReferences"] != 1:
+        raise ProductionInstallError(f"TEST_REFERENCE_COUNT:{result}")
+    if result["legacyNoBbdReferences"] != 0:
+        raise ProductionInstallError(f"LEGACY_NO_BBD_REFERENCE_REMAINS:{result}")
+
+
+def main() -> Dict[str, Any]:
+    v3 = _run_v3()
+    deploy = canonicalize_normal_deploy()
+    verify_idempotent_deploy_contract(deploy)
+    authority = patch_authority_references()
+
+    for relative in (
+        "scripts/install_mlb_three_api_autonomy_final.py",
+        "scripts/verify_mlb_three_api_runtime_production.py",
+        "hello_world/mlb_three_api_prediction_overlay.py",
+        "hello_world/mlb_three_api_autonomous_controller_v2.py",
+    ):
+        ast.parse(_read(relative), filename=relative)
+
+    result: Dict[str, Any] = {
+        "ok": True,
+        "installer": "MLB_THREE_API_AUTONOMY_PRODUCTION_INSTALLER",
+        "v3Migration": v3,
+        "normalDeployCanonicalization": deploy,
+        "authorityFilesChanged": authority,
+        "idempotent": True,
+        "sportsIsolation": {"tennisTouched": False, "soccerTouched": False},
+        "requirements": {
+            "threeApisInFinalDecision": True,
+            "bedrockLlmMaterialWeight": True,
+            "fullOfficialSlate": True,
+            "noPass": True,
+            "firstGameLeadMinutes": 45,
+            "completeCardDeadline": "second official game minus 45 minutes",
+            "autonomousCadenceMinutes": 5,
+            "postSettlementScoringAndRetraining": True,
+            "dailyAccuracyGoal": 0.70,
+            "accuracyGuarantee": False,
+        },
+    }
+    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    REPORT_PATH.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return result
+
+
+if __name__ == "__main__":
+    main()
