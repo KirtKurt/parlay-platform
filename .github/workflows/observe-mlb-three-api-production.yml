@@ -1,0 +1,76 @@
+name: Observe MLB Three-API Production
+
+on:
+  workflow_run:
+    workflows:
+      - Install Deploy and Accept MLB Three-API Production
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Capture authoritative production result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --json databaseId,name,status,conclusion,createdAt,startedAt,updatedAt,headSha,event,jobs,url \
+            > /tmp/production-run.json
+          gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed \
+            > runtime_reports/mlb_three_api_production_failed_log.txt 2>&1 || true
+          python - <<'PY'
+          import json
+          from datetime import datetime,timezone
+          from pathlib import Path
+          run=json.load(open('/tmp/production-run.json'))
+          log_path=Path('runtime_reports/mlb_three_api_production_failed_log.txt')
+          log=log_path.read_text(errors='replace') if log_path.exists() else ''
+          jobs=[]
+          for job in run.get('jobs') or []:
+              jobs.append({
+                  'name':job.get('name'),'status':job.get('status'),'conclusion':job.get('conclusion'),
+                  'startedAt':job.get('startedAt'),'completedAt':job.get('completedAt'),
+                  'steps':[{'number':step.get('number'),'name':step.get('name'),'status':step.get('status'),'conclusion':step.get('conclusion')} for step in job.get('steps') or []],
+              })
+          acceptance_path=Path('runtime_reports/mlb_three_api_production_acceptance_latest.json')
+          acceptance=None
+          if acceptance_path.exists():
+              try: acceptance=json.loads(acceptance_path.read_text())
+              except Exception: acceptance=None
+          result={
+              'observedAtUtc':datetime.now(timezone.utc).isoformat(),
+              'workflow':run.get('name'),'runId':run.get('databaseId'),'status':run.get('status'),
+              'conclusion':run.get('conclusion'),'headSha':run.get('headSha'),'event':run.get('event'),
+              'createdAt':run.get('createdAt'),'startedAt':run.get('startedAt'),'updatedAt':run.get('updatedAt'),'url':run.get('url'),
+              'jobs':jobs,'failedLogPresent':bool(log.strip()),'failedLogTail':log[-16000:] if log.strip() else None,
+              'productionAcceptance':acceptance,
+          }
+          Path('runtime_reports/mlb_three_api_production_observer_latest.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(result,indent=2,sort_keys=True))
+          PY
+
+      - name: Publish observer record
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git pull --rebase origin main || true
+          git add runtime_reports/mlb_three_api_production_observer_latest.json \
+                  runtime_reports/mlb_three_api_production_failed_log.txt
+          if ! git diff --cached --quiet; then
+            git commit -m 'Publish authoritative MLB three-source production result [skip ci]'
+            git push origin HEAD:main
+          fi
