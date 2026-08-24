@@ -153,9 +153,15 @@ jobs:
       - name: Commit repaired production source to main
         run: |
           set -euo pipefail
-          # Workflow files were verified above, but this token intentionally has
-          # no workflow-write scope. Revert those generated diffs so the runner
-          # can land only the already-tested runtime, template, and unit test.
+          # Preserve exact, tested workflow rewrites as ordinary report files so
+          # a workflow-authorized connector can install them byte-for-byte.
+          mkdir -p runtime_reports
+          cp .github/workflows/deploy-mlb-auto-llm.yml \
+            runtime_reports/deploy-mlb-auto-llm.patched.yml
+          cp .github/workflows/verify-mlb-auto-production-chain.yml \
+            runtime_reports/verify-mlb-auto-production-chain.patched.yml
+
+          # This runner token intentionally has no workflow-write scope.
           git checkout -- \
             .github/workflows/deploy-mlb-auto-llm.yml \
             .github/workflows/verify-mlb-auto-production-chain.yml
@@ -166,7 +172,9 @@ jobs:
             mlb_auto_llm/ml_authority_smoke.py \
             mlb_auto_llm/orchestrator_v3.py \
             tests/unit/test_mlb_auto_ml_authority.py \
-            mlb-auto-llm-template.yaml
+            mlb-auto-llm-template.yaml \
+            runtime_reports/deploy-mlb-auto-llm.patched.yml \
+            runtime_reports/verify-mlb-auto-production-chain.patched.yml
           git diff --cached --quiet && exit 0
           git commit -m 'Repair MLB AUTO with Bedrock-first AWS ML authority fallback'
           for attempt in 1 2 3 4 5; do
