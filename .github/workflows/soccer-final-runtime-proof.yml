@@ -1,0 +1,60 @@
+name: Soccer Final Runtime Proof
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/soccer-final-runtime-proof.yml']
+permissions:
+  contents: write
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Read final Soccer runtime state
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          stack=parlay-platform-soccer-auto
+          physical() { aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id "$1" --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text; }
+          worker=$(physical SoccerCollectionWorkerFunction); dlq=$(physical SoccerCollectionDeadLetterQueue)
+          dlq_url="$dlq"; [[ "$dlq" != http* ]] && dlq_url=$(aws sqs get-queue-url --queue-name "$dlq" --region "$REGION" --query QueueUrl --output text)
+          aws sqs get-queue-attributes --queue-url "$dlq_url" --region "$REGION" --attribute-names ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible ApproximateNumberOfMessagesDelayed --output json >/tmp/dlq.json
+          aws lambda get-function-configuration --function-name "$worker" --region "$REGION" --query '{Handler:Handler,State:State,LastUpdateStatus:LastUpdateStatus,LastModified:LastModified}' --output json >/tmp/worker.json
+          mapping=$(aws lambda list-event-source-mappings --function-name "$worker" --region "$REGION" --query 'EventSourceMappings[0].UUID' --output text)
+          aws lambda get-event-source-mapping --uuid "$mapping" --region "$REGION" --query '{State:State,ScalingConfig:ScalingConfig,FunctionResponseTypes:FunctionResponseTypes}' --output json >/tmp/mapping.json
+          start_ms=$(( ($(date +%s)-180)*1000 ))
+          aws logs filter-log-events --log-group-name "/aws/lambda/$worker" --region "$REGION" --start-time "$start_ms" --filter-pattern '?DISTRIBUTED_RATE_LIMIT_CONTENTION ?Unauthorized ?HTTP_401' --limit 100 --output json >/tmp/errors.json || echo '{"events":[]}' >/tmp/errors.json
+          status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" --output text)
+          curl --fail --silent --show-error --max-time 60 "$status_url" >/tmp/status.json
+          python - <<'PY'
+          import json,pathlib,datetime
+          load=lambda p:json.load(open(p))
+          d=load('/tmp/dlq.json');w=load('/tmp/worker.json');m=load('/tmp/mapping.json');e=load('/tmp/errors.json');s=load('/tmp/status.json')
+          a=d.get('Attributes') or {}
+          r={'proofType':'SOCCER_FINAL_RUNTIME_PROOF','observedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'deadLetterQueue':d,'worker':w,'mapping':m,'targetedWorkerEvents':e.get('events') or [],'publicStatus':s}
+          r['dlqClear']=all(int(a.get(k) or 0)==0 for k in ('ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible','ApproximateNumberOfMessagesDelayed'))
+          r['workerHealthy']=w.get('Handler')=='soccer_auto.collector.worker_handler' and w.get('State')=='Active' and w.get('LastUpdateStatus')=='Successful'
+          r['mappingHealthy']=m.get('State')=='Enabled' and int((m.get('ScalingConfig') or {}).get('MaximumConcurrency') or 0)==3
+          r['noFreshTargetedErrors']=len(r['targetedWorkerEvents'])==0
+          r['controllerFailuresClear']=not (s.get('failures') or []) and int(s.get('consecutive_failures') or 0)==0
+          pathlib.Path('runtime_reports/soccer_final_runtime_proof_latest.json').write_text(json.dumps(r,indent=2,default=str)+'\n')
+          print(json.dumps(r,indent=2,default=str))
+          assert r['dlqClear'] and r['workerHealthy'] and r['mappingHealthy'] and r['noFreshTargetedErrors'] and r['controllerFailuresClear'], r
+          PY
+      - name: Publish final proof
+        run: |
+          set -euo pipefail
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add runtime_reports/soccer_final_runtime_proof_latest.json
+          git commit -m 'runtime: publish Soccer final runtime proof [skip ci]' || exit 0
+          for i in 1 2 3 4 5 6 7 8; do git pull --rebase origin main && git push origin HEAD:main && exit 0 || { git rebase --abort 2>/dev/null || true; sleep $((i*2)); }; done
+          exit 1
