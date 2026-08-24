@@ -1,0 +1,56 @@
+name: Apply MLB terminal status idempotency now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-mlb-terminal-status-idempotency-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-mlb-terminal-status-idempotency-now
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply and verify exact idempotency repair
+        run: |
+          set -euo pipefail
+          python scripts/repair_mlb_terminal_status_idempotency.py
+          python -m py_compile hello_world/mlb_canonical_final_labels_v1.py
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'requests>=2.31,<3'
+          python -m pytest -q \
+            tests/unit/test_mlb_terminal_status_idempotency.py \
+            tests/unit/test_mlb_canonical_final_labels_v1.py
+          git diff --check
+      - name: Publish settlement source repair
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add hello_world/mlb_canonical_final_labels_v1.py
+          if git diff --cached --quiet; then
+            echo 'Terminal status idempotency repair already installed.'
+            exit 0
+          fi
+          git commit -m 'Treat MLB terminal status normalization as idempotent'
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then exit 0; fi
+            test "$attempt" != 5 || exit 1
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 2))
+          done
