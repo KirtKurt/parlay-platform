@@ -1,0 +1,395 @@
+name: Deploy MLB Auto LLM
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mlb_auto_llm/**'
+      - 'mlb-auto-llm-template.yaml'
+      - '.github/workflows/deploy-mlb-auto-llm.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-auto-llm-deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-mlb-auto-llm
+  LIVE_BEDROCK_MODELS: us.anthropic.claude-sonnet-4-20250514-v1:0,us.meta.llama3-3-70b-instruct-v1:0,meta.llama3-3-70b-instruct-v1:0,mistral.mistral-large-2402-v1:0,mistral.mistral-small-2402-v1:0,cohere.command-r-v1:0,cohere.command-r-plus-v1:0,openai.gpt-5.6-sol,anthropic.claude-opus-4-8,anthropic.claude-opus-4-7,anthropic.claude-opus-4-6-v1,anthropic.claude-sonnet-4-6-v1,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0
+
+jobs:
+  verify-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Verify required credentials and production source contracts
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          set -euo pipefail
+          test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
+          test -n "${BBS_API_KEY_VALUE:-}" || { echo '::error::Missing BBS_API_KEY'; exit 1; }
+          aws sts get-caller-identity
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
+          python -m py_compile \
+            mlb_auto_llm/handler.py \
+            mlb_auto_llm/orchestrator.py \
+            mlb_auto_llm/orchestrator_v2.py \
+            mlb_auto_llm/orchestrator_v3.py \
+            mlb_auto_llm/ml_authority.py \
+            mlb_auto_llm/ml_authority_smoke.py \
+            mlb_auto_llm/model_gateway.py \
+            mlb_auto_llm/bedrock_smoke.py
+          PYTHONPATH=mlb_auto_llm python -m pytest -q \
+            tests/unit/test_mlb_auto_model_gateway.py \
+            tests/unit/test_mlb_auto_ml_authority.py
+          sam validate --template-file mlb-auto-llm-template.yaml --lint
+          grep -q 'Handler: orchestrator_v3.lambda_handler' mlb-auto-llm-template.yaml
+          grep -q 'MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels' mlb-auto-llm-template.yaml
+          grep -q 'bedrock-mantle:CreateInference' mlb-auto-llm-template.yaml
+          grep -q 'Big Balls Sports Data Pro' mlb_auto_llm/handler.py
+          grep -q 'The Odds API' mlb_auto_llm/handler.py
+          grep -q 'MLB Stats API' mlb_auto_llm/handler.py
+          grep -q 'BEDROCK_LLM' mlb_auto_llm/orchestrator_v2.py
+          grep -q 'AWS_ML_RANKED_ENSEMBLE' mlb_auto_llm/ml_authority.py
+          grep -q 'FALLBACK_MARKET_CONSENSUS' mlb_auto_llm/handler.py
+          grep -q 'playerRollingStats' mlb_auto_llm/orchestrator.py
+          grep -q 'teamRecentForm' mlb_auto_llm/orchestrator.py
+
+      - name: Authenticate both paid data providers
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            -H "Authorization: Bearer ${BBS_API_KEY_VALUE}" \
+            'https://api.bigballsdata.com/v1/user/me' > /tmp/bbs-account.json
+          python - <<'PY'
+          import json
+          value=json.load(open('/tmp/bbs-account.json'))
+          assert isinstance(value, dict) and value.get('data') is not None, value
+          print('Big Balls Sports Data Pro authentication: OK')
+          PY
+          curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/?apiKey=${ODDS_API_KEY_VALUE}&regions=us&markets=h2h&oddsFormat=decimal&dateFormat=iso" \
+            > /tmp/odds-mlb.json
+          python - <<'PY'
+          import json
+          value=json.load(open('/tmp/odds-mlb.json'))
+          assert isinstance(value, list), type(value)
+          print('The Odds API MLB authentication: OK; events=', len(value))
+          PY
+
+      - name: Build isolated MLB Auto LLM stack
+        run: sam build --no-cached --template-file mlb-auto-llm-template.yaml
+
+      - name: Recover unsuccessful first creation
+        run: |
+          set -euo pipefail
+          status=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" --region "$AWS_REGION" \
+            --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)
+          case "$status" in
+            ROLLBACK_COMPLETE|ROLLBACK_FAILED)
+              aws cloudformation delete-stack --stack-name "$STACK_NAME" --region "$AWS_REGION"
+              aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME" --region "$AWS_REGION"
+              ;;
+            *_IN_PROGRESS)
+              echo "::error::MLB Auto LLM stack is busy in $status"
+              exit 1
+              ;;
+            *_FAILED)
+              echo "::error::MLB Auto LLM stack requires review in $status"
+              exit 1
+              ;;
+            *)
+              echo "MLB Auto LLM stack pre-deploy state: ${status:-STACK_MISSING}"
+              ;;
+          esac
+
+      - name: Deploy isolated MLB Auto LLM stack
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+        run: |
+          set -euo pipefail
+          MLB_ML_API_BASE_URL=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text)
+          test -n "$MLB_ML_API_BASE_URL"
+          test "$MLB_ML_API_BASE_URL" != "None"
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              OddsApiKey="${ODDS_API_KEY_VALUE}" \
+              BbsApiKey="${BBS_API_KEY_VALUE}" \
+              TargetDailyAccuracy='0.70' \
+              CardLeadMinutesBeforeSecondGame='45' \
+              BedrockModels="${LIVE_BEDROCK_MODELS}" \
+              MlbMlApiBaseUrl="${MLB_ML_API_BASE_URL}" \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+
+      - name: Prove Bedrock through deployed MLB Lambda role
+        run: |
+          set -euo pipefail
+          function_name=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBAutoLLMBedrockSmokeFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          aws lambda invoke \
+            --function-name "$function_name" \
+            --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 240 \
+            --payload '{}' \
+            /tmp/mlb-auto-bedrock.json \
+            > /tmp/mlb-auto-bedrock-meta.json
+          python - <<'PY'
+          import json
+          meta=json.load(open('/tmp/mlb-auto-bedrock-meta.json'))
+          response=json.load(open('/tmp/mlb-auto-bedrock.json'))
+          assert not meta.get('FunctionError'), (meta, response)
+          assert response.get('ok') is True, response
+          assert response.get('responseNonEmpty') is True, response
+          print('MLB Auto model authority: OK via', response.get('decisionAuthority'), response.get('modelId'))
+          print(json.dumps(response, sort_keys=True)[:12000])
+          PY
+
+      - name: Prove autonomous three-source production cycle
+        run: |
+          set -euo pipefail
+          function_name=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBAutoLLMFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          aws lambda invoke \
+            --function-name "$function_name" \
+            --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 900 \
+            --payload '{"mode":"deployment_provider_smoke","force_publish":true}' \
+            /tmp/mlb-auto-cycle.json \
+            > /tmp/mlb-auto-cycle-meta.json
+          python - <<'PY'
+          import json
+          meta=json.load(open('/tmp/mlb-auto-cycle-meta.json'))
+          response=json.load(open('/tmp/mlb-auto-cycle.json'))
+          assert not meta.get('FunctionError'), (meta, response)
+          assert response.get('ok') is True, response
+          status=response.get('status')
+          assert status in {'CARD_PUBLISHED','CARD_ALREADY_PUBLISHED','NO_GAMES'}, response
+          card=response.get('card') or {}
+          source=response.get('sourceStatus') or card.get('sourceStatus') or {}
+          if status != 'NO_GAMES':
+              for provider in ('mlbStatsApi','theOddsApi','bigBallsDataPro'):
+                  assert (source.get(provider) or {}).get('ok') is True, (provider, source)
+                  assert not ((source.get(provider) or {}).get('missingGamePks') or []), (provider, source)
+          if status in {'CARD_PUBLISHED','CARD_ALREADY_PUBLISHED'}:
+              assert card.get('threeSourceCoverageComplete') is True, card
+              assert card.get('modelAuthorityComplete') is True, card
+              picks=card.get('picks') or []
+              assert picks, card
+              authorities={row.get('decisionAuthority') for row in picks}
+              assert authorities <= {'BEDROCK_LLM','AWS_ML_RANKED_ENSEMBLE'}, authorities
+              assert len(authorities) == 1, authorities
+          print('AWS autonomous MLB cycle:', status)
+          print(json.dumps(response, sort_keys=True)[:20000])
+          PY
+
+      - name: Verify public status and autonomous schedules
+        run: |
+          set -euo pipefail
+          status_url=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='MLBAutoLLMStatusUrl'].OutputValue" \
+            --output text)
+          curl --fail --silent --show-error --retry 5 --retry-all-errors \
+            "$status_url" > /tmp/mlb-auto-status.json
+          aws cloudformation list-stack-resources \
+            --stack-name "$STACK_NAME" --region "$AWS_REGION" \
+            --query "StackResourceSummaries[?ResourceType=='AWS::Events::Rule'].PhysicalResourceId" \
+            --output text | tr '\t' '\n' > /tmp/mlb-auto-rules.txt
+          python - <<'PY'
+          import json, subprocess
+          status=json.load(open('/tmp/mlb-auto-status.json'))
+          assert status.get('service') == 'mlb-auto-llm', status
+          assert status.get('fullyAutonomous') is True, status
+          assert set(status.get('threeSourcePolicy') or []) == {
+              'MLB Stats API','The Odds API','Big Balls Sports Data Pro'
+          }, status
+          assert float(status.get('targetDailyAccuracy')) == 0.70, status
+          assert int(status.get('cardLeadMinutesBeforeSecondGame')) == 45, status
+          rules=[]
+          for name in open('/tmp/mlb-auto-rules.txt', encoding='utf-8').read().splitlines():
+              if not name or name == 'None':
+                  continue
+              state=subprocess.check_output([
+                  'aws','events','describe-rule','--name',name,
+                  '--region','us-east-1','--query','State','--output','text'
+              ], text=True).strip()
+              rules.append({'name':name,'state':state})
+          assert rules, rules
+          assert all(row['state'] == 'ENABLED' for row in rules), rules
+          json.dump(rules, open('/tmp/mlb-auto-rules.json','w'), indent=2, sort_keys=True)
+          print('MLB Auto public contract and autonomous schedules: OK')
+          PY
+
+      - name: Publish durable deployment and production acceptance proof
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+
+          def load(path, default):
+              try:
+                  with open(path, encoding='utf-8') as handle:
+                      value=json.load(handle)
+                  return value
+              except Exception:
+                  return default
+
+          bedrock=load('/tmp/mlb-auto-bedrock.json', {})
+          cycle=load('/tmp/mlb-auto-cycle.json', {})
+          public_status=load('/tmp/mlb-auto-status.json', {})
+          rules=load('/tmp/mlb-auto-rules.json', [])
+          card=cycle.get('card') if isinstance(cycle.get('card'), dict) else {}
+          picks=card.get('picks') if isinstance(card.get('picks'), list) else []
+          source_status=(
+              cycle.get('sourceStatus')
+              if isinstance(cycle.get('sourceStatus'), dict)
+              else card.get('sourceStatus')
+              if isinstance(card.get('sourceStatus'), dict)
+              else {}
+          )
+          body={
+              'service':'mlb-auto-llm',
+              'workflow':'Deploy MLB Auto LLM',
+              'jobStatus':os.environ['JOB_STATUS'],
+              'runId':os.environ['RUN_ID'],
+              'runAttempt':os.environ['RUN_ATTEMPT'],
+              'sourceSha':os.environ['SOURCE_SHA'],
+              'publishedAtUtc':datetime.now(timezone.utc).isoformat(),
+              'bedrockSmoke':{
+                  'ok':bedrock.get('ok'),
+                  'modelId':bedrock.get('modelId'),
+                  'endpointFamily':bedrock.get('endpointFamily'),
+                  'decisionAuthority':bedrock.get('decisionAuthority'),
+                  'bedrockAvailable':bedrock.get('bedrockAvailable'),
+                  'attemptedModelIds':bedrock.get('attemptedModelIds') or [],
+                  'errorsBeforeSuccess':bedrock.get('errorsBeforeSuccess') or [],
+                  'errors':bedrock.get('errors') or [],
+              },
+              'providerCycle':{
+                  'ok':cycle.get('ok'),
+                  'status':cycle.get('status'),
+                  'threeSourceCoverageComplete':(
+                      cycle.get('threeSourceCoverageComplete')
+                      if 'threeSourceCoverageComplete' in cycle
+                      else card.get('threeSourceCoverageComplete')
+                  ),
+                  'bedrockAuthorityComplete':card.get('bedrockAuthorityComplete'),
+                  'mlAuthorityComplete':card.get('mlAuthorityComplete'),
+                  'modelAuthorityComplete':card.get('modelAuthorityComplete'),
+                  'decisionAuthority':card.get('decisionAuthority'),
+                  'sourceStatus':source_status,
+                  'pickCount':len(picks),
+                  'bedrockDecisionCount':sum(
+                      row.get('decisionAuthority') == 'BEDROCK_LLM'
+                      for row in picks if isinstance(row, dict)
+                  ),
+                  'mlDecisionCount':sum(
+                      row.get('decisionAuthority') == 'AWS_ML_RANKED_ENSEMBLE'
+                      for row in picks if isinstance(row, dict)
+                  ),
+                  'modelDecisionCount':sum(
+                      row.get('decisionAuthority') in {'BEDROCK_LLM','AWS_ML_RANKED_ENSEMBLE'}
+                      for row in picks if isinstance(row, dict)
+                  ),
+                  'gamePks':[
+                      str(row.get('gamePk')) for row in picks
+                      if isinstance(row, dict) and row.get('gamePk') is not None
+                  ],
+              },
+              'publicStatus':{
+                  'service':public_status.get('service'),
+                  'fullyAutonomous':public_status.get('fullyAutonomous'),
+                  'threeSourcePolicy':public_status.get('threeSourcePolicy'),
+                  'targetDailyAccuracy':public_status.get('targetDailyAccuracy'),
+                  'cardLeadMinutesBeforeSecondGame':public_status.get('cardLeadMinutesBeforeSecondGame'),
+              },
+              'autonomousRules':rules,
+              'secretExposed':False,
+          }
+          body['ok']=(
+              body['jobStatus'] == 'success'
+              and body['bedrockSmoke']['ok'] is True
+              and body['providerCycle']['ok'] is True
+              and body['providerCycle']['modelAuthorityComplete'] is True
+              and body['providerCycle']['modelDecisionCount'] == body['providerCycle']['pickCount']
+              and body['publicStatus']['fullyAutonomous'] is True
+              and bool(rules)
+              and all(row.get('state') == 'ENABLED' for row in rules)
+          )
+          body['conclusion']='PASS' if body['ok'] else 'FAIL'
+          open('runtime_reports/mlb_auto_llm_deploy_latest.json','w').write(
+              json.dumps(body,indent=2,sort_keys=True,default=str)+'\n'
+          )
+          print(json.dumps(body,indent=2,sort_keys=True,default=str))
+          PY
+          cp runtime_reports/mlb_auto_llm_deploy_latest.json /tmp/mlb-auto-llm-deploy-proof.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-auto-deploy-proof origin/main
+            cp /tmp/mlb-auto-llm-deploy-proof.json runtime_reports/mlb_auto_llm_deploy_latest.json
+            git add runtime_reports/mlb_auto_llm_deploy_latest.json
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB Auto LLM deployment proof [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
