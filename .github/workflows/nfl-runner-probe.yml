@@ -2,8 +2,7 @@ name: Deploy Isolated NFL Auto
 on:
   push:
     branches: [main]
-    paths:
-      - '.github/workflows/nfl-runner-probe.yml'
+    paths: ['.github/workflows/nfl-runner-probe.yml']
   workflow_dispatch:
 permissions:
   contents: write
@@ -28,19 +27,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
-          fetch-depth: 0
+          ref: ${{ github.sha }}
+          fetch-depth: 1
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - uses: aws-actions/setup-sam@v2
-      - name: Restore tested NFL bundle
+      - name: Restore checksum-verified NFL bundle
         run: |
           set -euo pipefail
-          cat .nfl_bundle/part* | base64 -d > /tmp/nfl-auto.zip
+          cat .nfl_bundle/part00 .nfl_bundle/part01 .nfl_bundle/part02 .nfl_bundle/part03 .nfl_bundle/part04 \
+              .nfl_bundle/part05a .nfl_bundle/part05b .nfl_bundle/part05c .nfl_bundle/part05d \
+              .nfl_bundle/part06 .nfl_bundle/part07 .nfl_bundle/part08 | base64 -d > /tmp/nfl-auto.zip
+          actual=$(sha256sum /tmp/nfl-auto.zip | awk '{print $1}')
+          test "$actual" = 'cc97de599f396ccc0d93ba45950618389fda9ba0490897efa7ad5a55bb002f98'
+          unzip -t /tmp/nfl-auto.zip
           unzip -oq /tmp/nfl-auto.zip -d "$GITHUB_WORKSPACE"
           test -f nfl-auto-template.yaml
           test -f nfl_auto/controller.py
+          test -f scripts/verify_nfl_auto_bundle.py
       - name: Select provider credentials
         run: |
           set -euo pipefail
@@ -52,13 +57,12 @@ jobs:
           done
           test -n "$selected" || { echo '::error::No recognized BBD API secret'; exit 1; }
           echo "NFL_BBD_KEY=$selected" >> "$GITHUB_ENV"
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Verify source contracts
+      - name: Verify isolated source
         run: |
           set -euo pipefail
           python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
@@ -75,64 +79,49 @@ jobs:
           set -euo pipefail
           stack=parlay-platform-nfl-auto
           status=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$AWS_REGION_VALUE" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)
-          if [[ "$status" == "ROLLBACK_COMPLETE" || "$status" == "ROLLBACK_FAILED" ]]; then
+          if [[ "$status" == 'ROLLBACK_COMPLETE' || "$status" == 'ROLLBACK_FAILED' ]]; then
             aws cloudformation delete-stack --stack-name "$stack" --region "$AWS_REGION_VALUE"
             aws cloudformation wait stack-delete-complete --stack-name "$stack" --region "$AWS_REGION_VALUE"
-          elif [[ "$status" == *"_IN_PROGRESS" ]]; then
+          elif [[ "$status" == *'_IN_PROGRESS' ]]; then
             echo "::error::NFL stack busy: $status"; exit 1
-          elif [[ "$status" == *"_FAILED" ]]; then
+          elif [[ "$status" == *'_FAILED' ]]; then
             echo "::error::NFL stack failed state: $status"; exit 1
           fi
       - name: Deploy isolated NFL stack
         run: |
           set -euo pipefail
-          sam deploy \
-            --template-file .aws-sam/build/template.yaml \
-            --stack-name parlay-platform-nfl-auto \
-            --region "$AWS_REGION_VALUE" \
-            --resolve-s3 \
+          sam deploy --template-file .aws-sam/build/template.yaml \
+            --stack-name parlay-platform-nfl-auto --region "$AWS_REGION_VALUE" --resolve-s3 \
             --capabilities CAPABILITY_IAM \
-            --parameter-overrides \
-              OddsApiKey="$ODDS_API_KEY_VALUE" \
-              BbdApiKey="$NFL_BBD_KEY" \
-              EnableHistoricalBackfill='true' \
-              LiveCollectionStartUtc='2026-09-09T04:00:00Z' \
-              SharedQuotaReservePercent='20' \
-              QuotaRaceBufferCredits='2000' \
-              NflLlmModelId='us.amazon.nova-2-lite-v1:0' \
-              MinBookmakers='3' \
-              MinTrainingRows='650' \
-              MinValidationRows='180' \
-              MinAuditRows='180' \
-            --no-confirm-changeset \
-            --no-fail-on-empty-changeset
+            --parameter-overrides OddsApiKey="$ODDS_API_KEY_VALUE" BbdApiKey="$NFL_BBD_KEY" \
+              EnableHistoricalBackfill='true' LiveCollectionStartUtc='2026-09-09T04:00:00Z' \
+              SharedQuotaReservePercent='20' QuotaRaceBufferCredits='2000' \
+              NflLlmModelId='us.amazon.nova-2-lite-v1:0' MinBookmakers='3' \
+              MinTrainingRows='650' MinValidationRows='180' MinAuditRows='180' \
+            --no-confirm-changeset --no-fail-on-empty-changeset
       - name: Verify providers and historical-only runtime
         run: |
           set -euo pipefail
           stack=parlay-platform-nfl-auto
-          function_name() {
-            aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id "$1" --region "$AWS_REGION_VALUE" --query 'StackResourceDetail.PhysicalResourceId' --output text
-          }
-          autonomous=$(function_name NflAutonomousFunction)
-          live=$(function_name NflLiveFunction)
+          fn(){ aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id "$1" --region "$AWS_REGION_VALUE" --query 'StackResourceDetail.PhysicalResourceId' --output text; }
+          autonomous=$(fn NflAutonomousFunction)
+          live=$(fn NflLiveFunction)
           aws lambda invoke --function-name "$autonomous" --region "$AWS_REGION_VALUE" --cli-binary-format raw-in-base64-out --payload '{"action":"credential_smoke"}' /tmp/credentials.json >/tmp/credentials-meta.json
           aws lambda invoke --function-name "$live" --region "$AWS_REGION_VALUE" --cli-binary-format raw-in-base64-out --payload '{"action":"live_tick"}' /tmp/live.json >/tmp/live-meta.json
           aws lambda invoke --function-name "$autonomous" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"action":"autonomous_tick"}' /tmp/tick.json >/tmp/tick-meta.json
           python - <<'PY'
           import json
           for n in ('credentials','live','tick'):
-              meta=json.load(open(f'/tmp/{n}-meta.json'))
-              body=json.load(open(f'/tmp/{n}.json'))
+              meta=json.load(open(f'/tmp/{n}-meta.json')); body=json.load(open(f'/tmp/{n}.json'))
               assert not meta.get('FunctionError'), (n,meta,body)
               assert body.get('ok') is True, (n,body)
-          live=json.load(open('/tmp/live.json'))
-          creds=json.load(open('/tmp/credentials.json'))
+          live=json.load(open('/tmp/live.json')); creds=json.load(open('/tmp/credentials.json'))
           assert live.get('status') == 'HISTORICAL_ONLY', live
           assert live.get('preseason_predictions') == 0, live
           assert creds.get('status') == 'PROVIDERS_AUTHENTICATED', creds
           PY
           status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='NflAutoStatusUrl'].OutputValue" --output text)
-          curl --fail --retry 5 --retry-all-errors --retry-delay 5 "$status_url" > /tmp/nfl-status.json
+          curl --fail --retry 5 --retry-all-errors --retry-delay 5 "$status_url" >/tmp/nfl-status.json
           python - <<'PY'
           import json
           s=json.load(open('/tmp/nfl-status.json'))
@@ -147,6 +136,9 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+          git checkout -B publish origin/main
+          unzip -oq /tmp/nfl-auto.zip -d "$GITHUB_WORKSPACE"
           git add IMPLEMENTATION_VALIDATION.txt NFL_AUTO_IMPLEMENTATION.md NFL_AUTO_MANIFEST.json docs/NFL_AUTO_RUNBOOK.md nfl-auto-template.yaml nfl_auto requirements-nfl-auto.txt scripts/verify_nfl_auto_bundle.py tests/nfl_auto
           if ! git diff --cached --quiet; then
             git commit -m 'Deploy isolated NFL Auto historical training [skip ci]'
@@ -161,28 +153,13 @@ jobs:
           stack_status=$(aws cloudformation describe-stacks --stack-name "$stack" --region "${AWS_REGION_VALUE:-us-east-1}" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo MISSING)
           status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "${AWS_REGION_VALUE:-us-east-1}" --query "Stacks[0].Outputs[?OutputKey=='NflAutoStatusUrl'].OutputValue" --output text 2>/dev/null || true)
           git fetch origin main
-          git reset --hard origin/main
-          git clean -fd
+          git checkout -B evidence origin/main
           mkdir -p runtime_reports
           python - <<PY
-          import json, os
-          report={
-            'workflow':'Deploy Isolated NFL Auto',
-            'job_status':'${{ job.status }}',
-            'run_id':os.environ.get('GITHUB_RUN_ID'),
-            'commit':os.environ.get('GITHUB_SHA'),
-            'stack':'parlay-platform-nfl-auto',
-            'stack_status':'$stack_status',
-            'status_url':'$status_url',
-            'live_collection_start_utc':'2026-09-09T04:00:00Z',
-            'historical_backfill_enabled':True,
-            'preseason_collection_enabled':False,
-            'preseason_predictions_enabled':False,
-          }
-          open('runtime_reports/nfl_deploy_latest.json','w').write(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          import json,os
+          r={'workflow':'Deploy Isolated NFL Auto','job_status':'${{ job.status }}','run_id':os.environ.get('GITHUB_RUN_ID'),'commit':os.environ.get('GITHUB_SHA'),'stack':'parlay-platform-nfl-auto','stack_status':'$stack_status','status_url':'$status_url','live_collection_start_utc':'2026-09-09T04:00:00Z','historical_backfill_enabled':True,'preseason_collection_enabled':False,'preseason_predictions_enabled':False}
+          open('runtime_reports/nfl_deploy_latest.json','w').write(json.dumps(r,indent=2,sort_keys=True)+'\n')
           PY
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add runtime_reports/nfl_deploy_latest.json
           git commit -m 'Publish NFL Auto deployment evidence [skip ci]' || true
           git pull --rebase origin main || true
