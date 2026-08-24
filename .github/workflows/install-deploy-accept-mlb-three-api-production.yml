@@ -1,0 +1,228 @@
+name: Install Deploy and Accept MLB Three-API Production
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/install-deploy-accept-mlb-three-api-production.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: install-deploy-accept-mlb-three-api-production
+  cancel-in-progress: false
+
+jobs:
+  production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+      ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+      INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+      BBD_KEY_1: ${{ secrets.BIG_BALLS_DATA_API_KEY }}
+      BBD_KEY_2: ${{ secrets.BBD_API_KEY }}
+      BBD_KEY_3: ${{ secrets.BIGBALLS_DATA_API_KEY }}
+      BBD_KEY_4: ${{ secrets.BIG_BALLS_API_KEY }}
+      BBD_KEY_5: ${{ secrets.BIGBALLS_API_KEY }}
+      BBD_KEY_6: ${{ secrets.BIGBALLSDATA_API_KEY }}
+      BBD_KEY_7: ${{ secrets.BIG_BALLS_DATA_KEY }}
+      BBD_KEY_8: ${{ secrets.BBD_API_TOKEN }}
+      BBD_KEY_9: ${{ secrets.BIGBALLS_DATA_KEY }}
+      BBD_KEY_10: ${{ secrets.BIGBALLSDATA_KEY }}
+      BBD_KEY_11: ${{ secrets.BIG_BALLS_KEY }}
+      BBD_KEY_12: ${{ secrets.BBD_KEY }}
+      BIG_BALLS_DATA_API_BASE_URL: ${{ vars.BIG_BALLS_DATA_API_BASE_URL || vars.BBD_API_BASE_URL || '' }}
+      BIG_BALLS_DATA_OPENAPI_URL: ${{ vars.BIG_BALLS_DATA_OPENAPI_URL || vars.BBD_OPENAPI_URL || '' }}
+      BIG_BALLS_DATA_MLB_ENDPOINTS_JSON: ${{ vars.BIG_BALLS_DATA_MLB_ENDPOINTS_JSON || vars.BBD_MLB_ENDPOINTS_JSON || '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Select BBD Pro secret
+        run: |
+          set -euo pipefail
+          selected=''
+          selected_name=''
+          for variable in BBD_KEY_1 BBD_KEY_2 BBD_KEY_3 BBD_KEY_4 BBD_KEY_5 BBD_KEY_6 BBD_KEY_7 BBD_KEY_8 BBD_KEY_9 BBD_KEY_10 BBD_KEY_11 BBD_KEY_12; do
+            value=${!variable:-}
+            if [ -n "$value" ]; then selected=$value; selected_name=$variable; break; fi
+          done
+          test -n "$selected" || { echo '::error::No recognized Big Balls Data Pro repository secret'; exit 1; }
+          test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
+          test -n "${INQSI_ADMIN_API_TOKEN_VALUE:-}" || { echo '::error::Missing INQSI_ADMIN_API_TOKEN'; exit 1; }
+          test -n "${AWS_REGION_VALUE:-}" || { echo '::error::Missing AWS_REGION'; exit 1; }
+          echo "BIG_BALLS_DATA_API_KEY=$selected" >> "$GITHUB_ENV"
+          echo "BBD_SECRET_SLOT=$selected_name" >> "$GITHUB_ENV"
+          echo 'BBD secret selected and kept masked.'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Install verification dependencies
+        run: python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
+
+      - name: Cancel stale default and temporary integration deployments
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run list --repo "$GITHUB_REPOSITORY" --limit 200 --json databaseId,workflowName,status > /tmp/active-runs.json
+          python - <<'PY' >/tmp/cancel-runs.txt
+          import json,os
+          current=int(os.environ['GITHUB_RUN_ID'])
+          names={
+              'Deploy SAM to AWS',
+              'Verify and Deploy MLB Three-API Autonomy v1',
+              'Verify and Deploy MLB Three-API Autonomy v2',
+              'Verify and Deploy MLB Three-API Autonomy v3 Final',
+              'Finalize MLB Three-API Sequence v2',
+              'Finalize MLB Three-API Sequence v3',
+              'Finalize MLB Three-API Sequence v4 Final',
+          }
+          active={'queued','in_progress','waiting','requested','pending'}
+          for row in json.load(open('/tmp/active-runs.json')):
+              run_id=int(row['databaseId'])
+              if run_id!=current and row.get('workflowName') in names and row.get('status') in active:
+                  print(run_id)
+          PY
+          while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY" || true
+          done </tmp/cancel-runs.txt
+          sleep 25
+
+      - name: Install idempotent production source and run regressions
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          set -euo pipefail
+          python scripts/install_mlb_three_api_autonomy_final.py
+          python -m py_compile \
+            hello_world/mlb_bbd_pro_context.py \
+            hello_world/mlb_three_api_llm_analyst.py \
+            hello_world/mlb_three_api_prediction_overlay.py \
+            hello_world/mlb_three_api_policy.py \
+            hello_world/mlb_three_api_autonomous_controller_v2.py \
+            scripts/install_mlb_three_api_autonomy_final.py \
+            scripts/verify_mlb_three_api_runtime_production.py \
+            scripts/run_mlb_three_api_production_acceptance.py
+          tests=(
+            tests/unit/test_mlb_three_api_policy.py
+            tests/unit/test_mlb_bbd_pro_context.py
+            tests/unit/test_mlb_three_api_prediction_overlay.py
+            tests/unit/test_mlb_three_api_runtime_production.py
+            tests/unit/test_mlb_production_acceptance.py
+            tests/unit/test_mlb_daily_per_game_lock.py
+            tests/unit/test_mlb_published_prediction_authority.py
+            tests/unit/test_mlb_official_schedule_authority.py
+            tests/unit/test_mlb_canonical_final_labels_v1.py
+          )
+          optional=(
+            tests/unit/test_mlb_daily_pick_lock_runtime.py
+            tests/unit/test_mlb_public_per_game_authority.py
+            tests/unit/test_mlb_storage_authority.py
+            tests/unit/test_mlb_official_prediction_semantics.py
+          )
+          for test_file in "${optional[@]}"; do [ -f "$test_file" ] && tests+=("$test_file"); done
+          python -m pytest -q "${tests[@]}"
+          python scripts/verify_mlb_three_api_runtime_production.py
+          python scripts/verify_mlb_schedule_invariants.py
+          python scripts/verify_mlb_official_prediction_semantics.py
+          sam validate --template-file template.yaml
+
+      - name: Prove sport isolation
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only)
+          printf '%s\n' "$changed"
+          if printf '%s\n' "$changed" | grep -Eq '^(tennis_learning/|tennis-template\.yaml|soccer_auto/|soccer-auto-template\.yaml)'; then
+            echo '::error::MLB production installation modified tennis or soccer'
+            exit 1
+          fi
+
+      - name: Commit production source
+        run: |
+          set -euo pipefail
+          changed=false
+          if ! git diff --quiet; then
+            changed=true
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -A
+            git commit -m 'Install idempotent autonomous MLB three-source production'
+            git push origin HEAD:main
+          fi
+          echo "PRODUCTION_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "PRODUCTION_SOURCE_CHANGED=$changed" >> "$GITHUB_ENV"
+
+      - name: Find or dispatch the normal deployment workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sleep 15
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy.yml --limit 30 \
+            --json databaseId,headSha,status,createdAt \
+            --jq '[.[] | select(.headSha==env.PRODUCTION_SOURCE_SHA)] | sort_by(.createdAt) | reverse | .[0].databaseId // empty')
+          if [ -z "$run_id" ]; then
+            gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref main
+            sleep 10
+            run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy.yml --event workflow_dispatch --limit 10 \
+              --json databaseId,createdAt --jq 'sort_by(.createdAt) | reverse | .[0].databaseId')
+          fi
+          test -n "$run_id"
+          echo "NORMAL_DEPLOY_RUN_ID=$run_id" >> "$GITHUB_ENV"
+
+      - name: Watch the normal production deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run watch "$NORMAL_DEPLOY_RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status --interval 20
+
+      - name: Run live production acceptance
+        env:
+          ODDS_API_KEY: ${{ env.ODDS_API_KEY_VALUE }}
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION_VALUE }}
+          MLB_THREE_API_ENABLED: 'true'
+          MLB_THREE_API_REQUIRE_ALL_SOURCES: 'true'
+          MLB_THREE_API_LLM_MODEL_ID: us.amazon.nova-2-lite-v1:0
+        run: |
+          set -euo pipefail
+          python scripts/run_mlb_three_api_production_acceptance.py
+
+      - name: Publish authoritative production evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git pull --rebase origin main || true
+          git add \
+            runtime_reports/mlb_three_api_install_latest.json \
+            runtime_reports/mlb_three_api_install_v2_latest.json \
+            runtime_reports/mlb_three_api_install_v3_latest.json \
+            runtime_reports/mlb_three_api_install_production_latest.json \
+            runtime_reports/mlb_three_api_production_acceptance_latest.json 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m 'Publish authoritative MLB three-source production acceptance [skip ci]'
+            git push origin HEAD:main
+          fi
