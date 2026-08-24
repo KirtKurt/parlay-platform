@@ -1,0 +1,227 @@
+name: Repair MLB official terminal status normalization now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-official-status-normalization-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: repair-mlb-official-status-normalization-now
+  cancel-in-progress: false
+
+jobs:
+  repair-deploy-reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install test runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+
+      - name: Treat MLB terminal status normalization as semantic idempotency
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('hello_world/mlb_canonical_final_labels_v1.py')
+          source = path.read_text(encoding='utf-8')
+
+          start = source.index('IMMUTABLE_SETTLEMENT_FACT_FIELDS = (')
+          end = source.index('\n)\n\n\ndef _immutable_settlement_facts', start)
+          block = source[start:end]
+          for field in ('source_payload_fingerprint', 'official_status'):
+              line = f'    "{field}",\n'
+              if line in block:
+                  block = block.replace(line, '', 1)
+          source = source[:start] + block + source[end:]
+
+          source = source.replace(
+              'Training eligibility and exclusion reasons are intentionally absent: they\n'
+              '    are policy evaluations that may become stricter after a label is written.\n'
+              '    A policy change must never masquerade as an official-score correction.',
+              'Derived training policy and mutable terminal source representation are\n'
+              '    intentionally absent. MLB may normalize Game Over/O to Final/F after\n'
+              '    scores are already final; that must not masquerade as a score correction.',
+          )
+          source = source.replace(
+              'IDEMPOTENT_EXISTING_POLICY_DRIFT',
+              'IDEMPOTENT_EXISTING_OFFICIAL_STATUS_DRIFT',
+          )
+          source = source.replace(
+              '"existingTrainingEligible": existing.get("training_eligible"),\n'
+              '  "currentTrainingEligible": item.get("training_eligible"),\n'
+              '  "policy": (\n'
+              '      "The existing write-once label is retained because official result, "\n'
+              '      "canonical lock, and prediction facts are identical; only derived "\n'
+              '      "training-policy metadata changed."\n'
+              '  ),',
+              '"existingTrainingEligible": existing.get("training_eligible"),\n'
+              '  "currentTrainingEligible": item.get("training_eligible"),\n'
+              '  "existingOfficialStatus": copy.deepcopy(existing.get("official_status") or {}),\n'
+              '  "currentOfficialStatus": copy.deepcopy(item.get("official_status") or {}),\n'
+              '  "existingSourcePayloadFingerprint": existing.get("source_payload_fingerprint"),\n'
+              '  "currentSourcePayloadFingerprint": item.get("source_payload_fingerprint"),\n'
+              '  "policy": (\n'
+              '      "The existing write-once label is retained because scores, winner, "\n'
+              '      "teams, canonical lock, and prediction facts are identical; only "\n'
+              '      "mutable official terminal status representation or derived policy changed."\n'
+              '  ),',
+          )
+          source = source.replace(
+              '"labelPolicyDriftIdempotentCount"',
+              '"labelOfficialStatusDriftIdempotentCount"',
+          )
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/unit/test_mlb_canonical_label_policy_drift.py')
+          source = path.read_text(encoding='utf-8')
+          addition = r'''
+
+          def test_official_game_over_to_final_normalization_is_idempotent():
+              existing = immutable_row()
+              existing['official_status'] = {
+                  'abstractGameState': 'Final',
+                  'codedGameState': 'O',
+                  'detailedState': 'Game Over',
+                  'statusCode': 'O',
+              }
+              existing['source_payload_fingerprint'] = 'game-over-fingerprint'
+              proposed = deepcopy(existing)
+              proposed['official_status'] = {
+                  'abstractGameState': 'Final',
+                  'codedGameState': 'F',
+                  'detailedState': 'Final',
+                  'statusCode': 'F',
+              }
+              proposed['source_payload_fingerprint'] = 'final-fingerprint'
+              assert (
+                  subject._immutable_settlement_facts_fingerprint(existing)
+                  == subject._immutable_settlement_facts_fingerprint(proposed)
+              )
+
+
+          def test_source_status_normalization_never_overwrites_label():
+              source = (HELLO / 'mlb_canonical_final_labels_v1.py').read_text(encoding='utf-8')
+              assert 'IDEMPOTENT_EXISTING_OFFICIAL_STATUS_DRIFT' in source
+              assert 'labelOfficialStatusDriftIdempotentCount' in source
+              immutable_block = source.split('IMMUTABLE_SETTLEMENT_FACT_FIELDS = (', 1)[1].split('\n)', 1)[0]
+              assert 'source_payload_fingerprint' not in immutable_block
+              assert 'official_status' not in immutable_block
+              assert 'outcomes_tbl.update_item' not in source
+              assert 'outcomes_tbl.delete_item' not in source
+          '''
+          addition = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in addition.splitlines()
+          )
+          if 'test_official_game_over_to_final_normalization_is_idempotent' not in source:
+              path.write_text(source.rstrip() + addition + '\n', encoding='utf-8')
+          PY
+
+          python -m py_compile hello_world/mlb_canonical_final_labels_v1.py
+          python -m pytest -q \
+            tests/unit/test_mlb_canonical_label_policy_drift.py \
+            tests/unit/test_mlb_canonical_final_labels_v1.py
+          git diff --check
+
+      - name: Publish corrected semantic idempotency
+        id: publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            hello_world/mlb_canonical_final_labels_v1.py \
+            tests/unit/test_mlb_canonical_label_policy_drift.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'Accept stable MLB finals across terminal status normalization'
+          fi
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then break; fi
+            test "$attempt" != 5 || exit 1
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 2))
+          done
+          repair_sha=$(git rev-parse HEAD)
+          repair_branch='repair/mlb-official-status-normalization-20260824'
+          git push --force origin "HEAD:refs/heads/$repair_branch"
+          echo "repair_sha=$repair_sha" >> "$GITHUB_OUTPUT"
+          echo "repair_branch=$repair_branch" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy exact repaired root stack
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPAIR_SHA: ${{ steps.publish.outputs.repair_sha }}
+          REPAIR_BRANCH: ${{ steps.publish.outputs.repair_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref "$REPAIR_BRANCH"
+          run_id=''
+          for attempt in $(seq 1 120); do
+            run_id=$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow deploy.yml \
+              --branch "$REPAIR_BRANCH" \
+              --event workflow_dispatch \
+              --limit 20 \
+              --json databaseId,headSha,createdAt \
+              --jq '.[] | select(.headSha == "'"$REPAIR_SHA"'") | .databaseId' \
+              | head -n 1)
+            [ -z "$run_id" ] || break
+            sleep 10
+          done
+          test -n "$run_id"
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
+          echo "Exact repaired root deployment passed: $run_id"
+
+      - name: Run protected v5 continuity repair on deployed source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPAIR_SHA: ${{ steps.publish.outputs.repair_sha }}
+          REPAIR_BRANCH: ${{ steps.publish.outputs.repair_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-prospective-backlog-reconcile-v5-once.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$REPAIR_BRANCH"
+          run_id=''
+          for attempt in $(seq 1 120); do
+            run_id=$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow mlb-prospective-backlog-reconcile-v5-once.yml \
+              --branch "$REPAIR_BRANCH" \
+              --event workflow_dispatch \
+              --limit 20 \
+              --json databaseId,headSha,createdAt \
+              --jq '.[] | select(.headSha == "'"$REPAIR_SHA"'") | .databaseId' \
+              | head -n 1)
+            [ -z "$run_id" ] || break
+            sleep 10
+          done
+          test -n "$run_id"
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
+          echo "Protected v5 continuity repair passed: $run_id"
