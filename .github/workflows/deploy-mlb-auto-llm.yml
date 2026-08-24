@@ -23,20 +23,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-
       - uses: aws-actions/setup-sam@v2
-
       - name: Install verification runtime
         run: python -m pip install --quiet 'boto3>=1.34,<2'
 
@@ -50,7 +46,7 @@ jobs:
           test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
           test -n "${BBS_API_KEY_VALUE:-}" || { echo '::error::Missing BBS_API_KEY'; exit 1; }
           aws sts get-caller-identity
-          python -m py_compile mlb_auto_llm/handler.py mlb_auto_llm/orchestrator.py
+          python -m py_compile mlb_auto_llm/handler.py mlb_auto_llm/orchestrator.py mlb_auto_llm/bedrock_smoke.py
           sam validate --template-file mlb-auto-llm-template.yaml --lint
           grep -q 'MLB_AUTO_CARD_LEAD_MINUTES_BEFORE_SECOND_GAME' mlb_auto_llm/handler.py
           grep -q 'Big Balls Sports Data Pro' mlb_auto_llm/handler.py
@@ -68,61 +64,20 @@ jobs:
           set -euo pipefail
           curl --fail --silent --show-error --retry 3 --retry-all-errors \
             -H "Authorization: Bearer ${BBS_API_KEY_VALUE}" \
-            'https://api.bigballsdata.com/v1/user/me' \
-            > /tmp/bbs-account.json
+            'https://api.bigballsdata.com/v1/user/me' > /tmp/bbs-account.json
           python - <<'PY'
           import json
           value=json.load(open('/tmp/bbs-account.json'))
-          assert isinstance(value, dict), value
-          assert value.get('data') is not None, value
+          assert isinstance(value, dict) and value.get('data') is not None, value
           print('Big Balls Sports Data authentication: OK')
           PY
           curl --fail --silent --show-error --retry 3 --retry-all-errors \
-            "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/?apiKey=${ODDS_API_KEY_VALUE}&regions=us&markets=h2h&oddsFormat=decimal&dateFormat=iso" \
-            > /tmp/odds-mlb.json
+            "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/?apiKey=${ODDS_API_KEY_VALUE}&regions=us&markets=h2h&oddsFormat=decimal&dateFormat=iso" > /tmp/odds-mlb.json
           python - <<'PY'
           import json
           value=json.load(open('/tmp/odds-mlb.json'))
           assert isinstance(value, list), type(value)
           print('The Odds API MLB authentication: OK; events=', len(value))
-          PY
-
-      - name: Verify Bedrock LLM access
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import boto3
-          client=boto3.client('bedrock-runtime')
-          models=[
-              'us.amazon.nova-2-lite-v1:0',
-              'mistral.ministral-3-14b-instruct',
-              'us.meta.llama4-scout-17b-instruct-v1:0',
-              'us.meta.llama4-maverick-17b-instruct-v1:0',
-              'global.amazon.nova-2-lite-v1:0',
-              'us.amazon.nova-pro-v1:0',
-              'us.amazon.nova-lite-v1:0',
-              'us.amazon.nova-micro-v1:0',
-          ]
-          errors=[]
-          for model in models:
-              try:
-                  response=client.converse(
-                      modelId=model,
-                      messages=[{'role':'user','content':[{'text':'Return only the word OK.'}]}],
-                      inferenceConfig={'maxTokens':16,'temperature':0},
-                  )
-                  text=' '.join(
-                      str(x.get('text') or '')
-                      for x in (((response.get('output') or {}).get('message') or {}).get('content') or [])
-                      if isinstance(x, dict)
-                  )
-                  assert text.strip(), response
-                  print('Bedrock MLB LLM access: OK via', model)
-                  break
-              except Exception as exc:
-                  errors.append((model, type(exc).__name__, str(exc)[:200]))
-          else:
-              raise RuntimeError('No configured MLB Bedrock model is callable: '+repr(errors))
           PY
 
       - name: Build isolated MLB Auto LLM stack
@@ -145,9 +100,29 @@ jobs:
               BbsApiKey="${BBS_API_KEY_VALUE}" \
               TargetDailyAccuracy='0.70' \
               CardLeadMinutesBeforeSecondGame='45' \
-              BedrockModels='us.amazon.nova-2-lite-v1:0,mistral.ministral-3-14b-instruct,us.meta.llama4-scout-17b-instruct-v1:0,us.meta.llama4-maverick-17b-instruct-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0' \
+              BedrockModels='us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0' \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
+
+      - name: Prove Bedrock through deployed MLB Lambda role
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-mlb-auto-llm
+          region='${{ secrets.AWS_REGION }}'
+          function_name=$(aws cloudformation describe-stack-resource \
+            --stack-name "$stack" --logical-resource-id MLBAutoLLMBedrockSmokeFunction \
+            --region "$region" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          aws lambda invoke --function-name "$function_name" --region "$region" \
+            --cli-binary-format raw-in-base64-out --cli-read-timeout 180 --payload '{}' \
+            /tmp/mlb-auto-bedrock.json > /tmp/mlb-auto-bedrock-meta.json
+          python - <<'PY'
+          import json
+          meta=json.load(open('/tmp/mlb-auto-bedrock-meta.json'))
+          response=json.load(open('/tmp/mlb-auto-bedrock.json'))
+          assert not meta.get('FunctionError'), (meta, response)
+          assert response.get('ok') is True, response
+          print('MLB Auto LLM Bedrock Lambda role: OK via', response.get('modelId'))
+          PY
 
       - name: Prove autonomous provider collection in AWS
         run: |
@@ -155,19 +130,12 @@ jobs:
           stack=parlay-platform-mlb-auto-llm
           region='${{ secrets.AWS_REGION }}'
           function_name=$(aws cloudformation describe-stack-resource \
-            --stack-name "$stack" \
-            --logical-resource-id MLBAutoLLMFunction \
-            --region "$region" \
-            --query 'StackResourceDetail.PhysicalResourceId' \
-            --output text)
-          aws lambda invoke \
-            --function-name "$function_name" \
-            --region "$region" \
-            --cli-binary-format raw-in-base64-out \
-            --cli-read-timeout 900 \
+            --stack-name "$stack" --logical-resource-id MLBAutoLLMFunction \
+            --region "$region" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          aws lambda invoke --function-name "$function_name" --region "$region" \
+            --cli-binary-format raw-in-base64-out --cli-read-timeout 900 \
             --payload '{"mode":"deployment_provider_smoke"}' \
-            /tmp/mlb-auto-cycle.json \
-            > /tmp/mlb-auto-cycle-meta.json
+            /tmp/mlb-auto-cycle.json > /tmp/mlb-auto-cycle-meta.json
           python - <<'PY'
           import json
           meta=json.load(open('/tmp/mlb-auto-cycle-meta.json'))
@@ -189,10 +157,8 @@ jobs:
         run: |
           set -euo pipefail
           status_url=$(aws cloudformation describe-stacks \
-            --stack-name parlay-platform-mlb-auto-llm \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query "Stacks[0].Outputs[?OutputKey=='MLBAutoLLMStatusUrl'].OutputValue" \
-            --output text)
+            --stack-name parlay-platform-mlb-auto-llm --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='MLBAutoLLMStatusUrl'].OutputValue" --output text)
           curl --fail --silent --show-error --retry 5 --retry-all-errors "$status_url" > /tmp/mlb-auto-status.json
           python - <<'PY'
           import json
