@@ -1,0 +1,126 @@
+name: Finalize MLB Three-API Sequence v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/finalize-mlb-three-api-sequence-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: finalize-mlb-three-api-sequence-v2
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel all obsolete integration and default deploy runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run list --repo "$GITHUB_REPOSITORY" --limit 100 \
+            --json databaseId,workflowName,status > /tmp/runs.json
+          python - <<'PY' >/tmp/cancel.txt
+          import json, os
+          current=int(os.environ['GITHUB_RUN_ID'])
+          obsolete={
+              'Deploy SAM to AWS',
+              'Install MLB Three-API Autonomy v1',
+              'Install MLB Three-API Autonomy v2',
+              'Verify and Deploy MLB Three-API Autonomy v1',
+              'MLB Three-API Runtime Acceptance v1',
+              'Discover BBD Pro MLB Endpoints v1',
+              'Clear Obsolete Three-API Deploys and Run Final Sequence',
+          }
+          for row in json.load(open('/tmp/runs.json')):
+              run_id=int(row['databaseId'])
+              if run_id!=current and row.get('workflowName') in obsolete and row.get('status') in {'queued','in_progress','waiting','requested','pending'}:
+                  print(run_id)
+          PY
+          while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY" || true
+          done </tmp/cancel.txt
+          sleep 20
+
+      - name: Dispatch and wait for BBD endpoint discovery
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run discover-bbd-pro-mlb-endpoints-v1.yml --repo "$GITHUB_REPOSITORY" --ref main
+          sleep 8
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow discover-bbd-pro-mlb-endpoints-v1.yml \
+            --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId')
+          test -n "$run_id"
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status --interval 15
+
+      - name: Cancel default deploy triggered by discovery evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sleep 8
+          gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy.yml --limit 30 \
+            --json databaseId,status > /tmp/default-after-discovery.json
+          python - <<'PY' >/tmp/cancel-default.txt
+          import json
+          for row in json.load(open('/tmp/default-after-discovery.json')):
+              if row.get('status') in {'queued','in_progress','waiting','requested','pending'}:
+                  print(row['databaseId'])
+          PY
+          while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY" || true
+          done </tmp/cancel-default.txt
+          sleep 10
+
+      - name: Dispatch and wait for canonical three-API deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run verify-deploy-mlb-three-api-autonomy-v1.yml --repo "$GITHUB_REPOSITORY" --ref main
+          sleep 8
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow verify-deploy-mlb-three-api-autonomy-v1.yml \
+            --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId')
+          test -n "$run_id"
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status --interval 20
+
+      - name: Cancel redundant default deploy triggered by installed source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sleep 8
+          gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy.yml --limit 30 \
+            --json databaseId,status > /tmp/default-after-install.json
+          python - <<'PY' >/tmp/cancel-default.txt
+          import json
+          for row in json.load(open('/tmp/default-after-install.json')):
+              if row.get('status') in {'queued','in_progress','waiting','requested','pending'}:
+                  print(row['databaseId'])
+          PY
+          while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY" || true
+          done </tmp/cancel-default.txt
+          sleep 10
+
+      - name: Dispatch and wait for strict runtime acceptance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-three-api-acceptance-v1.yml --repo "$GITHUB_REPOSITORY" --ref main
+          sleep 8
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow mlb-three-api-acceptance-v1.yml \
+            --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId')
+          test -n "$run_id"
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status --interval 20
