@@ -1,0 +1,438 @@
+name: One-time MLB AUTO production audit 2026-08-24 18:38 ET
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/audit-mlb-auto-once-20260824-1838.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: audit-mlb-auto-once-20260824-1838
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AUTO_STACK: parlay-platform-mlb-auto-llm
+  ROOT_STACK: parlay-platform-dev
+  SLATE_DATE: '2026-08-24'
+  TARGET_UTC: '2026-08-24T22:38:30Z'
+  REPORT_PATH: runtime_reports/mlb_auto_one_time_audit_20260824_1838_et.json
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install audit runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Hold until the requested audit time
+        run: |
+          set -euo pipefail
+          target=$(date -u -d "$TARGET_UTC" +%s)
+          now=$(date -u +%s)
+          delay=$((target-now))
+          if [ "$delay" -gt 0 ]; then
+            sleep "$delay"
+          fi
+          echo "Audit started at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: Run read-only production audit
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-one-time-audit runtime_reports
+          date -u +%Y-%m-%dT%H:%M:%SZ > /tmp/mlb-one-time-audit/audit-started.txt
+
+          aws cloudformation describe-stacks \
+            --stack-name "$AUTO_STACK" --region "$AWS_REGION" \
+            > /tmp/mlb-one-time-audit/auto-stack.json
+          aws cloudformation describe-stacks \
+            --stack-name "$ROOT_STACK" --region "$AWS_REGION" \
+            > /tmp/mlb-one-time-audit/root-stack.json
+
+          AUTO_FUNCTION=$(aws cloudformation describe-stack-resource \
+            --stack-name "$AUTO_STACK" --logical-resource-id MLBAutoLLMFunction \
+            --region "$AWS_REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          SMOKE_FUNCTION=$(aws cloudformation describe-stack-resource \
+            --stack-name "$AUTO_STACK" --logical-resource-id MLBAutoLLMBedrockSmokeFunction \
+            --region "$AWS_REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          AUTO_TABLE=$(aws cloudformation describe-stacks \
+            --stack-name "$AUTO_STACK" --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='MLBAutoLLMTableName'].OutputValue" --output text)
+          STATUS_URL=$(aws cloudformation describe-stacks \
+            --stack-name "$AUTO_STACK" --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='MLBAutoLLMStatusUrl'].OutputValue" --output text)
+          TODAY_URL=$(aws cloudformation describe-stacks \
+            --stack-name "$AUTO_STACK" --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='MLBAutoLLMTodayUrl'].OutputValue" --output text)
+          ROOT_API=$(aws cloudformation describe-stacks \
+            --stack-name "$ROOT_STACK" --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+          TRAINER_ARN=$(aws cloudformation describe-stacks \
+            --stack-name "$ROOT_STACK" --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='MLBMLTrainingFunctionArn'].OutputValue" --output text)
+
+          printf '%s' "$AUTO_FUNCTION" > /tmp/mlb-one-time-audit/auto-function.txt
+          printf '%s' "$AUTO_TABLE" > /tmp/mlb-one-time-audit/auto-table.txt
+
+          aws lambda get-function-configuration \
+            --function-name "$AUTO_FUNCTION" --region "$AWS_REGION" \
+            > /tmp/mlb-one-time-audit/auto-function-config.json
+          aws lambda get-function-configuration \
+            --function-name "$SMOKE_FUNCTION" --region "$AWS_REGION" \
+            > /tmp/mlb-one-time-audit/smoke-function-config.json
+
+          aws lambda invoke \
+            --function-name "$SMOKE_FUNCTION" --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out --cli-read-timeout 240 \
+            --payload '{}' /tmp/mlb-one-time-audit/model-smoke.json \
+            > /tmp/mlb-one-time-audit/model-smoke-meta.json || true
+
+          curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            "$STATUS_URL" > /tmp/mlb-one-time-audit/public-status.json || printf '{}\n' > /tmp/mlb-one-time-audit/public-status.json
+          curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            "$TODAY_URL" > /tmp/mlb-one-time-audit/public-today.json || printf '{}\n' > /tmp/mlb-one-time-audit/public-today.json
+          curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            "${ROOT_API%/}/v1/health" > /tmp/mlb-one-time-audit/root-health.json || printf '{}\n' > /tmp/mlb-one-time-audit/root-health.json
+          curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            "${ROOT_API%/}/v1/mlb/model/version" > /tmp/mlb-one-time-audit/root-model.json || printf '{}\n' > /tmp/mlb-one-time-audit/root-model.json
+
+          aws lambda invoke \
+            --function-name "$TRAINER_ARN" --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out --cli-read-timeout 240 \
+            --payload '{"sport":"mlb","mode":"status","run":"one_time_audit_20260824_1838_et"}' \
+            /tmp/mlb-one-time-audit/trainer-status.json \
+            > /tmp/mlb-one-time-audit/trainer-status-meta.json || true
+
+          curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            -H "Authorization: Bearer ${BBS_API_KEY_VALUE}" \
+            'https://api.bigballsdata.com/v1/user/me' \
+            > /tmp/mlb-one-time-audit/bbd-account.json || printf '{}\n' > /tmp/mlb-one-time-audit/bbd-account.json
+          curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            -H "Authorization: Bearer ${BBS_API_KEY_VALUE}" \
+            "https://api.bigballsdata.com/v1/matches?sport=baseball&league=mlb&date=${SLATE_DATE}&limit=100" \
+            > /tmp/mlb-one-time-audit/bbd-matches.json || printf '{}\n' > /tmp/mlb-one-time-audit/bbd-matches.json
+          curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/?apiKey=${ODDS_API_KEY_VALUE}&regions=us&markets=h2h,spreads,totals&oddsFormat=decimal&dateFormat=iso" \
+            > /tmp/mlb-one-time-audit/odds-events.json || printf '[]\n' > /tmp/mlb-one-time-audit/odds-events.json
+          curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            "https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=08/24/2026&hydrate=probablePitcher,venue,team,linescore" \
+            > /tmp/mlb-one-time-audit/mlb-schedule.json || printf '{}\n' > /tmp/mlb-one-time-audit/mlb-schedule.json
+
+          aws dynamodb get-item --table-name "$AUTO_TABLE" --region "$AWS_REGION" \
+            --consistent-read \
+            --key '{"PK":{"S":"CARD#2026-08-24"},"SK":{"S":"FINAL"}}' \
+            > /tmp/mlb-one-time-audit/card-item.json || printf '{}\n' > /tmp/mlb-one-time-audit/card-item.json
+          aws dynamodb get-item --table-name "$AUTO_TABLE" --region "$AWS_REGION" \
+            --consistent-read \
+            --key '{"PK":{"S":"AUDIT#2026-08-24"},"SK":{"S":"FINAL"}}' \
+            > /tmp/mlb-one-time-audit/audit-item.json || printf '{}\n' > /tmp/mlb-one-time-audit/audit-item.json
+          aws dynamodb query --table-name "$AUTO_TABLE" --region "$AWS_REGION" \
+            --consistent-read \
+            --key-condition-expression 'PK = :pk' \
+            --expression-attribute-values '{":pk":{"S":"PACKET#2026-08-24"}}' \
+            --scan-index-forward false --limit 1 \
+            > /tmp/mlb-one-time-audit/latest-packet.json || printf '{}\n' > /tmp/mlb-one-time-audit/latest-packet.json
+
+          AUTO_RULES=$(aws cloudformation list-stack-resources \
+            --stack-name "$AUTO_STACK" --region "$AWS_REGION" \
+            --query "StackResourceSummaries[?ResourceType=='AWS::Events::Rule'].PhysicalResourceId" --output text)
+          printf '%s\n' "$AUTO_RULES" | tr '\t' '\n' > /tmp/mlb-one-time-audit/auto-rule-names.txt
+          python - <<'PY'
+          import json, subprocess
+          names=[x.strip() for x in open('/tmp/mlb-one-time-audit/auto-rule-names.txt') if x.strip() and x.strip()!='None']
+          rows=[]
+          for name in names:
+              try:
+                  value=json.loads(subprocess.check_output([
+                      'aws','events','describe-rule','--name',name,'--region','us-east-1','--output','json'
+                  ], text=True))
+                  rows.append({'name':name,'state':value.get('State'),'scheduleExpression':value.get('ScheduleExpression')})
+              except Exception as exc:
+                  rows.append({'name':name,'state':'ERROR','error':type(exc).__name__})
+          json.dump(rows, open('/tmp/mlb-one-time-audit/auto-rules.json','w'), indent=2, sort_keys=True)
+          PY
+
+          END_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          START_UTC=$(date -u -d '35 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          aws cloudwatch get-metric-statistics \
+            --namespace AWS/Lambda --metric-name Invocations \
+            --dimensions Name=FunctionName,Value="$AUTO_FUNCTION" \
+            --start-time "$START_UTC" --end-time "$END_UTC" \
+            --period 300 --statistics Sum --region "$AWS_REGION" \
+            > /tmp/mlb-one-time-audit/invocations.json || printf '{}\n' > /tmp/mlb-one-time-audit/invocations.json
+          aws cloudwatch get-metric-statistics \
+            --namespace AWS/Lambda --metric-name Errors \
+            --dimensions Name=FunctionName,Value="$AUTO_FUNCTION" \
+            --start-time "$START_UTC" --end-time "$END_UTC" \
+            --period 300 --statistics Sum --region "$AWS_REGION" \
+            > /tmp/mlb-one-time-audit/errors.json || printf '{}\n' > /tmp/mlb-one-time-audit/errors.json
+
+          python - <<'PY'
+          from __future__ import annotations
+          import json, os, re
+          from datetime import datetime, timezone, timedelta
+          from decimal import Decimal
+          from pathlib import Path
+          from typing import Any
+          import boto3
+          from boto3.dynamodb.types import TypeDeserializer
+
+          base=Path('/tmp/mlb-one-time-audit')
+          def load(name:str, default:Any):
+              try:
+                  return json.loads((base/name).read_text(encoding='utf-8'))
+              except Exception:
+                  return default
+          def parse_dt(value:Any):
+              if not value:
+                  return None
+              try:
+                  dt=datetime.fromisoformat(str(value).replace('Z','+00:00'))
+                  if dt.tzinfo is None: dt=dt.replace(tzinfo=timezone.utc)
+                  return dt.astimezone(timezone.utc)
+              except Exception:
+                  return None
+          def unwrap(value:Any):
+              if isinstance(value, dict) and isinstance(value.get('body'), str):
+                  try: return json.loads(value['body'])
+                  except Exception: return value
+              return value
+          def ddb_item(raw:Any):
+              item=(raw or {}).get('Item') if isinstance(raw,dict) else None
+              if not isinstance(item,dict): return None
+              des=TypeDeserializer()
+              out={k:des.deserialize(v) for k,v in item.items()}
+              def plain(v):
+                  if isinstance(v,Decimal): return int(v) if v==v.to_integral_value() else float(v)
+                  if isinstance(v,dict): return {k:plain(x) for k,x in v.items()}
+                  if isinstance(v,list): return [plain(x) for x in v]
+                  return v
+              return plain(out)
+          def norm(value:Any):
+              text=re.sub(r'[^a-z0-9]+',' ',str(value or '').lower()).strip()
+              aliases={
+                  'oakland athletics':'athletics','a s':'athletics','athletics':'athletics',
+                  'la dodgers':'los angeles dodgers','la angels':'los angeles angels',
+                  'ny yankees':'new york yankees','ny mets':'new york mets',
+                  'chi cubs':'chicago cubs','chi white sox':'chicago white sox',
+                  'tb rays':'tampa bay rays','sf giants':'san francisco giants',
+                  'sd padres':'san diego padres','az diamondbacks':'arizona diamondbacks',
+                  'kc royals':'kansas city royals','stl cardinals':'st louis cardinals',
+              }
+              return aliases.get(text,text)
+          def team_name(value:Any):
+              if isinstance(value,dict):
+                  for key in ('name','team_name','display_name','short_name'):
+                      if value.get(key): return str(value[key])
+              return str(value or '')
+          def record_teams(row:dict, provider:str):
+              if provider=='odds':
+                  return row.get('home_team'), row.get('away_team')
+              return team_name(row.get('home') or row.get('home_team')), team_name(row.get('away') or row.get('away_team'))
+          def schedule_games(payload:dict):
+              out=[]
+              for date_row in payload.get('dates') or []:
+                  for raw in date_row.get('games') or []:
+                      teams=raw.get('teams') or {}
+                      out.append({
+                          'gamePk':str(raw.get('gamePk') or ''),
+                          'gameDate':raw.get('gameDate'),
+                          'status':raw.get('status') or {},
+                          'home':team_name((teams.get('home') or {}).get('team')),
+                          'away':team_name((teams.get('away') or {}).get('team')),
+                      })
+              return out
+          def match_count(games:list, rows:list, provider:str):
+              matched=[]; missing=[]
+              for game in games:
+                  found=False
+                  for row in rows:
+                      if not isinstance(row,dict): continue
+                      home,away=record_teams(row,provider)
+                      if norm(home)==norm(game['home']) and norm(away)==norm(game['away']):
+                          found=True; break
+                  (matched if found else missing).append(game['gamePk'])
+              return {'matchedGames':len(matched),'missingGamePks':missing,'ok':len(missing)==0 and bool(games)}
+
+          stack=load('auto-stack.json',{})
+          stack_row=((stack.get('Stacks') or [{}])[0])
+          stack_status=stack_row.get('StackStatus')
+          function_cfg=load('auto-function-config.json',{})
+          smoke_cfg=load('smoke-function-config.json',{})
+          model_smoke=unwrap(load('model-smoke.json',{}))
+          model_smoke_meta=load('model-smoke-meta.json',{})
+          public_status=unwrap(load('public-status.json',{}))
+          public_today=unwrap(load('public-today.json',{}))
+          root_health=unwrap(load('root-health.json',{}))
+          root_model=unwrap(load('root-model.json',{}))
+          trainer=unwrap(load('trainer-status.json',{}))
+          trainer_meta=load('trainer-status-meta.json',{})
+          bbd_account=load('bbd-account.json',{})
+          bbd_payload=load('bbd-matches.json',{})
+          odds=load('odds-events.json',[])
+          schedule=load('mlb-schedule.json',{})
+          games=schedule_games(schedule)
+          bbd_rows=bbd_payload.get('data') if isinstance(bbd_payload,dict) else []
+          bbd_rows=bbd_rows if isinstance(bbd_rows,list) else []
+          odds_rows=odds if isinstance(odds,list) else []
+          coverage={
+              'mlbStatsApi':{'ok':bool(games),'scheduledGames':len(games),'gamePks':[g['gamePk'] for g in games]},
+              'theOddsApi':match_count(games,odds_rows,'odds'),
+              'bigBallsDataPro':match_count(games,bbd_rows,'bbd'),
+          }
+          coverage['theOddsApi']['eventsReturned']=len(odds_rows)
+          coverage['bigBallsDataPro']['eventsReturned']=len(bbd_rows)
+
+          card_item=ddb_item(load('card-item.json',{}))
+          card=(card_item or {}).get('data') if isinstance((card_item or {}).get('data'),dict) else None
+          audit_item=ddb_item(load('audit-item.json',{}))
+          audit=(audit_item or {}).get('data') if isinstance((audit_item or {}).get('data'),dict) else None
+          packet_raw=load('latest-packet.json',{})
+          packet_item=None
+          if isinstance(packet_raw.get('Items'),list) and packet_raw['Items']:
+              des=TypeDeserializer(); raw=packet_raw['Items'][0]
+              packet_item={k:des.deserialize(v) for k,v in raw.items()}
+          packet=(packet_item or {}).get('data') if isinstance((packet_item or {}).get('data'),dict) else None
+          rules=load('auto-rules.json',[])
+          invocations=sum(float(x.get('Sum') or 0) for x in (load('invocations.json',{}).get('Datapoints') or []))
+          errors=sum(float(x.get('Sum') or 0) for x in (load('errors.json',{}).get('Datapoints') or []))
+          now=datetime.now(timezone.utc)
+          packet_time=parse_dt((packet or {}).get('retrievedAtUtc') or (packet_item or {}).get('updatedAtUtc'))
+          card_published=parse_dt((card or {}).get('publishedAtUtc'))
+          deadline=parse_dt(((card or {}).get('deadline') or {}).get('publishDeadlineUtc'))
+          first_start=min((parse_dt(g['gameDate']) for g in games if parse_dt(g['gameDate'])), default=None)
+          timing_ok=bool(card_published and first_start and card_published <= first_start-timedelta(minutes=10))
+          picks=(card or {}).get('picks') if isinstance((card or {}).get('picks'),list) else []
+          authorities={str(x.get('decisionAuthority')) for x in picks if isinstance(x,dict)}
+          final_games=[g for g in games if str((g.get('status') or {}).get('abstractGameState') or '').upper()=='FINAL']
+
+          trainer_status=str(trainer.get('status') or trainer.get('trainingStatus') or '') if isinstance(trainer,dict) else ''
+          blocked_slate=(trainer.get('blockedSlateDate') or trainer.get('continuityBlockedSlateDate')) if isinstance(trainer,dict) else None
+          processed_through=(trainer.get('processedThroughSlateDate') or trainer.get('processedThrough')) if isinstance(trainer,dict) else None
+          accepted=(trainer.get('acceptedRowCount') or trainer.get('acceptedRows') or 0) if isinstance(trainer,dict) else 0
+          try: accepted=int(accepted)
+          except Exception: accepted=0
+
+          checks={
+              'stackDeployed': stack_status in {'CREATE_COMPLETE','UPDATE_COMPLETE'} and function_cfg.get('State')=='Active' and function_cfg.get('LastUpdateStatus')=='Successful',
+              'providerCredentials': isinstance(bbd_account,dict) and bbd_account.get('data') is not None and isinstance(odds,list),
+              'officialSchedule': bool(games),
+              'threeSourceCoverage': all(v.get('ok') is True for v in coverage.values()),
+              'modelAuthority': not model_smoke_meta.get('FunctionError') and model_smoke.get('ok') is True and bool(model_smoke.get('modelId')),
+              'publicAutonomyContract': public_status.get('fullyAutonomous') is True and set(public_status.get('threeSourcePolicy') or [])=={'MLB Stats API','The Odds API','Big Balls Sports Data Pro'},
+              'authoritativeCard': bool(card) and len(picks)==len(games) and bool(games),
+              'immutableTMinus10': timing_ok,
+              'modelAuthorityOnEveryPick': bool(picks) and authorities <= {'BEDROCK_LLM','AWS_ML_RANKED_ENSEMBLE'} and len(authorities)==1,
+              'autonomousRulesEnabled': bool(rules) and all(r.get('state')=='ENABLED' for r in rules),
+              'freshAutonomousExecution': invocations > 0,
+              'trainerContinuity': not trainer_meta.get('FunctionError') and not blocked_slate and processed_through not in {None,'','2026-08-03'},
+          }
+          settlement={'status':'WAITING','officialFinalGames':len(final_games),'reason':'No official finals are due yet.'}
+          if final_games:
+              graded=int((audit or {}).get('graded') or 0) if isinstance(audit,dict) else 0
+              settlement={
+                  'status':'PASS' if audit and graded>=len(final_games) else 'FAIL',
+                  'officialFinalGames':len(final_games),
+                  'graded':graded,
+                  'auditPresent':bool(audit),
+              }
+          critical=list(checks.values())
+          overall='HEALTHY' if all(critical) and settlement['status'] in {'PASS','WAITING'} else 'UNHEALTHY'
+          report={
+              'proofType':'MLB_AUTO_ONE_TIME_PRODUCTION_AUDIT',
+              'requestedAuditTimeEt':'2026-08-24T18:38:30-04:00',
+              'auditedAtUtc':now.isoformat(),
+              'overall':overall,
+              'checks':checks,
+              'deployment':{
+                  'stackName':'parlay-platform-mlb-auto-llm','stackStatus':stack_status,
+                  'functionState':function_cfg.get('State'),'lastUpdateStatus':function_cfg.get('LastUpdateStatus'),
+                  'handler':function_cfg.get('Handler'),'lastModified':function_cfg.get('LastModified'),
+              },
+              'providers':{
+                  'credentialAuthentication':{
+                      'bigBallsDataPro':isinstance(bbd_account,dict) and bbd_account.get('data') is not None,
+                      'theOddsApi':isinstance(odds,list),
+                  },
+                  'coverage':coverage,
+              },
+              'modelAuthority':{
+                  'ok':model_smoke.get('ok'),'decisionAuthority':model_smoke.get('decisionAuthority'),
+                  'modelId':model_smoke.get('modelId'),'bedrockAvailable':model_smoke.get('bedrockAvailable'),
+                  'endpointFamily':model_smoke.get('endpointFamily'),'functionError':model_smoke_meta.get('FunctionError'),
+              },
+              'collectionAndAutonomy':{
+                  'rules':rules,'lambdaInvocationsLast35Minutes':invocations,'lambdaErrorsLast35Minutes':errors,
+                  'latestPacketAtUtc':packet_time.isoformat() if packet_time else None,
+                  'latestPacketAgeMinutes':round((now-packet_time).total_seconds()/60,2) if packet_time else None,
+              },
+              'card':{
+                  'present':bool(card),'publishedAtUtc':card_published.isoformat() if card_published else None,
+                  'deadlineUtc':deadline.isoformat() if deadline else None,'firstGameUtc':first_start.isoformat() if first_start else None,
+                  'pickCount':len(picks),'officialGameCount':len(games),'decisionAuthorities':sorted(authorities),
+                  'threeSourceCoverageComplete':(card or {}).get('threeSourceCoverageComplete') if card else None,
+                  'modelAuthorityComplete':(card or {}).get('modelAuthorityComplete') if card else None,
+              },
+              'settlement':settlement,
+              'training':{
+                  'status':trainer_status,'blockedSlateDate':blocked_slate,'processedThroughSlateDate':processed_through,
+                  'acceptedRowCount':accepted,'functionError':trainer_meta.get('FunctionError'),
+              },
+              'rootRuntime':{
+                  'healthOk':root_health.get('ok'),'modelVersion':root_model.get('model_version'),
+                  'primaryAlgorithm':root_model.get('primaryAlgorithm'),'engineImportOk':root_model.get('engine_import_ok'),
+              },
+              'publicStatus':public_status,
+              'publicToday':public_today,
+              'secretExposed':False,
+          }
+          out=Path(os.environ['REPORT_PATH'])
+          out.write_text(json.dumps(report,indent=2,sort_keys=True,default=str)+'\n',encoding='utf-8')
+          print(json.dumps(report,indent=2,sort_keys=True,default=str))
+          PY
+
+      - name: Publish durable one-time audit report
+        if: always()
+        run: |
+          set -euo pipefail
+          test -f "$REPORT_PATH"
+          cp "$REPORT_PATH" /tmp/mlb-auto-one-time-audit.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-auto-one-time-audit origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb-auto-one-time-audit.json "$REPORT_PATH"
+            cp /tmp/mlb-auto-one-time-audit.json runtime_reports/mlb_auto_one_time_audit_latest.json
+            git add "$REPORT_PATH" runtime_reports/mlb_auto_one_time_audit_latest.json
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish one-time MLB AUTO production audit [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
