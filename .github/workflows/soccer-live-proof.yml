@@ -1,0 +1,85 @@
+name: Soccer Live Production Proof
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/soccer-live-proof.yml']
+permissions:
+  contents: write
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Read isolated Soccer runtime
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-soccer-auto
+          mkdir -p runtime_reports /tmp/soccer-proof
+          aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --output json > /tmp/soccer-proof/stack.json
+          aws cloudformation list-stack-resources --stack-name "$stack" --region "$REGION" --output json > /tmp/soccer-proof/resources.json
+          status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" --output text)
+          curl --fail --silent --show-error --max-time 60 "$status_url" > /tmp/soccer-proof/status.json
+          hist=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerHistoricalFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+          aws lambda invoke --function-name "$hist" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"mode":"status"}' /tmp/soccer-proof/historical.json >/tmp/soccer-proof/historical-meta.json
+          worker=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionWorkerFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+          start_ms=$(( ($(date +%s)-21600)*1000 ))
+          aws logs filter-log-events --log-group-name "/aws/lambda/$worker" --region "$REGION" --start-time "$start_ms" --filter-pattern '?ERROR ?Exception ?Traceback ?Unauthorized ?QUOTA_DEFERRED ?ThrottlingException' --limit 100 --output json > /tmp/soccer-proof/errors.json || echo '{"events":[]}' > /tmp/soccer-proof/errors.json
+          aws cloudwatch describe-alarms --region "$REGION" --query 'MetricAlarms[?contains(AlarmName, `Soccer`) || contains(AlarmName, `soccer`)]' --output json > /tmp/soccer-proof/alarms.json
+          python - <<'PY'
+          import json, pathlib, datetime, subprocess, os
+          d=pathlib.Path('/tmp/soccer-proof')
+          load=lambda n: json.loads((d/n).read_text())
+          stack=load('stack.json')['Stacks'][0]
+          resources=load('resources.json')['StackResourceSummaries']
+          status=load('status.json'); historical=load('historical.json'); errors=load('errors.json'); alarms=load('alarms.json')
+          def out(args):
+              return subprocess.check_output(args,text=True).strip()
+          lambdas=[]; rules=[]; queues={}
+          for r in resources:
+              logical=r.get('LogicalResourceId'); physical=r.get('PhysicalResourceId'); typ=r.get('ResourceType')
+              if typ=='AWS::Lambda::Function':
+                  x=json.loads(out(['aws','lambda','get-function-configuration','--function-name',physical,'--region',os.environ['REGION'],'--output','json']))
+                  lambdas.append({'logical':logical,'state':x.get('State'),'lastUpdateStatus':x.get('LastUpdateStatus'),'lastModified':x.get('LastModified')})
+              elif typ=='AWS::Events::Rule':
+                  x=json.loads(out(['aws','events','describe-rule','--name',physical,'--region',os.environ['REGION'],'--output','json']))
+                  rules.append({'logical':logical,'state':x.get('State'),'schedule':x.get('ScheduleExpression')})
+              elif typ=='AWS::SQS::Queue' and logical in ('SoccerCollectionQueue','SoccerCollectionDeadLetterQueue'):
+                  url=physical if str(physical).startswith('http') else out(['aws','sqs','get-queue-url','--queue-name',physical,'--region',os.environ['REGION'],'--query','QueueUrl','--output','text'])
+                  queues[logical]=json.loads(out(['aws','sqs','get-queue-attributes','--queue-url',url,'--region',os.environ['REGION'],'--attribute-names','ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible','ApproximateNumberOfMessagesDelayed','--output','json']))
+          params={x['ParameterKey']:x['ParameterValue'] for x in stack.get('Parameters',[])}
+          active_alarms=[x for x in alarms if x.get('StateValue')=='ALARM']
+          bad_lambdas=[x for x in lambdas if x.get('state')!='Active' or x.get('lastUpdateStatus')!='Successful']
+          report={
+            'proofType':'SOCCER_LIVE_PRODUCTION_PROOF',
+            'observedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'stackStatus':stack.get('StackStatus'),
+            'stackLastUpdated':stack.get('LastUpdatedTime'),
+            'parameters':{k:params.get(k) for k in ('EnableHistoricalBackfill','SharedQuotaReservePercent','SoccerOddsRequestsPerSecond','SoccerLlmModelId')},
+            'lambdas':lambdas,'badLambdas':bad_lambdas,'eventRules':rules,'queues':queues,
+            'activeAlarms':active_alarms,'publicStatus':status,'historicalStatus':historical,
+            'recentWorkerErrors':errors.get('events',[]),
+          }
+          report['infrastructureHealthy']=stack.get('StackStatus') in ('CREATE_COMPLETE','UPDATE_COMPLETE') and not bad_lambdas and not active_alarms
+          pathlib.Path('runtime_reports/soccer_live_production_proof_latest.json').write_text(json.dumps(report,indent=2,default=str)+'\n')
+          print(json.dumps(report,indent=2,default=str))
+          PY
+      - name: Publish proof without losing concurrent-runtime races
+        run: |
+          set -euo pipefail
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add runtime_reports/soccer_live_production_proof_latest.json
+          git commit -m 'runtime: publish Soccer live production proof [skip ci]' || exit 0
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            git rebase --abort 2>/dev/null || true
+            sleep $((attempt*2))
+          done
+          exit 1
