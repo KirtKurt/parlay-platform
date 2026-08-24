@@ -1,0 +1,106 @@
+{
+  "catalog": [
+    {
+      "errorCode": "AccessDeniedException",
+      "message": "An error occurred (AccessDeniedException) when calling the ListFoundationModels operation: User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: bedrock:ListFoundationModels because no identity-based policy allows the bedrock:ListFoundationModels action"
+    }
+  ],
+  "createdAtUtc": "2026-08-24T20:17:36.756610+00:00",
+  "inferenceProfiles": [
+    {
+      "errorCode": "AccessDeniedException",
+      "message": "An error occurred (AccessDeniedException) when calling the ListInferenceProfiles operation: User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: bedrock:ListInferenceProfiles on resource: arn:aws:bedrock:us-east-1:735707987003:inference-profile/* because n"
+    }
+  ],
+  "ok": false,
+  "probeResults": [
+    {
+      "errorCode": "ResourceNotFoundException",
+      "message": "This model version has reached the end of its life. Please refer to the AWS documentation for more details.",
+      "modelId": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+      "ok": false
+    },
+    {
+      "errorCode": "ResourceNotFoundException",
+      "message": "This model version has reached the end of its life. Please refer to the AWS documentation for more details.",
+      "modelId": "anthropic.claude-3-5-haiku-20241022-v1:0",
+      "ok": false
+    },
+    {
+      "errorCode": "ResourceNotFoundException",
+      "message": "This model version has reached the end of its life. Please refer to the AWS documentation for more details.",
+      "modelId": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+      "ok": false
+    },
+    {
+      "errorCode": "AccessDeniedException",
+      "message": "User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: bedrock:InvokeModel on resource: arn:aws:bedrock:us-east-1:735707987003:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0 because no identity-based policy allows the bedrock:InvokeModel action",
+      "modelId": "us.anthropic.claude-sonnet-4-20250514-v1:0",
+      "ok": false
+    },
+    {
+      "errorCode": "AccessDeniedException",
+      "message": "User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: bedrock:InvokeModel on resource: arn:aws:bedrock:us-east-1:735707987003:inference-profile/us.meta.llama3-3-70b-instruct-v1:0 because no identity-based policy allows the bedrock:InvokeModel action",
+      "modelId": "us.meta.llama3-3-70b-instruct-v1:0",
+      "ok": false
+    },
+    {
+      "errorCode": "AccessDeniedException",
+      "message": "User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: bedrock:InvokeModel on resource: arn:aws:bedrock:us-east-1::foundation-model/meta.llama3-3-70b-instruct-v1:0 because no identity-based policy allows the bedrock:InvokeModel action",
+      "modelId": "meta.llama3-3-70b-instruct-v1:0",
+      "ok": false
+    },
+    {
+      "errorCode": "ResourceNotFoundException",
+      "message": "This model version has reached the end of its life. Please refer to the AWS documentation for more details.",
+      "modelId": "us.meta.llama3-2-11b-instruct-v1:0",
+      "ok": false
+    },
+    {
+      "errorCode": "ResourceNotFoundException",
+      "message": "This model version has reached the end of its life. Please refer to the AWS documentation for more details.",
+      "modelId": "meta.llama3-2-11b-instruct-v1:0",
+      "ok": false
+    },
+    {
+      "errorCode": "AccessDeniedException",
+      "message": "User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: bedrock:InvokeModel on resource: arn:aws:bedrock:us-east-1::foundation-model/mistral.mistral-large-2402-v1:0 because no identity-based policy allows the bedrock:InvokeModel action",
+      "modelId": "mistral.mistral-large-2402-v1:0",
+      "ok": false
+    },
+    {
+      "errorCode": "AccessDeniedException",
+      "message": "User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: bedrock:InvokeModel on resource: arn:aws:bedrock:us-east-1::foundation-model/mistral.mistral-small-2402-v1:0 because no identity-based policy allows the bedrock:InvokeModel action",
+      "modelId": "mistral.mistral-small-2402-v1:0",
+      "ok": false
+    },
+    {
+      "errorCode": "AccessDeniedException",
+      "message": "User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: bedrock:InvokeModel on resource: arn:aws:bedrock:us-east-1::foundation-model/cohere.command-r-v1:0 because no identity-based policy allows the bedrock:InvokeModel action",
+      "modelId": "cohere.command-r-v1:0",
+      "ok": false
+    },
+    {
+      "errorCode": "AccessDeniedException",
+      "message": "User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: bedrock:InvokeModel on resource: arn:aws:bedrock:us-east-1::foundation-model/cohere.command-r-plus-v1:0 because no identity-based policy allows the bedrock:InvokeModel action",
+      "modelId": "cohere.command-r-plus-v1:0",
+      "ok": false
+    },
+    {
+      "errorCode": "ResourceNotFoundException",
+      "message": "This model version has reached the end of its life. Please refer to the AWS documentation for more details.",
+      "modelId": "amazon.titan-text-lite-v1",
+      "ok": false
+    },
+    {
+      "errorCode": "ResourceNotFoundException",
+      "message": "This model version has reached the end of its life. Please refer to the AWS documentation for more details.",
+      "modelId": "amazon.titan-text-express-v1",
+      "ok": false
+    }
+  ],
+  "proofType": "MLB_BEDROCK_MODEL_ACCESS_PROBE",
+  "region": "us-east-1",
+  "secretExposed": false,
+  "successfulModelIds": []
+}
