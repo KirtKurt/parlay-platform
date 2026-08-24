@@ -1,0 +1,88 @@
+name: Export live Tennis production code for hotfix
+
+on:
+  pull_request:
+    branches: [fix/tennis-snapshot-overflow-20260824]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-live-code:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      TENNIS_STACK_NAME: parlay-platform-tennis-ml-prod
+    steps:
+      - name: Configure established AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Export exact deployed Tennis Lambda package and stack metadata
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p /tmp/live-tennis-code /tmp/live-tennis-evidence
+
+          stack_status=$(aws cloudformation describe-stacks \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --query 'Stacks[0].StackStatus' --output text)
+          case "$stack_status" in
+            CREATE_COMPLETE|UPDATE_COMPLETE) ;;
+            *) echo "Unexpected Tennis stack status: $stack_status" >&2; exit 1 ;;
+          esac
+          printf '%s\n' "$stack_status" > /tmp/live-tennis-evidence/stack-status.txt
+
+          function_name=$(aws cloudformation describe-stack-resource \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --logical-resource-id TennisIngestFunction \
+            --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          test -n "$function_name" && test "$function_name" != None
+          printf '%s\n' "$function_name" > /tmp/live-tennis-evidence/function-name.txt
+
+          aws lambda get-function-configuration \
+            --function-name "$function_name" \
+            --query '{FunctionName:FunctionName,FunctionArn:FunctionArn,Runtime:Runtime,Handler:Handler,CodeSize:CodeSize,CodeSha256:CodeSha256,LastModified:LastModified,MemorySize:MemorySize,Timeout:Timeout,RevisionId:RevisionId,Architectures:Architectures}' \
+            --output json > /tmp/live-tennis-evidence/function-configuration-sanitized.json
+
+          code_url=$(aws lambda get-function \
+            --function-name "$function_name" \
+            --query 'Code.Location' --output text)
+          test -n "$code_url" && test "$code_url" != None
+          curl -LfsS "$code_url" -o /tmp/live-tennis-ingest.zip
+          unzip -q /tmp/live-tennis-ingest.zip -d /tmp/live-tennis-code
+          sha256sum /tmp/live-tennis-ingest.zip \
+            > /tmp/live-tennis-evidence/live-tennis-ingest.zip.sha256
+
+          aws cloudformation get-template \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --template-stage Processed --output json \
+            > /tmp/live-tennis-evidence/processed-stack-template.json
+          aws cloudformation list-stack-resources \
+            --stack-name "$TENNIS_STACK_NAME" --output json \
+            > /tmp/live-tennis-evidence/stack-resources.json
+
+          test -f /tmp/live-tennis-code/tennis_storage.py
+          test -f /tmp/live-tennis-code/tennis_pull_history.py
+          test -f /tmp/live-tennis-code/tennis_ingest.py
+          python -m py_compile \
+            /tmp/live-tennis-code/tennis_storage.py \
+            /tmp/live-tennis-code/tennis_pull_history.py \
+            /tmp/live-tennis-code/tennis_ingest.py
+
+      - name: Upload exact live Tennis code and sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-tennis-production-code-hotfix
+          retention-days: 2
+          if-no-files-found: error
+          path: |
+            /tmp/live-tennis-code/
+            /tmp/live-tennis-evidence/
