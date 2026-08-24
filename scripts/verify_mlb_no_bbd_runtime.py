@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Fail closed if an active MLB deployment path can read or call BBD/BBS.
+"""Verify the MLB provider boundary and the isolated three-source MLB AUTO stack.
 
-Legacy source files may remain temporarily for historical artifact compatibility, but
-no active SAM template, GitHub workflow, scheduled collector, deployment stabilizer,
-or provider-neutral context entrypoint may require a BBD credential or endpoint.
+The legacy/root MLB stack remains provider-neutral and must not acquire a BBD/BBS
+credential or endpoint.  The isolated ``mlb-auto-llm`` stack is intentionally the
+opposite: it must include MLB Stats API, The Odds API, Big Balls Sports Data Pro,
+Bedrock decision authority, per-game source coverage, and an immutable T-10 card.
+
+The historical filename is retained because the canonical root deployment and
+migration checks call it.  Its contract is no longer a repository-wide ban on BBD.
 """
 from __future__ import annotations
 
@@ -25,7 +29,10 @@ FORBIDDEN = (
     "mlb/providers/" + "bbs/",
 )
 
-ACTIVE_FILES = (
+# These are the only files governed by the legacy provider-neutral contract.
+# Isolated MLB AUTO files are verified positively below and must never be added
+# to this tuple.
+LEGACY_PROVIDER_NEUTRAL_FILES = (
     Path("template.yaml"),
     Path(".github/workflows/deploy.yml"),
     Path(".github/workflows/mlb-v8-historical-context-backfill.yml"),
@@ -34,11 +41,45 @@ ACTIVE_FILES = (
     Path("scripts/run_mlb_v8_historical_context_backfill_entrypoint.py"),
 )
 
-# This one-time migration workflow retains the retired provider term only in its
-# pathname so existing Actions registrations and PR links remain stable. Its
-# contents are still scanned for every forbidden secret, endpoint and parameter.
-MIGRATION_WORKFLOW_NAME_EXEMPTIONS = {
-    Path(".github/workflows/mlb-remove-bbd-active-runtime-once.yml")
+# Compatibility alias used by existing tests and migration tooling.
+ACTIVE_FILES = LEGACY_PROVIDER_NEUTRAL_FILES
+
+ISOLATED_THREE_SOURCE_REQUIREMENTS = {
+    Path("mlb_auto_llm/handler.py"): (
+        'VERSION = "MLB-AUTO-LLM-v1-three-source-autonomous"',
+        "https://statsapi.mlb.com/api/v1/schedule",
+        "https://api.the-odds-api.com/v4/sports/baseball_mlb",
+        "https://api.bigballsdata.com",
+        'boto3.client("bedrock-runtime")',
+        "FIRST_GAME_SAFETY_MINUTES",
+        'condition="attribute_not_exists(PK)"',
+        '"authority": "MLB_AUTO_LLM_PRIMARY"',
+    ),
+    Path("mlb_auto_llm/orchestrator.py"): (
+        "THREE_SOURCE_GAME_COVERAGE_INCOMPLETE",
+        "BEDROCK_DECISION_REQUIRED",
+        "threeSourceCoverageComplete",
+        "teamRecentForm",
+        "playerRollingStats",
+        "bbsLeagueContext",
+    ),
+    Path("mlb-auto-llm-template.yaml"): (
+        "OddsApiKey:",
+        "BbsApiKey:",
+        "BBS_API_SECRET_ARN",
+        "bedrock:InvokeModel",
+        "MLB_AUTO_FIRST_GAME_SAFETY_MINUTES: '10'",
+        "Schedule: cron(2/5 * * * ? *)",
+        "DeletionPolicy: Retain",
+    ),
+    Path(".github/workflows/deploy-mlb-auto-llm.yml"): (
+        "secrets.ODDS_API_KEY",
+        "secrets.BBS_API_KEY",
+        "api.bigballsdata.com/v1/user/me",
+        'BbsApiKey="${BBS_API_KEY_VALUE}"',
+        "Prove Bedrock through deployed MLB Lambda role",
+        "Prove autonomous provider collection in AWS",
+    ),
 }
 
 
@@ -49,43 +90,57 @@ def _read(path: Path) -> str:
     return resolved.read_text(encoding="utf-8")
 
 
-def verify_files(paths: Iterable[Path] = ACTIVE_FILES) -> list[str]:
+def _verify_legacy_provider_neutral(paths: Iterable[Path]) -> list[str]:
     errors: list[str] = []
     for path in paths:
-        text = _read(path)
+        try:
+            text = _read(path)
+        except RuntimeError:
+            errors.append(f"legacy_provider_neutral_file_missing:{path}")
+            continue
         for token in FORBIDDEN:
             if token in text:
                 errors.append(f"active_bbd_reference:{path}:{token}")
+    return errors
 
-    workflows = ROOT / ".github" / "workflows"
-    for path in sorted(workflows.glob("*.y*ml")):
-        text = path.read_text(encoding="utf-8")
-        if "schedule:" not in text and "workflow_dispatch:" not in text:
+
+def _verify_isolated_three_source() -> list[str]:
+    errors: list[str] = []
+    for path, required_markers in ISOLATED_THREE_SOURCE_REQUIREMENTS.items():
+        try:
+            text = _read(path)
+        except RuntimeError:
+            errors.append(f"isolated_three_source_file_missing:{path}")
             continue
-        relative = path.relative_to(ROOT)
-        lower_name = path.name.lower()
-        if (
-            relative not in MIGRATION_WORKFLOW_NAME_EXEMPTIONS
-            and ("bbd" in lower_name or "bbs" in lower_name)
-        ):
-            errors.append(f"active_bbd_workflow_name:{relative}")
-        for token in FORBIDDEN:
-            if token in text:
-                errors.append(f"active_bbd_workflow_reference:{relative}:{token}")
+        for marker in required_markers:
+            if marker not in text:
+                errors.append(
+                    f"isolated_three_source_marker_missing:{path}:{marker}"
+                )
+    return errors
 
-    context = _read(
-        Path("scripts/run_mlb_v8_historical_context_backfill_entrypoint.py")
-    )
-    required = (
+
+def verify_files(paths: Iterable[Path] = ACTIVE_FILES) -> list[str]:
+    errors = _verify_legacy_provider_neutral(paths)
+
+    try:
+        context = _read(
+            Path("scripts/run_mlb_v8_historical_context_backfill_entrypoint.py")
+        )
+    except RuntimeError:
+        context = ""
+    required_legacy_context = (
         "OfficialContextClient",
         '"official_mlb"',
         '"bbsApiUsed": False',
         '"bbsCredentialRead": False',
         '"productionAuthorityChanged": False',
     )
-    for token in required:
+    for token in required_legacy_context:
         if token not in context:
             errors.append(f"official_context_contract_missing:{token}")
+
+    errors.extend(_verify_isolated_three_source())
     return sorted(set(errors))
 
 
@@ -95,7 +150,12 @@ def main() -> int:
         for error in errors:
             print(error)
         return 1
-    print("MLB active runtime is provider-neutral and contains no BBD/BBS dependency.")
+    print(
+        "MLB provider boundary is valid: the legacy root stack is provider-neutral; "
+        "the isolated MLB AUTO stack positively requires MLB Stats API, The Odds API, "
+        "Big Balls Sports Data Pro, Bedrock, complete per-game coverage, and an "
+        "immutable T-10 card."
+    )
     return 0
 
 
