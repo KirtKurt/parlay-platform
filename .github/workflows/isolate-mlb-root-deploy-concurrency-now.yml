@@ -1,0 +1,79 @@
+name: Isolate MLB root deployment concurrency by ref now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/isolate-mlb-root-deploy-concurrency-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-main-and-repair-branch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Patch main deployment concurrency
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path=Path('.github/workflows/deploy.yml')
+          text=path.read_text(encoding='utf-8')
+          old='  group: parlay-platform-deploy\n'
+          new='  group: parlay-platform-deploy-${{ github.ref }}\n'
+          if new not in text:
+              if text.count(old) != 1:
+                  raise SystemExit(f'expected one root deploy concurrency group, found {text.count(old)}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/deploy.yml
+          if ! git diff --cached --quiet; then
+            git commit -m 'Isolate root deployment concurrency by ref'
+            for attempt in 1 2 3 4 5; do
+              if git push origin HEAD:main; then break; fi
+              test "$attempt" != 5 || exit 1
+              git fetch origin main
+              git rebase origin/main
+              sleep $((attempt * 2))
+            done
+          fi
+      - name: Patch pinned settlement repair branch concurrency
+        run: |
+          set -euo pipefail
+          branch='repair/mlb-production-final-20260824'
+          git fetch origin "$branch"
+          git checkout -B "$branch" "origin/$branch"
+          python - <<'PY'
+          from pathlib import Path
+          path=Path('.github/workflows/deploy.yml')
+          text=path.read_text(encoding='utf-8')
+          old='  group: parlay-platform-deploy\n'
+          new='  group: parlay-platform-deploy-${{ github.ref }}\n'
+          if new not in text:
+              if text.count(old) != 1:
+                  raise SystemExit(f'expected one root deploy concurrency group, found {text.count(old)}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          git diff --check
+          git add .github/workflows/deploy.yml
+          if ! git diff --cached --quiet; then
+            git commit -m 'Isolate pinned MLB deployment concurrency by ref'
+            for attempt in 1 2 3 4 5; do
+              if git push origin "HEAD:$branch"; then break; fi
+              test "$attempt" != 5 || exit 1
+              git fetch origin "$branch"
+              git rebase "origin/$branch"
+              sleep $((attempt * 2))
+            done
+          fi
+          echo "Pinned repair head: $(git rev-parse HEAD)"
