@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Isolated autonomous MLB winner-prediction stack using MLB Stats API, The Odds API, Big Balls Sports Data Pro, and Bedrock.
+
+Parameters:
+  OddsApiKey:
+    Type: String
+    NoEcho: true
+  BbsApiKey:
+    Type: String
+    NoEcho: true
+  TargetDailyAccuracy:
+    Type: String
+    Default: '0.70'
+  CardLeadMinutesBeforeSecondGame:
+    Type: Number
+    Default: 45
+  BedrockModels:
+    Type: String
+    Default: 'us.amazon.nova-2-lite-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'
+
+Resources:
+  MLBAutoLLMTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: inqsi_mlb_auto_llm
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  MLBAutoLLMBbsSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Big Balls Sports Data Pro API key for isolated MLB Auto LLM
+      SecretString: !Ref BbsApiKey
+
+  MLBAutoLLMFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: mlb_auto_llm/
+      Handler: handler.lambda_handler
+      Runtime: python3.11
+      Timeout: 900
+      MemorySize: 3072
+      ReservedConcurrentExecutions: 1
+      Environment:
+        Variables:
+          MLB_AUTO_TABLE: !Ref MLBAutoLLMTable
+          ODDS_API_KEY: !Ref OddsApiKey
+          BBS_API_SECRET_ARN: !Ref MLBAutoLLMBbsSecret
+          MLB_AUTO_TARGET_DAILY_ACCURACY: !Ref TargetDailyAccuracy
+          MLB_AUTO_CARD_LEAD_MINUTES_BEFORE_SECOND_GAME: !Ref CardLeadMinutesBeforeSecondGame
+          MLB_AUTO_FIRST_GAME_SAFETY_MINUTES: '10'
+          MLB_AUTO_FINAL_COLLECTION_WINDOW_MINUTES: '20'
+          MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MLBAutoLLMTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref MLBAutoLLMBbsSecret
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource: '*'
+      Events:
+        AutonomousCycle:
+          Type: Schedule
+          Properties:
+            Schedule: cron(2/5 * * * ? *)
+            Enabled: true
+            Input: '{"mode":"autonomous_cycle"}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 600
+              MaximumRetryAttempts: 1
+        StatusApi:
+          Type: Api
+          Properties:
+            Path: /v1/mlb-auto-llm/status
+            Method: GET
+        TodayApi:
+          Type: Api
+          Properties:
+            Path: /v1/mlb-auto-llm/today
+            Method: GET
+        RunApi:
+          Type: Api
+          Properties:
+            Path: /v1/mlb-auto-llm/run
+            Method: POST
+
+Outputs:
+  MLBAutoLLMStatusUrl:
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/mlb-auto-llm/status'
+  MLBAutoLLMTodayUrl:
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/mlb-auto-llm/today'
+  MLBAutoLLMRunUrl:
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/mlb-auto-llm/run'
+  MLBAutoLLMTableName:
+    Value: !Ref MLBAutoLLMTable
