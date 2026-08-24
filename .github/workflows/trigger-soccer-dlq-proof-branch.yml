@@ -1,0 +1,15 @@
+name: Trigger Soccer DLQ Proof Branch
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/trigger-soccer-dlq-proof-branch.yml']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run soccer-dlq-proof-branch.yml --repo "$GITHUB_REPOSITORY" --ref main
