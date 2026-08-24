@@ -1,7 +1,80 @@
 {
-  "commit": "6361a85da966dec6ddd7bb5a2b8d04af41ef891f",
-  "region_configured": true,
-  "run_id": "32778218717",
+  "commit": "229635fb85c4208dcd78a951956245dcb5fd69d8",
+  "failed_events": [
+    {
+      "logical_id": "parlay-platform-nfl-auto",
+      "reason": "The following resource(s) failed to create: [NflAlarmTopic, NflBbdSecret, NflOddsSecret, NflGamesTable, NflFailureQueue, NflOpsTable, NflModelsTable, NflRawBucket, NflArtifactBucket, NflStateTable, NflOddsTable, NflPredictionsTable, NflFeaturesTable]. Rollback requested by user.",
+      "status": "ROLLBACK_IN_PROGRESS",
+      "type": "AWS::CloudFormation::Stack"
+    },
+    {
+      "logical_id": "NflFeaturesTable",
+      "reason": "Resource creation cancelled",
+      "status": "CREATE_FAILED",
+      "type": "AWS::DynamoDB::Table"
+    },
+    {
+      "logical_id": "NflStateTable",
+      "reason": "Resource creation cancelled",
+      "status": "CREATE_FAILED",
+      "type": "AWS::DynamoDB::Table"
+    },
+    {
+      "logical_id": "NflPredictionsTable",
+      "reason": "Resource creation cancelled",
+      "status": "CREATE_FAILED",
+      "type": "AWS::DynamoDB::Table"
+    },
+    {
+      "logical_id": "NflOddsTable",
+      "reason": "Resource creation cancelled",
+      "status": "CREATE_FAILED",
+      "type": "AWS::DynamoDB::Table"
+    },
+    {
+      "logical_id": "NflGamesTable",
+      "reason": "Resource creation cancelled",
+      "status": "CREATE_FAILED",
+      "type": "AWS::DynamoDB::Table"
+    },
+    {
+      "logical_id": "NflOpsTable",
+      "reason": "Resource creation cancelled",
+      "status": "CREATE_FAILED",
+      "type": "AWS::DynamoDB::Table"
+    },
+    {
+      "logical_id": "NflBbdSecret",
+      "reason": "Resource creation cancelled",
+      "status": "CREATE_FAILED",
+      "type": "AWS::SecretsManager::Secret"
+    },
+    {
+      "logical_id": "NflOddsSecret",
+      "reason": "Resource creation cancelled",
+      "status": "CREATE_FAILED",
+      "type": "AWS::SecretsManager::Secret"
+    },
+    {
+      "logical_id": "NflModelsTable",
+      "reason": "Resource creation cancelled",
+      "status": "CREATE_FAILED",
+      "type": "AWS::DynamoDB::Table"
+    },
+    {
+      "logical_id": "NflRawBucket",
+      "reason": "Resource creation cancelled",
+      "status": "CREATE_FAILED",
+      "type": "AWS::S3::Bucket"
+    },
+    {
+      "logical_id": "NflArtifactBucket",
+      "reason": "Resource creation cancelled",
+      "status": "CREATE_FAILED",
+      "type": "AWS::S3::Bucket"
+    }
+  ],
+  "run_id": "32778312174",
   "stack": "parlay-platform-nfl-auto",
   "stack_status": "ROLLBACK_IN_PROGRESS",
   "status_url": "None"
