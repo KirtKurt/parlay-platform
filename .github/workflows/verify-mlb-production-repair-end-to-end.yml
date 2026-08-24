@@ -1,0 +1,127 @@
+name: Verify MLB production repair end to end
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-mlb-production-repair-end-to-end.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: verify-mlb-production-repair-end-to-end
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Resolve explicitly dispatched production runs
+        id: runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cutoff='2026-08-24T22:48:00Z'
+          resolve() {
+            local workflow="$1"
+            gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow "$workflow" \
+              --event workflow_dispatch \
+              --limit 20 \
+              --json databaseId,createdAt,headSha,status,conclusion,url \
+              --jq "map(select(.createdAt >= \"${cutoff}\")) | sort_by(.createdAt) | last | .databaseId"
+          }
+          auto_run="$(resolve deploy-mlb-auto-llm.yml)"
+          root_run="$(resolve deploy.yml)"
+          test -n "$auto_run" && test "$auto_run" != null
+          test -n "$root_run" && test "$root_run" != null
+          echo "auto_run=$auto_run" >> "$GITHUB_OUTPUT"
+          echo "root_run=$root_run" >> "$GITHUB_OUTPUT"
+          echo "Resolved isolated MLB AUTO run $auto_run"
+          echo "Resolved root production run $root_run"
+
+      - name: Observe isolated MLB AUTO deployment to terminal state
+        id: auto
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.runs.outputs.auto_run }}
+        shell: bash
+        run: |
+          set +e
+          gh run watch "$RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status --interval 10
+          rc=$?
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Observe root production deployment to terminal state
+        id: root
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.runs.outputs.root_run }}
+        shell: bash
+        run: |
+          set +e
+          gh run watch "$RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status --interval 10
+          rc=$?
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Publish durable deployment conclusions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUTO_RUN: ${{ steps.runs.outputs.auto_run }}
+          ROOT_RUN: ${{ steps.runs.outputs.root_run }}
+          AUTO_EXIT: ${{ steps.auto.outputs.exit_code }}
+          ROOT_EXIT: ${{ steps.root.outputs.exit_code }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          auto_json="$(gh run view "$AUTO_RUN" --repo "$GITHUB_REPOSITORY" --json databaseId,name,displayTitle,event,headSha,status,conclusion,createdAt,startedAt,updatedAt,url,jobs)"
+          root_json="$(gh run view "$ROOT_RUN" --repo "$GITHUB_REPOSITORY" --json databaseId,name,displayTitle,event,headSha,status,conclusion,createdAt,startedAt,updatedAt,url,jobs)"
+          jq -n \
+            --arg generatedAtUtc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg sourceSha "$(git rev-parse HEAD)" \
+            --argjson auto "$auto_json" \
+            --argjson root "$root_json" \
+            --arg autoExit "$AUTO_EXIT" \
+            --arg rootExit "$ROOT_EXIT" \
+            '{
+              generatedAtUtc: $generatedAtUtc,
+              observerSourceSha: $sourceSha,
+              isolatedMlbAuto: ($auto + {watchExitCode: ($autoExit|tonumber)}),
+              rootProduction: ($root + {watchExitCode: ($rootExit|tonumber)}),
+              ok: (
+                $auto.conclusion == "success" and
+                $root.conclusion == "success" and
+                ($autoExit|tonumber) == 0 and
+                ($rootExit|tonumber) == 0
+              )
+            }' > runtime_reports/mlb_production_repair_deployments_latest.json
+          cat runtime_reports/mlb_production_repair_deployments_latest.json
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime_reports/mlb_production_repair_deployments_latest.json
+          git commit -m 'Publish MLB production repair deployment proof [skip ci]' || true
+          git push origin HEAD:main
+
+      - name: Require both production deployments to pass
+        env:
+          AUTO_EXIT: ${{ steps.auto.outputs.exit_code }}
+          ROOT_EXIT: ${{ steps.root.outputs.exit_code }}
+        run: |
+          test "$AUTO_EXIT" = 0
+          test "$ROOT_EXIT" = 0
