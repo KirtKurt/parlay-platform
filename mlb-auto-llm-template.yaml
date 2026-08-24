@@ -68,9 +68,12 @@ Resources:
           MLB_AUTO_FINAL_COLLECTION_WINDOW_MINUTES: '20'
           MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
           MLB_AUTO_ML_API_BASE_URL: !Ref MlbMlApiBaseUrl
-          MLB_AUTO_BEDROCK_DISCOVERY: 'true'
+          MLB_AUTO_BEDROCK_MANTLE_DISCOVERY: 'true'
+          MLB_AUTO_BEDROCK_RUNTIME_DISCOVERY: 'true'
+          MLB_AUTO_BEDROCK_RUNTIME_PROVIDERS: 'amazon,openai'
+          MLB_AUTO_BEDROCK_ROUTE_CATALOG_LIMIT: '64'
           MLB_AUTO_BEDROCK_REGIONS: 'us-east-1,us-west-2,us-east-2'
-          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '200'
+          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '8'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref MLBAutoLLMTable
@@ -92,7 +95,6 @@ Resources:
               Resource: '*'
             - Effect: Allow
               Action:
-                - aws-marketplace:Subscribe
                 - aws-marketplace:ViewSubscriptions
               Resource: '*'
       Events:
@@ -133,9 +135,12 @@ Resources:
         Variables:
           MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
           MLB_AUTO_ML_API_BASE_URL: !Ref MlbMlApiBaseUrl
-          MLB_AUTO_BEDROCK_DISCOVERY: 'true'
+          MLB_AUTO_BEDROCK_MANTLE_DISCOVERY: 'true'
+          MLB_AUTO_BEDROCK_RUNTIME_DISCOVERY: 'true'
+          MLB_AUTO_BEDROCK_RUNTIME_PROVIDERS: 'amazon,openai'
+          MLB_AUTO_BEDROCK_ROUTE_CATALOG_LIMIT: '64'
           MLB_AUTO_BEDROCK_REGIONS: 'us-east-1,us-west-2,us-east-2'
-          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '200'
+          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '8'
       Policies:
         - Statement:
             - Effect: Allow
@@ -151,7 +156,6 @@ Resources:
               Resource: '*'
             - Effect: Allow
               Action:
-                - aws-marketplace:Subscribe
                 - aws-marketplace:ViewSubscriptions
               Resource: '*'
 

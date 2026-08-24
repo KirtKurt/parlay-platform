@@ -348,7 +348,7 @@ def _invoke_openai(
     model_id: str, prompt: str, *, max_tokens: int, region: str
 ) -> Dict[str, Any]:
     payload = _post_json(
-        f"https://bedrock-mantle.{region}.api.aws/openai/v1/responses",
+        f"https://bedrock-mantle.{region}.api.aws/v1/responses",
         {
             "Authorization": f"Bearer {_bearer_token()}",
             "Content-Type": "application/json",

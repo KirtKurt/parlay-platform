@@ -8,6 +8,31 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import handler as base
+import model_gateway as legacy_gateway
+import production_model_gateway as production_gateway
+
+
+def _invoke_endpoint_native_chain(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    """Bind strict slate decisions to the same endpoint-native gateway as smoke.
+
+    The strict card builder removes a schema-invalid route using the returned
+    modelId. Preserve the full route identity while retaining the provider
+    model ID separately for evidence.
+    """
+
+    result = dict(production_gateway.invoke_chain_text(*args, **kwargs))
+    if result.get("ok") is True and result.get("routeId"):
+        result["resolvedModelId"] = result.get("modelId")
+        result["modelId"] = result.get("routeId")
+    return result
+
+
+# orchestrator_v2 imports these symbols directly. Bind only the catalog and
+# chain before importing it; keep legacy.invoke_text untouched because the
+# endpoint-native gateway delegates compatible Runtime routes to that adapter.
+legacy_gateway.configured_models = production_gateway.configured_models
+legacy_gateway.invoke_chain_text = _invoke_endpoint_native_chain
+
 import orchestrator_v2 as strict_bedrock
 import orchestrator as production
 from ml_authority import AUTHORITY as ML_AUTHORITY
