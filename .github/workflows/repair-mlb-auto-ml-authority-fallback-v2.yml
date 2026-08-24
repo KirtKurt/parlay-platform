@@ -66,11 +66,47 @@ jobs:
 
           authority = Path('mlb_auto_llm/ml_authority.py')
           text = authority.read_text(encoding='utf-8')
-          bad = '        ((\n            "probability",'
-          good = '        (\n            "probability",'
-          if bad not in text and good not in text:
-              raise RuntimeError('PROBABILITY_FIELD_TUPLE_ANCHOR_MISSING')
-          authority.write_text(text.replace(bad, good, 1), encoding='utf-8')
+          start = text.find('def _row_probability(')
+          if start < 0:
+              raise RuntimeError('ROW_PROBABILITY_FUNCTION_MISSING')
+          next_function = text.find('\ndef ', start + 1)
+          if next_function < 0:
+              raise RuntimeError('ROW_PROBABILITY_FUNCTION_END_MISSING')
+          replacement = '''def _row_probability(row: Dict[str, Any]) -> float:
+              value = _first(
+                  row,
+                  (
+                      "probability",
+                      "winProbability",
+                      "win_probability",
+                      "modelProbability",
+                      "model_probability",
+                      "predictedProbability",
+                      "predicted_probability",
+                      "confidenceProbability",
+                      "confidence_probability",
+                  ),
+              )
+              if value is None and isinstance(row.get("prediction"), dict):
+                  value = _first(
+                      row["prediction"],
+                      ("probability", "winProbability", "win_probability", "confidence"),
+                  )
+              try:
+                  number = float(value)
+              except (TypeError, ValueError):
+                  number = 0.5
+              if number > 1.0:
+                  number /= 100.0
+              if not math.isfinite(number):
+                  number = 0.5
+              return min(max(number, 0.5), 0.95)
+          '''
+          replacement = textwrap.dedent(replacement).rstrip() + '\n'
+          authority.write_text(
+              text[:start] + replacement + text[next_function + 1 :],
+              encoding='utf-8',
+          )
           print('Corrected generated MLB AUTO model authority source.')
           PY
 
@@ -87,8 +123,8 @@ jobs:
             mlb_auto_llm/ml_authority.py \
             mlb_auto_llm/ml_authority_smoke.py \
             mlb_auto_llm/bedrock_smoke.py; then
-            nl -ba mlb_auto_llm/ml_authority.py | sed -n '1,460p'
-            nl -ba mlb_auto_llm/orchestrator_v3.py | sed -n '1,520p'
+            nl -ba mlb_auto_llm/ml_authority.py | sed -n '1,520p'
+            nl -ba mlb_auto_llm/orchestrator_v3.py | sed -n '1,620p'
             exit 1
           fi
           PYTHONPATH=mlb_auto_llm python -m pytest -q \
