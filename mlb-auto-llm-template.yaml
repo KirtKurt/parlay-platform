@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Isolated autonomous MLB winner-prediction stack using MLB Stats API, The Odds API, Big Balls Sports Data Pro, and Bedrock.
+Description: Isolated autonomous MLB winner-prediction stack using MLB Stats API, The Odds API, Big Balls Sports Data Pro, Bedrock, and the deployed AWS MLB ensemble.
 
 Parameters:
   OddsApiKey:
@@ -9,6 +9,8 @@ Parameters:
   BbsApiKey:
     Type: String
     NoEcho: true
+  MlbMlApiBaseUrl:
+    Type: String
   TargetDailyAccuracy:
     Type: String
     Default: '0.70'
@@ -51,7 +53,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: mlb_auto_llm/
-      Handler: orchestrator_v2.lambda_handler
+      Handler: orchestrator_v3.lambda_handler
       Runtime: python3.11
       Timeout: 900
       MemorySize: 3008
@@ -65,6 +67,7 @@ Resources:
           MLB_AUTO_FIRST_GAME_SAFETY_MINUTES: '10'
           MLB_AUTO_FINAL_COLLECTION_WINDOW_MINUTES: '20'
           MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
+          MLB_AUTO_ML_API_BASE_URL: !Ref MlbMlApiBaseUrl
           MLB_AUTO_BEDROCK_DISCOVERY: 'true'
           MLB_AUTO_BEDROCK_REGIONS: 'us-east-1,us-west-2,us-east-2'
           MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '200'
@@ -122,13 +125,14 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: mlb_auto_llm/
-      Handler: bedrock_smoke.lambda_handler
+      Handler: ml_authority_smoke.lambda_handler
       Runtime: python3.11
       Timeout: 300
       MemorySize: 512
       Environment:
         Variables:
           MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
+          MLB_AUTO_ML_API_BASE_URL: !Ref MlbMlApiBaseUrl
           MLB_AUTO_BEDROCK_DISCOVERY: 'true'
           MLB_AUTO_BEDROCK_REGIONS: 'us-east-1,us-west-2,us-east-2'
           MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '200'
