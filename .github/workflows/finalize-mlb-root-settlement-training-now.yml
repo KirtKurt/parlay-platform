@@ -1,10 +1,11 @@
-name: Finalize pinned MLB settlement and training repair now
+name: Finalize MLB settlement and training repair now
 
 on:
   push:
     branches: [main]
     paths:
       - '.github/workflows/finalize-mlb-root-settlement-training-now.yml'
+      - '.github/workflows/mlb-prospective-backlog-reconcile-v5-once.yml'
   workflow_dispatch:
 
 permissions:
@@ -15,82 +16,46 @@ concurrency:
   group: finalize-mlb-root-settlement-training-now
   cancel-in-progress: false
 
-env:
-  REPAIR_BRANCH: repair/mlb-production-final-20260824
-
 jobs:
-  deploy-reconcile-train:
+  reconcile-train:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 150
     steps:
-      - name: Resolve concurrency-isolated repair source
+      - name: Verify a repaired root deployment is active
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 90); do
-            encoded=$(gh api \
-              "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/deploy.yml?ref=${REPAIR_BRANCH}" \
-              --jq .content)
-            text=$(printf '%s' "$encoded" | base64 --decode)
-            if grep -q 'group: parlay-platform-deploy-${{ github.ref }}' <<<"$text"; then
-              break
-            fi
-            test "$attempt" != 90 || { echo 'Pinned branch concurrency repair did not land.' >&2; exit 1; }
-            sleep 5
-          done
-          repair_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${REPAIR_BRANCH}" --jq .sha)
-          test -n "$repair_sha"
-          echo "repair_sha=$repair_sha" >> "$GITHUB_OUTPUT"
-          echo "Pinned repair source: $repair_sha"
-
-      - name: Dispatch exact repaired root deployment
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh workflow run deploy.yml \
+          deploy_run=$(gh run list \
             --repo "$GITHUB_REPOSITORY" \
-            --ref "$REPAIR_BRANCH"
+            --workflow deploy.yml \
+            --branch main \
+            --limit 50 \
+            --json databaseId,status,conclusion,headSha,createdAt \
+            --jq '.[] | select(.status == "completed" and .conclusion == "success") | .databaseId' \
+            | head -n 1)
+          test -n "$deploy_run" || { echo '::error::No successful repaired root deployment exists'; exit 1; }
+          request_id="finalizer-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "request_id=$request_id" >> "$GITHUB_OUTPUT"
+          echo "Successful root deployment proof: $deploy_run"
+          echo "Recovery request: $request_id"
 
-      - name: Require exact repaired root deployment success
+      - name: Dispatch exact bounded reconciliation on main
         env:
           GH_TOKEN: ${{ github.token }}
-          REPAIR_SHA: ${{ steps.source.outputs.repair_sha }}
-        run: |
-          set -euo pipefail
-          run_id=''
-          for attempt in $(seq 1 120); do
-            run_id=$(gh run list \
-              --repo "$GITHUB_REPOSITORY" \
-              --workflow deploy.yml \
-              --branch "$REPAIR_BRANCH" \
-              --event workflow_dispatch \
-              --limit 30 \
-              --json databaseId,headSha,createdAt \
-              --jq '.[] | select(.headSha == "'"$REPAIR_SHA"'") | .databaseId' \
-              | head -n 1)
-            [ -z "$run_id" ] || break
-            sleep 10
-          done
-          test -n "$run_id"
-          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
-          echo "Pinned root deployment passed: $run_id"
-
-      - name: Dispatch protected reconciliation v5 on deployed source
-        env:
-          GH_TOKEN: ${{ github.token }}
+          REQUEST_ID: ${{ steps.source.outputs.request_id }}
         run: |
           set -euo pipefail
           gh workflow run mlb-prospective-backlog-reconcile-v5-once.yml \
             --repo "$GITHUB_REPOSITORY" \
-            --ref "$REPAIR_BRANCH"
+            --ref main \
+            -f "request_id=${REQUEST_ID}"
 
-      - name: Require protected reconciliation and training success
+      - name: Require reconciliation and accepted training rows
         env:
           GH_TOKEN: ${{ github.token }}
-          REPAIR_SHA: ${{ steps.source.outputs.repair_sha }}
+          REQUEST_ID: ${{ steps.source.outputs.request_id }}
         run: |
           set -euo pipefail
           run_id=''
@@ -98,15 +63,14 @@ jobs:
             run_id=$(gh run list \
               --repo "$GITHUB_REPOSITORY" \
               --workflow mlb-prospective-backlog-reconcile-v5-once.yml \
-              --branch "$REPAIR_BRANCH" \
               --event workflow_dispatch \
-              --limit 30 \
-              --json databaseId,headSha,createdAt \
-              --jq '.[] | select(.headSha == "'"$REPAIR_SHA"'") | .databaseId' \
+              --limit 50 \
+              --json databaseId,displayTitle,createdAt \
+              --jq '.[] | select(.displayTitle | contains("'"$REQUEST_ID"'")) | .databaseId' \
               | head -n 1)
             [ -z "$run_id" ] || break
-            sleep 10
+            sleep 5
           done
-          test -n "$run_id"
+          test -n "$run_id" || { echo '::error::Exact reconciliation dispatch was not observed'; exit 1; }
           gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
-          echo "Pinned protected reconciliation passed: $run_id"
+          echo "Protected reconciliation and training passed: $run_id"
