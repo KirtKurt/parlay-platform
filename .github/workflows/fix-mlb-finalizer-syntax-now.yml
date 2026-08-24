@@ -1,0 +1,71 @@
+name: Fix MLB settlement finalizer syntax now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-mlb-finalizer-syntax-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-mlb-finalizer-syntax-now
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Repair invalid Python scope declaration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/finalize-mlb-root-settlement-training-now.yml')
+          text = path.read_text(encoding='utf-8')
+          old = '              nonlocal fatal\n'
+          new = '              global fatal\n'
+          count = text.count(old)
+          if count == 1:
+              text = text.replace(old, new, 1)
+              path.write_text(text, encoding='utf-8')
+          elif new in text and count == 0:
+              print('MLB finalizer syntax already repaired')
+          else:
+              raise SystemExit(f'Unexpected MLB finalizer scope marker count: {count}')
+          PY
+          git diff --check
+          grep -q '^              global fatal$' .github/workflows/finalize-mlb-root-settlement-training-now.yml
+          ! grep -q '^              nonlocal fatal$' .github/workflows/finalize-mlb-root-settlement-training-now.yml
+
+      - name: Publish repair and trigger finalizer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/finalize-mlb-root-settlement-training-now.yml
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'Fix MLB settlement finalizer Python scope'
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 2))
+          done
+          echo '::error::Unable to publish MLB finalizer syntax repair'
+          exit 1
