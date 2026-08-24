@@ -16,7 +16,7 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Query NFL stack and failure events
+      - name: Query NFL stack and complete failure events
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
         run: |
@@ -24,12 +24,10 @@ jobs:
           stack=parlay-platform-nfl-auto
           status=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$AWS_REGION_VALUE" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo MISSING)
           url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='NflAutoStatusUrl'].OutputValue" --output text 2>/dev/null || true)
-          aws cloudformation describe-stack-events --stack-name "$stack" --region "$AWS_REGION_VALUE" --max-items 30 --output json >/tmp/events.json 2>/dev/null || echo '{"StackEvents":[]}' >/tmp/events.json
+          aws cloudformation describe-stack-events --stack-name "$stack" --region "$AWS_REGION_VALUE" --max-items 100 --output json >/tmp/events.json 2>/dev/null || echo '{"StackEvents":[]}' >/tmp/events.json
           echo "STACK_STATUS=$status" >> "$GITHUB_ENV"
           echo "STATUS_URL=$url" >> "$GITHUB_ENV"
-      - name: Publish probe
-        env:
-          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+      - name: Publish root failure probe
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -38,15 +36,17 @@ jobs:
           python - <<'PY'
           import json,os
           raw=json.load(open('/tmp/events.json'))
-          events=[]
+          failed=[]; roots=[]
           for e in raw.get('StackEvents',[]):
               status=str(e.get('ResourceStatus') or '')
               reason=str(e.get('ResourceStatusReason') or '')
-              if 'FAILED' in status or reason:
-                  events.append({'logical_id':e.get('LogicalResourceId'),'type':e.get('ResourceType'),'status':status,'reason':reason[:1500]})
-          r={'run_id':os.environ.get('GITHUB_RUN_ID'),'commit':os.environ.get('GITHUB_SHA'),'stack':'parlay-platform-nfl-auto','stack_status':os.environ.get('STACK_STATUS','UNKNOWN'),'status_url':os.environ.get('STATUS_URL',''),'failed_events':events[:12]}
+              if 'FAILED' in status:
+                  row={'logical_id':e.get('LogicalResourceId'),'type':e.get('ResourceType'),'status':status,'reason':reason[:1800]}
+                  failed.append(row)
+                  if reason and 'creation cancelled' not in reason.lower() and e.get('ResourceType')!='AWS::CloudFormation::Stack': roots.append(row)
+          r={'run_id':os.environ.get('GITHUB_RUN_ID'),'commit':os.environ.get('GITHUB_SHA'),'stack':'parlay-platform-nfl-auto','stack_status':os.environ.get('STACK_STATUS','UNKNOWN'),'status_url':os.environ.get('STATUS_URL',''),'root_failed_events':roots[:20],'all_failed_events':failed[:40]}
           open('runtime_reports/nfl_stack_probe_latest.json','w').write(json.dumps(r,indent=2,sort_keys=True)+'\n')
           PY
           git add runtime_reports/nfl_stack_probe_latest.json
-          git commit -m 'Publish NFL Auto rollback diagnostic [skip ci]' || true
+          git commit -m 'Publish NFL Auto root rollback diagnostic [skip ci]' || true
           git push origin HEAD:main || true
