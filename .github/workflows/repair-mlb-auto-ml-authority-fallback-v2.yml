@@ -56,13 +56,21 @@ jobs:
           body = textwrap.dedent(match.group('body'))
           exec(compile(body, str(installer) + ':embedded-python', 'exec'), {'__name__': '__main__'})
 
-          target = Path('mlb_auto_llm/orchestrator_v3.py')
-          text = target.read_text(encoding='utf-8')
+          orchestrator = Path('mlb_auto_llm/orchestrator_v3.py')
+          text = orchestrator.read_text(encoding='utf-8')
           bad = 'ALLOWED_MODEL_AUTHORITIES = {"BEDROCK_LLM", ML_AUTHORITY]'
           good = 'ALLOWED_MODEL_AUTHORITIES = {"BEDROCK_LLM", ML_AUTHORITY}'
           if bad not in text and good not in text:
               raise RuntimeError('MODEL_AUTHORITY_SET_ANCHOR_MISSING')
-          target.write_text(text.replace(bad, good), encoding='utf-8')
+          orchestrator.write_text(text.replace(bad, good), encoding='utf-8')
+
+          authority = Path('mlb_auto_llm/ml_authority.py')
+          text = authority.read_text(encoding='utf-8')
+          bad = '        ((\n            "probability",'
+          good = '        (\n            "probability",'
+          if bad not in text and good not in text:
+              raise RuntimeError('PROBABILITY_FIELD_TUPLE_ANCHOR_MISSING')
+          authority.write_text(text.replace(bad, good, 1), encoding='utf-8')
           print('Corrected generated MLB AUTO model authority source.')
           PY
 
@@ -70,7 +78,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
-          python -m py_compile \
+          if ! python -m py_compile \
             mlb_auto_llm/handler.py \
             mlb_auto_llm/model_gateway.py \
             mlb_auto_llm/orchestrator.py \
@@ -78,7 +86,11 @@ jobs:
             mlb_auto_llm/orchestrator_v3.py \
             mlb_auto_llm/ml_authority.py \
             mlb_auto_llm/ml_authority_smoke.py \
-            mlb_auto_llm/bedrock_smoke.py
+            mlb_auto_llm/bedrock_smoke.py; then
+            nl -ba mlb_auto_llm/ml_authority.py | sed -n '1,460p'
+            nl -ba mlb_auto_llm/orchestrator_v3.py | sed -n '1,520p'
+            exit 1
+          fi
           PYTHONPATH=mlb_auto_llm python -m pytest -q \
             tests/unit/test_mlb_auto_model_gateway.py \
             tests/unit/test_mlb_auto_ml_authority.py
