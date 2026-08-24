@@ -17,7 +17,7 @@ Parameters:
     Default: 45
   BedrockModels:
     Type: String
-    Default: 'us.amazon.nova-2-lite-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'
+    Default: 'us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'
 
 Resources:
   MLBAutoLLMTable:
@@ -105,6 +105,25 @@ Resources:
           Properties:
             Path: /v1/mlb-auto-llm/run
             Method: POST
+
+  MLBAutoLLMBedrockSmokeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: mlb_auto_llm/
+      Handler: bedrock_smoke.lambda_handler
+      Runtime: python3.11
+      Timeout: 120
+      MemorySize: 512
+      Environment:
+        Variables:
+          MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource: '*'
 
 Outputs:
   MLBAutoLLMStatusUrl:
