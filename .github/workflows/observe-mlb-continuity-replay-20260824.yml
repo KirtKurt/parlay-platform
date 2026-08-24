@@ -1,0 +1,80 @@
+name: Observe protected MLB continuity replay
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/observe-mlb-continuity-replay-20260824.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 125
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Resolve current continuity run
+        id: run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id=$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow reconcile-mlb-continuity-from-aug4-now.yml \
+            --event workflow_dispatch \
+            --limit 20 \
+            --json databaseId,createdAt \
+            --jq 'map(select(.createdAt >= "2026-08-24T23:00:30Z")) | sort_by(.createdAt) | last | .databaseId')
+          test -n "$run_id" && test "$run_id" != null
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "CONTINUITY_RUN_ID=$run_id"
+
+      - name: Watch continuity replay
+        id: watch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.run.outputs.run_id }}
+        run: |
+          set +e
+          gh run watch "$RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status --interval 15
+          rc=$?
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Publish run conclusion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.run.outputs.run_id }}
+          WATCH_EXIT: ${{ steps.watch.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --json databaseId,name,event,headSha,status,conclusion,createdAt,startedAt,updatedAt,url,jobs \
+            | jq --arg generatedAtUtc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                 --arg watchExit "$WATCH_EXIT" \
+                 '. + {generatedAtUtc:$generatedAtUtc,watchExitCode:($watchExit|tonumber),ok:(.conclusion=="success" and ($watchExit|tonumber)==0)}' \
+            > runtime_reports/mlb_continuity_replay_run_latest.json
+          cp runtime_reports/mlb_continuity_replay_run_latest.json /tmp/mlb_continuity_replay_run_latest.json
+          cat /tmp/mlb_continuity_replay_run_latest.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main
+            cp /tmp/mlb_continuity_replay_run_latest.json runtime_reports/mlb_continuity_replay_run_latest.json
+            git add runtime_reports/mlb_continuity_replay_run_latest.json
+            git diff --cached --quiet || git commit -m 'Publish MLB continuity replay run proof [skip ci]'
+            git push origin HEAD:main && break
+            sleep $((attempt * 2))
+          done
+          test "$WATCH_EXIT" = 0
