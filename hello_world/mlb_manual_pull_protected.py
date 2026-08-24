@@ -225,12 +225,26 @@ def _raise_scheduled_delegate_failure(event: Dict[str, Any], response: Any) -> N
                     continue
                 game_date = str(result.get("game_date_et") or "")
                 winner_dates.add(game_date)
-                if result.get("ok") is not True:
+                lifecycle_aware = result.get("preLockStorageLifecycleAware") is True
+                lifecycle_complete_for_result = (
+                    result.get("displayStatusCoverageComplete") is True
+                    and result.get("lifecycleCoverageComplete") is True
+                    and result.get("preLockStorageComplete") is True
+                    and result.get("preLockStorageDispositionComplete") is True
+                )
+                # A recommendation can be intentionally non-actionable (for example
+                # NEGATIVE_EV_GUARD) without being an operational persistence failure.
+                # Only fail the scheduled ingest when the result is explicitly an
+                # operational defect or its lifecycle/storage contract is incomplete.
+                hard_winner_failure = bool(
+                    result.get("operationalDefect") is True
+                    or (result.get("ok") is not True and not lifecycle_complete_for_result)
+                )
+                if hard_winner_failure:
                     candidate_failures.append(
                         f"winner_prediction_failed:{game_date or 'unknown'}"
                     )
 
-                lifecycle_aware = result.get("preLockStorageLifecycleAware") is True
                 if lifecycle_aware:
                     lifecycle_complete = (
                         result.get("displayStatusCoverageComplete") is True
@@ -337,5 +351,41 @@ def lambda_handler(event, context):
     if auth_error is not None:
         return auth_error
     response = _attach_runtime_status(mlb_manual_pull.lambda_handler(event, context))
-    _raise_scheduled_delegate_failure(event, response)
+    try:
+        _raise_scheduled_delegate_failure(event, response)
+    except RuntimeError as exc:
+        message = str(exc)
+        prefix = "MLB_SCHEDULED_PULL_FAILED:"
+        failure_payload = {}
+        if message.startswith(prefix):
+            try:
+                parsed = json.loads(message[len(prefix):])
+                failure_payload = parsed if isinstance(parsed, dict) else {}
+            except Exception:
+                failure_payload = {}
+        raw_failures = failure_payload.get("candidatePersistenceFailures")
+        failures = (
+            [str(failure) for failure in raw_failures]
+            if isinstance(raw_failures, list)
+            else []
+        )
+        manifest_only_failure = bool(failures) and all(
+            failure == "provider_schedule_manifest_incomplete"
+            or failure == "provider_schedule_manifest_missing"
+            or failure.startswith("provider_schedule_manifest_authority_invalid:")
+            for failure in failures
+        )
+        if not _is_scheduled(event) or not manifest_only_failure:
+            raise
+        # The canonical writer is intrinsically idempotent by 15-minute slot.
+        # Re-running the same scheduled event once allows a transient authority-
+        # binding race to converge without creating a second canonical observation.
+        # Mixed failures are never retried here; they remain fail-closed.
+        retry_event = dict(event)
+        retry_event["force"] = True
+        retry_event["manifest_binding_retry"] = True
+        response = _attach_runtime_status(
+            mlb_manual_pull.lambda_handler(retry_event, context)
+        )
+        _raise_scheduled_delegate_failure(retry_event, response)
     return response
