@@ -4,87 +4,120 @@ on:
   push:
     paths: ['.github/workflows/soccer-critical-diagnostic.yml']
 permissions:
-  contents: read
+  contents: write
 jobs:
   diagnose:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Inspect Soccer production health
+      - name: Inspect Soccer production health and persist proof
         env:
           REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -u
           stack=parlay-platform-soccer-auto
-          echo '=== STACK ==='
-          aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query 'Stacks[0].{Status:StackStatus,Updated:LastUpdatedTime,Params:Parameters,Outputs:Outputs}' --output json || true
+          mkdir -p runtime_reports /tmp/soccer-diag
 
-          echo '=== LAMBDAS ==='
-          aws cloudformation list-stack-resources --stack-name "$stack" --region "$REGION" --output json > /tmp/resources.json
-          python - <<'PY' >/tmp/lambdas.txt
-          import json
-          r=json.load(open('/tmp/resources.json'))['StackResourceSummaries']
-          for x in r:
-              if x.get('ResourceType')=='AWS::Lambda::Function': print(x['LogicalResourceId'],x['PhysicalResourceId'])
-          PY
-          while read -r logical fn; do
-            aws lambda get-function-configuration --function-name "$fn" --region "$REGION" --query '{Logical:`'"$logical"'`,FunctionName:FunctionName,State:State,LastUpdateStatus:LastUpdateStatus,LastModified:LastModified}' --output json || true
-          done </tmp/lambdas.txt
+          aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --output json > /tmp/soccer-diag/stack.json 2>/tmp/soccer-diag/stack.err || true
+          aws cloudformation list-stack-resources --stack-name "$stack" --region "$REGION" --output json > /tmp/soccer-diag/resources.json 2>/tmp/soccer-diag/resources.err || true
 
-          echo '=== EVENTBRIDGE RULES ==='
-          python - <<'PY' >/tmp/rules.txt
-          import json
-          r=json.load(open('/tmp/resources.json'))['StackResourceSummaries']
-          for x in r:
-              if x.get('ResourceType')=='AWS::Events::Rule': print(x['LogicalResourceId'],x['PhysicalResourceId'])
-          PY
-          while read -r logical rule; do
-            aws events describe-rule --name "$rule" --region "$REGION" --query '{Logical:`'"$logical"'`,Name:Name,State:State,ScheduleExpression:ScheduleExpression}' --output json || true
-          done </tmp/rules.txt
-
-          echo '=== CLOUDWATCH ALARMS ==='
-          aws cloudwatch describe-alarms --region "$REGION" --query 'MetricAlarms[?contains(AlarmName, `Soccer`) || contains(AlarmName, `soccer`)].{AlarmName:AlarmName,StateValue:StateValue,StateReason:StateReason,StateUpdatedTimestamp:StateUpdatedTimestamp}' --output json || true
-
-          echo '=== QUEUES ==='
-          for logical in SoccerCollectionQueue SoccerCollectionDeadLetterQueue; do
-            q=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id "$logical" --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text 2>/dev/null || true)
-            if [[ -n "$q" && "$q" != None ]]; then
-              if [[ "$q" == http* ]]; then url="$q"; else url=$(aws sqs get-queue-url --queue-name "$q" --region "$REGION" --query QueueUrl --output text 2>/dev/null || true); fi
-              echo "$logical $url"
-              aws sqs get-queue-attributes --queue-url "$url" --region "$REGION" --attribute-names ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible ApproximateNumberOfMessagesDelayed RedrivePolicy CreatedTimestamp LastModifiedTimestamp --output json || true
-            fi
-          done
-
-          echo '=== PUBLIC STATUS ==='
           status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" --output text 2>/dev/null || true)
-          echo "status_url=$status_url"
-          if [[ -n "$status_url" && "$status_url" != None ]]; then curl --fail --silent --show-error --max-time 45 "$status_url" || true; echo; fi
-
-          echo '=== HISTORICAL STATUS ==='
-          hist=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerHistoricalFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text 2>/dev/null || true)
-          if [[ -n "$hist" && "$hist" != None ]]; then
-            aws lambda invoke --function-name "$hist" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"mode":"status"}' /tmp/historical.json >/tmp/historical-meta.json 2>/tmp/historical-err.txt || true
-            cat /tmp/historical-meta.json 2>/dev/null || true; cat /tmp/historical.json 2>/dev/null || true; echo; cat /tmp/historical-err.txt 2>/dev/null || true
+          if [[ -n "$status_url" && "$status_url" != None ]]; then
+            curl --fail --silent --show-error --max-time 45 "$status_url" > /tmp/soccer-diag/public_status.json 2>/tmp/soccer-diag/public_status.err || true
           fi
 
-          echo '=== RECENT WORKER ERRORS ==='
+          hist=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerHistoricalFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text 2>/dev/null || true)
+          if [[ -n "$hist" && "$hist" != None ]]; then
+            aws lambda invoke --function-name "$hist" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"mode":"status"}' /tmp/soccer-diag/historical.json >/tmp/soccer-diag/historical_meta.json 2>/tmp/soccer-diag/historical.err || true
+          fi
+
           worker=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionWorkerFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text 2>/dev/null || true)
           if [[ -n "$worker" && "$worker" != None ]]; then
             start_ms=$(( ($(date +%s)-21600)*1000 ))
-            aws logs filter-log-events --log-group-name "/aws/lambda/$worker" --region "$REGION" --start-time "$start_ms" --filter-pattern '?ERROR ?Error ?Exception ?Traceback ?failed ?FAILED ?QUOTA_DEFERRED' --limit 100 --query 'events[*].{timestamp:timestamp,message:message}' --output json || true
+            aws logs filter-log-events --log-group-name "/aws/lambda/$worker" --region "$REGION" --start-time "$start_ms" --filter-pattern '?ERROR ?Error ?Exception ?Traceback ?failed ?FAILED ?QUOTA_DEFERRED ?Unauthorized' --limit 100 --output json > /tmp/soccer-diag/worker_errors.json 2>/tmp/soccer-diag/worker_errors.err || true
           fi
 
-          echo '=== DLQ MESSAGE INSPECTION ==='
-          dlq=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionDeadLetterQueue --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text 2>/dev/null || true)
-          if [[ -n "$dlq" && "$dlq" != None ]]; then
-            if [[ "$dlq" == http* ]]; then dlq_url="$dlq"; else dlq_url=$(aws sqs get-queue-url --queue-name "$dlq" --region "$REGION" --query QueueUrl --output text); fi
-            set +e
-            aws sqs receive-message --queue-url "$dlq_url" --region "$REGION" --max-number-of-messages 10 --visibility-timeout 0 --attribute-names All --message-attribute-names All --output json >/tmp/dlq-messages.json 2>/tmp/dlq-error.txt
-            rc=$?
-            set -e
-            if [[ $rc -eq 0 ]]; then cat /tmp/dlq-messages.json; else echo "DLQ_INSPECTION_BLOCKED rc=$rc"; cat /tmp/dlq-error.txt; fi
-          fi
+          aws cloudwatch describe-alarms --region "$REGION" --query 'MetricAlarms[?contains(AlarmName, `Soccer`) || contains(AlarmName, `soccer`)].{AlarmName:AlarmName,StateValue:StateValue,StateReason:StateReason,StateUpdatedTimestamp:StateUpdatedTimestamp}' --output json > /tmp/soccer-diag/alarms.json 2>/tmp/soccer-diag/alarms.err || true
+
+          python - <<'PY'
+          import json, pathlib, subprocess, datetime
+          root=pathlib.Path('/tmp/soccer-diag')
+          def load(name, default=None):
+              p=root/name
+              if not p.exists() or not p.read_text().strip(): return default
+              try: return json.loads(p.read_text())
+              except Exception: return {'raw': p.read_text()[:20000]}
+          def cmd(args):
+              try: return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT).strip()
+              except Exception as e: return ''
+          stack=load('stack.json', {}) or {}
+          stacks=stack.get('Stacks') or []
+          s=stacks[0] if stacks else {}
+          resources=load('resources.json', {}) or {}
+          rows=resources.get('StackResourceSummaries') or []
+          rules=[]
+          lambdas=[]
+          queues={}
+          for r in rows:
+              logical=r.get('LogicalResourceId'); physical=r.get('PhysicalResourceId'); typ=r.get('ResourceType')
+              if typ=='AWS::Events::Rule' and physical:
+                  raw=cmd(['aws','events','describe-rule','--name',physical,'--region',__import__('os').environ['REGION'],'--output','json'])
+                  try: rules.append({'logical':logical, **json.loads(raw)})
+                  except Exception: rules.append({'logical':logical,'error':raw})
+              if typ=='AWS::Lambda::Function' and physical:
+                  raw=cmd(['aws','lambda','get-function-configuration','--function-name',physical,'--region',__import__('os').environ['REGION'],'--output','json'])
+                  try:
+                      x=json.loads(raw); lambdas.append({'logical':logical,'function':physical,'state':x.get('State'),'lastUpdateStatus':x.get('LastUpdateStatus'),'lastModified':x.get('LastModified')})
+                  except Exception: lambdas.append({'logical':logical,'function':physical,'error':raw})
+              if typ=='AWS::SQS::Queue' and physical and logical in ('SoccerCollectionQueue','SoccerCollectionDeadLetterQueue'):
+                  url=physical if str(physical).startswith('http') else cmd(['aws','sqs','get-queue-url','--queue-name',physical,'--region',__import__('os').environ['REGION'],'--query','QueueUrl','--output','text'])
+                  raw=cmd(['aws','sqs','get-queue-attributes','--queue-url',url,'--region',__import__('os').environ['REGION'],'--attribute-names','ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible','ApproximateNumberOfMessagesDelayed','--output','json']) if url else ''
+                  try: queues[logical]=json.loads(raw)
+                  except Exception: queues[logical]={'error':raw}
+          params={x.get('ParameterKey'):x.get('ParameterValue') for x in (s.get('Parameters') or [])}
+          public=load('public_status.json')
+          historical=load('historical.json')
+          errors=load('worker_errors.json', {}) or {}
+          alarms=load('alarms.json', []) or []
+          enabled_rules=sum(1 for x in rules if x.get('State')=='ENABLED')
+          bad_lambdas=[x for x in lambdas if x.get('state') not in (None,'Active') or x.get('lastUpdateStatus') not in (None,'Successful')]
+          active_alarms=[x for x in alarms if x.get('StateValue')=='ALARM']
+          worker_events=errors.get('events') or [] if isinstance(errors,dict) else []
+          report={
+            'proofType':'SOCCER_CRITICAL_LIVE_DIAGNOSTIC',
+            'observedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'stackStatus':s.get('StackStatus'),
+            'lastUpdated':s.get('LastUpdatedTime'),
+            'parameters':{k:params.get(k) for k in ('EnableHistoricalBackfill','SharedQuotaReservePercent','SoccerOddsRequestsPerSecond','SoccerLlmModelId')},
+            'lambdas':lambdas,
+            'badLambdas':bad_lambdas,
+            'eventRules':rules,
+            'enabledRuleCount':enabled_rules,
+            'queues':queues,
+            'alarms':alarms,
+            'activeAlarms':active_alarms,
+            'publicStatus':public,
+            'historicalStatus':historical,
+            'recentWorkerErrorEvents':worker_events,
+            'statusUrlPresent':bool(public),
+          }
+          healthy_stack=s.get('StackStatus') in ('CREATE_COMPLETE','UPDATE_COMPLETE')
+          report['infrastructureHealthy']=healthy_stack and not bad_lambdas and not active_alarms
+          pathlib.Path('runtime_reports/soccer_critical_diagnostic_latest.json').write_text(json.dumps(report,indent=2,default=str)+'\n')
+          print(json.dumps(report,indent=2,default=str))
+          PY
+
+      - name: Publish durable Soccer diagnostic
+        run: |
+          set -euo pipefail
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add runtime_reports/soccer_critical_diagnostic_latest.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'runtime: publish Soccer critical diagnostic'
+          git push
