@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from model_gateway import configured_models, discovered_models, invoke_chain_text
+from model_gateway import (
+    configured_models,
+    configured_regions,
+    discovered_models,
+    invoke_chain_text,
+)
 
 
 def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
@@ -15,36 +20,34 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
         temperature=0.0,
         top_p=0.9,
     )
+    common = {
+        "service": "mlb-auto-llm-bedrock-smoke",
+        "configuredRegions": configured_regions(),
+        "configuredModelCount": len(models),
+        "discoveredModelCount": len(discovered),
+        "discoveredModelIds": discovered,
+        "attemptedModelIds": result.get("attemptedModelIds") or [],
+    }
     if result.get("ok") is not True:
         return {
+            **common,
             "ok": False,
-            "service": "mlb-auto-llm-bedrock-smoke",
-            "attemptedModelIds": result.get("attemptedModelIds") or [],
-            "configuredModelCount": len(models),
-            "discoveredModelCount": len(discovered),
-            "discoveredModelIds": discovered,
             "errors": result.get("errors") or [],
         }
     text = str(result.get("text") or "").strip()
     if not text:
         return {
+            **common,
             "ok": False,
-            "service": "mlb-auto-llm-bedrock-smoke",
-            "attemptedModelIds": result.get("attemptedModelIds") or [],
-            "configuredModelCount": len(models),
-            "discoveredModelCount": len(discovered),
-            "discoveredModelIds": discovered,
             "errors": [{"errorCode": "EMPTY_BEDROCK_RESPONSE"}],
         }
     return {
+        **common,
         "ok": True,
-        "service": "mlb-auto-llm-bedrock-smoke",
+        "routeId": result.get("routeId"),
+        "region": result.get("region"),
         "modelId": result.get("modelId"),
         "endpointFamily": result.get("endpointFamily"),
         "responseNonEmpty": True,
-        "configuredModelCount": len(models),
-        "discoveredModelCount": len(discovered),
-        "discoveredModelIds": discovered,
-        "attemptedModelIds": result.get("attemptedModelIds") or [],
         "errorsBeforeSuccess": result.get("errorsBeforeSuccess") or [],
     }

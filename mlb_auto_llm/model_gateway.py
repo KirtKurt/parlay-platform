@@ -13,10 +13,38 @@ import boto3
 from botocore.config import Config
 
 
-# Keep the first four direct in-Region Amazon routes first for deterministic
-# recovery and backwards-compatible tests, then move to independent regional
-# source pools before retrying the remaining local/profile/model families.
-RECOVERY_MODELS = (
+ROUTE_SEPARATOR = "::"
+_REGION_PATTERN = re.compile(r"^[a-z]{2}(?:-gov)?-[a-z]+-\d$")
+
+# The first production recovery exhausted every configured Nova route before
+# reaching another provider. Keep the rescue set deliberately provider- and
+# Region-diverse so a family-level daily token bucket cannot consume the whole
+# failover window.
+DIVERSIFIED_RECOVERY_ROUTES = (
+    "us-west-2::meta.llama3-2-1b-instruct-v1:0",
+    "us-west-2::meta.llama3-2-3b-instruct-v1:0",
+    "us-west-2::mistral.mistral-small-2402-v1:0",
+    "us-west-2::mistral.ministral-3-3b-instruct",
+    "us-west-2::ai21.jamba-1-5-mini-v1:0",
+    "us-west-2::openai.gpt-oss-20b-1:0",
+    "us-west-2::amazon.nova-micro-v1:0",
+    "us-west-2::amazon.nova-lite-v1:0",
+    "us-east-2::meta.llama3-2-1b-instruct-v1:0",
+    "us-east-2::meta.llama3-2-3b-instruct-v1:0",
+    "us-east-2::amazon.nova-micro-v1:0",
+    "us-east-2::amazon.nova-lite-v1:0",
+    "meta.llama3-2-1b-instruct-v1:0",
+    "meta.llama3-2-3b-instruct-v1:0",
+    "mistral.mistral-small-2402-v1:0",
+    "mistral.ministral-3-3b-instruct",
+    "ai21.jamba-1-5-mini-v1:0",
+    "google.gemma-3-4b-it",
+    "google.gemma-3n-e2b-it",
+    "openai.gpt-oss-20b-1:0",
+    "zai.glm-4.7-flash",
+)
+
+NOVA_LAST_RESORT_ROUTES = (
     "amazon.nova-micro-v1:0",
     "amazon.nova-lite-v1:0",
     "amazon.nova-pro-v1:0",
@@ -25,46 +53,27 @@ RECOVERY_MODELS = (
     "us.amazon.nova-lite-v1:0",
     "global.amazon.nova-2-lite-v1:0",
     "us.amazon.nova-2-lite-v1:0",
-    "us.meta.llama3-2-1b-instruct-v1:0",
-    "us.meta.llama3-2-3b-instruct-v1:0",
-    "ai21.jamba-1-5-mini-v1:0",
+    "us.amazon.nova-pro-v1:0",
 )
 
-# Bedrock daily invocation-token quotas are enforced by model/profile and
-# source Region. A region-qualified spec is internal syntax; only the model ID
-# after ``::`` is sent to Bedrock Runtime in the selected Region.
-REGIONAL_RECOVERY_MODELS = (
-    "us-west-2::us.amazon.nova-micro-v1:0",
-    "us-east-2::us.amazon.nova-micro-v1:0",
-    "us-west-2::us.amazon.nova-lite-v1:0",
-    "us-east-2::us.amazon.nova-lite-v1:0",
-    "us-west-2::us.amazon.nova-pro-v1:0",
-    "us-east-2::us.amazon.nova-pro-v1:0",
-    "us-west-2::us.meta.llama4-scout-17b-instruct-v1:0",
-    "us-east-2::us.meta.llama4-scout-17b-instruct-v1:0",
-)
-
-DEFAULT_MODELS = RECOVERY_MODELS + (
+DEFAULT_MODELS = DIVERSIFIED_RECOVERY_ROUTES + NOVA_LAST_RESORT_ROUTES + (
     "openai.gpt-5.6-sol",
     "anthropic.claude-opus-4-8",
     "anthropic.claude-opus-4-7",
     "anthropic.claude-opus-4-6-v1",
     "anthropic.claude-sonnet-4-6-v1",
-    "us.amazon.nova-pro-v1:0",
 )
 
 _PREFERRED_MODEL: Optional[str] = None
 _MODEL_FAILURE_UNTIL: Dict[str, float] = {}
-_RUNTIME_CLIENT: Any = None
-_REGIONAL_RUNTIME_CLIENTS: Dict[str, Any] = {}
-_CONTROL_CLIENT: Any = None
-_REGION_PATTERN = re.compile(r"^[a-z]{2}(?:-gov)?-[a-z]+-\d+$")
+_RUNTIME_CLIENTS: Dict[str, Any] = {}
+_CONTROL_CLIENTS: Dict[str, Any] = {}
 
-# Fail over quickly instead of letting one throttled model consume the whole
-# Lambda timeout through SDK retries.
+# Fail over quickly instead of allowing one unavailable or throttled model to
+# consume the complete Lambda timeout through SDK retries.
 _BOTO_CONFIG = Config(
     connect_timeout=5,
-    read_timeout=35,
+    read_timeout=25,
     retries={"max_attempts": 1, "mode": "standard"},
 )
 
@@ -77,41 +86,46 @@ def _region() -> str:
     )
 
 
-def _split_model_spec(model_spec: Any) -> Tuple[str, str]:
-    value = str(model_spec or "").strip()
-    if not value:
-        raise ValueError("BEDROCK_MODEL_SPEC_EMPTY")
-    if "::" not in value:
-        return _region(), value
-    region, model_id = (part.strip() for part in value.split("::", 1))
-    if not _REGION_PATTERN.fullmatch(region) or not model_id:
-        raise ValueError("BEDROCK_MODEL_SPEC_INVALID")
-    return region, model_id
+def configured_regions() -> List[str]:
+    configured = [
+        value.strip()
+        for value in os.environ.get(
+            "MLB_AUTO_BEDROCK_REGIONS", f"{_region()},us-west-2,us-east-2"
+        ).split(",")
+        if value.strip()
+    ]
+    return _dedupe((_region(), *configured))
+
+
+def _split_route(route_id: str) -> Tuple[str, str]:
+    value = str(route_id or "").strip()
+    if ROUTE_SEPARATOR in value:
+        region, model_id = value.split(ROUTE_SEPARATOR, 1)
+        if _REGION_PATTERN.match(region) and model_id:
+            return region, model_id
+    return _region(), value
+
+
+def _format_route(region: str, model_id: str) -> str:
+    return model_id if region == _region() else f"{region}{ROUTE_SEPARATOR}{model_id}"
 
 
 def _runtime_client(region: Optional[str] = None) -> Any:
-    global _RUNTIME_CLIENT
-    requested = str(region or _region())
-    if requested == _region():
-        if _RUNTIME_CLIENT is None:
-            _RUNTIME_CLIENT = boto3.client(
-                "bedrock-runtime", region_name=requested, config=_BOTO_CONFIG
-            )
-        return _RUNTIME_CLIENT
-    if requested not in _REGIONAL_RUNTIME_CLIENTS:
-        _REGIONAL_RUNTIME_CLIENTS[requested] = boto3.client(
-            "bedrock-runtime", region_name=requested, config=_BOTO_CONFIG
+    target = region or _region()
+    if target not in _RUNTIME_CLIENTS:
+        _RUNTIME_CLIENTS[target] = boto3.client(
+            "bedrock-runtime", region_name=target, config=_BOTO_CONFIG
         )
-    return _REGIONAL_RUNTIME_CLIENTS[requested]
+    return _RUNTIME_CLIENTS[target]
 
 
-def _control_client() -> Any:
-    global _CONTROL_CLIENT
-    if _CONTROL_CLIENT is None:
-        _CONTROL_CLIENT = boto3.client(
-            "bedrock", region_name=_region(), config=_BOTO_CONFIG
+def _control_client(region: Optional[str] = None) -> Any:
+    target = region or _region()
+    if target not in _CONTROL_CLIENTS:
+        _CONTROL_CLIENTS[target] = boto3.client(
+            "bedrock", region_name=target, config=_BOTO_CONFIG
         )
-    return _CONTROL_CLIENT
+    return _CONTROL_CLIENTS[target]
 
 
 def _dedupe(values: Iterable[str]) -> List[str]:
@@ -125,49 +139,47 @@ def _dedupe(values: Iterable[str]) -> List[str]:
     return output
 
 
-def _model_priority(model_id: str) -> tuple[int, int, str]:
-    try:
-        _, actual_model_id = _split_model_spec(model_id)
-    except ValueError:
-        actual_model_id = str(model_id or "")
-    value = actual_model_id.lower()
-    if value.startswith("amazon.nova-micro"):
-        return (0, 0, value)
-    if value.startswith("amazon.nova-lite"):
-        return (0, 1, value)
-    if value.startswith("amazon.nova-2-lite"):
-        return (0, 2, value)
-    if value.startswith("amazon."):
-        return (0, 3, value)
-    if any(
+def _model_priority(route_id: str) -> tuple[int, int, str]:
+    region, model_id = _split_route(route_id)
+    value = model_id.lower()
+    alternate_region = region != _region()
+    small = any(
         token in value
-        for token in ("micro", "mini", "lite", "small", "1b", "3b", "8b", "haiku")
-    ):
-        return (1, 0, value)
+        for token in (
+            "micro",
+            "mini",
+            "lite",
+            "small",
+            "1b",
+            "2b",
+            "3b",
+            "4b",
+            "7b",
+            "8b",
+            "9b",
+            "12b",
+            "14b",
+            "20b",
+            "haiku",
+            "flash",
+        )
+    )
+    if small and not value.startswith("amazon.nova"):
+        return (0 if alternate_region else 1, 0, route_id)
+    if alternate_region and value.startswith("amazon.nova"):
+        return (2, 0, route_id)
+    if value.startswith("amazon.nova"):
+        return (3, 0, route_id)
     if value.startswith(("us.", "global.")):
-        return (2, 0, value)
-    if value.startswith(("openai.", "anthropic.")):
-        return (4, 0, value)
-    return (3, 0, value)
+        return (4, 0, route_id)
+    if value.startswith(("openai.gpt-5", "anthropic.claude-opus")):
+        return (7, 0, route_id)
+    return (5 if alternate_region else 6, 0, route_id)
 
 
-@lru_cache(maxsize=1)
-def discovered_models() -> List[str]:
-    """List current account-visible text models and active inference profiles.
-
-    Discovery is best-effort. Static recovery candidates remain available when
-    the Bedrock control-plane call is temporarily unavailable or not authorized.
-    """
-
-    if os.environ.get("MLB_AUTO_BEDROCK_DISCOVERY", "true").lower() in {
-        "0",
-        "false",
-        "no",
-    }:
-        return []
-
+def _discover_region(region: str) -> List[str]:
     candidates: List[str] = []
-    client = _control_client()
+    client = _control_client(region)
 
     try:
         response = client.list_inference_profiles(
@@ -178,7 +190,7 @@ def discovered_models() -> List[str]:
                 continue
             model_id = str(row.get("inferenceProfileId") or "").strip()
             if model_id:
-                candidates.append(model_id)
+                candidates.append(_format_route(region, model_id))
     except Exception:
         pass
 
@@ -194,10 +206,31 @@ def discovered_models() -> List[str]:
                 continue
             model_id = str(row.get("modelId") or "").strip()
             if model_id:
-                candidates.append(model_id)
+                candidates.append(_format_route(region, model_id))
     except Exception:
         pass
 
+    return candidates
+
+
+@lru_cache(maxsize=1)
+def discovered_models() -> List[str]:
+    """List account-visible text routes across approved Bedrock Regions.
+
+    Discovery remains best-effort. Static diversified routes stay available when
+    a control-plane call is unavailable or not authorized in one Region.
+    """
+
+    if os.environ.get("MLB_AUTO_BEDROCK_DISCOVERY", "true").lower() in {
+        "0",
+        "false",
+        "no",
+    }:
+        return []
+
+    candidates: List[str] = []
+    for region in configured_regions():
+        candidates.extend(_discover_region(region))
     return sorted(_dedupe(candidates), key=_model_priority)
 
 
@@ -209,25 +242,23 @@ def configured_models() -> List[str]:
         ).split(",")
         if value.strip()
     ]
+    # Static provider diversity is first, live account discovery second, and
+    # already exhausted Nova/Mantle families are last-resort only.
     return _dedupe(
         (
-            *RECOVERY_MODELS[:4],
-            *REGIONAL_RECOVERY_MODELS,
-            *RECOVERY_MODELS[4:],
+            *DIVERSIFIED_RECOVERY_ROUTES,
             *discovered_models(),
             *configured,
+            *NOVA_LAST_RESORT_ROUTES,
         )
     )
 
 
-def _endpoint_family(model_id: str) -> str:
-    try:
-        _, actual_model_id = _split_model_spec(model_id)
-    except ValueError:
-        actual_model_id = str(model_id or "")
-    if actual_model_id.startswith("openai."):
+def _endpoint_family(route_id: str) -> str:
+    _, model_id = _split_route(route_id)
+    if model_id.startswith("openai.gpt-5"):
         return "bedrock-mantle-openai"
-    if actual_model_id.startswith("anthropic."):
+    if model_id.startswith("anthropic."):
         return "bedrock-mantle-anthropic"
     return "bedrock-runtime-converse"
 
@@ -245,7 +276,7 @@ def _post_json(
     url: str,
     headers: Dict[str, str],
     payload: Dict[str, Any],
-    timeout: int = 90,
+    timeout: int = 75,
 ) -> Dict[str, Any]:
     request = Request(
         url,
@@ -279,9 +310,11 @@ def _openai_text(payload: Dict[str, Any]) -> str:
     return "".join(parts).strip()
 
 
-def _invoke_openai(model_id: str, prompt: str, *, max_tokens: int) -> Dict[str, Any]:
+def _invoke_openai(
+    model_id: str, prompt: str, *, max_tokens: int, region: str
+) -> Dict[str, Any]:
     payload = _post_json(
-        f"https://bedrock-mantle.{_region()}.api.aws/openai/v1/responses",
+        f"https://bedrock-mantle.{region}.api.aws/openai/v1/responses",
         {
             "Authorization": f"Bearer {_bearer_token()}",
             "Content-Type": "application/json",
@@ -305,6 +338,8 @@ def _invoke_openai(model_id: str, prompt: str, *, max_tokens: int) -> Dict[str, 
         "text": text,
         "usage": dict(payload.get("usage") or {}),
         "endpointFamily": "bedrock-mantle-openai",
+        "region": region,
+        "modelId": model_id,
     }
 
 
@@ -314,9 +349,10 @@ def _invoke_anthropic(
     *,
     max_tokens: int,
     temperature: float,
+    region: str,
 ) -> Dict[str, Any]:
     payload = _post_json(
-        f"https://bedrock-mantle.{_region()}.api.aws/anthropic/v1/messages",
+        f"https://bedrock-mantle.{region}.api.aws/anthropic/v1/messages",
         {
             "x-api-key": _bearer_token(),
             "anthropic-version": "2023-06-01",
@@ -340,11 +376,13 @@ def _invoke_anthropic(
         "text": text,
         "usage": dict(payload.get("usage") or {}),
         "endpointFamily": "bedrock-mantle-anthropic",
+        "region": region,
+        "modelId": model_id,
     }
 
 
 def invoke_text(
-    model_id: str,
+    route_id: str,
     prompt: str,
     *,
     client: Any = None,
@@ -352,20 +390,23 @@ def invoke_text(
     temperature: float = 0.0,
     top_p: float = 0.9,
 ) -> Dict[str, Any]:
-    region, actual_model_id = _split_model_spec(model_id)
-    if actual_model_id.startswith("openai."):
-        return _invoke_openai(actual_model_id, prompt, max_tokens=max_tokens)
-    if actual_model_id.startswith("anthropic."):
+    region, model_id = _split_route(route_id)
+    if model_id.startswith("openai.gpt-5"):
+        return _invoke_openai(
+            model_id, prompt, max_tokens=max_tokens, region=region
+        )
+    if model_id.startswith("anthropic."):
         return _invoke_anthropic(
-            actual_model_id,
+            model_id,
             prompt,
             max_tokens=max_tokens,
             temperature=temperature,
+            region=region,
         )
 
     runtime = client or _runtime_client(region)
     response = runtime.converse(
-        modelId=actual_model_id,
+        modelId=model_id,
         messages=[{"role": "user", "content": [{"text": prompt}]}],
         inferenceConfig={
             "maxTokens": int(max_tokens),
@@ -387,8 +428,8 @@ def invoke_text(
         "text": text,
         "usage": dict(response.get("usage") or {}),
         "endpointFamily": "bedrock-runtime-converse",
-        "modelRegion": region,
-        "actualModelId": actual_model_id,
+        "region": region,
+        "modelId": model_id,
     }
 
 
@@ -417,6 +458,7 @@ def _failure_cooldown_seconds(code: str, message: str) -> int:
             "does not exist",
             "validationexception",
             "resource not found",
+            "unsupported model",
         )
     ):
         return 21600
@@ -438,46 +480,50 @@ def invoke_chain_text(
     discovered_count = None if explicit_models else len(discovered_models())
     now = time.time()
     attempted: List[str] = []
-    errors: List[Dict[str, str]] = []
+    errors: List[Dict[str, Any]] = []
     max_attempts = max(
-        1, int(os.environ.get("MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS", "20"))
+        1, int(os.environ.get("MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS", "24"))
     )
 
     eligible: List[str] = []
-    for model_id in _ordered_models(models or configured_models()):
-        retry_at = float(_MODEL_FAILURE_UNTIL.get(model_id) or 0.0)
+    for route_id in _ordered_models(models or configured_models()):
+        retry_at = float(_MODEL_FAILURE_UNTIL.get(route_id) or 0.0)
         if retry_at > now:
+            region, model_id = _split_route(route_id)
             errors.append(
                 {
+                    "routeId": route_id,
+                    "region": region,
                     "modelId": model_id,
-                    "endpointFamily": _endpoint_family(model_id),
+                    "endpointFamily": _endpoint_family(route_id),
                     "errorCode": "MODEL_COOLDOWN",
                     "message": f"retryAfterEpoch={int(retry_at)}",
                 }
             )
             continue
-        eligible.append(model_id)
+        eligible.append(route_id)
 
-    for model_id in eligible[:max_attempts]:
-        attempted.append(model_id)
+    for route_id in eligible[:max_attempts]:
+        region, model_id = _split_route(route_id)
+        attempted.append(route_id)
         try:
             result = invoke_text(
-                model_id,
+                route_id,
                 prompt,
                 client=client,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 top_p=top_p,
             )
-            _PREFERRED_MODEL = model_id
-            _MODEL_FAILURE_UNTIL.pop(model_id, None)
+            _PREFERRED_MODEL = route_id
+            _MODEL_FAILURE_UNTIL.pop(route_id, None)
             return {
                 "ok": True,
-                "modelId": model_id,
-                "modelRegion": result.get("modelRegion"),
-                "actualModelId": result.get("actualModelId") or model_id,
+                "routeId": route_id,
+                "region": result.get("region") or region,
+                "modelId": result.get("modelId") or model_id,
                 "endpointFamily": result.get("endpointFamily")
-                or _endpoint_family(model_id),
+                or _endpoint_family(route_id),
                 "text": result.get("text"),
                 "usage": result.get("usage") or {},
                 "attemptedModelIds": attempted,
@@ -490,13 +536,15 @@ def invoke_chain_text(
                 (response.get("Error") or {}).get("Code") or type(exc).__name__
             )
             message = str(exc)[:480]
-            _MODEL_FAILURE_UNTIL[model_id] = now + _failure_cooldown_seconds(
+            _MODEL_FAILURE_UNTIL[route_id] = now + _failure_cooldown_seconds(
                 code, message
             )
             errors.append(
                 {
+                    "routeId": route_id,
+                    "region": region,
                     "modelId": model_id,
-                    "endpointFamily": _endpoint_family(model_id),
+                    "endpointFamily": _endpoint_family(route_id),
                     "errorCode": code,
                     "message": message,
                 }
