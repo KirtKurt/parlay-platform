@@ -90,15 +90,6 @@ Resources:
             - Effect: Allow
               Action:
                 - aws-marketplace:Subscribe
-              Resource: '*'
-              Condition:
-                StringEquals:
-                  aws-marketplace:ProductId:
-                    - prod-bk5rjg4eo2pke
-                    - prod-d2ik6zgct5hxi
-                    - prod-4pmewlybdftbs
-            - Effect: Allow
-              Action:
                 - aws-marketplace:ViewSubscriptions
               Resource: '*'
       Events:
@@ -157,15 +148,6 @@ Resources:
             - Effect: Allow
               Action:
                 - aws-marketplace:Subscribe
-              Resource: '*'
-              Condition:
-                StringEquals:
-                  aws-marketplace:ProductId:
-                    - prod-bk5rjg4eo2pke
-                    - prod-d2ik6zgct5hxi
-                    - prod-4pmewlybdftbs
-            - Effect: Allow
-              Action:
                 - aws-marketplace:ViewSubscriptions
               Resource: '*'
 
