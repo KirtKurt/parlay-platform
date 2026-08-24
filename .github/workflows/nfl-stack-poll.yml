@@ -1,0 +1,32 @@
+name: NFL Auto Stack Poll
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/nfl-stack-poll.yml']
+permissions:
+  contents: write
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set +e
+          s=$(aws cloudformation describe-stacks --stack-name parlay-platform-nfl-auto --region "$AWS_REGION_VALUE" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo MISSING)
+          u=$(aws cloudformation describe-stacks --stack-name parlay-platform-nfl-auto --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='NflAutoStatusUrl'].OutputValue" --output text 2>/dev/null || true)
+          echo "STACK_STATUS=$s" >> "$GITHUB_ENV"; echo "STATUS_URL=$u" >> "$GITHUB_ENV"
+      - run: |
+          git config user.name 'github-actions[bot]'; git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git pull --rebase origin main || true; mkdir -p runtime_reports
+          python - <<'PY'
+          import json,os
+          open('runtime_reports/nfl_stack_poll_latest.json','w').write(json.dumps({'run_id':os.environ.get('GITHUB_RUN_ID'),'stack_status':os.environ.get('STACK_STATUS'),'status_url':os.environ.get('STATUS_URL')},indent=2)+'\n')
+          PY
+          git add runtime_reports/nfl_stack_poll_latest.json; git commit -m 'Publish NFL Auto stack poll [skip ci]' || true; git push origin HEAD:main || true
