@@ -1,0 +1,31 @@
+name: Trigger MLB prospective backlog v5 now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/trigger-mlb-prospective-v5-now.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: trigger-mlb-prospective-v5-now
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch readable-status reconciliation and training
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-prospective-backlog-reconcile-v5-once.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref main
+          echo "Dispatched MLB prospective backlog reconciliation v5 on main"
