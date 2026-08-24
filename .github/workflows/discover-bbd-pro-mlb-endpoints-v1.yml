@@ -1,0 +1,240 @@
+name: Discover BBD Pro MLB Endpoints v1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/discover-bbd-pro-mlb-endpoints-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bbd-pro-endpoint-discovery
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    env:
+      BBD_KEY_1: ${{ secrets.BIG_BALLS_DATA_API_KEY }}
+      BBD_KEY_2: ${{ secrets.BBD_API_KEY }}
+      BBD_KEY_3: ${{ secrets.BIGBALLS_DATA_API_KEY }}
+      BBD_KEY_4: ${{ secrets.BIG_BALLS_API_KEY }}
+      BBD_KEY_5: ${{ secrets.BIGBALLS_API_KEY }}
+      BBD_KEY_6: ${{ secrets.BIGBALLSDATA_API_KEY }}
+      BBD_KEY_7: ${{ secrets.BIG_BALLS_DATA_KEY }}
+      BBD_KEY_8: ${{ secrets.BBD_API_TOKEN }}
+      CONFIGURED_BASE: ${{ vars.BIG_BALLS_DATA_API_BASE_URL || vars.BBD_API_BASE_URL || '' }}
+      CONFIGURED_OPENAPI: ${{ vars.BIG_BALLS_DATA_OPENAPI_URL || vars.BBD_OPENAPI_URL || '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Select secret
+        run: |
+          set -euo pipefail
+          selected=''
+          for variable in BBD_KEY_1 BBD_KEY_2 BBD_KEY_3 BBD_KEY_4 BBD_KEY_5 BBD_KEY_6 BBD_KEY_7 BBD_KEY_8; do
+            value=${!variable:-}
+            if [ -n "$value" ]; then selected=$value; break; fi
+          done
+          test -n "$selected" || { echo '::error::No recognized BBD Pro secret'; exit 1; }
+          echo "BIG_BALLS_DATA_API_KEY=$selected" >> "$GITHUB_ENV"
+
+      - name: Discover official machine-readable MLB operations
+        run: |
+          set +e
+          python - <<'PY'
+          import html
+          import json
+          import os
+          import re
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          key=os.environ['BIG_BALLS_DATA_API_KEY']
+          headers={
+              'accept':'application/json, text/html;q=0.9, */*;q=0.8',
+              'user-agent':'inqsi-bbd-discovery/1.0',
+              'x-api-key':key,
+              'X-API-Key':key,
+              'Authorization':f'Bearer {key}',
+          }
+          configured_base=os.environ.get('CONFIGURED_BASE','').rstrip('/')
+          configured_openapi=os.environ.get('CONFIGURED_OPENAPI','')
+          openapi_candidates=[value for value in [
+              configured_openapi,
+              *(f'{configured_base}{suffix}' for suffix in ('/openapi.json','/docs/openapi.json','/api/openapi.json','/swagger.json','/api-docs') if configured_base),
+              'https://api.bigballsdata.com/openapi.json',
+              'https://api.bigballsdata.com/docs/openapi.json',
+              'https://api.bigballsdata.com/api/openapi.json',
+              'https://api.bigballsdata.com/swagger.json',
+              'https://api.bigballsdata.com/api-docs',
+              'https://bigballsdata.com/openapi.json',
+              'https://bigballsdata.com/docs/openapi.json',
+              'https://bigballsdata.com/api/openapi.json',
+              'https://bigballsdata.com/swagger.json',
+          ] if value]
+          docs_candidates=[
+              'https://bigballsdata.com/docs',
+              'https://bigballsdata.com/mlb-api',
+              'https://bigballsdata.com/baseball-api',
+              'https://bigballsdata.com/coverage',
+              'https://bigballsdata.com/pricing',
+          ]
+          report={'checkedAtUtc':datetime.now(timezone.utc).isoformat(),'openapiAttempts':[],'docsAttempts':[],'errors':[]}
+
+          def fetch(url, accept='application/json'):
+              req=urllib.request.Request(url,headers={**headers,'accept':accept})
+              with urllib.request.urlopen(req,timeout=20) as response:
+                  raw=response.read(2_000_001)
+                  if len(raw)>2_000_000: raise RuntimeError('response_too_large')
+                  return raw,response.headers.get('content-type',''),response.status
+
+          def category(material):
+              text=material.lower()
+              rules=[
+                  ('confirmed_lineups',('lineup','batting order')),
+                  ('injuries',('injur','il report','scratch')),
+                  ('probable_pitchers',('probable pitcher','starting pitcher','starter')),
+                  ('bullpen',('bullpen','reliever')),
+                  ('team_stats',('team stat','team metric')),
+                  ('player_stats',('player stat','pitcher stat','batter stat')),
+                  ('recent_form',('recent form','rolling','streak')),
+                  ('standings',('standing','rank')),
+                  ('odds_intelligence',('odds','fair price','line movement','consensus')),
+                  ('provider_prediction',('prediction','forecast','win probability')),
+                  ('games',('game','match','schedule','score')),
+              ]
+              return next((name for name,needles in rules if any(n in text for n in needles)),'games')
+
+          manifest=None
+          for url in dict.fromkeys(openapi_candidates):
+              try:
+                  raw,content_type,status=fetch(url)
+                  parsed=json.loads(raw.decode('utf-8'))
+                  paths=parsed.get('paths') if isinstance(parsed,dict) else None
+                  if not isinstance(paths,dict): raise RuntimeError('paths_missing')
+                  servers=parsed.get('servers') or []
+                  base=next((str(row.get('url') or '').rstrip('/') for row in servers if isinstance(row,dict) and str(row.get('url') or '').startswith('http')),None)
+                  if not base:
+                      parts=urllib.parse.urlsplit(url); base=f'{parts.scheme}://{parts.netloc}'
+                  operations=[]
+                  for path,row in paths.items():
+                      if not isinstance(row,dict) or not isinstance(row.get('get'),dict): continue
+                      op=row['get']
+                      material=' '.join([str(path),str(op.get('operationId') or ''),str(op.get('summary') or ''),str(op.get('description') or ''),' '.join(str(v) for v in op.get('tags') or [])])
+                      if not re.search(r'\b(mlb|baseball)\b',material,re.I): continue
+                      params=[]
+                      for group in (row.get('parameters') or [],op.get('parameters') or []):
+                          if isinstance(group,list): params.extend(v for v in group if isinstance(v,dict))
+                      operations.append({'category':category(material),'method':'GET','path':str(path),'urlTemplate':base+'/'+str(path).lstrip('/'),'operationId':str(op.get('operationId') or ''),'summary':str(op.get('summary') or ''),'parameters':params})
+                  if not operations: raise RuntimeError('no_mlb_operations')
+                  manifest={'version':'MLB-BBD-PRO-PINNED-MANIFEST-v1','source':'official OpenAPI discovery','openapiUrl':url,'baseUrl':base,'operations':operations}
+                  report['openapiAttempts'].append({'url':url,'status':status,'contentType':content_type,'success':True,'operationCount':len(operations)})
+                  break
+              except Exception as exc:
+                  report['openapiAttempts'].append({'url':url,'success':False,'error':f'{type(exc).__name__}:{exc}'})
+
+          if manifest is None:
+              discovered_urls=set()
+              for page in docs_candidates:
+                  try:
+                      raw,content_type,status=fetch(page,'text/html,application/xhtml+xml')
+                      text=html.unescape(raw.decode('utf-8',errors='ignore')).replace('\\/','/')
+                      absolutes=re.findall(r'https://[^\s"\'<>]+',text)
+                      quoted=re.findall(r'["\'](/(?:api|v1|v2|v3)/[^"\'<>\s]+)["\']',text)
+                      for value in absolutes:
+                          value=value.rstrip('.,);]')
+                          if re.search(r'(mlb|baseball)',value,re.I): discovered_urls.add(value)
+                      bases=[configured_base,'https://api.bigballsdata.com','https://bigballsdata.com']
+                      for path in quoted:
+                          if re.search(r'(mlb|baseball)',path,re.I):
+                              for base in bases:
+                                  if base: discovered_urls.add(base.rstrip('/')+'/'+path.lstrip('/'))
+                      report['docsAttempts'].append({'url':page,'status':status,'success':True,'candidateCount':len(discovered_urls)})
+                  except Exception as exc:
+                      report['docsAttempts'].append({'url':page,'success':False,'error':f'{type(exc).__name__}:{exc}'})
+
+              operations=[]
+              today=datetime.now(timezone.utc).date().isoformat()
+              for raw_url in sorted(discovered_urls):
+                  if any(token in raw_url.lower() for token in ('.js','.css','.png','.svg','.jpg','.webp')): continue
+                  url=raw_url
+                  url=re.sub(r'\{(?:date|gameDate|startDate|endDate)\}',today,url,flags=re.I)
+                  url=re.sub(r'\{(?:season)\}','2026',url,flags=re.I)
+                  if re.search(r'\{[^}]+\}',url): continue
+                  try:
+                      sep='&' if '?' in url else '?'
+                      probe=url+sep+urllib.parse.urlencode({'date':today,'season':'2026','league':'MLB','limit':'5'})
+                      raw,content_type,status=fetch(probe)
+                      payload=json.loads(raw.decode('utf-8'))
+                      operations.append({'category':category(url),'method':'GET','path':urllib.parse.urlsplit(url).path,'urlTemplate':url,'operationId':'docs-discovered','summary':'Official docs-discovered MLB endpoint','parameters':[]})
+                  except urllib.error.HTTPError as exc:
+                      if exc.code in (400,404,422):
+                          # The URL is real but rejected our generic optional
+                          # probe parameters. Keep it only when the docs gave a
+                          # concrete path with no unresolved placeholders.
+                          operations.append({'category':category(url),'method':'GET','path':urllib.parse.urlsplit(url).path,'urlTemplate':url,'operationId':'docs-discovered-unprobed','summary':'Official docs-discovered MLB endpoint','parameters':[]})
+                      else:
+                          report['errors'].append(f'{url}:HTTP_{exc.code}')
+                  except Exception as exc:
+                      report['errors'].append(f'{url}:{type(exc).__name__}:{exc}')
+              unique=[]; seen=set()
+              for row in operations:
+                  key=(row['category'],row['urlTemplate'])
+                  if key not in seen: seen.add(key); unique.append(row)
+              if unique:
+                  manifest={'version':'MLB-BBD-PRO-PINNED-MANIFEST-v1','source':'official documentation discovery','operations':unique}
+
+          Path('runtime_reports').mkdir(exist_ok=True)
+          if manifest:
+              Path('hello_world/bbd_mlb_endpoint_manifest.json').write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
+              report['success']=True; report['operationCount']=len(manifest.get('operations') or []); report['source']=manifest.get('source')
+          else:
+              report['success']=False; report['operationCount']=0
+          Path('runtime_reports/bbd_endpoint_discovery_latest.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+
+          # Teach the adapter to use the audited bundled manifest when no
+          # explicit environment manifest is supplied.
+          adapter=Path('hello_world/mlb_bbd_pro_context.py')
+          text=adapter.read_text()
+          if 'BBD_BUNDLED_MANIFEST_BEGIN' not in text:
+              text=text.replace('from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple\n',
+                  'from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple\nfrom pathlib import Path\n')
+              old='''    raw = _first_env(ENDPOINT_MANIFEST_ENV_NAMES)\n    if not raw:\n        return None\n'''
+              new='''    raw = _first_env(ENDPOINT_MANIFEST_ENV_NAMES)\n    # BBD_BUNDLED_MANIFEST_BEGIN\n    if not raw:\n        bundled = Path(__file__).with_name("bbd_mlb_endpoint_manifest.json")\n        if bundled.is_file():\n            parsed = json.loads(bundled.read_text(encoding="utf-8"))\n            if isinstance(parsed, list):\n                parsed = {"operations": parsed}\n            if not isinstance(parsed, dict):\n                raise RuntimeError("BBD_BUNDLED_ENDPOINT_MANIFEST_NOT_OBJECT")\n            return parsed\n        return None\n    # BBD_BUNDLED_MANIFEST_END\n'''
+              if old not in text: raise RuntimeError('adapter_manifest_anchor_missing')
+              adapter.write_text(text.replace(old,new,1))
+          print(json.dumps(report,indent=2,sort_keys=True))
+          raise SystemExit(0 if report.get('success') else 1)
+          PY
+          code=$?
+          echo "DISCOVERY_EXIT_CODE=$code" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Commit endpoint evidence and manifest
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add hello_world/mlb_bbd_pro_context.py \
+                  hello_world/bbd_mlb_endpoint_manifest.json \
+                  runtime_reports/bbd_endpoint_discovery_latest.json 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m 'Pin verified BBD Pro MLB endpoint manifest'
+            git push origin HEAD:main
+          fi
+
+      - name: Enforce successful discovery
+        if: always()
+        run: test "${DISCOVERY_EXIT_CODE:-1}" = '0'
