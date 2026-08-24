@@ -1,0 +1,66 @@
+name: Verify MLB AUTO endpoint-native Bedrock routing v2
+
+on:
+  push:
+    branches:
+      - main
+      - fix/mlb-auto-endpoint-native-bedrock-v2-20260824
+    paths:
+      - 'mlb_auto_llm/production_model_gateway.py'
+      - 'mlb_auto_llm/orchestrator_v3.py'
+      - 'mlb_auto_llm/bedrock_smoke.py'
+      - 'mlb-auto-llm-template.yaml'
+      - 'tests/unit/test_mlb_auto_production_model_gateway.py'
+      - '.github/workflows/verify-mlb-auto-endpoint-routing-v2.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'mlb_auto_llm/production_model_gateway.py'
+      - 'mlb_auto_llm/orchestrator_v3.py'
+      - 'mlb_auto_llm/bedrock_smoke.py'
+      - 'mlb-auto-llm-template.yaml'
+      - 'tests/unit/test_mlb_auto_production_model_gateway.py'
+      - '.github/workflows/verify-mlb-auto-endpoint-routing-v2.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - name: Install test dependencies
+        run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
+      - name: Compile endpoint-native runtime
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            mlb_auto_llm/model_gateway.py \
+            mlb_auto_llm/production_model_gateway.py \
+            mlb_auto_llm/orchestrator_v2.py \
+            mlb_auto_llm/orchestrator_v3.py \
+            mlb_auto_llm/bedrock_smoke.py
+      - name: Run routing regressions
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/unit/test_mlb_auto_model_gateway.py \
+            tests/unit/test_mlb_auto_production_model_gateway.py
+      - name: Validate bounded production template
+        run: |
+          set -euo pipefail
+          sam validate --template-file mlb-auto-llm-template.yaml --lint
+          grep -q 'Handler: orchestrator_v3.lambda_handler' mlb-auto-llm-template.yaml
+          grep -q "MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '8'" mlb-auto-llm-template.yaml
+          grep -q "MLB_AUTO_BEDROCK_RUNTIME_PROVIDERS: 'amazon,openai'" mlb-auto-llm-template.yaml
+          grep -q 'amazon.titan-text-premier-v1:0' mlb-auto-llm-template.yaml
+          ! grep -q 'aws-marketplace:Subscribe' mlb-auto-llm-template.yaml
