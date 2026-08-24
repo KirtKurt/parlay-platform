@@ -1,0 +1,344 @@
+name: Repair canonical MLB label replay policy drift now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-canonical-label-policy-drift-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: repair-mlb-canonical-label-policy-drift-now
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install test runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+
+      - name: Install semantic idempotency for immutable labels
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('hello_world/mlb_canonical_final_labels_v1.py')
+          source = path.read_text(encoding='utf-8')
+
+          helper = '''IMMUTABLE_SETTLEMENT_FACT_FIELDS = (
+              "record_type",
+              "sport",
+              "slate_date",
+              "official_game_pk",
+              "provider_event_id",
+              "provider_identity_match_method",
+              "provider_alias_crosswalk",
+              "away_team",
+              "home_team",
+              "game_date_utc",
+              "away_score",
+              "home_score",
+              "winner",
+              "home_won",
+              "predicted_winner",
+              "predicted_side",
+              "correct",
+              "canonical_lock_pk",
+              "canonical_lock_sk",
+              "canonical_lock_authority_version",
+              "canonical_lock_official_audit_eligible",
+              "exact_lock_vector_validated",
+              "canonical_stage_fingerprint",
+              "canonical_lock_payload_fingerprint",
+              "frozen_feature_vector_fingerprint",
+              "fundamentals_snapshot_v2_version",
+              "fundamentals_snapshot_v2_fingerprint",
+              "source",
+              "source_url",
+              "source_payload_fingerprint",
+              "official_status",
+          )
+
+
+          def _immutable_settlement_facts(item: Dict[str, Any]) -> Dict[str, Any]:
+              """Return only write-once game, lock, prediction, and official-result facts.
+
+              Training eligibility and exclusion reasons are intentionally absent: they
+              are policy evaluations that may become stricter after a label is written.
+              A policy change must never masquerade as an official-score correction.
+              """
+
+              return {
+                  field: copy.deepcopy(item.get(field))
+                  for field in IMMUTABLE_SETTLEMENT_FACT_FIELDS
+              }
+
+
+          def _immutable_settlement_facts_fingerprint(item: Dict[str, Any]) -> str:
+              return history.canonical_payload_fingerprint(
+                  _immutable_settlement_facts(item)
+              )
+
+
+          '''
+          marker = 'def _write_label(item: Dict[str, Any]) -> Dict[str, Any]:\n'
+          if 'IMMUTABLE_SETTLEMENT_FACT_FIELDS' not in source:
+              if source.count(marker) != 1:
+                  raise SystemExit('canonical label writer marker is not unique')
+              source = source.replace(marker, helper + marker, 1)
+
+          tail_start = source.index('    if str(existing.get("settlement_fingerprint") or "") == str(\n')
+          tail_end = source.index('\n\n\ndef _labels_for_slate', tail_start)
+          replacement = '''    existing_fingerprint = str(existing.get("settlement_fingerprint") or "")
+              proposed_fingerprint = str(item.get("settlement_fingerprint") or "")
+              if existing_fingerprint == proposed_fingerprint:
+                  return {
+                      "ok": True,
+                      "status": "IDEMPOTENT_EXISTING",
+                      "officialGamePk": official_pk,
+                      "pk": key["PK"],
+                      "sk": key["SK"],
+                      "settlementFingerprint": existing_fingerprint,
+                  }
+
+              existing_facts_fingerprint = _immutable_settlement_facts_fingerprint(existing)
+              proposed_facts_fingerprint = _immutable_settlement_facts_fingerprint(item)
+              if existing_facts_fingerprint == proposed_facts_fingerprint:
+                  return {
+                      "ok": True,
+                      "status": "IDEMPOTENT_EXISTING_POLICY_DRIFT",
+                      "officialGamePk": official_pk,
+                      "pk": key["PK"],
+                      "sk": key["SK"],
+                      "settlementFingerprint": existing_fingerprint,
+                      "proposedSettlementFingerprint": proposed_fingerprint,
+                      "immutableSettlementFactsFingerprint": existing_facts_fingerprint,
+                      "existingTrainingEligible": existing.get("training_eligible"),
+                      "currentTrainingEligible": item.get("training_eligible"),
+                      "policy": (
+                          "The existing write-once label is retained because official result, "
+                          "canonical lock, and prediction facts are identical; only derived "
+                          "training-policy metadata changed."
+                      ),
+                  }
+              return {
+                  "ok": False,
+                  "status": "OFFICIAL_FINAL_CORRECTION_CONFLICT",
+                  "officialGamePk": official_pk,
+                  "existingSettlementFingerprint": existing_fingerprint,
+                  "proposedSettlementFingerprint": proposed_fingerprint,
+                  "existingImmutableFactsFingerprint": existing_facts_fingerprint,
+                  "proposedImmutableFactsFingerprint": proposed_facts_fingerprint,
+                  "policy": "Write-once canonical labels never overwrite differing official, lock, or prediction facts; correction conflicts require manual review.",
+              }'''
+          # The replacement string is indented in this installer for readability.
+          replacement = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in replacement.splitlines()
+          )
+          source = source[:tail_start] + replacement + source[tail_end:]
+
+          old_count = '''            "labelIdempotentCount": sum(
+                          row.get("status") == "IDEMPOTENT_EXISTING" for row in writes
+                      ),
+          '''
+          new_count = '''            "labelIdempotentCount": sum(
+                          row.get("status")
+                          in {"IDEMPOTENT_EXISTING", "IDEMPOTENT_EXISTING_POLICY_DRIFT"}
+                          for row in writes
+                      ),
+                      "labelPolicyDriftIdempotentCount": sum(
+                          row.get("status") == "IDEMPOTENT_EXISTING_POLICY_DRIFT"
+                          for row in writes
+                      ),
+          '''
+          if 'labelPolicyDriftIdempotentCount' not in source:
+              if source.count(old_count) != 1:
+                  raise SystemExit('label idempotent count marker is not unique')
+              source = source.replace(old_count, new_count, 1)
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+          cat > tests/unit/test_mlb_canonical_label_policy_drift.py <<'PY'
+          from __future__ import annotations
+
+          import os
+          import sys
+          from copy import deepcopy
+          from pathlib import Path
+
+          os.environ.setdefault('AWS_DEFAULT_REGION', 'us-east-1')
+          os.environ.setdefault('AWS_EC2_METADATA_DISABLED', 'true')
+
+          ROOT = Path(__file__).resolve().parents[2]
+          HELLO = ROOT / 'hello_world'
+          if str(HELLO) not in sys.path:
+              sys.path.insert(0, str(HELLO))
+
+          import mlb_canonical_final_labels_v1 as subject
+
+
+          def immutable_row():
+              return {
+                  'record_type': subject.RECORD_TYPE,
+                  'sport': 'mlb',
+                  'slate_date': '2026-08-03',
+                  'official_game_pk': '823431',
+                  'provider_event_id': 'odds-event',
+                  'provider_identity_match_method': 'exact_official_game_pk_and_ordered_teams',
+                  'provider_alias_crosswalk': None,
+                  'away_team': 'Away',
+                  'home_team': 'Home',
+                  'game_date_utc': '2026-08-03T23:10:00Z',
+                  'away_score': 2,
+                  'home_score': 5,
+                  'winner': 'Home',
+                  'home_won': True,
+                  'predicted_winner': 'Home',
+                  'predicted_side': 'home',
+                  'correct': True,
+                  'canonical_lock_pk': 'GAME_WINNERS#mlb#2026-08-03',
+                  'canonical_lock_sk': 'LOCKED#GAME#823431',
+                  'canonical_lock_authority_version': 'v1',
+                  'canonical_lock_official_audit_eligible': True,
+                  'canonical_lock_learning_eligible': True,
+                  'exact_lock_vector_validated': True,
+                  'canonical_stage_fingerprint': 'stage',
+                  'canonical_lock_payload_fingerprint': 'lock',
+                  'frozen_feature_vector_fingerprint': 'vector',
+                  'fundamentals_snapshot_v2_version': 'v2',
+                  'fundamentals_snapshot_v2_fingerprint': 'fundamentals',
+                  'source': subject.SOURCE,
+                  'source_url': subject.official_finals_url('2026-08-03'),
+                  'source_payload_fingerprint': 'official-final',
+                  'official_status': {'abstractGameState': 'Final'},
+                  'accuracy_eligible': True,
+                  'training_eligible': True,
+                  'training_exclusion_reasons': [],
+              }
+
+
+          def test_training_policy_drift_is_not_an_official_correction():
+              existing = immutable_row()
+              proposed = deepcopy(existing)
+              proposed['canonical_lock_learning_eligible'] = False
+              proposed['training_eligible'] = False
+              proposed['training_exclusion_reasons'] = ['new_stricter_policy']
+              proposed['accuracy_eligible'] = False
+              assert (
+                  subject._immutable_settlement_facts_fingerprint(existing)
+                  == subject._immutable_settlement_facts_fingerprint(proposed)
+              )
+
+
+          def test_official_score_or_lock_or_prediction_change_remains_conflict():
+              existing = immutable_row()
+              for key, value in (
+                  ('home_score', 6),
+                  ('canonical_lock_payload_fingerprint', 'different-lock'),
+                  ('predicted_winner', 'Away'),
+              ):
+                  proposed = deepcopy(existing)
+                  proposed[key] = value
+                  assert (
+                      subject._immutable_settlement_facts_fingerprint(existing)
+                      != subject._immutable_settlement_facts_fingerprint(proposed)
+                  )
+
+
+          def test_source_retains_write_once_and_policy_drift_status():
+              source = (HELLO / 'mlb_canonical_final_labels_v1.py').read_text(encoding='utf-8')
+              assert 'IDEMPOTENT_EXISTING_POLICY_DRIFT' in source
+              assert 'ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)"' in source
+              assert 'outcomes_tbl.update_item' not in source
+              assert 'outcomes_tbl.delete_item' not in source
+          PY
+
+          python -m py_compile hello_world/mlb_canonical_final_labels_v1.py
+          python -m pytest -q \
+            tests/unit/test_mlb_canonical_label_policy_drift.py \
+            tests/unit/test_mlb_canonical_final_labels_v1.py
+          git diff --check
+
+      - name: Publish canonical label replay repair
+        id: publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            hello_world/mlb_canonical_final_labels_v1.py \
+            tests/unit/test_mlb_canonical_label_policy_drift.py
+          if git diff --cached --quiet; then
+            echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m 'Treat MLB label policy drift as semantic idempotency'
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            test "$attempt" != 5 || exit 1
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 2))
+          done
+
+      - name: Dispatch canonical production deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref main
+          echo 'Dispatched canonical root deployment.'
+
+      - name: Dispatch continuity reconciliation after deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha='${{ steps.publish.outputs.source_sha }}'
+          for attempt in $(seq 1 90); do
+            run_id=$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow deploy.yml \
+              --branch main \
+              --event workflow_dispatch \
+              --limit 20 \
+              --json databaseId,headSha,status,conclusion,createdAt \
+              --jq '.[] | select(.headSha == "'"$source_sha"'") | .databaseId' \
+              | head -n 1)
+            if [ -n "$run_id" ]; then
+              gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
+              gh workflow run mlb-prospective-backlog-reconcile-v5-once.yml \
+                --repo "$GITHUB_REPOSITORY" \
+                --ref main
+              echo "Deployment $run_id passed; dispatched protected v5 reconciliation."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo 'Unable to bind the deployment run to the repaired source SHA.' >&2
+          exit 1
