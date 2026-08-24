@@ -1,0 +1,167 @@
+{
+  "bedrock": {
+    "attemptedModelIds": [
+      "global.anthropic.claude-sonnet-4-20250514-v1:0",
+      "us.anthropic.claude-sonnet-4-20250514-v1:0",
+      "us.meta.llama3-3-70b-instruct-v1:0",
+      "meta.llama3-3-70b-instruct-v1:0",
+      "mistral.mistral-large-3-675b-instruct",
+      "mistral.ministral-3-3b-instruct",
+      "openai.gpt-5.6-sol",
+      "anthropic.claude-opus-4-8",
+      "anthropic.claude-opus-4-7",
+      "anthropic.claude-opus-4-6-v1",
+      "anthropic.claude-sonnet-4-6",
+      "us.amazon.nova-2-lite-v1:0",
+      "global.amazon.nova-2-lite-v1:0",
+      "us.amazon.nova-pro-v1:0",
+      "us.amazon.nova-lite-v1:0",
+      "us.amazon.nova-micro-v1:0"
+    ],
+    "endpointFamily": null,
+    "errors": [
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "AccessDeniedException",
+        "message": "An error occurred (AccessDeniedException) when calling the Converse operation: Model access is denied due to IAM user or service role is not authorized to perform the required AWS Marketplace actions (aws-marketplace:ViewSubscriptions, aws-marketplace:Subscribe) to enable access to this model. Refer to the Amazon Bedrock documentation for further details. Your AWS Marketplace subscription for this model cannot be completed at this time. If you recently fixed this issue, try a",
+        "modelId": "global.anthropic.claude-sonnet-4-20250514-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "AccessDeniedException",
+        "message": "An error occurred (AccessDeniedException) when calling the Converse operation: Model access is denied due to IAM user or service role is not authorized to perform the required AWS Marketplace actions (aws-marketplace:ViewSubscriptions, aws-marketplace:Subscribe) to enable access to this model. Refer to the Amazon Bedrock documentation for further details. Your AWS Marketplace subscription for this model cannot be completed at this time. If you recently fixed this issue, try a",
+        "modelId": "us.anthropic.claude-sonnet-4-20250514-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 4): Too many tokens, please wait before trying again.",
+        "modelId": "us.meta.llama3-3-70b-instruct-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ValidationException",
+        "message": "An error occurred (ValidationException) when calling the Converse operation: Invocation of model ID meta.llama3-3-70b-instruct-v1:0 with on-demand throughput isn\u2019t supported. Retry your request with the ID or ARN of an inference profile that contains this model.",
+        "modelId": "meta.llama3-3-70b-instruct-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 4): Too many tokens per day, please wait before trying again.",
+        "modelId": "mistral.mistral-large-3-675b-instruct"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 4): Too many tokens per day, please wait before trying again.",
+        "modelId": "mistral.ministral-3-3b-instruct"
+      },
+      {
+        "endpointFamily": "bedrock-mantle-openai",
+        "errorCode": "RuntimeError",
+        "message": "HTTP_401:{\"error\":{\"code\":\"access_denied\",\"message\":\"openai.gpt-5.6-sol is not available for this account. You can explore other available models on Amazon Bedrock. For additional access options, contact AWS Sales at https://aws.amazon.com/contact-us/sales-support/\",\"param\":null,\"type\":\"permission_denied_error\"}}",
+        "modelId": "openai.gpt-5.6-sol"
+      },
+      {
+        "endpointFamily": "bedrock-mantle-anthropic",
+        "errorCode": "RuntimeError",
+        "message": "HTTP_403:{\"type\":\"error\",\"request_id\":\"req_3gln7snmqwvjtjcgu5nf7bt3zinb226jgn2rpsz7bflwellwgetq\",\"error\":{\"type\":\"permission_error\",\"message\":\"anthropic.claude-opus-4-8 is not available for this account. You can explore other available models on Amazon Bedrock. For additional access options, contact AWS Sales at https://aws.amazon.com/contact-us/sales-support/\"}}",
+        "modelId": "anthropic.claude-opus-4-8"
+      },
+      {
+        "endpointFamily": "bedrock-mantle-anthropic",
+        "errorCode": "RuntimeError",
+        "message": "HTTP_403:{\"type\":\"error\",\"request_id\":\"req_7owhv6cxrw2dcna4n5fqv62smhz6n5fhcfpasmwb45ec4f6er7iq\",\"error\":{\"type\":\"permission_error\",\"message\":\"anthropic.claude-opus-4-7 is not available for this account. You can explore other available models on Amazon Bedrock. For additional access options, contact AWS Sales at https://aws.amazon.com/contact-us/sales-support/\"}}",
+        "modelId": "anthropic.claude-opus-4-7"
+      },
+      {
+        "endpointFamily": "bedrock-mantle-anthropic",
+        "errorCode": "RuntimeError",
+        "message": "HTTP_404:{\"type\":\"error\",\"request_id\":\"req_oxivol7ivv7tocovzfnimn6zstr5iqa6frsai5kmq2pixnd6a4oq\",\"error\":{\"type\":\"not_found_error\",\"message\":\"The model 'anthropic.claude-opus-4-6-v1' does not exist\"}}",
+        "modelId": "anthropic.claude-opus-4-6-v1"
+      },
+      {
+        "endpointFamily": "bedrock-mantle-anthropic",
+        "errorCode": "RuntimeError",
+        "message": "HTTP_404:{\"type\":\"error\",\"request_id\":\"req_r2uwzmelyc2qnx4nvbdcwalu4p4sz4ehqpajhi2sbql67eq5khoq\",\"error\":{\"type\":\"not_found_error\",\"message\":\"The model 'anthropic.claude-sonnet-4-6' does not exist\"}}",
+        "modelId": "anthropic.claude-sonnet-4-6"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 4): Too many tokens per day, please wait before trying again.",
+        "modelId": "us.amazon.nova-2-lite-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 4): Too many tokens per day, please wait before trying again.",
+        "modelId": "global.amazon.nova-2-lite-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 4): Too many tokens per day, please wait before trying again.",
+        "modelId": "us.amazon.nova-pro-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 4): Too many tokens per day, please wait before trying again.",
+        "modelId": "us.amazon.nova-lite-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 4): Too many tokens per day, please wait before trying again.",
+        "modelId": "us.amazon.nova-micro-v1:0"
+      }
+    ],
+    "errorsBeforeSuccess": [],
+    "modelId": null,
+    "ok": false
+  },
+  "conclusion": "FAIL",
+  "createdAtUtc": "2026-08-24T20:42:10.036851+00:00",
+  "eventRuleNames": [
+    "parlay-platform-mlb-auto--MLBAutoLLMFunctionAutonom-2Fnhw1x0m9iq"
+  ],
+  "ok": false,
+  "outcomes": {
+    "bedrock": "failure",
+    "cycle": "failure",
+    "schedule": "success"
+  },
+  "proofType": "MLB_AUTO_PRODUCTION_FINALIZATION",
+  "providerCycle": {
+    "bedrockAuthorityComplete": null,
+    "bedrockDecisionCount": 0,
+    "gamePks": [],
+    "ok": null,
+    "pickCount": 0,
+    "providerOk": {
+      "bigBallsDataPro": false,
+      "mlbStatsApi": false,
+      "theOddsApi": false
+    },
+    "publicationDeadlineUtc": null,
+    "publishedAtUtc": null,
+    "sourceStatus": {},
+    "status": null,
+    "threeSourceCoverageComplete": null
+  },
+  "publicStatus": {
+    "cardLeadMinutesBeforeSecondGame": 45,
+    "fullyAutonomous": true,
+    "service": "mlb-auto-llm",
+    "targetDailyAccuracy": 0.7,
+    "threeSourcePolicy": [
+      "MLB Stats API",
+      "The Odds API",
+      "Big Balls Sports Data Pro"
+    ]
+  },
+  "runId": "32775104486",
+  "secretExposed": false,
+  "sourceSha": "68542e352e888a561b7d231bdddb53509fdc56d1"
+}
