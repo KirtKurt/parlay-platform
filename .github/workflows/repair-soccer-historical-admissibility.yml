@@ -1,0 +1,91 @@
+name: Repair Soccer Historical Admissibility
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/repair-soccer-historical-admissibility.yml']
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Patch leakage-safe historical settlement certification
+        run: |
+          set -euo pipefail
+          git pull --rebase origin main
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('soccer_auto/historical_materializer.py')
+          s=p.read_text()
+          old='''from .settlement import (\n    settlement_conflict_blocks_training,\n    settlement_training_admissible,\n    settlement_training_evidence_valid,\n    settlement_training_views,\n)'''
+          new='''from .settlement import (\n    ALWAYS_REGULATION_AMBIGUOUS_KEYS,\n    MIXED_FORMAT_TOURNAMENT_KEYS,\n    build_settlement_admissibility_certificate,\n    regulation_time_ambiguous,\n    settlement_conflict_blocks_training,\n    settlement_training_admissible,\n    settlement_training_evidence_valid,\n    settlement_training_views,\n)'''
+          assert old in s or new in s
+          s=s.replace(old,new,1)
+
+          anchor='''def _authoritative_settlements(store: SoccerStore) -> list[dict[str, Any]]:\n    return [\n        row for row in _validated_settlements(store)\n        if settlement_training_admissible(row)\n    ]\n\n'''
+          helper='''def _historical_market_keys(event: Mapping[str, Any]) -> set[str]:\n    return {\n        str(market.get("key"))\n        for bookmaker in event.get("bookmakers") or []\n        if isinstance(bookmaker, Mapping)\n        for market in bookmaker.get("markets") or []\n        if isinstance(market, Mapping) and market.get("key")\n    }\n\n\ndef _historical_certification_scope_safe(\n    settlement: Mapping[str, Any],\n    competition: Mapping[str, Any] | None,\n) -> bool:\n    \"\"\"Allow T45 market evidence to certify only unambiguously league-format scopes.\n\n    Mixed-format tournaments are deliberately excluded because a featured-market\n    snapshot does not request ``to_qualify``; absence of that market therefore\n    cannot prove a group-stage fixture. Known/dynamic cups remain fail-closed.\n    \"\"\"\n    sport_key = str(settlement.get("sport_key") or "")\n    if sport_key in ALWAYS_REGULATION_AMBIGUOUS_KEYS or sport_key in MIXED_FORMAT_TOURNAMENT_KEYS:\n        return False\n    return not regulation_time_ambiguous(\n        sport_key, competition=competition, event_markets={"h2h"}\n    )\n\n\ndef _certify_settlement_from_historical_t45(\n    store: SoccerStore,\n    settlement: Mapping[str, Any],\n    event: Mapping[str, Any],\n    *,\n    competition: Mapping[str, Any] | None,\n    observed_at: str,\n) -> dict[str, Any]:\n    \"\"\"Append an immutable eligibility certificate from exact pre-lock odds.\"\"\"\n    markets = _historical_market_keys(event)\n    if not markets.intersection({"h2h", "h2h_3_way"}):\n        raise ValueError("historical T45 snapshot lacks regulation moneyline evidence")\n    certificate = build_settlement_admissibility_certificate(\n        settlement,\n        observed_at=observed_at,\n        competition=competition,\n        event_markets=markets,\n    )\n    if certificate.get("training_eligible_1x2") is not True:\n        raise ValueError("historical T45 event remains regulation-time ambiguous")\n    store.put_settlement(certificate)\n    view = settlement_training_views([dict(settlement), certificate])[0]\n    if not settlement_training_admissible(view):\n        raise RuntimeError("historical admissibility certificate failed validation")\n    return view\n\n'''
+          assert anchor in s
+          if '_historical_certification_scope_safe(' not in s:
+              s=s.replace(anchor,anchor+helper,1)
+
+          old='''    settlements = _authoritative_settlements(store)\n    if event_key:\n        settlements = [row for row in settlements if row["event_key"] == event_key]\n    conflicts = _conflicted_event_keys(store)\n    result: dict[str, Any] = {\n        "mode": "MATERIALIZE",\n        "authoritative_settlements": len(settlements),'''
+          new='''    validated_settlements = _validated_settlements(store)\n    if event_key:\n        validated_settlements = [\n            row for row in validated_settlements if row["event_key"] == event_key\n        ]\n    initially_authoritative = sum(\n        1 for row in validated_settlements if settlement_training_admissible(row)\n    )\n    competition_rows = {\n        str(row["sport_key"]): row for row in store.list_competitions()\n    }\n    settlements = [\n        row\n        for row in validated_settlements\n        if settlement_training_admissible(row)\n        or _historical_certification_scope_safe(\n            row, competition_rows.get(str(row.get("sport_key") or ""))\n        )\n    ]\n    conflicts = _conflicted_event_keys(store)\n    result: dict[str, Any] = {\n        "mode": "MATERIALIZE",\n        "validated_settlements": len(validated_settlements),\n        "authoritative_settlements": initially_authoritative,\n        "historical_certification_candidates": max(0, len(settlements) - initially_authoritative),\n        "historical_certificates_written": 0,'''
+          assert old in s or new in s
+          s=s.replace(old,new,1)
+
+          old='''            event = _matching_event(wrapper, settlement)\n            if event is None:\n                _write_state('''
+          new='''            event = _matching_event(wrapper, settlement)\n            if event is None:\n                _write_state('''
+          assert old in s
+          # insertion after event-none block is awkward; place immediately before _build_lock
+          marker='''            lock = _build_lock(\n                settlement,\n                event,'''
+          insertion='''            if not settlement_training_admissible(settlement):\n                settlement = _certify_settlement_from_historical_t45(\n                    store,\n                    settlement,\n                    event,\n                    competition=competition_rows.get(str(settlement["sport_key"])),\n                    observed_at=response_observed_at,\n                )\n                result["historical_certificates_written"] += 1\n            lock = _build_lock(\n                settlement,\n                event,'''
+          assert marker in s or insertion in s
+          s=s.replace(marker,insertion,1)
+          p.write_text(s)
+          PY
+          cat > tests/soccer_auto/test_historical_admissibility_bridge.py <<'PY'
+          from soccer_auto.historical_materializer import (
+              _historical_certification_scope_safe,
+              _historical_market_keys,
+          )
+
+          def test_historical_market_keys_collects_featured_moneyline():
+              event={"bookmakers":[{"markets":[{"key":"h2h"},{"key":"totals"}]}]}
+              assert _historical_market_keys(event)=={"h2h","totals"}
+
+          def test_regular_league_can_use_exact_t45_market_evidence():
+              settlement={"sport_key":"soccer_epl"}
+              competition={"sport_key":"soccer_epl","title":"Premier League","description":""}
+              assert _historical_certification_scope_safe(settlement,competition) is True
+
+          def test_known_cup_remains_fail_closed():
+              settlement={"sport_key":"soccer_fa_cup"}
+              competition={"sport_key":"soccer_fa_cup","title":"FA Cup","description":""}
+              assert _historical_certification_scope_safe(settlement,competition) is False
+
+          def test_mixed_tournament_remains_fail_closed_without_knockout_market_probe():
+              settlement={"sport_key":"soccer_uefa_champs_league"}
+              competition={"sport_key":"soccer_uefa_champs_league","title":"UEFA Champions League","description":""}
+              assert _historical_certification_scope_safe(settlement,competition) is False
+          PY
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
+          python -m py_compile soccer_auto/*.py
+          pytest -q tests/soccer_auto/test_historical_admissibility_bridge.py
+          pytest -q tests/soccer_auto/test_historical_materializer.py tests/soccer_auto/test_settlement_cadence.py
+      - name: Commit tested repair
+        run: |
+          set -euo pipefail
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add soccer_auto/historical_materializer.py tests/soccer_auto/test_historical_admissibility_bridge.py
+          git commit -m 'Certify safe Soccer training rows from exact T45 historical odds' || exit 0
+          for i in 1 2 3 4 5 6 7 8; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            git rebase --abort 2>/dev/null || true
+            sleep $((i*2))
+          done
+          exit 1
