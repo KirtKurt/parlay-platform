@@ -1,0 +1,1979 @@
+{
+  "checkedAtUtc": "2026-08-24T22:12:40.515994+00:00",
+  "contractAttempts": [
+    {
+      "matchesParameters": [
+        {
+          "in": "query",
+          "name": "sport",
+          "required": null,
+          "schema": {
+            "$ref": "#/components/schemas/Sport"
+          }
+        },
+        {
+          "in": "query",
+          "name": "league",
+          "required": null,
+          "schema": {
+            "$ref": "#/components/schemas/CanonicalId"
+          }
+        },
+        {
+          "in": "query",
+          "name": "date",
+          "required": null,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "status",
+          "required": null,
+          "schema": {
+            "$ref": "#/components/schemas/MatchStatus"
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "required": null,
+          "schema": {
+            "default": 50,
+            "maximum": 200,
+            "type": "integer"
+          }
+        },
+        {
+          "in": "query",
+          "name": "offset",
+          "required": null,
+          "schema": {
+            "default": 0,
+            "type": "integer"
+          }
+        }
+      ],
+      "path": "/openapi.json",
+      "status": 200,
+      "validOpenApi": true
+    },
+    {
+      "path": "/docs/openapi.json",
+      "status": 404,
+      "validOpenApi": false
+    },
+    {
+      "path": "/api/openapi.json",
+      "status": 404,
+      "validOpenApi": false
+    },
+    {
+      "path": "/swagger.json",
+      "status": 404,
+      "validOpenApi": false
+    },
+    {
+      "path": "/api-docs",
+      "status": 404,
+      "validOpenApi": false
+    }
+  ],
+  "matchedGameCount": 10,
+  "matchedIdsByGamePk": {
+    "822695": [
+      "c37a9c86-aa60-400e-a467-5c49d550196b",
+      "6c2bf815-4134-4f61-8f99-b63104d25f1a",
+      "8c86689d-a7de-4853-86d9-45c92be7034c"
+    ],
+    "823097": [
+      "16994be4-c66f-4523-8353-be4ff47b32ef",
+      "f70144a6-41bf-490f-89bc-dcf24fa4e189",
+      "03fe384c-730b-4f9b-a493-2b9b250c46fd"
+    ],
+    "823183": [
+      "25d8de40-3cae-4c54-9577-cd72e31ddd70",
+      "a68f1125-5381-40c3-830b-e8ad1e7b37a8",
+      "c7530b8f-b401-411b-964b-d36f38a8299c"
+    ],
+    "823260": [
+      "ab430cea-1aeb-4acd-b527-1cc45b675ab6",
+      "a5b9d7fe-6519-4bcb-82fd-3c4481aef3ad",
+      "53e4ed15-a38e-4d28-be0c-34ac9ddf4d61"
+    ],
+    "823828": [
+      "49ac6575-f6e3-4990-a945-773483ef32fd",
+      "d6932b8b-19cf-4604-be02-4af5e1b7ddf8",
+      "28c108c9-a1b5-4943-8927-070227473982"
+    ],
+    "823992": [
+      "a0e1b395-f536-4709-88f0-6e6eb4a553ee",
+      "3a8b525f-05b1-471f-91ab-a728ce8769d7",
+      "27ae5d91-b163-4a2d-ba74-9703478e3c81"
+    ],
+    "824235": [
+      "64d011bf-c464-4c12-af33-0c9853978818",
+      "2d352ec2-1f61-4d80-b6f4-98427dcd0006",
+      "59bafee9-dc38-447f-8efe-2b4ef6c293b9"
+    ],
+    "824557": [
+      "5821c764-7189-43b1-a85f-e933647b028a",
+      "b8cc3856-5367-4481-bf17-8e94588d1140",
+      "61c88819-5edb-4ec0-9508-fcc10ae62b5e"
+    ],
+    "824964": [
+      "9ea37ed7-d237-4886-8a83-fa2b756f3474",
+      "693709b6-fc72-4651-85f5-8f01d94524ee"
+    ],
+    "825041": [
+      "52ee39b4-ab29-46f5-adf6-5d4ba2cdcbc0",
+      "4b87b9ec-6023-47ef-a698-75c9faf0ef48",
+      "78442238-bf24-410a-b981-1404d7f296e1"
+    ]
+  },
+  "missingGamePks": [],
+  "officialGameCount": 10,
+  "officialGames": [
+    {
+      "away": "Tampa Bay Rays",
+      "gameDate": "2026-08-24T22:40:00Z",
+      "gamePk": "824235",
+      "home": "Detroit Tigers"
+    },
+    {
+      "away": "Boston Red Sox",
+      "gameDate": "2026-08-24T22:40:00Z",
+      "gamePk": "823828",
+      "home": "Miami Marlins"
+    },
+    {
+      "away": "Colorado Rockies",
+      "gameDate": "2026-08-24T22:45:00Z",
+      "gamePk": "822695",
+      "home": "Washington Nationals"
+    },
+    {
+      "away": "Texas Rangers",
+      "gameDate": "2026-08-24T23:40:00Z",
+      "gamePk": "824557",
+      "home": "Chicago White Sox"
+    },
+    {
+      "away": "Cleveland Guardians",
+      "gameDate": "2026-08-25T01:38:00Z",
+      "gamePk": "823992",
+      "home": "Los Angeles Angels"
+    },
+    {
+      "away": "Chicago Cubs",
+      "gameDate": "2026-08-25T01:40:00Z",
+      "gamePk": "825041",
+      "home": "Arizona Diamondbacks"
+    },
+    {
+      "away": "Pittsburgh Pirates",
+      "gameDate": "2026-08-25T01:40:00Z",
+      "gamePk": "823260",
+      "home": "San Diego Padres"
+    },
+    {
+      "away": "Minnesota Twins",
+      "gameDate": "2026-08-25T01:40:00Z",
+      "gamePk": "824964",
+      "home": "Athletics"
+    },
+    {
+      "away": "Philadelphia Phillies",
+      "gameDate": "2026-08-25T01:40:00Z",
+      "gamePk": "823097",
+      "home": "Seattle Mariners"
+    },
+    {
+      "away": "Cincinnati Reds",
+      "gameDate": "2026-08-25T01:45:00Z",
+      "gamePk": "823183",
+      "home": "San Francisco Giants"
+    }
+  ],
+  "proofType": "MLB_AUTO_BBD_LIVE_COVERAGE_DIAGNOSTIC",
+  "queryVariants": [
+    {
+      "count": 4,
+      "httpStatus": 200,
+      "label": "date-limit",
+      "meta": {
+        "cached": false,
+        "note": "Matches from the stored table matching your ?date=/?status= filter. This response reflects only that filter and makes no claim about what is upcoming \u2014 drop the filter to see what is next.",
+        "request_id": "cc8be355-9c61-4074-bf08-6e66fe722036",
+        "source": "stored"
+      },
+      "params": {
+        "date": "2026-08-24",
+        "league": "mlb",
+        "limit": 100,
+        "sport": "baseball"
+      },
+      "responseHeaderNames": [
+        "access-control-expose-headers",
+        "connection",
+        "content-length",
+        "content-type",
+        "cross-origin-opener-policy",
+        "cross-origin-resource-policy",
+        "date",
+        "origin-agent-cluster",
+        "referrer-policy",
+        "server",
+        "strict-transport-security",
+        "vary",
+        "x-content-type-options",
+        "x-dns-prefetch-control",
+        "x-download-options",
+        "x-frame-options",
+        "x-hikari-trace",
+        "x-permitted-cross-domain-policies",
+        "x-railway-edge",
+        "x-railway-request-id",
+        "x-ratelimit-limit",
+        "x-ratelimit-limit-day",
+        "x-ratelimit-limit-minute",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+        "x-request-id",
+        "x-xss-protection"
+      ],
+      "rows": [
+        {
+          "away": "Texas Rangers",
+          "home": "Chicago White Sox",
+          "id": "5821c764-7189-43b1-a85f-e933647b028a",
+          "start": "2026-08-24T23:40:00.000Z"
+        },
+        {
+          "away": "Colorado Rockies",
+          "home": "Washington Nationals",
+          "id": "c37a9c86-aa60-400e-a467-5c49d550196b",
+          "start": "2026-08-24T22:45:00.000Z"
+        },
+        {
+          "away": "Boston Red Sox",
+          "home": "Miami Marlins",
+          "id": "49ac6575-f6e3-4990-a945-773483ef32fd",
+          "start": "2026-08-24T22:40:00.000Z"
+        },
+        {
+          "away": "Tampa Bay Rays",
+          "home": "Detroit Tigers",
+          "id": "64d011bf-c464-4c12-af33-0c9853978818",
+          "start": "2026-08-24T22:40:00.000Z"
+        }
+      ],
+      "sampleRowKeys": [
+        "attendance",
+        "away",
+        "broadcast",
+        "has_odds",
+        "home",
+        "id",
+        "kickoff_utc",
+        "league",
+        "linescore",
+        "score",
+        "sport",
+        "status"
+      ],
+      "topLevelKeys": [
+        "data",
+        "error",
+        "meta"
+      ],
+      "urlPath": "/v1/matches"
+    },
+    {
+      "count": 4,
+      "httpStatus": 200,
+      "label": "date-page-1",
+      "meta": {
+        "cached": false,
+        "note": "Matches from the stored table matching your ?date=/?status= filter. This response reflects only that filter and makes no claim about what is upcoming \u2014 drop the filter to see what is next.",
+        "request_id": "d82e79c8-14e1-49f3-babd-a343744a8141",
+        "source": "stored"
+      },
+      "params": {
+        "date": "2026-08-24",
+        "league": "mlb",
+        "limit": 100,
+        "page": 1,
+        "sport": "baseball"
+      },
+      "responseHeaderNames": [
+        "access-control-expose-headers",
+        "connection",
+        "content-length",
+        "content-type",
+        "cross-origin-opener-policy",
+        "cross-origin-resource-policy",
+        "date",
+        "origin-agent-cluster",
+        "referrer-policy",
+        "server",
+        "strict-transport-security",
+        "vary",
+        "x-content-type-options",
+        "x-dns-prefetch-control",
+        "x-download-options",
+        "x-frame-options",
+        "x-hikari-trace",
+        "x-permitted-cross-domain-policies",
+        "x-railway-edge",
+        "x-railway-request-id",
+        "x-ratelimit-limit",
+        "x-ratelimit-limit-day",
+        "x-ratelimit-limit-minute",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+        "x-request-id",
+        "x-xss-protection"
+      ],
+      "rows": [
+        {
+          "away": "Texas Rangers",
+          "home": "Chicago White Sox",
+          "id": "5821c764-7189-43b1-a85f-e933647b028a",
+          "start": "2026-08-24T23:40:00.000Z"
+        },
+        {
+          "away": "Colorado Rockies",
+          "home": "Washington Nationals",
+          "id": "c37a9c86-aa60-400e-a467-5c49d550196b",
+          "start": "2026-08-24T22:45:00.000Z"
+        },
+        {
+          "away": "Boston Red Sox",
+          "home": "Miami Marlins",
+          "id": "49ac6575-f6e3-4990-a945-773483ef32fd",
+          "start": "2026-08-24T22:40:00.000Z"
+        },
+        {
+          "away": "Tampa Bay Rays",
+          "home": "Detroit Tigers",
+          "id": "64d011bf-c464-4c12-af33-0c9853978818",
+          "start": "2026-08-24T22:40:00.000Z"
+        }
+      ],
+      "sampleRowKeys": [
+        "attendance",
+        "away",
+        "broadcast",
+        "has_odds",
+        "home",
+        "id",
+        "kickoff_utc",
+        "league",
+        "linescore",
+        "score",
+        "sport",
+        "status"
+      ],
+      "topLevelKeys": [
+        "data",
+        "error",
+        "meta"
+      ],
+      "urlPath": "/v1/matches"
+    },
+    {
+      "count": 4,
+      "httpStatus": 200,
+      "label": "date-page-2",
+      "meta": {
+        "cached": false,
+        "note": "Matches from the stored table matching your ?date=/?status= filter. This response reflects only that filter and makes no claim about what is upcoming \u2014 drop the filter to see what is next.",
+        "request_id": "7ef5bf72-6fa1-4245-876c-4d9e9a992b25",
+        "source": "stored"
+      },
+      "params": {
+        "date": "2026-08-24",
+        "league": "mlb",
+        "limit": 100,
+        "page": 2,
+        "sport": "baseball"
+      },
+      "responseHeaderNames": [
+        "access-control-expose-headers",
+        "connection",
+        "content-length",
+        "content-type",
+        "cross-origin-opener-policy",
+        "cross-origin-resource-policy",
+        "date",
+        "origin-agent-cluster",
+        "referrer-policy",
+        "server",
+        "strict-transport-security",
+        "vary",
+        "x-content-type-options",
+        "x-dns-prefetch-control",
+        "x-download-options",
+        "x-frame-options",
+        "x-hikari-trace",
+        "x-permitted-cross-domain-policies",
+        "x-railway-edge",
+        "x-railway-request-id",
+        "x-ratelimit-limit",
+        "x-ratelimit-limit-day",
+        "x-ratelimit-limit-minute",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+        "x-request-id",
+        "x-xss-protection"
+      ],
+      "rows": [
+        {
+          "away": "Texas Rangers",
+          "home": "Chicago White Sox",
+          "id": "5821c764-7189-43b1-a85f-e933647b028a",
+          "start": "2026-08-24T23:40:00.000Z"
+        },
+        {
+          "away": "Colorado Rockies",
+          "home": "Washington Nationals",
+          "id": "c37a9c86-aa60-400e-a467-5c49d550196b",
+          "start": "2026-08-24T22:45:00.000Z"
+        },
+        {
+          "away": "Boston Red Sox",
+          "home": "Miami Marlins",
+          "id": "49ac6575-f6e3-4990-a945-773483ef32fd",
+          "start": "2026-08-24T22:40:00.000Z"
+        },
+        {
+          "away": "Tampa Bay Rays",
+          "home": "Detroit Tigers",
+          "id": "64d011bf-c464-4c12-af33-0c9853978818",
+          "start": "2026-08-24T22:40:00.000Z"
+        }
+      ],
+      "sampleRowKeys": [
+        "attendance",
+        "away",
+        "broadcast",
+        "has_odds",
+        "home",
+        "id",
+        "kickoff_utc",
+        "league",
+        "linescore",
+        "score",
+        "sport",
+        "status"
+      ],
+      "topLevelKeys": [
+        "data",
+        "error",
+        "meta"
+      ],
+      "urlPath": "/v1/matches"
+    },
+    {
+      "count": 4,
+      "httpStatus": 200,
+      "label": "date-offset-0",
+      "meta": {
+        "cached": false,
+        "note": "Matches from the stored table matching your ?date=/?status= filter. This response reflects only that filter and makes no claim about what is upcoming \u2014 drop the filter to see what is next.",
+        "request_id": "eb479cf2-d40a-4e51-994e-2a72b1991305",
+        "source": "stored"
+      },
+      "params": {
+        "date": "2026-08-24",
+        "league": "mlb",
+        "limit": 100,
+        "offset": 0,
+        "sport": "baseball"
+      },
+      "responseHeaderNames": [
+        "access-control-expose-headers",
+        "connection",
+        "content-length",
+        "content-type",
+        "cross-origin-opener-policy",
+        "cross-origin-resource-policy",
+        "date",
+        "origin-agent-cluster",
+        "referrer-policy",
+        "server",
+        "strict-transport-security",
+        "vary",
+        "x-content-type-options",
+        "x-dns-prefetch-control",
+        "x-download-options",
+        "x-frame-options",
+        "x-hikari-trace",
+        "x-permitted-cross-domain-policies",
+        "x-railway-edge",
+        "x-railway-request-id",
+        "x-ratelimit-limit",
+        "x-ratelimit-limit-day",
+        "x-ratelimit-limit-minute",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+        "x-request-id",
+        "x-xss-protection"
+      ],
+      "rows": [
+        {
+          "away": "Texas Rangers",
+          "home": "Chicago White Sox",
+          "id": "5821c764-7189-43b1-a85f-e933647b028a",
+          "start": "2026-08-24T23:40:00.000Z"
+        },
+        {
+          "away": "Colorado Rockies",
+          "home": "Washington Nationals",
+          "id": "c37a9c86-aa60-400e-a467-5c49d550196b",
+          "start": "2026-08-24T22:45:00.000Z"
+        },
+        {
+          "away": "Boston Red Sox",
+          "home": "Miami Marlins",
+          "id": "49ac6575-f6e3-4990-a945-773483ef32fd",
+          "start": "2026-08-24T22:40:00.000Z"
+        },
+        {
+          "away": "Tampa Bay Rays",
+          "home": "Detroit Tigers",
+          "id": "64d011bf-c464-4c12-af33-0c9853978818",
+          "start": "2026-08-24T22:40:00.000Z"
+        }
+      ],
+      "sampleRowKeys": [
+        "attendance",
+        "away",
+        "broadcast",
+        "has_odds",
+        "home",
+        "id",
+        "kickoff_utc",
+        "league",
+        "linescore",
+        "score",
+        "sport",
+        "status"
+      ],
+      "topLevelKeys": [
+        "data",
+        "error",
+        "meta"
+      ],
+      "urlPath": "/v1/matches"
+    },
+    {
+      "count": 0,
+      "httpStatus": 200,
+      "label": "date-offset-100",
+      "meta": {
+        "cache_age_ms": 0,
+        "cached": false,
+        "confidence": 0,
+        "coverage": false,
+        "fields_missing": [
+          "scores"
+        ],
+        "message": "No data available for this sport/league combination yet.",
+        "request_id": "2421637a-b3ab-4819-b338-dce81079be15",
+        "source": "none"
+      },
+      "params": {
+        "date": "2026-08-24",
+        "league": "mlb",
+        "limit": 100,
+        "offset": 100,
+        "sport": "baseball"
+      },
+      "responseHeaderNames": [
+        "access-control-expose-headers",
+        "connection",
+        "content-length",
+        "content-type",
+        "cross-origin-opener-policy",
+        "cross-origin-resource-policy",
+        "date",
+        "origin-agent-cluster",
+        "referrer-policy",
+        "server",
+        "strict-transport-security",
+        "vary",
+        "x-content-type-options",
+        "x-dns-prefetch-control",
+        "x-download-options",
+        "x-frame-options",
+        "x-hikari-trace",
+        "x-permitted-cross-domain-policies",
+        "x-railway-edge",
+        "x-railway-request-id",
+        "x-ratelimit-limit",
+        "x-ratelimit-limit-day",
+        "x-ratelimit-limit-minute",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+        "x-request-id",
+        "x-xss-protection"
+      ],
+      "rows": [],
+      "sampleRowKeys": [],
+      "topLevelKeys": [
+        "data",
+        "error",
+        "meta"
+      ],
+      "urlPath": "/v1/matches"
+    },
+    {
+      "count": 40,
+      "httpStatus": 200,
+      "label": "start-end-date",
+      "meta": {
+        "cached": false,
+        "note": "Upcoming matches served from the stored table (no live adapter covers this sport/league; refreshed by ingest).",
+        "request_id": "cb4551a1-9e4d-4cf0-b499-497a1d21627d",
+        "source": "stored"
+      },
+      "params": {
+        "end_date": "2026-08-24",
+        "league": "mlb",
+        "limit": 100,
+        "sport": "baseball",
+        "start_date": "2026-08-24"
+      },
+      "responseHeaderNames": [
+        "access-control-expose-headers",
+        "connection",
+        "content-length",
+        "content-type",
+        "cross-origin-opener-policy",
+        "cross-origin-resource-policy",
+        "date",
+        "origin-agent-cluster",
+        "referrer-policy",
+        "server",
+        "strict-transport-security",
+        "vary",
+        "x-content-type-options",
+        "x-dns-prefetch-control",
+        "x-download-options",
+        "x-frame-options",
+        "x-hikari-trace",
+        "x-permitted-cross-domain-policies",
+        "x-railway-edge",
+        "x-railway-request-id",
+        "x-ratelimit-limit",
+        "x-ratelimit-limit-day",
+        "x-ratelimit-limit-minute",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+        "x-request-id",
+        "x-xss-protection"
+      ],
+      "rows": [
+        {
+          "away": "Atlanta Braves",
+          "home": "Milwaukee Brewers",
+          "id": "468a9a58-bace-4319-b8ed-bd2e21f8da76",
+          "start": "2026-08-23T23:00:00.000Z"
+        },
+        {
+          "away": "Boston Red Sox",
+          "home": "Miami Marlins",
+          "id": "49ac6575-f6e3-4990-a945-773483ef32fd",
+          "start": "2026-08-24T22:40:00.000Z"
+        },
+        {
+          "away": "Tampa Bay Rays",
+          "home": "Detroit Tigers",
+          "id": "64d011bf-c464-4c12-af33-0c9853978818",
+          "start": "2026-08-24T22:40:00.000Z"
+        },
+        {
+          "away": "Colorado Rockies",
+          "home": "Washington Nationals",
+          "id": "c37a9c86-aa60-400e-a467-5c49d550196b",
+          "start": "2026-08-24T22:45:00.000Z"
+        },
+        {
+          "away": "Texas Rangers",
+          "home": "Chicago White Sox",
+          "id": "5821c764-7189-43b1-a85f-e933647b028a",
+          "start": "2026-08-24T23:40:00.000Z"
+        },
+        {
+          "away": "Cleveland Guardians",
+          "home": "Los Angeles Angels",
+          "id": "a0e1b395-f536-4709-88f0-6e6eb4a553ee",
+          "start": "2026-08-25T01:38:00.000Z"
+        },
+        {
+          "away": "Philadelphia Phillies",
+          "home": "Seattle Mariners",
+          "id": "16994be4-c66f-4523-8353-be4ff47b32ef",
+          "start": "2026-08-25T01:40:00.000Z"
+        },
+        {
+          "away": "Chicago Cubs",
+          "home": "Arizona Diamondbacks",
+          "id": "52ee39b4-ab29-46f5-adf6-5d4ba2cdcbc0",
+          "start": "2026-08-25T01:40:00.000Z"
+        },
+        {
+          "away": "Minnesota Twins",
+          "home": "Athletics",
+          "id": "9ea37ed7-d237-4886-8a83-fa2b756f3474",
+          "start": "2026-08-25T01:40:00.000Z"
+        },
+        {
+          "away": "Pittsburgh Pirates",
+          "home": "San Diego Padres",
+          "id": "ab430cea-1aeb-4acd-b527-1cc45b675ab6",
+          "start": "2026-08-25T01:40:00.000Z"
+        },
+        {
+          "away": "Cincinnati Reds",
+          "home": "San Francisco Giants",
+          "id": "25d8de40-3cae-4c54-9577-cd72e31ddd70",
+          "start": "2026-08-25T01:45:00.000Z"
+        },
+        {
+          "away": "Tampa Bay Rays",
+          "home": "Detroit Tigers",
+          "id": "2d352ec2-1f61-4d80-b6f4-98427dcd0006",
+          "start": "2026-08-25T22:40:00.000Z"
+        },
+        {
+          "away": "Boston Red Sox",
+          "home": "Miami Marlins",
+          "id": "d6932b8b-19cf-4604-be02-4af5e1b7ddf8",
+          "start": "2026-08-25T22:40:00.000Z"
+        },
+        {
+          "away": "Colorado Rockies",
+          "home": "Washington Nationals",
+          "id": "6c2bf815-4134-4f61-8f99-b63104d25f1a",
+          "start": "2026-08-25T22:45:00.000Z"
+        },
+        {
+          "away": "Houston Astros",
+          "home": "New York Yankees",
+          "id": "0808196b-2468-4d5a-a9ad-e13b27886c93",
+          "start": "2026-08-25T23:05:00.000Z"
+        },
+        {
+          "away": "Kansas City Royals",
+          "home": "Toronto Blue Jays",
+          "id": "9bd0aa5b-8b95-4a78-99f0-619f037734f0",
+          "start": "2026-08-25T23:07:00.000Z"
+        },
+        {
+          "away": "Milwaukee Brewers",
+          "home": "New York Mets",
+          "id": "412fcb87-c834-4320-84f1-b5d2de6c427a",
+          "start": "2026-08-25T23:10:00.000Z"
+        },
+        {
+          "away": "Los Angeles Dodgers",
+          "home": "Atlanta Braves",
+          "id": "cdf1f1ff-b13b-437f-b26f-7f0867d9d4b5",
+          "start": "2026-08-25T23:15:00.000Z"
+        },
+        {
+          "away": "Texas Rangers",
+          "home": "Chicago White Sox",
+          "id": "b8cc3856-5367-4481-bf17-8e94588d1140",
+          "start": "2026-08-25T23:40:00.000Z"
+        },
+        {
+          "away": "Baltimore Orioles",
+          "home": "St. Louis Cardinals",
+          "id": "25d0fd16-28ec-4ca5-830c-9b7d9d4f17ed",
+          "start": "2026-08-25T23:45:00.000Z"
+        },
+        {
+          "away": "Cleveland Guardians",
+          "home": "Los Angeles Angels",
+          "id": "3a8b525f-05b1-471f-91ab-a728ce8769d7",
+          "start": "2026-08-26T01:38:00.000Z"
+        },
+        {
+          "away": "Chicago Cubs",
+          "home": "Arizona Diamondbacks",
+          "id": "4b87b9ec-6023-47ef-a698-75c9faf0ef48",
+          "start": "2026-08-26T01:40:00.000Z"
+        },
+        {
+          "away": "Minnesota Twins",
+          "home": "Athletics",
+          "id": "693709b6-fc72-4651-85f5-8f01d94524ee",
+          "start": "2026-08-26T01:40:00.000Z"
+        },
+        {
+          "away": "Pittsburgh Pirates",
+          "home": "San Diego Padres",
+          "id": "a5b9d7fe-6519-4bcb-82fd-3c4481aef3ad",
+          "start": "2026-08-26T01:40:00.000Z"
+        },
+        {
+          "away": "Philadelphia Phillies",
+          "home": "Seattle Mariners",
+          "id": "f70144a6-41bf-490f-89bc-dcf24fa4e189",
+          "start": "2026-08-26T01:40:00.000Z"
+        },
+        {
+          "away": "Cincinnati Reds",
+          "home": "San Francisco Giants",
+          "id": "a68f1125-5381-40c3-830b-e8ad1e7b37a8",
+          "start": "2026-08-26T01:45:00.000Z"
+        },
+        {
+          "away": "Tampa Bay Rays",
+          "home": "Detroit Tigers",
+          "id": "59bafee9-dc38-447f-8efe-2b4ef6c293b9",
+          "start": "2026-08-26T17:10:00.000Z"
+        },
+        {
+          "away": "Chicago Cubs",
+          "home": "Arizona Diamondbacks",
+          "id": "78442238-bf24-410a-b981-1404d7f296e1",
+          "start": "2026-08-26T19:40:00.000Z"
+        },
+        {
+          "away": "Cincinnati Reds",
+          "home": "San Francisco Giants",
+          "id": "c7530b8f-b401-411b-964b-d36f38a8299c",
+          "start": "2026-08-26T19:45:00.000Z"
+        },
+        {
+          "away": "Cleveland Guardians",
+          "home": "Los Angeles Angels",
+          "id": "27ae5d91-b163-4a2d-ba74-9703478e3c81",
+          "start": "2026-08-26T20:07:00.000Z"
+        },
+        {
+          "away": "Philadelphia Phillies",
+          "home": "Seattle Mariners",
+          "id": "03fe384c-730b-4f9b-a493-2b9b250c46fd",
+          "start": "2026-08-26T20:10:00.000Z"
+        },
+        {
+          "away": "Pittsburgh Pirates",
+          "home": "San Diego Padres",
+          "id": "53e4ed15-a38e-4d28-be0c-34ac9ddf4d61",
+          "start": "2026-08-26T20:10:00.000Z"
+        },
+        {
+          "away": "Boston Red Sox",
+          "home": "Miami Marlins",
+          "id": "28c108c9-a1b5-4943-8927-070227473982",
+          "start": "2026-08-26T22:40:00.000Z"
+        },
+        {
+          "away": "Colorado Rockies",
+          "home": "Washington Nationals",
+          "id": "8c86689d-a7de-4853-86d9-45c92be7034c",
+          "start": "2026-08-26T22:45:00.000Z"
+        },
+        {
+          "away": "Houston Astros",
+          "home": "New York Yankees",
+          "id": "09d6af43-ca99-4060-b77c-30b9e1c2ae9e",
+          "start": "2026-08-26T23:05:00.000Z"
+        },
+        {
+          "away": "Kansas City Royals",
+          "home": "Toronto Blue Jays",
+          "id": "b64ed981-16b1-41a4-83f3-c07f9f4efa35",
+          "start": "2026-08-26T23:07:00.000Z"
+        },
+        {
+          "away": "Milwaukee Brewers",
+          "home": "New York Mets",
+          "id": "f287c8e9-7db4-4d8b-8159-5abb6a4ead5c",
+          "start": "2026-08-26T23:10:00.000Z"
+        },
+        {
+          "away": "Los Angeles Dodgers",
+          "home": "Atlanta Braves",
+          "id": "b2e60306-4421-476d-a715-90583f8e730f",
+          "start": "2026-08-26T23:15:00.000Z"
+        },
+        {
+          "away": "Texas Rangers",
+          "home": "Chicago White Sox",
+          "id": "61c88819-5edb-4ec0-9508-fcc10ae62b5e",
+          "start": "2026-08-26T23:40:00.000Z"
+        },
+        {
+          "away": "Baltimore Orioles",
+          "home": "St. Louis Cardinals",
+          "id": "2fe1e493-5c66-414e-a2f4-c4fff624a3ed",
+          "start": "2026-08-26T23:45:00.000Z"
+        }
+      ],
+      "sampleRowKeys": [
+        "attendance",
+        "away",
+        "broadcast",
+        "has_odds",
+        "home",
+        "id",
+        "kickoff_utc",
+        "league",
+        "linescore",
+        "score",
+        "sport",
+        "status"
+      ],
+      "topLevelKeys": [
+        "data",
+        "error",
+        "meta"
+      ],
+      "urlPath": "/v1/matches"
+    },
+    {
+      "count": 40,
+      "httpStatus": 200,
+      "label": "date-from-to",
+      "meta": {
+        "cached": false,
+        "note": "Upcoming matches served from the stored table (no live adapter covers this sport/league; refreshed by ingest).",
+        "request_id": "4e517232-8689-45f1-8e83-774a3b2d3b51",
+        "source": "stored"
+      },
+      "params": {
+        "date_from": "2026-08-24",
+        "date_to": "2026-08-24",
+        "league": "mlb",
+        "limit": 100,
+        "sport": "baseball"
+      },
+      "responseHeaderNames": [
+        "access-control-expose-headers",
+        "connection",
+        "content-length",
+        "content-type",
+        "cross-origin-opener-policy",
+        "cross-origin-resource-policy",
+        "date",
+        "origin-agent-cluster",
+        "referrer-policy",
+        "server",
+        "strict-transport-security",
+        "vary",
+        "x-content-type-options",
+        "x-dns-prefetch-control",
+        "x-download-options",
+        "x-frame-options",
+        "x-hikari-trace",
+        "x-permitted-cross-domain-policies",
+        "x-railway-edge",
+        "x-railway-request-id",
+        "x-ratelimit-limit",
+        "x-ratelimit-limit-day",
+        "x-ratelimit-limit-minute",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+        "x-request-id",
+        "x-xss-protection"
+      ],
+      "rows": [
+        {
+          "away": "Atlanta Braves",
+          "home": "Milwaukee Brewers",
+          "id": "468a9a58-bace-4319-b8ed-bd2e21f8da76",
+          "start": "2026-08-23T23:00:00.000Z"
+        },
+        {
+          "away": "Boston Red Sox",
+          "home": "Miami Marlins",
+          "id": "49ac6575-f6e3-4990-a945-773483ef32fd",
+          "start": "2026-08-24T22:40:00.000Z"
+        },
+        {
+          "away": "Tampa Bay Rays",
+          "home": "Detroit Tigers",
+          "id": "64d011bf-c464-4c12-af33-0c9853978818",
+          "start": "2026-08-24T22:40:00.000Z"
+        },
+        {
+          "away": "Colorado Rockies",
+          "home": "Washington Nationals",
+          "id": "c37a9c86-aa60-400e-a467-5c49d550196b",
+          "start": "2026-08-24T22:45:00.000Z"
+        },
+        {
+          "away": "Texas Rangers",
+          "home": "Chicago White Sox",
+          "id": "5821c764-7189-43b1-a85f-e933647b028a",
+          "start": "2026-08-24T23:40:00.000Z"
+        },
+        {
+          "away": "Cleveland Guardians",
+          "home": "Los Angeles Angels",
+          "id": "a0e1b395-f536-4709-88f0-6e6eb4a553ee",
+          "start": "2026-08-25T01:38:00.000Z"
+        },
+        {
+          "away": "Philadelphia Phillies",
+          "home": "Seattle Mariners",
+          "id": "16994be4-c66f-4523-8353-be4ff47b32ef",
+          "start": "2026-08-25T01:40:00.000Z"
+        },
+        {
+          "away": "Chicago Cubs",
+          "home": "Arizona Diamondbacks",
+          "id": "52ee39b4-ab29-46f5-adf6-5d4ba2cdcbc0",
+          "start": "2026-08-25T01:40:00.000Z"
+        },
+        {
+          "away": "Minnesota Twins",
+          "home": "Athletics",
+          "id": "9ea37ed7-d237-4886-8a83-fa2b756f3474",
+          "start": "2026-08-25T01:40:00.000Z"
+        },
+        {
+          "away": "Pittsburgh Pirates",
+          "home": "San Diego Padres",
+          "id": "ab430cea-1aeb-4acd-b527-1cc45b675ab6",
+          "start": "2026-08-25T01:40:00.000Z"
+        },
+        {
+          "away": "Cincinnati Reds",
+          "home": "San Francisco Giants",
+          "id": "25d8de40-3cae-4c54-9577-cd72e31ddd70",
+          "start": "2026-08-25T01:45:00.000Z"
+        },
+        {
+          "away": "Tampa Bay Rays",
+          "home": "Detroit Tigers",
+          "id": "2d352ec2-1f61-4d80-b6f4-98427dcd0006",
+          "start": "2026-08-25T22:40:00.000Z"
+        },
+        {
+          "away": "Boston Red Sox",
+          "home": "Miami Marlins",
+          "id": "d6932b8b-19cf-4604-be02-4af5e1b7ddf8",
+          "start": "2026-08-25T22:40:00.000Z"
+        },
+        {
+          "away": "Colorado Rockies",
+          "home": "Washington Nationals",
+          "id": "6c2bf815-4134-4f61-8f99-b63104d25f1a",
+          "start": "2026-08-25T22:45:00.000Z"
+        },
+        {
+          "away": "Houston Astros",
+          "home": "New York Yankees",
+          "id": "0808196b-2468-4d5a-a9ad-e13b27886c93",
+          "start": "2026-08-25T23:05:00.000Z"
+        },
+        {
+          "away": "Kansas City Royals",
+          "home": "Toronto Blue Jays",
+          "id": "9bd0aa5b-8b95-4a78-99f0-619f037734f0",
+          "start": "2026-08-25T23:07:00.000Z"
+        },
+        {
+          "away": "Milwaukee Brewers",
+          "home": "New York Mets",
+          "id": "412fcb87-c834-4320-84f1-b5d2de6c427a",
+          "start": "2026-08-25T23:10:00.000Z"
+        },
+        {
+          "away": "Los Angeles Dodgers",
+          "home": "Atlanta Braves",
+          "id": "cdf1f1ff-b13b-437f-b26f-7f0867d9d4b5",
+          "start": "2026-08-25T23:15:00.000Z"
+        },
+        {
+          "away": "Texas Rangers",
+          "home": "Chicago White Sox",
+          "id": "b8cc3856-5367-4481-bf17-8e94588d1140",
+          "start": "2026-08-25T23:40:00.000Z"
+        },
+        {
+          "away": "Baltimore Orioles",
+          "home": "St. Louis Cardinals",
+          "id": "25d0fd16-28ec-4ca5-830c-9b7d9d4f17ed",
+          "start": "2026-08-25T23:45:00.000Z"
+        },
+        {
+          "away": "Cleveland Guardians",
+          "home": "Los Angeles Angels",
+          "id": "3a8b525f-05b1-471f-91ab-a728ce8769d7",
+          "start": "2026-08-26T01:38:00.000Z"
+        },
+        {
+          "away": "Chicago Cubs",
+          "home": "Arizona Diamondbacks",
+          "id": "4b87b9ec-6023-47ef-a698-75c9faf0ef48",
+          "start": "2026-08-26T01:40:00.000Z"
+        },
+        {
+          "away": "Minnesota Twins",
+          "home": "Athletics",
+          "id": "693709b6-fc72-4651-85f5-8f01d94524ee",
+          "start": "2026-08-26T01:40:00.000Z"
+        },
+        {
+          "away": "Pittsburgh Pirates",
+          "home": "San Diego Padres",
+          "id": "a5b9d7fe-6519-4bcb-82fd-3c4481aef3ad",
+          "start": "2026-08-26T01:40:00.000Z"
+        },
+        {
+          "away": "Philadelphia Phillies",
+          "home": "Seattle Mariners",
+          "id": "f70144a6-41bf-490f-89bc-dcf24fa4e189",
+          "start": "2026-08-26T01:40:00.000Z"
+        },
+        {
+          "away": "Cincinnati Reds",
+          "home": "San Francisco Giants",
+          "id": "a68f1125-5381-40c3-830b-e8ad1e7b37a8",
+          "start": "2026-08-26T01:45:00.000Z"
+        },
+        {
+          "away": "Tampa Bay Rays",
+          "home": "Detroit Tigers",
+          "id": "59bafee9-dc38-447f-8efe-2b4ef6c293b9",
+          "start": "2026-08-26T17:10:00.000Z"
+        },
+        {
+          "away": "Chicago Cubs",
+          "home": "Arizona Diamondbacks",
+          "id": "78442238-bf24-410a-b981-1404d7f296e1",
+          "start": "2026-08-26T19:40:00.000Z"
+        },
+        {
+          "away": "Cincinnati Reds",
+          "home": "San Francisco Giants",
+          "id": "c7530b8f-b401-411b-964b-d36f38a8299c",
+          "start": "2026-08-26T19:45:00.000Z"
+        },
+        {
+          "away": "Cleveland Guardians",
+          "home": "Los Angeles Angels",
+          "id": "27ae5d91-b163-4a2d-ba74-9703478e3c81",
+          "start": "2026-08-26T20:07:00.000Z"
+        },
+        {
+          "away": "Philadelphia Phillies",
+          "home": "Seattle Mariners",
+          "id": "03fe384c-730b-4f9b-a493-2b9b250c46fd",
+          "start": "2026-08-26T20:10:00.000Z"
+        },
+        {
+          "away": "Pittsburgh Pirates",
+          "home": "San Diego Padres",
+          "id": "53e4ed15-a38e-4d28-be0c-34ac9ddf4d61",
+          "start": "2026-08-26T20:10:00.000Z"
+        },
+        {
+          "away": "Boston Red Sox",
+          "home": "Miami Marlins",
+          "id": "28c108c9-a1b5-4943-8927-070227473982",
+          "start": "2026-08-26T22:40:00.000Z"
+        },
+        {
+          "away": "Colorado Rockies",
+          "home": "Washington Nationals",
+          "id": "8c86689d-a7de-4853-86d9-45c92be7034c",
+          "start": "2026-08-26T22:45:00.000Z"
+        },
+        {
+          "away": "Houston Astros",
+          "home": "New York Yankees",
+          "id": "09d6af43-ca99-4060-b77c-30b9e1c2ae9e",
+          "start": "2026-08-26T23:05:00.000Z"
+        },
+        {
+          "away": "Kansas City Royals",
+          "home": "Toronto Blue Jays",
+          "id": "b64ed981-16b1-41a4-83f3-c07f9f4efa35",
+          "start": "2026-08-26T23:07:00.000Z"
+        },
+        {
+          "away": "Milwaukee Brewers",
+          "home": "New York Mets",
+          "id": "f287c8e9-7db4-4d8b-8159-5abb6a4ead5c",
+          "start": "2026-08-26T23:10:00.000Z"
+        },
+        {
+          "away": "Los Angeles Dodgers",
+          "home": "Atlanta Braves",
+          "id": "b2e60306-4421-476d-a715-90583f8e730f",
+          "start": "2026-08-26T23:15:00.000Z"
+        },
+        {
+          "away": "Texas Rangers",
+          "home": "Chicago White Sox",
+          "id": "61c88819-5edb-4ec0-9508-fcc10ae62b5e",
+          "start": "2026-08-26T23:40:00.000Z"
+        },
+        {
+          "away": "Baltimore Orioles",
+          "home": "St. Louis Cardinals",
+          "id": "2fe1e493-5c66-414e-a2f4-c4fff624a3ed",
+          "start": "2026-08-26T23:45:00.000Z"
+        }
+      ],
+      "sampleRowKeys": [
+        "attendance",
+        "away",
+        "broadcast",
+        "has_odds",
+        "home",
+        "id",
+        "kickoff_utc",
+        "league",
+        "linescore",
+        "score",
+        "sport",
+        "status"
+      ],
+      "topLevelKeys": [
+        "data",
+        "error",
+        "meta"
+      ],
+      "urlPath": "/v1/matches"
+    },
+    {
+      "count": 40,
+      "httpStatus": 200,
+      "label": "from-to",
+      "meta": {
+        "cached": false,
+        "note": "Upcoming matches served from the stored table (no live adapter covers this sport/league; refreshed by ingest).",
+        "request_id": "dd93eb43-446e-42dc-8a4c-7ec988b05db4",
+        "source": "stored"
+      },
+      "params": {
+        "from": "2026-08-24T00:00:00Z",
+        "league": "mlb",
+        "limit": 100,
+        "sport": "baseball",
+        "to": "2026-08-24T23:59:59Z"
+      },
+      "responseHeaderNames": [
+        "access-control-expose-headers",
+        "connection",
+        "content-length",
+        "content-type",
+        "cross-origin-opener-policy",
+        "cross-origin-resource-policy",
+        "date",
+        "origin-agent-cluster",
+        "referrer-policy",
+        "server",
+        "strict-transport-security",
+        "vary",
+        "x-content-type-options",
+        "x-dns-prefetch-control",
+        "x-download-options",
+        "x-frame-options",
+        "x-hikari-trace",
+        "x-permitted-cross-domain-policies",
+        "x-railway-edge",
+        "x-railway-request-id",
+        "x-ratelimit-limit",
+        "x-ratelimit-limit-day",
+        "x-ratelimit-limit-minute",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+        "x-request-id",
+        "x-xss-protection"
+      ],
+      "rows": [
+        {
+          "away": "Atlanta Braves",
+          "home": "Milwaukee Brewers",
+          "id": "468a9a58-bace-4319-b8ed-bd2e21f8da76",
+          "start": "2026-08-23T23:00:00.000Z"
+        },
+        {
+          "away": "Boston Red Sox",
+          "home": "Miami Marlins",
+          "id": "49ac6575-f6e3-4990-a945-773483ef32fd",
+          "start": "2026-08-24T22:40:00.000Z"
+        },
+        {
+          "away": "Tampa Bay Rays",
+          "home": "Detroit Tigers",
+          "id": "64d011bf-c464-4c12-af33-0c9853978818",
+          "start": "2026-08-24T22:40:00.000Z"
+        },
+        {
+          "away": "Colorado Rockies",
+          "home": "Washington Nationals",
+          "id": "c37a9c86-aa60-400e-a467-5c49d550196b",
+          "start": "2026-08-24T22:45:00.000Z"
+        },
+        {
+          "away": "Texas Rangers",
+          "home": "Chicago White Sox",
+          "id": "5821c764-7189-43b1-a85f-e933647b028a",
+          "start": "2026-08-24T23:40:00.000Z"
+        },
+        {
+          "away": "Cleveland Guardians",
+          "home": "Los Angeles Angels",
+          "id": "a0e1b395-f536-4709-88f0-6e6eb4a553ee",
+          "start": "2026-08-25T01:38:00.000Z"
+        },
+        {
+          "away": "Philadelphia Phillies",
+          "home": "Seattle Mariners",
+          "id": "16994be4-c66f-4523-8353-be4ff47b32ef",
+          "start": "2026-08-25T01:40:00.000Z"
+        },
+        {
+          "away": "Chicago Cubs",
+          "home": "Arizona Diamondbacks",
+          "id": "52ee39b4-ab29-46f5-adf6-5d4ba2cdcbc0",
+          "start": "2026-08-25T01:40:00.000Z"
+        },
+        {
+          "away": "Minnesota Twins",
+          "home": "Athletics",
+          "id": "9ea37ed7-d237-4886-8a83-fa2b756f3474",
+          "start": "2026-08-25T01:40:00.000Z"
+        },
+        {
+          "away": "Pittsburgh Pirates",
+          "home": "San Diego Padres",
+          "id": "ab430cea-1aeb-4acd-b527-1cc45b675ab6",
+          "start": "2026-08-25T01:40:00.000Z"
+        },
+        {
+          "away": "Cincinnati Reds",
+          "home": "San Francisco Giants",
+          "id": "25d8de40-3cae-4c54-9577-cd72e31ddd70",
+          "start": "2026-08-25T01:45:00.000Z"
+        },
+        {
+          "away": "Tampa Bay Rays",
+          "home": "Detroit Tigers",
+          "id": "2d352ec2-1f61-4d80-b6f4-98427dcd0006",
+          "start": "2026-08-25T22:40:00.000Z"
+        },
+        {
+          "away": "Boston Red Sox",
+          "home": "Miami Marlins",
+          "id": "d6932b8b-19cf-4604-be02-4af5e1b7ddf8",
+          "start": "2026-08-25T22:40:00.000Z"
+        },
+        {
+          "away": "Colorado Rockies",
+          "home": "Washington Nationals",
+          "id": "6c2bf815-4134-4f61-8f99-b63104d25f1a",
+          "start": "2026-08-25T22:45:00.000Z"
+        },
+        {
+          "away": "Houston Astros",
+          "home": "New York Yankees",
+          "id": "0808196b-2468-4d5a-a9ad-e13b27886c93",
+          "start": "2026-08-25T23:05:00.000Z"
+        },
+        {
+          "away": "Kansas City Royals",
+          "home": "Toronto Blue Jays",
+          "id": "9bd0aa5b-8b95-4a78-99f0-619f037734f0",
+          "start": "2026-08-25T23:07:00.000Z"
+        },
+        {
+          "away": "Milwaukee Brewers",
+          "home": "New York Mets",
+          "id": "412fcb87-c834-4320-84f1-b5d2de6c427a",
+          "start": "2026-08-25T23:10:00.000Z"
+        },
+        {
+          "away": "Los Angeles Dodgers",
+          "home": "Atlanta Braves",
+          "id": "cdf1f1ff-b13b-437f-b26f-7f0867d9d4b5",
+          "start": "2026-08-25T23:15:00.000Z"
+        },
+        {
+          "away": "Texas Rangers",
+          "home": "Chicago White Sox",
+          "id": "b8cc3856-5367-4481-bf17-8e94588d1140",
+          "start": "2026-08-25T23:40:00.000Z"
+        },
+        {
+          "away": "Baltimore Orioles",
+          "home": "St. Louis Cardinals",
+          "id": "25d0fd16-28ec-4ca5-830c-9b7d9d4f17ed",
+          "start": "2026-08-25T23:45:00.000Z"
+        },
+        {
+          "away": "Cleveland Guardians",
+          "home": "Los Angeles Angels",
+          "id": "3a8b525f-05b1-471f-91ab-a728ce8769d7",
+          "start": "2026-08-26T01:38:00.000Z"
+        },
+        {
+          "away": "Chicago Cubs",
+          "home": "Arizona Diamondbacks",
+          "id": "4b87b9ec-6023-47ef-a698-75c9faf0ef48",
+          "start": "2026-08-26T01:40:00.000Z"
+        },
+        {
+          "away": "Minnesota Twins",
+          "home": "Athletics",
+          "id": "693709b6-fc72-4651-85f5-8f01d94524ee",
+          "start": "2026-08-26T01:40:00.000Z"
+        },
+        {
+          "away": "Pittsburgh Pirates",
+          "home": "San Diego Padres",
+          "id": "a5b9d7fe-6519-4bcb-82fd-3c4481aef3ad",
+          "start": "2026-08-26T01:40:00.000Z"
+        },
+        {
+          "away": "Philadelphia Phillies",
+          "home": "Seattle Mariners",
+          "id": "f70144a6-41bf-490f-89bc-dcf24fa4e189",
+          "start": "2026-08-26T01:40:00.000Z"
+        },
+        {
+          "away": "Cincinnati Reds",
+          "home": "San Francisco Giants",
+          "id": "a68f1125-5381-40c3-830b-e8ad1e7b37a8",
+          "start": "2026-08-26T01:45:00.000Z"
+        },
+        {
+          "away": "Tampa Bay Rays",
+          "home": "Detroit Tigers",
+          "id": "59bafee9-dc38-447f-8efe-2b4ef6c293b9",
+          "start": "2026-08-26T17:10:00.000Z"
+        },
+        {
+          "away": "Chicago Cubs",
+          "home": "Arizona Diamondbacks",
+          "id": "78442238-bf24-410a-b981-1404d7f296e1",
+          "start": "2026-08-26T19:40:00.000Z"
+        },
+        {
+          "away": "Cincinnati Reds",
+          "home": "San Francisco Giants",
+          "id": "c7530b8f-b401-411b-964b-d36f38a8299c",
+          "start": "2026-08-26T19:45:00.000Z"
+        },
+        {
+          "away": "Cleveland Guardians",
+          "home": "Los Angeles Angels",
+          "id": "27ae5d91-b163-4a2d-ba74-9703478e3c81",
+          "start": "2026-08-26T20:07:00.000Z"
+        },
+        {
+          "away": "Philadelphia Phillies",
+          "home": "Seattle Mariners",
+          "id": "03fe384c-730b-4f9b-a493-2b9b250c46fd",
+          "start": "2026-08-26T20:10:00.000Z"
+        },
+        {
+          "away": "Pittsburgh Pirates",
+          "home": "San Diego Padres",
+          "id": "53e4ed15-a38e-4d28-be0c-34ac9ddf4d61",
+          "start": "2026-08-26T20:10:00.000Z"
+        },
+        {
+          "away": "Boston Red Sox",
+          "home": "Miami Marlins",
+          "id": "28c108c9-a1b5-4943-8927-070227473982",
+          "start": "2026-08-26T22:40:00.000Z"
+        },
+        {
+          "away": "Colorado Rockies",
+          "home": "Washington Nationals",
+          "id": "8c86689d-a7de-4853-86d9-45c92be7034c",
+          "start": "2026-08-26T22:45:00.000Z"
+        },
+        {
+          "away": "Houston Astros",
+          "home": "New York Yankees",
+          "id": "09d6af43-ca99-4060-b77c-30b9e1c2ae9e",
+          "start": "2026-08-26T23:05:00.000Z"
+        },
+        {
+          "away": "Kansas City Royals",
+          "home": "Toronto Blue Jays",
+          "id": "b64ed981-16b1-41a4-83f3-c07f9f4efa35",
+          "start": "2026-08-26T23:07:00.000Z"
+        },
+        {
+          "away": "Milwaukee Brewers",
+          "home": "New York Mets",
+          "id": "f287c8e9-7db4-4d8b-8159-5abb6a4ead5c",
+          "start": "2026-08-26T23:10:00.000Z"
+        },
+        {
+          "away": "Los Angeles Dodgers",
+          "home": "Atlanta Braves",
+          "id": "b2e60306-4421-476d-a715-90583f8e730f",
+          "start": "2026-08-26T23:15:00.000Z"
+        },
+        {
+          "away": "Texas Rangers",
+          "home": "Chicago White Sox",
+          "id": "61c88819-5edb-4ec0-9508-fcc10ae62b5e",
+          "start": "2026-08-26T23:40:00.000Z"
+        },
+        {
+          "away": "Baltimore Orioles",
+          "home": "St. Louis Cardinals",
+          "id": "2fe1e493-5c66-414e-a2f4-c4fff624a3ed",
+          "start": "2026-08-26T23:45:00.000Z"
+        }
+      ],
+      "sampleRowKeys": [
+        "attendance",
+        "away",
+        "broadcast",
+        "has_odds",
+        "home",
+        "id",
+        "kickoff_utc",
+        "league",
+        "linescore",
+        "score",
+        "sport",
+        "status"
+      ],
+      "topLevelKeys": [
+        "data",
+        "error",
+        "meta"
+      ],
+      "urlPath": "/v1/matches"
+    },
+    {
+      "count": 40,
+      "httpStatus": 200,
+      "label": "start-end-time",
+      "meta": {
+        "cached": false,
+        "note": "Upcoming matches served from the stored table (no live adapter covers this sport/league; refreshed by ingest).",
+        "request_id": "b28ffc6e-df2b-4585-95b8-83c3f6f47286",
+        "source": "stored"
+      },
+      "params": {
+        "end_time": "2026-08-24T23:59:59Z",
+        "league": "mlb",
+        "limit": 100,
+        "sport": "baseball",
+        "start_time": "2026-08-24T00:00:00Z"
+      },
+      "responseHeaderNames": [
+        "access-control-expose-headers",
+        "connection",
+        "content-length",
+        "content-type",
+        "cross-origin-opener-policy",
+        "cross-origin-resource-policy",
+        "date",
+        "origin-agent-cluster",
+        "referrer-policy",
+        "server",
+        "strict-transport-security",
+        "vary",
+        "x-content-type-options",
+        "x-dns-prefetch-control",
+        "x-download-options",
+        "x-frame-options",
+        "x-hikari-trace",
+        "x-permitted-cross-domain-policies",
+        "x-railway-edge",
+        "x-railway-request-id",
+        "x-ratelimit-limit",
+        "x-ratelimit-limit-day",
+        "x-ratelimit-limit-minute",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+        "x-request-id",
+        "x-xss-protection"
+      ],
+      "rows": [
+        {
+          "away": "Atlanta Braves",
+          "home": "Milwaukee Brewers",
+          "id": "468a9a58-bace-4319-b8ed-bd2e21f8da76",
+          "start": "2026-08-23T23:00:00.000Z"
+        },
+        {
+          "away": "Boston Red Sox",
+          "home": "Miami Marlins",
+          "id": "49ac6575-f6e3-4990-a945-773483ef32fd",
+          "start": "2026-08-24T22:40:00.000Z"
+        },
+        {
+          "away": "Tampa Bay Rays",
+          "home": "Detroit Tigers",
+          "id": "64d011bf-c464-4c12-af33-0c9853978818",
+          "start": "2026-08-24T22:40:00.000Z"
+        },
+        {
+          "away": "Colorado Rockies",
+          "home": "Washington Nationals",
+          "id": "c37a9c86-aa60-400e-a467-5c49d550196b",
+          "start": "2026-08-24T22:45:00.000Z"
+        },
+        {
+          "away": "Texas Rangers",
+          "home": "Chicago White Sox",
+          "id": "5821c764-7189-43b1-a85f-e933647b028a",
+          "start": "2026-08-24T23:40:00.000Z"
+        },
+        {
+          "away": "Cleveland Guardians",
+          "home": "Los Angeles Angels",
+          "id": "a0e1b395-f536-4709-88f0-6e6eb4a553ee",
+          "start": "2026-08-25T01:38:00.000Z"
+        },
+        {
+          "away": "Philadelphia Phillies",
+          "home": "Seattle Mariners",
+          "id": "16994be4-c66f-4523-8353-be4ff47b32ef",
+          "start": "2026-08-25T01:40:00.000Z"
+        },
+        {
+          "away": "Chicago Cubs",
+          "home": "Arizona Diamondbacks",
+          "id": "52ee39b4-ab29-46f5-adf6-5d4ba2cdcbc0",
+          "start": "2026-08-25T01:40:00.000Z"
+        },
+        {
+          "away": "Minnesota Twins",
+          "home": "Athletics",
+          "id": "9ea37ed7-d237-4886-8a83-fa2b756f3474",
+          "start": "2026-08-25T01:40:00.000Z"
+        },
+        {
+          "away": "Pittsburgh Pirates",
+          "home": "San Diego Padres",
+          "id": "ab430cea-1aeb-4acd-b527-1cc45b675ab6",
+          "start": "2026-08-25T01:40:00.000Z"
+        },
+        {
+          "away": "Cincinnati Reds",
+          "home": "San Francisco Giants",
+          "id": "25d8de40-3cae-4c54-9577-cd72e31ddd70",
+          "start": "2026-08-25T01:45:00.000Z"
+        },
+        {
+          "away": "Tampa Bay Rays",
+          "home": "Detroit Tigers",
+          "id": "2d352ec2-1f61-4d80-b6f4-98427dcd0006",
+          "start": "2026-08-25T22:40:00.000Z"
+        },
+        {
+          "away": "Boston Red Sox",
+          "home": "Miami Marlins",
+          "id": "d6932b8b-19cf-4604-be02-4af5e1b7ddf8",
+          "start": "2026-08-25T22:40:00.000Z"
+        },
+        {
+          "away": "Colorado Rockies",
+          "home": "Washington Nationals",
+          "id": "6c2bf815-4134-4f61-8f99-b63104d25f1a",
+          "start": "2026-08-25T22:45:00.000Z"
+        },
+        {
+          "away": "Houston Astros",
+          "home": "New York Yankees",
+          "id": "0808196b-2468-4d5a-a9ad-e13b27886c93",
+          "start": "2026-08-25T23:05:00.000Z"
+        },
+        {
+          "away": "Kansas City Royals",
+          "home": "Toronto Blue Jays",
+          "id": "9bd0aa5b-8b95-4a78-99f0-619f037734f0",
+          "start": "2026-08-25T23:07:00.000Z"
+        },
+        {
+          "away": "Milwaukee Brewers",
+          "home": "New York Mets",
+          "id": "412fcb87-c834-4320-84f1-b5d2de6c427a",
+          "start": "2026-08-25T23:10:00.000Z"
+        },
+        {
+          "away": "Los Angeles Dodgers",
+          "home": "Atlanta Braves",
+          "id": "cdf1f1ff-b13b-437f-b26f-7f0867d9d4b5",
+          "start": "2026-08-25T23:15:00.000Z"
+        },
+        {
+          "away": "Texas Rangers",
+          "home": "Chicago White Sox",
+          "id": "b8cc3856-5367-4481-bf17-8e94588d1140",
+          "start": "2026-08-25T23:40:00.000Z"
+        },
+        {
+          "away": "Baltimore Orioles",
+          "home": "St. Louis Cardinals",
+          "id": "25d0fd16-28ec-4ca5-830c-9b7d9d4f17ed",
+          "start": "2026-08-25T23:45:00.000Z"
+        },
+        {
+          "away": "Cleveland Guardians",
+          "home": "Los Angeles Angels",
+          "id": "3a8b525f-05b1-471f-91ab-a728ce8769d7",
+          "start": "2026-08-26T01:38:00.000Z"
+        },
+        {
+          "away": "Chicago Cubs",
+          "home": "Arizona Diamondbacks",
+          "id": "4b87b9ec-6023-47ef-a698-75c9faf0ef48",
+          "start": "2026-08-26T01:40:00.000Z"
+        },
+        {
+          "away": "Minnesota Twins",
+          "home": "Athletics",
+          "id": "693709b6-fc72-4651-85f5-8f01d94524ee",
+          "start": "2026-08-26T01:40:00.000Z"
+        },
+        {
+          "away": "Pittsburgh Pirates",
+          "home": "San Diego Padres",
+          "id": "a5b9d7fe-6519-4bcb-82fd-3c4481aef3ad",
+          "start": "2026-08-26T01:40:00.000Z"
+        },
+        {
+          "away": "Philadelphia Phillies",
+          "home": "Seattle Mariners",
+          "id": "f70144a6-41bf-490f-89bc-dcf24fa4e189",
+          "start": "2026-08-26T01:40:00.000Z"
+        },
+        {
+          "away": "Cincinnati Reds",
+          "home": "San Francisco Giants",
+          "id": "a68f1125-5381-40c3-830b-e8ad1e7b37a8",
+          "start": "2026-08-26T01:45:00.000Z"
+        },
+        {
+          "away": "Tampa Bay Rays",
+          "home": "Detroit Tigers",
+          "id": "59bafee9-dc38-447f-8efe-2b4ef6c293b9",
+          "start": "2026-08-26T17:10:00.000Z"
+        },
+        {
+          "away": "Chicago Cubs",
+          "home": "Arizona Diamondbacks",
+          "id": "78442238-bf24-410a-b981-1404d7f296e1",
+          "start": "2026-08-26T19:40:00.000Z"
+        },
+        {
+          "away": "Cincinnati Reds",
+          "home": "San Francisco Giants",
+          "id": "c7530b8f-b401-411b-964b-d36f38a8299c",
+          "start": "2026-08-26T19:45:00.000Z"
+        },
+        {
+          "away": "Cleveland Guardians",
+          "home": "Los Angeles Angels",
+          "id": "27ae5d91-b163-4a2d-ba74-9703478e3c81",
+          "start": "2026-08-26T20:07:00.000Z"
+        },
+        {
+          "away": "Philadelphia Phillies",
+          "home": "Seattle Mariners",
+          "id": "03fe384c-730b-4f9b-a493-2b9b250c46fd",
+          "start": "2026-08-26T20:10:00.000Z"
+        },
+        {
+          "away": "Pittsburgh Pirates",
+          "home": "San Diego Padres",
+          "id": "53e4ed15-a38e-4d28-be0c-34ac9ddf4d61",
+          "start": "2026-08-26T20:10:00.000Z"
+        },
+        {
+          "away": "Boston Red Sox",
+          "home": "Miami Marlins",
+          "id": "28c108c9-a1b5-4943-8927-070227473982",
+          "start": "2026-08-26T22:40:00.000Z"
+        },
+        {
+          "away": "Colorado Rockies",
+          "home": "Washington Nationals",
+          "id": "8c86689d-a7de-4853-86d9-45c92be7034c",
+          "start": "2026-08-26T22:45:00.000Z"
+        },
+        {
+          "away": "Houston Astros",
+          "home": "New York Yankees",
+          "id": "09d6af43-ca99-4060-b77c-30b9e1c2ae9e",
+          "start": "2026-08-26T23:05:00.000Z"
+        },
+        {
+          "away": "Kansas City Royals",
+          "home": "Toronto Blue Jays",
+          "id": "b64ed981-16b1-41a4-83f3-c07f9f4efa35",
+          "start": "2026-08-26T23:07:00.000Z"
+        },
+        {
+          "away": "Milwaukee Brewers",
+          "home": "New York Mets",
+          "id": "f287c8e9-7db4-4d8b-8159-5abb6a4ead5c",
+          "start": "2026-08-26T23:10:00.000Z"
+        },
+        {
+          "away": "Los Angeles Dodgers",
+          "home": "Atlanta Braves",
+          "id": "b2e60306-4421-476d-a715-90583f8e730f",
+          "start": "2026-08-26T23:15:00.000Z"
+        },
+        {
+          "away": "Texas Rangers",
+          "home": "Chicago White Sox",
+          "id": "61c88819-5edb-4ec0-9508-fcc10ae62b5e",
+          "start": "2026-08-26T23:40:00.000Z"
+        },
+        {
+          "away": "Baltimore Orioles",
+          "home": "St. Louis Cardinals",
+          "id": "2fe1e493-5c66-414e-a2f4-c4fff624a3ed",
+          "start": "2026-08-26T23:45:00.000Z"
+        }
+      ],
+      "sampleRowKeys": [
+        "attendance",
+        "away",
+        "broadcast",
+        "has_odds",
+        "home",
+        "id",
+        "kickoff_utc",
+        "league",
+        "linescore",
+        "score",
+        "sport",
+        "status"
+      ],
+      "topLevelKeys": [
+        "data",
+        "error",
+        "meta"
+      ],
+      "urlPath": "/v1/matches"
+    },
+    {
+      "errorBody": "{\"error\":{\"code\":\"bad_request\",\"message\":\"One or more query parameters are invalid.\",\"validation_errors\":{\"formErrors\":[],\"fieldErrors\":{\"limit\":[\"Number must be less than or equal to 200\"]}}},\"suggested_fix\":\"Lower limit to 200 or less, optionally add ?page=2 to page through results.\",\"example\":\"https://api.bigballsdata.com/v1/matches?sport=football&status=live\",\"docs_url\":\"https://bigballsdata.com/docs/matches\",\"support\":{\"discord\":\"https://discord.gg/H2WJBQurbq\",\"email\":\"support@bigballsdata.",
+      "errorType": "HTTPError",
+      "httpStatus": 400,
+      "label": "wide-date",
+      "params": {
+        "date": "2026-08-24",
+        "league": "mlb",
+        "limit": 500,
+        "sport": "baseball"
+      },
+      "urlPath": "/v1/matches"
+    },
+    {
+      "count": 4,
+      "httpStatus": 200,
+      "label": "stored-date",
+      "meta": {
+        "cached": false,
+        "note": "Matches from the stored table matching your ?date=/?status= filter. This response reflects only that filter and makes no claim about what is upcoming \u2014 drop the filter to see what is next.",
+        "request_id": "10acf142-eb49-4563-9a3e-2095314be84c",
+        "source": "stored"
+      },
+      "params": {
+        "date": "2026-08-24",
+        "league": "mlb",
+        "limit": 100,
+        "sport": "baseball",
+        "stored": "true"
+      },
+      "responseHeaderNames": [
+        "access-control-expose-headers",
+        "connection",
+        "content-length",
+        "content-type",
+        "cross-origin-opener-policy",
+        "cross-origin-resource-policy",
+        "date",
+        "origin-agent-cluster",
+        "referrer-policy",
+        "server",
+        "strict-transport-security",
+        "vary",
+        "x-content-type-options",
+        "x-dns-prefetch-control",
+        "x-download-options",
+        "x-frame-options",
+        "x-hikari-trace",
+        "x-permitted-cross-domain-policies",
+        "x-railway-edge",
+        "x-railway-request-id",
+        "x-ratelimit-limit",
+        "x-ratelimit-limit-day",
+        "x-ratelimit-limit-minute",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+        "x-request-id",
+        "x-xss-protection"
+      ],
+      "rows": [
+        {
+          "away": "Texas Rangers",
+          "home": "Chicago White Sox",
+          "id": "5821c764-7189-43b1-a85f-e933647b028a",
+          "start": "2026-08-24T23:40:00.000Z"
+        },
+        {
+          "away": "Colorado Rockies",
+          "home": "Washington Nationals",
+          "id": "c37a9c86-aa60-400e-a467-5c49d550196b",
+          "start": "2026-08-24T22:45:00.000Z"
+        },
+        {
+          "away": "Boston Red Sox",
+          "home": "Miami Marlins",
+          "id": "49ac6575-f6e3-4990-a945-773483ef32fd",
+          "start": "2026-08-24T22:40:00.000Z"
+        },
+        {
+          "away": "Tampa Bay Rays",
+          "home": "Detroit Tigers",
+          "id": "64d011bf-c464-4c12-af33-0c9853978818",
+          "start": "2026-08-24T22:40:00.000Z"
+        }
+      ],
+      "sampleRowKeys": [
+        "attendance",
+        "away",
+        "broadcast",
+        "has_odds",
+        "home",
+        "id",
+        "kickoff_utc",
+        "league",
+        "linescore",
+        "score",
+        "sport",
+        "status"
+      ],
+      "topLevelKeys": [
+        "data",
+        "error",
+        "meta"
+      ],
+      "urlPath": "/v1/matches"
+    }
+  ],
+  "secretExposed": false,
+  "slateDateEt": "2026-08-24",
+  "unionDistinctEventCount": 40
+}
