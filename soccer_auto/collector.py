@@ -31,6 +31,7 @@ from .odds_api import (
     ApiResponse,
     OddsApiClient,
     OddsApiError,
+    OddsApiRateLimitError,
     chunks,
 )
 from .schedule import (
@@ -1896,6 +1897,60 @@ def worker_handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
             try:
                 job = json.loads(record["body"])
                 processed.append(process_job(job, store=store, client=client))
+            except OddsApiRateLimitError as exc:
+                # Distributed lease contention is expected backpressure, not a
+                # poison-message failure. Acknowledge this delivery only after
+                # a delayed replacement is durably queued so SQS redrive is
+                # reserved for genuine defects and T-10 work remains actionable.
+                receive_count = max(
+                    1,
+                    int((record.get("attributes") or {}).get("ApproximateReceiveCount") or 1),
+                )
+                retry_count = max(
+                    receive_count,
+                    int(job.get("rate_limit_retry_count") or 0) + 1,
+                )
+                delay_seconds = min(30, max(2, 2 * retry_count))
+                if job.get("action") == "FETCH_OUTRIGHTS":
+                    processed.append(
+                        {
+                            "deferred": True,
+                            "reason": str(exc),
+                            "retry_via_scheduler": True,
+                            "receive_count": receive_count,
+                        }
+                    )
+                    continue
+                try:
+                    store.enqueue(
+                        {
+                            **job,
+                            "rate_limit_retry_count": retry_count,
+                            "rate_limit_deferred_at": _observed_at(),
+                        },
+                        delay_seconds=delay_seconds,
+                    )
+                except Exception:
+                    failures.append({"itemIdentifier": record.get("messageId")})
+                    processed.append(
+                        {
+                            "deferred": True,
+                            "reason": str(exc),
+                            "retry_reenqueued": False,
+                            "receive_count": receive_count,
+                        }
+                    )
+                    continue
+                processed.append(
+                    {
+                        "deferred": True,
+                        "reason": str(exc),
+                        "retry_reenqueued": True,
+                        "retry_visible_in_seconds": delay_seconds,
+                        "receive_count": receive_count,
+                        "rate_limit_retry_count": retry_count,
+                    }
+                )
             except (ProviderBudgetDeferred, CoverageExecutionDeferred) as exc:
                 if (
                     isinstance(exc, ProviderBudgetDeferred)
