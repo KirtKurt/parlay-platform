@@ -1,26 +1,17 @@
 from __future__ import annotations
 
-import os
 from typing import Any, Dict
 
-from model_gateway import invoke_chain_text
-
-
-MODELS = [
-    item.strip()
-    for item in os.environ.get(
-        "MLB_AUTO_BEDROCK_MODELS",
-        "openai.gpt-5.6-sol,anthropic.claude-opus-4-8,anthropic.claude-opus-4-7,anthropic.claude-opus-4-6-v1,anthropic.claude-sonnet-4-6-v1,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0",
-    ).split(",")
-    if item.strip()
-]
+from model_gateway import configured_models, discovered_models, invoke_chain_text
 
 
 def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
+    discovered = discovered_models()
+    models = configured_models()
     result = invoke_chain_text(
         "Return only the word OK.",
-        MODELS,
-        max_tokens=16,
+        models,
+        max_tokens=8,
         temperature=0.0,
         top_p=0.9,
     )
@@ -28,7 +19,10 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
         return {
             "ok": False,
             "service": "mlb-auto-llm-bedrock-smoke",
-            "attemptedModelIds": result.get("attemptedModelIds") or MODELS,
+            "attemptedModelIds": result.get("attemptedModelIds") or [],
+            "configuredModelCount": len(models),
+            "discoveredModelCount": len(discovered),
+            "discoveredModelIds": discovered,
             "errors": result.get("errors") or [],
         }
     text = str(result.get("text") or "").strip()
@@ -37,6 +31,9 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
             "ok": False,
             "service": "mlb-auto-llm-bedrock-smoke",
             "attemptedModelIds": result.get("attemptedModelIds") or [],
+            "configuredModelCount": len(models),
+            "discoveredModelCount": len(discovered),
+            "discoveredModelIds": discovered,
             "errors": [{"errorCode": "EMPTY_BEDROCK_RESPONSE"}],
         }
     return {
@@ -45,6 +42,9 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
         "modelId": result.get("modelId"),
         "endpointFamily": result.get("endpointFamily"),
         "responseNonEmpty": True,
+        "configuredModelCount": len(models),
+        "discoveredModelCount": len(discovered),
+        "discoveredModelIds": discovered,
         "attemptedModelIds": result.get("attemptedModelIds") or [],
         "errorsBeforeSuccess": result.get("errorsBeforeSuccess") or [],
     }

@@ -92,10 +92,12 @@ def test_non_2xx_mutating_response_remains_fail_closed():
 
 def test_unhealthy_status_body_does_not_trigger_protected_mutation(monkeypatch):
     calls = []
+
     def fake_invoke(client, function, event):
         del client, function
         calls.append(event)
         return {"ok": False, "sport": "mlb", "slateDateEt": "2026-08-03"}
+
     monkeypatch.setattr(base, "invoke_json", fake_invoke)
     with pytest.raises(base.ReconciliationError, match="official_status_unhealthy"):
         v4.reconcile(
@@ -145,3 +147,21 @@ def test_source_has_no_storage_prediction_or_authority_writer():
         assert forbidden not in source
     assert "STATUS_PATH" in source
     assert "_nonSuccessStatusBodyPreserved" in source
+
+
+def test_recovery_workflow_uses_unique_bounded_dispatch():
+    workflow = (
+        ROOT
+        / ".github"
+        / "workflows"
+        / "mlb-prospective-backlog-reconcile-v5-once.yml"
+    ).read_text(encoding="utf-8")
+    trigger = workflow.split("permissions:", 1)[0]
+
+    assert "--max-slate-days 31" in workflow
+    assert "request_id:" in trigger
+    assert "  workflow_dispatch:" in trigger
+    assert "\n  push:" not in trigger
+    assert "github.event_name == 'workflow_dispatch'" in workflow
+    assert "directTableWrite" in workflow
+    assert "productionAuthorityChanged" in workflow

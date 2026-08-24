@@ -17,7 +17,7 @@ Parameters:
     Default: 45
   BedrockModels:
     Type: String
-    Default: 'global.anthropic.claude-sonnet-4-20250514-v1:0,us.anthropic.claude-sonnet-4-20250514-v1:0,us.meta.llama3-3-70b-instruct-v1:0,meta.llama3-3-70b-instruct-v1:0,mistral.mistral-large-3-675b-instruct,mistral.ministral-3-3b-instruct,openai.gpt-5.6-sol,anthropic.claude-opus-4-8,anthropic.claude-opus-4-7,anthropic.claude-opus-4-6-v1,anthropic.claude-sonnet-4-6,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'
+    Default: 'amazon.nova-micro-v1:0,amazon.nova-lite-v1:0,amazon.nova-pro-v1:0,amazon.nova-2-lite-v1:0,global.anthropic.claude-sonnet-4-20250514-v1:0,us.anthropic.claude-sonnet-4-20250514-v1:0,us.meta.llama3-3-70b-instruct-v1:0,meta.llama3-3-70b-instruct-v1:0,mistral.mistral-large-3-675b-instruct,mistral.ministral-3-3b-instruct,openai.gpt-5.6-sol,anthropic.claude-opus-4-8,anthropic.claude-opus-4-7,anthropic.claude-opus-4-6-v1,anthropic.claude-sonnet-4-6,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'
 
 Resources:
   MLBAutoLLMTable:
@@ -65,6 +65,8 @@ Resources:
           MLB_AUTO_FIRST_GAME_SAFETY_MINUTES: '10'
           MLB_AUTO_FINAL_COLLECTION_WINDOW_MINUTES: '20'
           MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
+          MLB_AUTO_BEDROCK_DISCOVERY: 'true'
+          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '20'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref MLBAutoLLMTable
@@ -80,6 +82,9 @@ Resources:
                 - bedrock:CallWithBearerToken
                 - bedrock-mantle:CallWithBearerToken
                 - bedrock-mantle:CreateInference
+                - bedrock:ListFoundationModels
+                - bedrock:ListInferenceProfiles
+                - bedrock:GetInferenceProfile
               Resource: '*'
             - Effect: Allow
               Action:
@@ -127,11 +132,13 @@ Resources:
       CodeUri: mlb_auto_llm/
       Handler: bedrock_smoke.lambda_handler
       Runtime: python3.11
-      Timeout: 120
+      Timeout: 210
       MemorySize: 512
       Environment:
         Variables:
           MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
+          MLB_AUTO_BEDROCK_DISCOVERY: 'true'
+          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '8'
       Policies:
         - Statement:
             - Effect: Allow
@@ -141,6 +148,9 @@ Resources:
                 - bedrock:CallWithBearerToken
                 - bedrock-mantle:CallWithBearerToken
                 - bedrock-mantle:CreateInference
+                - bedrock:ListFoundationModels
+                - bedrock:ListInferenceProfiles
+                - bedrock:GetInferenceProfile
               Resource: '*'
             - Effect: Allow
               Action:
