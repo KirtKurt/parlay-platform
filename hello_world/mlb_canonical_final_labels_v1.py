@@ -802,8 +802,6 @@ IMMUTABLE_SETTLEMENT_FACT_FIELDS = (
     "fundamentals_snapshot_v2_fingerprint",
     "source",
     "source_url",
-    "source_payload_fingerprint",
-    "official_status",
 )
 
 
