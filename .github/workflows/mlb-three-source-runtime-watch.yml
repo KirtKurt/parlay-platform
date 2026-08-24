@@ -1,0 +1,308 @@
+name: MLB Three-Source Runtime Watch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-three-source-runtime-watch.yml'
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-three-source-runtime-watch
+  cancel-in-progress: false
+
+jobs:
+  verify-live-runtime:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+      AWS_EC2_METADATA_DISABLED: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Install runtime verifier
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Wait for the MLB stack to become readable
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 80); do
+            status=$(aws cloudformation describe-stacks \
+              --stack-name parlay-platform-dev \
+              --region "$AWS_REGION" \
+              --query 'Stacks[0].StackStatus' \
+              --output text 2>/dev/null || echo STACK_MISSING)
+            echo "stack_status=$status"
+            case "$status" in
+              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE)
+                exit 0 ;;
+              *_IN_PROGRESS)
+                sleep 15 ;;
+              *)
+                echo "::error::MLB stack is not readable: $status"
+                exit 1 ;;
+            esac
+          done
+          echo '::error::Timed out waiting for MLB stack'
+          exit 1
+
+      - name: Invoke and audit the autonomous runtime
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import copy
+          import json
+          import os
+          import pathlib
+          from datetime import datetime, timezone
+          from decimal import Decimal
+          from typing import Any, Dict, Iterable, List
+
+          import boto3
+          from boto3.dynamodb.conditions import Key
+
+          REGION=os.environ['AWS_REGION']
+          STACK='parlay-platform-dev'
+          REPORT=pathlib.Path('runtime_reports/mlb_three_source_runtime_latest.json')
+          cfn=boto3.client('cloudformation', region_name=REGION)
+          lam=boto3.client('lambda', region_name=REGION)
+          events=boto3.client('events', region_name=REGION)
+          ddb=boto3.resource('dynamodb', region_name=REGION)
+
+          def plain(value: Any) -> Any:
+              if isinstance(value, Decimal):
+                  return int(value) if value == value.to_integral_value() else float(value)
+              if isinstance(value, dict):
+                  return {str(k): plain(v) for k,v in value.items()}
+              if isinstance(value, list):
+                  return [plain(v) for v in value]
+              return value
+
+          def physical(logical_id: str) -> str:
+              return cfn.describe_stack_resource(
+                  StackName=STACK,
+                  LogicalResourceId=logical_id,
+              )['StackResourceDetail']['PhysicalResourceId']
+
+          orchestrator_name=physical('MLBAutonomousOrchestratorFunction')
+          lock_name=physical('MLBDailyPickLockFunction')
+          pull_name=physical('MLBAuditedPullFunction')
+          orchestrator_cfg=lam.get_function_configuration(FunctionName=orchestrator_name)
+          lock_cfg=lam.get_function_configuration(FunctionName=lock_name)
+          pull_cfg=lam.get_function_configuration(FunctionName=pull_name)
+          lock_env=(lock_cfg.get('Environment') or {}).get('Variables') or {}
+          pull_env=(pull_cfg.get('Environment') or {}).get('Variables') or {}
+
+          invocation_meta=lam.invoke(
+              FunctionName=orchestrator_name,
+              InvocationType='RequestResponse',
+              Payload=b'{}',
+          )
+          raw=invocation_meta['Payload'].read()
+          invocation=json.loads(raw.decode('utf-8')) if raw else {}
+          function_error=invocation_meta.get('FunctionError')
+
+          orchestrator_arn=orchestrator_cfg['FunctionArn']
+          rule_names=events.list_rule_names_by_target(TargetArn=orchestrator_arn).get('RuleNames') or []
+          rules=[]
+          for name in rule_names:
+              row=events.describe_rule(Name=name)
+              rules.append({
+                  'name': name,
+                  'state': row.get('State'),
+                  'scheduleExpression': row.get('ScheduleExpression'),
+              })
+
+          slate_date=str(invocation.get('slateDate') or datetime.now(timezone.utc).date().isoformat())
+          official_count=int(((invocation.get('officialSchedule') or {}).get('officialGameCount')) or 0)
+          timing=invocation.get('timing') or {}
+          full_card_due=bool(timing.get('fullCardDue'))
+
+          table_names=[]
+          for env in (lock_env, pull_env):
+              for key,value in env.items():
+                  if 'TABLE' in key.upper() and value and value not in table_names:
+                      table_names.append(value)
+
+          items=[]
+          table_errors=[]
+          for table_name in table_names:
+              try:
+                  description=boto3.client('dynamodb', region_name=REGION).describe_table(TableName=table_name)['Table']
+                  keys=description.get('KeySchema') or []
+                  partition=next((row['AttributeName'] for row in keys if row['KeyType']=='HASH'), None)
+                  if partition != 'PK':
+                      continue
+                  table=ddb.Table(table_name)
+                  for pk in (f'LOCKED_PICKS#mlb#{slate_date}', f'GAME_WINNERS#mlb#{slate_date}'):
+                      response=table.query(KeyConditionExpression=Key('PK').eq(pk), ConsistentRead=True)
+                      for item in response.get('Items') or []:
+                          items.append({'table': table_name, 'item': plain(item)})
+              except Exception as exc:
+                  table_errors.append({'table': table_name, 'errorType': type(exc).__name__, 'error': str(exc)[:500]})
+
+          def first(row: Dict[str, Any], keys: Iterable[str]) -> Any:
+              for key in keys:
+                  if row.get(key) not in (None, ''):
+                      return row[key]
+              return None
+
+          def prediction_rows(value: Any) -> List[Dict[str, Any]]:
+              rows=[]
+              seen=set()
+              def walk(node: Any):
+                  if isinstance(node, dict):
+                      home=first(node, ('homeTeam','home_team'))
+                      away=first(node, ('awayTeam','away_team'))
+                      winner=first(node, ('predictedWinner','predicted_winner','pick'))
+                      if home and away and winner:
+                          identity=str(first(node, ('officialGamePk','official_game_pk','providerEventId','provider_event_id','gameId','game_id','id','gameIdentity')) or f'{away}@{home}')
+                          if identity not in seen:
+                              seen.add(identity)
+                              rows.append(copy.deepcopy(node))
+                          return
+                      for child in node.values():
+                          walk(child)
+                  elif isinstance(node, list):
+                      for child in node:
+                          walk(child)
+              walk(value)
+              return rows
+
+          picks=[]
+          for wrapped in items:
+              item=wrapped['item']
+              picks.extend(prediction_rows(item.get('data') if isinstance(item,dict) else item))
+          dedup={}
+          for row in picks:
+              identity=str(first(row, ('officialGamePk','official_game_pk','providerEventId','provider_event_id','gameId','game_id','id','gameIdentity')) or '')
+              if identity:
+                  dedup[identity]=row
+          picks=list(dedup.values())
+
+          pick_proofs=[]
+          for row in picks:
+              decision=row.get('autonomousLLMDecision') if isinstance(row.get('autonomousLLMDecision'),dict) else {}
+              sources=decision.get('sourceUse') if isinstance(decision.get('sourceUse'),dict) else {}
+              pick_proofs.append({
+                  'gameId': first(row, ('officialGamePk','official_game_pk','providerEventId','provider_event_id','gameId','game_id','id','gameIdentity')),
+                  'homeTeam': first(row, ('homeTeam','home_team')),
+                  'awayTeam': first(row, ('awayTeam','away_team')),
+                  'predictedWinner': first(row, ('predictedWinner','predicted_winner','pick')),
+                  'decisionVersion': decision.get('version'),
+                  'decisionStatus': decision.get('status'),
+                  'threeSourceReady': decision.get('threeSourceReady'),
+                  'sourceUse': sources,
+                  'coveragePolicy': decision.get('coveragePolicy'),
+                  'dailyAccuracyGoal': decision.get('dailyAccuracyGoal'),
+                  'checkedAtUtc': decision.get('checkedAtUtc'),
+              })
+
+          config_checks={
+              'oddsApiKeyPresent': bool(lock_env.get('ODDS_API_KEY') or pull_env.get('ODDS_API_KEY')),
+              'bbdProApiKeyPresent': bool(lock_env.get('BIG_BALLS_DATA_API_KEY') or pull_env.get('BIG_BALLS_DATA_API_KEY')),
+              'autonomousLlmEnabled': str(lock_env.get('MLB_AUTONOMOUS_LLM_ENABLED') or '').lower() == 'true',
+              'accuracyGoalConfigured': str(lock_env.get('MLB_DAILY_ACCURACY_TARGET') or '') in {'0.7','0.70'},
+              'leadMinutesConfigured': int(lock_env.get('MLB_CARD_LEAD_MINUTES') or 0) >= 45,
+          }
+          schedule_healthy=bool(rules) and all(row['state']=='ENABLED' and row['scheduleExpression']=='rate(5 minutes)' for row in rules)
+          invocation_healthy=not function_error and invocation.get('ok') is True
+          all_no_pass=all(bool(row.get('predictedWinner')) for row in pick_proofs)
+          all_three_source=bool(pick_proofs) and all(
+              row.get('threeSourceReady') is True
+              and (row.get('sourceUse') or {}).get('mlbOfficial') is True
+              and (row.get('sourceUse') or {}).get('theOddsApi') is True
+              and (row.get('sourceUse') or {}).get('bigBallsDataPro') is True
+              for row in pick_proofs
+          )
+          card_complete=(official_count == 0) or (len(pick_proofs) >= official_count and all_no_pass)
+          deadline_requirement_met=(not full_card_due) or (card_complete and all_three_source)
+
+          report={
+              'ok': bool(all(config_checks.values()) and schedule_healthy and invocation_healthy and deadline_requirement_met),
+              'version': 'MLB-THREE-SOURCE-RUNTIME-WATCH-v1',
+              'checkedAtUtc': datetime.now(timezone.utc).isoformat(),
+              'stackName': STACK,
+              'stackStatus': cfn.describe_stacks(StackName=STACK)['Stacks'][0]['StackStatus'],
+              'orchestratorFunction': orchestrator_name,
+              'dailyLockFunction': lock_name,
+              'auditedPullFunction': pull_name,
+              'configuration': config_checks,
+              'eventBridgeRules': rules,
+              'scheduleHealthy': schedule_healthy,
+              'orchestratorInvocation': invocation,
+              'orchestratorFunctionError': function_error,
+              'invocationHealthy': invocation_healthy,
+              'slateDate': slate_date,
+              'officialGameCount': official_count,
+              'fullCardDue': full_card_due,
+              'timing': timing,
+              'predictionCount': len(pick_proofs),
+              'cardComplete': card_complete,
+              'allGamesNoPass': all_no_pass,
+              'allPredictionsThreeSourceReady': all_three_source,
+              'deadlineRequirementMet': deadline_requirement_met,
+              'predictionProofs': pick_proofs,
+              'tableNamesInspected': table_names,
+              'tableErrors': table_errors,
+              'status': (
+                  'HEALTHY_AUTHORITATIVE' if full_card_due and deadline_requirement_met
+                  else 'HEALTHY_AWAITING_FULL_CARD_DEADLINE' if report_condition := (not full_card_due and all(config_checks.values()) and schedule_healthy and invocation_healthy)
+                  else 'DEGRADED'
+              ),
+              'dailyAccuracyGoal': 0.70,
+              'accuracyGoalIsNotGuarantee': True,
+          }
+          REPORT.parent.mkdir(parents=True, exist_ok=True)
+          REPORT.write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+
+      - name: Publish sanitized runtime proof
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime_reports/mlb_three_source_runtime_latest.json
+          if git diff --cached --quiet; then
+            echo 'Runtime proof is unchanged.'
+            exit 0
+          fi
+          git commit -m 'Publish MLB three-source runtime proof [skip ci]'
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+            sleep $((attempt * 5))
+          done
+          exit 1
+
+      - name: Enforce runtime health when the deadline is due
+        run: |
+          python - <<'PY'
+          import json
+          report=json.load(open('runtime_reports/mlb_three_source_runtime_latest.json'))
+          assert report['ok'] is True, report
+          print(report['status'])
+          PY
