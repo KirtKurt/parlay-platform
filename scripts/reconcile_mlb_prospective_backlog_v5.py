@@ -9,13 +9,18 @@ the status-first decision. This v5 adapter accepts non-2xx application bodies
 only for the read-only lock-status GET route. Mutating lock, settlement, trainer,
 promotion, and production-authority calls retain the existing fail-closed 2xx
 requirement and v4 backpressure behavior.
+
+For failed mutating calls, a strict whitelist of bounded diagnostic fields is
+included in the raised error. This exposes the exact canonical-settlement blocker
+without treating a 409 as success, continuing to another slate, or writing any
+storage directly.
 """
 from __future__ import annotations
 
 import json
 import sys
 from contextlib import contextmanager
-from typing import Any, Dict, Mapping
+from typing import Any, Dict, Iterable, Mapping
 
 import reconcile_mlb_prospective_backlog as base
 import reconcile_mlb_prospective_backlog_v4 as v4
@@ -26,11 +31,58 @@ SAFE_APPLICATION_FIELDS = (
     "error",
     "reason",
     "status",
+    "overall_status",
     "lockStatus",
     "lifecycleStatus",
     "slateDateEt",
+    "slate_date_et",
     "run",
+    "authoritativeSettlement",
+    "officialGameCount",
+    "officialFinalCount",
+    "canonicalLockCount",
+    "rejectedCanonicalLockCount",
+    "terminalNoPredictionCount",
+    "lockTerminalConflictCount",
+    "terminalNoPredictionExcludedCount",
+    "skippedNotFinalCount",
+    "missingCanonicalLockCount",
+    "identityRejectionCount",
+    "labelWriteCount",
+    "labelCreatedCount",
+    "labelIdempotentCount",
+    "labelPolicyDriftIdempotentCount",
+    "labelWouldCreateCount",
+    "labelConflictCount",
+    "immutablePregameRowsMutated",
 )
+SAFE_FAILURE_COLLECTIONS = (
+    "rejectedCanonicalLocks",
+    "rejectedTerminalOutcomes",
+    "lockTerminalConflictOfficialGamePks",
+    "missingCanonicalLocks",
+    "identityRejections",
+    "labelWrites",
+    "immutablePregameReadbackErrors",
+)
+SAFE_FAILURE_ROW_FIELDS = (
+    "officialGamePk",
+    "sourcePk",
+    "sourceSk",
+    "status",
+    "reason",
+    "error",
+    "errors",
+    "candidateCount",
+    "lockedTeams",
+    "officialTeams",
+    "existingSettlementFingerprint",
+    "proposedSettlementFingerprint",
+    "existingImmutableFactsFingerprint",
+    "proposedImmutableFactsFingerprint",
+)
+MAX_DIAGNOSTIC_ITEMS = 8
+MAX_DIAGNOSTIC_STRING = 480
 
 
 def _is_read_only_status_event(event: Mapping[str, Any]) -> bool:
@@ -38,6 +90,40 @@ def _is_read_only_status_event(event: Mapping[str, Any]) -> bool:
         str(event.get("httpMethod") or "").upper() == "GET"
         and str(event.get("path") or "") == STATUS_PATH
     )
+
+
+def _bounded_string(value: Any) -> str:
+    return str(value)[:MAX_DIAGNOSTIC_STRING]
+
+
+def _safe_scalar(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return _bounded_string(value)
+    if isinstance(value, (tuple, list)):
+        return [_safe_scalar(item) for item in value[:MAX_DIAGNOSTIC_ITEMS]]
+    return _bounded_string(value)
+
+
+def _safe_failure_row(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        row: Dict[str, Any] = {}
+        for key in SAFE_FAILURE_ROW_FIELDS:
+            item = value.get(key)
+            if item not in (None, "", [], {}):
+                row[key] = _safe_scalar(item)
+        return row or {"diagnostic": "failure_row_redacted"}
+    return _safe_scalar(value)
+
+
+def _safe_failure_sample(values: Any) -> list[Any]:
+    if not isinstance(values, Iterable) or isinstance(values, (str, bytes, Mapping)):
+        return []
+    return [
+        _safe_failure_row(value)
+        for value in list(values)[:MAX_DIAGNOSTIC_ITEMS]
+    ]
 
 
 def _safe_application_detail(
@@ -56,7 +142,13 @@ def _safe_application_detail(
     for key in SAFE_APPLICATION_FIELDS:
         value = application.get(key)
         if value not in (None, "", [], {}):
-            detail[key] = value
+            detail[key] = _safe_scalar(value)
+    for key in SAFE_FAILURE_COLLECTIONS:
+        values = application.get(key)
+        if values not in (None, "", [], {}):
+            detail[f"{key}Sample"] = _safe_failure_sample(values)
+            if isinstance(values, (list, tuple)):
+                detail[f"{key}ObservedCount"] = len(values)
     return json.dumps(detail, sort_keys=True, default=str, separators=(",", ":"))
 
 
@@ -129,6 +221,7 @@ def reconcile(*args: Any, **kwargs: Any) -> Dict[str, Any]:
     value["version"] = VERSION
     value["readOnlyNonSuccessStatusBodiesPreserved"] = True
     value["mutatingNonSuccessStatusesStillFailClosed"] = True
+    value["mutatingFailureDiagnosticsWhitelisted"] = True
     return value
 
 
@@ -158,6 +251,7 @@ def main() -> int:
             "error": f"{type(exc).__name__}:{exc}",
             "readOnlyNonSuccessStatusBodiesPreserved": True,
             "mutatingNonSuccessStatusesStillFailClosed": True,
+            "mutatingFailureDiagnosticsWhitelisted": True,
             "directTableWrite": False,
             "postStartPredictionCreationAllowed": False,
             "immutablePredictionRewriteAllowed": False,

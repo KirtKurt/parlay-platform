@@ -90,6 +90,98 @@ def test_non_2xx_mutating_response_remains_fail_closed():
         )
 
 
+def test_failed_settlement_exposes_only_bounded_whitelisted_diagnostics():
+    client = FakeLambda(
+        [
+            api_gateway(
+                409,
+                {
+                    "ok": False,
+                    "sport": "mlb",
+                    "status": "FAILED_CLOSED",
+                    "slateDateEt": "2026-08-04",
+                    "officialGameCount": 15,
+                    "officialFinalCount": 15,
+                    "canonicalLockCount": 12,
+                    "rejectedCanonicalLockCount": 1,
+                    "missingCanonicalLockCount": 2,
+                    "identityRejectionCount": 1,
+                    "labelConflictCount": 0,
+                    "immutablePregameRowsMutated": False,
+                    "missingCanonicalLocks": [
+                        {
+                            "officialGamePk": "123",
+                            "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME",
+                            "secretToken": "must-not-appear",
+                        },
+                        {
+                            "officialGamePk": "456",
+                            "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME",
+                        },
+                    ],
+                    "identityRejections": [
+                        {
+                            "officialGamePk": "789",
+                            "reason": "CANONICAL_LOCK_OFFICIAL_FINAL_ORDERED_TEAMS_MISMATCH",
+                            "lockedTeams": ["a", "b"],
+                            "officialTeams": ["a", "c"],
+                        }
+                    ],
+                    "apiKey": "must-not-appear",
+                },
+            )
+        ]
+    )
+
+    with pytest.raises(base.ReconciliationError) as raised:
+        subject.invoke_json_preserving_status_body(
+            client,
+            "settlement",
+            {
+                "sport": "mlb",
+                "slate_date": "2026-08-04",
+                "run": "prospective_backlog_settlement_v4",
+            },
+        )
+
+    message = str(raised.value)
+    assert "lambda_application_status_not_success" in message
+    detail = json.loads(message.split(":", 1)[1])
+    assert detail["applicationStatusCode"] == 409
+    assert detail["eventKind"] == "prospective_backlog_settlement_v4"
+    assert detail["officialGameCount"] == 15
+    assert detail["canonicalLockCount"] == 12
+    assert detail["missingCanonicalLockCount"] == 2
+    assert detail["missingCanonicalLocksObservedCount"] == 2
+    assert detail["missingCanonicalLocksSample"][0] == {
+        "officialGamePk": "123",
+        "reason": "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME",
+    }
+    assert detail["identityRejectionsSample"][0]["officialGamePk"] == "789"
+    assert detail["immutablePregameRowsMutated"] is False
+    assert "must-not-appear" not in message
+    assert "apiKey" not in message
+
+
+def test_failure_collection_is_bounded():
+    rows = [
+        {"officialGamePk": str(index), "reason": "MISSING"}
+        for index in range(subject.MAX_DIAGNOSTIC_ITEMS + 4)
+    ]
+    detail = json.loads(
+        subject._safe_application_detail(
+            409,
+            {
+                "status": "FAILED_CLOSED",
+                "missingCanonicalLocks": rows,
+            },
+            {"run": "settlement"},
+        )
+    )
+    assert detail["missingCanonicalLocksObservedCount"] == len(rows)
+    assert len(detail["missingCanonicalLocksSample"]) == subject.MAX_DIAGNOSTIC_ITEMS
+
+
 def test_unhealthy_status_body_does_not_trigger_protected_mutation(monkeypatch):
     calls = []
 
@@ -128,6 +220,7 @@ def test_v5_preserves_v4_safety_flags(monkeypatch):
     assert result["version"] == subject.VERSION
     assert result["readOnlyNonSuccessStatusBodiesPreserved"] is True
     assert result["mutatingNonSuccessStatusesStillFailClosed"] is True
+    assert result["mutatingFailureDiagnosticsWhitelisted"] is True
     assert result["productionAuthorityChanged"] is False
     assert result["automaticWagerAllowed"] is False
 
@@ -147,6 +240,8 @@ def test_source_has_no_storage_prediction_or_authority_writer():
         assert forbidden not in source
     assert "STATUS_PATH" in source
     assert "_nonSuccessStatusBodyPreserved" in source
+    assert "SAFE_FAILURE_COLLECTIONS" in source
+    assert "mutatingFailureDiagnosticsWhitelisted" in source
 
 
 def test_recovery_workflow_uses_unique_bounded_dispatch():
