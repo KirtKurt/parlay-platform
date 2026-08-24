@@ -1,0 +1,333 @@
+name: Probe MLB Bedrock through deployed Lambda role
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/probe-mlb-bedrock-lambda-role-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: probe-mlb-bedrock-lambda-role-now
+  cancel-in-progress: false
+
+jobs:
+  probe-and-activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Install probe runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Probe current Bedrock Runtime models and activate usable chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import re
+          import time
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from typing import Any
+
+          import boto3
+          from botocore.config import Config
+
+          REGION = 'us-east-1'
+          STACK = 'parlay-platform-mlb-auto-llm'
+          CANDIDATES = (
+              'qwen.qwen3-next-80b-a3b',
+              'deepseek.v3.2',
+              'qwen.qwen3-coder-next',
+              'qwen.qwen3-32b-v1:0',
+              'us.meta.llama4-scout-17b-instruct-v1:0',
+              'us.deepseek.r1-v1:0',
+              'us.amazon.nova-micro-v1:0',
+              'us.amazon.nova-lite-v1:0',
+          )
+
+          config = Config(
+              retries={'max_attempts': 0, 'mode': 'standard'},
+              connect_timeout=10,
+              read_timeout=930,
+          )
+          cfn = boto3.client('cloudformation', region_name=REGION, config=config)
+          lam = boto3.client('lambda', region_name=REGION, config=config)
+
+          def now() -> str:
+              return datetime.now(timezone.utc).isoformat()
+
+          def safe(value: Any) -> Any:
+              if isinstance(value, dict):
+                  return {str(k): safe(v) for k, v in value.items()}
+              if isinstance(value, list):
+                  return [safe(v) for v in value]
+              if isinstance(value, str):
+                  text = re.sub(r'arn:aws[^\s,\"]+', '<redacted-arn>', value)
+                  text = re.sub(r'\b\d{12}\b', '<redacted-account>', text)
+                  return text[:12000]
+              return value
+
+          def physical(logical_id: str) -> str:
+              response = cfn.describe_stack_resource(
+                  StackName=STACK,
+                  LogicalResourceId=logical_id,
+              )
+              value = str(
+                  (response.get('StackResourceDetail') or {}).get('PhysicalResourceId')
+                  or ''
+              ).strip()
+              if not value:
+                  raise RuntimeError(f'PHYSICAL_RESOURCE_MISSING:{logical_id}')
+              return value
+
+          def environment(function_name: str) -> dict[str, str]:
+              response = lam.get_function_configuration(FunctionName=function_name)
+              values = ((response.get('Environment') or {}).get('Variables') or {})
+              return {str(k): str(v) for k, v in values.items()}
+
+          def wait_updated(function_name: str, deadline_seconds: int = 300) -> None:
+              deadline = time.monotonic() + deadline_seconds
+              while time.monotonic() < deadline:
+                  response = lam.get_function_configuration(FunctionName=function_name)
+                  state = str(response.get('State') or '')
+                  update = str(response.get('LastUpdateStatus') or '')
+                  if state == 'Active' and update == 'Successful':
+                      return
+                  if update == 'Failed':
+                      raise RuntimeError(
+                          f'LAMBDA_UPDATE_FAILED:{function_name}:'
+                          + str(response.get('LastUpdateStatusReason') or '')
+                      )
+                  time.sleep(3)
+              raise TimeoutError(f'LAMBDA_UPDATE_TIMEOUT:{function_name}')
+
+          def set_models(
+              function_name: str,
+              original: dict[str, str],
+              models: str,
+          ) -> None:
+              values = dict(original)
+              values['MLB_AUTO_BEDROCK_MODELS'] = models
+              lam.update_function_configuration(
+                  FunctionName=function_name,
+                  Environment={'Variables': values},
+              )
+              wait_updated(function_name)
+
+          def invoke(function_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+              response = lam.invoke(
+                  FunctionName=function_name,
+                  InvocationType='RequestResponse',
+                  Payload=json.dumps(payload).encode('utf-8'),
+              )
+              raw = response['Payload'].read().decode('utf-8', errors='replace')
+              try:
+                  body: Any = json.loads(raw)
+              except Exception:
+                  body = {'raw': raw[:12000]}
+              return {
+                  'statusCode': response.get('StatusCode'),
+                  'functionError': response.get('FunctionError'),
+                  'executedVersion': response.get('ExecutedVersion'),
+                  'body': safe(body),
+              }
+
+          report: dict[str, Any] = {
+              'service': 'mlb-auto-llm',
+              'probe': 'deployed-lambda-role-current-bedrock-models',
+              'startedAtUtc': now(),
+              'region': REGION,
+              'stack': STACK,
+              'candidateModelIds': list(CANDIDATES),
+              'attempts': [],
+              'usableModelIds': [],
+              'activatedModelChain': None,
+              'bedrockOk': False,
+              'liveCycleOk': False,
+              'ok': False,
+          }
+
+          smoke_name = physical('MLBAutoLLMBedrockSmokeFunction')
+          auto_name = physical('MLBAutoLLMFunction')
+          original_smoke = environment(smoke_name)
+          original_auto = environment(auto_name)
+          report['smokeFunction'] = smoke_name
+          report['autoFunction'] = auto_name
+
+          try:
+              for model_id in CANDIDATES:
+                  attempt: dict[str, Any] = {
+                      'modelId': model_id,
+                      'startedAtUtc': now(),
+                      'ok': False,
+                  }
+                  try:
+                      set_models(smoke_name, original_smoke, model_id)
+                      result = invoke(smoke_name, {})
+                      attempt['invocation'] = result
+                      body = result.get('body') if isinstance(result, dict) else None
+                      attempt['ok'] = bool(
+                          not result.get('functionError')
+                          and isinstance(body, dict)
+                          and body.get('ok') is True
+                          and body.get('responseNonEmpty') is True
+                          and str(body.get('modelId') or '') == model_id
+                      )
+                  except Exception as exc:
+                      attempt['exception'] = {
+                          'type': type(exc).__name__,
+                          'message': safe(str(exc)),
+                      }
+                  attempt['completedAtUtc'] = now()
+                  report['attempts'].append(attempt)
+                  if attempt['ok']:
+                      report['usableModelIds'].append(model_id)
+                  print(json.dumps(attempt, sort_keys=True)[:16000])
+
+              usable = list(report['usableModelIds'])
+              report['bedrockOk'] = bool(usable)
+              if usable:
+                  chain = ','.join(usable)
+                  report['activatedModelChain'] = chain
+                  set_models(smoke_name, original_smoke, chain)
+                  set_models(auto_name, original_auto, chain)
+                  report['finalSmokeInvocation'] = invoke(smoke_name, {})
+                  smoke_body = report['finalSmokeInvocation'].get('body') or {}
+                  report['bedrockOk'] = bool(
+                      not report['finalSmokeInvocation'].get('functionError')
+                      and isinstance(smoke_body, dict)
+                      and smoke_body.get('ok') is True
+                      and smoke_body.get('responseNonEmpty') is True
+                  )
+                  report['liveCycleInvocation'] = invoke(
+                      auto_name,
+                      {'mode': 'deployment_provider_smoke'},
+                  )
+                  cycle = report['liveCycleInvocation'].get('body') or {}
+                  status = cycle.get('status') if isinstance(cycle, dict) else None
+                  source = cycle.get('sourceStatus') if isinstance(cycle, dict) else None
+                  source = source if isinstance(source, dict) else {}
+                  provider_ok = all(
+                      isinstance(source.get(provider), dict)
+                      and source[provider].get('ok') is True
+                      and not (source[provider].get('missingGamePks') or [])
+                      for provider in (
+                          'mlbStatsApi',
+                          'theOddsApi',
+                          'bigBallsDataPro',
+                      )
+                  ) if status != 'NO_GAMES' else True
+                  card = cycle.get('card') if isinstance(cycle, dict) else None
+                  card = card if isinstance(card, dict) else {}
+                  if status in {'CARD_PUBLISHED', 'CARD_ALREADY_PUBLISHED'}:
+                      card_ok = bool(
+                          card.get('threeSourceCoverageComplete') is True
+                          and card.get('bedrockAuthorityComplete') is True
+                          and (card.get('picks') or [])
+                          and all(
+                              row.get('decisionAuthority') == 'BEDROCK_LLM'
+                              for row in (card.get('picks') or [])
+                              if isinstance(row, dict)
+                          )
+                      )
+                  else:
+                      card_ok = status in {'COLLECTING', 'NO_GAMES'}
+                  report['liveCycleOk'] = bool(
+                      not report['liveCycleInvocation'].get('functionError')
+                      and isinstance(cycle, dict)
+                      and cycle.get('ok') is True
+                      and status in {
+                          'COLLECTING',
+                          'CARD_PUBLISHED',
+                          'CARD_ALREADY_PUBLISHED',
+                          'NO_GAMES',
+                      }
+                      and provider_ok
+                      and card_ok
+                  )
+              else:
+                  set_models(smoke_name, original_smoke, original_smoke.get('MLB_AUTO_BEDROCK_MODELS', ''))
+          except Exception as exc:
+              report['fatalException'] = {
+                  'type': type(exc).__name__,
+                  'message': safe(str(exc)),
+              }
+              try:
+                  if not report.get('usableModelIds'):
+                      set_models(smoke_name, original_smoke, original_smoke.get('MLB_AUTO_BEDROCK_MODELS', ''))
+              except Exception as restore_exc:
+                  report['restoreException'] = {
+                      'type': type(restore_exc).__name__,
+                      'message': safe(str(restore_exc)),
+                  }
+
+          report['ok'] = bool(report['bedrockOk'] and report['liveCycleOk'])
+          report['completedAtUtc'] = now()
+          path = Path('runtime_reports/mlb_bedrock_lambda_role_probe_latest.json')
+          path.write_text(
+              json.dumps(report, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(report, indent=2, sort_keys=True)[:50000])
+          PY
+
+      - name: Publish durable Lambda-role probe proof
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f runtime_reports/mlb_bedrock_lambda_role_probe_latest.json
+          cp runtime_reports/mlb_bedrock_lambda_role_probe_latest.json /tmp/mlb_bedrock_lambda_role_probe_latest.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main
+            cp /tmp/mlb_bedrock_lambda_role_probe_latest.json runtime_reports/mlb_bedrock_lambda_role_probe_latest.json
+            git add runtime_reports/mlb_bedrock_lambda_role_probe_latest.json
+            if git diff --cached --quiet; then
+              exit 0
+            fi
+            git commit -m 'Publish MLB Lambda-role Bedrock probe [skip ci]'
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 2))
+          done
+          echo '::error::Unable to publish Lambda-role Bedrock probe proof'
+          exit 1
+
+      - name: Enforce usable Bedrock authority and live provider cycle
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          report=json.load(open('/tmp/mlb_bedrock_lambda_role_probe_latest.json'))
+          assert report.get('bedrockOk') is True, report
+          assert report.get('liveCycleOk') is True, report
+          assert report.get('ok') is True, report
+          print('Usable Bedrock chain:', report.get('activatedModelChain'))
+          PY
