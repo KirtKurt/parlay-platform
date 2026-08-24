@@ -1,0 +1,188 @@
+name: Deploy Tennis snapshot overflow hotfix
+
+on:
+  pull_request:
+    branches: [fix/tennis-snapshot-overflow-20260824]
+    paths:
+      - "tennis_hotfix/**"
+      - ".github/workflows/deploy-tennis-snapshot-overflow-hotfix.yml"
+      - ".hotfix/tennis-source-export-trigger"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tennis-snapshot-overflow-production
+  cancel-in-progress: false
+
+jobs:
+  deploy-tennis-hotfix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      TENNIS_STACK: parlay-platform-tennis-ml-prod
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Validate isolated hotfix source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m py_compile tennis_hotfix/tennis_storage.py
+          grep -q 'TENNIS-DDB-ZLIB-JSON-v1' tennis_hotfix/tennis_storage.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('tennis_hotfix/tennis_storage.py')
+          tree=ast.parse(p.read_text())
+          assert any(isinstance(n,ast.ClassDef) and n.name=='DynamoStore' for n in tree.body)
+          print('storage hotfix syntax and class contract OK')
+          PY
+
+      - name: Patch production Tennis Lambdas, verify live ingest, and restore schedules
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p /tmp/tennis-hotfix/original /tmp/tennis-hotfix/patched /tmp/tennis-hotfix/packages
+
+          stack_status=$(aws cloudformation describe-stacks --stack-name "$TENNIS_STACK" --query 'Stacks[0].StackStatus' --output text)
+          case "$stack_status" in CREATE_COMPLETE|UPDATE_COMPLETE) ;; *) echo "Unexpected stack status $stack_status"; exit 1;; esac
+
+          aws cloudformation list-stack-resources --stack-name "$TENNIS_STACK" \
+            --query "StackResourceSummaries[?ResourceType=='AWS::Events::Rule'].[PhysicalResourceId]" --output text \
+            | tr '\t' '\n' | sed '/^$/d' > /tmp/tennis-hotfix/rules.txt
+          : > /tmp/tennis-hotfix/rule-states.tsv
+          while read -r rule; do
+            state=$(aws events describe-rule --name "$rule" --query State --output text)
+            printf '%s\t%s\n' "$rule" "$state" >> /tmp/tennis-hotfix/rule-states.tsv
+            if [ "$state" = ENABLED ]; then aws events disable-rule --name "$rule"; fi
+          done < /tmp/tennis-hotfix/rules.txt
+
+          aws cloudformation list-stack-resources --stack-name "$TENNIS_STACK" \
+            --query "StackResourceSummaries[?ResourceType=='AWS::Lambda::Function'].[PhysicalResourceId]" --output text \
+            | tr '\t' '\n' | sed '/^$/d' > /tmp/tennis-hotfix/functions.txt
+          test "$(wc -l < /tmp/tennis-hotfix/functions.txt)" -eq 5
+
+          restore_rules() {
+            while IFS=$'\t' read -r rule state; do
+              [ -n "$rule" ] || continue
+              if [ "$state" = ENABLED ]; then aws events enable-rule --name "$rule" >/dev/null; else aws events disable-rule --name "$rule" >/dev/null; fi
+            done < /tmp/tennis-hotfix/rule-states.tsv
+          }
+          rollback_code() {
+            while read -r fn; do
+              [ -f "/tmp/tennis-hotfix/original/${fn}.zip" ] || continue
+              aws lambda update-function-code --function-name "$fn" --zip-file "fileb:///tmp/tennis-hotfix/original/${fn}.zip" >/dev/null || true
+              aws lambda wait function-updated --function-name "$fn" || true
+            done < /tmp/tennis-hotfix/functions.txt
+          }
+          cleanup() {
+            rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "Hotfix verification failed; rolling back Tennis Lambda code"
+              rollback_code
+            fi
+            restore_rules
+            exit "$rc"
+          }
+          trap cleanup EXIT
+
+          while read -r fn; do
+            code_url=$(aws lambda get-function --function-name "$fn" --query 'Code.Location' --output text)
+            curl -LfsS "$code_url" -o "/tmp/tennis-hotfix/original/${fn}.zip"
+            mkdir -p "/tmp/tennis-hotfix/packages/${fn}"
+            unzip -q "/tmp/tennis-hotfix/original/${fn}.zip" -d "/tmp/tennis-hotfix/packages/${fn}"
+            test -f "/tmp/tennis-hotfix/packages/${fn}/tennis_storage.py"
+            cp tennis_hotfix/tennis_storage.py "/tmp/tennis-hotfix/packages/${fn}/tennis_storage.py"
+            python -m py_compile "/tmp/tennis-hotfix/packages/${fn}/tennis_storage.py"
+            (cd "/tmp/tennis-hotfix/packages/${fn}" && zip -qr "/tmp/tennis-hotfix/patched/${fn}.zip" .)
+            aws lambda update-function-code --function-name "$fn" --zip-file "fileb:///tmp/tennis-hotfix/patched/${fn}.zip" >/dev/null
+            aws lambda wait function-updated --function-name "$fn"
+            deployed_url=$(aws lambda get-function --function-name "$fn" --query 'Code.Location' --output text)
+            curl -LfsS "$deployed_url" -o "/tmp/tennis-hotfix/deployed-${fn}.zip"
+            unzip -p "/tmp/tennis-hotfix/deployed-${fn}.zip" tennis_storage.py | grep -q 'TENNIS-DDB-ZLIB-JSON-v1'
+          done < /tmp/tennis-hotfix/functions.txt
+
+          ingest=$(aws cloudformation describe-stack-resource --stack-name "$TENNIS_STACK" --logical-resource-id TennisIngestFunction --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          snapshots=$(aws cloudformation describe-stack-resource --stack-name "$TENNIS_STACK" --logical-resource-id TennisSnapshotsTable --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          printf '%s' '{"httpMethod":"POST","path":"/v1/pull/tennis","body":"{\"run\":\"snapshot_overflow_hotfix_verify\",\"force\":true}"}' > /tmp/tennis-hotfix/invoke.json
+          aws lambda invoke --function-name "$ingest" --cli-read-timeout 300 --cli-connect-timeout 10 \
+            --cli-binary-format raw-in-base64-out --payload file:///tmp/tennis-hotfix/invoke.json \
+            /tmp/tennis-hotfix/invoke-output.json > /tmp/tennis-hotfix/invoke-meta.json
+          python - <<'PY'
+          import json
+          meta=json.load(open('/tmp/tennis-hotfix/invoke-meta.json'))
+          out=json.load(open('/tmp/tennis-hotfix/invoke-output.json'))
+          assert meta.get('StatusCode')==200 and not meta.get('FunctionError'), (meta,out)
+          assert int(out.get('statusCode') or 0)==200, out
+          body=out.get('body')
+          payload=json.loads(body) if isinstance(body,str) else body
+          assert isinstance(payload,dict) and payload.get('ok') is True, payload
+          results=payload.get('results') or []
+          assert results, payload
+          assert all(r.get('ok') is True for r in results), payload
+          assert sum(int(r.get('match_count') or 0) for r in results)>0, payload
+          print('live ingest verified', sum(int(r.get('match_count') or 0) for r in results), 'matches')
+          PY
+
+          aws dynamodb scan --table-name "$snapshots" \
+            --filter-expression 'attribute_exists(#v)' \
+            --expression-attribute-names '{"#v":"__tennis_pack_version"}' \
+            --projection-expression 'PK,SK,#v,__tennis_pack_original_bytes,__tennis_pack_compressed_bytes' \
+            --output json > /tmp/tennis-hotfix/packed-snapshots.json
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/tennis-hotfix/packed-snapshots.json'))
+          rows=d.get('Items') or []
+          assert rows, 'No packed Tennis snapshot was persisted after live verification'
+          latest=rows[-1]
+          print('packed snapshot proof', latest)
+          PY
+
+          start_ms=$(( ($(date +%s) - 600) * 1000 ))
+          log_group="/aws/lambda/${ingest}"
+          aws logs filter-log-events --log-group-name "$log_group" --start-time "$start_ms" \
+            --filter-pattern '"Item size has exceeded the maximum allowed size"' \
+            --output json > /tmp/tennis-hotfix/oversize-errors.json || true
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/tennis-hotfix/oversize-errors.json'))
+          assert not (d.get('events') or []), d.get('events')
+          print('no DynamoDB oversized-item errors in verification window')
+          PY
+
+          api=$(aws cloudformation describe-stacks --stack-name "$TENNIS_STACK" --query "Stacks[0].Outputs[?OutputKey=='TennisApiUrl'].OutputValue | [0]" --output text)
+          if [ -n "$api" ] && [ "$api" != None ]; then
+            curl -fsS "$api/v1/tennis/ml/status" > /tmp/tennis-hotfix/status.json
+            python - <<'PY'
+          import json
+          d=json.load(open('/tmp/tennis-hotfix/status.json'))
+          assert d.get('ok') is True and d.get('sport')=='tennis', d
+          print('public Tennis status endpoint healthy')
+          PY
+          fi
+
+          echo "Tennis snapshot overflow hotfix verified successfully"
+
+      - name: Upload deployment proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tennis-snapshot-overflow-hotfix-${{ github.run_id }}
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            /tmp/tennis-hotfix/*.json
+            /tmp/tennis-hotfix/*.tsv
+            /tmp/tennis-hotfix/*.txt
