@@ -19,7 +19,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          test "$(gh api --repo "$GITHUB_REPOSITORY" repos/${GITHUB_REPOSITORY}/commits/6b54528163823284fce6f6a0305d5b99f4edc5a6 --jq .sha)" = "6b54528163823284fce6f6a0305d5b99f4edc5a6"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/commits/6b54528163823284fce6f6a0305d5b99f4edc5a6" --jq .sha)" = "6b54528163823284fce6f6a0305d5b99f4edc5a6"
 
       - name: Dispatch isolated MLB AUTO production deployment
         env:
