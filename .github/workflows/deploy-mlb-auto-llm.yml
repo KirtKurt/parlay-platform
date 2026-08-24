@@ -1,0 +1,194 @@
+name: Deploy MLB Auto LLM
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mlb_auto_llm/**'
+      - 'mlb-auto-llm-template.yaml'
+      - '.github/workflows/deploy-mlb-auto-llm.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-auto-llm-deploy
+  cancel-in-progress: false
+
+jobs:
+  verify-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Verify required credentials and source contracts
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          set -euo pipefail
+          test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
+          test -n "${BBS_API_KEY_VALUE:-}" || { echo '::error::Missing BBS_API_KEY'; exit 1; }
+          aws sts get-caller-identity
+          python -m py_compile mlb_auto_llm/handler.py
+          sam validate --template-file mlb-auto-llm-template.yaml --lint
+          grep -q 'MLB_AUTO_CARD_LEAD_MINUTES_BEFORE_SECOND_GAME' mlb_auto_llm/handler.py
+          grep -q 'Big Balls Sports Data Pro' mlb_auto_llm/handler.py
+          grep -q 'The Odds API' mlb_auto_llm/handler.py
+          grep -q 'MLB Stats API' mlb_auto_llm/handler.py
+          grep -q 'BEDROCK_LLM' mlb_auto_llm/handler.py
+
+      - name: Authenticate both paid data providers
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            -H "Authorization: Bearer ${BBS_API_KEY_VALUE}" \
+            'https://api.bigballsdata.com/v1/user/me' \
+            > /tmp/bbs-account.json
+          python - <<'PY'
+          import json
+          value=json.load(open('/tmp/bbs-account.json'))
+          assert isinstance(value, dict), value
+          assert value.get('data') is not None, value
+          print('Big Balls Sports Data authentication: OK')
+          PY
+          curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/?apiKey=${ODDS_API_KEY_VALUE}&regions=us&markets=h2h&oddsFormat=decimal&dateFormat=iso" \
+            > /tmp/odds-mlb.json
+          python - <<'PY'
+          import json
+          value=json.load(open('/tmp/odds-mlb.json'))
+          assert isinstance(value, list), type(value)
+          print('The Odds API MLB authentication: OK; events=', len(value))
+          PY
+
+      - name: Verify Bedrock LLM access
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import boto3
+          client=boto3.client('bedrock-runtime')
+          models=[
+              'us.amazon.nova-2-lite-v1:0',
+              'us.amazon.nova-lite-v1:0',
+              'us.amazon.nova-micro-v1:0',
+          ]
+          errors=[]
+          for model in models:
+              try:
+                  response=client.converse(
+                      modelId=model,
+                      messages=[{'role':'user','content':[{'text':'Return only the word OK.'}]}],
+                      inferenceConfig={'maxTokens':16,'temperature':0},
+                  )
+                  text=' '.join(
+                      str(x.get('text') or '')
+                      for x in (((response.get('output') or {}).get('message') or {}).get('content') or [])
+                      if isinstance(x, dict)
+                  )
+                  assert text.strip(), response
+                  print('Bedrock MLB LLM access: OK via', model)
+                  break
+              except Exception as exc:
+                  errors.append((model, type(exc).__name__, str(exc)[:200]))
+          else:
+              raise RuntimeError('No configured MLB Bedrock model is callable: '+repr(errors))
+          PY
+
+      - name: Build isolated MLB Auto LLM stack
+        run: sam build --no-cached --template-file mlb-auto-llm-template.yaml
+
+      - name: Deploy isolated MLB Auto LLM stack
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+        run: |
+          set -euo pipefail
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name parlay-platform-mlb-auto-llm \
+            --region "${{ secrets.AWS_REGION }}" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              OddsApiKey="${ODDS_API_KEY_VALUE}" \
+              BbsApiKey="${BBS_API_KEY_VALUE}" \
+              TargetDailyAccuracy='0.70' \
+              CardLeadMinutesBeforeSecondGame='45' \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+
+      - name: Prove autonomous provider collection in AWS
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-mlb-auto-llm
+          region='${{ secrets.AWS_REGION }}'
+          function_name=$(aws cloudformation describe-stack-resource \
+            --stack-name "$stack" \
+            --logical-resource-id MLBAutoLLMFunction \
+            --region "$region" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          aws lambda invoke \
+            --function-name "$function_name" \
+            --region "$region" \
+            --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 900 \
+            --payload '{"mode":"deployment_provider_smoke"}' \
+            /tmp/mlb-auto-cycle.json \
+            > /tmp/mlb-auto-cycle-meta.json
+          python - <<'PY'
+          import json
+          meta=json.load(open('/tmp/mlb-auto-cycle-meta.json'))
+          response=json.load(open('/tmp/mlb-auto-cycle.json'))
+          assert not meta.get('FunctionError'), (meta, response)
+          assert response.get('ok') is True, response
+          status=response.get('status')
+          assert status in {'COLLECTING','CARD_PUBLISHED','CARD_ALREADY_PUBLISHED','NO_GAMES'}, response
+          if status == 'COLLECTING':
+              source=response.get('sourceStatus') or {}
+              assert (source.get('mlbStatsApi') or {}).get('ok') is True, source
+              assert (source.get('theOddsApi') or {}).get('ok') is True, source
+              assert (source.get('bigBallsDataPro') or {}).get('ok') is True, source
+          print('AWS autonomous MLB cycle:', status)
+          PY
+
+      - name: Verify public status contract
+        run: |
+          set -euo pipefail
+          status_url=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-mlb-auto-llm \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='MLBAutoLLMStatusUrl'].OutputValue" \
+            --output text)
+          curl --fail --silent --show-error --retry 5 --retry-all-errors "$status_url" > /tmp/mlb-auto-status.json
+          python - <<'PY'
+          import json
+          status=json.load(open('/tmp/mlb-auto-status.json'))
+          assert status['service']=='mlb-auto-llm', status
+          assert status['fullyAutonomous'] is True, status
+          assert set(status['threeSourcePolicy']) == {'MLB Stats API','The Odds API','Big Balls Sports Data Pro'}, status
+          assert float(status['targetDailyAccuracy']) == 0.70, status
+          assert int(status['cardLeadMinutesBeforeSecondGame']) == 45, status
+          print('MLB Auto LLM production status contract: OK')
+          PY
