@@ -772,6 +772,61 @@ def _build_label(
     return prepared
 
 
+IMMUTABLE_SETTLEMENT_FACT_FIELDS = (
+    "record_type",
+    "sport",
+    "slate_date",
+    "official_game_pk",
+    "provider_event_id",
+    "provider_identity_match_method",
+    "provider_alias_crosswalk",
+    "away_team",
+    "home_team",
+    "game_date_utc",
+    "away_score",
+    "home_score",
+    "winner",
+    "home_won",
+    "predicted_winner",
+    "predicted_side",
+    "correct",
+    "canonical_lock_pk",
+    "canonical_lock_sk",
+    "canonical_lock_authority_version",
+    "canonical_lock_official_audit_eligible",
+    "exact_lock_vector_validated",
+    "canonical_stage_fingerprint",
+    "canonical_lock_payload_fingerprint",
+    "frozen_feature_vector_fingerprint",
+    "fundamentals_snapshot_v2_version",
+    "fundamentals_snapshot_v2_fingerprint",
+    "source",
+    "source_url",
+    "source_payload_fingerprint",
+    "official_status",
+)
+
+
+def _immutable_settlement_facts(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Return only write-once game, lock, prediction, and official-result facts.
+
+    Training eligibility and exclusion reasons are intentionally absent: they
+    are policy evaluations that may become stricter after a label is written.
+    A policy change must never masquerade as an official-score correction.
+    """
+
+    return {
+        field: copy.deepcopy(item.get(field))
+        for field in IMMUTABLE_SETTLEMENT_FACT_FIELDS
+    }
+
+
+def _immutable_settlement_facts_fingerprint(item: Dict[str, Any]) -> str:
+    return history.canonical_payload_fingerprint(
+        _immutable_settlement_facts(item)
+    )
+
+
 def _write_label(item: Dict[str, Any]) -> Dict[str, Any]:
     if outcomes_tbl is None:
         return {
@@ -821,24 +876,47 @@ def _write_label(item: Dict[str, Any]) -> Dict[str, Any]:
             "officialGamePk": official_pk,
             "errors": errors,
         }
-    if str(existing.get("settlement_fingerprint") or "") == str(
-        item.get("settlement_fingerprint") or ""
-    ):
+    existing_fingerprint = str(existing.get("settlement_fingerprint") or "")
+    proposed_fingerprint = str(item.get("settlement_fingerprint") or "")
+    if existing_fingerprint == proposed_fingerprint:
         return {
-            "ok": True,
-            "status": "IDEMPOTENT_EXISTING",
-            "officialGamePk": official_pk,
-            "pk": key["PK"],
-            "sk": key["SK"],
-            "settlementFingerprint": existing.get("settlement_fingerprint"),
+  "ok": True,
+  "status": "IDEMPOTENT_EXISTING",
+  "officialGamePk": official_pk,
+  "pk": key["PK"],
+  "sk": key["SK"],
+  "settlementFingerprint": existing_fingerprint,
+        }
+
+    existing_facts_fingerprint = _immutable_settlement_facts_fingerprint(existing)
+    proposed_facts_fingerprint = _immutable_settlement_facts_fingerprint(item)
+    if existing_facts_fingerprint == proposed_facts_fingerprint:
+        return {
+  "ok": True,
+  "status": "IDEMPOTENT_EXISTING_POLICY_DRIFT",
+  "officialGamePk": official_pk,
+  "pk": key["PK"],
+  "sk": key["SK"],
+  "settlementFingerprint": existing_fingerprint,
+  "proposedSettlementFingerprint": proposed_fingerprint,
+  "immutableSettlementFactsFingerprint": existing_facts_fingerprint,
+  "existingTrainingEligible": existing.get("training_eligible"),
+  "currentTrainingEligible": item.get("training_eligible"),
+  "policy": (
+      "The existing write-once label is retained because official result, "
+      "canonical lock, and prediction facts are identical; only derived "
+      "training-policy metadata changed."
+  ),
         }
     return {
         "ok": False,
         "status": "OFFICIAL_FINAL_CORRECTION_CONFLICT",
         "officialGamePk": official_pk,
-        "existingSettlementFingerprint": existing.get("settlement_fingerprint"),
-        "proposedSettlementFingerprint": item.get("settlement_fingerprint"),
-        "policy": "Write-once canonical labels never overwrite a differing official FINAL; correction conflicts require manual review.",
+        "existingSettlementFingerprint": existing_fingerprint,
+        "proposedSettlementFingerprint": proposed_fingerprint,
+        "existingImmutableFactsFingerprint": existing_facts_fingerprint,
+        "proposedImmutableFactsFingerprint": proposed_facts_fingerprint,
+        "policy": "Write-once canonical labels never overwrite differing official, lock, or prediction facts; correction conflicts require manual review.",
     }
 
 
@@ -1371,7 +1449,13 @@ def settle_mlb_slate(
             "labelWriteCount": len(writes),
             "labelCreatedCount": sum(row.get("status") == "CREATED" for row in writes),
             "labelIdempotentCount": sum(
-                row.get("status") == "IDEMPOTENT_EXISTING" for row in writes
+                row.get("status")
+                in {"IDEMPOTENT_EXISTING", "IDEMPOTENT_EXISTING_POLICY_DRIFT"}
+                for row in writes
+            ),
+            "labelPolicyDriftIdempotentCount": sum(
+                row.get("status") == "IDEMPOTENT_EXISTING_POLICY_DRIFT"
+                for row in writes
             ),
             "labelWouldCreateCount": sum(row.get("status") == "WOULD_CREATE" for row in writes),
             "labelConflictCount": sum(
