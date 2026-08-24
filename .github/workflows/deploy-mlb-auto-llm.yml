@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: mlb-auto-llm-deploy
@@ -81,8 +81,6 @@ jobs:
           PY
 
       - name: Verify Bedrock LLM access
-        env:
-          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -192,3 +190,34 @@ jobs:
           assert int(status['cardLeadMinutesBeforeSecondGame']) == 45, status
           print('MLB Auto LLM production status contract: OK')
           PY
+
+      - name: Publish durable deployment proof
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          body={
+              'service':'mlb-auto-llm',
+              'workflow':'Deploy MLB Auto LLM',
+              'jobStatus':os.environ['JOB_STATUS'],
+              'runId':os.environ['RUN_ID'],
+              'runAttempt':os.environ['RUN_ATTEMPT'],
+              'sourceSha':os.environ['SOURCE_SHA'],
+              'publishedAtUtc':datetime.now(timezone.utc).isoformat(),
+          }
+          open('runtime_reports/mlb_auto_llm_deploy_latest.json','w').write(json.dumps(body,indent=2,sort_keys=True)+'\n')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime_reports/mlb_auto_llm_deploy_latest.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'Publish MLB Auto LLM deployment proof [skip ci]'
+          git push
