@@ -1,0 +1,15 @@
+name: Trigger Soccer Post Drain Verify
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/trigger-soccer-post-drain-verify.yml']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run soccer-post-drain-verify.yml --repo "$GITHUB_REPOSITORY" --ref main

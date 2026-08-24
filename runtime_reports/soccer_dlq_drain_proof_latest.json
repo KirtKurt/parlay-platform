@@ -1,0 +1,49 @@
+{
+  "proofType": "SOCCER_DLQ_DRAIN_PROOF",
+  "observedAtUtc": "2026-08-24T18:30:34.470618+00:00",
+  "codeRc": "0",
+  "codeError": "",
+  "handlerSetRc": "0",
+  "handlerSetError": "",
+  "recoveryRc": "0",
+  "recoveryMeta": {
+    "StatusCode": 200,
+    "ExecutedVersion": "$LATEST"
+  },
+  "recovery": {
+    "ok": true,
+    "system": "soccer_auto",
+    "component": "dlq_recovery",
+    "scanned": 1357,
+    "deleted": 1357,
+    "requeued_future": 0,
+    "retired_stale": 1357,
+    "malformed": 0,
+    "remaining_visible": 1357,
+    "remaining_inflight": 0
+  },
+  "recoveryError": "",
+  "handlerRestoreRc": "0",
+  "handlerRestoreError": "",
+  "workerFinal": {
+    "Handler": "soccer_auto.collector.worker_handler",
+    "State": "Active",
+    "LastUpdateStatus": "Successful",
+    "LastModified": "2026-08-24T18:30:29.000+0000",
+    "CodeSha256": "ydyttkXvKJvo7bvAHsQRT50GNEpXH0cJIOtox0XVwfw="
+  },
+  "workerFinalError": "",
+  "mappingFinal": {
+    "State": "Enabled",
+    "ScalingConfig": {
+      "MaximumConcurrency": 3
+    },
+    "FunctionResponseTypes": [
+      "ReportBatchItemFailures"
+    ]
+  },
+  "mappingFinalError": "",
+  "dlqClear": false,
+  "workerRestored": true,
+  "mappingRestored": true
+}
