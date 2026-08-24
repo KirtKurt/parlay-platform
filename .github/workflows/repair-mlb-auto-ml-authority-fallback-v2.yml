@@ -103,10 +103,13 @@ jobs:
               return min(max(number, 0.5), 0.95)
           '''
           replacement = textwrap.dedent(replacement).rstrip() + '\n'
-          authority.write_text(
-              text[:start] + replacement + text[next_function + 1 :],
-              encoding='utf-8',
-          )
+          text = text[:start] + replacement + text[next_function + 1 :]
+          bad = 'bedrock_failur or ""'
+          good = 'bedrock_failure or ""'
+          if bad not in text and good not in text:
+              raise RuntimeError('BEDROCK_FAILURE_METADATA_ANCHOR_MISSING')
+          text = text.replace(bad, good)
+          authority.write_text(text, encoding='utf-8')
           print('Corrected generated MLB AUTO model authority source.')
           PY
 
