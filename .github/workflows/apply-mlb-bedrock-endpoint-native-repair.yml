@@ -1,0 +1,281 @@
+name: Apply endpoint-native MLB Bedrock repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-mlb-bedrock-endpoint-native-repair.yml'
+      - 'scripts/trigger_mlb_bedrock_endpoint_native_repair.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-mlb-bedrock-endpoint-native-repair
+  cancel-in-progress: false
+
+jobs:
+  repair-test-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Integrate green endpoint-native gateway with current production chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin fix/mlb-auto-endpoint-native-bedrock-v2-20260824
+          git show origin/fix/mlb-auto-endpoint-native-bedrock-v2-20260824:mlb_auto_llm/production_model_gateway.py \
+            > mlb_auto_llm/production_model_gateway.py
+          git show origin/fix/mlb-auto-endpoint-native-bedrock-v2-20260824:mlb_auto_llm/bedrock_smoke.py \
+            > mlb_auto_llm/bedrock_smoke.py
+          git show origin/fix/mlb-auto-endpoint-native-bedrock-v2-20260824:tests/unit/test_mlb_auto_production_model_gateway.py \
+            > tests/unit/test_mlb_auto_production_model_gateway.py
+
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str, label: str) -> None:
+              target = Path(path)
+              source = target.read_text(encoding='utf-8')
+              if new in source:
+                  print(f'{label}: already applied')
+                  return
+              count = source.count(old)
+              if count != 1:
+                  raise RuntimeError(f'{label}: expected one marker, found {count}')
+              target.write_text(source.replace(old, new, 1), encoding='utf-8')
+              print(f'{label}: applied')
+
+          replace_once(
+              'mlb_auto_llm/model_gateway.py',
+              'f"https://bedrock-mantle.{region}.api.aws/openai/v1/responses"',
+              'f"https://bedrock-mantle.{region}.api.aws/v1/responses"',
+              'legacy Mantle Responses endpoint',
+          )
+
+          old_imports = '''import handler as base
+          import orchestrator_v2 as strict_bedrock
+          import orchestrator as production
+          from ml_authority import AUTHORITY as ML_AUTHORITY
+          from ml_authority import build_card as build_ml_card
+          '''
+          new_imports = '''import handler as base
+          import model_gateway as legacy_gateway
+          import production_model_gateway as production_gateway
+
+
+          def _invoke_endpoint_native_chain(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+              """Bind strict slate decisions to the same endpoint-native gateway as smoke.
+
+              The strict card builder removes a schema-invalid route using the returned
+              modelId. Preserve the full route identity while retaining the provider
+              model ID separately for evidence.
+              """
+
+              result = dict(production_gateway.invoke_chain_text(*args, **kwargs))
+              if result.get("ok") is True and result.get("routeId"):
+                  result["resolvedModelId"] = result.get("modelId")
+                  result["modelId"] = result.get("routeId")
+              return result
+
+
+          # orchestrator_v2 imports these symbols directly. Bind only the catalog and
+          # chain before importing it; keep legacy.invoke_text untouched because the
+          # endpoint-native gateway delegates compatible Runtime routes to that adapter.
+          legacy_gateway.configured_models = production_gateway.configured_models
+          legacy_gateway.invoke_chain_text = _invoke_endpoint_native_chain
+
+          import orchestrator_v2 as strict_bedrock
+          import orchestrator as production
+          from ml_authority import AUTHORITY as ML_AUTHORITY
+          from ml_authority import build_card as build_ml_card
+          '''
+          replace_once(
+              'mlb_auto_llm/orchestrator_v3.py',
+              old_imports,
+              new_imports,
+              'production decision gateway binding',
+          )
+
+          template = Path('mlb-auto-llm-template.yaml')
+          source = template.read_text(encoding='utf-8')
+          source = source.replace(
+              "          MLB_AUTO_BEDROCK_DISCOVERY: 'true'\n",
+              "          MLB_AUTO_BEDROCK_MANTLE_DISCOVERY: 'true'\n"
+              "          MLB_AUTO_BEDROCK_RUNTIME_DISCOVERY: 'true'\n"
+              "          MLB_AUTO_BEDROCK_RUNTIME_PROVIDERS: 'amazon,openai'\n"
+              "          MLB_AUTO_BEDROCK_ROUTE_CATALOG_LIMIT: '64'\n",
+          )
+          source = source.replace(
+              "          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '200'\n",
+              "          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '8'\n",
+          )
+          source = source.replace("                - aws-marketplace:Subscribe\n", "")
+          if source.count("MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '8'") != 2:
+              raise RuntimeError('template did not bound both Bedrock functions')
+          if source.count("MLB_AUTO_BEDROCK_MANTLE_DISCOVERY: 'true'") != 2:
+              raise RuntimeError('template did not configure both endpoint-native functions')
+          if 'aws-marketplace:Subscribe' in source:
+              raise RuntimeError('automatic marketplace subscription remains')
+          template.write_text(source, encoding='utf-8')
+
+          Path('mlb_auto_llm/ml_authority_smoke.py').write_text('''from __future__ import annotations
+
+          from typing import Any, Dict
+
+          try:
+              from bedrock_smoke import lambda_handler as _bedrock_smoke
+          except ModuleNotFoundError:  # pragma: no cover - package import in unit tests
+              from mlb_auto_llm.bedrock_smoke import lambda_handler as _bedrock_smoke
+
+
+          def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
+              """Deployment proof is Bedrock-only and never hides model errors behind ML."""
+
+              result = dict(_bedrock_smoke(event, context))
+              result["decisionAuthority"] = "BEDROCK_LLM"
+              result["bedrockAvailable"] = result.get("ok") is True
+              result["mlFallbackAttempted"] = False
+              return result
+          ''', encoding='utf-8')
+
+          Path('tests/unit/test_mlb_auto_ml_authority_smoke.py').write_text('''from __future__ import annotations
+
+          from mlb_auto_llm import ml_authority_smoke
+
+
+          def test_deployment_smoke_is_bedrock_only_on_success(monkeypatch) -> None:
+              monkeypatch.setattr(
+                  ml_authority_smoke,
+                  "_bedrock_smoke",
+                  lambda event, context: {
+                      "ok": True,
+                      "responseNonEmpty": True,
+                      "modelId": "endpoint-model",
+                  },
+              )
+              result = ml_authority_smoke.lambda_handler({}, None)
+              assert result["ok"] is True
+              assert result["decisionAuthority"] == "BEDROCK_LLM"
+              assert result["bedrockAvailable"] is True
+              assert result["mlFallbackAttempted"] is False
+
+
+          def test_deployment_smoke_surfaces_bedrock_errors_without_ml_call(monkeypatch) -> None:
+              errors = [{"errorCode": "AccessDeniedException", "message": "denied"}]
+              monkeypatch.setattr(
+                  ml_authority_smoke,
+                  "_bedrock_smoke",
+                  lambda event, context: {"ok": False, "errors": errors},
+              )
+              result = ml_authority_smoke.lambda_handler({}, None)
+              assert result["ok"] is False
+              assert result["errors"] == errors
+              assert result["decisionAuthority"] == "BEDROCK_LLM"
+              assert result["bedrockAvailable"] is False
+              assert result["mlFallbackAttempted"] is False
+          ''', encoding='utf-8')
+
+          Path('tests/unit/test_mlb_auto_mantle_endpoint_contract.py').write_text('''from __future__ import annotations
+
+          from mlb_auto_llm import model_gateway
+
+
+          def test_legacy_openai_route_uses_documented_mantle_responses_path(monkeypatch) -> None:
+              captured = {}
+              monkeypatch.setattr(model_gateway, "_bearer_token", lambda: "token")
+
+              def fake_post(url, headers, payload, timeout=75):
+                  captured["url"] = url
+                  captured["payload"] = payload
+                  return {"output_text": "OK", "usage": {}}
+
+              monkeypatch.setattr(model_gateway, "_post_json", fake_post)
+              result = model_gateway._invoke_openai(
+                  "openai.gpt-5.6-sol",
+                  "Return only OK",
+                  max_tokens=8,
+                  region="us-east-1",
+              )
+              assert result["text"] == "OK"
+              assert captured["url"] == "https://bedrock-mantle.us-east-1.api.aws/v1/responses"
+              assert "/openai/v1/" not in captured["url"]
+          ''', encoding='utf-8')
+          PY
+
+      - name: Compile, lint, and run combined regression suite
+        env:
+          AWS_ACCESS_KEY_ID: testing
+          AWS_SECRET_ACCESS_KEY: testing
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7' 'aws-bedrock-token-generator>=1,<2'
+          python -m py_compile \
+            mlb_auto_llm/handler.py \
+            mlb_auto_llm/model_gateway.py \
+            mlb_auto_llm/production_model_gateway.py \
+            mlb_auto_llm/bedrock_smoke.py \
+            mlb_auto_llm/ml_authority.py \
+            mlb_auto_llm/ml_authority_smoke.py \
+            mlb_auto_llm/orchestrator.py \
+            mlb_auto_llm/orchestrator_v2.py \
+            mlb_auto_llm/orchestrator_v3.py
+          python -m pytest -q \
+            tests/unit/test_mlb_auto_model_gateway.py \
+            tests/unit/test_mlb_auto_production_model_gateway.py \
+            tests/unit/test_mlb_auto_mantle_endpoint_contract.py \
+            tests/unit/test_mlb_auto_ml_authority.py \
+            tests/unit/test_mlb_auto_ml_authority_smoke.py \
+            tests/unit/test_mlb_auto_bbd_utc_date_resolver.py
+          sam validate --template-file mlb-auto-llm-template.yaml --lint
+          grep -q "MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '8'" mlb-auto-llm-template.yaml
+          grep -q "MLB_AUTO_BEDROCK_RUNTIME_PROVIDERS: 'amazon,openai'" mlb-auto-llm-template.yaml
+          ! grep -q 'aws-marketplace:Subscribe' mlb-auto-llm-template.yaml
+          git diff --check
+
+      - name: Commit tested source repair to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            mlb_auto_llm/model_gateway.py \
+            mlb_auto_llm/production_model_gateway.py \
+            mlb_auto_llm/bedrock_smoke.py \
+            mlb_auto_llm/ml_authority_smoke.py \
+            mlb_auto_llm/orchestrator_v3.py \
+            mlb-auto-llm-template.yaml \
+            tests/unit/test_mlb_auto_production_model_gateway.py \
+            tests/unit/test_mlb_auto_mantle_endpoint_contract.py \
+            tests/unit/test_mlb_auto_ml_authority_smoke.py
+          if git diff --cached --quiet; then
+            echo 'Endpoint-native MLB Bedrock repair already installed.'
+            exit 0
+          fi
+          git commit -m 'Repair MLB Bedrock endpoint routing and smoke isolation'
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            test "$attempt" != 5 || exit 1
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 2))
+          done
