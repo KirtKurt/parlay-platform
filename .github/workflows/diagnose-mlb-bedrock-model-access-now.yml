@@ -1,0 +1,200 @@
+name: Diagnose MLB Bedrock model access now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-mlb-bedrock-model-access-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: diagnose-mlb-bedrock-model-access-now
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Probe accessible non-Nova Bedrock text models and profiles
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          import boto3
+          from botocore.config import Config
+
+          region='us-east-1'
+          control=boto3.client('bedrock', region_name=region)
+          runtime=boto3.client(
+              'bedrock-runtime',
+              region_name=region,
+              config=Config(connect_timeout=5, read_timeout=45, retries={'total_max_attempts':1,'mode':'standard'}),
+          )
+
+          preferred=[
+              'us.anthropic.claude-3-5-haiku-20241022-v1:0',
+              'anthropic.claude-3-5-haiku-20241022-v1:0',
+              'us.anthropic.claude-3-7-sonnet-20250219-v1:0',
+              'us.anthropic.claude-sonnet-4-20250514-v1:0',
+              'us.meta.llama3-3-70b-instruct-v1:0',
+              'meta.llama3-3-70b-instruct-v1:0',
+              'us.meta.llama3-2-11b-instruct-v1:0',
+              'meta.llama3-2-11b-instruct-v1:0',
+              'mistral.mistral-large-2402-v1:0',
+              'mistral.mistral-small-2402-v1:0',
+              'cohere.command-r-v1:0',
+              'cohere.command-r-plus-v1:0',
+              'amazon.titan-text-lite-v1',
+              'amazon.titan-text-express-v1',
+          ]
+
+          catalog=[]
+          try:
+              for item in control.list_foundation_models(byOutputModality='TEXT').get('modelSummaries') or []:
+                  catalog.append({
+                      'modelId':item.get('modelId'),
+                      'modelName':item.get('modelName'),
+                      'providerName':item.get('providerName'),
+                      'inferenceTypesSupported':item.get('inferenceTypesSupported') or [],
+                      'responseStreamingSupported':item.get('responseStreamingSupported'),
+                  })
+          except Exception as exc:
+              catalog=[{'errorCode':type(exc).__name__,'message':str(exc)[:300]}]
+
+          profiles=[]
+          try:
+              paginator=control.get_paginator('list_inference_profiles')
+              for page in paginator.paginate(typeEquals='SYSTEM_DEFINED'):
+                  for item in page.get('inferenceProfileSummaries') or []:
+                      profile_id=str(item.get('inferenceProfileId') or '')
+                      profiles.append({
+                          'inferenceProfileId':profile_id,
+                          'inferenceProfileName':item.get('inferenceProfileName'),
+                          'status':item.get('status'),
+                          'models':item.get('models') or [],
+                      })
+                      low=profile_id.lower()
+                      if profile_id and 'nova' not in low and any(token in low for token in ('anthropic','claude','meta','llama','mistral','cohere','deepseek','qwen')):
+                          preferred.append(profile_id)
+          except Exception as exc:
+              profiles=[{'errorCode':type(exc).__name__,'message':str(exc)[:300]}]
+
+          for item in catalog:
+              model_id=str(item.get('modelId') or '')
+              low=model_id.lower()
+              if (
+                  model_id
+                  and 'nova' not in low
+                  and 'embedding' not in low
+                  and 'image' not in low
+                  and 'video' not in low
+                  and any(token in low for token in ('anthropic','claude','meta','llama','mistral','cohere','deepseek','qwen','titan-text'))
+              ):
+                  preferred.append(model_id)
+
+          candidates=[]
+          seen=set()
+          for model_id in preferred:
+              if not model_id or model_id in seen:
+                  continue
+              seen.add(model_id)
+              candidates.append(model_id)
+
+          results=[]
+          successes=[]
+          for model_id in candidates[:80]:
+              try:
+                  response=runtime.converse(
+                      modelId=model_id,
+                      messages=[{'role':'user','content':[{'text':'Return only OK.'}]}],
+                      inferenceConfig={'maxTokens':8,'temperature':0.0,'topP':0.9},
+                  )
+                  text=''.join(
+                      str(block.get('text') or '')
+                      for block in (((response.get('output') or {}).get('message') or {}).get('content') or [])
+                      if isinstance(block,dict)
+                  ).strip()
+                  row={
+                      'modelId':model_id,
+                      'ok':bool(text),
+                      'responseNonEmpty':bool(text),
+                      'usage':response.get('usage') or {},
+                      'stopReason':response.get('stopReason'),
+                  }
+                  if row['ok']:
+                      successes.append(model_id)
+                  results.append(row)
+                  if len(successes) >= 5:
+                      break
+              except Exception as exc:
+                  error=(getattr(exc,'response',{}) or {}).get('Error') or {}
+                  results.append({
+                      'modelId':model_id,
+                      'ok':False,
+                      'errorCode':str(error.get('Code') or type(exc).__name__),
+                      'message':str(error.get('Message') or str(exc))[:500],
+                  })
+
+          report={
+              'proofType':'MLB_BEDROCK_MODEL_ACCESS_PROBE',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'region':region,
+              'ok':bool(successes),
+              'successfulModelIds':successes,
+              'probeResults':results,
+              'inferenceProfiles':profiles,
+              'catalog':catalog,
+              'secretExposed':False,
+          }
+          Path('runtime_reports/mlb_bedrock_model_access_latest.json').write_text(
+              json.dumps(report,indent=2,sort_keys=True,default=str)+'\n', encoding='utf-8')
+          print(json.dumps({
+              'ok':report['ok'],
+              'successfulModelIds':successes,
+              'probeCount':len(results),
+          },indent=2,sort_keys=True))
+          PY
+      - name: Publish access proof
+        if: always()
+        run: |
+          set -euo pipefail
+          cp runtime_reports/mlb_bedrock_model_access_latest.json /tmp/mlb-bedrock-model-access.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-bedrock-access-proof origin/main
+            cp /tmp/mlb-bedrock-model-access.json runtime_reports/mlb_bedrock_model_access_latest.json
+            git add runtime_reports/mlb_bedrock_model_access_latest.json
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish available MLB Bedrock model proof [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
+
+# Trigger revision: 2026-08-24T20:25Z
