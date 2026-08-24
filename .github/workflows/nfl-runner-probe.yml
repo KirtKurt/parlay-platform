@@ -1,0 +1,27 @@
+name: NFL Deployment Runner Probe
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/nfl-runner-probe.yml'
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Publish runner marker
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          printf '{"status":"RUNNER_ACTIVE","run_id":"%s","sha":"%s","time":"%s"}\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" "$(date -u +%FT%TZ)" > runtime_reports/nfl_runner_probe_latest.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime_reports/nfl_runner_probe_latest.json
+          git commit -m 'Publish NFL runner probe [skip ci]'
+          git pull --rebase origin main
+          git push origin HEAD:main
