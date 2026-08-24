@@ -123,3 +123,4 @@ jobs:
           open('runtime_reports/nfl_force_deploy_latest.json','w').write(json.dumps({'run_id':os.environ.get('GITHUB_RUN_ID'),'commit':os.environ.get('GITHUB_SHA'),'job_status':'${{ job.status }}','stack_status':'$s','status_url':'$u','historical_backfill_enabled':True,'preseason_collection_enabled':False,'preseason_predictions_enabled':False,'sns_sqs_optional_resources':False},indent=2,sort_keys=True)+'\n')
           PY
           git add runtime_reports/nfl_force_deploy_latest.json; git commit -m 'Publish NFL Auto force-deploy evidence [skip ci]' || true; git pull --rebase origin main || true; git push origin HEAD:main || true
+# force deployment trigger
