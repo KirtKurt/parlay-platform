@@ -6,10 +6,10 @@
       "amazon.nova-lite-v1:0",
       "amazon.nova-pro-v1:0",
       "amazon.nova-2-lite-v1:0",
-      "us.amazon.nova-micro-v1:0",
-      "us.amazon.nova-lite-v1:0",
-      "global.amazon.nova-2-lite-v1:0",
-      "us.amazon.nova-2-lite-v1:0"
+      "us-west-2::us.amazon.nova-micro-v1:0",
+      "us-east-2::us.amazon.nova-micro-v1:0",
+      "us-west-2::us.amazon.nova-lite-v1:0",
+      "us-east-2::us.amazon.nova-lite-v1:0"
     ],
     "endpointFamily": null,
     "errors": [
@@ -41,25 +41,25 @@
         "endpointFamily": "bedrock-runtime-converse",
         "errorCode": "ThrottlingException",
         "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "us.amazon.nova-micro-v1:0"
+        "modelId": "us-west-2::us.amazon.nova-micro-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "AccessDeniedException",
+        "message": "An error occurred (AccessDeniedException) when calling the Converse operation: Your account is currently being verified. Verification normally takes less than 2 hours. Until your account is verified, you may not have access to this operation. If you are still receiving this message after more than 2 hours, please let us know by writing to aws-verification@amazon.com. We appreciate your patience.",
+        "modelId": "us-east-2::us.amazon.nova-micro-v1:0"
       },
       {
         "endpointFamily": "bedrock-runtime-converse",
         "errorCode": "ThrottlingException",
         "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "us.amazon.nova-lite-v1:0"
+        "modelId": "us-west-2::us.amazon.nova-lite-v1:0"
       },
       {
         "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "global.amazon.nova-2-lite-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "us.amazon.nova-2-lite-v1:0"
+        "errorCode": "AccessDeniedException",
+        "message": "An error occurred (AccessDeniedException) when calling the Converse operation: Your account is currently being verified. Verification normally takes less than 2 hours. Until your account is verified, you may not have access to this operation. If you are still receiving this message after more than 2 hours, please let us know by writing to aws-verification@amazon.com. We appreciate your patience.",
+        "modelId": "us-east-2::us.amazon.nova-lite-v1:0"
       }
     ],
     "errorsBeforeSuccess": [],
@@ -86,11 +86,11 @@
     "targetDailyAccuracy": null,
     "threeSourcePolicy": null
   },
-  "publishedAtUtc": "2026-08-24T20:56:43.737666+00:00",
+  "publishedAtUtc": "2026-08-24T21:02:15.747134+00:00",
   "runAttempt": "1",
-  "runId": "32776537490",
+  "runId": "32777112898",
   "secretExposed": false,
   "service": "mlb-auto-llm",
-  "sourceSha": "506f84d9af80bfff4d29953fe11bd51493b8111e",
+  "sourceSha": "f3fae80d35d0267965a7f2e0291ccdb98b96ed5e",
   "workflow": "Deploy MLB Auto LLM"
 }
