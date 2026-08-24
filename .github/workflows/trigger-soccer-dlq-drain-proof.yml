@@ -1,4 +1,5 @@
 name: Trigger Soccer DLQ Drain Proof
+# Second pass verifies SQS approximate count after the 1,357 stale messages were deleted.
 on:
   workflow_dispatch:
   push:
