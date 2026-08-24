@@ -110,7 +110,15 @@ jobs:
               raise RuntimeError('BEDROCK_FAILURE_METADATA_ANCHOR_MISSING')
           text = text.replace(bad, good)
           authority.write_text(text, encoding='utf-8')
-          print('Corrected generated MLB AUTO model authority source.')
+
+          deploy = Path('.github/workflows/deploy-mlb-auto-llm.yml')
+          text = deploy.read_text(encoding='utf-8')
+          expanded = '      - name: Prove Bedrock or AWS ML authority through deployed MLB Lambda role'
+          canonical = '      - name: Prove Bedrock through deployed MLB Lambda role'
+          if expanded not in text and canonical not in text:
+              raise RuntimeError('CANONICAL_BEDROCK_VERIFICATION_MARKER_MISSING')
+          deploy.write_text(text.replace(expanded, canonical), encoding='utf-8')
+          print('Corrected generated MLB AUTO model authority source and preserved canonical verifier markers.')
           PY
 
       - name: Verify source, tests, SAM, and sport isolation
