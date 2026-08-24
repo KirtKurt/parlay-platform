@@ -1,0 +1,430 @@
+name: Repair MLB authority boundary once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-authority-boundary-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-mlb-authority-boundary-once
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  LEGACY_STACK_NAME: parlay-platform-mlb-auto-prod
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Disable every scheduled writer targeting the retired MLB Auto stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          LEGACY_FUNCTION=$(aws cloudformation describe-stack-resource \
+            --stack-name "$LEGACY_STACK_NAME" \
+            --logical-resource-id AutoFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$LEGACY_FUNCTION"
+          test "$LEGACY_FUNCTION" != "None"
+          LEGACY_ARN=$(aws lambda get-function-configuration \
+            --function-name "$LEGACY_FUNCTION" \
+            --region "$AWS_REGION" \
+            --query FunctionArn \
+            --output text)
+          test -n "$LEGACY_ARN"
+          test "$LEGACY_ARN" != "None"
+
+          aws events list-rules \
+            --name-prefix "${LEGACY_STACK_NAME}-" \
+            --region "$AWS_REGION" \
+            --query 'Rules[].Name' \
+            --output text | tr '\t' '\n' > /tmp/legacy_mlb_auto_rules.txt
+
+          retired=0
+          while IFS= read -r rule; do
+            [ -n "$rule" ] || continue
+            [ "$rule" != "None" ] || continue
+            targeted=false
+            while IFS= read -r target; do
+              case "$target" in
+                "$LEGACY_ARN"|"$LEGACY_ARN":*) targeted=true ;;
+              esac
+            done < <(aws events list-targets-by-rule \
+              --rule "$rule" \
+              --region "$AWS_REGION" \
+              --query 'Targets[].Arn' \
+              --output text | tr '\t' '\n')
+            if $targeted; then
+              state=$(aws events describe-rule \
+                --name "$rule" \
+                --region "$AWS_REGION" \
+                --query State \
+                --output text)
+              if [ "$state" != "DISABLED" ]; then
+                aws events disable-rule --name "$rule" --region "$AWS_REGION"
+              fi
+              after=$(aws events describe-rule \
+                --name "$rule" \
+                --region "$AWS_REGION" \
+                --query State \
+                --output text)
+              echo "retired_rule=$rule state=$after"
+              test "$after" = "DISABLED"
+              retired=$((retired + 1))
+            fi
+          done < /tmp/legacy_mlb_auto_rules.txt
+          test "$retired" -ge 1
+
+      - name: Patch the live authority boundary and permanent regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+          verifier_path = root / 'scripts/verify_mlb_deploy_identity.py'
+          test_path = root / 'tests/unit/test_mlb_deploy_identity.py'
+          legacy_workflow_path = root / '.github/workflows/mlb-auto-critical-repair-once.yml'
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one marker, found {count}')
+              return text.replace(old, new, 1)
+
+          verifier = verifier_path.read_text(encoding='utf-8')
+          constants_marker = '''HISTORICAL_NONCANONICAL_WRITER_TOKENS = (
+              "HISTORICALOPTIMIZER",
+              "HISTORICALOPTIMIZERV7RECOVERYENTRYPOINT",
+          )
+          '''
+          constants_replacement = constants_marker + '''
+          ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN = (
+              "PARLAYPLATFORMMLBAUTOLLMMLBAUTOLLMFUNCTION"
+          )
+          ISOLATED_THREE_SOURCE_HANDLER = "orchestrator.lambda_handler"
+          ISOLATED_THREE_SOURCE_REQUIRED_ENVIRONMENT = (
+              "MLB_AUTO_TABLE",
+              "ODDS_API_KEY",
+              "BBS" + "_API_SECRET_ARN",
+              "MLB_AUTO_FIRST_GAME_SAFETY_MINUTES",
+              "MLB_AUTO_BEDROCK_MODELS",
+          )
+          ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT = (
+              "SNAPSHOTS_TABLE",
+              "OUTCOMES_TABLE",
+              "MLB_ML_ARTIFACTS_BUCKET",
+          )
+          '''
+          if 'ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN' not in verifier:
+              verifier = replace_once(
+                  verifier,
+                  constants_marker,
+                  constants_replacement,
+                  'isolated three-source constants',
+              )
+
+          helper_anchor = '''    return "MLB" in text and any(token in text for token in MLB_WRITER_TOKENS)
+
+
+          def _base_lambda_arn(value: Any) -> str:
+          '''
+          helper_replacement = '''    return "MLB" in text and any(token in text for token in MLB_WRITER_TOKENS)
+
+
+          def _is_authorized_isolated_three_source_auto(function: Any) -> bool:
+              if not isinstance(function, dict):
+                  return False
+              name = str(function.get("FunctionName") or "")
+              arn = str(function.get("FunctionArn") or "")
+              handler = str(function.get("Handler") or "")
+              environment = (function.get("Environment") or {}).get("Variables") or {}
+              if not isinstance(environment, dict):
+                  return False
+              required_present = all(
+                  str(environment.get(key) or "").strip()
+                  for key in ISOLATED_THREE_SOURCE_REQUIRED_ENVIRONMENT
+              )
+              forbidden_absent = all(
+                  not str(environment.get(key) or "").strip()
+                  for key in ISOLATED_THREE_SOURCE_FORBIDDEN_ROOT_ENVIRONMENT
+              )
+              secret_arn = str(
+                  environment.get("BBS" + "_API_SECRET_ARN") or ""
+              )
+              return bool(
+                  ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN
+                  in _authority_text(name)
+                  and arn
+                  and handler == ISOLATED_THREE_SOURCE_HANDLER
+                  and required_present
+                  and forbidden_absent
+                  and environment.get("MLB_AUTO_FIRST_GAME_SAFETY_MINUTES") == "10"
+                  and secret_arn.startswith("arn:")
+                  and ":secretsmanager:" in secret_arn
+              )
+
+
+          def _root_authority_lambda_functions(lambdas: Any) -> List[Dict[str, Any]]:
+              return [
+                  function
+                  for function in _all_lambda_functions(lambdas)
+                  if not _is_authorized_isolated_three_source_auto(function)
+              ]
+
+
+          def _base_lambda_arn(value: Any) -> str:
+          '''
+          if 'def _is_authorized_isolated_three_source_auto' not in verifier:
+              verifier = replace_once(
+                  verifier,
+                  helper_anchor,
+                  helper_replacement,
+                  'isolated three-source helper',
+              )
+
+          old_loop = '        for function in _all_lambda_functions(lambdas):\n'
+          new_loop = '        for function in _root_authority_lambda_functions(lambdas):\n'
+          if new_loop not in verifier:
+              verifier = replace_once(
+                  verifier,
+                  old_loop,
+                  new_loop,
+                  'root authority Lambda inventory',
+              )
+          verifier_path.write_text(verifier, encoding='utf-8')
+
+          tests = test_path.read_text(encoding='utf-8')
+          test_marker = 'def test_authorized_isolated_three_source_auto_is_outside_root_authority_scan'
+          if test_marker not in tests:
+              tests += '''
+
+          def _install_isolated_three_source_auto(aws) -> str:
+              name = "parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-AbCd1234"
+              aws["lambda"].configurations[name] = {
+                  "FunctionArn": _arn("isolated-three-source-auto"),
+                  "Handler": deploy_identity.ISOLATED_THREE_SOURCE_HANDLER,
+                  "Runtime": "python3.11",
+                  "Description": "Isolated three-source MLB AUTO authority",
+                  "Environment": {
+                      "Variables": {
+                          "MLB_AUTO_TABLE": "isolated-table",
+                          "ODDS_API_KEY": "configured",
+                          "BBS" + "_API_SECRET_ARN": (
+                              "arn:aws:secretsmanager:us-east-1:123456789012:"
+                              "secret:isolated-mlb-auto"
+                          ),
+                          "MLB_AUTO_FIRST_GAME_SAFETY_MINUTES": "10",
+                          "MLB_AUTO_BEDROCK_MODELS": "us.amazon.nova-lite-v1:0",
+                      }
+                  },
+              }
+              return name
+
+
+          def test_authorized_isolated_three_source_auto_is_outside_root_authority_scan(
+              aws,
+          ) -> None:
+              name = _install_isolated_three_source_auto(aws)
+
+              assert deploy_identity._is_authorized_isolated_three_source_auto(
+                  {"FunctionName": name, **aws["lambda"].configurations[name]}
+              ) is True
+              result = _verify()
+
+              assert result["ok"] is True
+              assert result["providerCredentialBoundary"][
+                  "allCanonicalFunctionsWithoutRetiredProviderAuthority"
+              ] is True
+              assert not any(
+                  blocker.startswith(
+                      "RETIRED_PROVIDER_ENVIRONMENT_PRESENT_ON_DISCOVERED_LAMBDA:"
+                      + name
+                  )
+                  for blocker in result["blockers"]
+              )
+
+
+          def test_isolated_three_source_lookalike_with_root_tables_is_rejected(
+              aws,
+          ) -> None:
+              name = _install_isolated_three_source_auto(aws)
+              environment = aws["lambda"].configurations[name]["Environment"][
+                  "Variables"
+              ]
+              environment["SNAPSHOTS_TABLE"] = "root-snapshots"
+
+              assert deploy_identity._is_authorized_isolated_three_source_auto(
+                  {"FunctionName": name, **aws["lambda"].configurations[name]}
+              ) is False
+              result = _verify()
+
+              assert result["ok"] is False
+              assert any(
+                  blocker.startswith(
+                      "RETIRED_PROVIDER_ENVIRONMENT_PRESENT_ON_DISCOVERED_LAMBDA:"
+                      + name
+                  )
+                  for blocker in result["blockers"]
+              )
+
+
+          def test_legacy_mlb_auto_repair_workflow_can_only_retire_schedules() -> None:
+              workflow = (
+                  Path(__file__).resolve().parents[2]
+                  / ".github/workflows/mlb-auto-critical-repair-once.yml"
+              ).read_text(encoding="utf-8")
+
+              assert "disable-rule" in workflow
+              assert "enable-rule" not in workflow
+              assert "MLB_AUTO_HEARTBEAT" not in workflow
+              assert "MLB_AUTO_REPAIR" not in workflow
+          '''
+          test_path.write_text(tests, encoding='utf-8')
+
+          retirement = '''name: Retire legacy MLB Auto writer schedules
+
+          on:
+            push:
+              branches: [main]
+              paths:
+                - '.github/workflows/mlb-auto-critical-repair-once.yml'
+            workflow_dispatch:
+
+          permissions:
+            contents: read
+
+          concurrency:
+            group: retire-legacy-mlb-auto-writers
+            cancel-in-progress: false
+
+          env:
+            AWS_REGION: us-east-1
+            STACK_NAME: parlay-platform-mlb-auto-prod
+
+          jobs:
+            retire:
+              runs-on: ubuntu-latest
+              timeout-minutes: 15
+              steps:
+                - uses: actions/checkout@v4
+                - uses: aws-actions/configure-aws-credentials@v4
+                  with:
+                    aws-access-key-id: __AWS_ACCESS_KEY_ID__
+                    aws-secret-access-key: __AWS_SECRET_ACCESS_KEY__
+                    aws-region: __AWS_REGION__
+                - name: Disable and verify every legacy writer schedule
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    LEGACY_FUNCTION=$(aws cloudformation describe-stack-resource \\
+                      --stack-name "$STACK_NAME" \\
+                      --logical-resource-id AutoFunction \\
+                      --region "$AWS_REGION" \\
+                      --query 'StackResourceDetail.PhysicalResourceId' \\
+                      --output text)
+                    test -n "$LEGACY_FUNCTION"
+                    test "$LEGACY_FUNCTION" != "None"
+                    LEGACY_ARN=$(aws lambda get-function-configuration \\
+                      --function-name "$LEGACY_FUNCTION" \\
+                      --region "$AWS_REGION" \\
+                      --query FunctionArn \\
+                      --output text)
+                    aws events list-rules \\
+                      --name-prefix "${STACK_NAME}-" \\
+                      --region "$AWS_REGION" \\
+                      --query 'Rules[].Name' \\
+                      --output text | tr '\\t' '\\n' > /tmp/legacy_rules.txt
+                    matched=0
+                    while IFS= read -r rule; do
+                      [ -n "$rule" ] || continue
+                      [ "$rule" != "None" ] || continue
+                      targeted=false
+                      while IFS= read -r target; do
+                        case "$target" in
+                          "$LEGACY_ARN"|"$LEGACY_ARN":*) targeted=true ;;
+                        esac
+                      done < <(aws events list-targets-by-rule \\
+                        --rule "$rule" \\
+                        --region "$AWS_REGION" \\
+                        --query 'Targets[].Arn' \\
+                        --output text | tr '\\t' '\\n')
+                      if $targeted; then
+                        aws events disable-rule --name "$rule" --region "$AWS_REGION"
+                        state=$(aws events describe-rule \\
+                          --name "$rule" \\
+                          --region "$AWS_REGION" \\
+                          --query State \\
+                          --output text)
+                        echo "retired_rule=$rule state=$state"
+                        test "$state" = "DISABLED"
+                        matched=$((matched + 1))
+                      fi
+                    done < /tmp/legacy_rules.txt
+                    test "$matched" -ge 1
+          '''
+          retirement = retirement.replace('__AWS_ACCESS_KEY_ID__', '${' + '{ secrets.AWS_ACCESS_KEY_ID }}')
+          retirement = retirement.replace('__AWS_SECRET_ACCESS_KEY__', '${' + '{ secrets.AWS_SECRET_ACCESS_KEY }}')
+          retirement = retirement.replace('__AWS_REGION__', '${' + '{ env.AWS_REGION }}')
+          legacy_workflow_path.write_text(retirement, encoding='utf-8')
+          PY
+
+      - name: Run authority, migration, and provider-boundary regression suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
+          python -m py_compile scripts/verify_mlb_deploy_identity.py
+          python scripts/migrate_mlb_deploy_identity_provider_neutral.py --check
+          python scripts/verify_mlb_no_bbd_runtime.py
+          python -m pytest -q \
+            tests/unit/test_mlb_deploy_identity.py \
+            tests/unit/test_verify_mlb_no_bbd_runtime.py
+          git diff --check
+
+      - name: Publish the verified production repair without overwriting report commits
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            scripts/verify_mlb_deploy_identity.py \
+            tests/unit/test_mlb_deploy_identity.py \
+            .github/workflows/mlb-auto-critical-repair-once.yml
+          git commit -m 'Retire duplicate MLB writer and authorize isolated three-source boundary'
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 2))
+          done
+          echo '::error::Unable to publish MLB authority repair after five force-free attempts'
+          exit 1
