@@ -1,0 +1,113 @@
+name: Export exact deployed Tennis V2.4 source for hotfix
+
+on:
+  push:
+    branches: [fix/tennis-snapshot-overflow-20260824]
+    paths:
+      - ".github/workflows/export-tennis-v2-4-source-hotfix.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact deployed vehicle
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct exact deployed Tennis V2.4 source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf /tmp/v2-release tennis_predictive_platform_v2 tennis_predictive_platform_v2_4
+          mkdir -p /tmp/v2-release
+
+          git fetch --no-tags --depth=1 origin \
+            agent/tennis-mlb-exact-parity-v2:refs/remotes/origin/agent/tennis-mlb-exact-parity-v2
+          git archive --format=tar refs/remotes/origin/agent/tennis-mlb-exact-parity-v2 \
+            tennis_release_v2 | tar -xf - -C /tmp/v2-release
+
+          cat /tmp/v2-release/tennis_release_v2/tennis_predictive_platform_v2.tar.xz.b64.part[0-9][0-9] \
+            | base64 --decode > /tmp/tennis-v2-baseline.tar.xz
+          expected_baseline=$(awk '{print $1}' \
+            /tmp/v2-release/tennis_release_v2/tennis_predictive_platform_v2.tar.xz.sha256)
+          actual_baseline=$(sha256sum /tmp/tennis-v2-baseline.tar.xz | awk '{print $1}')
+          test "$actual_baseline" = "$expected_baseline"
+          tar -xJf /tmp/tennis-v2-baseline.tar.xz
+          test -d tennis_predictive_platform_v2
+          mv tennis_predictive_platform_v2 tennis_predictive_platform_v2_4
+
+          cat \
+            tennis_release_v2_4/overlay.tar.xz.b64.part00 \
+            .github/tennis-v2-4-part01/frag00 \
+            .github/tennis-v2-4-part01/frag01 \
+            .github/tennis-v2-4-part01/frag02 \
+            .github/tennis-v2-4-part01/frag03 \
+            .github/tennis-v2-4-part01/frag04 \
+            .github/tennis-v2-4-part01/frag05 \
+            .github/tennis-v2-4-part01/frag06 \
+            .github/tennis-v2-4-part01/frag07 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part02 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part03 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part04 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part05 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part06 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part07 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part08 \
+            > /tmp/tennis-v24-overlay.b64
+          test "$(wc -c < /tmp/tennis-v24-overlay.b64)" -eq 69192
+          test "$(sha256sum /tmp/tennis-v24-overlay.b64 | awk '{print $1}')" = \
+            2f334bc8cbe58257818fe40035c3c54852eef1eef9eddddcd5eb44972be063cf
+          base64 --decode /tmp/tennis-v24-overlay.b64 > /tmp/tennis-v24-overlay.tar.xz
+          test "$(sha256sum /tmp/tennis-v24-overlay.tar.xz | awk '{print $1}')" = \
+            325b77b554b5b3835176d8c93d930d8780c4093fb6ba3304f78f4c4770f1b17c
+          tar -xJf /tmp/tennis-v24-overlay.tar.xz -C tennis_predictive_platform_v2_4
+
+          while IFS= read -r path; do
+            test -z "$path" || rm -rf "tennis_predictive_platform_v2_4/$path"
+          done < tennis_predictive_platform_v2_4/DELETE_FILES.txt
+          rm -f tennis_predictive_platform_v2_4/DELETE_FILES.txt
+          find tennis_predictive_platform_v2_4 -type d -name __pycache__ -prune -exec rm -rf {} +
+          find tennis_predictive_platform_v2_4 -type d -name .pytest_cache -prune -exec rm -rf {} +
+          find tennis_predictive_platform_v2_4 -type f -name '*.pyc' -delete
+
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tennis_predictive_platform_v2_4/template.yaml')
+          text = path.read_text()
+          dead = 'Conditions:\n  HasApiTennisKey: !Not [!Equals [!Ref TennisApiTennisKey, ""]]\n\n'
+          if text.count(dead) != 1:
+              raise SystemExit('expected exactly one unused HasApiTennisKey condition')
+          path.write_text(text.replace(dead, ''))
+          PY
+
+          actual_tree=$(python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root=Path('tennis_predictive_platform_v2_4'); h=hashlib.sha256()
+          files=sorted((p for p in root.rglob('*') if p.is_file()),key=lambda p:p.relative_to(root).as_posix())
+          for path in files:
+              relative=path.relative_to(root).as_posix().encode(); data=path.read_bytes()
+              h.update(len(relative).to_bytes(8,'big')); h.update(relative)
+              h.update(len(data).to_bytes(8,'big')); h.update(data)
+          print(h.hexdigest())
+          PY
+          )
+          printf '%s\n' "$actual_tree" | tee /tmp/tennis-v24-source-tree.sha256
+          test "$actual_tree" = 0d512dadca07b594e0908c5b760f2b71550d230d8347f7b54f4793357024c909
+
+      - name: Upload reconstructed source
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tennis-v2-4-exact-source-hotfix
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            tennis_predictive_platform_v2_4/
+            /tmp/tennis-v24-source-tree.sha256
