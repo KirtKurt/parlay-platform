@@ -1,0 +1,15 @@
+name: Trigger Soccer Lambda Role DLQ Recovery
+on:
+  push:
+    paths: ['.github/workflows/trigger-soccer-lambda-dlq-recovery.yml']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch recovery workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run soccer-lambda-dlq-recovery.yml --repo "$GITHUB_REPOSITORY" --ref main
