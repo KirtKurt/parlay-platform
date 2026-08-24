@@ -1,0 +1,12 @@
+NFL Auto implementation validation
+Generated: 2026-08-24
+
+$ python -m py_compile nfl_auto/*.py
+PASS
+
+$ python scripts/verify_nfl_auto_bundle.py
+nfl_auto_bundle_verified {'modules': 14, 'historical_seasons': '2020-2025', 'live_gate': '2026-09-09T04:00:00Z', 'preseason': 'forbidden', 'decision_horizon': 'T-10'}
+
+$ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q tests/nfl_auto
+..............                                                           [100%]
+14 passed in 2.08s
