@@ -1,6 +1,6 @@
 {
   "classification": "TRAINER_HEALTHY",
-  "createdAtUtc": "2026-08-24T22:13:48.651088+00:00",
+  "createdAtUtc": "2026-08-24T22:15:51.919317+00:00",
   "diagnosticOnly": true,
   "lambdaConfiguration": {
     "Architectures": [
@@ -60,7 +60,7 @@
   "productionAuthorityChanged": false,
   "proofType": "MLB_TRAINER_DEPLOY_HEALTH_DIAGNOSTIC",
   "secretExposed": false,
-  "sourceSha": "8a55ebdfbf4e275debad7df7559eeb764602d457",
+  "sourceSha": "d3fd9aeafcd92ea99726aa197141a5e785a48c03",
   "statusAfter": {
     "automaticPromotionEnabled": false,
     "experimentId": "mlb-v2-2026-08-03-future-prospective-r7",
@@ -99,8 +99,10 @@
       "ok": false
     },
     "trainingHealth": {
-      "deploymentIdentityMatches": true,
-      "errors": [],
+      "deploymentIdentityMatches": false,
+      "errors": [
+        "latest_status_deployment_identity_mismatch"
+      ],
       "executionMode": "training",
       "latestRun": {
         "acceptedRowCount": 0,
@@ -144,7 +146,7 @@
           "version": "MLB-ML-CANONICAL-SLATE-CONTINUITY-v2-exact-official-game-set"
         },
         "championChanged": false,
-        "createdAtUtc": "2026-08-24T22:13:47.642238+00:00",
+        "createdAtUtc": "2026-08-24T22:15:49.190122+00:00",
         "deploymentIdentity": {
           "gitSha": "8a55ebdfbf4e275debad7df7559eeb764602d457",
           "templateSha256": "9e5519d55d5f7898e819cb68dca35edd2f07c87f1203427b3bd8b77789e8e5cb"
@@ -225,10 +227,10 @@
         "rejectionReasonCounts": {
           "current_canonical_row_not_training_eligible": 8
         },
-        "runId": "f65a13b8e08f6ed7527828e6",
+        "runId": "af9d020fecc01738cfc37eb6",
         "status": "WAITING_FOR_CANONICAL_SLATE_CONTINUITY"
       },
-      "ok": true
+      "ok": false
     },
     "v2InferenceConsumerInstalled": false,
     "version": "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow"
@@ -237,14 +239,14 @@
     "ExecutedVersion": "$LATEST",
     "StatusCode": 200,
     "parseError": null,
-    "redactedLogTail": "START RequestId: 4db1719a-3c11-4db2-8713-1fdf28bc6334 Version: $LATEST\nEND RequestId: 4db1719a-3c11-4db2-8713-1fdf28bc6334\nREPORT RequestId: 4db1719a-3c11-4db2-8713-1fdf28bc6334\tDuration: 68.44 ms\tBilled Duration: 69 ms\tMemory Size: 2048 MB\tMax Memory Used: 177 MB\t"
+    "redactedLogTail": "START RequestId: e4ee779a-e2f8-4268-a0c8-3c7e650672b5 Version: $LATEST\nEND RequestId: e4ee779a-e2f8-4268-a0c8-3c7e650672b5\nREPORT RequestId: e4ee779a-e2f8-4268-a0c8-3c7e650672b5\tDuration: 104.89 ms\tBilled Duration: 888 ms\tMemory Size: 2048 MB\tMax Memory Used: 113 MB\tInit Duration: 782.76 ms\t"
   },
   "statusResponseParseError": null,
   "trainingInvocation": {
     "ExecutedVersion": "$LATEST",
     "StatusCode": 200,
     "parseError": null,
-    "redactedLogTail": "START RequestId: 00925f71-8980-4809-b7bc-605ed504d9b1 Version: $LATEST\nEND RequestId: 00925f71-8980-4809-b7bc-605ed504d9b1\nREPORT RequestId: 00925f71-8980-4809-b7bc-605ed504d9b1\tDuration: 52450.95 ms\tBilled Duration: 53085 ms\tMemory Size: 2048 MB\tMax Memory Used: 176 MB\tInit Duration: 633.43 ms\t"
+    "redactedLogTail": "START RequestId: e055aa8b-cd7d-4406-99b1-b0cd18c3d5ba Version: $LATEST\nEND RequestId: e055aa8b-cd7d-4406-99b1-b0cd18c3d5ba\nREPORT RequestId: e055aa8b-cd7d-4406-99b1-b0cd18c3d5ba\tDuration: 53104.85 ms\tBilled Duration: 53105 ms\tMemory Size: 2048 MB\tMax Memory Used: 177 MB\t"
   },
   "trainingResponse": {
     "acceptedRowCount": 0,
@@ -289,7 +291,7 @@
     },
     "championChanged": false,
     "continuityWaitCompatibilityVersion": "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v5-persisted-return",
-    "createdAtUtc": "2026-08-24T22:13:47.642238+00:00",
+    "createdAtUtc": "2026-08-24T22:15:49.190122+00:00",
     "deploymentIdentity": {
       "gitSha": "8a55ebdfbf4e275debad7df7559eeb764602d457",
       "templateSha256": "9e5519d55d5f7898e819cb68dca35edd2f07c87f1203427b3bd8b77789e8e5cb"
@@ -377,7 +379,7 @@
       "train": 300,
       "validation": 100
     },
-    "runId": "f65a13b8e08f6ed7527828e6",
+    "runId": "af9d020fecc01738cfc37eb6",
     "selectionCaptureBeforeTraining": {
       "collisionPolicy": "separate_global_lease_domain",
       "healthEvaluatedByTraining": false,
@@ -394,5 +396,5 @@
   },
   "trainingResponseParseError": null,
   "version": "MLB-TRAINER-DEPLOY-DIAGNOSTIC-v1-redacted-fail-closed",
-  "workflowRunId": "32783509906"
+  "workflowRunId": "32783643813"
 }
