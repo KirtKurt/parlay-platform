@@ -1,0 +1,241 @@
+name: MLB Three-API Runtime Acceptance v1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-three-api-acceptance-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: parlay-platform-deploy
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+      ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+      BBD_KEY_1: ${{ secrets.BIG_BALLS_DATA_API_KEY }}
+      BBD_KEY_2: ${{ secrets.BBD_API_KEY }}
+      BBD_KEY_3: ${{ secrets.BIGBALLS_DATA_API_KEY }}
+      BBD_KEY_4: ${{ secrets.BIG_BALLS_API_KEY }}
+      BBD_KEY_5: ${{ secrets.BIGBALLS_API_KEY }}
+      BBD_KEY_6: ${{ secrets.BIGBALLSDATA_API_KEY }}
+      BBD_KEY_7: ${{ secrets.BIG_BALLS_DATA_KEY }}
+      BBD_KEY_8: ${{ secrets.BBD_API_TOKEN }}
+      BIG_BALLS_DATA_API_BASE_URL: ${{ vars.BIG_BALLS_DATA_API_BASE_URL || vars.BBD_API_BASE_URL || '' }}
+      BIG_BALLS_DATA_OPENAPI_URL: ${{ vars.BIG_BALLS_DATA_OPENAPI_URL || vars.BBD_OPENAPI_URL || '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Select BBD key and configure Python
+        run: |
+          set -euo pipefail
+          selected=''
+          for variable in BBD_KEY_1 BBD_KEY_2 BBD_KEY_3 BBD_KEY_4 BBD_KEY_5 BBD_KEY_6 BBD_KEY_7 BBD_KEY_8; do
+            value=${!variable:-}
+            if [ -n "$value" ]; then selected=$value; break; fi
+          done
+          test -n "$selected" || { echo '::error::No recognized BBD Pro secret'; exit 1; }
+          test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
+          echo "BIG_BALLS_DATA_API_KEY=$selected" >> "$GITHUB_ENV"
+          python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Wait for deployed stack to become stable
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 90); do
+            status=$(aws cloudformation describe-stacks --stack-name parlay-platform-dev \
+              --region "$AWS_REGION_VALUE" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo MISSING)
+            case "$status" in
+              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE) exit 0 ;;
+              *_IN_PROGRESS) sleep 20 ;;
+              *) echo "::error::Stack unavailable or failed: $status"; exit 1 ;;
+            esac
+          done
+          echo '::error::Timed out waiting for stable stack'
+          exit 1
+
+      - name: Run strict provider, Lambda, schedule and LLM acceptance
+        env:
+          PYTHONPATH: hello_world
+          ODDS_API_KEY: ${{ env.ODDS_API_KEY_VALUE }}
+        run: |
+          set +e
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import urllib.parse
+          import urllib.request
+          from datetime import datetime, timezone
+          from zoneinfo import ZoneInfo
+
+          report={
+              'accepted': False,
+              'status': 'UNHEALTHY',
+              'checkedAtUtc': datetime.now(timezone.utc).isoformat(),
+              'checks': {},
+              'errors': [],
+          }
+          def check(name, fn):
+              try:
+                  value=fn()
+                  report['checks'][name]={'ok': True, 'value': value}
+                  return value
+              except Exception as exc:
+                  report['checks'][name]={'ok': False, 'error': f'{type(exc).__name__}:{exc}'}
+                  report['errors'].append(f'{name}:{type(exc).__name__}:{exc}')
+                  return None
+
+          def aws(*args):
+              return subprocess.check_output(['aws', *args], text=True).strip()
+
+          def official_and_sources():
+              import mlb_bbd_pro_context as bbd
+              import mlb_official_schedule_authority as official
+              import mlb_three_api_llm_analyst as llm
+              date_et=datetime.now(ZoneInfo('America/New_York')).date().isoformat()
+              schedule=official.fetch_exact_date_schedule(date_et)
+              games=schedule.get('games') or []
+              assert games, schedule
+              query=urllib.parse.urlencode({
+                  'apiKey': os.environ['ODDS_API_KEY'], 'regions':'us', 'markets':'h2h',
+                  'oddsFormat':'american', 'dateFormat':'iso',
+              })
+              req=urllib.request.Request('https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/?'+query, headers={'accept':'application/json'})
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  odds=json.loads(response.read().decode('utf-8'))
+                  headers=dict(response.headers)
+              assert isinstance(odds,list), type(odds)
+              game=dict(games[0])
+              home=str(game.get('home_team') or '').lower(); away=str(game.get('away_team') or '').lower()
+              market=next((row for row in odds if str(row.get('home_team') or '').lower()==home and str(row.get('away_team') or '').lower()==away),None)
+              if market:
+                  game['provider_event_id']=market.get('id')
+                  game['bookmakers']=market.get('bookmakers') or []
+              manifest=bbd.discover_manifest(force=True)
+              context=bbd.collect_game_context(game)
+              assert context.get('sourceStatus') in {'CONNECTED','PARTIAL'}, context
+              assert int(context.get('operationsSucceeded') or 0)>0, context
+              merged=bbd.merge_into_advanced_context({
+                  'official_game_pk':game.get('official_game_pk'),
+                  'schedule_authority':game.get('schedule_authority'),
+                  'bookmakers':game.get('bookmakers') or [],
+              },context)
+              signal=llm.analyze_game(game,merged)
+              assert signal.get('status')=='CONNECTED', signal
+              return {
+                  'officialGameCount':schedule.get('officialGameCount'),
+                  'oddsEventCount':len(odds),
+                  'oddsRequestsRemaining':headers.get('x-requests-remaining'),
+                  'bbdOperations':len(manifest.get('operations') or []),
+                  'bbdOperationsSucceeded':context.get('operationsSucceeded'),
+                  'bbdStatus':context.get('sourceStatus'),
+                  'llmStatus':signal.get('status'),
+                  'llmModelId':signal.get('modelId'),
+                  'llmPredictedWinner':signal.get('predictedWinner'),
+                  'llmPredictedLoser':signal.get('predictedLoser'),
+                  'evidenceFingerprint':signal.get('evidenceFingerprint'),
+              }
+
+          source_result=check('allThreeProvidersAndBedrock', official_and_sources)
+
+          def controller_config():
+              fn=aws('cloudformation','describe-stack-resource','--stack-name','parlay-platform-dev',
+                     '--logical-resource-id','MLBThreeApiAutonomousControllerFunction','--region',os.environ['AWS_REGION_VALUE'],
+                     '--query','StackResourceDetail.PhysicalResourceId','--output','text')
+              raw=aws('lambda','get-function-configuration','--function-name',fn,'--region',os.environ['AWS_REGION_VALUE'],'--output','json')
+              cfg=json.loads(raw)
+              env=(cfg.get('Environment') or {}).get('Variables') or {}
+              assert env.get('BIG_BALLS_DATA_API_KEY'), 'BBD key missing from deployed controller'
+              assert env.get('ODDS_API_KEY'), 'Odds key missing from deployed controller'
+              assert env.get('MLB_THREE_API_LLM_MODEL_ID'), 'LLM model missing from deployed controller'
+              return {'functionName':fn,'lastModified':cfg.get('LastModified'),'runtime':cfg.get('Runtime'),'environmentKeys':sorted(env)}
+          cfg=check('deployedControllerConfiguration', controller_config)
+
+          def schedule_enabled():
+              fn=(cfg or {}).get('functionName')
+              assert fn
+              arn=aws('lambda','get-function-configuration','--function-name',fn,'--region',os.environ['AWS_REGION_VALUE'],'--query','FunctionArn','--output','text')
+              names=json.loads(aws('events','list-rule-names-by-target','--target-arn',arn,'--region',os.environ['AWS_REGION_VALUE'],'--output','json')).get('RuleNames') or []
+              assert names, 'No EventBridge rule targets controller'
+              states=[]
+              for name in names:
+                  data=json.loads(aws('events','describe-rule','--name',name,'--region',os.environ['AWS_REGION_VALUE'],'--output','json'))
+                  states.append({'name':name,'state':data.get('State'),'schedule':data.get('ScheduleExpression')})
+              assert any(row['state']=='ENABLED' and row['schedule']=='rate(5 minutes)' for row in states), states
+              return states
+          check('fiveMinuteAutonomousSchedule', schedule_enabled)
+
+          def invoke_controller():
+              fn=(cfg or {}).get('functionName'); assert fn
+              subprocess.check_call(['aws','lambda','invoke','--function-name',fn,'--region',os.environ['AWS_REGION_VALUE'],
+                                     '--cli-binary-format','raw-in-base64-out','--payload','{"action":"run","source":"acceptance"}',
+                                     '/tmp/controller-acceptance.json'],stdout=subprocess.DEVNULL)
+              body=json.load(open('/tmp/controller-acceptance.json'))
+              assert body.get('version')=='MLB-THREE-API-AUTONOMOUS-CONTROLLER-v1', body
+              assert body.get('dailyAccuracyGoal')==0.70, body
+              assert int(body.get('officialGameCount') or 0)>0, body
+              return body
+          check('autonomousControllerInvocation', invoke_controller)
+
+          report['accepted']=all(row.get('ok') for row in report['checks'].values())
+          report['status']='HEALTHY' if report['accepted'] else 'UNHEALTHY'
+          report['requirements']={
+              'allThreeApis':True,
+              'bedrockLlm':True,
+              'fullSlateRequired':True,
+              'firstGamePredictionLeadMinutes':45,
+              'completeCardDeadline':'second official game minus 45 minutes',
+              'autonomousCadenceMinutes':5,
+              'dailyAccuracyGoal':0.70,
+              'accuracyGuarantee':False,
+          }
+          os.makedirs('runtime_reports',exist_ok=True)
+          with open('runtime_reports/mlb_three_api_acceptance_latest.json','w') as handle:
+              json.dump(report,handle,indent=2,sort_keys=True); handle.write('\n')
+          print(json.dumps(report,indent=2,sort_keys=True))
+          raise SystemExit(0 if report['accepted'] else 1)
+          PY
+          result=$?
+          echo "ACCEPTANCE_EXIT_CODE=$result" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Publish acceptance evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git pull --rebase origin main || true
+          git add runtime_reports/mlb_three_api_acceptance_latest.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'Publish MLB three-API runtime acceptance [skip ci]'
+            git push origin HEAD:main
+          fi
+
+      - name: Enforce acceptance
+        if: always()
+        run: |
+          test "${ACCEPTANCE_EXIT_CODE:-1}" = '0'
