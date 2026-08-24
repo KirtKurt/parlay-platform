@@ -1,8 +1,9 @@
 """Deterministic Lambda-style imports and AWS defaults for offline tests.
 
 Production Lambda receives its region, credentials, and flattened code root from
-AWS. Repository tests import the same modules through ``hello_world`` as a
-package, so CI provides equivalent non-network defaults before collection.
+AWS. Repository tests import the same modules through ``hello_world`` and
+``mlb_auto_llm`` as package/source roots, so CI provides equivalent non-network
+defaults before collection.
 """
 from __future__ import annotations
 
@@ -12,8 +13,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 HELLO_WORLD = ROOT / "hello_world"
+MLB_AUTO_LLM = ROOT / "mlb_auto_llm"
 SCRIPTS = ROOT / "scripts"
-for path in (HELLO_WORLD, SCRIPTS):
+for path in (HELLO_WORLD, MLB_AUTO_LLM, SCRIPTS):
     value = str(path)
     if value not in sys.path:
         sys.path.insert(0, value)
