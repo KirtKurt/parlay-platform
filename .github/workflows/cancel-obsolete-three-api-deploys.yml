@@ -1,0 +1,89 @@
+name: Clear Obsolete Three-API Deploys and Run Final Sequence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cancel-obsolete-three-api-deploys.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: clear-obsolete-three-api-deploys
+  cancel-in-progress: false
+
+jobs:
+  clear-and-dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel obsolete queued and running deployment attempts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          current="${GITHUB_RUN_ID}"
+          gh run list --repo "$GITHUB_REPOSITORY" --limit 100 \
+            --json databaseId,workflowName,status,createdAt > /tmp/runs.json
+          python - <<'PY' >/tmp/cancel-ids.txt
+          import json
+          import os
+          runs=json.load(open('/tmp/runs.json'))
+          current=int(os.environ['GITHUB_RUN_ID'])
+          obsolete={
+              'Deploy SAM to AWS',
+              'Install MLB Three-API Autonomy v1',
+              'Install MLB Three-API Autonomy v2',
+              'Verify and Deploy MLB Three-API Autonomy v1',
+              'MLB Three-API Runtime Acceptance v1',
+          }
+          for row in runs:
+              run_id=int(row['databaseId'])
+              if run_id==current: continue
+              if row.get('workflowName') in obsolete and row.get('status') in {'queued','in_progress','waiting','requested','pending'}:
+                  print(run_id)
+          PY
+          while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY" || true
+          done </tmp/cancel-ids.txt
+
+      - name: Allow cancellations to settle
+        run: sleep 20
+
+      - name: Dispatch one final install and deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run verify-deploy-mlb-three-api-autonomy-v1.yml \
+            --repo "$GITHUB_REPOSITORY" --ref main
+
+      - name: Wait and clear any default deploy created by the repair commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sleep 45
+          gh run list --repo "$GITHUB_REPOSITORY" --limit 50 \
+            --json databaseId,workflowName,status,createdAt > /tmp/runs-after.json
+          python - <<'PY' >/tmp/default-deploy-ids.txt
+          import json
+          for row in json.load(open('/tmp/runs-after.json')):
+              if row.get('workflowName')=='Deploy SAM to AWS' and row.get('status') in {'queued','in_progress','waiting','requested','pending'}:
+                  print(row['databaseId'])
+          PY
+          while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY" || true
+          done </tmp/default-deploy-ids.txt
+
+      - name: Dispatch strict acceptance behind the final deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-three-api-acceptance-v1.yml \
+            --repo "$GITHUB_REPOSITORY" --ref main
