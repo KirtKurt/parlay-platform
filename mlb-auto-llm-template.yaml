@@ -67,7 +67,7 @@ Resources:
           MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
           MLB_AUTO_BEDROCK_DISCOVERY: 'true'
           MLB_AUTO_BEDROCK_REGIONS: 'us-east-1,us-west-2,us-east-2'
-          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '50'
+          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '200'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref MLBAutoLLMTable
@@ -140,7 +140,7 @@ Resources:
           MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
           MLB_AUTO_BEDROCK_DISCOVERY: 'true'
           MLB_AUTO_BEDROCK_REGIONS: 'us-east-1,us-west-2,us-east-2'
-          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '50'
+          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '200'
       Policies:
         - Statement:
             - Effect: Allow
