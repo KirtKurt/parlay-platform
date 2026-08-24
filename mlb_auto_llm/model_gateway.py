@@ -16,32 +16,67 @@ from botocore.config import Config
 ROUTE_SEPARATOR = "::"
 _REGION_PATTERN = re.compile(r"^[a-z]{2}(?:-gov)?-[a-z]+-\d$")
 
-# The first production recovery exhausted every configured Nova route before
-# reaching another provider. Keep the rescue set deliberately provider- and
-# Region-diverse so a family-level daily token bucket cannot consume the whole
-# failover window.
+# These identifiers were returned as ACTIVE by the deployed MLB AUTO role on
+# 2026-08-24. Put current system inference profiles and current model families
+# ahead of the already exhausted Nova bucket and retired Llama 3.2 1B/3B IDs.
+PROFILE_FIRST_ROUTES = (
+    "global.xai.grok-4.6",
+    "global.openai.gpt-5.6-luna",
+    "global.openai.gpt-5.6-terra",
+    "global.anthropic.claude-fable-5",
+    "global.anthropic.claude-sonnet-5",
+    "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "us.anthropic.claude-3-haiku-20240307-v1:0",
+    "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "us.writer.palmyra-x4-v1:0",
+    "us.writer.palmyra-x5-v1:0",
+    "us.deepseek.r1-v1:0",
+    "us.meta.llama4-scout-17b-instruct-v1:0",
+    "us.meta.llama4-maverick-17b-instruct-v1:0",
+    "us.meta.llama3-1-8b-instruct-v1:0",
+    "meta.llama3-8b-instruct-v1:0",
+    "mistral.mistral-7b-instruct-v0:2",
+    "mistral.ministral-3-8b-instruct",
+    "nvidia.nemotron-nano-9b-v2",
+    "nvidia.nemotron-nano-12b-v2",
+    "deepseek.v3.2",
+    "moonshotai.kimi-k2.5",
+    "qwen.qwen3-32b-v1:0",
+    "zai.glm-5",
+    "us-west-2::global.xai.grok-4.6",
+    "us-west-2::global.openai.gpt-5.6-luna",
+    "us-west-2::global.openai.gpt-5.6-terra",
+    "us-west-2::global.anthropic.claude-fable-5",
+    "us-west-2::global.anthropic.claude-sonnet-5",
+    "us-west-2::us.writer.palmyra-x4-v1:0",
+    "us-west-2::us.writer.palmyra-x5-v1:0",
+    "us-west-2::us.deepseek.r1-v1:0",
+    "us-west-2::us.meta.llama4-scout-17b-instruct-v1:0",
+    "us-west-2::us.meta.llama4-maverick-17b-instruct-v1:0",
+    "us-west-2::meta.llama3-1-8b-instruct-v1:0",
+    "us-west-2::mistral.mistral-7b-instruct-v0:2",
+    "us-west-2::mistral.ministral-3-8b-instruct",
+    "us-west-2::nvidia.nemotron-nano-9b-v2",
+    "us-west-2::nvidia.nemotron-nano-12b-v2",
+    "us-west-2::deepseek.v3.2",
+    "us-west-2::moonshotai.kimi-k2.5",
+    "us-west-2::qwen.qwen3-32b-v1:0",
+    "us-west-2::zai.glm-5",
+)
+
 DIVERSIFIED_RECOVERY_ROUTES = (
-    "us-west-2::meta.llama3-2-1b-instruct-v1:0",
-    "us-west-2::meta.llama3-2-3b-instruct-v1:0",
-    "us-west-2::mistral.mistral-small-2402-v1:0",
-    "us-west-2::mistral.ministral-3-3b-instruct",
-    "us-west-2::ai21.jamba-1-5-mini-v1:0",
-    "us-west-2::openai.gpt-oss-20b-1:0",
-    "us-west-2::amazon.nova-micro-v1:0",
-    "us-west-2::amazon.nova-lite-v1:0",
-    "us-east-2::meta.llama3-2-1b-instruct-v1:0",
-    "us-east-2::meta.llama3-2-3b-instruct-v1:0",
-    "us-east-2::amazon.nova-micro-v1:0",
-    "us-east-2::amazon.nova-lite-v1:0",
-    "meta.llama3-2-1b-instruct-v1:0",
-    "meta.llama3-2-3b-instruct-v1:0",
-    "mistral.mistral-small-2402-v1:0",
-    "mistral.ministral-3-3b-instruct",
-    "ai21.jamba-1-5-mini-v1:0",
-    "google.gemma-3-4b-it",
-    "google.gemma-3n-e2b-it",
-    "openai.gpt-oss-20b-1:0",
-    "zai.glm-4.7-flash",
+    "us-east-2::mistral.ministral-3-8b-instruct",
+    "us-east-2::nvidia.nemotron-nano-9b-v2",
+    "us-east-2::nvidia.nemotron-nano-12b-v2",
+    "us-east-2::openai.gpt-oss-120b-1:0",
+    "us-east-2::qwen.qwen3-32b-v1:0",
+    "us-east-2::us.meta.llama4-scout-17b-instruct-v1:0",
+    "us-east-2::us.meta.llama4-maverick-17b-instruct-v1:0",
+    "us-east-2::us.deepseek.r1-v1:0",
+    "mistral.mistral-large-3-675b-instruct",
+    "nvidia.nemotron-nano-3-30b",
+    "qwen.qwen3-coder-next",
+    "zai.glm-4.7",
 )
 
 NOVA_LAST_RESORT_ROUTES = (
@@ -56,12 +91,17 @@ NOVA_LAST_RESORT_ROUTES = (
     "us.amazon.nova-pro-v1:0",
 )
 
-DEFAULT_MODELS = DIVERSIFIED_RECOVERY_ROUTES + NOVA_LAST_RESORT_ROUTES + (
-    "openai.gpt-5.6-sol",
-    "anthropic.claude-opus-4-8",
-    "anthropic.claude-opus-4-7",
-    "anthropic.claude-opus-4-6-v1",
-    "anthropic.claude-sonnet-4-6-v1",
+DEFAULT_MODELS = (
+    PROFILE_FIRST_ROUTES
+    + DIVERSIFIED_RECOVERY_ROUTES
+    + NOVA_LAST_RESORT_ROUTES
+    + (
+        "openai.gpt-5.6-sol",
+        "anthropic.claude-opus-4-8",
+        "anthropic.claude-opus-4-7",
+        "anthropic.claude-opus-4-6-v1",
+        "anthropic.claude-sonnet-4-6-v1",
+    )
 )
 
 _PREFERRED_MODEL: Optional[str] = None
@@ -69,8 +109,6 @@ _MODEL_FAILURE_UNTIL: Dict[str, float] = {}
 _RUNTIME_CLIENTS: Dict[str, Any] = {}
 _CONTROL_CLIENTS: Dict[str, Any] = {}
 
-# Fail over quickly instead of allowing one unavailable or throttled model to
-# consume the complete Lambda timeout through SDK retries.
 _BOTO_CONFIG = Config(
     connect_timeout=5,
     read_timeout=25,
@@ -84,6 +122,17 @@ def _region() -> str:
         or os.environ.get("AWS_DEFAULT_REGION")
         or "us-east-1"
     )
+
+
+def _dedupe(values: Iterable[str]) -> List[str]:
+    output: List[str] = []
+    seen = set()
+    for raw in values:
+        value = str(raw or "").strip()
+        if value and value not in seen:
+            seen.add(value)
+            output.append(value)
+    return output
 
 
 def configured_regions() -> List[str]:
@@ -128,32 +177,31 @@ def _control_client(region: Optional[str] = None) -> Any:
     return _CONTROL_CLIENTS[target]
 
 
-def _dedupe(values: Iterable[str]) -> List[str]:
-    output: List[str] = []
-    seen = set()
-    for raw in values:
-        value = str(raw or "").strip()
-        if value and value not in seen:
-            seen.add(value)
-            output.append(value)
-    return output
+def reset_model_state(*, clear_discovery: bool = False) -> None:
+    """Clear warm-container preference/cooldown state before a deploy smoke."""
+
+    global _PREFERRED_MODEL
+    _PREFERRED_MODEL = None
+    _MODEL_FAILURE_UNTIL.clear()
+    if clear_discovery:
+        discovered_models.cache_clear()
 
 
 def _model_priority(route_id: str) -> tuple[int, int, str]:
     region, model_id = _split_route(route_id)
     value = model_id.lower()
     alternate_region = region != _region()
+    if route_id in PROFILE_FIRST_ROUTES:
+        return (0, 0, route_id)
+    if value.startswith(("global.xai.", "global.openai.", "global.anthropic.")):
+        return (1, 0, route_id)
+    if value.startswith(("us.writer.", "us.deepseek.", "us.meta.llama4")):
+        return (2, 0, route_id)
     small = any(
         token in value
         for token in (
-            "micro",
             "mini",
-            "lite",
             "small",
-            "1b",
-            "2b",
-            "3b",
-            "4b",
             "7b",
             "8b",
             "9b",
@@ -162,25 +210,21 @@ def _model_priority(route_id: str) -> tuple[int, int, str]:
             "20b",
             "haiku",
             "flash",
+            "nano",
         )
     )
     if small and not value.startswith("amazon.nova"):
-        return (0 if alternate_region else 1, 0, route_id)
-    if alternate_region and value.startswith("amazon.nova"):
-        return (2, 0, route_id)
+        return (3 if alternate_region else 4, 0, route_id)
     if value.startswith("amazon.nova"):
-        return (3, 0, route_id)
-    if value.startswith(("us.", "global.")):
-        return (4, 0, route_id)
+        return (8, 0, route_id)
     if value.startswith(("openai.gpt-5", "anthropic.claude-opus")):
-        return (7, 0, route_id)
+        return (10, 0, route_id)
     return (5 if alternate_region else 6, 0, route_id)
 
 
 def _discover_region(region: str) -> List[str]:
     candidates: List[str] = []
     client = _control_client(region)
-
     try:
         response = client.list_inference_profiles(
             typeEquals="SYSTEM_DEFINED", maxResults=1000
@@ -193,7 +237,6 @@ def _discover_region(region: str) -> List[str]:
                 candidates.append(_format_route(region, model_id))
     except Exception:
         pass
-
     try:
         response = client.list_foundation_models(
             byOutputModality="TEXT", byInferenceType="ON_DEMAND"
@@ -209,25 +252,17 @@ def _discover_region(region: str) -> List[str]:
                 candidates.append(_format_route(region, model_id))
     except Exception:
         pass
-
     return candidates
 
 
 @lru_cache(maxsize=1)
 def discovered_models() -> List[str]:
-    """List account-visible text routes across approved Bedrock Regions.
-
-    Discovery remains best-effort. Static diversified routes stay available when
-    a control-plane call is unavailable or not authorized in one Region.
-    """
-
     if os.environ.get("MLB_AUTO_BEDROCK_DISCOVERY", "true").lower() in {
         "0",
         "false",
         "no",
     }:
         return []
-
     candidates: List[str] = []
     for region in configured_regions():
         candidates.extend(_discover_region(region))
@@ -242,12 +277,11 @@ def configured_models() -> List[str]:
         ).split(",")
         if value.strip()
     ]
-    # Static provider diversity is first, live account discovery second, and
-    # already exhausted Nova/Mantle families are last-resort only.
     return _dedupe(
         (
-            *DIVERSIFIED_RECOVERY_ROUTES,
+            *PROFILE_FIRST_ROUTES,
             *discovered_models(),
+            *DIVERSIFIED_RECOVERY_ROUTES,
             *configured,
             *NOVA_LAST_RESORT_ROUTES,
         )
@@ -403,7 +437,6 @@ def invoke_text(
             temperature=temperature,
             region=region,
         )
-
     runtime = client or _runtime_client(region)
     response = runtime.converse(
         modelId=model_id,
@@ -459,6 +492,7 @@ def _failure_cooldown_seconds(code: str, message: str) -> int:
             "validationexception",
             "resource not found",
             "unsupported model",
+            "end of its life",
         )
     ):
         return 21600
@@ -482,9 +516,8 @@ def invoke_chain_text(
     attempted: List[str] = []
     errors: List[Dict[str, Any]] = []
     max_attempts = max(
-        1, int(os.environ.get("MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS", "24"))
+        1, int(os.environ.get("MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS", "50"))
     )
-
     eligible: List[str] = []
     for route_id in _ordered_models(models or configured_models()):
         retry_at = float(_MODEL_FAILURE_UNTIL.get(route_id) or 0.0)
@@ -502,7 +535,6 @@ def invoke_chain_text(
             )
             continue
         eligible.append(route_id)
-
     for route_id in eligible[:max_attempts]:
         region, model_id = _split_route(route_id)
         attempted.append(route_id)
@@ -549,7 +581,6 @@ def invoke_chain_text(
                     "message": message,
                 }
             )
-
     return {
         "ok": False,
         "attemptedModelIds": attempted,
