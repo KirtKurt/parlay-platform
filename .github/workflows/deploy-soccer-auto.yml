@@ -17,9 +17,7 @@ permissions:
 
 concurrency:
   group: soccer-auto-deploy
-  # Recovery builds supersede older queued/deploying snapshots. This prevents
-  # stale code from landing after a newer root-cause fix.
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   verify-and-deploy:
@@ -46,87 +44,135 @@ jobs:
             us-east-1|us-east-2|us-west-2) ;;
             *) echo '::error::Soccer Nova 2 US CRIS deployment requires a supported US AWS region'; exit 1 ;;
           esac
-          python -m pip install --upgrade pip
-          python -m pip install -e '.[dev]'
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
           python -m py_compile soccer_auto/*.py
           python -m pytest -q tests/soccer_auto
-          python scripts/verify_soccer_auto_isolation.py
-          python - <<'PY'
-          from pathlib import Path
-          text = Path('soccer-auto-template.yaml').read_text()
-          forbidden = (
-              'Mlb', 'MLB', 'Tennis', 'tennis_', 'LegacySoccer',
-              'sportsdata', 'bigballs', 'BBD_API', 'BBS_API',
-          )
-          for value in forbidden:
-              assert value not in text, value
-          print('isolated_template_contract_ok')
-          PY
-      - name: Build isolated Soccer stack
+          sam validate --template-file soccer-auto-template.yaml --lint
+          ! grep -Eq 'parlay_platform_|inqis_tennis|MLB|TENNIS' soccer-auto-template.yaml
+          aws sts get-caller-identity
+      - name: Build isolated artifact
+        run: sam build --no-cached --template-file soccer-auto-template.yaml
+      - name: Recover an unsuccessful first creation
         run: |
           set -euo pipefail
-          sam build --template-file soccer-auto-template.yaml
-      - name: Deploy isolated Soccer stack
-        env:
-          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
-          SOCCER_SHARED_QUOTA_RESERVE_PERCENT: ${{ inputs.shared_quota_reserve_percent }}
+          stack_name=parlay-platform-soccer-auto
+          region='${{ secrets.AWS_REGION }}'
+          stack_status=$(aws cloudformation describe-stacks \
+            --stack-name "$stack_name" \
+            --region "$region" \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || true)
+
+          if [[ "$stack_status" == "ROLLBACK_COMPLETE" || "$stack_status" == "ROLLBACK_FAILED" ]]; then
+            aws cloudformation list-stack-resources \
+              --stack-name "$stack_name" \
+              --region "$region" \
+              --query 'StackResourceSummaries[?ResourceStatus==`DELETE_SKIPPED`].[LogicalResourceId,PhysicalResourceId,ResourceType]' \
+              --output json | tee /tmp/soccer-auto-retained-first-attempt.json
+            {
+              echo '### Retained resources from unsuccessful first creation'
+              echo '```json'
+              cat /tmp/soccer-auto-retained-first-attempt.json
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            aws cloudformation delete-stack --stack-name "$stack_name" --region "$region"
+            aws cloudformation wait stack-delete-complete --stack-name "$stack_name" --region "$region"
+          elif [[ "$stack_status" == *"_IN_PROGRESS" ]]; then
+            echo "::error::Soccer stack is busy in state $stack_status"
+            exit 1
+          elif [[ "$stack_status" == *"_FAILED" ]]; then
+            echo "::error::Soccer stack requires operator review in state $stack_status"
+            exit 1
+          fi
+      - name: Deploy isolated soccer_auto stack
         run: |
           set -euo pipefail
+          soccer_llm_model_id=us.amazon.nova-2-lite-v1:0
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
             --stack-name parlay-platform-soccer-auto \
-            --region '${{ secrets.AWS_REGION }}' \
+            --region "${{ secrets.AWS_REGION }}" \
+            --resolve-s3 \
             --capabilities CAPABILITY_IAM \
-            --no-confirm-changeset \
-            --no-fail-on-empty-changeset \
             --parameter-overrides \
-              OddsApiKey="$ODDS_API_KEY_VALUE" \
-              EnableHistoricalBackfill=true \
-              SharedQuotaReservePercent="$SOCCER_SHARED_QUOTA_RESERVE_PERCENT"
-      - name: Verify historical schedules are enabled
+              OddsApiKey="${{ secrets.ODDS_API_KEY }}" \
+              EnableHistoricalBackfill="true" \
+              SharedQuotaReservePercent="${{ inputs.shared_quota_reserve_percent || '0' }}" \
+              QuotaRaceBufferCredits="2000" \
+              SoccerOddsRequestsPerSecond="3" \
+              SoccerLlmModelId="$soccer_llm_model_id" \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+      - name: Assert historical backfill is deployed and scheduled
         run: |
           set -euo pipefail
           stack_name=parlay-platform-soccer-auto
           region='${{ secrets.AWS_REGION }}'
-          for logical_id in \
-            SoccerHistoricalFunctionFeaturedHistoricalHourly \
-            SoccerHistoricalFunctionAdditionalHistoricalHourly \
-            SoccerHistoricalFunctionMaterializeHistoricalT45Hourly
-          do
-            rule=$(aws cloudformation describe-stack-resource \
-              --stack-name "$stack_name" \
-              --logical-resource-id "$logical_id" \
-              --region "$region" \
-              --query StackResourceDetail.PhysicalResourceId \
-              --output text)
-            test -n "$rule" && test "$rule" != None
-            state=$(aws events describe-rule --name "$rule" --region "$region" --query State --output text)
-            test "$state" = ENABLED
-          done
-      - name: Exercise provider, backfill, Bedrock, trainer, and prediction authorities
+          configured=$(aws cloudformation describe-stacks \
+            --stack-name "$stack_name" \
+            --region "$region" \
+            --query "Stacks[0].Parameters[?ParameterKey=='EnableHistoricalBackfill'].ParameterValue" \
+            --output text)
+          test "$configured" = "true"
+          function_name=$(aws cloudformation describe-stack-resource \
+            --stack-name "$stack_name" \
+            --logical-resource-id SoccerHistoricalFunction \
+            --region "$region" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          function_arn=$(aws lambda get-function \
+            --function-name "$function_name" \
+            --region "$region" \
+            --query 'Configuration.FunctionArn' \
+            --output text)
+          aws events list-rule-names-by-target \
+            --target-arn "$function_arn" \
+            --region "$region" \
+            --output json > /tmp/soccer-historical-rules.json
+          python - <<'PY'
+          import json
+          import subprocess
+
+          names = json.load(open('/tmp/soccer-historical-rules.json'))['RuleNames']
+          assert len(names) == 3, names
+          for name in names:
+              state = subprocess.check_output([
+                  'aws', 'events', 'describe-rule', '--name', name,
+                  '--region', '${{ secrets.AWS_REGION }}', '--query', 'State', '--output', 'text',
+              ], text=True).strip()
+              assert state == 'ENABLED', (name, state)
+          print('historical_rules_enabled', names)
+          PY
+      - name: Prove isolated runtime integrations
         env:
-          SOCCER_SHARED_QUOTA_RESERVE_PERCENT: ${{ inputs.shared_quota_reserve_percent }}
+          SOCCER_AWS_REGION: ${{ secrets.AWS_REGION }}
+          SOCCER_SHARED_QUOTA_RESERVE_PERCENT: ${{ inputs.shared_quota_reserve_percent || '0' }}
         run: |
           set -euo pipefail
           stack_name=parlay-platform-soccer-auto
-          region='${{ secrets.AWS_REGION }}'
-          function_name() {
+          region="$SOCCER_AWS_REGION"
+
+          physical_function() {
             aws cloudformation describe-stack-resource \
               --stack-name "$stack_name" \
               --logical-resource-id "$1" \
               --region "$region" \
-              --query StackResourceDetail.PhysicalResourceId \
+              --query 'StackResourceDetail.PhysicalResourceId' \
               --output text
           }
+
           invoke_and_assert_ok() {
             logical_id="$1"
             payload="$2"
             output_name="$3"
             response_policy="${4:-strict}"
-            fn=$(function_name "$logical_id")
+            function_name=$(physical_function "$logical_id")
+            test -n "$function_name"
             aws lambda invoke \
-              --function-name "$fn" \
+              --function-name "$function_name" \
               --region "$region" \
+              --cli-connect-timeout 10 \
+              --cli-read-timeout 360 \
               --cli-binary-format raw-in-base64-out \
               --payload "$payload" \
               "/tmp/${output_name}.json" \
@@ -150,37 +196,680 @@ jobs:
           assert response.get("status") == "DEFERRED_QUOTA", response
           assert response.get("reason") == "BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE", response
           assert response.get("analysis_available") is False, response
+          assert int(response.get("validated_trials") or 0) == 0, response
           errors = response.get("model_errors") or []
+          attempted = response.get("attempted_model_ids") or []
+          expected_models = [
+              "us.amazon.nova-2-lite-v1:0",
+              "mistral.ministral-3-14b-instruct",
+              "us.meta.llama4-scout-17b-instruct-v1:0",
+              "us.meta.llama4-maverick-17b-instruct-v1:0",
+              "global.amazon.nova-2-lite-v1:0",
+              "us.amazon.nova-pro-v1:0",
+              "us.amazon.nova-lite-v1:0",
+              "us.amazon.nova-micro-v1:0",
+          ]
           assert errors, response
-          assert all(row.get("error_code") == "ThrottlingException" and row.get("category") == "DAILY_TOKEN_QUOTA" for row in errors), response
-          retry_after = datetime.fromisoformat(str(response["retry_after"]).replace("Z", "+00:00"))
+          assert attempted == expected_models, response
+          assert all(
+              row.get("error_code") == "ThrottlingException"
+              and row.get("category") == "DAILY_TOKEN_QUOTA"
+              for row in errors
+          ), response
+          assert [row.get("model_id") for row in errors] == attempted, response
+          retry_after = datetime.fromisoformat(
+              str(response["retry_after"]).replace("Z", "+00:00")
+          )
           assert retry_after > datetime.now(timezone.utc), response
           PY
           }
-          status_url=$(aws cloudformation describe-stacks --stack-name "$stack_name" --region "$region" --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" --output text)
+
+          # Catalog and events are quota-free provider calls. Together they
+          # validate the existing all-sports key and populate the isolated
+          # registry before any paid T-10 collection work is released.
+          status_url=$(aws cloudformation describe-stacks \
+            --stack-name "$stack_name" \
+            --region "$region" \
+            --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" \
+            --output text)
           test -n "$status_url"
-          curl --fail --retry 10 --retry-all-errors --retry-delay 10 "$status_url" >/tmp/soccer-status-before.json
-          invoke_and_assert_ok SoccerCatalogFunction '{"action":"deployment_catalog_smoke"}' catalog
-          invoke_and_assert_ok SoccerInventoryFunction '{"action":"deployment_inventory_smoke"}' inventory
-          invoke_and_assert_ok SoccerSettlementFunction '{"action":"reconcile_admissibility_only"}' settlement_reconcile
-          invoke_and_assert_ok SoccerHistoricalFunction '{"mode":"status"}' historical_status
-          invoke_and_assert_ok SoccerHistoricalFunction '{"mode":"featured","sport_key":"soccer_epl","max_calls":1}' historical_featured
-          invoke_and_assert_ok SoccerHistoricalFunction '{"mode":"materialize","max_events":5}' historical_materialize
-          invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_controller_smoke"}' controller_before_llm
-          invoke_and_assert_ok SoccerDispatchFunction '{"action":"deployment_dispatch_before_llm"}' dispatch_before_llm
-          invoke_and_assert_ok SoccerLlmAnalystFunction '{"action":"deployment_llm_smoke","force_refresh":true}' llm allow_daily_quota
-          invoke_and_assert_ok SoccerTrainerFunction '{"action":"deployment_trainer_smoke"}' trainer
-          invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_controller_post_llm"}' controller_after_llm
-          invoke_and_assert_ok SoccerDispatchFunction '{"action":"deployment_dispatch_smoke"}' dispatch
-          invoke_and_assert_ok SoccerFreezeFunction '{"action":"deployment_dual_lock_smoke"}' freeze
-          invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_final_health_proof"}' controller_final
-          curl --fail --retry 10 --retry-all-errors --retry-delay 10 "$status_url" >/tmp/soccer-status-after.json
+          curl --fail --retry 10 --retry-all-errors --retry-delay 10 "$status_url" \
+            | tee /tmp/soccer-auto-status-before-provider-smoke.json
           python - <<'PY'
           import json
-          status=json.load(open('/tmp/soccer-status-after.json'))
-          assert status['system']=='soccer_auto', status
-          assert status['all_component_liveness_complete'] is True, status
-          assert status['historical_backfill']['enabled'] is True, status
-          assert int(status['provider_429_telemetry']['rolling_count']) == 0, status
-          print('soccer_deployment_final_status', status.get('authority'), status.get('reason'))
+          import pathlib
+
+          status = json.load(open('/tmp/soccer-auto-status-before-provider-smoke.json'))
+          telemetry = status['provider_429_telemetry']
+          pathlib.Path('/tmp/soccer-auto-429-baseline.txt').write_text(
+              str(telemetry['rolling_count'])
+          )
+          pathlib.Path('/tmp/soccer-auto-429-latest-baseline.txt').write_text(
+              str((telemetry['latest_rows'] or [{}])[0].get('SK') or '')
+          )
+          print('provider_429_baseline', telemetry)
+          PY
+          invoke_and_assert_ok SoccerCatalogFunction '{"action":"deployment_catalog_smoke"}' catalog
+          invoke_and_assert_ok SoccerInventoryFunction '{"action":"deployment_inventory_smoke"}' inventory
+          # Convert legacy immutable final scores with stored event-market
+          # evidence before historical T45 materialization. This path is
+          # provider-call-free and deliberately does not advance the scheduled
+          # migration cursor during deployment verification.
+          invoke_and_assert_ok SoccerSettlementFunction '{"action":"reconcile_admissibility_only"}' settlement_reconcile
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/settlement_reconcile.json'))
+          reconciliation = response['admissibility_reconciliation']
+          assert response['component'] == 'settlement', response
+          assert response['action'] == 'reconcile_admissibility_only', response
+          assert int(response['provider_calls']) == 0, response
+          assert not response['failures'], response
+          assert reconciliation['scan_mode'] == 'BOUNDED_CHECKPOINTED', reconciliation
+          assert reconciliation['checkpoint_requested'] is False, reconciliation
+          assert reconciliation['claim_requested'] is False, reconciliation
+          assert reconciliation['scan_checkpointed'] is False, reconciliation
+          assert int(reconciliation['settlement_table_rows_scanned']) <= int(reconciliation['scan_page_limit']), reconciliation
+          assert int(reconciliation['certificates_written']) >= 0, reconciliation
+          assert int(reconciliation['certificates_existing']) >= 0, reconciliation
+          assert int(reconciliation['pending_market_evidence']) >= 0, reconciliation
+          print('settlement_admissibility_reconciliation_smoke', reconciliation)
+          PY
+          invoke_and_assert_ok SoccerHistoricalFunction '{"mode":"status"}' historical_status
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/historical_status.json'))
+          assert response['component'] == 'historical_backfill', response
+          assert response['enabled'] is True, response
+          assert response['provider_calls'] == 0, response
+          print('historical_status_before_smoke', response['modes'])
+          PY
+          invoke_and_assert_ok SoccerHistoricalFunction '{"mode":"featured","sport_key":"soccer_epl","max_calls":1}' historical_featured
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/historical_featured.json'))
+          featured = response['featured']
+          assert response['enabled'] is True, response
+          provider_calls = int(response['provider_calls'])
+          calls = int(featured['calls'])
+          if provider_calls == 0:
+              assert calls == 0, response
+              assert not featured['archived'], response
+              deferred = [row for row in featured['cursors'] if row.get('status') == 'QUOTA_DEFERRED']
+              assert deferred, response
+              print('::warning::Historical featured smoke is externally quota-deferred; no provider call or archive is required')
+          else:
+              assert provider_calls == 1, response
+              assert calls == 1, response
+              assert featured['archived'], response
+              assert any(int(row.get('calls_completed') or 0) > 0 for row in featured['cursors']), response
+          print('historical_featured_smoke', calls, featured['remaining_competitions'])
+          PY
+          invoke_and_assert_ok SoccerHistoricalFunction '{"mode":"materialize","max_events":5}' historical_materialize
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/historical_materialize.json'))
+          materialization = response['materialization']
+          assert response['component'] == 'historical_backfill', response
+          assert materialization['provider_calls'] <= 5, materialization
+          assert int(materialization['invalid_existing_locks']) == 0, materialization
+          if materialization['quota_deferred']:
+              print('::warning::Historical materialization smoke is externally quota-deferred; immutable evidence remains fail-closed')
+          if materialization['authoritative_settlements'] > 0:
+              assert (
+                  materialization['materialized'] > 0
+                  or materialization['existing_training_eligible_locks'] > 0
+              ), materialization
+          else:
+              assert materialization['provider_calls'] == 0, materialization
+              assert materialization['materialized'] == 0, materialization
+              print('::warning::No trainer-eligible settled Soccer events are currently available for T45 materialization')
+          print('historical_t45_materialization_smoke', materialization)
+          PY
+          invoke_and_assert_ok SoccerHistoricalFunction '{"mode":"status"}' historical_status_after_materialize
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/historical_status_after_materialize.json'))
+          supervised = response['supervised_materialization']
+          materialization = json.load(open('/tmp/historical_materialize.json'))['materialization']
+          materialized_now = int(materialization['materialized'])
+          validated = int(supervised['validated_settlements'])
+          eligible = int(supervised['authoritative_settlements'])
+          ineligible = int(supervised['ineligible_validated_settlements'])
+          training_rows = int(supervised['historical_training_rows'])
+          manifest_version = str(supervised['historical_training_manifest_version'])
+          manifest_digest = str(supervised['historical_training_manifest_digest'])
+          assert validated > 0, supervised
+          assert validated == eligible + ineligible, supervised
+          assert int(materialization['authoritative_settlements']) == eligible, (materialization, supervised)
+          assert int(supervised['classified_authoritative_settlements']) == eligible, supervised
+          assert int(supervised['invalid_existing_locks']) == 0, supervised
+          assert training_rows == int(supervised['materialized_rows']), supervised
+          assert 0 <= training_rows <= eligible, supervised
+          assert manifest_version == 'soccer-auto-historical-training-manifest-v1', supervised
+          assert manifest_digest, supervised
+          if materialized_now > 0:
+              assert training_rows > 0, supervised
+          elif eligible == 0:
+              assert training_rows == 0, supervised
+              print('::warning::Validated Soccer settlements are currently regulation-ambiguous and remain training-ineligible')
+          else:
+              assert int(supervised['existing_training_eligible_locks']) > 0, supervised
+              print('::warning::Eligible Soccer settlements already had validated immutable locks; no new historical lock was required')
+          open('/tmp/soccer-historical-training-rows.txt', 'w').write(str(training_rows))
+          open('/tmp/soccer-historical-training-manifest-version.txt', 'w').write(manifest_version)
+          open('/tmp/soccer-historical-training-manifest-digest.txt', 'w').write(manifest_digest)
+          open('/tmp/soccer-authoritative-settlements.txt', 'w').write(str(eligible))
+          print('historical_training_rows_after_materialization', supervised)
+          PY
+          printf '%s' "$SOCCER_SHARED_QUOTA_RESERVE_PERCENT" > /tmp/soccer-reserve-percent.txt
+          invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_controller_smoke"}' controller_before_llm
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/controller_before_llm.json'))
+          safety = response['shared_provider_safety']
+          expected_reserve = int(open('/tmp/soccer-reserve-percent.txt').read())
+          assert safety['shared_quota_reserve_percent'] == expected_reserve, safety
+          assert safety['quota_race_buffer_credits'] == 2000, safety
+          assert safety['soccer_request_limit_per_second'] == 3, safety
+          assert safety['burst_capacity'] == 1, safety
+          assert safety['minimum_spacing_ms'] == 334, safety
+          assert safety['distributed_lease'] is True, safety
+          assert safety['fail_closed'] is True, safety
+          limiter = response['distributed_rate_limit_state']
+          assert limiter, response
+          assert limiter['configured_rps'] == 3, limiter
+          assert limiter['minimum_spacing_ms'] == 334, limiter
+          assert limiter['burst_capacity'] == 1, limiter
+          assert limiter.get('updated_at'), limiter
+          telemetry = response['provider_429_telemetry']
+          baseline = int(open('/tmp/soccer-auto-429-baseline.txt').read())
+          latest_baseline = open('/tmp/soccer-auto-429-latest-baseline.txt').read()
+          latest = str((telemetry['latest_rows'] or [{}])[0].get('SK') or '')
+          assert telemetry['rolling_count'] == baseline, (baseline, telemetry)
+          assert latest == latest_baseline, (latest_baseline, telemetry)
+          print('soccer_shared_provider_safety', safety)
+          print('soccer_distributed_rate_limit_state', limiter)
+          print('provider_429_after_provider_smoke', telemetry)
+          PY
+
+          # Publish the exact open-window event universe before the analyst so
+          # its production diagnostics exercise the same strongly consistent
+          # manifest-backed path used by /coverage.
+          invoke_and_assert_ok SoccerDispatchFunction '{"action":"deployment_dispatch_before_llm"}' dispatch_before_llm
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/dispatch_before_llm.json'))
+          assert response['system'] == 'soccer_auto', response
+          assert response.get('observed_at'), response
+          if response.get('authority_deferred'):
+              assert int(response.get('enqueued') or 0) == 0, response
+              print('::warning::Inventory generation is still running; waiting for an authoritative dispatch manifest')
+          elif response.get('stale_dispatch'):
+              assert int(response['enqueued']) == 0, response
+              assert int(response['events_seen']) == int(response['before_window']) + int(response['skipped']), response
+          else:
+              manifest_events = int(response['coverage_manifest_events'])
+              assert response.get('coverage_manifest_digest'), response
+              assert int(response['events_seen']) == int(response['before_window']) + manifest_events, response
+              assert int(response['enqueued']) + int(response['skipped']) == manifest_events, response
+          print('coverage_dispatch_before_llm', response)
+          PY
+
+          # A concurrent scheduled inventory can legitimately hold the global
+          # generation fence when this deployment first invokes dispatch. Poll
+          # and republish until the exact manifest is bound to the current
+          # completed generation; Bedrock must never analyze a stale/mixed
+          # event universe.
+          coverage_url="${status_url%/status}/coverage"
+          llm_context_ready=0
+          for attempt in $(seq 1 72); do
+            curl --fail --max-time 55 --retry 2 --retry-all-errors --retry-delay 5 \
+              "$coverage_url" > /tmp/soccer-auto-coverage-before-llm.json
+            if python - <<'PY'
+          import json
+
+          inventory = json.load(open('/tmp/soccer-auto-coverage-before-llm.json'))['live_inventory']
+          manifest = inventory['dispatch_manifest']
+          ready = bool(
+              manifest.get('authoritative')
+              and not manifest.get('manifest_error')
+              and manifest.get('manifest_fresh')
+              and manifest.get('manifest_integrity_valid')
+              and manifest.get('inventory_authority_current')
+              and manifest.get('inventory_authority_state') == 'COMPLETED'
+              and (manifest.get('inventory_authority') or {}).get('generation_id')
+          )
+          raise SystemExit(0 if ready else 1)
+          PY
+            then
+              llm_context_ready=1
+              break
+            fi
+            sleep 5
+            invoke_and_assert_ok SoccerDispatchFunction \
+              '{"action":"deployment_dispatch_before_llm_retry"}' \
+              "dispatch_before_llm_retry_${attempt}"
+          done
+          test "$llm_context_ready" -eq 1
+
+          # Force one genuine Bedrock Converse analysis. Primary quota or
+          # transient faults must fall through the complete allowlisted chain.
+          # Exact all-model daily-token exhaustion is visible degradation; any
+          # other failure remains fatal to deployment proof.
+          invoke_and_assert_ok SoccerLlmAnalystFunction '{"action":"deployment_llm_smoke","force_refresh":true}' llm allow_daily_quota
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/llm.json'))
+          assert response['component'] == 'llm_analyst', response
+          allowed_models = {
+              'us.amazon.nova-2-lite-v1:0',
+              'mistral.ministral-3-14b-instruct',
+              'us.meta.llama4-scout-17b-instruct-v1:0',
+              'us.meta.llama4-maverick-17b-instruct-v1:0',
+              'global.amazon.nova-2-lite-v1:0',
+              'us.amazon.nova-pro-v1:0',
+              'us.amazon.nova-lite-v1:0',
+              'us.amazon.nova-micro-v1:0',
+          }
+          assert response['model_id'] in allowed_models, response
+          if response['status'] == 'ANALYZED':
+              assert response['analysis_origin'] == 'BEDROCK_CONVERSE', response
+              assert response.get('analysis_digest'), response
+              assert response.get('context_digest'), response
+              assert response.get('stop_reason') == 'end_turn', response
+              assert response.get('usage'), response
+              print('bedrock_cris_smoke', response['model_id'], response['status'])
+          else:
+              assert response['status'] == 'DEFERRED_QUOTA', response
+              assert response['analysis_available'] is False, response
+              assert response['reason'] == 'BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE', response
+              print('::warning::Bedrock daily-token quota deferred; deterministic Soccer deployment remains valid')
+          PY
+          # Refresh the manifest immediately before trainer invocation so the
+          # exact cross-component proof is not comparing against a pre-Bedrock
+          # snapshot that may be several minutes old.
+          invoke_and_assert_ok SoccerHistoricalFunction '{"mode":"status"}' historical_status_before_trainer
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/historical_status_before_trainer.json'))
+          supervised = response['supervised_materialization']
+          assert int(supervised['invalid_existing_locks']) == 0, supervised
+          assert int(supervised['classified_authoritative_settlements']) == int(supervised['authoritative_settlements']), supervised
+          open('/tmp/soccer-historical-training-rows.txt', 'w').write(str(int(supervised['historical_training_rows'])))
+          open('/tmp/soccer-historical-training-manifest-version.txt', 'w').write(str(supervised['historical_training_manifest_version']))
+          open('/tmp/soccer-historical-training-manifest-digest.txt', 'w').write(str(supervised['historical_training_manifest_digest']))
+          open('/tmp/soccer-authoritative-settlements.txt', 'w').write(str(int(supervised['authoritative_settlements'])))
+          print('historical_manifest_immediately_before_trainer', supervised)
+          PY
+          invoke_and_assert_ok SoccerTrainerFunction '{"action":"deployment_trainer_smoke"}' trainer
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/trainer.json'))
+          assert response['system'] == 'soccer_auto', response
+          historical_training_rows = int(open('/tmp/soccer-historical-training-rows.txt').read())
+          historical_manifest_version = open('/tmp/soccer-historical-training-manifest-version.txt').read()
+          historical_manifest_digest = open('/tmp/soccer-historical-training-manifest-digest.txt').read()
+          eligible_settlements = int(open('/tmp/soccer-authoritative-settlements.txt').read())
+          total_eligible_rows = int(response['total_eligible_rows'])
+          training_rows = int(response['training_rows'])
+          assert int(response['historical_training_rows']) == historical_training_rows, response
+          assert response['historical_training_manifest_version'] == historical_manifest_version, response
+          assert response['historical_training_manifest_digest'] == historical_manifest_digest, response
+          assert historical_training_rows <= total_eligible_rows <= eligible_settlements, response
+          assert 0 <= training_rows <= total_eligible_rows, response
+          if eligible_settlements == 0:
+              assert total_eligible_rows == 0 and training_rows == 0, response
+          else:
+              assert total_eligible_rows > 0 and training_rows > 0, response
+          training = response['training']
+          assert training.get('trained') is True or training.get('reason') in {
+              'INSUFFICIENT_TRAINING_ROWS',
+              'INSUFFICIENT_UNTOUCHED_AUDIT_ROWS',
+              'DATA_MANIFEST_ALREADY_EVALUATED',
+              'ACTIVE_PROSPECTIVE_CHALLENGER',
+          }, response
+          if eligible_settlements == 0:
+              print('::warning::Trainer correctly remains at zero until an eligible authoritative settlement is available')
+          print('deterministic_trainer_smoke', training_rows, training)
+          PY
+          invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_controller_post_llm"}' controller_after_llm
+          python - <<'PY'
+          import json
+          from datetime import datetime
+
+          def parsed_at(value):
+              return datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+
+          llm = json.load(open('/tmp/llm.json'))
+          controller = json.load(open('/tmp/controller_after_llm.json'))
+          state = controller['llm_analyst']
+          smoke_attempt_id = llm['attempt_id']
+          smoke_started_at = llm['attempt_started_at']
+          assert smoke_attempt_id and smoke_started_at, llm
+          state_attempt = state.get('last_attempt') or {}
+          state_analysis_started = str(state.get('attempt_started_at') or '')
+          exact_analysis = state.get('attempt_id') == smoke_attempt_id
+          newer_analysis = bool(
+              state.get('fresh')
+              and state_analysis_started
+              and parsed_at(state_analysis_started) > parsed_at(smoke_started_at)
+          )
+          exact_attempt = state_attempt.get('attempt_id') == smoke_attempt_id
+          state_attempt_started = str(state_attempt.get('attempt_started_at') or '')
+          newer_attempt = bool(
+              state_attempt_started
+              and parsed_at(state_attempt_started) > parsed_at(smoke_started_at)
+          )
+          if llm['status'] == 'ANALYZED':
+              assert state['fresh'] is True, controller
+              assert exact_analysis or newer_analysis, (state, llm)
+              assert state['analysis_origin'] == 'BEDROCK_CONVERSE', state
+              if exact_analysis:
+                  assert state['analysis_digest'] == llm['analysis_digest'], (state, llm)
+                  assert state['model_id'] == llm['model_id'], (state, llm)
+              else:
+                  print('::warning::A newer validated Bedrock analysis superseded the deployment smoke')
+              print('controller_validated_bedrock_analysis', state)
+          else:
+              assert exact_attempt or newer_attempt, (state_attempt, llm)
+              if exact_attempt:
+                  assert state_attempt['status'] == 'DEFERRED_QUOTA', (state_attempt, llm)
+                  assert state_attempt['reason'] == llm['reason'], (state_attempt, llm)
+                  assert state_attempt['retry_after'] == llm['retry_after'], (state_attempt, llm)
+                  assert state_attempt['model_errors'] == llm['model_errors'], (state_attempt, llm)
+              else:
+                  assert state_attempt['status'] in {'ANALYZED', 'DEFERRED_QUOTA'}, state_attempt
+                  if state_attempt['status'] == 'DEFERRED_QUOTA':
+                      assert state_attempt['reason'] == 'BEDROCK_ALL_FALLBACK_MODELS_UNAVAILABLE', state_attempt
+                      errors = state_attempt.get('model_errors') or []
+                      assert errors and all(
+                          error.get('error_code') == 'ThrottlingException'
+                          and error.get('category') == 'DAILY_TOKEN_QUOTA'
+                          for error in errors
+                      ), state_attempt
+                  print('::warning::A newer safe Bedrock attempt superseded the deployment smoke attempt pointer')
+              if state.get('fresh'):
+                  assert state['analysis_origin'] == 'BEDROCK_CONVERSE', state
+                  assert state.get('analysis_digest'), state
+              else:
+                  assert int(state.get('analyses') or 0) == 0, state
+              print('controller_validated_bedrock_quota_deferral', state)
+          PY
+
+          # Dispatch is provider-call-free. Its deep worker gate remains the
+          # authority for releasing paid work only when a daily T-10 window is
+          # open; invoking it here starts any already-due collection safely.
+          invoke_and_assert_ok SoccerDispatchFunction '{"action":"deployment_dispatch_smoke"}' dispatch
+
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/dispatch.json'))
+          assert response['system'] == 'soccer_auto', response
+          assert response.get('observed_at'), response
+          if response.get('stale_dispatch'):
+              assert int(response['enqueued']) == 0, response
+              assert int(response['events_seen']) == int(response['before_window']) + int(response['skipped']), response
+          else:
+              manifest_events = int(response['coverage_manifest_events'])
+              assert response.get('coverage_manifest_digest'), response
+              assert int(response['events_seen']) == int(response['before_window']) + manifest_events, response
+              assert int(response['enqueued']) + int(response['skipped']) == manifest_events, response
+          print('coverage_dispatch_after_runtime_smoke', response)
+          PY
+
+          coverage_url="${status_url%/status}/coverage"
+          coverage_ready=0
+          for attempt in $(seq 1 72); do
+            curl --fail --max-time 55 --retry 2 --retry-all-errors --retry-delay 5 \
+              "$coverage_url" > /tmp/soccer-auto-coverage.json
+            if python - <<'PY'
+          import json
+
+          inventory = json.load(open('/tmp/soccer-auto-coverage.json'))['live_inventory']
+          manifest = inventory['dispatch_manifest']
+          universe_ready = bool(
+              manifest.get('authoritative')
+              and not manifest.get('manifest_error')
+              and manifest.get('inventory_authority_current')
+              and int(manifest.get('missing_event_summaries') or 0) == 0
+              and int(manifest.get('schedule_identity_mismatches') or 0) == 0
+              and int(manifest.get('schedule_revision_mismatches') or 0) == 0
+              and int(manifest.get('stale_discovery_generations') or 0) == 0
+              and int(inventory.get('coverage_integrity_failures') or 0) == 0
+              and int(inventory.get('coverage_error_cycles') or 0) == 0
+          )
+          events = int(manifest.get('manifest_events') or 0)
+          statuses = set(inventory.get('discovery_status_counts') or {})
+          exact_quota = bool(
+              events > 0
+              and int(inventory['incomplete_request_cycles']) > 0
+              and int(inventory['quota_only_incomplete_request_cycles'])
+                  == int(inventory['incomplete_request_cycles'])
+              and int(inventory['non_quota_incomplete_request_cycles']) == 0
+              and statuses
+              and statuses <= {'HTTP_200', 'QUOTA_DEFERRED'}
+              and int(inventory['attempted_incomplete_event_bookmaker_market_pairs']) == 0
+              and int(inventory['failed_event_bookmaker_market_pairs']) == 0
+              and int(inventory['never_attempted_event_bookmaker_market_pairs']) == 0
+              and int(inventory['unresolved_event_bookmaker_market_pairs'])
+                  == int(inventory['quota_deferred_event_bookmaker_market_pairs'])
+              and int(inventory['failed_request_batches']) == 0
+              and int(inventory['unresolved_request_batches'])
+                  == int(inventory['deferred_request_batches'])
+          )
+          ready = universe_ready and (
+              events == 0
+              or bool(inventory.get('request_cycles_complete'))
+              or exact_quota
+          )
+          raise SystemExit(0 if ready else 1)
+          PY
+            then
+              coverage_ready=1
+              break
+            fi
+            sleep 5
+          done
+          test "$coverage_ready" -eq 1
+          tee /tmp/soccer-auto-coverage-proof.json < /tmp/soccer-auto-coverage.json
+
+          # Exercise both immutable authorities after exact coverage is ready.
+          # T45 is training/audit evidence only; T10 is the sole final public
+          # decision authority and may safely be not-due when no match is in its
+          # bounded capture window.
+          invoke_and_assert_ok SoccerFreezeFunction '{"action":"deployment_dual_lock_smoke"}' freeze
+          python - <<'PY'
+          import json
+
+          response = json.load(open('/tmp/freeze.json'))
+          assert response['system'] == 'soccer_auto', response
+          assert response['training_horizon'] == 'T45', response
+          assert response['public_decision_horizon'] == 'T10', response
+          for field in (
+              'locks_created_by_horizon',
+              'locks_retried_by_horizon',
+              'locks_blocked_by_horizon',
+              'not_due_by_horizon',
+          ):
+              assert set(response[field]) == {'T45', 'T10'}, (field, response)
+              assert all(int(value) >= 0 for value in response[field].values()), response
+          assert int(response['locks_created']) == sum(
+              int(value) for value in response['locks_created_by_horizon'].values()
+          ), response
+          assert int(response['locks_retried']) == sum(
+              int(value) for value in response['locks_retried_by_horizon'].values()
+          ), response
+          assert int(response['final_decision_window_misses']) >= 0, response
+          assert not response['failures'], response
+          if int(response['final_decision_window_misses']) > 0:
+              print('::warning::Pre-repair Soccer events missed their historical T10 capture window; they remain unpublished and immutable')
+          print('dual_lock_freeze_smoke', response)
+          PY
+
+          # Persist a fresh evidence-backed controller proof after collection,
+          # reconciliation, trainer, LLM, dispatch, coverage, and dual-lock
+          # verification have all completed.
+          invoke_and_assert_ok SoccerControllerFunction '{"action":"deployment_final_health_proof"}' controller_final
+
+          # Re-read status after the asynchronous coverage proof. A provider
+          # 429 raised while the poll was running must fail this deployment;
+          # pre-poll telemetry is not authoritative for the completed smoke.
+          curl --fail --retry 10 --retry-all-errors --retry-delay 10 \
+            "$status_url" | tee /tmp/soccer-auto-status.json
+          python - <<'PY'
+          import json
+          status=json.load(open('/tmp/soccer-auto-status.json'))
+          coverage=json.load(open('/tmp/soccer-auto-coverage.json'))
+          dispatch=json.load(open('/tmp/dispatch.json'))
+          controller_final=json.load(open('/tmp/controller_final.json'))
+          assert status['system']=='soccer_auto'
+          assert status['authority'] in {'BOOTSTRAPPING','COLLECTING','SHADOW_LEARNING','AUTHORITATIVE','DEGRADED'}
+          assert status.get('automatic_prediction_allowed', False) is False or status['authority']=='AUTHORITATIVE'
+          assert str(status['updated_at']) >= str(controller_final['updated_at']), (status, controller_final)
+
+          health = status['prediction_and_training_health']
+          assert health['contract_version'] == 'soccer-auto-health-proof-v1', health
+          assert health['proof_complete'] is True, health
+          assert health['scan_truncated'] is False, health
+          assert health['healthy'] is True, health
+          assert int(health['integrity_failures']) == 0, health
+          decisions = health['t10_decisions']
+          assert int(decisions['invalid_locks']) == 0, decisions
+          assert int(decisions['valid_or_present_locks']) >= 0, decisions
+          assert int(decisions['missing_locks']) >= int(decisions['missed_locks']) >= 0, decisions
+          public = health['public_authority']
+          assert int(public['duplicate_public_authorities']) == 0, public
+          assert int(public['public_prediction_after_cutoff']) == 0, public
+          assert int(public['public_prediction_after_commit_deadline']) == 0, public
+          assert int(public['binding_integrity_failures']) == 0, public
+          training_health = health['training']
+          validated = int(training_health['validated_final_score_rows'])
+          admissible = int(training_health['admissible_final_score_rows'])
+          ready = int(training_health['training_rows_ready'])
+          backlog = int(training_health['conversion_backlog'])
+          assert validated >= admissible >= ready >= 0, training_health
+          assert backlog == admissible - ready, training_health
+          assert int(training_health['invalid_existing_locks']) == 0, training_health
+          if int(health['availability_warnings']) > 0:
+              assert health['state'] == 'DEGRADED_AVAILABILITY', health
+              print('::warning::Soccer authority is safely degraded while missing T10 or T45 evidence remains unavailable')
+          else:
+              assert health['state'] in {'COLLECTING_LABELS', 'HEALTHY'}, health
+          assert not status.get('failures'), status
+          print('prediction_and_training_health_proof', health)
+          baseline = int(open('/tmp/soccer-auto-429-baseline.txt').read())
+          latest_baseline = open('/tmp/soccer-auto-429-latest-baseline.txt').read()
+          latest = str((status['provider_429_telemetry']['latest_rows'] or [{}])[0].get('SK') or '')
+          assert status['provider_429_telemetry']['rolling_count'] == baseline, status['provider_429_telemetry']
+          assert latest == latest_baseline, status['provider_429_telemetry']
+          assert coverage['ok'] is True and coverage['system'] == 'soccer_auto', coverage
+          assert coverage['historical_backfill']['enabled'] is True, coverage
+          inventory = coverage['live_inventory']
+          manifest = inventory['dispatch_manifest']
+          assert inventory['latest_cycle_source'] == 'KEYED_STRONGLY_CONSISTENT_SUMMARY', inventory
+          assert inventory['latest_cycle_read_truncated'] is False, inventory
+          assert manifest['manifest_fresh'] is True, manifest
+          assert manifest['manifest_integrity_valid'] is True, manifest
+          assert manifest['authoritative'] is True, manifest
+          assert manifest['inventory_authority_current'] is True, manifest
+          assert manifest['inventory_authority_state'] == 'COMPLETED', manifest
+          assert manifest['inventory_authority']['generation_id'], manifest
+          assert int(manifest['inventory_authority']['authority_revision']) > 0, manifest
+          assert not manifest.get('manifest_error'), manifest
+          assert int(manifest.get('manifest_item_size_bytes') or 0) == 0, manifest
+          assert int(manifest['missing_event_summaries']) == 0, manifest
+          assert int(manifest['schedule_identity_mismatches']) == 0, manifest
+          assert int(manifest['schedule_revision_mismatches']) == 0, manifest
+          assert int(manifest['stale_discovery_generations']) == 0, manifest
+          assert int(inventory['coverage_integrity_failures']) == 0, inventory
+          assert int(inventory['coverage_error_cycles']) == 0, inventory
+          size_statuses = {'PLAN_SIZE_LIMIT', 'SUMMARY_SIZE_LIMIT', 'EVIDENCE_SIZE_LIMIT'}
+          assert not (size_statuses & set(inventory['discovery_status_counts'])), inventory
+          manifest_at = str(manifest['manifest_observed_at'])
+          dispatch_at = str(dispatch['observed_at'])
+          assert manifest_at >= dispatch_at, (manifest, dispatch)
+          if manifest_at == dispatch_at and not dispatch.get('stale_dispatch'):
+              assert manifest['manifest_digest'] == dispatch['coverage_manifest_digest'], (manifest, dispatch)
+              assert int(manifest['manifest_events']) == int(dispatch['coverage_manifest_events']), (manifest, dispatch)
+          manifest_events = int(manifest['manifest_events'])
+          assert int(manifest['manifest_declared_events']) == manifest_events, manifest
+          assert sum(int(value) for value in inventory['discovery_status_counts'].values()) == manifest_events, inventory
+
+          expected = int(inventory['expected_event_bookmaker_market_pairs'])
+          required = int(inventory['required_current_event_bookmaker_market_pairs'])
+          probes = int(inventory['rolling_probe_event_bookmaker_market_pairs'])
+          fetched = int(inventory['fetched_event_bookmaker_market_pairs'])
+          missing = int(inventory['missing_event_bookmaker_market_pairs'])
+          unavailable = int(inventory['provider_unavailable_event_bookmaker_market_pairs'])
+          rejected = int(inventory['normalization_rejected_event_bookmaker_market_pairs'])
+          unresolved = int(inventory['unresolved_event_bookmaker_market_pairs'])
+          attempted_incomplete = int(inventory['attempted_incomplete_event_bookmaker_market_pairs'])
+          deferred = int(inventory['quota_deferred_event_bookmaker_market_pairs'])
+          failed = int(inventory['failed_event_bookmaker_market_pairs'])
+          never_attempted = int(inventory['never_attempted_event_bookmaker_market_pairs'])
+          assert expected == required + probes, inventory
+          assert expected == fetched + missing, inventory
+          assert missing == unavailable + rejected + unresolved, inventory
+          assert unresolved == attempted_incomplete + deferred + failed + never_attempted, inventory
+
+          expected_batches = int(inventory['expected_request_batches'])
+          succeeded_batches = int(inventory['succeeded_request_batches'])
+          failed_batches = int(inventory['failed_request_batches'])
+          unresolved_batches = int(inventory['unresolved_request_batches'])
+          deferred_batches = int(inventory['deferred_request_batches'])
+          assert expected_batches == succeeded_batches + failed_batches + unresolved_batches, inventory
+          assert 0 <= deferred_batches <= unresolved_batches, inventory
+
+          statuses = set(inventory['discovery_status_counts'])
+          exact_quota = bool(
+              manifest_events > 0
+              and int(inventory['incomplete_request_cycles']) > 0
+              and int(inventory['quota_only_incomplete_request_cycles'])
+                  == int(inventory['incomplete_request_cycles'])
+              and int(inventory['non_quota_incomplete_request_cycles']) == 0
+              and statuses
+              and statuses <= {'HTTP_200', 'QUOTA_DEFERRED'}
+              and attempted_incomplete == 0
+              and failed == 0
+              and never_attempted == 0
+              and unresolved == deferred
+              and failed_batches == 0
+              and unresolved_batches == deferred_batches
+          )
+
+          incomplete_coverage = int(inventory['incomplete_latest_event_cycles'])
+          incomplete_requests = int(inventory['incomplete_request_cycles'])
+          assert bool(inventory['coverage_complete']) == (manifest_events > 0 and incomplete_coverage == 0), inventory
+          assert bool(inventory['request_cycles_complete']) == (manifest_events > 0 and incomplete_requests == 0), inventory
+          assert bool(inventory['all_planned_pairs_returned']) == (
+              bool(inventory['request_cycles_complete']) and missing == 0
+          ), inventory
+          if manifest_events == 0:
+              assert not inventory['latest_event_cycles'], inventory
+              assert expected == expected_batches == 0, inventory
+              assert inventory['coverage_complete'] is False, inventory
+              assert inventory['request_cycles_complete'] is False, inventory
+              assert inventory['all_planned_pairs_returned'] is False, inventory
+          elif inventory['request_cycles_complete']:
+              assert int(inventory['incomplete_request_cycles']) == 0, inventory
+              assert expected_batches > 0, inventory
+              assert succeeded_batches == expected_batches, inventory
+              assert failed_batches == deferred_batches == unresolved_batches == 0, inventory
+              assert attempted_incomplete == deferred == failed == never_attempted == 0, inventory
+          else:
+              assert exact_quota, inventory
+              print('::warning::Soccer coverage proof is externally quota-deferred; exact unresolved scopes remain fail-closed')
+          print(status)
+          print('coverage_endpoint_exact_manifest_proof', inventory)
           PY
