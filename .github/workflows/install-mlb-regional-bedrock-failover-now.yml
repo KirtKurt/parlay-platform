@@ -1,0 +1,372 @@
+name: Install MLB regional Bedrock failover now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/install-mlb-regional-bedrock-failover-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: install-mlb-regional-bedrock-failover-now
+  cancel-in-progress: false
+
+jobs:
+  patch-test-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install regional Bedrock failover source and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+          package = root / 'mlb_auto_llm'
+
+          regional = '''from __future__ import annotations
+
+import os
+import re
+from functools import lru_cache
+from typing import Any, Iterable, List, Tuple
+
+import boto3
+from botocore.config import Config
+
+
+DEFAULT_REGION = (
+    os.environ.get("AWS_REGION")
+    or os.environ.get("AWS_DEFAULT_REGION")
+    or "us-east-1"
+)
+REGION_PATTERN = re.compile(r"^[a-z]{2}(?:-gov)?-[a-z]+-\\d+$")
+REGIONAL_FAILOVER_MODEL_SPECS = (
+    "us-west-2::us.amazon.nova-micro-v1:0",
+    "us-east-2::us.amazon.nova-micro-v1:0",
+    "us-west-2::us.amazon.nova-lite-v1:0",
+    "us-east-2::us.amazon.nova-lite-v1:0",
+    "us-west-2::us.meta.llama4-scout-17b-instruct-v1:0",
+    "us-east-2::us.meta.llama4-scout-17b-instruct-v1:0",
+)
+_CLIENT_CONFIG = Config(
+    retries={"max_attempts": 4, "mode": "adaptive"},
+    connect_timeout=10,
+    read_timeout=900,
+)
+
+
+def parse_model_spec(value: Any) -> Tuple[str, str]:
+    spec = str(value or "").strip()
+    if not spec:
+        raise ValueError("BEDROCK_MODEL_SPEC_EMPTY")
+    if "::" not in spec:
+        return DEFAULT_REGION, spec
+    region, model_id = (part.strip() for part in spec.split("::", 1))
+    if not REGION_PATTERN.fullmatch(region) or not model_id:
+        raise ValueError("BEDROCK_MODEL_SPEC_INVALID")
+    return region, model_id
+
+
+def configured_model_specs(configured: Any = None) -> List[str]:
+    if configured is None:
+        configured = os.environ.get("MLB_AUTO_BEDROCK_MODELS", "")
+    if isinstance(configured, str):
+        supplied: Iterable[Any] = configured.split(",")
+    elif isinstance(configured, Iterable):
+        supplied = configured
+    else:
+        supplied = ()
+    ordered = [*REGIONAL_FAILOVER_MODEL_SPECS, *supplied]
+    result: List[str] = []
+    seen = set()
+    for raw in ordered:
+        value = str(raw or "").strip()
+        if not value or value in seen:
+            continue
+        parse_model_spec(value)
+        seen.add(value)
+        result.append(value)
+    return result
+
+
+@lru_cache(maxsize=12)
+def _client_for_region(region: str) -> Any:
+    return boto3.client(
+        "bedrock-runtime",
+        region_name=region,
+        config=_CLIENT_CONFIG,
+    )
+
+
+class RegionalBedrockRuntime:
+    """Route region-qualified model specs to that Region's Runtime endpoint."""
+
+    def converse(self, *, modelId: str, **kwargs: Any) -> Any:
+        region, actual_model_id = parse_model_spec(modelId)
+        return _client_for_region(region).converse(
+            modelId=actual_model_id,
+            **kwargs,
+        )
+
+    def invoke_model(self, *, modelId: str, **kwargs: Any) -> Any:
+        region, actual_model_id = parse_model_spec(modelId)
+        return _client_for_region(region).invoke_model(
+            modelId=actual_model_id,
+            **kwargs,
+        )
+'''
+          (package / 'regional_bedrock.py').write_text(regional, encoding='utf-8')
+
+          handler_path = package / 'handler.py'
+          handler = handler_path.read_text(encoding='utf-8')
+          import_marker = 'import boto3\n\nVERSION = "MLB-AUTO-LLM-v1-three-source-autonomous"\n'
+          import_replacement = '''import boto3
+
+try:
+    from regional_bedrock import RegionalBedrockRuntime, configured_model_specs
+except ModuleNotFoundError:
+    from mlb_auto_llm.regional_bedrock import (
+        RegionalBedrockRuntime,
+        configured_model_specs,
+    )
+
+VERSION = "MLB-AUTO-LLM-v1-three-source-autonomous"
+'''
+          if 'from regional_bedrock import RegionalBedrockRuntime' not in handler:
+              if import_marker not in handler:
+                  raise SystemExit('handler regional import marker missing')
+              handler = handler.replace(import_marker, import_replacement, 1)
+
+          models_marker = '''BEDROCK_MODELS = [
+    item.strip()
+    for item in os.environ.get(
+        "MLB_AUTO_BEDROCK_MODELS",
+        "us.amazon.nova-2-lite-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0",
+    ).split(",")
+    if item.strip()
+]
+'''
+          models_replacement = '''BEDROCK_MODELS = configured_model_specs(
+    os.environ.get(
+        "MLB_AUTO_BEDROCK_MODELS",
+        "us.amazon.nova-2-lite-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0",
+    )
+)
+'''
+          if models_replacement not in handler:
+              if models_marker not in handler:
+                  raise SystemExit('handler model list marker missing')
+              handler = handler.replace(models_marker, models_replacement, 1)
+          handler = handler.replace(
+              'BEDROCK = boto3.client("bedrock-runtime")',
+              'BEDROCK = RegionalBedrockRuntime()',
+              1,
+          )
+          handler_path.write_text(handler, encoding='utf-8')
+
+          gateway_path = package / 'model_gateway.py'
+          gateway = gateway_path.read_text(encoding='utf-8')
+          gateway_import_marker = 'import boto3\n\n\nDEFAULT_MODELS = (\n'
+          gateway_import_replacement = '''import boto3
+
+try:
+    from regional_bedrock import RegionalBedrockRuntime, configured_model_specs
+except ModuleNotFoundError:
+    from mlb_auto_llm.regional_bedrock import (
+        RegionalBedrockRuntime,
+        configured_model_specs,
+    )
+
+
+DEFAULT_MODELS = (
+'''
+          if 'from regional_bedrock import RegionalBedrockRuntime' not in gateway:
+              if gateway_import_marker not in gateway:
+                  raise SystemExit('model gateway regional import marker missing')
+              gateway = gateway.replace(
+                  gateway_import_marker,
+                  gateway_import_replacement,
+                  1,
+              )
+          gateway_models_marker = '''def configured_models() -> List[str]:
+    return [
+        value.strip()
+        for value in os.environ.get(
+            "MLB_AUTO_BEDROCK_MODELS", ",".join(DEFAULT_MODELS)
+        ).split(",")
+        if value.strip()
+    ]
+'''
+          gateway_models_replacement = '''def configured_models() -> List[str]:
+    return configured_model_specs(
+        os.environ.get("MLB_AUTO_BEDROCK_MODELS", ",".join(DEFAULT_MODELS))
+    )
+'''
+          if gateway_models_replacement not in gateway:
+              if gateway_models_marker not in gateway:
+                  raise SystemExit('model gateway configured models marker missing')
+              gateway = gateway.replace(
+                  gateway_models_marker,
+                  gateway_models_replacement,
+                  1,
+              )
+          gateway = gateway.replace(
+              'runtime = client or boto3.client("bedrock-runtime")',
+              'runtime = client or RegionalBedrockRuntime()',
+              1,
+          )
+          gateway_path.write_text(gateway, encoding='utf-8')
+
+          smoke_path = package / 'bedrock_smoke.py'
+          smoke = smoke_path.read_text(encoding='utf-8')
+          smoke_import_marker = 'from model_gateway import invoke_chain_text\n\n\nMODELS = [\n'
+          smoke_import_replacement = '''from model_gateway import invoke_chain_text
+from regional_bedrock import configured_model_specs
+
+
+MODELS = configured_model_specs(
+'''
+          smoke_models_tail = '''    item.strip()
+    for item in os.environ.get(
+        "MLB_AUTO_BEDROCK_MODELS",
+        "openai.gpt-5.6-sol,anthropic.claude-opus-4-8,anthropic.claude-opus-4-7,anthropic.claude-opus-4-6-v1,anthropic.claude-sonnet-4-6-v1,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0",
+    ).split(",")
+    if item.strip()
+]
+'''
+          smoke_models_replacement_tail = '''    os.environ.get(
+        "MLB_AUTO_BEDROCK_MODELS",
+        "openai.gpt-5.6-sol,anthropic.claude-opus-4-8,anthropic.claude-opus-4-7,anthropic.claude-opus-4-6-v1,anthropic.claude-sonnet-4-6-v1,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0",
+    )
+)
+'''
+          if 'MODELS = configured_model_specs(' not in smoke:
+              if smoke_import_marker not in smoke or smoke_models_tail not in smoke:
+                  raise SystemExit('bedrock smoke model markers missing')
+              smoke = smoke.replace(smoke_import_marker, smoke_import_replacement, 1)
+              smoke = smoke.replace(smoke_models_tail, smoke_models_replacement_tail, 1)
+          smoke_path.write_text(smoke, encoding='utf-8')
+
+          template_path = root / 'mlb-auto-llm-template.yaml'
+          template = template_path.read_text(encoding='utf-8')
+          old_default = "    Default: 'us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'"
+          new_default = "    Default: 'us-west-2::us.amazon.nova-micro-v1:0,us-east-2::us.amazon.nova-micro-v1:0,us-west-2::us.amazon.nova-lite-v1:0,us-east-2::us.amazon.nova-lite-v1:0,us-west-2::us.meta.llama4-scout-17b-instruct-v1:0,us-east-2::us.meta.llama4-scout-17b-instruct-v1:0,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'"
+          if old_default in template:
+              template = template.replace(old_default, new_default, 1)
+          elif new_default not in template:
+              raise SystemExit('template Bedrock default marker missing')
+          template_path.write_text(template, encoding='utf-8')
+
+          test = '''from __future__ import annotations
+
+from mlb_auto_llm import regional_bedrock
+
+
+def test_parse_model_spec_uses_default_region(monkeypatch) -> None:
+    monkeypatch.setattr(regional_bedrock, "DEFAULT_REGION", "us-east-1")
+    assert regional_bedrock.parse_model_spec("us.amazon.nova-micro-v1:0") == (
+        "us-east-1",
+        "us.amazon.nova-micro-v1:0",
+    )
+
+
+def test_parse_model_spec_routes_explicit_region() -> None:
+    assert regional_bedrock.parse_model_spec(
+        "us-west-2::us.amazon.nova-micro-v1:0"
+    ) == ("us-west-2", "us.amazon.nova-micro-v1:0")
+
+
+def test_configured_models_prepend_regional_failover_and_dedupe() -> None:
+    result = regional_bedrock.configured_model_specs(
+        "us.amazon.nova-micro-v1:0,us-west-2::us.amazon.nova-micro-v1:0"
+    )
+    assert result[: len(regional_bedrock.REGIONAL_FAILOVER_MODEL_SPECS)] == list(
+        regional_bedrock.REGIONAL_FAILOVER_MODEL_SPECS
+    )
+    assert result.count("us-west-2::us.amazon.nova-micro-v1:0") == 1
+    assert result[-1] == "us.amazon.nova-micro-v1:0"
+
+
+def test_runtime_wrapper_sends_actual_model_to_selected_region(monkeypatch) -> None:
+    calls = []
+
+    class FakeRuntime:
+        def converse(self, **kwargs):
+            calls.append(kwargs)
+            return {"output": {"message": {"content": [{"text": "OK"}]}}}
+
+    requested = []
+
+    def fake_client(region):
+        requested.append(region)
+        return FakeRuntime()
+
+    monkeypatch.setattr(regional_bedrock, "_client_for_region", fake_client)
+    response = regional_bedrock.RegionalBedrockRuntime().converse(
+        modelId="us-east-2::us.amazon.nova-lite-v1:0",
+        messages=[{"role": "user", "content": [{"text": "OK"}]}],
+    )
+    assert requested == ["us-east-2"]
+    assert calls[0]["modelId"] == "us.amazon.nova-lite-v1:0"
+    assert response["output"]["message"]["content"][0]["text"] == "OK"
+'''
+          test_path = root / 'tests' / 'unit' / 'test_mlb_auto_llm_regional_bedrock.py'
+          test_path.write_text(test, encoding='utf-8')
+          PY
+
+      - name: Run regional failover and MLB source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
+          python -m py_compile \
+            mlb_auto_llm/regional_bedrock.py \
+            mlb_auto_llm/model_gateway.py \
+            mlb_auto_llm/handler.py \
+            mlb_auto_llm/bedrock_smoke.py
+          python -m pytest -q \
+            tests/unit/test_mlb_auto_llm_regional_bedrock.py \
+            tests/unit/test_mlb_auto_llm.py \
+            tests/unit/test_mlb_auto_llm_three_source_contract.py
+          python scripts/verify_mlb_no_bbd_runtime.py
+          git diff --check
+
+      - name: Publish tested regional failover source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            mlb_auto_llm/regional_bedrock.py \
+            mlb_auto_llm/model_gateway.py \
+            mlb_auto_llm/handler.py \
+            mlb_auto_llm/bedrock_smoke.py \
+            mlb-auto-llm-template.yaml \
+            tests/unit/test_mlb_auto_llm_regional_bedrock.py
+          git commit -m 'Route MLB Bedrock authority across regional quota pools'
+          for attempt in 1 2 3 4 5 6; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 2))
+          done
+          echo '::error::Unable to publish regional Bedrock failover after six attempts'
+          exit 1
