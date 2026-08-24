@@ -1,0 +1,44 @@
+name: NFL Auto AWS Stack Probe
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/nfl-stack-status-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Query NFL stack
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set +e
+          stack=parlay-platform-nfl-auto
+          status=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$AWS_REGION_VALUE" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo MISSING)
+          url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='NflAutoStatusUrl'].OutputValue" --output text 2>/dev/null || true)
+          echo "STACK_STATUS=$status" >> "$GITHUB_ENV"
+          echo "STATUS_URL=$url" >> "$GITHUB_ENV"
+      - name: Publish probe
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git pull --rebase origin main || true
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json,os
+          r={'run_id':os.environ.get('GITHUB_RUN_ID'),'commit':os.environ.get('GITHUB_SHA'),'stack':'parlay-platform-nfl-auto','stack_status':os.environ.get('STACK_STATUS','UNKNOWN'),'status_url':os.environ.get('STATUS_URL',''),'region_configured':bool(os.environ.get('AWS_REGION_VALUE'))}
+          open('runtime_reports/nfl_stack_probe_latest.json','w').write(json.dumps(r,indent=2,sort_keys=True)+'\n')
+          PY
+          git add runtime_reports/nfl_stack_probe_latest.json
+          git commit -m 'Publish NFL Auto AWS stack probe [skip ci]' || true
+          git push origin HEAD:main || true
