@@ -1,0 +1,203 @@
+name: Install test-compatible MLB Titan native recovery v4
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/install-mlb-titan-native-recovery-v4.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: install-mlb-titan-native-recovery-v4
+  cancel-in-progress: false
+
+jobs:
+  patch-test-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native Titan without changing established route precedence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+          import ast
+          import re
+          from pathlib import Path
+
+          path=Path('mlb_auto_llm/model_gateway.py')
+          text=path.read_text(encoding='utf-8')
+
+          routes='''
+
+NATIVE_TEXT_RECOVERY_ROUTES = (
+    "us-east-1::amazon.titan-text-premier-v1:0",
+    "us-east-1::amazon.titan-text-express-v1",
+    "us-west-2::amazon.titan-text-express-v1",
+    "us-east-1::amazon.titan-text-lite-v1",
+    "us-west-2::amazon.titan-text-lite-v1",
+)
+'''
+          if 'NATIVE_TEXT_RECOVERY_ROUTES = (' not in text:
+              match=re.search(r'(?ms)^STATIC_LAST_RESORT\s*=\s*\(.*?^\)\n',text)
+              if match is None:
+                  raise SystemExit('STATIC_LAST_RESORT tuple not found')
+              text=text[:match.end()]+routes+text[match.end():]
+
+          # Remove any earlier placement, then restore exactly after the
+          # existing diversified routes to preserve established test/runtime
+          # precedence while reaching Titan before dynamic discovery.
+          text=re.sub(r'(?m)^\s*\*NATIVE_TEXT_RECOVERY_ROUTES,\s*\n','',text)
+          marker='            *DIVERSIFIED_RECOVERY_ROUTES,\n'
+          if marker not in text:
+              marker='        *DIVERSIFIED_RECOVERY_ROUTES,\n'
+          if marker not in text:
+              raise SystemExit('DIVERSIFIED_RECOVERY_ROUTES ordering marker missing')
+          indent=marker[:len(marker)-len(marker.lstrip())]
+          text=text.replace(
+              marker,
+              marker+f'{indent}*NATIVE_TEXT_RECOVERY_ROUTES,\n',
+              1,
+          )
+
+          helper='''
+
+def _invoke_titan_text(
+    runtime: Any,
+    model_id: str,
+    prompt: str,
+    *,
+    max_tokens: int,
+    temperature: float,
+    top_p: float,
+) -> Dict[str, Any]:
+    request = {
+        "inputText": prompt,
+        "textGenerationConfig": {
+            "maxTokenCount": int(max_tokens),
+            "temperature": float(temperature),
+            "topP": float(top_p),
+            "stopSequences": [],
+        },
+    }
+    response = runtime.invoke_model(
+        modelId=model_id,
+        contentType="application/json",
+        accept="application/json",
+        body=json.dumps(request).encode("utf-8"),
+    )
+    stream = response.get("body")
+    raw = stream.read() if hasattr(stream, "read") else stream
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8")
+    payload = json.loads(str(raw or "{}"))
+    results = payload.get("results") or []
+    row = results[0] if results and isinstance(results[0], dict) else {}
+    output = str(row.get("outputText") or "").strip()
+    if not output:
+        raise RuntimeError("EMPTY_BEDROCK_TITAN_TEXT_RESPONSE")
+    return {
+        "text": output,
+        "usage": {
+            "inputTokens": payload.get("inputTextTokenCount"),
+            "outputTokens": row.get("tokenCount"),
+        },
+        "endpointFamily": "bedrock-runtime-invoke-model-titan-text",
+    }
+'''
+          if 'def _invoke_titan_text(' not in text:
+              position=text.find('\ndef invoke_text(')
+              if position<0:
+                  raise SystemExit('invoke_text definition not found')
+              text=text[:position]+helper+text[position:]
+
+          branch='''
+    if actual_model_id.startswith("amazon.titan-text-"):
+        result = _invoke_titan_text(
+            runtime,
+            actual_model_id,
+            prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+        )
+        return {
+            **result,
+            "modelRegion": region,
+            "actualModelId": actual_model_id,
+        }
+'''
+          if 'actual_model_id.startswith("amazon.titan-text-")' not in text:
+              runtime_line='    runtime = client or _runtime_client(region)\n'
+              if text.count(runtime_line)!=1:
+                  raise SystemExit('runtime assignment marker missing or ambiguous')
+              text=text.replace(runtime_line,runtime_line+branch,1)
+
+          ast.parse(text,filename=str(path))
+          path.write_text(text,encoding='utf-8')
+          PY
+      - name: Compile and run native plus existing gateway tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
+          python -m py_compile mlb_auto_llm/model_gateway.py
+          python - <<'PY'
+          import io,json
+          from mlb_auto_llm import model_gateway
+          models=model_gateway.configured_models()
+          diversified=list(model_gateway.DIVERSIFIED_RECOVERY_ROUTES)
+          assert models[:len(diversified)]==diversified, models[:len(diversified)]
+          titan_index=models.index('us-east-1::amazon.titan-text-premier-v1:0')
+          assert titan_index==len(diversified), (titan_index,len(diversified))
+          class Runtime:
+              def __init__(self): self.calls=[]
+              def invoke_model(self,**kwargs):
+                  self.calls.append(kwargs)
+                  payload={'inputTextTokenCount':2,'results':[{'outputText':'OK','tokenCount':1}]}
+                  return {'body':io.BytesIO(json.dumps(payload).encode())}
+              def converse(self,**kwargs): raise AssertionError('Titan used Converse')
+          runtime=Runtime()
+          result=model_gateway.invoke_text(
+              'us-east-1::amazon.titan-text-lite-v1','Return only OK.',
+              client=runtime,max_tokens=4,temperature=0.0,
+          )
+          assert result['text']=='OK'
+          assert result['endpointFamily']=='bedrock-runtime-invoke-model-titan-text'
+          assert runtime.calls[0]['modelId']=='amazon.titan-text-lite-v1'
+          print('Titan native route contract PASS')
+          PY
+          python -m pytest -q \
+            tests/unit/test_mlb_auto_model_gateway.py \
+            tests/unit/test_mlb_auto_llm_three_source_contract.py
+          git diff --check
+      - name: Publish tested source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add mlb_auto_llm/model_gateway.py
+          if git diff --cached --quiet; then
+            echo 'Compatible Titan recovery already present.'
+            exit 0
+          fi
+          git commit -m 'Add compatible native Titan Text recovery to MLB Bedrock chain'
+          for attempt in 1 2 3 4 5 6; do
+            git push origin HEAD:main && exit 0
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt*2))
+          done
+          exit 1
