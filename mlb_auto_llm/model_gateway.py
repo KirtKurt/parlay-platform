@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from functools import lru_cache
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -12,9 +13,9 @@ import boto3
 from botocore.config import Config
 
 
-# Prefer direct in-Region Amazon models before cross-Region profiles. Bedrock
-# applies separate capacity controls to some model/profile routes, so direct
-# candidates can remain usable when a cross-Region daily token bucket is full.
+# Keep the first four direct in-Region Amazon routes first for deterministic
+# recovery and backwards-compatible tests, then move to independent regional
+# source pools before retrying the remaining local/profile/model families.
 RECOVERY_MODELS = (
     "amazon.nova-micro-v1:0",
     "amazon.nova-lite-v1:0",
@@ -29,6 +30,20 @@ RECOVERY_MODELS = (
     "ai21.jamba-1-5-mini-v1:0",
 )
 
+# Bedrock daily invocation-token quotas are enforced by model/profile and
+# source Region. A region-qualified spec is internal syntax; only the model ID
+# after ``::`` is sent to Bedrock Runtime in the selected Region.
+REGIONAL_RECOVERY_MODELS = (
+    "us-west-2::us.amazon.nova-micro-v1:0",
+    "us-east-2::us.amazon.nova-micro-v1:0",
+    "us-west-2::us.amazon.nova-lite-v1:0",
+    "us-east-2::us.amazon.nova-lite-v1:0",
+    "us-west-2::us.amazon.nova-pro-v1:0",
+    "us-east-2::us.amazon.nova-pro-v1:0",
+    "us-west-2::us.meta.llama4-scout-17b-instruct-v1:0",
+    "us-east-2::us.meta.llama4-scout-17b-instruct-v1:0",
+)
+
 DEFAULT_MODELS = RECOVERY_MODELS + (
     "openai.gpt-5.6-sol",
     "anthropic.claude-opus-4-8",
@@ -41,7 +56,9 @@ DEFAULT_MODELS = RECOVERY_MODELS + (
 _PREFERRED_MODEL: Optional[str] = None
 _MODEL_FAILURE_UNTIL: Dict[str, float] = {}
 _RUNTIME_CLIENT: Any = None
+_REGIONAL_RUNTIME_CLIENTS: Dict[str, Any] = {}
 _CONTROL_CLIENT: Any = None
+_REGION_PATTERN = re.compile(r"^[a-z]{2}(?:-gov)?-[a-z]+-\d+$")
 
 # Fail over quickly instead of letting one throttled model consume the whole
 # Lambda timeout through SDK retries.
@@ -60,13 +77,32 @@ def _region() -> str:
     )
 
 
-def _runtime_client() -> Any:
+def _split_model_spec(model_spec: Any) -> Tuple[str, str]:
+    value = str(model_spec or "").strip()
+    if not value:
+        raise ValueError("BEDROCK_MODEL_SPEC_EMPTY")
+    if "::" not in value:
+        return _region(), value
+    region, model_id = (part.strip() for part in value.split("::", 1))
+    if not _REGION_PATTERN.fullmatch(region) or not model_id:
+        raise ValueError("BEDROCK_MODEL_SPEC_INVALID")
+    return region, model_id
+
+
+def _runtime_client(region: Optional[str] = None) -> Any:
     global _RUNTIME_CLIENT
-    if _RUNTIME_CLIENT is None:
-        _RUNTIME_CLIENT = boto3.client(
-            "bedrock-runtime", region_name=_region(), config=_BOTO_CONFIG
+    requested = str(region or _region())
+    if requested == _region():
+        if _RUNTIME_CLIENT is None:
+            _RUNTIME_CLIENT = boto3.client(
+                "bedrock-runtime", region_name=requested, config=_BOTO_CONFIG
+            )
+        return _RUNTIME_CLIENT
+    if requested not in _REGIONAL_RUNTIME_CLIENTS:
+        _REGIONAL_RUNTIME_CLIENTS[requested] = boto3.client(
+            "bedrock-runtime", region_name=requested, config=_BOTO_CONFIG
         )
-    return _RUNTIME_CLIENT
+    return _REGIONAL_RUNTIME_CLIENTS[requested]
 
 
 def _control_client() -> Any:
@@ -90,7 +126,11 @@ def _dedupe(values: Iterable[str]) -> List[str]:
 
 
 def _model_priority(model_id: str) -> tuple[int, int, str]:
-    value = model_id.lower()
+    try:
+        _, actual_model_id = _split_model_spec(model_id)
+    except ValueError:
+        actual_model_id = str(model_id or "")
+    value = actual_model_id.lower()
     if value.startswith("amazon.nova-micro"):
         return (0, 0, value)
     if value.startswith("amazon.nova-lite"):
@@ -169,13 +209,25 @@ def configured_models() -> List[str]:
         ).split(",")
         if value.strip()
     ]
-    return _dedupe((*RECOVERY_MODELS, *discovered_models(), *configured))
+    return _dedupe(
+        (
+            *RECOVERY_MODELS[:4],
+            *REGIONAL_RECOVERY_MODELS,
+            *RECOVERY_MODELS[4:],
+            *discovered_models(),
+            *configured,
+        )
+    )
 
 
 def _endpoint_family(model_id: str) -> str:
-    if model_id.startswith("openai."):
+    try:
+        _, actual_model_id = _split_model_spec(model_id)
+    except ValueError:
+        actual_model_id = str(model_id or "")
+    if actual_model_id.startswith("openai."):
         return "bedrock-mantle-openai"
-    if model_id.startswith("anthropic."):
+    if actual_model_id.startswith("anthropic."):
         return "bedrock-mantle-anthropic"
     return "bedrock-runtime-converse"
 
@@ -300,19 +352,20 @@ def invoke_text(
     temperature: float = 0.0,
     top_p: float = 0.9,
 ) -> Dict[str, Any]:
-    if model_id.startswith("openai."):
-        return _invoke_openai(model_id, prompt, max_tokens=max_tokens)
-    if model_id.startswith("anthropic."):
+    region, actual_model_id = _split_model_spec(model_id)
+    if actual_model_id.startswith("openai."):
+        return _invoke_openai(actual_model_id, prompt, max_tokens=max_tokens)
+    if actual_model_id.startswith("anthropic."):
         return _invoke_anthropic(
-            model_id,
+            actual_model_id,
             prompt,
             max_tokens=max_tokens,
             temperature=temperature,
         )
 
-    runtime = client or _runtime_client()
+    runtime = client or _runtime_client(region)
     response = runtime.converse(
-        modelId=model_id,
+        modelId=actual_model_id,
         messages=[{"role": "user", "content": [{"text": prompt}]}],
         inferenceConfig={
             "maxTokens": int(max_tokens),
@@ -334,6 +387,8 @@ def invoke_text(
         "text": text,
         "usage": dict(response.get("usage") or {}),
         "endpointFamily": "bedrock-runtime-converse",
+        "modelRegion": region,
+        "actualModelId": actual_model_id,
     }
 
 
@@ -419,6 +474,8 @@ def invoke_chain_text(
             return {
                 "ok": True,
                 "modelId": model_id,
+                "modelRegion": result.get("modelRegion"),
+                "actualModelId": result.get("actualModelId") or model_id,
                 "endpointFamily": result.get("endpointFamily")
                 or _endpoint_family(model_id),
                 "text": result.get("text"),
