@@ -1,0 +1,129 @@
+{
+  "conclusion": "cancelled",
+  "createdAt": "2026-08-24T17:22:35Z",
+  "event": "push",
+  "failedLogPresent": false,
+  "failedLogTail": null,
+  "headSha": "dcd0b5950e315250cc605b2c3f3ee99d219cd4c3",
+  "jobs": [
+    {
+      "completedAt": "2026-08-24T17:23:44Z",
+      "conclusion": "cancelled",
+      "name": "production",
+      "startedAt": "2026-08-24T17:22:39Z",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "cancelled",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Select BBD Pro secret",
+          "number": 3,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Run actions/setup-python@v5",
+          "number": 4,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Configure AWS credentials",
+          "number": 5,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Run aws-actions/setup-sam@v2",
+          "number": 6,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Install verification dependencies",
+          "number": 7,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Cancel stale default and temporary integration deployments",
+          "number": 8,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Install idempotent production source and run regressions",
+          "number": 9,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Prove sport isolation",
+          "number": 10,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Commit production source",
+          "number": 11,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Find or dispatch the normal deployment workflow",
+          "number": 12,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Watch the normal production deployment",
+          "number": 13,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Run live production acceptance",
+          "number": 14,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Publish authoritative production evidence",
+          "number": 15,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 30,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 31,
+          "status": "completed"
+        }
+      ]
+    }
+  ],
+  "observedAtUtc": "2026-08-24T17:24:01.062273+00:00",
+  "productionAcceptance": null,
+  "runId": 32756260021,
+  "startedAt": "2026-08-24T17:22:35Z",
+  "status": "completed",
+  "updatedAt": "2026-08-24T17:23:45Z",
+  "url": "https://github.com/KirtKurt/parlay-platform/actions/runs/32756260021",
+  "workflow": "Install Deploy and Accept MLB Three-API Production"
+}
