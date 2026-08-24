@@ -1,0 +1,94 @@
+name: Repair MLB AUTO Mantle inference IAM now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-auto-mantle-iam-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-mlb-auto-bedrock-gateway-now
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install capability gateway with complete Mantle IAM
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          script = Path('scripts/repair_mlb_auto_bedrock_gateway.py')
+          text = script.read_text(encoding='utf-8')
+          old = '''    replacement = action_block + \'''                - bedrock:CallWithBearerToken
+                - bedrock-mantle:CallWithBearerToken
+\'''
+'''
+          new = '''    replacement = action_block + \'''                - bedrock:CallWithBearerToken
+                - bedrock-mantle:CallWithBearerToken
+                - bedrock-mantle:CreateInference
+\'''
+'''
+          if 'bedrock-mantle:CreateInference' not in text:
+              if text.count(old) != 1:
+                  raise SystemExit('expected exactly one Mantle policy replacement marker')
+              script.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          apply_workflow = Path('.github/workflows/apply-mlb-auto-bedrock-gateway-now.yml')
+          apply_text = apply_workflow.read_text(encoding='utf-8')
+          anchor = "          grep -q 'bedrock-mantle:CallWithBearerToken' mlb-auto-llm-template.yaml\n"
+          check = anchor + "          grep -q 'bedrock-mantle:CreateInference' mlb-auto-llm-template.yaml\n"
+          if "grep -q 'bedrock-mantle:CreateInference'" not in apply_text:
+              if apply_text.count(anchor) != 1:
+                  raise SystemExit('expected exactly one apply-workflow Mantle IAM assertion')
+              apply_workflow.write_text(apply_text.replace(anchor, check, 1), encoding='utf-8')
+          PY
+          python scripts/repair_mlb_auto_bedrock_gateway.py
+          python -m py_compile \
+            mlb_auto_llm/model_gateway.py \
+            mlb_auto_llm/bedrock_smoke.py \
+            mlb_auto_llm/handler.py \
+            scripts/repair_mlb_auto_bedrock_gateway.py
+          grep -q 'from model_gateway import invoke_chain_text' mlb_auto_llm/handler.py
+          grep -q 'openai.gpt-5.6-sol' mlb-auto-llm-template.yaml
+          grep -q 'bedrock-mantle:CallWithBearerToken' mlb-auto-llm-template.yaml
+          grep -q 'bedrock-mantle:CreateInference' mlb-auto-llm-template.yaml
+          grep -q 'test_mlb_auto_model_gateway.py' .github/workflows/deploy-mlb-auto-llm.yml
+          git diff --check
+      - name: Publish complete capability gateway
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            scripts/repair_mlb_auto_bedrock_gateway.py \
+            mlb_auto_llm/handler.py \
+            mlb-auto-llm-template.yaml \
+            .github/workflows/deploy-mlb-auto-llm.yml \
+            .github/workflows/apply-mlb-auto-bedrock-gateway-now.yml
+          if git diff --cached --quiet; then
+            echo 'Complete Mantle gateway already installed.'
+            exit 0
+          fi
+          git commit -m 'Authorize MLB AUTO Mantle inference fallback'
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then exit 0; fi
+            test "$attempt" != 5 || exit 1
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 2))
+          done
