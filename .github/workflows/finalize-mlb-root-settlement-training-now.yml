@@ -17,13 +17,34 @@ concurrency:
 
 env:
   REPAIR_BRANCH: repair/mlb-production-final-20260824
-  REPAIR_SHA: a40ea4962208c4ca8d803d971e59386532c9a780
 
 jobs:
   deploy-reconcile-train:
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
+      - name: Resolve concurrency-isolated repair source
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 90); do
+            encoded=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/deploy.yml?ref=${REPAIR_BRANCH}" \
+              --jq .content)
+            text=$(printf '%s' "$encoded" | base64 --decode)
+            if grep -q 'group: parlay-platform-deploy-${{ github.ref }}' <<<"$text"; then
+              break
+            fi
+            test "$attempt" != 90 || { echo 'Pinned branch concurrency repair did not land.' >&2; exit 1; }
+            sleep 5
+          done
+          repair_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${REPAIR_BRANCH}" --jq .sha)
+          test -n "$repair_sha"
+          echo "repair_sha=$repair_sha" >> "$GITHUB_OUTPUT"
+          echo "Pinned repair source: $repair_sha"
+
       - name: Dispatch exact repaired root deployment
         env:
           GH_TOKEN: ${{ github.token }}
@@ -36,6 +57,7 @@ jobs:
       - name: Require exact repaired root deployment success
         env:
           GH_TOKEN: ${{ github.token }}
+          REPAIR_SHA: ${{ steps.source.outputs.repair_sha }}
         run: |
           set -euo pipefail
           run_id=''
@@ -68,6 +90,7 @@ jobs:
       - name: Require protected reconciliation and training success
         env:
           GH_TOKEN: ${{ github.token }}
+          REPAIR_SHA: ${{ steps.source.outputs.repair_sha }}
         run: |
           set -euo pipefail
           run_id=''
