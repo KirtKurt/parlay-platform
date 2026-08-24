@@ -65,14 +65,20 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          # GitHub Actions' installation token intentionally cannot mutate workflow
+          # definitions. They were modified only to prove the regression commands;
+          # restore them before the source commit and retain the tests themselves.
+          git restore --worktree --staged \
+            .github/workflows/deploy-mlb-auto-llm.yml \
+            .github/workflows/deploy.yml
+
           git add \
             mlb_auto_llm/handler.py \
             scripts/verify_mlb_deploy_identity.py \
             tests/unit/test_mlb_auto_bbd_utc_date_resolver.py \
             tests/unit/test_mlb_deploy_identity_isolated_v3.py \
-            tests/unit/test_mlb_isolated_authority_boundary.py \
-            .github/workflows/deploy-mlb-auto-llm.yml \
-            .github/workflows/deploy.yml
+            tests/unit/test_mlb_isolated_authority_boundary.py
           if git diff --cached --quiet; then
             echo 'MLB production source repair already installed.'
             exit 0
