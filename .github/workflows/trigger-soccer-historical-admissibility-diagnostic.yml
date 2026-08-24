@@ -1,0 +1,15 @@
+name: Trigger Soccer Historical Admissibility Diagnostic
+on:
+  push:
+    paths: ['.github/workflows/trigger-soccer-historical-admissibility-diagnostic.yml']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch diagnostic
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run diagnose-soccer-historical-admissibility.yml --repo "$GITHUB_REPOSITORY" --ref main
