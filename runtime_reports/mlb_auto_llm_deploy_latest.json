@@ -2,64 +2,152 @@
   "autonomousRules": [],
   "bedrockSmoke": {
     "attemptedModelIds": [
-      "amazon.nova-micro-v1:0",
-      "amazon.nova-lite-v1:0",
-      "amazon.nova-pro-v1:0",
-      "amazon.nova-2-lite-v1:0",
-      "us-west-2::us.amazon.nova-micro-v1:0",
-      "us-east-2::us.amazon.nova-micro-v1:0",
-      "us-west-2::us.amazon.nova-lite-v1:0",
-      "us-east-2::us.amazon.nova-lite-v1:0"
+      "us-west-2::meta.llama3-2-1b-instruct-v1:0",
+      "us-west-2::meta.llama3-2-3b-instruct-v1:0",
+      "us-west-2::mistral.mistral-small-2402-v1:0",
+      "us-west-2::mistral.ministral-3-3b-instruct",
+      "us-west-2::ai21.jamba-1-5-mini-v1:0",
+      "us-west-2::openai.gpt-oss-20b-1:0",
+      "us-west-2::amazon.nova-micro-v1:0",
+      "us-west-2::amazon.nova-lite-v1:0",
+      "us-east-2::meta.llama3-2-1b-instruct-v1:0",
+      "us-east-2::meta.llama3-2-3b-instruct-v1:0",
+      "us-east-2::amazon.nova-micro-v1:0",
+      "us-east-2::amazon.nova-lite-v1:0",
+      "meta.llama3-2-1b-instruct-v1:0",
+      "meta.llama3-2-3b-instruct-v1:0",
+      "mistral.mistral-small-2402-v1:0",
+      "mistral.ministral-3-3b-instruct"
     ],
     "endpointFamily": null,
     "errors": [
       {
         "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "amazon.nova-micro-v1:0"
+        "errorCode": "ResourceNotFoundException",
+        "message": "An error occurred (ResourceNotFoundException) when calling the Converse operation: This model version has reached the end of its life. Please refer to the AWS documentation for more details.",
+        "modelId": "meta.llama3-2-1b-instruct-v1:0",
+        "region": "us-west-2",
+        "routeId": "us-west-2::meta.llama3-2-1b-instruct-v1:0"
       },
       {
         "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "amazon.nova-lite-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "amazon.nova-pro-v1:0"
+        "errorCode": "ResourceNotFoundException",
+        "message": "An error occurred (ResourceNotFoundException) when calling the Converse operation: This model version has reached the end of its life. Please refer to the AWS documentation for more details.",
+        "modelId": "meta.llama3-2-3b-instruct-v1:0",
+        "region": "us-west-2",
+        "routeId": "us-west-2::meta.llama3-2-3b-instruct-v1:0"
       },
       {
         "endpointFamily": "bedrock-runtime-converse",
         "errorCode": "ValidationException",
-        "message": "An error occurred (ValidationException) when calling the Converse operation: Invocation of model ID amazon.nova-2-lite-v1:0 with on-demand throughput isn\u2019t supported. Retry your request with the ID or ARN of an inference profile that contains this model.",
-        "modelId": "amazon.nova-2-lite-v1:0"
+        "message": "An error occurred (ValidationException) when calling the Converse operation: The provided model identifier is invalid.",
+        "modelId": "mistral.mistral-small-2402-v1:0",
+        "region": "us-west-2",
+        "routeId": "us-west-2::mistral.mistral-small-2402-v1:0"
       },
       {
         "endpointFamily": "bedrock-runtime-converse",
         "errorCode": "ThrottlingException",
         "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "us-west-2::us.amazon.nova-micro-v1:0"
+        "modelId": "mistral.ministral-3-3b-instruct",
+        "region": "us-west-2",
+        "routeId": "us-west-2::mistral.ministral-3-3b-instruct"
       },
       {
         "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "AccessDeniedException",
-        "message": "An error occurred (AccessDeniedException) when calling the Converse operation: Your account is currently being verified. Verification normally takes less than 2 hours. Until your account is verified, you may not have access to this operation. If you are still receiving this message after more than 2 hours, please let us know by writing to aws-verification@amazon.com. We appreciate your patience.",
-        "modelId": "us-east-2::us.amazon.nova-micro-v1:0"
+        "errorCode": "ValidationException",
+        "message": "An error occurred (ValidationException) when calling the Converse operation: The provided model identifier is invalid.",
+        "modelId": "ai21.jamba-1-5-mini-v1:0",
+        "region": "us-west-2",
+        "routeId": "us-west-2::ai21.jamba-1-5-mini-v1:0"
       },
       {
         "endpointFamily": "bedrock-runtime-converse",
         "errorCode": "ThrottlingException",
         "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "us-west-2::us.amazon.nova-lite-v1:0"
+        "modelId": "openai.gpt-oss-20b-1:0",
+        "region": "us-west-2",
+        "routeId": "us-west-2::openai.gpt-oss-20b-1:0"
       },
       {
         "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "AccessDeniedException",
-        "message": "An error occurred (AccessDeniedException) when calling the Converse operation: Your account is currently being verified. Verification normally takes less than 2 hours. Until your account is verified, you may not have access to this operation. If you are still receiving this message after more than 2 hours, please let us know by writing to aws-verification@amazon.com. We appreciate your patience.",
-        "modelId": "us-east-2::us.amazon.nova-lite-v1:0"
+        "errorCode": "ValidationException",
+        "message": "An error occurred (ValidationException) when calling the Converse operation: Invocation of model ID amazon.nova-micro-v1:0 with on-demand throughput isn\u2019t supported. Retry your request with the ID or ARN of an inference profile that contains this model.",
+        "modelId": "amazon.nova-micro-v1:0",
+        "region": "us-west-2",
+        "routeId": "us-west-2::amazon.nova-micro-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "amazon.nova-lite-v1:0",
+        "region": "us-west-2",
+        "routeId": "us-west-2::amazon.nova-lite-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ResourceNotFoundException",
+        "message": "An error occurred (ResourceNotFoundException) when calling the Converse operation: This model version has reached the end of its life. Please refer to the AWS documentation for more details.",
+        "modelId": "meta.llama3-2-1b-instruct-v1:0",
+        "region": "us-east-2",
+        "routeId": "us-east-2::meta.llama3-2-1b-instruct-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ResourceNotFoundException",
+        "message": "An error occurred (ResourceNotFoundException) when calling the Converse operation: This model version has reached the end of its life. Please refer to the AWS documentation for more details.",
+        "modelId": "meta.llama3-2-3b-instruct-v1:0",
+        "region": "us-east-2",
+        "routeId": "us-east-2::meta.llama3-2-3b-instruct-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ValidationException",
+        "message": "An error occurred (ValidationException) when calling the Converse operation: Invocation of model ID amazon.nova-micro-v1:0 with on-demand throughput isn\u2019t supported. Retry your request with the ID or ARN of an inference profile that contains this model.",
+        "modelId": "amazon.nova-micro-v1:0",
+        "region": "us-east-2",
+        "routeId": "us-east-2::amazon.nova-micro-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "amazon.nova-lite-v1:0",
+        "region": "us-east-2",
+        "routeId": "us-east-2::amazon.nova-lite-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ResourceNotFoundException",
+        "message": "An error occurred (ResourceNotFoundException) when calling the Converse operation: This model version has reached the end of its life. Please refer to the AWS documentation for more details.",
+        "modelId": "meta.llama3-2-1b-instruct-v1:0",
+        "region": "us-east-1",
+        "routeId": "meta.llama3-2-1b-instruct-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ResourceNotFoundException",
+        "message": "An error occurred (ResourceNotFoundException) when calling the Converse operation: This model version has reached the end of its life. Please refer to the AWS documentation for more details.",
+        "modelId": "meta.llama3-2-3b-instruct-v1:0",
+        "region": "us-east-1",
+        "routeId": "meta.llama3-2-3b-instruct-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "mistral.mistral-small-2402-v1:0",
+        "region": "us-east-1",
+        "routeId": "mistral.mistral-small-2402-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "mistral.ministral-3-3b-instruct",
+        "region": "us-east-1",
+        "routeId": "mistral.ministral-3-3b-instruct"
       }
     ],
     "errorsBeforeSuccess": [],
@@ -86,11 +174,11 @@
     "targetDailyAccuracy": null,
     "threeSourcePolicy": null
   },
-  "publishedAtUtc": "2026-08-24T21:02:15.747134+00:00",
+  "publishedAtUtc": "2026-08-24T21:08:08.407065+00:00",
   "runAttempt": "1",
-  "runId": "32777112898",
+  "runId": "32777652655",
   "secretExposed": false,
   "service": "mlb-auto-llm",
-  "sourceSha": "f3fae80d35d0267965a7f2e0291ccdb98b96ed5e",
+  "sourceSha": "efcc72b66394d48a54bb99ac3ed1b2e0b1669781",
   "workflow": "Deploy MLB Auto LLM"
 }
