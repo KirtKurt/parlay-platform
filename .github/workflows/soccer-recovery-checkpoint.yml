@@ -1,0 +1,50 @@
+name: Soccer Recovery Checkpoint
+on:
+  push:
+    paths: ['.github/workflows/soccer-recovery-checkpoint.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  checkpoint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Inspect current Soccer state
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-soccer-auto
+          status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" --output text)
+          stack_status=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query 'Stacks[0].StackStatus' --output text)
+          updated=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query 'Stacks[0].LastUpdatedTime' --output text)
+          main_name=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionQueue --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+          dlq_name=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionDeadLetterQueue --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+          main_url=$(aws sqs get-queue-url --queue-name "$main_name" --region "$REGION" --query QueueUrl --output text)
+          dlq_url=$(aws sqs get-queue-url --queue-name "$dlq_name" --region "$REGION" --query QueueUrl --output text)
+          curl --fail --silent --show-error --max-time 60 "$status_url" >/tmp/status.json
+          aws sqs get-queue-attributes --queue-url "$main_url" --region "$REGION" --attribute-names ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible ApproximateNumberOfMessagesDelayed >/tmp/main.json || echo '{"Attributes":{}}' >/tmp/main.json
+          aws sqs get-queue-attributes --queue-url "$dlq_url" --region "$REGION" --attribute-names ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible ApproximateNumberOfMessagesDelayed >/tmp/dlq.json || echo '{"Attributes":{}}' >/tmp/dlq.json
+          export STACK_STATUS="$stack_status" STACK_UPDATED="$updated"
+          python - <<'PY'
+          import json, pathlib, datetime, os
+          report={'proofType':'SOCCER_RECOVERY_CHECKPOINT','observedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'stackStatus':os.environ['STACK_STATUS'],'stackLastUpdated':os.environ['STACK_UPDATED'],'mainQueue':json.load(open('/tmp/main.json')),'deadLetterQueue':json.load(open('/tmp/dlq.json')),'publicStatus':json.load(open('/tmp/status.json'))}
+          pathlib.Path('runtime_reports/soccer_recovery_checkpoint_latest.json').write_text(json.dumps(report,indent=2,default=str)+'\n')
+          print(json.dumps(report,indent=2,default=str))
+          PY
+      - name: Publish checkpoint
+        run: |
+          set -euo pipefail
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add runtime_reports/soccer_recovery_checkpoint_latest.json
+          git commit -m 'runtime: publish Soccer recovery checkpoint [skip ci]' || exit 0
+          for i in 1 2 3 4 5; do git pull --rebase origin main && git push origin HEAD:main && exit 0 || { git rebase --abort 2>/dev/null || true; sleep $((i*2)); }; done
+          exit 1
