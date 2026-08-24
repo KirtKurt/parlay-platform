@@ -6,6 +6,8 @@ on:
     paths:
       - 'mlb_auto_llm/**'
       - 'mlb-auto-llm-template.yaml'
+      - 'tests/unit/test_mlb_auto_model_gateway.py'
+      - 'tests/unit/test_mlb_auto_production_model_gateway.py'
       - '.github/workflows/deploy-mlb-auto-llm.yml'
   workflow_dispatch:
 
@@ -19,16 +21,17 @@ concurrency:
 env:
   AWS_REGION: us-east-1
   STACK_NAME: parlay-platform-mlb-auto-llm
-  LIVE_BEDROCK_MODELS: us.anthropic.claude-sonnet-4-20250514-v1:0,us.meta.llama3-3-70b-instruct-v1:0,meta.llama3-3-70b-instruct-v1:0,mistral.mistral-large-2402-v1:0,mistral.mistral-small-2402-v1:0,cohere.command-r-v1:0,cohere.command-r-plus-v1:0,openai.gpt-5.6-sol,anthropic.claude-opus-4-8,anthropic.claude-opus-4-7,anthropic.claude-opus-4-6-v1,anthropic.claude-sonnet-4-6-v1,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0
+  LIVE_BEDROCK_MODELS: openai.gpt-oss-20b-1:0,openai.gpt-oss-120b-1:0,amazon.nova-micro-v1:0,amazon.nova-lite-v1:0,amazon.nova-pro-v1:0,amazon.nova-2-lite-v1:0,us.amazon.nova-micro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0
 
 jobs:
   verify-and-deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout exact source commit
+        uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
@@ -44,7 +47,7 @@ jobs:
 
       - uses: aws-actions/setup-sam@v2
 
-      - name: Verify required credentials and production source contracts
+      - name: Verify credentials and endpoint-native source contracts
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
           BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
@@ -59,19 +62,23 @@ jobs:
             mlb_auto_llm/handler.py \
             mlb_auto_llm/orchestrator.py \
             mlb_auto_llm/orchestrator_v2.py \
+            mlb_auto_llm/orchestrator_v3.py \
             mlb_auto_llm/model_gateway.py \
+            mlb_auto_llm/production_model_gateway.py \
             mlb_auto_llm/bedrock_smoke.py
-          python -m pytest -q tests/unit/test_mlb_auto_model_gateway.py
+          python -m pytest -q \
+            tests/unit/test_mlb_auto_model_gateway.py \
+            tests/unit/test_mlb_auto_production_model_gateway.py
           sam validate --template-file mlb-auto-llm-template.yaml --lint
-          grep -q 'Handler: orchestrator_v2.lambda_handler' mlb-auto-llm-template.yaml
-          grep -q 'MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels' mlb-auto-llm-template.yaml
+          grep -q 'Handler: orchestrator_v3.lambda_handler' mlb-auto-llm-template.yaml
+          grep -q "MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '8'" mlb-auto-llm-template.yaml
+          grep -q "MLB_AUTO_BEDROCK_RUNTIME_PROVIDERS: 'amazon,openai'" mlb-auto-llm-template.yaml
           grep -q 'bedrock-mantle:CreateInference' mlb-auto-llm-template.yaml
+          ! grep -q 'aws-marketplace:Subscribe' mlb-auto-llm-template.yaml
           grep -q 'Big Balls Sports Data Pro' mlb_auto_llm/handler.py
           grep -q 'The Odds API' mlb_auto_llm/handler.py
           grep -q 'MLB Stats API' mlb_auto_llm/handler.py
           grep -q 'BEDROCK_LLM' mlb_auto_llm/orchestrator_v2.py
-          grep -q 'playerRollingStats' mlb_auto_llm/orchestrator.py
-          grep -q 'teamRecentForm' mlb_auto_llm/orchestrator.py
 
       - name: Authenticate both paid data providers
         env:
@@ -125,7 +132,7 @@ jobs:
               ;;
           esac
 
-      - name: Deploy isolated MLB Auto LLM stack
+      - name: Deploy exact isolated MLB Auto LLM source
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
           BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
@@ -136,6 +143,7 @@ jobs:
             --stack-name "$STACK_NAME" \
             --region "$AWS_REGION" \
             --resolve-s3 \
+            --force-upload \
             --capabilities CAPABILITY_IAM \
             --parameter-overrides \
               OddsApiKey="${ODDS_API_KEY_VALUE}" \
@@ -170,8 +178,9 @@ jobs:
           assert not meta.get('FunctionError'), (meta, response)
           assert response.get('ok') is True, response
           assert response.get('responseNonEmpty') is True, response
-          print('MLB Auto Bedrock authority: OK via', response.get('modelId'))
-          print(json.dumps(response, sort_keys=True)[:12000])
+          assert len(response.get('attemptedModelIds') or []) <= 8, response
+          print('MLB Auto Bedrock authority: OK via', response.get('routeId'))
+          print(json.dumps(response, sort_keys=True)[:16000])
           PY
 
       - name: Prove autonomous three-source production cycle
@@ -212,7 +221,7 @@ jobs:
               assert picks, card
               assert all(row.get('decisionAuthority') == 'BEDROCK_LLM' for row in picks), picks
           print('AWS autonomous MLB cycle:', status)
-          print(json.dumps(response, sort_keys=True)[:20000])
+          print(json.dumps(response, sort_keys=True)[:24000])
           PY
 
       - name: Verify public status and autonomous schedules
@@ -292,8 +301,11 @@ jobs:
               'publishedAtUtc':datetime.now(timezone.utc).isoformat(),
               'bedrockSmoke':{
                   'ok':bedrock.get('ok'),
+                  'routeId':bedrock.get('routeId'),
                   'modelId':bedrock.get('modelId'),
                   'endpointFamily':bedrock.get('endpointFamily'),
+                  'mantleModelCount':bedrock.get('mantleModelCount'),
+                  'runtimeModelCount':bedrock.get('runtimeModelCount'),
                   'attemptedModelIds':bedrock.get('attemptedModelIds') or [],
                   'errorsBeforeSuccess':bedrock.get('errorsBeforeSuccess') or [],
                   'errors':bedrock.get('errors') or [],
