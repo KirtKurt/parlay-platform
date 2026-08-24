@@ -1,7 +1,6 @@
 name: Trigger Soccer Quota Backpressure Deploy
 
-# Operational trigger refreshed after ODDS_API_KEY rotation on 2026-08-24.
-# Fresh isolated recovery trigger at 13:xx ET to verify provider, backfill, and Bedrock runtime.
+# Explicitly dispatch the root-cause Soccer contention repair on 2026-08-24.
 on:
   push:
     paths:
@@ -15,12 +14,10 @@ jobs:
   trigger:
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch isolated Soccer deployment
+      - name: Dispatch Soccer contention repair
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Redeploy current main after restoring the Soccer lock-hash persistence contract.
-          gh workflow run deploy-soccer-auto.yml \
+          gh workflow run repair-soccer-rate-limit-contention.yml \
             --repo "${GITHUB_REPOSITORY}" \
-            --ref main \
-            -f shared_quota_reserve_percent=0
+            --ref main
