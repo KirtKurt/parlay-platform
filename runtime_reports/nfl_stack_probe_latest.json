@@ -1,12 +1,5 @@
 {
-  "commit": "229635fb85c4208dcd78a951956245dcb5fd69d8",
-  "failed_events": [
-    {
-      "logical_id": "parlay-platform-nfl-auto",
-      "reason": "The following resource(s) failed to create: [NflAlarmTopic, NflBbdSecret, NflOddsSecret, NflGamesTable, NflFailureQueue, NflOpsTable, NflModelsTable, NflRawBucket, NflArtifactBucket, NflStateTable, NflOddsTable, NflPredictionsTable, NflFeaturesTable]. Rollback requested by user.",
-      "status": "ROLLBACK_IN_PROGRESS",
-      "type": "AWS::CloudFormation::Stack"
-    },
+  "all_failed_events": [
     {
       "logical_id": "NflFeaturesTable",
       "reason": "Resource creation cancelled",
@@ -72,9 +65,36 @@
       "reason": "Resource creation cancelled",
       "status": "CREATE_FAILED",
       "type": "AWS::S3::Bucket"
+    },
+    {
+      "logical_id": "NflAlarmTopic",
+      "reason": "Resource handler returned message: \"User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: SNS:GetTopicAttributes on resource: arn:aws:sns:us-east-1:735707987003:parlay-platform-nfl-auto-NflAlarmTopic-LyGcdaEZOty6 because no identity-based policy allows the SNS:GetTopicAttributes action (Service: Sns, Status Code: 403, Request ID: 62988ed1-6f38-5e85-963c-edd7dad1e18c) (SDK Attempt Count: 1)\" (RequestToken: 0aef93e4-7019-666a-4ccc-898b8791f921, HandlerErrorCode: AccessDenied)",
+      "status": "CREATE_FAILED",
+      "type": "AWS::SNS::Topic"
+    },
+    {
+      "logical_id": "NflFailureQueue",
+      "reason": "Resource handler returned message: \"User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: sqs:createqueue on resource: arn:aws:sqs:us-east-1:735707987003:parlay-platform-nfl-auto-NflFailureQueue-MASo9ovNF363 because no identity-based policy allows the sqs:createqueue action (Service: Sqs, Status Code: 403, Request ID: e9207148-6e73-5ec1-b213-124edb9ab6a7) (SDK Attempt Count: 1)\" (RequestToken: f8982ff7-9704-c463-c3c6-383c91890814, HandlerErrorCode: AccessDenied)",
+      "status": "CREATE_FAILED",
+      "type": "AWS::SQS::Queue"
     }
   ],
-  "run_id": "32778312174",
+  "commit": "25f440f285d0dcca0e046b73a0d317d887bfb669",
+  "root_failed_events": [
+    {
+      "logical_id": "NflAlarmTopic",
+      "reason": "Resource handler returned message: \"User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: SNS:GetTopicAttributes on resource: arn:aws:sns:us-east-1:735707987003:parlay-platform-nfl-auto-NflAlarmTopic-LyGcdaEZOty6 because no identity-based policy allows the SNS:GetTopicAttributes action (Service: Sns, Status Code: 403, Request ID: 62988ed1-6f38-5e85-963c-edd7dad1e18c) (SDK Attempt Count: 1)\" (RequestToken: 0aef93e4-7019-666a-4ccc-898b8791f921, HandlerErrorCode: AccessDenied)",
+      "status": "CREATE_FAILED",
+      "type": "AWS::SNS::Topic"
+    },
+    {
+      "logical_id": "NflFailureQueue",
+      "reason": "Resource handler returned message: \"User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: sqs:createqueue on resource: arn:aws:sqs:us-east-1:735707987003:parlay-platform-nfl-auto-NflFailureQueue-MASo9ovNF363 because no identity-based policy allows the sqs:createqueue action (Service: Sqs, Status Code: 403, Request ID: e9207148-6e73-5ec1-b213-124edb9ab6a7) (SDK Attempt Count: 1)\" (RequestToken: f8982ff7-9704-c463-c3c6-383c91890814, HandlerErrorCode: AccessDenied)",
+      "status": "CREATE_FAILED",
+      "type": "AWS::SQS::Queue"
+    }
+  ],
+  "run_id": "32778378410",
   "stack": "parlay-platform-nfl-auto",
   "stack_status": "ROLLBACK_IN_PROGRESS",
   "status_url": "None"
