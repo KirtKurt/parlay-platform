@@ -1,5 +1,5 @@
 name: Finalize MLB settlement and training repair now
-# Recovery dispatch revision: 2026-08-24T21:31Z settlement-diagnostics-v2
+# Recovery dispatch revision: 2026-08-24T21:33Z no-sigpipe-v3
 
 on:
   push:
@@ -34,8 +34,7 @@ jobs:
             --branch main \
             --limit 50 \
             --json databaseId,status,conclusion,headSha,createdAt \
-            --jq '.[] | select(.status == "completed" and .conclusion == "success") | .databaseId' \
-            | head -n 1)
+            --jq 'map(select(.status == "completed" and .conclusion == "success")) | first | .databaseId // empty')
           test -n "$deploy_run" || { echo '::error::No successful repaired root deployment exists'; exit 1; }
           request_id="finalizer-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "request_id=$request_id" >> "$GITHUB_OUTPUT"
@@ -67,8 +66,7 @@ jobs:
               --event workflow_dispatch \
               --limit 50 \
               --json databaseId,displayTitle,createdAt \
-              --jq '.[] | select(.displayTitle | contains("'"$REQUEST_ID"'")) | .databaseId' \
-              | head -n 1)
+              --jq 'map(select(.displayTitle | contains("'"$REQUEST_ID"'"))) | first | .databaseId // empty')
             [ -z "$run_id" ] || break
             sleep 5
           done
