@@ -1,0 +1,83 @@
+name: Snapshot MLB regional failover run now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/snapshot-mlb-regional-failover-run-now.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Capture latest installer and isolated deploy runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/install-mlb-regional-bedrock-failover-now.yml/runs?per_page=5" \
+            > /tmp/installer-runs.json
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-mlb-auto-llm.yml/runs?per_page=5" \
+            > /tmp/deploy-runs.json
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          installer=json.load(open('/tmp/installer-runs.json')).get('workflow_runs') or []
+          deploy=json.load(open('/tmp/deploy-runs.json')).get('workflow_runs') or []
+          def select(rows):
+              return [
+                  {
+                      'id': row.get('id'),
+                      'name': row.get('name'),
+                      'headSha': row.get('head_sha'),
+                      'status': row.get('status'),
+                      'conclusion': row.get('conclusion'),
+                      'event': row.get('event'),
+                      'createdAtUtc': row.get('created_at'),
+                      'updatedAtUtc': row.get('updated_at'),
+                      'runAttempt': row.get('run_attempt'),
+                      'htmlUrl': row.get('html_url'),
+                  }
+                  for row in rows
+              ]
+          report={
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'installerRuns': select(installer),
+              'isolatedDeployRuns': select(deploy),
+          }
+          Path('runtime_reports/mlb_regional_failover_runs_latest.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True)+'\n', encoding='utf-8'
+          )
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+      - name: Publish run snapshot
+        run: |
+          set -euo pipefail
+          cp runtime_reports/mlb_regional_failover_runs_latest.json /tmp/mlb_regional_failover_runs_latest.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main
+            cp /tmp/mlb_regional_failover_runs_latest.json runtime_reports/mlb_regional_failover_runs_latest.json
+            git add runtime_reports/mlb_regional_failover_runs_latest.json
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB regional failover run snapshot [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 2))
+          done
+          exit 1
