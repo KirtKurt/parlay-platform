@@ -1,0 +1,16 @@
+name: Trigger Soccer DLQ Drain Proof
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/trigger-soccer-dlq-drain-proof.yml']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch guaranteed Soccer drain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run soccer-dlq-drain-proof.yml --repo "$GITHUB_REPOSITORY" --ref main
