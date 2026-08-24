@@ -1,0 +1,284 @@
+name: Probe MLB AUTO Bedrock capacity now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/probe-mlb-auto-bedrock-capacity-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: probe-mlb-auto-bedrock-capacity-now
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-mlb-auto-llm
+  REPORT_PATH: runtime_reports/mlb_auto_bedrock_capacity_probe_latest.json
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Inventory and probe active text models
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json, os, time
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          import boto3
+          from botocore.config import Config
+
+          region=os.environ['AWS_REGION']
+          stack=os.environ['STACK_NAME']
+          cfn=boto3.client('cloudformation', region_name=region)
+          physical=cfn.describe_stack_resource(
+              StackName=stack,
+              LogicalResourceId='MLBAutoLLMBedrockSmokeFunction',
+          )['StackResourceDetail']['PhysicalResourceId']
+          control=boto3.client('bedrock', region_name=region)
+          runtime=boto3.client(
+              'bedrock-runtime',
+              region_name=region,
+              config=Config(
+                  retries={'max_attempts': 0, 'mode': 'standard'},
+                  connect_timeout=5,
+                  read_timeout=20,
+              ),
+          )
+          lamb=boto3.client('lambda', region_name=region)
+
+          model_summaries=[]
+          token=None
+          while True:
+              kwargs={'byOutputModality':'TEXT'}
+              if token:
+                  kwargs['nextToken']=token
+              response=control.list_foundation_models(**kwargs)
+              model_summaries.extend(response.get('modelSummaries') or [])
+              token=response.get('nextToken')
+              if not token:
+                  break
+
+          active=[]
+          for row in model_summaries:
+              lifecycle=(row.get('modelLifecycle') or {}).get('status')
+              if lifecycle and lifecycle != 'ACTIVE':
+                  continue
+              model_id=str(row.get('modelId') or '')
+              if not model_id:
+                  continue
+              lower=model_id.lower()
+              if any(part in lower for part in (
+                  'embed','rerank','image','canvas','reel','speech','audio','video',
+                  'guardrail','reranker','multimodal-embed',
+              )):
+                  continue
+              active.append({
+                  'modelId':model_id,
+                  'providerName':row.get('providerName'),
+                  'modelName':row.get('modelName'),
+                  'inferenceTypesSupported':row.get('inferenceTypesSupported') or [],
+                  'responseStreamingSupported':row.get('responseStreamingSupported'),
+              })
+
+          profiles=[]
+          token=None
+          while True:
+              kwargs={'maxResults':100}
+              if token:
+                  kwargs['nextToken']=token
+              response=control.list_inference_profiles(**kwargs)
+              profiles.extend(response.get('inferenceProfileSummaries') or [])
+              token=response.get('nextToken')
+              if not token:
+                  break
+
+          known_tried={
+              'global.anthropic.claude-sonnet-4-20250514-v1:0',
+              'us.anthropic.claude-sonnet-4-20250514-v1:0',
+              'us.meta.llama3-3-70b-instruct-v1:0',
+              'meta.llama3-3-70b-instruct-v1:0',
+              'mistral.mistral-large-3-675b-instruct',
+              'mistral.ministral-3-3b-instruct',
+              'openai.gpt-5.6-sol',
+              'anthropic.claude-opus-4-8',
+              'anthropic.claude-opus-4-7',
+              'anthropic.claude-opus-4-6-v1',
+              'anthropic.claude-sonnet-4-6',
+              'us.amazon.nova-2-lite-v1:0',
+              'global.amazon.nova-2-lite-v1:0',
+              'us.amazon.nova-pro-v1:0',
+              'us.amazon.nova-lite-v1:0',
+              'us.amazon.nova-micro-v1:0',
+          }
+          priority_tokens=(
+              'titan-text','llama3-1-8b','llama3-2-1b','llama3-2-3b',
+              'jamba','command','mistral-7b','mixtral','ministral',
+          )
+          candidates=[]
+          def add(value):
+              value=str(value or '')
+              if value and value not in known_tried and value not in candidates:
+                  candidates.append(value)
+
+          for row in active:
+              model_id=row['modelId']
+              if any(token in model_id.lower() for token in priority_tokens):
+                  if 'ON_DEMAND' in row['inferenceTypesSupported']:
+                      add(model_id)
+          for profile in profiles:
+              profile_id=str(profile.get('inferenceProfileId') or '')
+              lower=profile_id.lower()
+              if any(token in lower for token in priority_tokens):
+                  add(profile_id)
+          for row in active:
+              if 'ON_DEMAND' in row['inferenceTypesSupported']:
+                  add(row['modelId'])
+          for profile in profiles:
+              add(profile.get('inferenceProfileId'))
+
+          # Keep the probe bounded and text-oriented.
+          candidates=candidates[:40]
+          attempts=[]
+          selected=None
+          for model_id in candidates:
+              started=time.monotonic()
+              try:
+                  response=runtime.converse(
+                      modelId=model_id,
+                      messages=[{'role':'user','content':[{'text':'Reply only OK'}]}],
+                      inferenceConfig={'maxTokens':8,'temperature':0},
+                  )
+                  text=''.join(
+                      part.get('text','')
+                      for part in (((response.get('output') or {}).get('message') or {}).get('content') or [])
+                      if isinstance(part, dict)
+                  ).strip()
+                  attempts.append({
+                      'modelId':model_id,
+                      'ok':True,
+                      'latencyMs':round((time.monotonic()-started)*1000),
+                      'responseNonempty':bool(text),
+                  })
+                  selected=model_id
+                  break
+              except Exception as exc:
+                  code=(getattr(exc, 'response', {}) or {}).get('Error', {}).get('Code')
+                  attempts.append({
+                      'modelId':model_id,
+                      'ok':False,
+                      'latencyMs':round((time.monotonic()-started)*1000),
+                      'errorCode':code or type(exc).__name__,
+                      'message':str(exc)[:500],
+                  })
+
+          lambda_proof={}
+          original=(lamb.get_function_configuration(FunctionName=physical).get('Environment') or {}).get('Variables') or {}
+          if selected:
+              updated=dict(original)
+              updated['MLB_AUTO_BEDROCK_MODELS']=selected
+              try:
+                  lamb.update_function_configuration(
+                      FunctionName=physical,
+                      Environment={'Variables':updated},
+                  )
+                  lamb.get_waiter('function_updated_v2').wait(
+                      FunctionName=physical,
+                      WaiterConfig={'Delay':2,'MaxAttempts':60},
+                  )
+                  invocation=lamb.invoke(
+                      FunctionName=physical,
+                      InvocationType='RequestResponse',
+                      Payload=b'{}',
+                  )
+                  payload=json.loads(invocation['Payload'].read() or b'{}')
+                  lambda_proof={
+                      'ok':not invocation.get('FunctionError') and payload.get('ok') is True,
+                      'functionError':invocation.get('FunctionError'),
+                      'modelId':payload.get('modelId'),
+                      'endpointFamily':payload.get('endpointFamily'),
+                      'attemptedModelIds':payload.get('attemptedModelIds') or [],
+                      'errors':payload.get('errors') or [],
+                  }
+              finally:
+                  lamb.update_function_configuration(
+                      FunctionName=physical,
+                      Environment={'Variables':original},
+                  )
+                  lamb.get_waiter('function_updated_v2').wait(
+                      FunctionName=physical,
+                      WaiterConfig={'Delay':2,'MaxAttempts':60},
+                  )
+
+          report={
+              'proofType':'MLB_AUTO_BEDROCK_CAPACITY_PROBE',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ.get('GITHUB_SHA'),
+              'runId':os.environ.get('GITHUB_RUN_ID'),
+              'activeTextModelCount':len(active),
+              'inferenceProfileCount':len(profiles),
+              'activeTextModels':active,
+              'candidateCount':len(candidates),
+              'attempts':attempts,
+              'selectedModelId':selected,
+              'lambdaRoleProof':lambda_proof,
+              'secretExposed':False,
+          }
+          report['ok']=bool(selected and lambda_proof.get('ok'))
+          report['conclusion']='PASS' if report['ok'] else 'FAIL'
+          Path(os.environ['REPORT_PATH']).write_text(
+              json.dumps(report, indent=2, sort_keys=True, default=str)+'\n'
+          )
+          print(json.dumps(report, indent=2, sort_keys=True, default=str))
+          PY
+      - name: Publish redacted capacity proof
+        if: always()
+        run: |
+          set -euo pipefail
+          cp "$REPORT_PATH" /tmp/mlb-auto-bedrock-capacity.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-auto-bedrock-capacity-proof origin/main
+            git reset --hard origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb-auto-bedrock-capacity.json "$REPORT_PATH"
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && break
+            git commit -m 'Publish MLB AUTO Bedrock capacity proof [skip ci]'
+            if git push origin HEAD:main; then break; fi
+            sleep $((attempt * 3))
+          done
+      - name: Require Lambda-role Bedrock capacity
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('runtime_reports/mlb_auto_bedrock_capacity_probe_latest.json').read_text())
+          assert report.get('ok') is True, report
+          print('MLB AUTO Bedrock capacity: PASS via', report.get('selectedModelId'))
+          PY
