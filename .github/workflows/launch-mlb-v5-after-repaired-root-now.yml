@@ -1,0 +1,42 @@
+name: Launch MLB v5 after repaired root now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/launch-mlb-v5-after-repaired-root-now.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: launch-mlb-v5-after-repaired-root-now
+  cancel-in-progress: false
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify repaired deployment proof and dispatch v5
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest=$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow deploy.yml \
+            --branch main \
+            --limit 30 \
+            --json databaseId,headSha,status,conclusion,updatedAt \
+            --jq '[.[] | select(.conclusion == "success")][0]')
+          test -n "$latest"
+          deployed_sha=$(jq -r .headSha <<<"$latest")
+          test "$deployed_sha" = '73481e4b4f94b576a3314b7b2f64e78c2f4c358c'
+          gh workflow run mlb-prospective-backlog-reconcile-v5-once.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+          echo "Dispatched protected v5 reconciliation after repaired root deployment $deployed_sha"
