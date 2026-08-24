@@ -1,0 +1,89 @@
+name: Observe Final MLB Three-API Deployment
+
+on:
+  workflow_run:
+    workflows:
+      - Verify and Deploy MLB Three-API Autonomy v3 Final
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-conclusion:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Capture run, jobs, and failed log evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OBSERVED_RUN_ID: ${{ github.event.workflow_run.id }}
+          OBSERVED_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          OBSERVED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          OBSERVED_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          gh run view "$OBSERVED_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --json databaseId,name,status,conclusion,createdAt,startedAt,updatedAt,headSha,event,jobs,url \
+            > /tmp/final-run.json
+          gh run view "$OBSERVED_RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed \
+            > runtime_reports/mlb_three_api_final_deploy_failed_log.txt 2>&1 || true
+          python - <<'PY'
+          import json,os
+          from datetime import datetime,timezone
+          from pathlib import Path
+          run=json.load(open('/tmp/final-run.json'))
+          jobs=[]
+          for job in run.get('jobs') or []:
+              jobs.append({
+                  'name':job.get('name'),
+                  'status':job.get('status'),
+                  'conclusion':job.get('conclusion'),
+                  'startedAt':job.get('startedAt'),
+                  'completedAt':job.get('completedAt'),
+                  'steps':[
+                      {'name':step.get('name'),'status':step.get('status'),'conclusion':step.get('conclusion'),'number':step.get('number')}
+                      for step in job.get('steps') or []
+                  ],
+              })
+          failed_log=Path('runtime_reports/mlb_three_api_final_deploy_failed_log.txt')
+          log_text=failed_log.read_text(errors='replace') if failed_log.exists() else ''
+          summary={
+              'observedAtUtc':datetime.now(timezone.utc).isoformat(),
+              'workflow':'Verify and Deploy MLB Three-API Autonomy v3 Final',
+              'runId':run.get('databaseId'),
+              'status':run.get('status'),
+              'conclusion':run.get('conclusion'),
+              'headSha':run.get('headSha'),
+              'event':run.get('event'),
+              'createdAt':run.get('createdAt'),
+              'startedAt':run.get('startedAt'),
+              'updatedAt':run.get('updatedAt'),
+              'url':run.get('url'),
+              'jobs':jobs,
+              'failedLogPresent':bool(log_text.strip()),
+              'failedLogTail':log_text[-12000:] if log_text.strip() else None,
+              'finalAcceptanceFilePresent':Path('runtime_reports/mlb_three_api_acceptance_final.json').exists(),
+          }
+          Path('runtime_reports/mlb_three_api_final_deploy_observer.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(summary,indent=2,sort_keys=True))
+          PY
+
+      - name: Publish observer evidence
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git pull --rebase origin main || true
+          git add runtime_reports/mlb_three_api_final_deploy_observer.json \
+                  runtime_reports/mlb_three_api_final_deploy_failed_log.txt
+          if ! git diff --cached --quiet; then
+            git commit -m 'Publish final MLB three-source deployment conclusion [skip ci]'
+            git push origin HEAD:main
+          fi
