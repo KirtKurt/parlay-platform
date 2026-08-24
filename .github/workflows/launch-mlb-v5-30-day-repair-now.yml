@@ -1,0 +1,27 @@
+name: Launch MLB v5 30-day repair now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/launch-mlb-v5-30-day-repair-now.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Dispatch protected 30-day reconciliation and training
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run repair-mlb-prospective-v5-now.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+          echo 'Dispatched protected MLB v5 30-day repair.'
