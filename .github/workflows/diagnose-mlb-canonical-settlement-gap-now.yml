@@ -1,0 +1,164 @@
+name: Diagnose MLB canonical settlement gap now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-mlb-canonical-settlement-gap-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Invoke exact official status, proof, and settlement paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          mkdir -p runtime_reports
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from typing import Any
+
+          import boto3
+          from botocore.config import Config
+
+          REGION='us-east-1'
+          STACK='parlay-platform-dev'
+          config=Config(retries={'total_max_attempts': 2, 'mode': 'standard'}, read_timeout=700)
+          cfn=boto3.client('cloudformation', region_name=REGION, config=config)
+          lam=boto3.client('lambda', region_name=REGION, config=config)
+
+          def physical(logical_id: str) -> str:
+              response=cfn.describe_stack_resource(StackName=STACK, LogicalResourceId=logical_id)
+              value=str((response.get('StackResourceDetail') or {}).get('PhysicalResourceId') or '')
+              if not value:
+                  raise RuntimeError(f'PHYSICAL_RESOURCE_MISSING:{logical_id}')
+              return value
+
+          def sanitize(value: Any, key: str='') -> Any:
+              lowered=key.lower()
+              if any(token in lowered for token in ('secret','token','password','authorization','api_key','apikey')):
+                  return '<redacted>'
+              if isinstance(value, dict):
+                  return {str(k): sanitize(v, str(k)) for k,v in value.items()}
+              if isinstance(value, list):
+                  return [sanitize(v, key) for v in value]
+              if isinstance(value, str):
+                  return value[:8000]
+              return value
+
+          def invoke(name: str, event: dict[str, Any]) -> dict[str, Any]:
+              response=lam.invoke(
+                  FunctionName=name,
+                  InvocationType='RequestResponse',
+                  Payload=json.dumps(event, separators=(',',':')).encode('utf-8'),
+              )
+              raw=response['Payload'].read().decode('utf-8', errors='replace')
+              try:
+                  outer=json.loads(raw)
+              except Exception:
+                  outer={'raw': raw[:12000]}
+              application=None
+              if isinstance(outer, dict) and 'body' in outer:
+                  body=outer.get('body')
+                  if isinstance(body, str):
+                      try:
+                          application=json.loads(body)
+                      except Exception:
+                          application={'rawBody': body[:12000]}
+                  elif isinstance(body, dict):
+                      application=body
+              return sanitize({
+                  'functionError': response.get('FunctionError'),
+                  'statusCode': response.get('StatusCode'),
+                  'outerStatusCode': outer.get('statusCode') if isinstance(outer, dict) else None,
+                  'application': application if application is not None else outer,
+              })
+
+          lock=physical('MLBDailyPickLockFunction')
+          results=physical('MLBResultsSchedulerFunction')
+          report={
+              'proofType':'MLB_CANONICAL_SETTLEMENT_GAP_DIAGNOSTIC',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'stack':STACK,
+              'region':REGION,
+              'slates':{},
+              'secretExposed':False,
+          }
+          for slate in ('2026-08-03','2026-08-04'):
+              report['slates'][slate]={
+                  'lockStatus':invoke(lock, {
+                      'httpMethod':'GET',
+                      'path':'/v1/mlb/locks/status',
+                      'queryStringParameters':{'date':slate},
+                  }),
+                  'settlementProof':invoke(results, {
+                      'httpMethod':'GET',
+                      'path':'/v1/results/mlb/proof',
+                      'queryStringParameters':{
+                          'slate_date':slate,
+                          'fetch_scores':'true',
+                          'legacy_diagnostic':'false',
+                      },
+                  }),
+                  'settlementAttempt':invoke(results, {
+                      'httpMethod':'GET',
+                      'path':'/v1/results/mlb/settlement',
+                      'queryStringParameters':{
+                          'slate_date':slate,
+                          'fetch_scores':'true',
+                          'store':'true',
+                          'legacy_diagnostic':'false',
+                      },
+                  }),
+              }
+          report['ok']=all(
+              row['settlementAttempt'].get('outerStatusCode') == 200
+              for row in report['slates'].values()
+          )
+          path=Path('runtime_reports/mlb_canonical_settlement_gap_latest.json')
+          path.write_text(json.dumps(report, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+          print(json.dumps(report, indent=2, sort_keys=True)[:50000])
+          PY
+      - name: Publish diagnostic proof
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f runtime_reports/mlb_canonical_settlement_gap_latest.json
+          cp runtime_reports/mlb_canonical_settlement_gap_latest.json /tmp/mlb_canonical_settlement_gap_latest.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main
+            cp /tmp/mlb_canonical_settlement_gap_latest.json runtime_reports/mlb_canonical_settlement_gap_latest.json
+            git add runtime_reports/mlb_canonical_settlement_gap_latest.json
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB canonical settlement gap diagnostic [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 2))
+          done
+          exit 1
