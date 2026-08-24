@@ -1,0 +1,129 @@
+name: Force Deploy And Recover Soccer Runtime
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/soccer-force-recover.yml']
+permissions:
+  contents: write
+  actions: write
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Dispatch and wait for isolated Soccer deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          previous=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy-soccer-auto.yml --limit 1 --json databaseId --jq '.[0].databaseId // 0')
+          gh workflow run deploy-soccer-auto.yml --repo "$GITHUB_REPOSITORY" --ref main -f shared_quota_reserve_percent=0
+          run_id=''
+          for attempt in $(seq 1 90); do
+            candidate=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy-soccer-auto.yml --event workflow_dispatch --branch main --limit 5 --json databaseId,status --jq '.[0].databaseId // empty' || true)
+            if [[ -n "$candidate" && "$candidate" != "$previous" ]]; then run_id="$candidate"; break; fi
+            sleep 2
+          done
+          test -n "$run_id"
+          echo "$run_id" >/tmp/soccer-deploy-run-id
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status --interval 10
+      - name: Drain stale Soccer DLQ without losing future fixtures
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          stack=parlay-platform-soccer-auto
+          main_name=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionQueue --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+          dlq_name=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionDeadLetterQueue --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+          export MAIN_QUEUE_NAME="$main_name" DLQ_QUEUE_NAME="$dlq_name"
+          python - <<'PY'
+          import boto3, json, os, datetime, pathlib
+          sqs=boto3.client('sqs', region_name=os.environ['REGION'])
+          def url(name):
+              return name if name.startswith('http') else sqs.get_queue_url(QueueName=name)['QueueUrl']
+          main=url(os.environ['MAIN_QUEUE_NAME']); dlq=url(os.environ['DLQ_QUEUE_NAME'])
+          now=datetime.datetime.now(datetime.timezone.utc)
+          scanned=deleted=requeued=retired=malformed=0
+          empty=0
+          while scanned < 5000 and empty < 5:
+              r=sqs.receive_message(QueueUrl=dlq,MaxNumberOfMessages=10,VisibilityTimeout=120,WaitTimeSeconds=1,AttributeNames=['All'])
+              msgs=r.get('Messages') or []
+              if not msgs:
+                  empty+=1; continue
+              empty=0
+              for m in msgs:
+                  scanned+=1; actionable=False; body={}
+                  try:
+                      body=json.loads(m.get('Body') or '{}')
+                      event=body.get('event') or {}
+                      raw=event.get('commence_time') or event.get('commenceTime') or ''
+                      dt=datetime.datetime.fromisoformat(str(raw).replace('Z','+00:00')) if raw else None
+                      actionable=bool(body.get('action') in ('DISCOVER_EVENT','FETCH_EVENT') and dt and dt>now)
+                  except Exception:
+                      malformed+=1
+                  if actionable:
+                      body['dlq_recovered_at']=now.isoformat()
+                      body['dlq_recovery_count']=int(body.get('dlq_recovery_count') or 0)+1
+                      sqs.send_message(QueueUrl=main,MessageBody=json.dumps(body,separators=(',',':')),DelaySeconds=2)
+                      requeued+=1
+                  else:
+                      retired+=1
+                  sqs.delete_message(QueueUrl=dlq,ReceiptHandle=m['ReceiptHandle']); deleted+=1
+          attrs=sqs.get_queue_attributes(QueueUrl=dlq,AttributeNames=['ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible'])['Attributes']
+          result={'scanned':scanned,'deleted':deleted,'requeued_future':requeued,'retired_stale':retired,'malformed':malformed,'remaining_visible':int(attrs.get('ApproximateNumberOfMessages',0)),'remaining_inflight':int(attrs.get('ApproximateNumberOfMessagesNotVisible',0))}
+          pathlib.Path('/tmp/soccer-dlq-recovery.json').write_text(json.dumps(result,indent=2))
+          print(json.dumps(result,indent=2))
+          assert result['remaining_visible']==0, result
+          PY
+      - name: Exercise post-repair autonomous cycle and collect proof
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-soccer-auto
+          physical() { aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id "$1" --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text; }
+          dispatch=$(physical SoccerDispatchFunction)
+          freeze=$(physical SoccerFreezeFunction)
+          controller=$(physical SoccerControllerFunction)
+          historical=$(physical SoccerHistoricalFunction)
+          aws lambda invoke --function-name "$dispatch" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"post_repair_dispatch"}' /tmp/dispatch.json >/tmp/dispatch-meta.json
+          sleep 45
+          aws lambda invoke --function-name "$freeze" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"post_repair_freeze"}' /tmp/freeze.json >/tmp/freeze-meta.json
+          aws lambda invoke --function-name "$controller" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"post_repair_controller"}' /tmp/controller.json >/tmp/controller-meta.json
+          aws lambda invoke --function-name "$historical" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"mode":"status"}' /tmp/historical.json >/tmp/historical-meta.json
+          status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" --output text)
+          curl --fail --silent --show-error --max-time 60 "$status_url" >/tmp/status.json
+          worker=$(physical SoccerCollectionWorkerFunction)
+          start_ms=$(( ($(date +%s)-1200)*1000 ))
+          aws logs filter-log-events --log-group-name "/aws/lambda/$worker" --region "$REGION" --start-time "$start_ms" --filter-pattern '?DISTRIBUTED_RATE_LIMIT_CONTENTION ?Unauthorized ?HTTP_401 ?ERROR ?Exception' --limit 100 --output json >/tmp/worker-errors.json || echo '{"events":[]}' >/tmp/worker-errors.json
+          aws cloudwatch describe-alarms --region "$REGION" --query 'MetricAlarms[?contains(AlarmName, `Soccer`) || contains(AlarmName, `soccer`)].{AlarmName:AlarmName,StateValue:StateValue,StateReason:StateReason,StateUpdatedTimestamp:StateUpdatedTimestamp}' --output json >/tmp/alarms.json
+          python - <<'PY'
+          import json,pathlib,datetime,subprocess,os
+          load=lambda p: json.load(open(p))
+          stack=load('/tmp/status.json'); hist=load('/tmp/historical.json'); dlq=load('/tmp/soccer-dlq-recovery.json'); errors=load('/tmp/worker-errors.json'); alarms=load('/tmp/alarms.json')
+          report={'proofType':'SOCCER_FORCE_RECOVERY_PROOF','observedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'deployRunId':int(pathlib.Path('/tmp/soccer-deploy-run-id').read_text()),'dlqRecovery':dlq,'publicStatus':stack,'historicalStatus':hist,'recentWorkerErrors':errors.get('events') or [],'alarms':alarms}
+          pathlib.Path('runtime_reports/soccer_force_recovery_latest.json').write_text(json.dumps(report,indent=2,default=str)+'\n')
+          print(json.dumps(report,indent=2,default=str))
+          PY
+      - name: Publish recovery proof
+        run: |
+          set -euo pipefail
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add runtime_reports/soccer_force_recovery_latest.json
+          git commit -m 'runtime: publish Soccer force recovery proof [skip ci]' || exit 0
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            git rebase --abort 2>/dev/null || true
+            sleep $((attempt*2))
+          done
+          exit 1
