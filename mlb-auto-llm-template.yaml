@@ -66,7 +66,8 @@ Resources:
           MLB_AUTO_FINAL_COLLECTION_WINDOW_MINUTES: '20'
           MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
           MLB_AUTO_BEDROCK_DISCOVERY: 'true'
-          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '20'
+          MLB_AUTO_BEDROCK_REGIONS: 'us-east-1,us-west-2,us-east-2'
+          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '32'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref MLBAutoLLMTable
@@ -132,13 +133,14 @@ Resources:
       CodeUri: mlb_auto_llm/
       Handler: bedrock_smoke.lambda_handler
       Runtime: python3.11
-      Timeout: 210
+      Timeout: 220
       MemorySize: 512
       Environment:
         Variables:
           MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
           MLB_AUTO_BEDROCK_DISCOVERY: 'true'
-          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '8'
+          MLB_AUTO_BEDROCK_REGIONS: 'us-east-1,us-west-2,us-east-2'
+          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '16'
       Policies:
         - Statement:
             - Effect: Allow
