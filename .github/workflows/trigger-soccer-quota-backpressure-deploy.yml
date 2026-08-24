@@ -1,6 +1,6 @@
 name: Trigger Soccer Quota Backpressure Deploy
 
-# Deploy the immediate lease hardening and run the full root-cause repair.
+# Explicitly run the isolated deploy and force-recovery proof after the contention fix.
 on:
   push:
     paths:
@@ -22,10 +22,10 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --ref main \
             -f shared_quota_reserve_percent=0
-      - name: Dispatch Soccer contention repair
+      - name: Dispatch Soccer force recovery
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh workflow run repair-soccer-rate-limit-contention.yml \
+          gh workflow run soccer-force-recover.yml \
             --repo "${GITHUB_REPOSITORY}" \
             --ref main
