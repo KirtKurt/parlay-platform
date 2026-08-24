@@ -34,6 +34,7 @@ jobs:
             repair-mlb-prospective-v5-now.yml
             trigger-mlb-prospective-v5-repair-now.yml
             reconcile-mlb-continuity-from-aug4-now.yml
+            finalize-mlb-root-settlement-training-now.yml
           )
           for workflow in "${workflows[@]}"; do
             safe=${workflow//[^A-Za-z0-9]/_}
@@ -54,6 +55,7 @@ jobs:
               'repair-mlb-prospective-v5-now.yml',
               'trigger-mlb-prospective-v5-repair-now.yml',
               'reconcile-mlb-continuity-from-aug4-now.yml',
+              'finalize-mlb-root-settlement-training-now.yml',
           )
 
           def key(name: str) -> str:
@@ -101,7 +103,7 @@ jobs:
           set -euo pipefail
           cp runtime_reports/mlb_regional_failover_runs_latest.json /tmp/mlb_regional_failover_runs_latest.json
           git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             git reset --hard origin/main
