@@ -286,6 +286,10 @@ ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN = (
     "PARLAYPLATFORMMLBAUTOLLMMLBAUTOLLMFUNCTION"
 )
 ISOLATED_THREE_SOURCE_HANDLER = "orchestrator.lambda_handler"
+ISOLATED_THREE_SOURCE_HANDLERS = (
+    ISOLATED_THREE_SOURCE_HANDLER,
+    "orchestrator_v2.lambda_handler",
+)
 ISOLATED_THREE_SOURCE_REQUIRED_ENVIRONMENT = (
     "MLB_AUTO_TABLE",
     "ODDS_API_KEY",
@@ -442,7 +446,7 @@ def _is_authorized_isolated_three_source_auto(function: Any) -> bool:
     return bool(
         ISOLATED_THREE_SOURCE_FUNCTION_NAME_TOKEN in _authority_text(name)
         and arn
-        and handler == ISOLATED_THREE_SOURCE_HANDLER
+        and handler in ISOLATED_THREE_SOURCE_HANDLERS
         and required_present
         and forbidden_absent
         and environment.get("MLB_AUTO_FIRST_GAME_SAFETY_MINUTES") == "10"
