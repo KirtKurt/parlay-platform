@@ -20,3 +20,8 @@ Required outcome: AWS-native V2 remains shadow-only; canonical pull, probability
 
 Direct deployment trigger UTC: 2026-07-21T20:57:00Z
 Exact runtime source: 0329892d55d2d0e8004a1b5250516f1dd6c2b33c (PR #41 tree unchanged by metadata-only commits).
+
+Deployment request UTC: 2026-08-24T23:53:18Z
+Exact runtime source: 4dba57c79bbb11298f72d33c555422baca49feb0
+Purpose: deploy the tested MLB canonical-ingest alarm repair that distinguishes intentionally non-actionable, fully persisted recommendations from true winner-persistence failures and performs one idempotent retry only for transient provider-manifest binding failures.
+Required safety: no winner override, no historical reconstruction, no immutable lock rewrite, no weakened promotion or timing gates, and all mixed/non-manifest failures remain fail-closed.
