@@ -1,0 +1,107 @@
+name: Soccer Hot Recovery Diagnostic
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/soccer-hot-recovery-diagnostic.yml']
+permissions:
+  contents: write
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Execute recovery and always persist diagnostics
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set +e
+          mkdir -p runtime_reports /tmp/soccer-hot-diag /tmp/soccer-hot-diag/pkg/soccer_auto
+          stack=parlay-platform-soccer-auto
+          worker=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionWorkerFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text 2>/tmp/soccer-hot-diag/worker-name.err)
+          echo "$worker" >/tmp/soccer-hot-diag/worker-name.txt
+          cp soccer_auto/*.py /tmp/soccer-hot-diag/pkg/soccer_auto/ 2>/tmp/soccer-hot-diag/copy.err
+          (cd /tmp/soccer-hot-diag/pkg && zip -qr /tmp/soccer-hot-diag/worker.zip soccer_auto) 2>/tmp/soccer-hot-diag/zip.err
+          aws lambda update-function-code --function-name "$worker" --region "$REGION" --zip-file fileb:///tmp/soccer-hot-diag/worker.zip >/tmp/soccer-hot-diag/update-code.json 2>/tmp/soccer-hot-diag/update-code.err
+          echo $? >/tmp/soccer-hot-diag/update-code.rc
+          aws lambda wait function-updated-v2 --function-name "$worker" --region "$REGION" 2>/tmp/soccer-hot-diag/wait.err
+          echo $? >/tmp/soccer-hot-diag/wait.rc
+          aws lambda get-function-configuration --function-name "$worker" --region "$REGION" --output json >/tmp/soccer-hot-diag/worker-config.json 2>/tmp/soccer-hot-diag/worker-config.err
+          mapping=$(aws lambda list-event-source-mappings --function-name "$worker" --region "$REGION" --query 'EventSourceMappings[0].UUID' --output text 2>/tmp/soccer-hot-diag/mapping-list.err)
+          echo "$mapping" >/tmp/soccer-hot-diag/mapping.txt
+          if [[ -n "$mapping" && "$mapping" != None ]]; then
+            aws lambda update-event-source-mapping --uuid "$mapping" --region "$REGION" --scaling-config MaximumConcurrency=3 >/tmp/soccer-hot-diag/mapping-update.json 2>/tmp/soccer-hot-diag/mapping-update.err
+            echo $? >/tmp/soccer-hot-diag/mapping-update.rc
+          fi
+          main=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionQueue --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text 2>/tmp/soccer-hot-diag/main.err)
+          dlq=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionDeadLetterQueue --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text 2>/tmp/soccer-hot-diag/dlq.err)
+          export MAIN_QUEUE="$main" DLQ_QUEUE="$dlq"
+          python - <<'PY' >/tmp/soccer-hot-diag/drain.json 2>/tmp/soccer-hot-diag/drain.err
+          import boto3, json, os, datetime
+          sqs=boto3.client('sqs', region_name=os.environ['REGION'])
+          def qurl(value): return value if value.startswith('http') else sqs.get_queue_url(QueueName=value)['QueueUrl']
+          main=qurl(os.environ['MAIN_QUEUE']); dlq=qurl(os.environ['DLQ_QUEUE'])
+          now=datetime.datetime.now(datetime.timezone.utc)
+          scanned=deleted=requeued=retired=malformed=0
+          for _ in range(200):
+              r=sqs.receive_message(QueueUrl=dlq,MaxNumberOfMessages=10,VisibilityTimeout=60,WaitTimeSeconds=0,AttributeNames=['All'])
+              msgs=r.get('Messages') or []
+              if not msgs: break
+              for m in msgs:
+                  scanned+=1; body={}; actionable=False
+                  try:
+                      body=json.loads(m.get('Body') or '{}'); ev=body.get('event') or {}; raw=ev.get('commence_time') or ev.get('commenceTime') or ''
+                      dt=datetime.datetime.fromisoformat(str(raw).replace('Z','+00:00')) if raw else None
+                      actionable=bool(body.get('action') in ('DISCOVER_EVENT','FETCH_EVENT') and dt and dt>now)
+                  except Exception: malformed+=1
+                  if actionable:
+                      body['dlq_recovered_at']=now.isoformat(); body['dlq_recovery_count']=int(body.get('dlq_recovery_count') or 0)+1
+                      sqs.send_message(QueueUrl=main,MessageBody=json.dumps(body,separators=(',',':')),DelaySeconds=2); requeued+=1
+                  else: retired+=1
+                  sqs.delete_message(QueueUrl=dlq,ReceiptHandle=m['ReceiptHandle']); deleted+=1
+          attrs=sqs.get_queue_attributes(QueueUrl=dlq,AttributeNames=['ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible','ApproximateNumberOfMessagesDelayed'])['Attributes']
+          print(json.dumps({'scanned':scanned,'deleted':deleted,'requeued_future':requeued,'retired_stale':retired,'malformed':malformed,'attributes':attrs},indent=2))
+          PY
+          echo $? >/tmp/soccer-hot-diag/drain.rc
+          status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" --output text 2>/tmp/soccer-hot-diag/status-url.err)
+          echo "$status_url" >/tmp/soccer-hot-diag/status-url.txt
+          curl --silent --show-error --max-time 60 "$status_url" >/tmp/soccer-hot-diag/status.json 2>/tmp/soccer-hot-diag/status.err
+          physical() { aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id "$1" --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text; }
+          dispatch=$(physical SoccerDispatchFunction 2>/dev/null); freeze=$(physical SoccerFreezeFunction 2>/dev/null); controller=$(physical SoccerControllerFunction 2>/dev/null)
+          aws lambda invoke --function-name "$dispatch" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"diagnostic_hot_dispatch"}' /tmp/soccer-hot-diag/dispatch.json >/tmp/soccer-hot-diag/dispatch-meta.json 2>/tmp/soccer-hot-diag/dispatch.err
+          aws lambda invoke --function-name "$freeze" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"diagnostic_hot_freeze"}' /tmp/soccer-hot-diag/freeze.json >/tmp/soccer-hot-diag/freeze-meta.json 2>/tmp/soccer-hot-diag/freeze.err
+          aws lambda invoke --function-name "$controller" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"diagnostic_hot_controller"}' /tmp/soccer-hot-diag/controller.json >/tmp/soccer-hot-diag/controller-meta.json 2>/tmp/soccer-hot-diag/controller.err
+          start_ms=$(( ($(date +%s)-900)*1000 ))
+          aws logs filter-log-events --log-group-name "/aws/lambda/$worker" --region "$REGION" --start-time "$start_ms" --filter-pattern '?DISTRIBUTED_RATE_LIMIT_CONTENTION ?Unauthorized ?HTTP_401 ?ERROR ?Exception' --limit 100 --output json >/tmp/soccer-hot-diag/logs.json 2>/tmp/soccer-hot-diag/logs.err
+          python - <<'PY'
+          import json,pathlib,datetime
+          root=pathlib.Path('/tmp/soccer-hot-diag')
+          def txt(n):
+              p=root/n; return p.read_text() if p.exists() else ''
+          def js(n):
+              p=root/n
+              if not p.exists() or not p.read_text().strip(): return None
+              try: return json.loads(p.read_text())
+              except Exception: return {'raw':p.read_text()[:20000]}
+          report={'proofType':'SOCCER_HOT_RECOVERY_DIAGNOSTIC','observedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'worker':txt('worker-name.txt').strip(),'updateCodeRc':txt('update-code.rc').strip(),'updateCode':js('update-code.json'),'updateCodeError':txt('update-code.err'),'waitRc':txt('wait.rc').strip(),'waitError':txt('wait.err'),'workerConfig':js('worker-config.json'),'mapping':txt('mapping.txt').strip(),'mappingUpdateRc':txt('mapping-update.rc').strip(),'mappingUpdate':js('mapping-update.json'),'mappingUpdateError':txt('mapping-update.err'),'drainRc':txt('drain.rc').strip(),'drain':js('drain.json'),'drainError':txt('drain.err'),'publicStatus':js('status.json'),'statusError':txt('status.err'),'dispatch':js('dispatch.json'),'dispatchError':txt('dispatch.err'),'freeze':js('freeze.json'),'freezeError':txt('freeze.err'),'controller':js('controller.json'),'controllerError':txt('controller.err'),'workerLogs':js('logs.json'),'workerLogsError':txt('logs.err')}
+          pathlib.Path('runtime_reports/soccer_hot_recovery_diagnostic_latest.json').write_text(json.dumps(report,indent=2,default=str)+'\n')
+          print(json.dumps(report,indent=2,default=str))
+          PY
+      - name: Publish diagnostic result
+        run: |
+          set -euo pipefail
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add runtime_reports/soccer_hot_recovery_diagnostic_latest.json
+          git commit -m 'runtime: publish Soccer hot recovery diagnostic [skip ci]' || exit 0
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            git rebase --abort 2>/dev/null || true
+            sleep $((attempt*2))
+          done
+          exit 1
