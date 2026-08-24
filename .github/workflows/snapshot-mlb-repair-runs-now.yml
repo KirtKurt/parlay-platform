@@ -1,5 +1,5 @@
 name: Snapshot active MLB repair workflows now
-# Snapshot revision: 2026-08-24T21:36Z model-authority-installer
+# Snapshot revision: 2026-08-24T21:41Z model-authority-installer-v2
 
 on:
   push:
@@ -29,6 +29,7 @@ jobs:
           mkdir -p /tmp/mlb-runs runtime_reports
           for workflow in \
             repair-mlb-auto-ml-authority-fallback-once.yml \
+            repair-mlb-auto-ml-authority-fallback-v2.yml \
             finalize-mlb-root-settlement-training-now.yml \
             deploy.yml \
             mlb-prospective-backlog-reconcile-v5-once.yml \
