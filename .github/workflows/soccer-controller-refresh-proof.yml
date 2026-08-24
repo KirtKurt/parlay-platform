@@ -1,0 +1,47 @@
+name: Soccer Controller Refresh Proof
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/soccer-controller-refresh-proof.yml']
+permissions:
+  contents: write
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Refresh controller from current AWS state
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          stack=parlay-platform-soccer-auto
+          fn=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerControllerFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+          aws lambda invoke --function-name "$fn" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"post_dlq_controller_refresh"}' /tmp/controller.json >/tmp/controller-meta.json
+          sleep 3
+          status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" --output text)
+          curl --fail --silent --show-error --max-time 60 "$status_url" >/tmp/status.json
+          python - <<'PY'
+          import json,pathlib,datetime
+          c=json.load(open('/tmp/controller.json')); s=json.load(open('/tmp/status.json'))
+          report={'proofType':'SOCCER_CONTROLLER_REFRESH_PROOF','observedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'controller':c,'publicStatus':s}
+          pathlib.Path('runtime_reports/soccer_controller_refresh_latest.json').write_text(json.dumps(report,indent=2,default=str)+'\n')
+          print(json.dumps(report,indent=2,default=str))
+          assert 'collection_dead_letter_queue_not_empty' not in (s.get('failures') or []), s
+          PY
+      - name: Publish refresh proof
+        run: |
+          set -euo pipefail
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add runtime_reports/soccer_controller_refresh_latest.json
+          git commit -m 'runtime: publish Soccer controller refresh proof [skip ci]' || exit 0
+          for i in 1 2 3 4 5 6 7 8; do git pull --rebase origin main && git push origin HEAD:main && exit 0 || { git rebase --abort 2>/dev/null || true; sleep $((i*2)); }; done
+          exit 1
