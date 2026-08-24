@@ -1,0 +1,149 @@
+name: Diagnose protected MLB settlement conflict now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-mlb-settlement-conflict-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: diagnose-mlb-settlement-conflict-now
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-dev
+  SLATE_DATE_ET: '2026-08-03'
+  REPORT_PATH: runtime_reports/mlb_settlement_conflict_diagnostic_latest.json
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Invoke protected canonical settlement and retain safe diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-settlement-diagnostic runtime_reports
+          function_name=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBResultsSchedulerFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$function_name"
+          test "$function_name" != "None"
+          payload=$(python - <<'PY'
+          import json, os
+          print(json.dumps({
+              'sport': 'mlb',
+              'run': 'protected_settlement_conflict_diagnostic',
+              'slate_date': os.environ['SLATE_DATE_ET'],
+              'days_from': 0,
+              'fetch_scores': True,
+          }, separators=(',', ':')))
+          PY
+          )
+          aws lambda invoke \
+            --function-name "$function_name" \
+            --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "$payload" \
+            /tmp/mlb-settlement-diagnostic/lambda-response.json \
+            > /tmp/mlb-settlement-diagnostic/invocation.json
+
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          raw=json.loads(Path('/tmp/mlb-settlement-diagnostic/lambda-response.json').read_text())
+          status=int(raw.get('statusCode') or 0) if isinstance(raw, dict) else 0
+          body=raw.get('body') if isinstance(raw, dict) else None
+          if isinstance(body, str):
+              try:
+                  app=json.loads(body)
+              except Exception:
+                  app={'bodyParseError': True}
+          elif isinstance(body, dict):
+              app=body
+          elif isinstance(raw, dict):
+              app=raw
+          else:
+              app={'invalidResponseType': type(raw).__name__}
+
+          allowed=(
+              'ok','version','settlement_version','proofType','createdAtUtc','sport',
+              'slateDateEt','slate_date_et','status','overall_status',
+              'authoritativeSettlement','legacySettlementAuthority','officialSchedule',
+              'officialGameCount','officialFinalCount','canonicalLockCount',
+              'rejectedCanonicalLockCount','rejectedCanonicalLocks',
+              'terminalNoPredictionCount','lockTerminalConflictCount',
+              'lockTerminalConflictOfficialGamePks','terminalNoPredictionExcludedCount',
+              'terminalNoPredictionExclusions','rejectedTerminalOutcomes',
+              'skippedNotFinalCount','skippedNotFinal','missingCanonicalLockCount',
+              'missingCanonicalLocks','identityRejectionCount','identityRejections',
+              'labelWriteCount','labelCreatedCount','labelIdempotentCount',
+              'labelWouldCreateCount','labelConflictCount','labelWrites',
+              'immutablePregameRowsMutated','immutablePregameReadbackErrors','error',
+          )
+          safe={key: app.get(key) for key in allowed if key in app}
+          report={
+              'proofType':'MLB_PROTECTED_SETTLEMENT_CONFLICT_DIAGNOSTIC',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ.get('GITHUB_SHA'),
+              'runId':os.environ.get('GITHUB_RUN_ID'),
+              'requestedSlateDateEt':os.environ['SLATE_DATE_ET'],
+              'applicationStatusCode':status,
+              'settlement':safe,
+              'directTableWrite':False,
+              'protectedSettlementLambdaUsed':True,
+              'immutablePredictionRewriteAllowed':False,
+              'postStartPredictionCreationAllowed':False,
+              'secretExposed':False,
+          }
+          report['diagnosticCaptured']=bool(safe)
+          Path(os.environ['REPORT_PATH']).write_text(
+              json.dumps(report, indent=2, sort_keys=True, default=str)+'\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(report, indent=2, sort_keys=True, default=str))
+          PY
+
+      - name: Publish durable safe diagnostic
+        run: |
+          set -euo pipefail
+          cp "$REPORT_PATH" /tmp/mlb-settlement-diagnostic/report.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-settlement-diagnostic-proof origin/main
+            git reset --hard origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb-settlement-diagnostic/report.json "$REPORT_PATH"
+            python -m json.tool "$REPORT_PATH" >/dev/null
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish protected MLB settlement conflict diagnostic [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
