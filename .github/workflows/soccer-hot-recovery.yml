@@ -1,0 +1,135 @@
+name: Soccer Hot Recovery
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/soccer-hot-recovery.yml']
+permissions:
+  contents: write
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Hot deploy isolated Soccer worker only
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-soccer-auto
+          worker=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionWorkerFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+          rm -rf /tmp/soccer-hot && mkdir -p /tmp/soccer-hot/soccer_auto
+          cp soccer_auto/*.py /tmp/soccer-hot/soccer_auto/
+          (cd /tmp/soccer-hot && zip -qr /tmp/soccer-worker.zip soccer_auto)
+          aws lambda update-function-code --function-name "$worker" --region "$REGION" --zip-file fileb:///tmp/soccer-worker.zip >/tmp/update-code.json
+          aws lambda wait function-updated-v2 --function-name "$worker" --region "$REGION"
+          aws lambda get-function-configuration --function-name "$worker" --region "$REGION" --query '{State:State,LastUpdateStatus:LastUpdateStatus,LastModified:LastModified,CodeSha256:CodeSha256}' --output json | tee /tmp/worker-config.json
+          mapping=$(aws lambda list-event-source-mappings --function-name "$worker" --region "$REGION" --query 'EventSourceMappings[0].UUID' --output text)
+          if [[ -n "$mapping" && "$mapping" != None ]]; then
+            aws lambda update-event-source-mapping --uuid "$mapping" --region "$REGION" --scaling-config MaximumConcurrency=3 >/tmp/update-mapping.json
+          fi
+      - name: Drain stale DLQ safely
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          stack=parlay-platform-soccer-auto
+          main=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionQueue --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+          dlq=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionDeadLetterQueue --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
+          export MAIN_QUEUE="$main" DLQ_QUEUE="$dlq"
+          python - <<'PY'
+          import boto3, json, os, datetime, pathlib
+          sqs=boto3.client('sqs', region_name=os.environ['REGION'])
+          def qurl(value):
+              return value if value.startswith('http') else sqs.get_queue_url(QueueName=value)['QueueUrl']
+          main=qurl(os.environ['MAIN_QUEUE']); dlq=qurl(os.environ['DLQ_QUEUE'])
+          now=datetime.datetime.now(datetime.timezone.utc)
+          scanned=deleted=requeued=retired=malformed=0
+          empty=0
+          while scanned < 5000 and empty < 8:
+              r=sqs.receive_message(QueueUrl=dlq,MaxNumberOfMessages=10,VisibilityTimeout=120,WaitTimeSeconds=1,AttributeNames=['All'])
+              msgs=r.get('Messages') or []
+              if not msgs:
+                  empty += 1
+                  continue
+              empty=0
+              for m in msgs:
+                  scanned += 1
+                  body={}; actionable=False
+                  try:
+                      body=json.loads(m.get('Body') or '{}')
+                      ev=body.get('event') or {}
+                      raw=ev.get('commence_time') or ev.get('commenceTime') or ''
+                      dt=datetime.datetime.fromisoformat(str(raw).replace('Z','+00:00')) if raw else None
+                      actionable=bool(body.get('action') in ('DISCOVER_EVENT','FETCH_EVENT') and dt and dt>now)
+                  except Exception:
+                      malformed += 1
+                  if actionable:
+                      body['dlq_recovered_at']=now.isoformat()
+                      body['dlq_recovery_count']=int(body.get('dlq_recovery_count') or 0)+1
+                      sqs.send_message(QueueUrl=main,MessageBody=json.dumps(body,separators=(',',':')),DelaySeconds=2)
+                      requeued += 1
+                  else:
+                      retired += 1
+                  sqs.delete_message(QueueUrl=dlq,ReceiptHandle=m['ReceiptHandle'])
+                  deleted += 1
+          attrs=sqs.get_queue_attributes(QueueUrl=dlq,AttributeNames=['ApproximateNumberOfMessages','ApproximateNumberOfMessagesNotVisible'])['Attributes']
+          result={'scanned':scanned,'deleted':deleted,'requeued_future':requeued,'retired_stale':retired,'malformed':malformed,'remaining_visible':int(attrs.get('ApproximateNumberOfMessages',0)),'remaining_inflight':int(attrs.get('ApproximateNumberOfMessagesNotVisible',0))}
+          pathlib.Path('/tmp/dlq.json').write_text(json.dumps(result,indent=2))
+          print(json.dumps(result,indent=2))
+          assert result['remaining_visible']==0, result
+          PY
+      - name: Prove post-repair runtime
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-soccer-auto
+          physical() { aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id "$1" --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text; }
+          dispatch=$(physical SoccerDispatchFunction)
+          freeze=$(physical SoccerFreezeFunction)
+          controller=$(physical SoccerControllerFunction)
+          historical=$(physical SoccerHistoricalFunction)
+          worker=$(physical SoccerCollectionWorkerFunction)
+          aws lambda invoke --function-name "$dispatch" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"hot_recovery_dispatch"}' /tmp/dispatch.json >/tmp/dispatch-meta.json
+          sleep 60
+          aws lambda invoke --function-name "$freeze" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"hot_recovery_freeze"}' /tmp/freeze.json >/tmp/freeze-meta.json
+          aws lambda invoke --function-name "$controller" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"hot_recovery_controller"}' /tmp/controller.json >/tmp/controller-meta.json
+          aws lambda invoke --function-name "$historical" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"mode":"status"}' /tmp/historical.json >/tmp/historical-meta.json
+          status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" --output text)
+          curl --fail --silent --show-error --max-time 60 "$status_url" >/tmp/status.json
+          dlq=$(physical SoccerCollectionDeadLetterQueue)
+          dlq_url="$dlq"; [[ "$dlq" != http* ]] && dlq_url=$(aws sqs get-queue-url --queue-name "$dlq" --region "$REGION" --query QueueUrl --output text)
+          aws sqs get-queue-attributes --queue-url "$dlq_url" --region "$REGION" --attribute-names ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible --output json >/tmp/dlq-after.json
+          start_ms=$(( ($(date +%s)-600)*1000 ))
+          aws logs filter-log-events --log-group-name "/aws/lambda/$worker" --region "$REGION" --start-time "$start_ms" --filter-pattern '?Unauthorized ?HTTP_401 ?DISTRIBUTED_RATE_LIMIT_CONTENTION' --limit 100 --output json >/tmp/targeted-errors.json || echo '{"events":[]}' >/tmp/targeted-errors.json
+          python - <<'PY'
+          import json, pathlib, datetime
+          load=lambda p: json.load(open(p))
+          status=load('/tmp/status.json'); dlq=load('/tmp/dlq.json'); after=load('/tmp/dlq-after.json'); errs=load('/tmp/targeted-errors.json')
+          attrs=after.get('Attributes') or {}
+          report={'proofType':'SOCCER_HOT_RECOVERY_PROOF','observedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'workerConfig':load('/tmp/worker-config.json'),'dlqRecovery':dlq,'dlqAfter':after,'publicStatus':status,'historicalStatus':load('/tmp/historical.json'),'targetedWorkerEvents':errs.get('events') or []}
+          report['dlqClear']=int(attrs.get('ApproximateNumberOfMessages') or 0)==0 and int(attrs.get('ApproximateNumberOfMessagesNotVisible') or 0)==0
+          pathlib.Path('runtime_reports/soccer_hot_recovery_latest.json').write_text(json.dumps(report,indent=2,default=str)+'\n')
+          print(json.dumps(report,indent=2,default=str))
+          assert report['dlqClear'], report
+          PY
+      - name: Publish hot recovery proof
+        run: |
+          set -euo pipefail
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add runtime_reports/soccer_hot_recovery_latest.json
+          git commit -m 'runtime: publish Soccer hot recovery proof [skip ci]' || exit 0
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            git rebase --abort 2>/dev/null || true
+            sleep $((attempt*2))
+          done
+          exit 1
