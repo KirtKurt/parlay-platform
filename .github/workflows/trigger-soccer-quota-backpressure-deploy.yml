@@ -1,6 +1,6 @@
 name: Trigger Soccer Quota Backpressure Deploy
 
-# Explicitly dispatch the root-cause Soccer contention repair on 2026-08-24.
+# Deploy the immediate lease hardening and run the full root-cause repair.
 on:
   push:
     paths:
@@ -14,6 +14,14 @@ jobs:
   trigger:
     runs-on: ubuntu-latest
     steps:
+      - name: Dispatch isolated Soccer deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run deploy-soccer-auto.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref main \
+            -f shared_quota_reserve_percent=0
       - name: Dispatch Soccer contention repair
         env:
           GH_TOKEN: ${{ github.token }}
