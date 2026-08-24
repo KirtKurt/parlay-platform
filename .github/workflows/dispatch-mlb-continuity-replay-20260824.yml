@@ -1,0 +1,24 @@
+name: Dispatch protected MLB continuity replay
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/dispatch-mlb-continuity-replay-20260824.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch current protected continuity workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run reconcile-mlb-continuity-from-aug4-now.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
