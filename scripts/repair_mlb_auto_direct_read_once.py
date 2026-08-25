@@ -12,12 +12,13 @@ def patch_authority() -> None:
             "import urllib.request\n\nimport boto3\nfrom datetime import datetime, timezone\n",
             1,
         )
-    marker = 'READ_FUNCTION_NAME = os.environ.get("MLB_AUTO_ML_READ_FUNCTION", "").strip()'
-    if marker not in text:
+    if 'READ_STACK_NAME = os.environ.get("MLB_AUTO_ML_READ_STACK_NAME", "parlay-platform-dev").strip()' not in text:
         text = text.replace(
             'API_BASE_URL = os.environ.get("MLB_AUTO_ML_API_BASE_URL", "").rstrip("/")\n',
             'API_BASE_URL = os.environ.get("MLB_AUTO_ML_API_BASE_URL", "").rstrip("/")\n'
-            'READ_FUNCTION_NAME = os.environ.get("MLB_AUTO_ML_READ_FUNCTION", "").strip()\n',
+            'READ_STACK_NAME = os.environ.get("MLB_AUTO_ML_READ_STACK_NAME", "parlay-platform-dev").strip()\n'
+            'READ_LOGICAL_ID = os.environ.get("MLB_AUTO_ML_READ_LOGICAL_ID", "MLBV3ReadFunction").strip()\n'
+            '_READ_FUNCTION_NAME: Optional[str] = None\n',
             1,
         )
 
@@ -44,9 +45,25 @@ def patch_authority() -> None:
         raise RuntimeError("MLB_ML_API_RESPONSE_NOT_OBJECT")
     return payload
 '''
-    new = '''def _direct_lambda_json(path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    if not READ_FUNCTION_NAME:
-        raise RuntimeError("MLB_AUTO_ML_READ_FUNCTION_MISSING")
+    new = '''def _resolve_read_function_name() -> str:
+    global _READ_FUNCTION_NAME
+    if _READ_FUNCTION_NAME:
+        return _READ_FUNCTION_NAME
+    if not READ_STACK_NAME or not READ_LOGICAL_ID:
+        raise RuntimeError("MLB_AUTO_ML_READ_STACK_CONFIGURATION_MISSING")
+    detail = boto3.client("cloudformation").describe_stack_resource(
+        StackName=READ_STACK_NAME,
+        LogicalResourceId=READ_LOGICAL_ID,
+    ).get("StackResourceDetail") or {}
+    name = str(detail.get("PhysicalResourceId") or "").strip()
+    if not name:
+        raise RuntimeError("MLB_AUTO_ML_READ_FUNCTION_UNRESOLVED")
+    _READ_FUNCTION_NAME = name
+    return name
+
+
+def _direct_lambda_json(path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    function_name = _resolve_read_function_name()
     query = {
         str(key): str(value)
         for key, value in (params or {}).items()
@@ -60,7 +77,7 @@ def patch_authority() -> None:
         "queryStringParameters": query,
     }
     response = boto3.client("lambda").invoke(
-        FunctionName=READ_FUNCTION_NAME,
+        FunctionName=function_name,
         InvocationType="RequestResponse",
         Payload=json.dumps(event).encode("utf-8"),
     )
@@ -87,12 +104,11 @@ def patch_authority() -> None:
 
 
 def _http_json(path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    # API Gateway has a hard integration timeout shorter than the protected MLB
-    # read Lambda's worst-case cold path. In AWS, call that exact read Lambda
-    # directly so the same persisted, read-only authority is used without a
-    # gateway 504. HTTP remains a local/test fallback only when no function is
-    # configured. This does not recalculate or rewrite any prediction.
-    if READ_FUNCTION_NAME:
+    # The public API path is protected by API Gateway's integration timeout.
+    # Inside AWS use the exact existing read Lambda directly so the same
+    # persisted, read-only authority is retained without a gateway 504.
+    # No prediction is recalculated or rewritten here.
+    if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
         return _direct_lambda_json(path, params)
     if not API_BASE_URL:
         raise RuntimeError("MLB_AUTO_ML_API_BASE_URL_MISSING")
@@ -116,7 +132,7 @@ def _http_json(path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, 
         raise RuntimeError("MLB_ML_API_RESPONSE_NOT_OBJECT")
     return payload
 '''
-    if old not in text and "def _direct_lambda_json" not in text:
+    if old not in text and "def _resolve_read_function_name" not in text:
         raise RuntimeError("ml_authority HTTP block drifted; refusing unsafe patch")
     if old in text:
         text = text.replace(old, new, 1)
@@ -126,29 +142,30 @@ def _http_json(path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, 
 def patch_template() -> None:
     path = Path("mlb-auto-llm-template.yaml")
     text = path.read_text(encoding="utf-8")
-    if "  MlbMlReadFunctionName:\n" not in text:
-        text = text.replace(
-            "  MlbMlApiBaseUrl:\n    Type: String\n",
-            "  MlbMlApiBaseUrl:\n    Type: String\n  MlbMlReadFunctionName:\n    Type: String\n",
-            1,
-        )
     env_line = "          MLB_AUTO_ML_API_BASE_URL: !Ref MlbMlApiBaseUrl\n"
-    new_env_line = env_line + "          MLB_AUTO_ML_READ_FUNCTION: !Ref MlbMlReadFunctionName\n"
-    if "MLB_AUTO_ML_READ_FUNCTION" not in text:
+    new_env_line = (
+        env_line
+        + "          MLB_AUTO_ML_READ_STACK_NAME: parlay-platform-dev\n"
+        + "          MLB_AUTO_ML_READ_LOGICAL_ID: MLBV3ReadFunction\n"
+    )
+    if "MLB_AUTO_ML_READ_STACK_NAME" not in text:
         text = text.replace(env_line, new_env_line)
-    else:
-        # Ensure both isolated Lambda functions have the direct-read environment.
-        while text.count("MLB_AUTO_ML_READ_FUNCTION") < 2 and env_line in text:
-            idx = text.find(env_line, text.find("MLB_AUTO_ML_READ_FUNCTION") + 1)
-            if idx < 0:
-                break
-            text = text[:idx] + new_env_line + text[idx + len(env_line):]
+    while text.count("MLB_AUTO_ML_READ_STACK_NAME") < 2:
+        first = text.find("MLB_AUTO_ML_READ_STACK_NAME")
+        idx = text.find(env_line, first + 1)
+        if idx < 0:
+            break
+        text = text[:idx] + new_env_line + text[idx + len(env_line):]
 
-    policy = (
+    invoke_policy = (
         "            - Effect: Allow\n"
         "              Action:\n"
         "                - lambda:InvokeFunction\n"
-        "              Resource: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${MlbMlReadFunctionName}'\n"
+        "              Resource: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:parlay-platform-dev-MLBV3ReadFunction-*'\n"
+        "            - Effect: Allow\n"
+        "              Action:\n"
+        "                - cloudformation:DescribeStackResource\n"
+        "              Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/parlay-platform-dev/*'\n"
     )
     market = (
         "            - Effect: Allow\n"
@@ -156,63 +173,20 @@ def patch_template() -> None:
         "                - aws-marketplace:ViewSubscriptions\n"
         "              Resource: '*'\n"
     )
-    need = 2 - text.count("lambda:InvokeFunction")
+    existing = text.count("cloudformation:DescribeStackResource")
     cursor = 0
-    for _ in range(max(need, 0)):
+    for _ in range(max(2 - existing, 0)):
         idx = text.find(market, cursor)
         if idx < 0:
             raise RuntimeError("template policy marker missing")
-        text = text[:idx] + policy + text[idx:]
-        cursor = idx + len(policy) + len(market)
-    path.write_text(text, encoding="utf-8")
-
-
-def patch_deploy_workflow() -> None:
-    path = Path(".github/workflows/deploy-mlb-auto-llm.yml")
-    text = path.read_text(encoding="utf-8")
-    if "MLB_ML_READ_FUNCTION=$(aws cloudformation describe-stack-resource" not in text:
-        anchor = (
-            '          test -n "$MLB_ML_API_BASE_URL"\n'
-            '          test "$MLB_ML_API_BASE_URL" != "None"\n'
-            '          sam deploy \\\n'
-        )
-        replacement = (
-            '          test -n "$MLB_ML_API_BASE_URL"\n'
-            '          test "$MLB_ML_API_BASE_URL" != "None"\n'
-            '          MLB_ML_READ_FUNCTION=$(aws cloudformation describe-stack-resource \\\n'
-            '            --stack-name parlay-platform-dev --region "$AWS_REGION" \\\n'
-            '            --logical-resource-id MLBV3ReadFunction \\\n'
-            "            --query 'StackResourceDetail.PhysicalResourceId' \\\n"
-            '            --output text)\n'
-            '          test -n "$MLB_ML_READ_FUNCTION"\n'
-            '          test "$MLB_ML_READ_FUNCTION" != "None"\n'
-            '          sam deploy \\\n'
-        )
-        if anchor not in text:
-            raise RuntimeError("deploy workflow anchor missing")
-        text = text.replace(anchor, replacement, 1)
-    if 'MlbMlReadFunctionName="${MLB_ML_READ_FUNCTION}"' not in text:
-        text = text.replace(
-            '              MlbMlApiBaseUrl="${MLB_ML_API_BASE_URL}" \\\n',
-            '              MlbMlApiBaseUrl="${MLB_ML_API_BASE_URL}" \\\n'
-            '              MlbMlReadFunctionName="${MLB_ML_READ_FUNCTION}" \\\n',
-            1,
-        )
-    if "grep -q 'MLB_AUTO_ML_READ_FUNCTION' mlb_auto_llm/ml_authority.py" not in text:
-        text = text.replace(
-            "          grep -q 'AWS_ML_RANKED_ENSEMBLE' mlb_auto_llm/ml_authority.py\n",
-            "          grep -q 'AWS_ML_RANKED_ENSEMBLE' mlb_auto_llm/ml_authority.py\n"
-            "          grep -q 'MLB_AUTO_ML_READ_FUNCTION' mlb_auto_llm/ml_authority.py\n"
-            "          grep -q 'MlbMlReadFunctionName' mlb-auto-llm-template.yaml\n",
-            1,
-        )
+        text = text[:idx] + invoke_policy + text[idx:]
+        cursor = idx + len(invoke_policy) + len(market)
     path.write_text(text, encoding="utf-8")
 
 
 def main() -> None:
     patch_authority()
     patch_template()
-    patch_deploy_workflow()
 
 
 if __name__ == "__main__":
