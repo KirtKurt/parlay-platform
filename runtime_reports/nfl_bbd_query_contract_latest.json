@@ -1,5 +1,117 @@
 {
+  "backfillExclusionCountSample": 100,
+  "backfillExclusionSample": [
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#1"
+    },
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#10"
+    },
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#100"
+    },
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#101"
+    },
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#102"
+    },
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#103"
+    },
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#104"
+    },
+    {
+      "reason": "NFL_TEAM_UNRECOGNIZED:LA",
+      "sk": "BBD_GAME#2020#REG#0#105"
+    },
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#106"
+    },
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#107"
+    },
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#108"
+    },
+    {
+      "reason": "NFL_TEAM_UNRECOGNIZED:LA",
+      "sk": "BBD_GAME#2020#REG#0#109"
+    },
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#11"
+    },
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#110"
+    },
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#111"
+    },
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#112"
+    },
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#113"
+    },
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#114"
+    },
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#115"
+    },
+    {
+      "reason": "BBD_KICKOFF_MISSING",
+      "sk": "BBD_GAME#2020#REG#0#116"
+    }
+  ],
+  "backfillState": {
+    "completed": true,
+    "completed_at": "2026-08-25T00:55:12Z",
+    "game_type_index": 0,
+    "last_batch_accepted": 0,
+    "last_batch_rejected": 0,
+    "last_provider": "BBD",
+    "last_transport": {
+      "endpoint": "/v1/nfl/games",
+      "provider": "BBD",
+      "rate_limit": "600",
+      "rate_remaining": "598",
+      "rate_reset": "1787619193",
+      "requests_last": null,
+      "requests_remaining": null,
+      "requests_used": null,
+      "status": 200
+    },
+    "materialize_index": 0,
+    "offset": 0,
+    "phase": "READY",
+    "season_index": 0,
+    "started_at": "2026-08-25T00:35:41Z",
+    "updated_at": "2026-08-25T00:55:12Z"
+  },
+  "gamesTableItemCount": 0,
+  "immutableHistoryRewritten": false,
+  "productionAuthorityChanged": false,
   "proofType": "NFL_BBD_QUERY_CONTRACT_DIAGNOSTIC",
+  "readOnly": true,
   "seasonOnly": {
     "count": 5,
     "pagination": {
@@ -8,6 +120,7 @@
       "total": 285
     },
     "rateRemaining": "599",
+    "sampleGameType": "REG",
     "sampleKeys": [
       "away_rest",
       "away_score",
@@ -24,6 +137,7 @@
       "surface",
       "week"
     ],
+    "sampleSeason": 2025,
     "status": 200
   },
   "seasonTypePost": {
@@ -34,7 +148,9 @@
       "total": 0
     },
     "rateRemaining": "597",
+    "sampleGameType": null,
     "sampleKeys": [],
+    "sampleSeason": null,
     "status": 200
   },
   "seasonTypeReg": {
@@ -45,6 +161,7 @@
       "total": 272
     },
     "rateRemaining": "598",
+    "sampleGameType": "REG",
     "sampleKeys": [
       "away_rest",
       "away_score",
@@ -61,6 +178,7 @@
       "surface",
       "week"
     ],
+    "sampleSeason": 2025,
     "status": 200
   },
   "secretExposed": false
