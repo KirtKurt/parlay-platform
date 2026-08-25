@@ -1,4 +1,4 @@
-# 2026-08-25: rerun isolated terminal-durability repair after fresh continuity proof exposed missing durable terminal outcomes; no prediction, lock, winner, or promotion authority is changed by this trigger.
+# 2026-08-25: rerun isolated terminal-durability repair after fresh continuity proof exposed missing durable terminal outcomes; accept the already-hardened v3 protected-force-replay source without downgrading it. No prediction, lock, winner, or promotion authority is changed by this trigger.
 name: Repair MLB terminal durability once
 
 on:
@@ -39,7 +39,11 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
-          python scripts/repair_mlb_terminal_durability_once.py
+          if grep -q 'v3-protected-force-replay' hello_world/mlb_prospective_row_repair.py; then
+            echo 'Current MLB prospective repair is already the hardened v3 protected-force-replay implementation; preserving it.'
+          else
+            python scripts/repair_mlb_terminal_durability_once.py
+          fi
           python -m py_compile \
             hello_world/mlb_prospective_row_repair.py \
             scripts/reconcile_mlb_prospective_backlog_v4.py \
@@ -52,7 +56,7 @@ jobs:
             tests/unit/test_reconcile_mlb_prospective_backlog_v5.py \
             tests/unit/test_mlb_canonical_final_labels_v1.py
           git diff --check
-          grep -q 'v2-durable-cached-replay' hello_world/mlb_prospective_row_repair.py
+          grep -Eq 'v(2-durable-cached-replay|3-protected-force-replay)' hello_world/mlb_prospective_row_repair.py
           grep -q 'official_status_terminal_durability_incomplete' scripts/reconcile_mlb_prospective_backlog_v4.py
 
       - name: Publish tested source repair
