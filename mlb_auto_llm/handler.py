@@ -128,6 +128,7 @@ def _team_name(container: Any) -> str:
     return str(container or "")
 
 
+# MLB_AUTO_PACKET_STORAGE_GZIP_CHUNKED_V1
 def _put(pk: str, sk: str, data: Dict[str, Any], *, condition: Optional[str] = None) -> bool:
     if TABLE is None:
         raise RuntimeError("MLB_AUTO_TABLE_NOT_CONFIGURED")
@@ -138,9 +139,52 @@ def _put(pk: str, sk: str, data: Dict[str, Any], *, condition: Optional[str] = N
         TABLE.put_item(**kwargs)
         return True
     except Exception as exc:
-        if str((getattr(exc, "response", {}) or {}).get("Error", {}).get("Code", "")) == "ConditionalCheckFailedException":
+        code = str((getattr(exc, "response", {}) or {}).get("Error", {}).get("Code", ""))
+        status = int(((getattr(exc, "response", {}) or {}).get("ResponseMetadata", {}) or {}).get("HTTPStatusCode") or 0)
+        if code == "ConditionalCheckFailedException":
             return False
-        raise
+        if not str(pk).startswith("PACKET#") or status != 413:
+            raise
+
+        # DynamoDB has a hard 400 KB item limit. Full expanded provider packets can
+        # exceed it. Persist the exact packet losslessly as deterministic gzip chunks
+        # instead of dropping fields or silently failing the production cycle.
+        import gzip
+        import hashlib
+        raw = json.dumps(_plain(data), separators=(",", ":"), sort_keys=True, default=str).encode("utf-8")
+        compressed = gzip.compress(raw, compresslevel=9, mtime=0)
+        digest = hashlib.sha256(raw).hexdigest()
+        chunk_size = 240000
+        chunks = [compressed[i:i + chunk_size] for i in range(0, len(compressed), chunk_size)] or [b""]
+        for index, chunk in enumerate(chunks):
+            TABLE.put_item(Item={
+                "PK": pk,
+                "SK": f"{sk}#CHUNK#{index:04d}",
+                "data": {
+                    "storageEncoding": "gzip-json-chunk-v1",
+                    "chunkIndex": index,
+                    "chunkCount": len(chunks),
+                    "payload": chunk,
+                },
+                "updatedAtUtc": _iso(_now()),
+            })
+        manifest = {
+            "storageEncoding": "gzip-json-chunked-v1",
+            "chunkCount": len(chunks),
+            "compressedBytes": len(compressed),
+            "uncompressedBytes": len(raw),
+            "sha256": digest,
+        }
+        manifest_kwargs: Dict[str, Any] = {"Item": {"PK": pk, "SK": sk, "data": manifest, "updatedAtUtc": _iso(_now())}}
+        if condition:
+            manifest_kwargs["ConditionExpression"] = condition
+        try:
+            TABLE.put_item(**manifest_kwargs)
+        except Exception as manifest_exc:
+            if str((getattr(manifest_exc, "response", {}) or {}).get("Error", {}).get("Code", "")) == "ConditionalCheckFailedException":
+                return False
+            raise
+        return True
 
 
 def _get(pk: str, sk: str) -> Optional[Dict[str, Any]]:
@@ -148,7 +192,31 @@ def _get(pk: str, sk: str) -> Optional[Dict[str, Any]]:
         return None
     result = TABLE.get_item(Key={"PK": pk, "SK": sk}, ConsistentRead=True)
     item = result.get("Item") if isinstance(result, dict) else None
-    return _plain((item or {}).get("data")) if isinstance((item or {}).get("data"), dict) else None
+    stored = (item or {}).get("data")
+    plain = _plain(stored) if isinstance(stored, dict) else None
+    if not isinstance(plain, dict):
+        return None
+    if plain.get("storageEncoding") != "gzip-json-chunked-v1":
+        return plain
+
+    import gzip
+    import hashlib
+    count = int(plain.get("chunkCount") or 0)
+    if count <= 0:
+        raise RuntimeError("MLB_AUTO_PACKET_CHUNK_MANIFEST_INVALID")
+    parts = []
+    for index in range(count):
+        child = TABLE.get_item(Key={"PK": pk, "SK": f"{sk}#CHUNK#{index:04d}"}, ConsistentRead=True).get("Item") or {}
+        child_data = child.get("data") or {}
+        payload = child_data.get("payload")
+        if payload is None:
+            raise RuntimeError(f"MLB_AUTO_PACKET_CHUNK_MISSING:{index}")
+        parts.append(bytes(payload))
+    raw = gzip.decompress(b"".join(parts))
+    if hashlib.sha256(raw).hexdigest() != str(plain.get("sha256") or ""):
+        raise RuntimeError("MLB_AUTO_PACKET_CHUNK_SHA256_MISMATCH")
+    value = json.loads(raw.decode("utf-8"))
+    return value if isinstance(value, dict) else None
 
 
 def _official_schedule(slate: str) -> Dict[str, Any]:
