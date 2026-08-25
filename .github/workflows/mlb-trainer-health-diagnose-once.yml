@@ -1,10 +1,10 @@
-# Triggered after the branch-local push contract is active.
+# Isolated AWS runtime proof; never merged to main.
 name: Verify deployed MLB R7 admission now
 
 "on":
-  push:
+  pull_request:
     branches:
-      - repair/mlb-r7-runtime-admission-proof-20260825
+      - main
     paths:
       - '.github/workflows/mlb-trainer-health-diagnose-once.yml'
   workflow_dispatch:
@@ -115,15 +115,12 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           from __future__ import annotations
-
-          import json
-          import os
+          import json, os
           from datetime import datetime, timezone
           from pathlib import Path
           from typing import Any
 
           EXPERIMENT = os.environ['EXPERIMENT_ID']
-
           def load(path: str) -> dict[str, Any]:
               value = json.loads(Path(path).read_text(encoding='utf-8'))
               if isinstance(value, dict) and 'body' in value:
@@ -143,7 +140,6 @@ jobs:
           partitions = authoritative.get('partitionCounts') or {}
           milestones = authoritative.get('milestones') or {}
           counts = milestones.get('counts') or {}
-
           accepted = int(authoritative.get('acceptedRowCount') or 0)
           rejected = int(authoritative.get('rejectedRowCount') or 0)
           train_count = int(partitions.get('train') or counts.get('train') or 0)
@@ -191,11 +187,7 @@ jobs:
               'acceptedRowCount': accepted,
               'rejectedRowCount': rejected,
               'rejectionReasonCounts': authoritative.get('rejectionReasonCounts') or {},
-              'partitionCounts': {
-                  'train': train_count,
-                  'validation': validation_count,
-                  'prospectiveTest': prospective_count,
-              },
+              'partitionCounts': {'train': train_count, 'validation': validation_count, 'prospectiveTest': prospective_count},
               'milestoneTargets': milestones.get('targets') or {},
               'milestoneRemainingRows': milestones.get('remainingRows') or {},
               'modelTrained': authoritative.get('modelTrained'),
