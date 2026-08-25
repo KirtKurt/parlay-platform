@@ -1,0 +1,70 @@
+name: Repair MLB Auto ML read timeout once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-auto-ml-read-timeout-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-mlb-auto-ml-read-timeout-once
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Patch only the bounded AWS ML read path
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('mlb_auto_llm/ml_authority.py')
+          text=p.read_text(encoding='utf-8')
+          old_timeout='    with urllib.request.urlopen(request, timeout=25) as response:\n'
+          new_timeout='    timeout_seconds = float(os.environ.get("MLB_AUTO_ML_HTTP_TIMEOUT_SECONDS", "60"))\n    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:\n'
+          old_query='        {"game_date_et": slate, "date": slate, "limit": 500},\n'
+          new_query='        {"game_date_et": slate, "limit": 64},\n'
+          assert old_timeout in text, 'expected HTTP timeout source not found'
+          assert old_query in text, 'expected prediction query source not found'
+          text=text.replace(old_timeout,new_timeout,1).replace(old_query,new_query,1)
+          p.write_text(text,encoding='utf-8')
+          PY
+          python -m py_compile mlb_auto_llm/ml_authority.py mlb_auto_llm/ml_authority_smoke.py
+          python -m pip install --quiet 'pytest>=8,<9'
+          PYTHONPATH=mlb_auto_llm python -m pytest -q tests/unit/test_mlb_auto_ml_authority.py
+          python - <<'PY'
+          from pathlib import Path
+          text=Path('mlb_auto_llm/ml_authority.py').read_text(encoding='utf-8')
+          assert 'MLB_AUTO_ML_HTTP_TIMEOUT_SECONDS' in text
+          assert '{"game_date_et": slate, "limit": 64}' in text
+          assert 'AWS_ML_RANKED_ENSEMBLE' in text
+          assert 'MLB_ML_GAME_COVERAGE_INCOMPLETE' in text
+          assert 'MLB_ML_CARD_GAME_COUNT_MISMATCH' in text
+          PY
+          git diff --check
+      - name: Commit tested isolated repair
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mlb_auto_llm/ml_authority.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'Bound MLB Auto AWS ML read latency without weakening coverage'
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
