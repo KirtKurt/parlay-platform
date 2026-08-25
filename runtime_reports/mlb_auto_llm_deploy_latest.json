@@ -1,20 +1,9 @@
 {
   "bedrock": {
     "attemptedModelIds": [
-      "us-east-2::us.amazon.nova-2-lite-v1:0",
-      "us-east-2::us.amazon.nova-lite-v1:0",
-      "us-east-2::us.amazon.nova-micro-v1:0",
-      "us-east-2::us.amazon.nova-premier-v1:0",
-      "us-east-2::us.amazon.nova-pro-v1:0",
-      "us-west-2::us.amazon.nova-2-lite-v1:0",
-      "us-west-2::us.amazon.nova-lite-v1:0",
-      "us-west-2::us.amazon.nova-micro-v1:0",
-      "us-west-2::us.amazon.nova-premier-v1:0",
-      "us-west-2::us.amazon.nova-pro-v1:0",
-      "us.amazon.nova-2-lite-v1:0",
-      "us.amazon.nova-lite-v1:0"
+      "us-east-2::us.amazon.nova-2-lite-v1:0"
     ],
-    "bedrockAvailable": false,
+    "bedrockAvailable": true,
     "configuredModelCount": 12,
     "configuredRegions": [
       "us-east-1",
@@ -22,110 +11,18 @@
       "us-east-2"
     ],
     "decisionAuthority": "BEDROCK_LLM",
-    "errors": [
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "us.amazon.nova-2-lite-v1:0",
-        "region": "us-east-2",
-        "routeId": "us-east-2::us.amazon.nova-2-lite-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "us.amazon.nova-lite-v1:0",
-        "region": "us-east-2",
-        "routeId": "us-east-2::us.amazon.nova-lite-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "us.amazon.nova-micro-v1:0",
-        "region": "us-east-2",
-        "routeId": "us-east-2::us.amazon.nova-micro-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens, please wait before trying again.",
-        "modelId": "us.amazon.nova-premier-v1:0",
-        "region": "us-east-2",
-        "routeId": "us-east-2::us.amazon.nova-premier-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "us.amazon.nova-pro-v1:0",
-        "region": "us-east-2",
-        "routeId": "us-east-2::us.amazon.nova-pro-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "us.amazon.nova-2-lite-v1:0",
-        "region": "us-west-2",
-        "routeId": "us-west-2::us.amazon.nova-2-lite-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "us.amazon.nova-lite-v1:0",
-        "region": "us-west-2",
-        "routeId": "us-west-2::us.amazon.nova-lite-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "us.amazon.nova-micro-v1:0",
-        "region": "us-west-2",
-        "routeId": "us-west-2::us.amazon.nova-micro-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens, please wait before trying again.",
-        "modelId": "us.amazon.nova-premier-v1:0",
-        "region": "us-west-2",
-        "routeId": "us-west-2::us.amazon.nova-premier-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "us.amazon.nova-pro-v1:0",
-        "region": "us-west-2",
-        "routeId": "us-west-2::us.amazon.nova-pro-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "us.amazon.nova-2-lite-v1:0",
-        "region": "us-east-1",
-        "routeId": "us.amazon.nova-2-lite-v1:0"
-      },
-      {
-        "endpointFamily": "bedrock-runtime-converse",
-        "errorCode": "ThrottlingException",
-        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-        "modelId": "us.amazon.nova-lite-v1:0",
-        "region": "us-east-1",
-        "routeId": "us.amazon.nova-lite-v1:0"
-      }
-    ],
+    "endpointFamily": "bedrock-runtime-converse",
+    "errorsBeforeSuccess": [],
     "failoverEnabled": true,
     "mantleModelCount": 0,
     "mantleModelIds": [],
     "mlFallbackAttempted": false,
-    "ok": false,
+    "modelId": "us.amazon.nova-2-lite-v1:0",
+    "ok": true,
+    "region": "us-east-2",
+    "responseNonEmpty": true,
     "routeAttemptLimit": 12,
+    "routeId": "us-east-2::us.amazon.nova-2-lite-v1:0",
     "routeSelectionPolicy": "us-cross-region,global-cross-region,direct",
     "runtimeModelCount": 32,
     "runtimeModelIds": [
@@ -164,10 +61,563 @@
     ],
     "service": "mlb-auto-llm-bedrock-smoke"
   },
-  "createdAtUtc": "2026-08-25T17:47:33.154755+00:00",
-  "cycle": {},
-  "jobStatus": "failure",
-  "ok": false,
+  "createdAtUtc": "2026-08-25T18:16:51.255244+00:00",
+  "cycle": {
+    "card": {
+      "authority": "MLB_AUTO_LLM_BEDROCK",
+      "bedrockAuthorityComplete": true,
+      "dataSources": [
+        "MLB Stats API",
+        "The Odds API",
+        "Big Balls Sports Data Pro",
+        "Amazon Bedrock"
+      ],
+      "deadline": {
+        "firstGameSafetyDeadlineUtc": "2026-08-25T22:30:00+00:00",
+        "firstGameUtc": "2026-08-25T22:40:00+00:00",
+        "publishDeadlineUtc": "2026-08-25T21:55:00+00:00",
+        "requestedDeadlineUtc": "2026-08-25T21:55:00+00:00",
+        "requestedSecondGameLeadMinutes": 45,
+        "secondGameUtc": "2026-08-25T22:40:00+00:00"
+      },
+      "deadlineMet": true,
+      "decisionAuthority": "BEDROCK_LLM",
+      "decisionPolicy": "BEDROCK_ONLY_NO_MARKET_DECISION_FALLBACK",
+      "fullyAutonomous": true,
+      "mlAuthorityComplete": false,
+      "modelAuthorityComplete": true,
+      "modelState": {
+        "marketAnchorWeight": 0.55,
+        "policy": "If recent accuracy is below target, constrain the LLM more tightly to multi-book market consensus while still considering independent baseball context.",
+        "recentAccuracy": null,
+        "recentCorrectPicks": 0,
+        "recentDays": 0,
+        "recentGradedPicks": 0,
+        "targetDailyAccuracy": 0.7
+      },
+      "picks": [
+        {
+          "awayTeam": "Boston Red Sox",
+          "confidence": "0.6",
+          "decisionAuthority": "BEDROCK_LLM",
+          "disagreements": [
+            "Record suggests a slight edge for Boston, but odds dominate the final decision"
+          ],
+          "gameDate": "2026-08-25T22:40:00Z",
+          "gamePk": "823826",
+          "homeTeam": "Miami Marlins",
+          "llmModelId": "openai.gpt-oss-20b-1:0",
+          "predictedLoser": "Boston Red Sox",
+          "predictedWinner": "Miami Marlins",
+          "probability": 0.56,
+          "rationale": "The consensus moneyline odds (1.7 for Marlins vs 1.411 for Red Sox) indicate a 58.8% implied probability for the Marlins, while the teams\u2019 season records (72\u201159 for Boston vs 67\u201165 for Miami) translate to a 48% implied probability for the Marlins.  Applying the policy\u2011mandated source weighting (70% odds, 30% record) yields a combined probability of approximately 56% for the Marlins.  The odds carry more weight, so the Marlins are selected as the winner.",
+          "sourcePresence": {
+            "bigBallsDataPro": true,
+            "mlbStatsApi": true,
+            "theOddsApi": true,
+            "theOddsApiExpanded": true
+          },
+          "sourceWeights": {
+            "odds": 0.7,
+            "record": 0.3
+          }
+        },
+        {
+          "awayTeam": "Tampa Bay Rays",
+          "confidence": "0.6",
+          "decisionAuthority": "BEDROCK_LLM",
+          "disagreements": "The team record suggests a slight edge for Tampa Bay, but the odds and home advantage provide a stronger signal for Detroit.",
+          "gameDate": "2026-08-25T22:40:00Z",
+          "gamePk": "824233",
+          "homeTeam": "Detroit Tigers",
+          "llmModelId": "openai.gpt-oss-20b-1:0",
+          "predictedLoser": "Tampa Bay Rays",
+          "predictedWinner": "Detroit Tigers",
+          "probability": 0.62,
+          "rationale": "The consensus moneyline odds favor Detroit (1.594 vs 1.461 for Tampa Bay), implying a 62.8% chance for the Tigers. The Tigers also have the home\u2011field advantage at Comerica Park, which historically boosts win probability by roughly 5%. While Tampa Bay\u2019s regular\u2011season record (78\u201153, .595) is better than Detroit\u2019s (61\u201170, .466), the odds and home advantage outweigh the record differential. Combining the odds (50% weight), record (30% weight) and home advantage (20% weight) yields an overall probability of about 62%.",
+          "sourcePresence": {
+            "bigBallsDataPro": true,
+            "mlbStatsApi": true,
+            "theOddsApi": true,
+            "theOddsApiExpanded": true
+          },
+          "sourceWeights": {
+            "home_advantage": 0.2,
+            "odds": 0.5,
+            "record": 0.3
+          }
+        },
+        {
+          "awayTeam": "Colorado Rockies",
+          "confidence": "0.8",
+          "decisionAuthority": "BEDROCK_LLM",
+          "disagreements": [],
+          "gameDate": "2026-08-25T22:45:00Z",
+          "gamePk": "822693",
+          "homeTeam": "Washington Nationals",
+          "llmModelId": "openai.gpt-oss-20b-1:0",
+          "predictedLoser": "Colorado Rockies",
+          "predictedWinner": "Washington Nationals",
+          "probability": 0.72,
+          "rationale": "The consensus moneyline odds favor the Nationals (1.392 vs. 1.729 for the Rockies), indicating a roughly 72% implied probability. The Nationals also have a better season record (.466 vs. .382) and a named probable pitcher (Andrew Alvarez) while the Rockies\u2019 pitcher is not listed. These factors collectively support a Nationals win.",
+          "sourcePresence": {
+            "bigBallsDataPro": true,
+            "mlbStatsApi": true,
+            "theOddsApi": true,
+            "theOddsApiExpanded": true
+          },
+          "sourceWeights": {
+            "odds": 0.4,
+            "other": 0.1,
+            "pitcher": 0.2,
+            "record": 0.3
+          }
+        },
+        {
+          "awayTeam": "Houston Astros",
+          "confidence": "0.8",
+          "decisionAuthority": "BEDROCK_LLM",
+          "disagreements": [],
+          "gameDate": "2026-08-25T23:05:00Z",
+          "gamePk": "823505",
+          "homeTeam": "New York Yankees",
+          "llmModelId": "openai.gpt-oss-20b-1:0",
+          "predictedLoser": "Houston Astros",
+          "predictedWinner": "New York Yankees",
+          "probability": 0.72,
+          "rationale": "The Yankees are favored by both the moneyline odds (1.456 vs 1.788 for the Astros) and the spread (-1.5 vs +1.5). They also have a better season record (.569 vs .496) and are playing at home in Yankee Stadium, giving them a home\u2011field advantage. These factors collectively support a 72% chance of a Yankees win.",
+          "sourcePresence": {
+            "bigBallsDataPro": true,
+            "mlbStatsApi": true,
+            "theOddsApi": true,
+            "theOddsApiExpanded": true
+          },
+          "sourceWeights": {
+            "home_advantage": 0.2,
+            "odds": 0.5,
+            "record": 0.3
+          }
+        },
+        {
+          "awayTeam": "Kansas City Royals",
+          "confidence": "0.8",
+          "decisionAuthority": "BEDROCK_LLM",
+          "disagreements": [],
+          "gameDate": "2026-08-25T23:07:00Z",
+          "gamePk": "822773",
+          "homeTeam": "Toronto Blue Jays",
+          "llmModelId": "openai.gpt-oss-20b-1:0",
+          "predictedLoser": "Kansas City Royals",
+          "predictedWinner": "Toronto Blue Jays",
+          "probability": 0.68,
+          "rationale": "The pre\u2011game odds overwhelmingly favor Toronto, with a moneyline of 1.493 (implied 67%) versus 1.691 for Kansas City (59%). The spread also favors Toronto at -1.5. Toronto\u2019s season record (.485) is better than Kansas City\u2019s (.439), and the Blue Jays\u2019 probable pitcher, Max Scherzer, is a proven ace compared to Seth Lugo. All available evidence points to Toronto as the likely winner.",
+          "sourcePresence": {
+            "bigBallsDataPro": true,
+            "mlbStatsApi": true,
+            "theOddsApi": true,
+            "theOddsApiExpanded": true
+          },
+          "sourceWeights": {
+            "odds": 0.5,
+            "other": 0.1,
+            "pitcher": 0.2,
+            "team_record": 0.2
+          }
+        },
+        {
+          "awayTeam": "Milwaukee Brewers",
+          "confidence": "high",
+          "decisionAuthority": "BEDROCK_LLM",
+          "disagreements": [],
+          "gameDate": "2026-08-25T23:10:00Z",
+          "gamePk": "823585",
+          "homeTeam": "New York Mets",
+          "llmModelId": "openai.gpt-oss-20b-1:0",
+          "predictedLoser": "New York Mets",
+          "predictedWinner": "Milwaukee Brewers",
+          "probability": 0.78,
+          "rationale": "The Brewers are favored by the majority of bookmakers (average moneyline ~1.57\u20131.64) and have a significantly better season record (.618 vs .450). Their probable pitcher, Kyle Harrison, has a strong track record, while the Mets\u2019 starter Zac Thornton has a less favorable recent performance. The consensus odds and team performance data strongly support a Brewers win.",
+          "sourcePresence": {
+            "bigBallsDataPro": true,
+            "mlbStatsApi": true,
+            "theOddsApi": true,
+            "theOddsApiExpanded": true
+          },
+          "sourceWeights": {
+            "odds": 0.5,
+            "pitcher": 0.2,
+            "season_record": 0.3
+          }
+        },
+        {
+          "awayTeam": "Los Angeles Dodgers",
+          "confidence": "0.7",
+          "decisionAuthority": "BEDROCK_LLM",
+          "disagreements": [],
+          "gameDate": "2026-08-25T23:15:00Z",
+          "gamePk": "824881",
+          "homeTeam": "Atlanta Braves",
+          "llmModelId": "openai.gpt-oss-20b-1:0",
+          "predictedLoser": "Atlanta Braves",
+          "predictedWinner": "Los Angeles Dodgers",
+          "probability": 0.68,
+          "rationale": "The pre\u2011game odds heavily favor the Dodgers (moneyline 1.378 vs 1.734 for the Braves) and the Dodgers\u2019 season record (80\u201151, .611) is superior to the Braves\u2019 76\u201155 (.580). The probable starting pitchers\u2014Tyler Glasnow for the Dodgers and Bryce Elder for the Braves\u2014are both solid, but Glasnow\u2019s recent performance and the Dodgers\u2019 overall edge give the Dodgers a clear advantage. No conflicting data is present in the supplied pre\u2011game evidence.",
+          "sourcePresence": {
+            "bigBallsDataPro": true,
+            "mlbStatsApi": true,
+            "theOddsApi": true,
+            "theOddsApiExpanded": true
+          },
+          "sourceWeights": {
+            "odds": 0.6,
+            "pitcher": 0.2,
+            "record": 0.2
+          }
+        },
+        {
+          "awayTeam": "Texas Rangers",
+          "confidence": "0.7",
+          "decisionAuthority": "BEDROCK_LLM",
+          "disagreements": [
+            "Rangers\u2019 pitcher advantage (deGrom)"
+          ],
+          "gameDate": "2026-08-25T23:40:00Z",
+          "gamePk": "824556",
+          "homeTeam": "Chicago White Sox",
+          "llmModelId": "openai.gpt-oss-20b-1:0",
+          "predictedLoser": "Texas Rangers",
+          "predictedWinner": "Chicago White Sox",
+          "probability": 0.62,
+          "rationale": "The multi\u2011book market consensus strongly favors the White Sox, with 11 of 11 bookmakers offering a moneyline edge (decimal odds 1.359 vs 1.327 for the Rangers) and a spread advantage (+1.5). The White Sox also have a slightly better season record (.519 vs .500). While the Rangers\u2019 probable pitcher is listed as Jacob deGrom\u2014an elite starter\u2014this appears to be an anomaly in the supplied data (deGrom is normally a Mets pitcher). Given the policy to lean on market consensus when accuracy is uncertain, the White Sox edge is deemed decisive. The pitcher advantage is noted as a disagreement but is weighted less heavily.",
+          "sourcePresence": {
+            "bigBallsDataPro": true,
+            "mlbStatsApi": true,
+            "theOddsApi": true,
+            "theOddsApiExpanded": true
+          },
+          "sourceWeights": {
+            "odds": 0.6,
+            "pitcher": 0.25,
+            "record": 0.15
+          }
+        },
+        {
+          "awayTeam": "Baltimore Orioles",
+          "confidence": "0.7",
+          "decisionAuthority": "BEDROCK_LLM",
+          "disagreements": [],
+          "gameDate": "2026-08-25T23:45:00Z",
+          "gamePk": "823016",
+          "homeTeam": "St. Louis Cardinals",
+          "llmModelId": "openai.gpt-oss-20b-1:0",
+          "predictedLoser": "Baltimore Orioles",
+          "predictedWinner": "St. Louis Cardinals",
+          "probability": 0.68,
+          "rationale": "The consensus moneyline odds across 11 bookmakers favor the Cardinals (average decimal ~1.54, implied ~65%) versus the Orioles (~1.79, ~56%). The spread also backs the Cardinals at -1.5 with an implied probability of ~39%, while the Orioles are +1.5 with ~66%. The Cardinals\u2019 .500 record marginally outpaces the Orioles\u2019 .481 record, and the Orioles\u2019 probable pitcher, Chris Bassitt, is a solid starter but the Cardinals lack a listed starter, suggesting a neutral or slight advantage for the Cardinals. Combining these signals yields a moderate confidence win probability of 68%.",
+          "sourcePresence": {
+            "bigBallsDataPro": true,
+            "mlbStatsApi": true,
+            "theOddsApi": true,
+            "theOddsApiExpanded": true
+          },
+          "sourceWeights": {
+            "odds": 0.6,
+            "other": 0.1,
+            "pitcher": 0.1,
+            "team_record": 0.2
+          }
+        },
+        {
+          "awayTeam": "Cleveland Guardians",
+          "confidence": "0.8",
+          "decisionAuthority": "BEDROCK_LLM",
+          "disagreements": [],
+          "gameDate": "2026-08-26T01:38:00Z",
+          "gamePk": "823989",
+          "homeTeam": "Los Angeles Angels",
+          "llmModelId": "openai.gpt-oss-20b-1:0",
+          "predictedLoser": "Los Angeles Angels",
+          "predictedWinner": "Cleveland Guardians",
+          "probability": 0.7,
+          "rationale": "The Guardians are favored by the market with a moneyline of 1.427 versus 1.717 for the Angels, implying a 70% chance of winning. Their season record (66\u201166) is markedly better than the Angels\u2019 52\u201180 record, and the Guardians\u2019 probable pitcher Gavin Williams is expected to start, whereas the Angels\u2019 Walbert Ure\u00f1a has a less favorable recent performance. All available pre\u2011game evidence points to the Guardians as the more likely winner.",
+          "sourcePresence": {
+            "bigBallsDataPro": true,
+            "mlbStatsApi": true,
+            "theOddsApi": true,
+            "theOddsApiExpanded": true
+          },
+          "sourceWeights": {
+            "odds": 0.5,
+            "pitcher": 0.2,
+            "record": 0.3
+          }
+        },
+        {
+          "awayTeam": "Philadelphia Phillies",
+          "confidence": "0.6",
+          "decisionAuthority": "BEDROCK_LLM",
+          "disagreements": "The Phillies\u2019 superior win\u2011loss record and the fact that Aaron Nola is a strong starting pitcher could sway some analysts toward Philadelphia, but the betting market and home\u2011field advantage outweigh those factors in this instance.",
+          "gameDate": "2026-08-26T01:40:00Z",
+          "gamePk": "823098",
+          "homeTeam": "Seattle Mariners",
+          "llmModelId": "openai.gpt-oss-20b-1:0",
+          "predictedLoser": "Philadelphia Phillies",
+          "predictedWinner": "Seattle Mariners",
+          "probability": 0.57,
+          "rationale": "The pre\u2011game odds across 11 bookmakers consistently give the Mariners a slight edge (average moneyline ~1.53 vs 1.52 for the Phillies, DraftKings h2h 1.98 vs 1.95, and most spreads favor the Mariners). Home\u2011field advantage at T\u2011Mobile Park also tips the balance toward Seattle. While the Phillies have a better season record (73\u201159) than the Mariners (63\u201169), the pitching matchup (George Kirby vs. Aaron Nola) and the collective betting consensus suggest a modest Mariners advantage. The probability reflects the small but consistent edge in the odds and venue, tempered by the Phillies\u2019 stronger record.",
+          "sourcePresence": {
+            "bigBallsDataPro": true,
+            "mlbStatsApi": true,
+            "theOddsApi": true,
+            "theOddsApiExpanded": true
+          },
+          "sourceWeights": {
+            "odds": 0.6,
+            "other": 0.1,
+            "record": 0.3
+          }
+        },
+        {
+          "awayTeam": "Pittsburgh Pirates",
+          "confidence": "0.7",
+          "decisionAuthority": "BEDROCK_LLM",
+          "disagreements": [],
+          "gameDate": "2026-08-26T01:40:00Z",
+          "gamePk": "823259",
+          "homeTeam": "San Diego Padres",
+          "llmModelId": "openai.gpt-oss-20b-1:0",
+          "predictedLoser": "Pittsburgh Pirates",
+          "predictedWinner": "San Diego Padres",
+          "probability": 0.62,
+          "rationale": "The consensus from 11 bookmakers shows the Padres as the favorite on both moneyline (1.632 vs 1.796) and spread (-1.5 at 2.7 vs +1.5 at 1.48). The implied probabilities from the moneyline are 61.3% for the Padres and 55.7% for the Pirates, while the spread implies 37.0% for the Padres and 67.6% for the Pirates. The Padres also hold a better season record (71\u201161, .538) versus the Pirates (64\u201169, .481). Combining the odds consensus (weight 0.6) and the season record advantage (weight 0.4) yields a balanced probability estimate of 62% in favor of the Padres.",
+          "sourcePresence": {
+            "bigBallsDataPro": true,
+            "mlbStatsApi": true,
+            "theOddsApi": true,
+            "theOddsApiExpanded": true
+          },
+          "sourceWeights": {
+            "odds_consensus": 0.6,
+            "season_record": 0.4
+          }
+        },
+        {
+          "awayTeam": "Minnesota Twins",
+          "confidence": "0.6",
+          "decisionAuthority": "BEDROCK_LLM",
+          "disagreements": [],
+          "gameDate": "2026-08-26T01:40:00Z",
+          "gamePk": "824962",
+          "homeTeam": "Athletics",
+          "llmModelId": "openai.gpt-oss-20b-1:0",
+          "predictedLoser": "Athletics",
+          "predictedWinner": "Minnesota Twins",
+          "probability": 0.62,
+          "rationale": "The pre\u2011game moneyline odds favor the Twins (1.424 vs. 1.509 for the Athletics), and the spread also favors the Twins (-1.5). The Twins\u2019 season record (64\u201168, .485) is markedly better than the Athletics\u2019 (51\u201181, .386). With the Twins\u2019 pitcher Taj Bradley likely to start and the Athletics\u2019 Gage Jump on the mound, the overall statistical and betting consensus points to a Twins win. The probability is set at 0.62, comfortably within the required 0.50\u20110.95 range, reflecting a moderate but clear edge.",
+          "sourcePresence": {
+            "bigBallsDataPro": true,
+            "mlbStatsApi": true,
+            "theOddsApi": true,
+            "theOddsApiExpanded": true
+          },
+          "sourceWeights": {
+            "odds": 0.6,
+            "record": 0.4
+          }
+        },
+        {
+          "awayTeam": "Chicago Cubs",
+          "confidence": "0.7",
+          "decisionAuthority": "BEDROCK_LLM",
+          "disagreements": [],
+          "gameDate": "2026-08-26T01:40:00Z",
+          "gamePk": "825042",
+          "homeTeam": "Arizona Diamondbacks",
+          "llmModelId": "us-east-2::openai.gpt-oss-20b-1:0",
+          "predictedLoser": "Arizona Diamondbacks",
+          "predictedWinner": "Chicago Cubs",
+          "probability": 0.6,
+          "rationale": "The pre\u2011game data shows the Cubs are favored across multiple metrics: the moneyline odds (1.637 vs 1.613) imply a 61% chance for the Cubs, the spread favors the Cubs at -1.5, and the head\u2011to\u2011head odds from 11 bookmakers consistently give the Cubs a better implied probability (\u224854% vs 51%). The Cubs\u2019 season record (76\u201156, .576) is better than the Diamondbacks\u2019 (69\u201163, .523). The probable pitchers, Clay Holmes for the Cubs and Brandon Pfaadt for the Diamondbacks, are both solid but Holmes has a slightly better recent performance. Combining these signals, the consensus leans toward the Cubs with a moderate confidence level.",
+          "sourcePresence": {
+            "bigBallsDataPro": true,
+            "mlbStatsApi": true,
+            "theOddsApi": true,
+            "theOddsApiExpanded": true
+          },
+          "sourceWeights": {
+            "market_consensus": 0.2,
+            "odds": 0.4,
+            "other": 0.1,
+            "pitcher": 0.1,
+            "team_record": 0.2
+          }
+        },
+        {
+          "awayTeam": "Cincinnati Reds",
+          "confidence": "moderate",
+          "decisionAuthority": "BEDROCK_LLM",
+          "disagreements": [],
+          "gameDate": "2026-08-26T01:45:00Z",
+          "gamePk": "823181",
+          "homeTeam": "San Francisco Giants",
+          "llmModelId": "us-east-2::openai.gpt-oss-20b-1:0",
+          "predictedLoser": "Cincinnati Reds",
+          "predictedWinner": "San Francisco Giants",
+          "probability": 0.58,
+          "rationale": "The aggregated betting market shows a slight edge for the Giants (moneyline odds 1.533 vs 1.498 for the Reds, and a +0.515 spread for the Giants). Home-field advantage at Oracle Park and the Giants\u2019 recent performance trend also support a modest advantage for the Giants, despite the Reds having a better overall record. No conflicting pre\u2011game data (lineups, statistics, or pitcher performance) is available to overturn the market consensus.",
+          "sourcePresence": {
+            "bigBallsDataPro": true,
+            "mlbStatsApi": true,
+            "theOddsApi": true,
+            "theOddsApiExpanded": true
+          },
+          "sourceWeights": {
+            "home_field": 0.2,
+            "odds": 0.6,
+            "team_record": 0.2
+          }
+        }
+      ],
+      "publishedAtUtc": "2026-08-25T18:16:51.058664+00:00",
+      "secondsBeforeDeadline": 13267,
+      "slateDateEt": "2026-08-25",
+      "sourcePresenceByGamePk": {
+        "822693": {
+          "bigBallsDataPro": true,
+          "mlbStatsApi": true,
+          "theOddsApi": true
+        },
+        "822773": {
+          "bigBallsDataPro": true,
+          "mlbStatsApi": true,
+          "theOddsApi": true
+        },
+        "823016": {
+          "bigBallsDataPro": true,
+          "mlbStatsApi": true,
+          "theOddsApi": true
+        },
+        "823098": {
+          "bigBallsDataPro": true,
+          "mlbStatsApi": true,
+          "theOddsApi": true
+        },
+        "823181": {
+          "bigBallsDataPro": true,
+          "mlbStatsApi": true,
+          "theOddsApi": true
+        },
+        "823259": {
+          "bigBallsDataPro": true,
+          "mlbStatsApi": true,
+          "theOddsApi": true
+        },
+        "823505": {
+          "bigBallsDataPro": true,
+          "mlbStatsApi": true,
+          "theOddsApi": true
+        },
+        "823585": {
+          "bigBallsDataPro": true,
+          "mlbStatsApi": true,
+          "theOddsApi": true
+        },
+        "823826": {
+          "bigBallsDataPro": true,
+          "mlbStatsApi": true,
+          "theOddsApi": true
+        },
+        "823989": {
+          "bigBallsDataPro": true,
+          "mlbStatsApi": true,
+          "theOddsApi": true
+        },
+        "824233": {
+          "bigBallsDataPro": true,
+          "mlbStatsApi": true,
+          "theOddsApi": true
+        },
+        "824556": {
+          "bigBallsDataPro": true,
+          "mlbStatsApi": true,
+          "theOddsApi": true
+        },
+        "824881": {
+          "bigBallsDataPro": true,
+          "mlbStatsApi": true,
+          "theOddsApi": true
+        },
+        "824962": {
+          "bigBallsDataPro": true,
+          "mlbStatsApi": true,
+          "theOddsApi": true
+        },
+        "825042": {
+          "bigBallsDataPro": true,
+          "mlbStatsApi": true,
+          "theOddsApi": true
+        }
+      },
+      "sourceStatus": {
+        "bigBallsDataPro": {
+          "events": 35,
+          "expandedCoverage": {
+            "coverageDiscovery": true,
+            "events": true,
+            "injuriesAttempted": true,
+            "lineups": true,
+            "matchDetail": true,
+            "matchOdds": true,
+            "matchStatistics": true,
+            "playerGameLog": true,
+            "playerRollingStats": true,
+            "playerSeasonStats": true,
+            "standings": true,
+            "statcastPublicEndpoint": false,
+            "statcastReason": "Big Balls documents Statcast as loaded but its public endpoint remains in development; no unavailable endpoint is fabricated.",
+            "teamRecentForm": true,
+            "weather": true
+          },
+          "matchedGames": 15,
+          "missingGamePks": [],
+          "ok": true,
+          "scheduledGames": 15
+        },
+        "mlbStatsApi": {
+          "games": 15,
+          "matchedGames": 15,
+          "missingGamePks": [],
+          "ok": true,
+          "scheduledGames": 15
+        },
+        "theOddsApi": {
+          "events": 22,
+          "matchedGames": 15,
+          "missingGamePks": [],
+          "ok": true,
+          "persistedPregameEvidenceByGamePk": {},
+          "persistedPregameRecoveredGamePks": [],
+          "persistedPregameRecoveryCount": 0,
+          "postStartOddsFabricationAllowed": false,
+          "pregameReplayVersion": "MLB-AUTO-PREGAME-ODDS-REPLAY-v1-immutable-evidence-only",
+          "quota": {
+            "last": "15",
+            "remaining": "24101117",
+            "used": "898883"
+          },
+          "replayPolicy": "Only an actual stored The Odds API event with real core-market prices, matching teams/start time, and a packet timestamp strictly before first pitch may be replayed.",
+          "scheduledGames": 15
+        }
+      },
+      "targetDailyAccuracy": 0.7,
+      "threeSourceCoverageComplete": true,
+      "version": "MLB-AUTO-LLM-v1-three-source-autonomous"
+    },
+    "ok": true,
+    "status": "CARD_PUBLISHED"
+  },
+  "jobStatus": "success",
+  "ok": true,
   "proofType": "MLB_AUTO_LLM_DEPLOYMENT",
   "runId": "32879387159",
   "sourceSha": "cba5515919296c227ce94495eb2f08311a9a76dc"
