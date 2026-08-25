@@ -19,13 +19,12 @@ REAL = "lock_reliability:stale_or_missing_source_at_lock"
 
 
 def _locked(*reasons, exact=True):
+    errors = [] if exact else ["frozen_vector_fingerprint_mismatch"]
     return {
         "lockedPrediction": True,
         "immutableLockedStorage": True,
         "exactVectorVerified": exact,
-        "exactVectorValidationErrors": (
-            [] if exact else ["frozen_vector_fingerprint_mismatch"]
-        ),
+        "exactVectorValidationErrors": list(errors),
         "frozenFeatureVector": {"fingerprint": "vector-fingerprint"},
         "trainingEligible": False,
         "trainingEligibilityStatus": "INELIGIBLE",
@@ -33,9 +32,8 @@ def _locked(*reasons, exact=True):
         "mlFeatureFreeze": {
             "trainingEligible": False,
             "trainingExclusionReasons": list(reasons),
-            "exactVectorValidationErrors": (
-                [] if exact else ["frozen_vector_fingerprint_mismatch"]
-            ),
+            "exactVectorVerified": exact,
+            "exactVectorValidationErrors": list(errors),
         },
     }
 
@@ -44,13 +42,24 @@ def _labels_module():
     def authority(item, slate_date):
         del slate_date
         data = item["data"]
+        freeze = data.get("mlFeatureFreeze") or {}
         reasons = {
             *(data.get("trainingExclusionReasons") or []),
-            *((data.get("mlFeatureFreeze") or {}).get(
-                "trainingExclusionReasons"
-            ) or []),
+            *(freeze.get("trainingExclusionReasons") or []),
         }
-        exact = data.get("exactVectorVerified") is True
+        vector = data.get("frozenFeatureVector") or {}
+        validation_errors = {
+            *(data.get("exactVectorValidationErrors") or []),
+            *(freeze.get("exactVectorValidationErrors") or []),
+        }
+        exact = bool(vector.get("fingerprint") and not validation_errors)
+        status_errors = []
+        for label, container in (("row", data), ("freeze", freeze)):
+            if "exactVectorVerified" in container and (
+                container.get("exactVectorVerified") is not exact
+            ):
+                status_errors.append(f"{label}_exact_vector_verified_mismatch")
+        status_valid = not status_errors
         return {
             "verified": True,
             "consistentRead": True,
@@ -59,11 +68,14 @@ def _labels_module():
             "persistedStageAuthorityValidated": True,
             "officialAuditEligible": True,
             "exactLockVectorValidated": exact,
-            "selectionLockVectorStatusValidated": exact,
+            "exactLockVectorValidationErrors": sorted(validation_errors),
+            "selectionLockVectorStatusValidated": status_valid,
+            "selectionLockVectorStatusValidationErrors": status_errors,
             "trainingExclusionReasons": sorted(reasons),
             "learningEligible": bool(
                 data.get("trainingEligible") is True
                 and exact
+                and status_valid
                 and not reasons
             ),
         }
@@ -125,14 +137,7 @@ def _authority(module, row):
     )
 
 
-def test_existing_exact_lock_and_label_become_eligible_read_only():
-    module = repair.install(_labels_module())
-    source_lock = _locked(STALE)
-    source_label = {
-        "training_eligible": False,
-        "training_exclusion_reasons": [STALE],
-    }
-
+def _joined(module, source_lock, source_label):
     authority = _authority(module, source_lock)
     locked = copy.deepcopy(source_lock)
     locked["canonicalLockAuthority"] = authority
@@ -142,6 +147,18 @@ def test_existing_exact_lock_and_label_become_eligible_read_only():
         locked,
         slate_finalized=True,
     )
+    return authority, result
+
+
+def test_existing_exact_lock_and_label_become_eligible_read_only():
+    module = repair.install(_labels_module())
+    source_lock = _locked(STALE)
+    source_label = {
+        "training_eligible": False,
+        "training_exclusion_reasons": [STALE],
+    }
+
+    authority, result = _joined(module, source_lock, source_label)
 
     assert authority["learningEligible"] is True
     assert authority["trainingExclusionReasons"] == []
@@ -155,6 +172,68 @@ def test_existing_exact_lock_and_label_become_eligible_read_only():
     assert source_label["training_eligible"] is False
 
 
+def test_freeze_only_exact_vector_alias_becomes_eligible_read_only():
+    module = repair.install(_labels_module())
+    source_lock = _locked(STALE)
+    source_lock.pop("exactVectorVerified")
+    source_label = {
+        "training_eligible": False,
+        "training_exclusion_reasons": [STALE],
+    }
+
+    authority, result = _joined(module, source_lock, source_label)
+
+    assert authority["learningEligible"] is True
+    assert authority["exactVectorProofSourceAtRead"] == (
+        "STORED_EXACT_VECTOR_METADATA"
+    )
+    assert result["trainingEligible"] is True
+    assert "exactVectorVerified" not in source_lock
+    assert source_lock["mlFeatureFreeze"]["trainingEligible"] is False
+
+
+def test_authority_revalidation_repairs_when_legacy_exact_aliases_are_absent():
+    module = repair.install(_labels_module())
+    source_lock = _locked(STALE)
+    source_lock.pop("exactVectorVerified")
+    source_lock["mlFeatureFreeze"].pop("exactVectorVerified")
+    source_label = {
+        "training_eligible": False,
+        "training_exclusion_reasons": [STALE],
+    }
+
+    authority, result = _joined(module, source_lock, source_label)
+
+    assert authority["exactLockVectorValidated"] is True
+    assert authority["selectionLockVectorStatusValidated"] is True
+    assert authority["learningEligible"] is True
+    assert authority["exactVectorProofSourceAtRead"] == (
+        "CANONICAL_LOCK_AUTHORITY_REVALIDATION"
+    )
+    assert result["trainingEligible"] is True
+    assert "exactVectorVerified" not in source_lock
+    assert "exactVectorVerified" not in source_lock["mlFeatureFreeze"]
+
+
+def test_conflicting_exact_vector_aliases_remain_fail_closed():
+    module = repair.install(_labels_module())
+    source_lock = _locked(STALE)
+    source_lock["exactVectorVerified"] = False
+    source_lock["mlFeatureFreeze"]["exactVectorVerified"] = True
+    source_label = {
+        "training_eligible": False,
+        "training_exclusion_reasons": [STALE],
+    }
+
+    authority, result = _joined(module, source_lock, source_label)
+
+    assert authority["exactLockVectorValidated"] is True
+    assert authority["selectionLockVectorStatusValidated"] is False
+    assert authority["learningEligible"] is False
+    assert result["trainingEligible"] is False
+    assert result["trainingExclusionReasons"] == [STALE]
+
+
 def test_stale_false_label_boolean_with_no_reasons_is_repaired_read_only():
     module = repair.install(_labels_module())
     source_lock = _locked()
@@ -163,15 +242,7 @@ def test_stale_false_label_boolean_with_no_reasons_is_repaired_read_only():
         "training_exclusion_reasons": [],
     }
 
-    authority = _authority(module, source_lock)
-    locked = copy.deepcopy(source_lock)
-    locked["canonicalLockAuthority"] = authority
-    result = module._joined_training_row(
-        "2026-08-05",
-        source_label,
-        locked,
-        slate_finalized=True,
-    )
+    authority, result = _joined(module, source_lock, source_label)
 
     assert authority["learningEligible"] is True
     assert result["trainingEligible"] is True
@@ -191,15 +262,7 @@ def test_substantive_label_reason_blocks_stale_false_boolean_repair():
         "training_exclusion_reasons": [REAL],
     }
 
-    authority = _authority(module, source_lock)
-    locked = copy.deepcopy(source_lock)
-    locked["canonicalLockAuthority"] = authority
-    result = module._joined_training_row(
-        "2026-08-05",
-        source_label,
-        locked,
-        slate_finalized=True,
-    )
+    authority, result = _joined(module, source_lock, source_label)
 
     assert authority["learningEligible"] is True
     assert result["trainingEligible"] is False
@@ -215,15 +278,7 @@ def test_real_reliability_exclusion_remains_ineligible():
         "training_exclusion_reasons": [STALE, REAL],
     }
 
-    authority = _authority(module, source_lock)
-    locked = copy.deepcopy(source_lock)
-    locked["canonicalLockAuthority"] = authority
-    result = module._joined_training_row(
-        "2026-08-05",
-        source_label,
-        locked,
-        slate_finalized=True,
-    )
+    authority, result = _joined(module, source_lock, source_label)
 
     assert authority["learningEligible"] is False
     assert authority["trainingExclusionReasons"] == [REAL]
