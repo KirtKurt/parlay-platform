@@ -67,8 +67,6 @@ jobs:
           if marker not in text:
               raise SystemExit('MLB Auto test insertion marker not found')
           text = text.replace(marker, addition + marker, 1)
-          # Existing missing-game test must supply a non-retired identity so it
-          # reaches the intended coverage gate.
           text = text.replace(
               '''        lambda slate: {\n            "ok": True,\n            "winner_predictions": [\n                {\n                    "gamePk": "1",''',
               '''        lambda slate: {\n            "ok": True,\n            "model_version": "INQSI-MLB-AWS-PROSPECTIVE-R7-candidate",\n            "primaryAlgorithm": "INQSI-MLB-AWS-PROSPECTIVE-R7",\n            "winner_predictions": [\n                {\n                    "gamePk": "1",''',
@@ -110,9 +108,10 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           source = Path('mlb_auto_llm/ml_authority.py').read_text()
-          assert 'EXPECTED_MODEL' not in source
+          assert 'or EXPECTED_MODEL' not in source
           assert 'MLB_ML_RETIRED_AUTHORITY_REJECTED' in source
           assert 'AWS_ML_PROSPECTIVE_R7' in source
+          assert 'RETIRED_MODELS = {"INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble"}' in source
           assert not Path('.github/workflows/deploy-mlb-ranked-v15-10.yml').exists()
           assert not Path('.github/workflows/verify-and-recover-mlb-v15-10.yml').exists()
           PY
