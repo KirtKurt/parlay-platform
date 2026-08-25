@@ -118,13 +118,14 @@ jobs:
         run: |
           set -euo pipefail
           test -f "$REPORT_PATH" || exit 0
+          cp "$REPORT_PATH" /tmp/mlb-auto-r7-advancement-proof.json
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             git checkout -B mlb-auto-r7-advancement-proof origin/main
             mkdir -p runtime_reports
-            cp "$REPORT_PATH" "$REPORT_PATH"
+            cp /tmp/mlb-auto-r7-advancement-proof.json "$REPORT_PATH"
             git add "$REPORT_PATH"
             git diff --cached --quiet && break
             git commit -m 'Publish MLB AUTO R7 advancement proof [skip ci]'
