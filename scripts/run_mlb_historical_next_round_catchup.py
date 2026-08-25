@@ -87,13 +87,25 @@ def summarize_state(state: Mapping[str, Any]) -> dict[str, Any]:
 
 def classify_state(state: Mapping[str, Any], *, expected_ceiling: str) -> str:
     common = watchdog.validate_common_state(state, expected_ceiling=expected_ceiling)
+    phase = str(common.get("phase") or "")
     complete = _int(state.get("completeSlateCount"))
     rematerialized = _int(state.get("featureRematerializedSlateCount"))
     total = _int(state.get("featureRematerializationTotalSlateCount"))
     if complete and (rematerialized != complete or total != complete):
+        # During active ingestion a newly completed slate can legitimately appear
+        # one orchestration step before its feature rematerialization catches up.
+        # Let only the active MLB pipeline repair that bounded lag.  Never permit
+        # optimization, waiting, rejected-candidate, or promoted states to cross
+        # an incomplete feature corpus, and fail closed if counters are ahead of
+        # the authoritative completed-slate count.
+        if (
+            phase in watchdog.ACTIVE_PHASES
+            and rematerialized <= complete
+            and total <= complete
+        ):
+            return ADVANCE_ACTIVE_PIPELINE
         raise ValueError("feature_rematerialization_does_not_cover_completed_slates")
     summary = summarize_state(state)
-    phase = str(common.get("phase") or "")
     if phase == watchdog.WAITING_PHASE:
         watchdog.validate_waiting_state(state, expected_ceiling=expected_ceiling)
         return RUN_NEXT_OPTIMIZATION if summary["nextOptimizationReady"] else WAITING_FOR_EVIDENCE
