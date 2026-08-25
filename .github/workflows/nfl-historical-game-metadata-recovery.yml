@@ -39,7 +39,20 @@ jobs:
       - name: Restore checksum-controlled NFL template source
         run: |
           set -euo pipefail
-          cat .nfl_bundle/part* | base64 -d > /tmp/nfl-auto.zip
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+
+          parts = sorted(
+              Path('.nfl_bundle').glob('part*'),
+              key=lambda path: int(path.name.removeprefix('part')),
+          )
+          if not parts:
+              raise SystemExit('NFL bundle parts missing')
+          encoded = b''.join(path.read_bytes() for path in parts)
+          Path('/tmp/nfl-auto.zip').write_bytes(base64.b64decode(encoded, validate=True))
+          print({'partCount': len(parts), 'firstPart': parts[0].name, 'lastPart': parts[-1].name})
+          PY
           unzip -p /tmp/nfl-auto.zip nfl-auto-template.yaml > nfl-auto-template.yaml
           python - <<'PY'
           import hashlib,json,pathlib
