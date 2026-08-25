@@ -5,6 +5,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 import mlb_prospective_row_repair as prospective_row_repair
+import mlb_terminal_identity_resolution_patch as terminal_identity_resolution
 
 
 VERSION = "MLB-TERMINAL-LIFECYCLE-COUNT-RECONCILIATION-v1-row-derived"
@@ -223,4 +224,5 @@ def reconcile_http_response(
     return out
 
 
+terminal_identity_resolution.apply(prospective_row_repair)
 prospective_row_repair.install()
