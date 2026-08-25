@@ -1,0 +1,206 @@
+name: Diagnose Tennis auto-repair alarm
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-tennis-auto-repair-alarm-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-tennis-auto-repair-alarm-now
+  cancel-in-progress: false
+
+jobs:
+  diagnose-tennis-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      REPAIR_STACK: parlay-platform-auto-repair-tennis
+      TARGET_STACK: parlay-platform-tennis-learning
+      SPORT: tennis
+      TARGET_LOGICAL_ID: TennisAutonomousControllerFunction
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Capture Tennis-only alarm and controller evidence
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          out=/tmp/tennis-auto-repair-alarm
+          mkdir -p "$out" runtime_reports
+
+          repair_function=$(aws cloudformation describe-stacks \
+            --stack-name "$REPAIR_STACK" --region "$REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='AutoRepairFunctionName'].OutputValue | [0]" \
+            --output text)
+          state_table=$(aws cloudformation describe-stacks \
+            --stack-name "$REPAIR_STACK" --region "$REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='AutoRepairStateTableName'].OutputValue | [0]" \
+            --output text)
+          alarm_name=$(aws cloudformation describe-stack-resource \
+            --stack-name "$REPAIR_STACK" \
+            --logical-resource-id AutoRepairUnresolvedFailureAlarm \
+            --region "$REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          target_function=$(aws cloudformation describe-stack-resource \
+            --stack-name "$TARGET_STACK" \
+            --logical-resource-id "$TARGET_LOGICAL_ID" \
+            --region "$REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' --output text)
+
+          printf '%s' "$repair_function" > "$out/repair-function-name.txt"
+          printf '%s' "$state_table" > "$out/state-table-name.txt"
+          printf '%s' "$alarm_name" > "$out/alarm-name.txt"
+          printf '%s' "$target_function" > "$out/target-function-name.txt"
+
+          aws cloudwatch describe-alarms --alarm-names "$alarm_name" --region "$REGION" > "$out/alarm.json"
+          aws cloudwatch describe-alarm-history --alarm-name "$alarm_name" \
+            --history-item-type StateUpdate --max-records 20 --region "$REGION" > "$out/alarm-history.json"
+
+          aws lambda invoke --function-name "$repair_function" \
+            --invocation-type RequestResponse --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"status","source":"tennis_alarm_diagnostic"}' \
+            --region "$REGION" "$out/controller-status.json" > "$out/controller-status-meta.json"
+
+          aws dynamodb get-item --table-name "$state_table" \
+            --key '{"PK":{"S":"STATE"},"SK":{"S":"STATE"}}' \
+            --consistent-read --region "$REGION" > "$out/controller-state-ddb.json"
+
+          target_arn=$(aws lambda get-function-configuration --function-name "$target_function" \
+            --region "$REGION" --query FunctionArn --output text)
+          aws events list-rule-names-by-target --target-arn "$target_arn" \
+            --limit 100 --region "$REGION" > "$out/target-rules.json"
+
+          python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          out = Path('/tmp/tennis-auto-repair-alarm')
+          rules = json.load(open(out / 'target-rules.json')).get('RuleNames') or []
+          details = []
+          for name in rules:
+              rule = json.loads(subprocess.check_output([
+                  'aws','events','describe-rule','--name',name,'--region',os.environ['REGION'],'--output','json'
+              ]))
+              targets = json.loads(subprocess.check_output([
+                  'aws','events','list-targets-by-rule','--rule',name,'--region',os.environ['REGION'],'--output','json'
+              ]))
+              details.append({'rule': rule, 'targets': targets.get('Targets') or []})
+          (out / 'target-rule-details.json').write_text(json.dumps(details, indent=2, default=str) + '\n')
+          PY
+
+          start_time=$(date -u -d '8 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          end_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          for metric in Checks RepairAttempts RepairSuccesses RepairFailures RepairDeferred SchedulesEnabled UnhealthyComponents; do
+            aws cloudwatch get-metric-statistics --namespace Inqsi/AutoRepair \
+              --metric-name "$metric" --dimensions Name=Sport,Value="$SPORT" \
+              --start-time "$start_time" --end-time "$end_time" --period 300 \
+              --statistics Sum --region "$REGION" > "$out/metric-${metric}.json"
+          done
+
+          start_ms=$(( ($(date -u +%s) - 28800) * 1000 ))
+          for pair in "repair:$repair_function" "target:$target_function"; do
+            label=${pair%%:*}; function=${pair#*:}
+            aws logs filter-log-events --log-group-name "/aws/lambda/$function" \
+              --start-time "$start_ms" --limit 300 --region "$REGION" \
+              > "$out/${label}-logs.json" 2> "$out/${label}-logs-error.txt" || true
+          done
+
+          python - <<'PY'
+          from __future__ import annotations
+          import json, os, re
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          src = Path('/tmp/tennis-auto-repair-alarm')
+          dest = Path('runtime_reports/tennis_auto_repair_alarm_diagnostic_latest.json')
+          secret_key = re.compile(r'(?i)(secret|token|password|authorization|api[_-]?key|credential)')
+          bearer = re.compile(r'(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+')
+          aws_key = re.compile(r'\b(?:AKIA|ASIA)[0-9A-Z]{16}\b')
+
+          def load(name, default=None):
+              path = src / name
+              if not path.exists() or not path.read_text(errors='replace').strip(): return default
+              try: return json.loads(path.read_text(errors='replace'))
+              except Exception: return {'raw': path.read_text(errors='replace')[:12000]}
+
+          def sanitize(value, depth=0):
+              if depth > 12: return '[DEPTH_LIMIT]'
+              if isinstance(value, dict):
+                  return {str(k): ('[REDACTED]' if secret_key.search(str(k)) else sanitize(v, depth+1)) for k,v in value.items()}
+              if isinstance(value, list): return [sanitize(v, depth+1) for v in value[:500]]
+              if isinstance(value, str): return aws_key.sub('[REDACTED_AWS_ACCESS_KEY]', bearer.sub('Bearer [REDACTED]', value))[:16000]
+              return value
+
+          alarm_rows = (load('alarm.json', {}) or {}).get('MetricAlarms') or []
+          alarm = alarm_rows[0] if alarm_rows else {}
+          status = load('controller-status.json', {}) or {}
+          state = status.get('state') if isinstance(status, dict) else {}
+          components = state.get('components') if isinstance(state, dict) else []
+          component = components[0] if isinstance(components, list) and components else {}
+          repair = component.get('repair') if isinstance(component, dict) else {}
+          metrics = {}
+          for path in sorted(src.glob('metric-*.json')):
+              data = load(path.name, {}) or {}
+              metrics[path.stem.removeprefix('metric-')] = sorted(data.get('Datapoints') or [], key=lambda r: str(r.get('Timestamp') or ''))
+
+          report = sanitize({
+              'proofType': 'TENNIS_AUTO_REPAIR_UNRESOLVED_FAILURE_ALARM_DIAGNOSTIC_V1',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'sourceSha': os.environ.get('GITHUB_SHA'),
+              'scope': 'tennis-only',
+              'repairStack': os.environ['REPAIR_STACK'],
+              'targetStack': os.environ['TARGET_STACK'],
+              'sport': os.environ['SPORT'],
+              'alarmName': (src/'alarm-name.txt').read_text(),
+              'alarm': alarm,
+              'alarmHistory': (load('alarm-history.json', {}) or {}).get('AlarmHistoryItems') or [],
+              'controllerStatus': status,
+              'latestControllerState': state,
+              'latestComponent': component,
+              'latestRepair': repair,
+              'targetRules': load('target-rule-details.json', []),
+              'metrics': metrics,
+              'repairLogs': load('repair-logs.json', {}),
+              'targetLogs': load('target-logs.json', {}),
+              'controllerStateDdb': load('controller-state-ddb.json', {}),
+              'alarmCurrentlyInAlarm': alarm.get('StateValue') == 'ALARM',
+              'latestControllerOkay': state.get('ok') if isinstance(state, dict) else None,
+              'latestControllerStatus': state.get('status') if isinstance(state, dict) else None,
+              'latestRepairClassification': repair.get('status') if isinstance(repair, dict) else None,
+              'readOnlyDiagnostic': True,
+              'repairCycleInvoked': False,
+              'targetFunctionInvoked': False,
+              'directSportTableWrite': False,
+              'productionAuthorityChanged': False,
+              'predictionLogicChanged': False,
+              'immutableHistoryChanged': False,
+              'otherSportsInspected': False,
+              'secretExposed': False,
+          })
+          dest.write_text(json.dumps(report, indent=2, sort_keys=True, default=str) + '\n')
+          print(json.dumps({k: report.get(k) for k in ('alarmCurrentlyInAlarm','latestControllerOkay','latestControllerStatus','latestRepairClassification','alarmName')}, indent=2))
+          PY
+
+      - name: Upload Tennis-only diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tennis-auto-repair-alarm-diagnostic-${{ github.run_id }}
+          path: runtime_reports/tennis_auto_repair_alarm_diagnostic_latest.json
+          if-no-files-found: error
+          retention-days: 30
