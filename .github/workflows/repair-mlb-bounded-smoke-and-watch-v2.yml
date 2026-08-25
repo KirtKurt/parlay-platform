@@ -51,9 +51,14 @@ jobs:
             tests/unit/test_mlb_auto_ml_authority.py
           git diff --check
 
-      - name: Publish tested repair to main
+      - name: Publish tested runtime repair to main
         run: |
           set -euo pipefail
+          # The runtime patch script also hardens the deployment workflow's local
+          # test list. GitHub Apps without workflows scope cannot publish that
+          # file, so discard only that non-runtime edit. The exact runtime and
+          # regression tests have already passed above.
+          git checkout -- .github/workflows/deploy-mlb-auto-llm.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
@@ -61,8 +66,7 @@ jobs:
             mlb_auto_llm/bedrock_smoke.py \
             tests/unit/test_mlb_auto_production_model_gateway.py \
             tests/unit/test_mlb_auto_bedrock_smoke.py \
-            tests/unit/test_mlb_auto_ml_authority_smoke.py \
-            .github/workflows/deploy-mlb-auto-llm.yml
+            tests/unit/test_mlb_auto_ml_authority_smoke.py
           git diff --cached --quiet && exit 0
           git commit -m 'Bound MLB deployment smoke before ML authority fallback'
           for attempt in 1 2 3 4 5; do
