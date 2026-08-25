@@ -1,4 +1,7 @@
-# 2026-08-25: automation-triggered MLB-only R7 continuity recovery. No authority or gate semantics changed.
+# 2026-08-25: automation-triggered MLB-only R7 continuity recovery.
+# CloudFormation deployment retries only the known transient OBSOLETE
+# change-set race. No authority, timing, source, admission, or promotion gate
+# semantics are changed.
 name: Repair MLB training continuity now
 
 on:
@@ -51,16 +54,15 @@ jobs:
           python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
           python -m py_compile \
             hello_world/mlb_prospective_row_repair.py \
+            hello_world/mlb_prospective_trainer_read_repair.py \
             hello_world/mlb_terminal_identity_resolution_patch.py \
             scripts/reconcile_mlb_prospective_backlog.py \
             scripts/reconcile_mlb_prospective_backlog_v4.py \
             scripts/reconcile_mlb_prospective_backlog_v5.py \
             scripts/invoke_mlb_trainer_with_retry.py
           # Gate this repair on the exact prospective lifecycle, reconciliation,
-          # labeling, protected force-replay, identity-crosswalk, and terminal-
-          # durability contracts it can change. The full per-game lock suite
-          # remains in canonical CI; this workflow never relaxes immutable lock,
-          # post-start prediction, official-game-set, or promotion requirements.
+          # labeling, protected force-replay, identity-crosswalk, terminal-
+          # durability, and read-only R7 admission contracts it can change.
           PYTHONPATH="hello_world:scripts:${PYTHONPATH:-}" python -m pytest -q \
             tests/unit/test_mlb_terminal_durability_replay.py \
             tests/unit/test_mlb_protected_terminal_force_replay.py \
@@ -68,8 +70,13 @@ jobs:
             tests/unit/test_reconcile_mlb_prospective_backlog.py \
             tests/unit/test_reconcile_mlb_prospective_backlog_v4.py \
             tests/unit/test_reconcile_mlb_prospective_backlog_v5.py \
-            tests/unit/test_mlb_canonical_final_labels_v1.py
+            tests/unit/test_mlb_canonical_final_labels_v1.py \
+            tests/unit/test_mlb_prospective_trainer_read_repair.py
           grep -q 'v3-protected-force-replay' hello_world/mlb_prospective_row_repair.py
+          grep -q 'MLB-PROSPECTIVE-TRAINER-READ-REPAIR-v4' \
+            hello_world/mlb_prospective_trainer_read_repair.py
+          grep -q 'CANONICAL_LOCK_AUTHORITY_REVALIDATION' \
+            hello_world/mlb_prospective_trainer_read_repair.py
           grep -q 'unique-official-provider-crosswalk' \
             hello_world/mlb_terminal_identity_resolution_patch.py
           grep -q 'official_status_terminal_durability_incomplete' \
@@ -115,25 +122,69 @@ jobs:
           set -euo pipefail
           test -n "${ODDS_API_KEY_VALUE:-}"
           test -n "${INQSI_ADMIN_API_TOKEN_VALUE:-}"
-          DEPLOY_RUN_ID="continuity-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          echo "deploy_run_id=$DEPLOY_RUN_ID" >> "$GITHUB_OUTPUT"
-          parameter_overrides=(
-            "OddsApiKey=${ODDS_API_KEY_VALUE}"
-            "InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}"
-            "DeployGitSha=${GITHUB_SHA}"
-            "DeployTemplateSha256=${TEMPLATE_SHA256}"
-            "DeployRunId=${DEPLOY_RUN_ID}"
-          )
-          sam deploy \
-            --template-file .aws-sam/build/template.yaml \
-            --stack-name "$STACK_NAME" \
-            --region "$AWS_REGION" \
-            --capabilities CAPABILITY_IAM \
-            --resolve-s3 \
-            --force-upload \
-            --no-confirm-changeset \
-            --no-fail-on-empty-changeset \
-            --parameter-overrides "${parameter_overrides[@]}"
+
+          wait_for_stack_updateable() {
+            for wait_attempt in $(seq 1 80); do
+              status=$(aws cloudformation describe-stacks \
+                --stack-name "$STACK_NAME" --region "$AWS_REGION" \
+                --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_MISSING)
+              echo "CloudFormation pre-deploy status: $status"
+              case "$status" in
+                CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE|STACK_MISSING)
+                  return 0 ;;
+                *_IN_PROGRESS) sleep 15 ;;
+                *) echo "::error::Root stack not updateable: $status"; return 1 ;;
+              esac
+            done
+            echo '::error::Timed out waiting for root stack updateability'
+            return 1
+          }
+
+          deployed=false
+          for deploy_attempt in 1 2 3 4 5; do
+            wait_for_stack_updateable
+            DEPLOY_RUN_ID="continuity-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${deploy_attempt}"
+            parameter_overrides=(
+              "OddsApiKey=${ODDS_API_KEY_VALUE}"
+              "InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}"
+              "DeployGitSha=${GITHUB_SHA}"
+              "DeployTemplateSha256=${TEMPLATE_SHA256}"
+              "DeployRunId=${DEPLOY_RUN_ID}"
+            )
+            deploy_log="/tmp/mlb-continuity-sam-deploy-${deploy_attempt}.log"
+            set +e
+            sam deploy \
+              --template-file .aws-sam/build/template.yaml \
+              --stack-name "$STACK_NAME" \
+              --region "$AWS_REGION" \
+              --capabilities CAPABILITY_IAM \
+              --resolve-s3 \
+              --force-upload \
+              --no-confirm-changeset \
+              --no-fail-on-empty-changeset \
+              --parameter-overrides "${parameter_overrides[@]}" \
+              2>&1 | tee "$deploy_log"
+            deploy_status=${PIPESTATUS[0]}
+            set -e
+            if [[ "$deploy_status" -eq 0 ]]; then
+              echo "deploy_run_id=$DEPLOY_RUN_ID" >> "$GITHUB_OUTPUT"
+              echo "deploy_attempt=$deploy_attempt" >> "$GITHUB_OUTPUT"
+              deployed=true
+              break
+            fi
+            if grep -q 'InvalidChangeSetStatus' "$deploy_log" \
+              && grep -q 'OBSOLETE' "$deploy_log"; then
+              echo "::warning::CloudFormation change set became obsolete; retrying bounded MLB deployment attempt ${deploy_attempt}/5"
+              sleep $((deploy_attempt * 15))
+              continue
+            fi
+            echo "::error::Non-retryable SAM deployment failure on attempt $deploy_attempt"
+            exit "$deploy_status"
+          done
+          if [[ "$deployed" != true ]]; then
+            echo '::error::MLB deployment exhausted five OBSOLETE change-set retries'
+            exit 1
+          fi
 
       - name: Prove deployed lifecycle function identity
         env:
@@ -279,9 +330,10 @@ jobs:
           backlog=load('backlog.json')
           trainer=load('trainer-evidence.json')
           report={
-              'proofType':'MLB_CANONICAL_TRAINING_CONTINUITY_REPAIR_V6_DEPLOYED',
+              'proofType':'MLB_CANONICAL_TRAINING_CONTINUITY_REPAIR_V7_DEPLOYED',
               'createdAtUtc':datetime.now(timezone.utc).isoformat(),
               'sourceSha':'${{ github.sha }}',
+              'deploymentAttempt':'${{ steps.deploy.outputs.deploy_attempt }}',
               'identity':identity,
               'backlog':backlog,
               'trainer':trainer,
@@ -313,7 +365,7 @@ jobs:
               runtime_reports/mlb_training_continuity_repair_latest.json
             git add runtime_reports/mlb_training_continuity_repair_latest.json
             git diff --cached --quiet || \
-              git commit -m 'Publish MLB training continuity V6 proof [skip ci]'
+              git commit -m 'Publish MLB training continuity V7 proof [skip ci]'
             git push origin HEAD:main && break
             test "$attempt" != 5
             sleep $((attempt*3))
@@ -322,5 +374,5 @@ jobs:
           import json
           report=json.load(open('/tmp/mlb_training_continuity_repair_latest.json'))
           assert report.get('ok') is True, report
-          print('MLB canonical training continuity V6: PASS')
+          print('MLB canonical training continuity V7: PASS')
           PY
