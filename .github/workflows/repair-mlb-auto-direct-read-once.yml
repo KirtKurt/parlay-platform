@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/repair-mlb-auto-direct-read-once.yml'
-  workflow_dispatch: {}
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -25,36 +25,46 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Remove stale missing MLB Auto test reference only
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Install MLB Auto direct-read patch
+        run: python scripts/repair_mlb_auto_direct_read_once.py
+
+      - name: Verify isolated MLB Auto repair
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          path=Path('.github/workflows/deploy-mlb-auto-llm.yml')
-          text=path.read_text(encoding='utf-8')
-          line='  tests/unit/test_mlb_auto_direct_read.py \\\n'
-          if line not in text:
-              raise SystemExit('stale test reference not found; refusing broad edit')
-          text=text.replace(line,'',1)
-          path.write_text(text,encoding='utf-8')
-          PY
-          grep -q 'tests/unit/test_mlb_auto_model_gateway.py' .github/workflows/deploy-mlb-auto-llm.yml
-          grep -q 'tests/unit/test_mlb_auto_ml_authority.py' .github/workflows/deploy-mlb-auto-llm.yml
-          grep -q 'tests/unit/test_mlb_auto_pregame_odds_replay.py' .github/workflows/deploy-mlb-auto-llm.yml
-          ! grep -q 'tests/unit/test_mlb_auto_direct_read.py' .github/workflows/deploy-mlb-auto-llm.yml
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
+          python -m py_compile mlb_auto_llm/ml_authority.py mlb_auto_llm/ml_authority_smoke.py
+          PYTHONPATH=mlb_auto_llm python -m pytest -q tests/unit/test_mlb_auto_model_gateway.py tests/unit/test_mlb_auto_ml_authority.py
+          sam validate --template-file mlb-auto-llm-template.yaml --lint
           git diff --check
-          test "$(git diff --name-only)" = '.github/workflows/deploy-mlb-auto-llm.yml'
+          changed=$(git diff --name-only || true)
+          test -n "$changed"
+          if echo "$changed" | grep -Ev '^(mlb_auto_llm/ml_authority.py|mlb-auto-llm-template.yaml)$'; then
+            echo '::error::Repair escaped MLB Auto isolation'
+            exit 1
+          fi
 
-      - name: Commit tested workflow repair and dispatch canonical MLB Auto deployment
+      - name: Commit tested source repair and dispatch canonical deployment
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/workflows/deploy-mlb-auto-llm.yml
-          git commit -m 'Remove stale MLB Auto direct-read test reference'
+          git add mlb_auto_llm/ml_authority.py mlb-auto-llm-template.yaml
+          git commit -m 'Route MLB Auto model reads directly through AWS Lambda'
           git pull --rebase origin main
           git push origin HEAD:main
           sleep 5
           gh workflow run deploy-mlb-auto-llm.yml --ref main
+
+# source-only one-shot trigger
