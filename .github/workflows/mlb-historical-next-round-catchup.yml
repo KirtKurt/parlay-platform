@@ -103,7 +103,22 @@ jobs:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
-          python scripts/run_mlb_historical_next_round_catchup.py --region "$AWS_REGION_VALUE" --stack-name "$STACK_NAME" --expected-handler mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler --expected-max-credits 300000 --template mlb_historical_optimizer/template.yaml --max-attempts 8 --output "$REPORT_PATH"
+          EXPECTED_MAX_CREDITS="$(python - <<'PY'
+          import os
+          import boto3
+          region=os.environ['AWS_REGION_VALUE']; stack=os.environ['STACK_NAME']
+          cf=boto3.client('cloudformation',region_name=region); lam=boto3.client('lambda',region_name=region)
+          outputs={x['OutputKey']:x['OutputValue'] for x in cf.describe_stacks(StackName=stack)['Stacks'][0].get('Outputs',[])}
+          fn=outputs.get('HistoricalOptimizerFunctionName')
+          if not fn: raise SystemExit('HistoricalOptimizerFunctionName output missing')
+          env=((lam.get_function_configuration(FunctionName=fn).get('Environment') or {}).get('Variables') or {})
+          value=str(env.get('MLB_HISTORICAL_MAX_CREDITS') or '').strip()
+          if not value.isdigit() or int(value) < 1000: raise SystemExit(f'invalid deployed MLB_HISTORICAL_MAX_CREDITS:{value!r}')
+          print(value)
+          PY
+          )"
+          echo "Using deployed historical credit budget: ${EXPECTED_MAX_CREDITS}"
+          python scripts/run_mlb_historical_next_round_catchup.py --region "$AWS_REGION_VALUE" --stack-name "$STACK_NAME" --expected-handler mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler --expected-max-credits "$EXPECTED_MAX_CREDITS" --template mlb_historical_optimizer/template.yaml --max-attempts 8 --output "$REPORT_PATH"
 
       - uses: actions/upload-artifact@v4
         if: always()
