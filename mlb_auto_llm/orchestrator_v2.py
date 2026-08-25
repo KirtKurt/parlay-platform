@@ -137,9 +137,9 @@ def _strict_bedrock_decision(game: Dict[str, Any], state: Dict[str, Any]) -> Dic
     )
     response = invoke_chain_text(
         prompt,
-        max_output_tokens=900,
+        models=configured_models(),
+        max_tokens=900,
         temperature=0.15,
-        preferred_models=configured_models(),
     )
     if response.get("ok") is not True:
         raise RuntimeError(
