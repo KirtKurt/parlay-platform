@@ -1,0 +1,451 @@
+name: Repair MLB bounded smoke and runtime watch now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-bounded-smoke-and-watch-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: repair-mlb-bounded-smoke-and-watch-now
+  cancel-in-progress: false
+
+jobs:
+  repair-test-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Apply bounded smoke and dynamic controller discovery repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+
+          def replace_once(path: Path, old: str, new: str, label: str) -> None:
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count == 0 and new in text:
+                  return
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one marker, found {count}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          gateway = root / 'mlb_auto_llm/production_model_gateway.py'
+          replace_once(
+              gateway,
+              '''    top_p: float = 0.9,
+          ) -> Dict[str, Any]:
+          ''',
+              '''    top_p: float = 0.9,
+              max_attempts: Optional[int] = None,
+          ) -> Dict[str, Any]:
+          ''',
+              'gateway explicit max attempts parameter',
+          )
+          replace_once(
+              gateway,
+              '''    catalog = _ordered_routes(models or configured_models())
+          ''',
+              '''    catalog = _ordered_routes(
+                  configured_models() if models is None else models
+              )
+          ''',
+              'gateway explicit empty catalog semantics',
+          )
+          replace_once(
+              gateway,
+              '''    max_attempts = max(
+                  1, int(os.environ.get("MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS", "8"))
+              )
+          ''',
+              '''    configured_max_attempts = (
+                  max_attempts
+                  if max_attempts is not None
+                  else int(os.environ.get("MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS", "8"))
+              )
+              max_attempts = max(1, int(configured_max_attempts))
+          ''',
+              'gateway bounded attempt resolution',
+          )
+
+          smoke = root / 'mlb_auto_llm/bedrock_smoke.py'
+          smoke_text = smoke.read_text(encoding='utf-8')
+          if 'import os\n' not in smoke_text:
+              smoke_text = smoke_text.replace(
+                  'from __future__ import annotations\n\n',
+                  'from __future__ import annotations\n\nimport os\n',
+                  1,
+              )
+              smoke.write_text(smoke_text, encoding='utf-8')
+          replace_once(
+              smoke,
+              '''    reset_model_state(clear_discovery=True, clear_failures=False)
+              mantle = mantle_models()
+              runtime = runtime_models()
+              models = configured_models()
+              result = invoke_chain_text(
+                  "Return only the word OK.",
+                  models,
+                  max_tokens=8,
+                  temperature=0.0,
+                  top_p=0.9,
+              )
+          ''',
+              '''    reset_model_state(clear_discovery=True, clear_failures=False)
+              # Deployment smoke must be bounded. Real prediction inference still
+              # uses configured_models() and its full failover catalog.
+              mantle = []
+              runtime = runtime_models()
+              smoke_limit = max(
+                  1,
+                  min(
+                      int(os.environ.get("MLB_AUTO_BEDROCK_SMOKE_ROUTE_LIMIT", "1")),
+                      3,
+                  ),
+              )
+              models = runtime[:smoke_limit]
+              result = invoke_chain_text(
+                  "Return only the word OK.",
+                  models,
+                  max_tokens=8,
+                  temperature=0.0,
+                  top_p=0.9,
+                  max_attempts=smoke_limit,
+              )
+          ''',
+              'bounded runtime-only Bedrock smoke',
+          )
+
+          deploy = root / '.github/workflows/deploy-mlb-auto-llm.yml'
+          deploy_text = deploy.read_text(encoding='utf-8')
+          compile_marker = '            mlb_auto_llm/model_gateway.py \\\n            mlb_auto_llm/bedrock_smoke.py\n'
+          compile_replacement = (
+              '            mlb_auto_llm/model_gateway.py \\\n'
+              '            mlb_auto_llm/production_model_gateway.py \\\n'
+              '            mlb_auto_llm/bedrock_smoke.py\n'
+          )
+          if 'mlb_auto_llm/production_model_gateway.py \\\' not in deploy_text:
+              if compile_marker not in deploy_text:
+                  raise SystemExit('deploy compile marker missing')
+              deploy_text = deploy_text.replace(compile_marker, compile_replacement, 1)
+          test_marker = (
+              '            tests/unit/test_mlb_auto_model_gateway.py \\\n'
+              '            tests/unit/test_mlb_auto_ml_authority.py\n'
+          )
+          test_replacement = (
+              '            tests/unit/test_mlb_auto_model_gateway.py \\\n'
+              '            tests/unit/test_mlb_auto_production_model_gateway.py \\\n'
+              '            tests/unit/test_mlb_auto_bedrock_smoke.py \\\n'
+              '            tests/unit/test_mlb_auto_ml_authority_smoke.py \\\n'
+              '            tests/unit/test_mlb_auto_ml_authority.py\n'
+          )
+          if 'tests/unit/test_mlb_auto_bedrock_smoke.py' not in deploy_text:
+              if test_marker not in deploy_text:
+                  raise SystemExit('deploy test marker missing')
+              deploy_text = deploy_text.replace(test_marker, test_replacement, 1)
+          deploy.write_text(deploy_text, encoding='utf-8')
+
+          production_test = root / 'tests/unit/test_mlb_auto_production_model_gateway.py'
+          production_text = production_test.read_text(encoding='utf-8')
+          marker = 'def test_explicit_max_attempts_override_is_bounded'
+          if marker not in production_text:
+              production_text += '''
+
+          def test_explicit_max_attempts_override_is_bounded(monkeypatch) -> None:
+              _reset(monkeypatch)
+              attempts = []
+              monkeypatch.setenv("MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS", "8")
+              monkeypatch.setattr(gateway, "mantle_models", lambda: [])
+              monkeypatch.setattr(gateway, "runtime_models", lambda: [])
+
+              def fail(route_id, prompt, **kwargs):
+                  attempts.append(route_id)
+                  raise RuntimeError("unavailable")
+
+              monkeypatch.setattr(gateway, "invoke_text", fail)
+              result = gateway.invoke_chain_text(
+                  "x", ["a", "b", "c"], max_attempts=1
+              )
+              assert result["ok"] is False
+              assert result["attemptedModelIds"] == ["a"]
+              assert attempts == ["a"]
+
+
+          def test_explicit_empty_catalog_does_not_expand_to_full_catalog(monkeypatch) -> None:
+              _reset(monkeypatch)
+              monkeypatch.setattr(
+                  gateway,
+                  "configured_models",
+                  lambda: (_ for _ in ()).throw(
+                      AssertionError("explicit empty catalog must not expand")
+                  ),
+              )
+              monkeypatch.setattr(gateway, "mantle_models", lambda: [])
+              monkeypatch.setattr(gateway, "runtime_models", lambda: [])
+              result = gateway.invoke_chain_text("x", [], max_attempts=1)
+              assert result["ok"] is False
+              assert result["attemptedModelIds"] == []
+          '''
+              production_test.write_text(production_text, encoding='utf-8')
+
+          (root / 'tests/unit/test_mlb_auto_bedrock_smoke.py').write_text(
+              '''from __future__ import annotations
+
+          from mlb_auto_llm import bedrock_smoke
+
+
+          def test_deployment_smoke_uses_one_runtime_route_only(monkeypatch) -> None:
+              captured = {}
+              monkeypatch.setenv("MLB_AUTO_BEDROCK_SMOKE_ROUTE_LIMIT", "1")
+              monkeypatch.setattr(
+                  bedrock_smoke,
+                  "reset_model_state",
+                  lambda **kwargs: captured.setdefault("reset", kwargs),
+              )
+              monkeypatch.setattr(
+                  bedrock_smoke,
+                  "runtime_models",
+                  lambda: ["runtime-a", "runtime-b"],
+              )
+
+              def invoke(prompt, models, **kwargs):
+                  captured["prompt"] = prompt
+                  captured["models"] = list(models)
+                  captured["kwargs"] = kwargs
+                  return {
+                      "ok": True,
+                      "text": "OK",
+                      "routeId": "runtime-a",
+                      "region": "us-east-1",
+                      "modelId": "runtime-a",
+                      "endpointFamily": "bedrock-runtime-converse",
+                      "attemptedModelIds": ["runtime-a"],
+                  }
+
+              monkeypatch.setattr(bedrock_smoke, "invoke_chain_text", invoke)
+              result = bedrock_smoke.lambda_handler({}, None)
+              assert result["ok"] is True
+              assert result["responseNonEmpty"] is True
+              assert captured["models"] == ["runtime-a"]
+              assert captured["kwargs"]["max_attempts"] == 1
+              assert result["mantleModelCount"] == 0
+              assert result["runtimeModelCount"] == 2
+
+
+          def test_deployment_smoke_empty_runtime_catalog_fails_fast(monkeypatch) -> None:
+              monkeypatch.setattr(bedrock_smoke, "reset_model_state", lambda **kwargs: None)
+              monkeypatch.setattr(bedrock_smoke, "runtime_models", lambda: [])
+              captured = {}
+
+              def invoke(prompt, models, **kwargs):
+                  captured["models"] = list(models)
+                  captured["max_attempts"] = kwargs["max_attempts"]
+                  return {"ok": False, "attemptedModelIds": [], "errors": []}
+
+              monkeypatch.setattr(bedrock_smoke, "invoke_chain_text", invoke)
+              result = bedrock_smoke.lambda_handler({}, None)
+              assert result["ok"] is False
+              assert captured == {"models": [], "max_attempts": 1}
+          ''',
+              encoding='utf-8',
+          )
+
+          (root / 'tests/unit/test_mlb_auto_ml_authority_smoke.py').write_text(
+              '''from __future__ import annotations
+
+          from mlb_auto_llm import ml_authority_smoke
+
+
+          def test_deployment_smoke_prefers_bedrock_success(monkeypatch) -> None:
+              monkeypatch.setattr(
+                  ml_authority_smoke.bedrock_smoke,
+                  "lambda_handler",
+                  lambda event, context: {
+                      "ok": True,
+                      "responseNonEmpty": True,
+                      "modelId": "endpoint-model",
+                  },
+              )
+              monkeypatch.setattr(
+                  ml_authority_smoke.ml_authority,
+                  "smoke",
+                  lambda: (_ for _ in ()).throw(
+                      AssertionError("ML fallback must not run after Bedrock success")
+                  ),
+              )
+              result = ml_authority_smoke.lambda_handler({}, None)
+              assert result["ok"] is True
+              assert result["decisionAuthority"] == "BEDROCK_LLM"
+              assert result["bedrockAvailable"] is True
+              assert result["mlFallbackAttempted"] is False
+
+
+          def test_deployment_smoke_uses_ml_after_bounded_bedrock_failure(monkeypatch) -> None:
+              errors = [{"errorCode": "MODEL_UNAVAILABLE"}]
+              monkeypatch.setattr(
+                  ml_authority_smoke.bedrock_smoke,
+                  "lambda_handler",
+                  lambda event, context: {"ok": False, "errors": errors},
+              )
+              monkeypatch.setattr(
+                  ml_authority_smoke.ml_authority,
+                  "smoke",
+                  lambda: {
+                      "ok": True,
+                      "responseNonEmpty": True,
+                      "modelId": "ranked-ensemble",
+                      "decisionAuthority": "AWS_ML_RANKED_ENSEMBLE",
+                  },
+              )
+              result = ml_authority_smoke.lambda_handler({}, None)
+              assert result["ok"] is True
+              assert result["decisionAuthority"] == "AWS_ML_RANKED_ENSEMBLE"
+              assert result["bedrockAvailable"] is False
+              assert result["mlFallbackAttempted"] is True
+              assert result["bedrockErrors"] == errors
+          ''',
+              encoding='utf-8',
+          )
+
+          watch = root / '.github/workflows/mlb-three-source-runtime-watch-v3.yml'
+          watch_text = watch.read_text(encoding='utf-8')
+          old = '''          def resource(logical_id: str) -> str:
+              return cfn.describe_stack_resource(
+                  StackName=STACK,
+                  LogicalResourceId=logical_id,
+              )['StackResourceDetail']['PhysicalResourceId']
+
+          controller_name = resource('MLBThreeApiAutonomousControllerFunction')
+          config = lam.get_function_configuration(FunctionName=controller_name)
+          '''
+          new = '''          def stack_lambda_resources():
+              rows = []
+              token = None
+              while True:
+                  kwargs = {"StackName": STACK}
+                  if token:
+                      kwargs["NextToken"] = token
+                  page = cfn.list_stack_resources(**kwargs)
+                  rows.extend(
+                      row
+                      for row in page.get("StackResourceSummaries") or []
+                      if row.get("ResourceType") == "AWS::Lambda::Function"
+                      and row.get("PhysicalResourceId")
+                  )
+                  token = page.get("NextToken")
+                  if not token:
+                      return rows
+
+          required_env = (
+              'MLB_THREE_API_STATE_TABLE',
+              'MLB_THREE_API_PULL_FUNCTION_NAME',
+              'MLB_THREE_API_LOCK_FUNCTION_NAME',
+              'MLB_THREE_API_TRAIN_FUNCTION_NAME',
+              'MLB_THREE_API_VERIFY_FUNCTION_NAME',
+          )
+          candidates = []
+          for resource_row in stack_lambda_resources():
+              candidate_name = resource_row['PhysicalResourceId']
+              candidate_config = lam.get_function_configuration(
+                  FunctionName=candidate_name
+              )
+              candidate_env = (
+                  (candidate_config.get('Environment') or {}).get('Variables') or {}
+              )
+              handler = str(candidate_config.get('Handler') or '')
+              if (
+                  handler.startswith('mlb_three_api_autonomous_controller_')
+                  and handler.endswith('.lambda_handler')
+                  and all(bool(candidate_env.get(key)) for key in required_env)
+              ):
+                  candidates.append((candidate_name, candidate_config))
+          if len(candidates) != 1:
+              raise RuntimeError(
+                  'MLB_THREE_API_CONTROLLER_DISCOVERY_FAILED:'
+                  + json.dumps(
+                      {
+                          'candidateCount': len(candidates),
+                          'candidateNames': [row[0] for row in candidates],
+                      },
+                      sort_keys=True,
+                  )
+              )
+          controller_name, config = candidates[0]
+          '''
+          if old in watch_text:
+              watch_text = watch_text.replace(old, new, 1)
+          elif new not in watch_text:
+              raise SystemExit('runtime watch controller marker missing')
+          duplicate_required = '''          required_env = (
+              'MLB_THREE_API_STATE_TABLE',
+              'MLB_THREE_API_PULL_FUNCTION_NAME',
+              'MLB_THREE_API_LOCK_FUNCTION_NAME',
+              'MLB_THREE_API_TRAIN_FUNCTION_NAME',
+              'MLB_THREE_API_VERIFY_FUNCTION_NAME',
+          )
+          env_complete = all(bool(env.get(key)) for key in required_env)
+          '''
+          replacement_required = '''          env_complete = all(bool(env.get(key)) for key in required_env)
+          '''
+          if duplicate_required in watch_text:
+              watch_text = watch_text.replace(
+                  duplicate_required, replacement_required, 1
+              )
+          watch.write_text(watch_text, encoding='utf-8')
+          PY
+
+      - name: Run focused regression suite
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
+          python -m py_compile \
+            mlb_auto_llm/production_model_gateway.py \
+            mlb_auto_llm/bedrock_smoke.py \
+            mlb_auto_llm/ml_authority_smoke.py
+          PYTHONPATH=. python -m pytest -q \
+            tests/unit/test_mlb_auto_production_model_gateway.py \
+            tests/unit/test_mlb_auto_bedrock_smoke.py \
+            tests/unit/test_mlb_auto_ml_authority_smoke.py \
+            tests/unit/test_mlb_auto_ml_authority.py \
+            tests/unit/test_mlb_auto_model_gateway.py
+          git diff --check
+
+      - name: Publish tested repair to main
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            mlb_auto_llm/production_model_gateway.py \
+            mlb_auto_llm/bedrock_smoke.py \
+            tests/unit/test_mlb_auto_production_model_gateway.py \
+            tests/unit/test_mlb_auto_bedrock_smoke.py \
+            tests/unit/test_mlb_auto_ml_authority_smoke.py \
+            .github/workflows/deploy-mlb-auto-llm.yml \
+            .github/workflows/mlb-three-source-runtime-watch-v3.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'Bound MLB deployment smoke and repair controller discovery'
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
