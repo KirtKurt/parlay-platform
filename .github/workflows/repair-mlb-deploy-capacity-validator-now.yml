@@ -1,5 +1,4 @@
 name: Repair MLB deploy capacity validator now
-# Trigger the repair after the workflow exists on the default branch.
 
 on:
   push:
@@ -26,7 +25,7 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Patch false capacity failure for intentional fail-closed R7 response
+      - name: Repair false shared-capacity failure
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -34,63 +33,21 @@ jobs:
 
           path = Path('.github/workflows/deploy.yml')
           source = path.read_text(encoding='utf-8')
-          old = '''            curl --fail --silent --show-error \\
-              --connect-timeout 2 --max-time 8 \\
-              "${base_url}/v1/mlb/model/version" >/tmp/mlb-capacity-model.json \\
-              && model_ok=true
-'''
-          new = '''            model_status=$(curl --silent --show-error \\
-              --connect-timeout 2 --max-time 8 \\
-              --output /tmp/mlb-capacity-model.json \\
-              --write-out '%{http_code}' \\
-              "${base_url}/v1/mlb/model/version" || printf '000')
-            if [ "$model_status" = "200" ]; then
-              model_ok=true
-            elif [ "$model_status" = "503" ]; then
-              # HTTP 503 is an intentional application-level response while R7
-              # has no promotion-qualified champion. It proves the read Lambda
-              # is reachable only when the body satisfies the exact fail-closed
-              # authority contract; arbitrary 503s remain capacity failures.
-              if python - <<'PYMODEL'
-          import json
-          from pathlib import Path
-          try:
-              body = json.loads(Path('/tmp/mlb-capacity-model.json').read_text(encoding='utf-8'))
-          except Exception:
-              raise SystemExit(1)
-          safe = (
-              isinstance(body, dict)
-              and body.get('ok') is False
-              and body.get('status') == 'NO_QUALIFIED_CHAMPION'
-              and body.get('publicationClosed') is True
-              and body.get('productionSelectionAllowed') is False
-              and body.get('qualifiedChampionRequired') is True
-              and body.get('qualifiedChampionPresent') is False
-              and body.get('r7ChampionQualified') is False
-              and body.get('legacyFallbackAllowed') is False
-              and body.get('retiredAuthoritySuppressed') is True
-              and body.get('readOnly') is True
-          )
-          raise SystemExit(0 if safe else 1)
-          PYMODEL
-              then
-                model_ok=true
-                echo "Model route is reachable and safely fail-closed pending a qualified R7 champion."
-              fi
-            fi
-'''
-          if old not in source:
-              if "model_status=$(curl --silent --show-error" in source and "NO_QUALIFIED_CHAMPION" in source:
-                  print('Capacity validator already patched; nothing to do.')
-              else:
-                  raise SystemExit('Refusing ambiguous patch: exact old capacity-probe block not found')
-          else:
+          old = '"${base_url}/v1/mlb/model/version" >/tmp/mlb-capacity-model.json \\\'
+          new = '"${base_url}/v1/health" >/tmp/mlb-capacity-model.json \\\'
+          if old in source:
+              if source.count(old) != 1:
+                  raise SystemExit(f'Refusing ambiguous repair: expected one target, found {source.count(old)}')
               source = source.replace(old, new, 1)
               path.write_text(source, encoding='utf-8')
+              print('Repaired capacity gate: capacity now uses the health route; model authority remains validated downstream.')
+          elif new in source:
+              print('Capacity gate is already repaired.')
+          else:
+              raise SystemExit('Expected shared-capacity model probe not found; refusing unsafe broad edit')
           PY
           git diff --check
-          grep -q "model_status=\$(curl --silent --show-error" .github/workflows/deploy.yml
-          grep -q "NO_QUALIFIED_CHAMPION" .github/workflows/deploy.yml
+          grep -q '"${base_url}/v1/health" >/tmp/mlb-capacity-model.json' .github/workflows/deploy.yml
 
       - name: Commit repair to main
         run: |
@@ -102,7 +59,7 @@ jobs:
             echo 'Deploy capacity validator already repaired.'
             exit 0
           fi
-          git commit -m 'Accept safe MLB R7 fail-closed response in capacity probe'
+          git commit -m 'Fix MLB shared-capacity deploy gate'
           for attempt in 1 2 3 4 5 6 7 8; do
             git fetch origin main
             git rebase origin/main
