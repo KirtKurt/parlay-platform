@@ -1,0 +1,113 @@
+name: Deploy AWS Native Algorithm Auto Repair V2
+
+on:
+  push:
+    branches:
+      - automation/aws-native-algorithm-auto-repair-20260825
+    paths:
+      - 'aws_auto_repair/**'
+      - 'aws-auto-repair-template.yaml'
+      - 'tests/aws_auto_repair/**'
+      - 'scripts/deploy_aws_native_auto_repair.sh'
+      - '.github/workflows/deploy-aws-native-algorithm-auto-repair-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-native-algorithm-auto-repair-v2-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: '${{ github.sha }}'}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: aws-actions/setup-sam@v2
+      - name: Verify source, tests, template, and denylist
+        env:
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<10' 'boto3>=1.34,<2' 'PyYAML>=6,<7' 'cfn-lint>=1,<2'
+          python -m py_compile aws_auto_repair/*.py
+          python -m pytest -q tests/aws_auto_repair
+          sam validate --template-file aws-auto-repair-template.yaml --lint
+          bash -n scripts/deploy_aws_native_auto_repair.sh
+          python - <<'PY'
+          from pathlib import Path
+          template=Path('aws-auto-repair-template.yaml').read_text()
+          source=Path('aws_auto_repair/handler.py').read_text()
+          for marker in (
+            'lambda:InvokeFunction','events:EnableRule','cloudformation:ListStackResources',
+            'DataContractBlockers','ExternalBlockers','REPAIR_STATE_TABLE',
+          ):
+            assert marker in template or marker in source, marker
+          for marker in (
+            'lambda:UpdateFunctionCode','lambda:UpdateFunctionConfiguration',
+            'lambda:PutFunctionConcurrency','events:DisableRule',
+            'dynamodb:BatchWriteItem','dynamodb:TransactWriteItems',
+            's3:PutObject','bedrock:InvokeModel','secretsmanager:GetSecretValue',
+          ):
+            assert marker not in template, marker
+          for marker in (
+            'update_function_code(','update_function_configuration(',
+            'disable_rule(','transact_write_items(','batch_write_item(','put_object(',
+          ):
+            assert marker not in source, marker
+          print('four_sport_aws_native_auto_repair_contracts_ok')
+          PY
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - sport: mlb-auto
+            target_stack: parlay-platform-mlb-auto-llm
+            repair_stack: parlay-platform-auto-repair-mlb-auto
+          - sport: tennis
+            target_stack: parlay-platform-tennis-learning
+            repair_stack: parlay-platform-auto-repair-tennis
+          - sport: soccer
+            target_stack: parlay-platform-soccer-auto
+            repair_stack: parlay-platform-auto-repair-soccer
+          - sport: nfl
+            target_stack: parlay-platform-nfl-auto
+            repair_stack: parlay-platform-auto-repair-nfl
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: '${{ github.sha }}'}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Deploy and verify isolated AWS repair control plane
+        run: |
+          chmod +x scripts/deploy_aws_native_auto_repair.sh
+          scripts/deploy_aws_native_auto_repair.sh \
+            '${{ matrix.sport }}' \
+            '${{ matrix.target_stack }}' \
+            '${{ matrix.repair_stack }}' \
+            '${{ secrets.AWS_REGION }}'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: aws-native-auto-repair-v2-${{ matrix.sport }}-${{ github.run_id }}
+          path: /tmp/aws-native-auto-repair-${{ matrix.sport }}.json
+          if-no-files-found: warn
+          retention-days: 90
