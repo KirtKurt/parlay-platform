@@ -32,7 +32,7 @@ def _response(status, body):
 def _build_module():
     calls = {"delegated": [], "diagnostics": 0, "status": []}
 
-    def full_diagnostics(_module, slate_date, game):
+    def full_diagnostics(_module, slate_date, game, limit=20):
         calls["diagnostics"] += 1
         return {
             "ok": True,
