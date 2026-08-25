@@ -2,7 +2,7 @@
   "backlog": {
     "automaticWagerAllowed": false,
     "directTableWrite": false,
-    "error": "ReconciliationError:lambda_function_error:{\"errorMessage\":\"RequestId: a030c106-da5e-4f36-a4f5-f5080e688f27 Error: Task timed out after 300.00 seconds\",\"errorType\":\"Sandbox.Timedout\",\"eventKind\":\"prospective_terminal_backlog_reconciliation_v4\",\"functionError\":\"Unhandled\",\"functionName\":\"parlay-platform-dev-MLBDailyPickLockFunction-BQIhMFw1k5YP\",\"redactedLogTail\":\"START RequestId: a030c106-da5e-4f36-a4f5-f5080e688f27 Version: $LATEST\\nEND RequestId: a030c106-da5e-4f36-a4f5-f5080e688f27\\nREPORT RequestId: a030c106-da5e-4f36-a4f5-f5080e688f27\\tDuration: 300000.00 ms\\tBilled Duration: 300000 ms\\tMemory Size: 1024 MB\\tMax Memory Used: 216 MB\\tStatus: timeout\\n\",\"requestPayloadIncluded\":false,\"secretExposed\":false,\"slateDateEt\":\"2026-08-04\"}",
+    "error": "ReconciliationError:lambda_function_error:{\"errorMessage\":\"MLB_SCHEDULED_LOCK_PREREQUISITE_FAILED:{\\\"error\\\": \\\"MLB_LOCK_EXECUTION_LEASE_VALIDATION_FAILED\\\", \\\"errorCode\\\": \\\"RuntimeError\\\", \\\"ok\\\": false, \\\"sport\\\": \\\"mlb\\\"}\",\"errorType\":\"RuntimeError\",\"eventKind\":\"prospective_terminal_backlog_reconciliation_v4\",\"functionError\":\"Unhandled\",\"functionName\":\"parlay-platform-dev-MLBDailyPickLockFunction-BQIhMFw1k5YP\",\"redactedLogTail\":\"r\\\", \\\"ok\\\": false, \\\"sport\\\": \\\"mlb\\\"}\\nTraceback (most recent call last):\\n\\u00a0\\u00a0File \\\"/var/task/mlb_daily_pick_lock_protected.py\\\", line 726, in lambda_handler\\n\\u00a0\\u00a0\\u00a0\\u00a0return _failure_response(\\n\\u00a0\\u00a0File \\\"/var/task/mlb_daily_pick_lock_protected.py\\\", line 344, in _failure_response\\n\\u00a0\\u00a0\\u00a0\\u00a0raise RuntimeError(\\nEND RequestId: ad1cb12b-a67c-470e-a9bf-b2839cf4527c\\nREPORT RequestId: ad1cb12b-a67c-470e-a9bf-b2839cf4527c\\tDuration: 1.47 ms\\tBilled Duration: 2 ms\\tMemory Size: 1024 MB\\tMax Memory Used: 212 MB\\t\\n\",\"requestPayloadIncluded\":false,\"secretExposed\":false,\"slateDateEt\":\"2026-08-04\"}",
     "immutablePredictionRewriteAllowed": false,
     "lambdaFunctionErrorRequestPayloadIncluded": false,
     "lambdaFunctionErrorsRedacted": true,
@@ -18,7 +18,7 @@
     "version": "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5.3-full-bearer-redacted-function-error-evidence"
   },
   "conclusion": "FAIL",
-  "createdAtUtc": "2026-08-25T14:26:01.259017+00:00",
+  "createdAtUtc": "2026-08-25T20:34:54.423577+00:00",
   "diagnosticDurability": {
     "contract": "append_only_missed_lock_start_and_terminal_outcome_once",
     "immutablePredictionRewriteAllowed": false,
@@ -28,28 +28,28 @@
   "directTableWrite": false,
   "identity": {
     "MLBDailyPickLockFunction": {
-      "deployRunId": "lifecycle-32856295109-1",
+      "deployRunId": "lifecycle-32895680805-1",
       "functionName": "parlay-platform-dev-MLBDailyPickLockFunction-BQIhMFw1k5YP",
-      "gitSha": "b5727c1f512c4c710bf74170c4b888bb018e1888",
+      "gitSha": "03a09c5367b20be6a35398b14270d7c79f02fd50",
       "lastUpdateStatus": "Successful",
       "state": "Active",
-      "templateSha256": "9e5519d55d5f7898e819cb68dca35edd2f07c87f1203427b3bd8b77789e8e5cb"
+      "templateSha256": "491458859c0ece7293e7d914dbf0819ed41b9e6fd379f11d3ba4af1bc91d36af"
     },
     "MLBMLTrainingFunction": {
-      "deployRunId": "lifecycle-32856295109-1",
+      "deployRunId": "lifecycle-32895680805-1",
       "functionName": "parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
-      "gitSha": "b5727c1f512c4c710bf74170c4b888bb018e1888",
+      "gitSha": "03a09c5367b20be6a35398b14270d7c79f02fd50",
       "lastUpdateStatus": "Successful",
       "state": "Active",
-      "templateSha256": "9e5519d55d5f7898e819cb68dca35edd2f07c87f1203427b3bd8b77789e8e5cb"
+      "templateSha256": "491458859c0ece7293e7d914dbf0819ed41b9e6fd379f11d3ba4af1bc91d36af"
     },
     "MLBV3ReadFunction": {
-      "deployRunId": "lifecycle-32856295109-1",
+      "deployRunId": "lifecycle-32895680805-1",
       "functionName": "parlay-platform-dev-MLBV3ReadFunction-QnN5BEYDgbli",
-      "gitSha": "b5727c1f512c4c710bf74170c4b888bb018e1888",
+      "gitSha": "03a09c5367b20be6a35398b14270d7c79f02fd50",
       "lastUpdateStatus": "Successful",
       "state": "Active",
-      "templateSha256": "9e5519d55d5f7898e819cb68dca35edd2f07c87f1203427b3bd8b77789e8e5cb"
+      "templateSha256": "491458859c0ece7293e7d914dbf0819ed41b9e6fd379f11d3ba4af1bc91d36af"
     }
   },
   "immutablePredictionRewriteAllowed": false,
@@ -59,12 +59,12 @@
   "proofType": "MLB_ROOT_DURABLE_LIFECYCLE_CONTINUITY_DEPLOYMENT_V3",
   "secretExposed": false,
   "source": {
-    "checkoutSha": "b5727c1f512c4c710bf74170c4b888bb018e1888",
-    "githubSha": "b5727c1f512c4c710bf74170c4b888bb018e1888",
+    "checkoutSha": "03a09c5367b20be6a35398b14270d7c79f02fd50",
+    "githubSha": "03a09c5367b20be6a35398b14270d7c79f02fd50",
     "immutableCheckout": true,
     "ok": true
   },
-  "sourceSha": "b5727c1f512c4c710bf74170c4b888bb018e1888",
+  "sourceSha": "03a09c5367b20be6a35398b14270d7c79f02fd50",
   "trainer": {
     "error": "trainer-proof.json_missing",
     "ok": false
