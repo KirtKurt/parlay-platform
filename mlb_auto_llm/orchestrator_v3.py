@@ -296,5 +296,15 @@ production._validate_deployment_smoke = _validate_deployment_smoke_v3
 base._build_card = _build_card_three_source_model
 
 
+from pregame_odds_replay import install as _install_pregame_odds_replay
+
+_install_pregame_odds_replay(
+    base,
+    production,
+    strict_bedrock,
+    match_event=_match_event_v2,
+)
+
+
 def lambda_handler(event: Any, context: Any) -> Any:
     return strict_bedrock.lambda_handler(event, context)
