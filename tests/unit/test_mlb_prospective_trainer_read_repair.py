@@ -40,6 +40,25 @@ def _locked(*reasons, exact=True):
     }
 
 
+def _canonical_authority(*reasons, **updates):
+    authority = {
+        "verified": True,
+        "consistentRead": True,
+        "immutableLocked": True,
+        "stageAuthorityVerified": True,
+        "persistedStageAuthorityValidated": True,
+        "officialAuditEligible": True,
+        "exactLockVectorValidated": True,
+        "selectionLockVectorStatusValidated": True,
+        "exactLockVectorValidationErrors": [],
+        "selectionLockVectorStatusValidationErrors": [],
+        "trainingExclusionReasons": list(reasons),
+        "learningEligible": False,
+    }
+    authority.update(updates)
+    return authority
+
+
 def _labels_module():
     def authority(item, slate_date):
         del slate_date
@@ -265,6 +284,69 @@ def test_invalid_vector_is_never_repaired():
     assert authority["learningEligible"] is False
     assert authority["exactLockVectorValidated"] is False
     assert authority["trainingExclusionReasons"] == [STALE]
+
+
+def test_canonical_authority_rederived_exact_vector_repairs_missing_legacy_boolean():
+    module = repair.install(_labels_module())
+    source_lock = _locked(STALE)
+    source_lock.pop("exactVectorVerified")
+    source_lock["mlFeatureFreeze"].pop("exactVectorVerified", None)
+    source_lock["canonicalLockAuthority"] = _canonical_authority(STALE)
+    source_label = {
+        "training_eligible": False,
+        "training_exclusion_reasons": [STALE],
+    }
+
+    result = module._joined_training_row(
+        "2026-08-05",
+        source_label,
+        source_lock,
+        slate_finalized=True,
+    )
+
+    assert result["trainingEligible"] is True
+    assert result["trainingExclusionReasons"] == []
+    cleaned = repair._copy_with_stale_prelock_exclusions_cleared(source_lock)
+    assert cleaned["exactVectorProofSourceAtRead"] == "canonical_lock_authority"
+    assert cleaned["canonicalLockAuthority"]["learningEligible"] is True
+    assert source_lock["trainingEligible"] is False
+    assert "exactVectorVerified" not in source_lock
+
+
+def test_incomplete_canonical_exact_vector_authority_remains_fail_closed():
+    module = repair.install(_labels_module())
+    source_lock = _locked(STALE)
+    source_lock.pop("exactVectorVerified")
+    source_lock["canonicalLockAuthority"] = _canonical_authority(
+        STALE,
+        selectionLockVectorStatusValidated=False,
+    )
+    source_label = {
+        "training_eligible": False,
+        "training_exclusion_reasons": [STALE],
+    }
+
+    result = module._joined_training_row(
+        "2026-08-05",
+        source_label,
+        source_lock,
+        slate_finalized=True,
+    )
+
+    assert result["trainingEligible"] is False
+    assert result["trainingExclusionReasons"] == [STALE]
+    assert repair._copy_with_stale_prelock_exclusions_cleared(source_lock) == source_lock
+
+
+def test_canonical_authority_validation_error_remains_fail_closed():
+    source_lock = _locked(STALE)
+    source_lock.pop("exactVectorVerified")
+    source_lock["canonicalLockAuthority"] = _canonical_authority(
+        STALE,
+        exactLockVectorValidationErrors=["frozen_vector_fingerprint_mismatch"],
+    )
+
+    assert repair._copy_with_stale_prelock_exclusions_cleared(source_lock) == source_lock
 
 
 def test_trainer_compat_installs_read_repair_before_invocation():
