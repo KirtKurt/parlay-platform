@@ -1,0 +1,277 @@
+# MLB-only, read-only production diagnostic for R7 row admission.
+# It reads the deployed trainer configuration, current R7 status, immutable
+# canonical locks, and write-once labels. It does not write AWS state, invoke a
+# mutating mode, alter authority, or weaken any admission/promotion contract.
+name: Diagnose MLB R7 admission now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-mlb-r7-admission-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: diagnose-mlb-r7-admission-now
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-dev
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact main source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Read exact R7 admission evidence
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          mkdir -p runtime_reports
+          PYTHONPATH="hello_world:${PYTHONPATH:-}" python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import sys
+          from collections import Counter
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from typing import Any, Dict, Iterable
+
+          import boto3
+
+          REGION = os.environ['AWS_REGION']
+          STACK = os.environ['STACK_NAME']
+          EXPERIMENT = 'mlb-v2-2026-08-03-future-prospective-r7'
+          FALLBACK_DATES = ['2026-08-03', '2026-08-24']
+
+          cf = boto3.client('cloudformation', region_name=REGION)
+          lam = boto3.client('lambda', region_name=REGION)
+          trainer = cf.describe_stack_resource(
+              StackName=STACK,
+              LogicalResourceId='MLBMLTrainingFunction',
+          )['StackResourceDetail']['PhysicalResourceId']
+          config = lam.get_function_configuration(FunctionName=trainer)
+          variables = ((config.get('Environment') or {}).get('Variables') or {})
+          for key, value in variables.items():
+              if isinstance(value, str):
+                  os.environ[key] = value
+
+          # Install the exact deployed compatibility boundary before importing
+          # and evaluating canonical label joins. No persistence APIs are called.
+          import mlb_prospective_trainer_read_repair as read_repair
+          import mlb_canonical_final_labels_v1 as labels
+          import mlb_fundamentals_snapshot_v2 as fundamentals
+
+          read_repair.install(labels)
+
+          def plain(value: Any) -> Any:
+              try:
+                  from decimal import Decimal
+                  if isinstance(value, Decimal):
+                      return int(value) if value == value.to_integral_value() else float(value)
+              except Exception:
+                  pass
+              if isinstance(value, dict):
+                  return {str(k): plain(v) for k, v in value.items()}
+              if isinstance(value, (list, tuple)):
+                  return [plain(v) for v in value]
+              return value
+
+          def strings(values: Any) -> list[str]:
+              return sorted({str(v) for v in (values or []) if str(v)})
+
+          def invoke_status() -> Dict[str, Any]:
+              response = lam.invoke(
+                  FunctionName=trainer,
+                  InvocationType='RequestResponse',
+                  Payload=json.dumps({
+                      'sport': 'mlb',
+                      'mode': 'status',
+                      'run': 'r7_admission_read_only_diagnostic',
+                  }, separators=(',', ':')).encode('utf-8'),
+              )
+              body = response['Payload'].read()
+              if response.get('FunctionError'):
+                  return {}
+              parsed = json.loads(body.decode('utf-8'))
+              if isinstance(parsed, dict) and 'body' in parsed:
+                  nested = parsed.get('body')
+                  parsed = json.loads(nested) if isinstance(nested, str) else nested
+              return parsed if isinstance(parsed, dict) else {}
+
+          status = invoke_status()
+          latest = (((status.get('trainingHealth') or {}).get('latestRun')) or {})
+          continuity = latest.get('canonicalSlateContinuity') or {}
+          dates = [str(v) for v in continuity.get('finalizedGameSlateDates') or [] if str(v)]
+          if not dates:
+              dates = list(FALLBACK_DATES)
+
+          rows: list[Dict[str, Any]] = []
+          rejected_lock_count = 0
+          for slate_date in sorted(set(dates)):
+              locks, rejected = labels._validated_canonical_locks(slate_date)
+              rejected_lock_count += len(rejected)
+              stored_labels = {
+                  str(item.get('official_game_pk') or ''): item
+                  for item in labels._labels_for_slate(slate_date)
+              }
+              for locked in locks:
+                  official_values = labels._official_game_pk_values(locked)
+                  official_pk = next(iter(official_values)) if len(official_values) == 1 else None
+                  authority = locked.get('canonicalLockAuthority') or {}
+                  freeze = locked.get('mlFeatureFreeze') or {}
+                  vector = locked.get('frozenFeatureVector') or {}
+                  snapshot = locked.get('fundamentalsSnapshotV2') or {}
+                  verdict_eligible, verdict_reasons = labels._training_verdict(locked)
+                  label = stored_labels.get(str(official_pk or '')) or {}
+                  joined = (
+                      labels._joined_training_row(
+                          slate_date,
+                          label,
+                          locked,
+                          slate_finalized=True,
+                      )
+                      if label
+                      else {}
+                  )
+                  try:
+                      fundamentals_errors = fundamentals.validate(snapshot) if snapshot else ['fundamentals_v2_missing']
+                  except Exception as exc:
+                      fundamentals_errors = [f'fundamentals_validation_failed:{type(exc).__name__}']
+                  rows.append({
+                      'slateDateEt': slate_date,
+                      'officialGamePk': official_pk,
+                      'storedAliases': {
+                          'lockedPrediction': locked.get('lockedPrediction'),
+                          'immutablePerGameStage': locked.get('immutablePerGameStage'),
+                          'immutableLockedStorage': locked.get('immutableLockedStorage'),
+                          'trainingEligible': locked.get('trainingEligible'),
+                          'freezeTrainingEligible': freeze.get('trainingEligible'),
+                          'exactVectorVerified': locked.get('exactVectorVerified'),
+                          'freezeExactVectorVerified': freeze.get('exactVectorVerified'),
+                      },
+                      'storedTrainingExclusionReasons': strings(locked.get('trainingExclusionReasons')),
+                      'freezeTrainingExclusionReasons': strings(freeze.get('trainingExclusionReasons')),
+                      'vectorFingerprintPresent': bool(isinstance(vector, dict) and vector.get('fingerprint')),
+                      'fundamentalsPresent': bool(snapshot),
+                      'fundamentalsVersion': snapshot.get('version') if isinstance(snapshot, dict) else None,
+                      'fundamentalsValidationErrors': strings(fundamentals_errors),
+                      'authority': {
+                          'learningEligible': authority.get('learningEligible'),
+                          'verified': authority.get('verified'),
+                          'immutableLocked': authority.get('immutableLocked'),
+                          'stageAuthorityVerified': authority.get('stageAuthorityVerified'),
+                          'persistedStageAuthorityValidated': authority.get('persistedStageAuthorityValidated'),
+                          'officialAuditEligible': authority.get('officialAuditEligible'),
+                          'exactLockVectorValidated': authority.get('exactLockVectorValidated'),
+                          'selectionLockVectorStatusValidated': authority.get('selectionLockVectorStatusValidated'),
+                          'trainingExclusionReasons': strings(authority.get('trainingExclusionReasons')),
+                          'exactVectorProofSourceAtRead': authority.get('exactVectorProofSourceAtRead'),
+                          'repairVersion': authority.get('prospectiveTrainerReadRepairVersion'),
+                      },
+                      'currentVerdict': {
+                          'eligible': bool(verdict_eligible),
+                          'reasons': strings(verdict_reasons),
+                      },
+                      'storedLabel': {
+                          'present': bool(label),
+                          'trainingEligible': label.get('training_eligible') if label else None,
+                          'trainingExclusionReasons': strings(label.get('training_exclusion_reasons')) if label else [],
+                      },
+                      'joinedRow': {
+                          'trainingEligible': joined.get('trainingEligible') if joined else None,
+                          'trainingExclusionReasons': strings(joined.get('trainingExclusionReasons')) if joined else [],
+                          'repairVersion': joined.get('prospectiveTrainerReadRepairVersion') if joined else None,
+                          'immutableLockPayloadMutated': joined.get('immutableLockPayloadMutated') if joined else None,
+                          'immutableLabelPayloadMutated': joined.get('immutableLabelPayloadMutated') if joined else None,
+                      },
+                  })
+
+          reason_counts: Counter[str] = Counter()
+          verdict_reason_counts: Counter[str] = Counter()
+          for row in rows:
+              joined = row.get('joinedRow') or {}
+              for reason in joined.get('trainingExclusionReasons') or []:
+                  reason_counts[str(reason)] += 1
+              for reason in (row.get('currentVerdict') or {}).get('reasons') or []:
+                  verdict_reason_counts[str(reason)] += 1
+          joined_eligible = sum(
+              (row.get('joinedRow') or {}).get('trainingEligible') is True
+              for row in rows
+          )
+          report = {
+              'ok': True,
+              'proofType': 'MLB_R7_ROW_ADMISSION_READ_ONLY_DIAGNOSTIC_V1',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'sourceSha': os.environ.get('GITHUB_SHA'),
+              'experimentId': EXPERIMENT,
+              'trainerFunction': trainer,
+              'trainerCodeSha256': config.get('CodeSha256'),
+              'trainerLastModified': config.get('LastModified'),
+              'readRepairVersion': read_repair.VERSION,
+              'statusExperimentId': status.get('experimentId'),
+              'statusReadOk': status.get('ok'),
+              'finalizedSlateDatesInspected': sorted(set(dates)),
+              'inspectedCanonicalLockCount': len(rows),
+              'rejectedCanonicalLockCount': rejected_lock_count,
+              'joinedEligibleCount': joined_eligible,
+              'joinedIneligibleCount': len(rows) - joined_eligible,
+              'joinedExclusionReasonCounts': dict(sorted(reason_counts.items())),
+              'currentVerdictReasonCounts': dict(sorted(verdict_reason_counts.items())),
+              'rows': rows,
+              'awsStateMutated': False,
+              'immutablePredictionOrLockMutated': False,
+              'labelMutated': False,
+              'promotionAuthorityChanged': False,
+              'productionAuthorityChanged': False,
+              'retiredV15_10Used': False,
+              'secretExposed': False,
+          }
+          path = Path('runtime_reports/mlb_r7_admission_diagnostic_latest.json')
+          path.write_text(json.dumps(plain(report), indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print(json.dumps(plain({k: v for k, v in report.items() if k != 'rows'}), indent=2, sort_keys=True))
+          print(json.dumps(plain(rows), indent=2, sort_keys=True))
+          PY
+
+      - name: Publish read-only diagnostic evidence
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime_reports/mlb_r7_admission_diagnostic_latest.json
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'Publish MLB R7 row admission diagnostic [skip ci]'
+          for attempt in 1 2 3 4; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 3))
+          done
+          exit 1
