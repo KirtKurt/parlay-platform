@@ -28,6 +28,10 @@ _CACHED_TERMINAL_RECONCILIATION_REASONS = frozenset(
 _EXISTING_POST_WINDOW_SUCCESS_REASONS = frozenset(
     {"POST_WINDOW_TERMINAL_STATUS_RECONCILED"}
 )
+_POST_WINDOW_REPAIR_REASONS = (
+    _CACHED_TERMINAL_RECONCILIATION_REASONS
+    | _EXISTING_POST_WINDOW_SUCCESS_REASONS
+)
 
 
 def _int(value: Any, default: int = 0) -> int:
@@ -292,13 +296,7 @@ def _attach_repair(
     result: Dict[str, Any],
     report: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Attach repair evidence while preserving established public contracts.
-
-    Existing lifecycle reason strings and progress payloads remain untouched
-    unless this layer itself performs a new durable terminal transition. The
-    pre-existing post-window success response is also preserved verbatim even
-    when this layer adds the missing per-game durable terminal behind it.
-    """
+    """Attach repair evidence while preserving established public contracts."""
 
     out = copy.deepcopy(result)
     out["missedLockTerminalReconciliation"] = copy.deepcopy(report)
@@ -327,9 +325,6 @@ def _attach_repair(
         in _EXISTING_POST_WINDOW_SUCCESS_REASONS
         and result.get("lockStatusComplete") is True
     ):
-        # The established post-window API intentionally reports its cached
-        # lifecycle view. Preserve that response exactly while the durable
-        # per-game terminal written above unblocks settlement/training readers.
         return out
 
     out["perGameLockProgress"] = copy.deepcopy(progress)
@@ -381,6 +376,8 @@ def install_prospective_row_repair(module: Any, patch: Any) -> Any:
         if not isinstance(result, dict):
             return result
         if _missed_count_from_result(result) <= 0:
+            return result
+        if str(result.get("reason") or "") not in _POST_WINDOW_REPAIR_REASONS:
             return result
         slate = str(
             slate_date or result.get("slateDateEt") or module._today_et()
