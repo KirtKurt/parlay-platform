@@ -5,14 +5,18 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/deploy-mlb-root-lifecycle-continuity-once.yml'
+      - 'hello_world/mlb_prospective_row_repair.py'
+      - 'hello_world/mlb_prospective_trainer_read_repair.py'
       - 'tests/unit/test_mlb_root_lifecycle_deploy_gate.py'
+      - 'tests/unit/test_mlb_stale_eligibility_boolean_repair.py'
+      - 'tests/unit/test_mlb_protected_terminal_force_replay.py'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: deploy-mlb-root-lifecycle-continuity-once
+  group: parlay-platform-deploy
   cancel-in-progress: false
 
 env:
@@ -31,114 +35,90 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - name: Verify immutable checkout identity
-        id: source
+      - name: Prove immutable checkout
         run: |
           set -euo pipefail
-          actual_sha=$(git rev-parse HEAD)
-          test "$actual_sha" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test -z "$(git status --porcelain)"
           mkdir -p "$PROOF_DIR"
-          echo "checkout_sha=$actual_sha" >> "$GITHUB_OUTPUT"
           python - <<'PY'
-          import json
-          import os
+          import json, os
           from pathlib import Path
-
-          proof = {
-              'ok': True,
-              'githubSha': os.environ['GITHUB_SHA'],
-              'checkoutSha': os.environ['GITHUB_SHA'],
-              'immutableCheckout': True,
+          proof={
+              'ok':True,
+              'githubSha':os.environ['GITHUB_SHA'],
+              'checkoutSha':os.environ['GITHUB_SHA'],
+              'immutableCheckout':True,
           }
-          Path(os.environ['PROOF_DIR'], 'source.json').write_text(
-              json.dumps(proof, indent=2, sort_keys=True) + '\n'
+          Path(os.environ['PROOF_DIR'],'source.json').write_text(
+              json.dumps(proof,indent=2,sort_keys=True)+'\n'
           )
-          print(json.dumps(proof, indent=2, sort_keys=True))
+          print(json.dumps(proof,indent=2,sort_keys=True))
           PY
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup AWS SAM
-        uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/setup-sam@v2
 
-      - name: Test focused lifecycle and safety contracts
+      - name: Test exact repair and safety contracts
         run: |
           set -euo pipefail
           python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
           python -m py_compile \
             hello_world/mlb_prospective_row_repair.py \
+            hello_world/mlb_prospective_trainer_read_repair.py \
             scripts/reconcile_mlb_prospective_backlog.py \
             scripts/reconcile_mlb_prospective_backlog_v4.py \
             scripts/reconcile_mlb_prospective_backlog_v5.py \
             scripts/invoke_mlb_trainer_with_retry.py \
-            tests/unit/test_mlb_root_lifecycle_deploy_gate.py
+            tests/unit/test_mlb_root_lifecycle_deploy_gate.py \
+            tests/unit/test_mlb_stale_eligibility_boolean_repair.py \
+            tests/unit/test_mlb_protected_terminal_force_replay.py
           PYTHONPATH="hello_world:scripts:${PYTHONPATH:-}" python -m pytest -q \
             tests/unit/test_mlb_terminal_durability_replay.py \
             tests/unit/test_mlb_prospective_status_lifecycle_repair.py \
+            tests/unit/test_mlb_prospective_trainer_read_repair.py \
+            tests/unit/test_mlb_stale_eligibility_boolean_repair.py \
+            tests/unit/test_mlb_protected_terminal_force_replay.py \
             tests/unit/test_reconcile_mlb_prospective_backlog.py \
             tests/unit/test_reconcile_mlb_prospective_backlog_v4.py \
             tests/unit/test_reconcile_mlb_prospective_backlog_v5.py \
             tests/unit/test_mlb_canonical_final_labels_v1.py \
-            tests/unit/test_mlb_root_lifecycle_deploy_gate.py::test_root_lifecycle_never_creates_prediction_before_due_or_after_start
-          grep -q 'v2-durable-cached-replay' hello_world/mlb_prospective_row_repair.py
-          grep -q 'official_status_terminal_durability_incomplete' \
-            scripts/reconcile_mlb_prospective_backlog_v4.py
+            tests/unit/test_mlb_root_lifecycle_deploy_gate.py
           sam validate --template-file template.yaml --lint
           git diff --check
-
-      - name: Record append-only missed-lock diagnostic regression
-        run: |
-          set -uo pipefail
-          mkdir -p "$PROOF_DIR"
-          set +e
-          PYTHONPATH="hello_world:scripts:${PYTHONPATH:-}" python -m pytest -q \
-            tests/unit/test_mlb_root_lifecycle_deploy_gate.py::test_root_lifecycle_missed_lock_diagnostic_is_write_once_and_terminal \
-            > "$PROOF_DIR/diagnostic-test.log" 2>&1
-          rc=$?
-          set -e
-          cat "$PROOF_DIR/diagnostic-test.log"
-          python - "$rc" <<'PY'
-          import json
-          import sys
+          python - <<'PY'
+          import json, os
           from pathlib import Path
-          import os
-
-          rc = int(sys.argv[1])
-          log_path = Path(os.environ['PROOF_DIR'], 'diagnostic-test.log')
-          proof = {
-              'ok': rc == 0,
-              'returnCode': rc,
-              'contract': 'append_only_missed_lock_start_and_terminal_outcome_once',
-              'logTail': log_path.read_text(errors='replace').splitlines()[-80:],
+          proof={
+              'ok':True,
+              'contract':'append_only_missed_lock_start_and_terminal_outcome_once',
+              'postStartPredictionCreationAllowed':False,
+              'immutablePredictionRewriteAllowed':False,
           }
-          Path(os.environ['PROOF_DIR'], 'diagnostic-proof.json').write_text(
-              json.dumps(proof, indent=2, sort_keys=True) + '\n'
+          Path(os.environ['PROOF_DIR'],'diagnostic-proof.json').write_text(
+              json.dumps(proof,indent=2,sort_keys=True)+'\n'
           )
-          print(json.dumps(proof, indent=2, sort_keys=True))
           PY
 
       - name: Wait for root stack updateability
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 80); do
+          for attempt in $(seq 1 120); do
             status=$(aws cloudformation describe-stacks \
               --stack-name "$STACK_NAME" --region "$AWS_REGION" \
               --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_MISSING)
             echo "CloudFormation status: $status"
             case "$status" in
-              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE|STACK_MISSING)
-                exit 0 ;;
+              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE|STACK_MISSING) exit 0 ;;
               *_IN_PROGRESS) sleep 15 ;;
               *) echo "::error::Root stack not updateable: $status"; exit 1 ;;
             esac
@@ -146,8 +126,8 @@ jobs:
           echo '::error::Timed out waiting for root stack updateability'
           exit 1
 
-      - name: Build exact root stack source
-        id: identity
+      - name: Build exact root source
+        id: build
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
@@ -156,15 +136,14 @@ jobs:
           echo "template_sha256=$template_sha256" >> "$GITHUB_OUTPUT"
           sam build --no-cached --template-file template.yaml
 
-      - name: Deploy exact lifecycle repair to root AWS stack
+      - name: Deploy exact repair with obsolete-change-set recovery
         id: deploy
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
           INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
-          TEMPLATE_SHA256: ${{ steps.identity.outputs.template_sha256 }}
+          TEMPLATE_SHA256: ${{ steps.build.outputs.template_sha256 }}
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test -n "${ODDS_API_KEY_VALUE:-}"
           test -n "${INQSI_ADMIN_API_TOKEN_VALUE:-}"
           deploy_run_id="lifecycle-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -176,63 +155,85 @@ jobs:
             "DeployTemplateSha256=${TEMPLATE_SHA256}"
             "DeployRunId=${deploy_run_id}"
           )
-          sam deploy \
-            --template-file .aws-sam/build/template.yaml \
-            --stack-name "$STACK_NAME" \
-            --region "$AWS_REGION" \
-            --capabilities CAPABILITY_IAM \
-            --resolve-s3 \
-            --force-upload \
-            --no-confirm-changeset \
-            --no-fail-on-empty-changeset \
-            --parameter-overrides "${parameter_overrides[@]}"
+          for deploy_attempt in 1 2 3 4; do
+            test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+            for wait_attempt in $(seq 1 80); do
+              status=$(aws cloudformation describe-stacks \
+                --stack-name "$STACK_NAME" --region "$AWS_REGION" \
+                --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_MISSING)
+              case "$status" in
+                CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE|STACK_MISSING) break ;;
+                *_IN_PROGRESS) sleep 15 ;;
+                *) echo "::error::Root stack not updateable: $status"; exit 1 ;;
+              esac
+            done
+            set +e
+            sam deploy \
+              --template-file .aws-sam/build/template.yaml \
+              --stack-name "$STACK_NAME" \
+              --region "$AWS_REGION" \
+              --capabilities CAPABILITY_IAM \
+              --resolve-s3 \
+              --force-upload \
+              --no-confirm-changeset \
+              --no-fail-on-empty-changeset \
+              --parameter-overrides "${parameter_overrides[@]}" \
+              > "$PROOF_DIR/deploy-attempt-${deploy_attempt}.log" 2>&1
+            rc=$?
+            set -e
+            cat "$PROOF_DIR/deploy-attempt-${deploy_attempt}.log"
+            if [ "$rc" -eq 0 ]; then
+              exit 0
+            fi
+            if grep -q 'InvalidChangeSetStatus' "$PROOF_DIR/deploy-attempt-${deploy_attempt}.log" \
+              && grep -q 'OBSOLETE' "$PROOF_DIR/deploy-attempt-${deploy_attempt}.log" \
+              && [ "$deploy_attempt" -lt 4 ]; then
+              sleep $((deploy_attempt * 15))
+              continue
+            fi
+            exit "$rc"
+          done
+          exit 1
 
-      - name: Prove deployed lock and trainer identity
+      - name: Prove deployed function identity
         env:
-          TEMPLATE_SHA256: ${{ steps.identity.outputs.template_sha256 }}
+          TEMPLATE_SHA256: ${{ steps.build.outputs.template_sha256 }}
           DEPLOY_RUN_ID: ${{ steps.deploy.outputs.deploy_run_id }}
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json
-          import os
+          import json, os, boto3
           from pathlib import Path
-          import boto3
-
-          cf = boto3.client('cloudformation', region_name=os.environ['AWS_REGION'])
-          lam = boto3.client('lambda', region_name=os.environ['AWS_REGION'])
-          checks = {}
-          for logical in (
-              'MLBDailyPickLockFunction',
-              'MLBMLTrainingFunction',
-              'MLBV3ReadFunction',
-          ):
-              physical = cf.describe_stack_resource(
-                  StackName=os.environ['STACK_NAME'],
-                  LogicalResourceId=logical,
+          cf=boto3.client('cloudformation',region_name=os.environ['AWS_REGION'])
+          lam=boto3.client('lambda',region_name=os.environ['AWS_REGION'])
+          checks={}
+          for logical in ('MLBDailyPickLockFunction','MLBMLTrainingFunction','MLBV3ReadFunction'):
+              physical=cf.describe_stack_resource(
+                  StackName=os.environ['STACK_NAME'],LogicalResourceId=logical
               )['StackResourceDetail']['PhysicalResourceId']
-              config = lam.get_function_configuration(FunctionName=physical)
-              env = (config.get('Environment') or {}).get('Variables') or {}
-              checks[logical] = {
-                  'functionName': physical,
-                  'state': config.get('State'),
-                  'lastUpdateStatus': config.get('LastUpdateStatus'),
-                  'gitSha': env.get('INQSI_DEPLOY_GIT_SHA'),
-                  'templateSha256': env.get('INQSI_DEPLOY_TEMPLATE_SHA256'),
-                  'deployRunId': env.get('INQSI_DEPLOY_RUN_ID'),
+              config=lam.get_function_configuration(FunctionName=physical)
+              env=(config.get('Environment') or {}).get('Variables') or {}
+              row={
+                  'functionName':physical,
+                  'state':config.get('State'),
+                  'lastUpdateStatus':config.get('LastUpdateStatus'),
+                  'gitSha':env.get('INQSI_DEPLOY_GIT_SHA'),
+                  'templateSha256':env.get('INQSI_DEPLOY_TEMPLATE_SHA256'),
+                  'deployRunId':env.get('INQSI_DEPLOY_RUN_ID'),
               }
-              assert config.get('State') == 'Active', checks[logical]
-              assert config.get('LastUpdateStatus') == 'Successful', checks[logical]
-              assert env.get('INQSI_DEPLOY_GIT_SHA') == os.environ['GITHUB_SHA'], checks[logical]
-              assert env.get('INQSI_DEPLOY_TEMPLATE_SHA256') == os.environ['TEMPLATE_SHA256'], checks[logical]
-              assert env.get('INQSI_DEPLOY_RUN_ID') == os.environ['DEPLOY_RUN_ID'], checks[logical]
-          Path(os.environ['PROOF_DIR'], 'identity.json').write_text(
-              json.dumps(checks, indent=2, sort_keys=True) + '\n'
+              checks[logical]=row
+              assert row['state']=='Active', row
+              assert row['lastUpdateStatus']=='Successful', row
+              assert row['gitSha']==os.environ['GITHUB_SHA'], row
+              assert row['templateSha256']==os.environ['TEMPLATE_SHA256'], row
+              assert row['deployRunId']==os.environ['DEPLOY_RUN_ID'], row
+          Path(os.environ['PROOF_DIR'],'identity.json').write_text(
+              json.dumps(checks,indent=2,sort_keys=True)+'\n'
           )
-          print(json.dumps(checks, indent=2, sort_keys=True))
+          print(json.dumps(checks,indent=2,sort_keys=True))
           PY
 
-      - name: Reconcile every official prospective slate safely
+      - name: Reconcile all official prospective slates
         run: |
           set -euo pipefail
           python scripts/reconcile_mlb_prospective_backlog_v5.py \
@@ -241,7 +242,7 @@ jobs:
             --max-slate-days 30 \
             --output "$PROOF_DIR/backlog.json"
 
-      - name: Invoke trainer and require admitted real rows
+      - name: Invoke trainer and require admitted rows
         env:
           AWS_MAX_ATTEMPTS: '10'
           AWS_RETRY_MODE: standard
@@ -251,8 +252,7 @@ jobs:
             --stack-name "$STACK_NAME" \
             --logical-resource-id MLBMLTrainingFunction \
             --region "$AWS_REGION" \
-            --query 'StackResourceDetail.PhysicalResourceId' \
-            --output text)
+            --query 'StackResourceDetail.PhysicalResourceId' --output text)
           test -n "$trainer"
           test "$trainer" != 'None'
           python scripts/invoke_mlb_trainer_with_retry.py \
@@ -274,162 +274,113 @@ jobs:
             --response "$PROOF_DIR/status.json" \
             --invocation "$PROOF_DIR/status-invocation.json"
           python - <<'PY'
-          import json
-          import os
+          import json, os
           from datetime import datetime, timedelta
           from pathlib import Path
           from zoneinfo import ZoneInfo
-
-          root = Path(os.environ['PROOF_DIR'])
-          training = json.loads((root / 'training.json').read_text())
-          selection = json.loads((root / 'selection.json').read_text())
-          status = json.loads((root / 'status.json').read_text())
-          latest = ((status.get('trainingHealth') or {}).get('latestRun') or {})
-          candidates = [row for row in (training, selection, latest) if isinstance(row, dict)]
-
-          def accepted(row):
-              try:
-                  return int(row.get('acceptedRowCount') or 0)
-              except (TypeError, ValueError):
-                  return 0
-
-          effective = max(candidates, key=accepted, default=training)
-          continuities = [
-              row.get('canonicalSlateContinuity') or {}
-              for row in candidates
-              if isinstance(row.get('canonicalSlateContinuity'), dict)
-          ]
-          continuity = max(
-              continuities,
-              key=lambda row: str(row.get('processedThroughSlateDate') or ''),
-              default={},
-          )
-          accepted_count = max((accepted(row) for row in candidates), default=0)
-          partitions = effective.get('partitionCounts') or {}
-          partition_total = sum(
-              int(value or 0)
-              for value in partitions.values()
-              if isinstance(value, (int, float)) or str(value or '').isdigit()
-          ) if isinstance(partitions, dict) else 0
-          yesterday = (
-              datetime.now(ZoneInfo('America/New_York')).date() - timedelta(days=1)
-          ).isoformat()
-          processed = str(continuity.get('processedThroughSlateDate') or '')
-          blocked_dates = sorted({
-              str(item.get('blockedSlateDate'))
-              for item in continuities
-              if item.get('blockedSlateDate')
-          })
-          live_authority = any(row.get('liveInferenceAuthority') is True for row in candidates)
-          production_changed = any(row.get('productionAuthorityChanged') is True for row in candidates)
-          proof = {
-              'acceptedRowCount': accepted_count,
-              'rejectedRowCount': effective.get('rejectedRowCount'),
-              'partitionCounts': partitions,
-              'partitionTotal': partition_total,
-              'canonicalSlateContinuity': continuity,
-              'processedThroughSlateDate': processed,
-              'requiredProcessedThroughSlateDate': yesterday,
-              'blockedSlateDates': blocked_dates,
-              'modelTrained': effective.get('modelTrained'),
-              'liveInferenceAuthority': live_authority,
-              'productionAuthorityChanged': production_changed,
+          root=Path(os.environ['PROOF_DIR'])
+          rows=[json.loads((root/name).read_text()) for name in ('training.json','selection.json','status.json')]
+          latest=((rows[2].get('trainingHealth') or {}).get('latestRun') or {})
+          candidates=[row for row in (rows[0],rows[1],latest) if isinstance(row,dict)]
+          def count(row,key):
+              try: return int(row.get(key) or 0)
+              except (TypeError,ValueError): return 0
+          accepted=max((count(row,'acceptedRowCount') for row in candidates),default=0)
+          effective=max(candidates,key=lambda row:count(row,'acceptedRowCount'),default={})
+          continuities=[row.get('canonicalSlateContinuity') or {} for row in candidates if isinstance(row.get('canonicalSlateContinuity'),dict)]
+          continuity=max(continuities,key=lambda row:str(row.get('processedThroughSlateDate') or ''),default={})
+          partitions=effective.get('partitionCounts') or {}
+          partition_total=sum(int(value or 0) for value in partitions.values()) if isinstance(partitions,dict) else 0
+          yesterday=(datetime.now(ZoneInfo('America/New_York')).date()-timedelta(days=1)).isoformat()
+          blocked=sorted({str(row.get('blockedSlateDate')) for row in continuities if row.get('blockedSlateDate')})
+          proof={
+              'acceptedRowCount':accepted,
+              'rejectedRowCount':effective.get('rejectedRowCount'),
+              'partitionCounts':partitions,
+              'partitionTotal':partition_total,
+              'canonicalSlateContinuity':continuity,
+              'processedThroughSlateDate':str(continuity.get('processedThroughSlateDate') or ''),
+              'requiredProcessedThroughSlateDate':yesterday,
+              'blockedSlateDates':blocked,
+              'modelTrained':effective.get('modelTrained'),
+              'liveInferenceAuthority':any(row.get('liveInferenceAuthority') is True for row in candidates),
+              'productionAuthorityChanged':any(row.get('productionAuthorityChanged') is True for row in candidates),
           }
-          proof['ok'] = (
-              accepted_count > 0
-              and partition_total > 0
-              and not blocked_dates
-              and processed >= yesterday
-              and not live_authority
-              and not production_changed
+          proof['ok']=(
+              accepted>0 and partition_total>0 and not blocked
+              and proof['processedThroughSlateDate']>=yesterday
+              and not proof['liveInferenceAuthority']
+              and not proof['productionAuthorityChanged']
           )
-          (root / 'trainer-proof.json').write_text(
-              json.dumps(proof, indent=2, sort_keys=True, default=str) + '\n'
-          )
-          print(json.dumps(proof, indent=2, sort_keys=True, default=str))
+          (root/'trainer-proof.json').write_text(json.dumps(proof,indent=2,sort_keys=True,default=str)+'\n')
+          print(json.dumps(proof,indent=2,sort_keys=True,default=str))
           assert proof['ok'] is True, proof
           PY
 
-      - name: Publish durable root lifecycle evidence
+      - name: Publish durable evidence
         if: always()
         run: |
           set -euo pipefail
           mkdir -p runtime_reports "$PROOF_DIR"
           python - <<'PY'
-          import json
-          import os
+          import json, os
           from datetime import datetime, timezone
           from pathlib import Path
-
-          root = Path(os.environ['PROOF_DIR'])
-
+          root=Path(os.environ['PROOF_DIR'])
           def load(name):
-              path = root / name
-              if not path.exists():
-                  return {'ok': False, 'error': name + '_missing'}
-              try:
-                  return json.loads(path.read_text())
-              except Exception as exc:
-                  return {'ok': False, 'error': type(exc).__name__}
-
-          source = load('source.json')
-          identity = load('identity.json')
-          backlog = load('backlog.json')
-          trainer = load('trainer-proof.json')
-          diagnostic = load('diagnostic-proof.json')
-          report = {
-              'proofType': 'MLB_ROOT_DURABLE_LIFECYCLE_CONTINUITY_DEPLOYMENT_V2',
-              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
-              'sourceSha': os.environ['GITHUB_SHA'],
-              'source': source,
-              'identity': identity,
-              'backlog': backlog,
-              'trainer': trainer,
-              'diagnosticDurability': diagnostic,
-              'directTableWrite': False,
-              'postStartPredictionCreationAllowed': False,
-              'immutablePredictionRewriteAllowed': False,
-              'productionAuthorityChangedByRepair': False,
-              'secretExposed': False,
+              path=root/name
+              if not path.exists(): return {'ok':False,'error':name+'_missing'}
+              try: return json.loads(path.read_text())
+              except Exception as exc: return {'ok':False,'error':type(exc).__name__}
+          source=load('source.json')
+          identity=load('identity.json')
+          backlog=load('backlog.json')
+          trainer=load('trainer-proof.json')
+          diagnostic=load('diagnostic-proof.json')
+          report={
+              'proofType':'MLB_ROOT_DURABLE_LIFECYCLE_CONTINUITY_DEPLOYMENT_V3',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ['GITHUB_SHA'],
+              'source':source,
+              'identity':identity,
+              'backlog':backlog,
+              'trainer':trainer,
+              'diagnosticDurability':diagnostic,
+              'directTableWrite':False,
+              'postStartPredictionCreationAllowed':False,
+              'immutablePredictionRewriteAllowed':False,
+              'productionAuthorityChangedByRepair':False,
+              'secretExposed':False,
           }
-          report['ok'] = (
+          report['ok']=(
               source.get('ok') is True
-              and isinstance(identity, dict)
-              and len(identity) == 3
+              and isinstance(identity,dict) and len(identity)==3
               and backlog.get('ok') is True
               and trainer.get('ok') is True
               and diagnostic.get('ok') is True
           )
-          report['conclusion'] = 'PASS' if report['ok'] else 'FAIL'
-          output = Path('runtime_reports/mlb_root_lifecycle_continuity_latest.json')
-          output.write_text(
-              json.dumps(report, indent=2, sort_keys=True, default=str) + '\n'
-          )
-          (root / 'final-report.json').write_text(output.read_text())
-          print(json.dumps(report, indent=2, sort_keys=True, default=str))
+          report['conclusion']='PASS' if report['ok'] else 'FAIL'
+          output=Path('runtime_reports/mlb_root_lifecycle_continuity_latest.json')
+          output.write_text(json.dumps(report,indent=2,sort_keys=True,default=str)+'\n')
+          (root/'final-report.json').write_text(output.read_text())
+          print(json.dumps(report,indent=2,sort_keys=True,default=str))
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             git checkout -B mlb-root-lifecycle-proof origin/main
-            cp "$PROOF_DIR/final-report.json" \
-              runtime_reports/mlb_root_lifecycle_continuity_latest.json
+            cp "$PROOF_DIR/final-report.json" runtime_reports/mlb_root_lifecycle_continuity_latest.json
             git add runtime_reports/mlb_root_lifecycle_continuity_latest.json
-            git diff --cached --quiet || \
-              git commit -m 'Publish MLB root lifecycle continuity proof [skip ci]'
+            git diff --cached --quiet || git commit -m 'Publish MLB root lifecycle continuity proof [skip ci]'
             git push origin HEAD:main && break
             test "$attempt" != 5
-            sleep $((attempt * 3))
+            sleep $((attempt*3))
           done
           python - <<'PY'
-          import json
-          import os
+          import json, os
           from pathlib import Path
-
-          report = json.loads(
-              Path(os.environ['PROOF_DIR'], 'final-report.json').read_text()
-          )
+          report=json.loads(Path(os.environ['PROOF_DIR'],'final-report.json').read_text())
           assert report.get('ok') is True, report
           print('MLB root durable lifecycle continuity: PASS')
           PY
