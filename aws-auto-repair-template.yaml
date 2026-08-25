@@ -1,0 +1,209 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: AWS-native isolated operational auto-repair for one Inqsi sports algorithm
+
+Parameters:
+  SportName:
+    Type: String
+    AllowedValues: [mlb-core, mlb-auto, tennis, soccer, nfl]
+  TargetStackName:
+    Type: String
+  FunctionNamePrefix:
+    Type: String
+  RuleNamePrefix:
+    Type: String
+  RepairCadence:
+    Type: String
+    Default: rate(5 minutes)
+  RepairLeaseSeconds:
+    Type: Number
+    Default: 960
+    MinValue: 60
+    MaxValue: 3600
+
+Resources:
+  RepairStateTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: PK, AttributeType: S}
+        - {AttributeName: SK, AttributeType: S}
+      KeySchema:
+        - {AttributeName: PK, KeyType: HASH}
+        - {AttributeName: SK, KeyType: RANGE}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+      SSESpecification: {SSEEnabled: true}
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  RepairDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  RepairAlarmTopic:
+    Type: AWS::SNS::Topic
+
+  AutoRepairFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: aws_auto_repair/
+      Handler: handler.lambda_handler
+      Runtime: python3.11
+      Architectures: [arm64]
+      Timeout: 900
+      MemorySize: 512
+      Tracing: Active
+      Environment:
+        Variables:
+          SPORT_NAME: !Ref SportName
+          TARGET_STACK_NAME: !Ref TargetStackName
+          FUNCTION_NAME_PREFIX: !Ref FunctionNamePrefix
+          RULE_NAME_PREFIX: !Ref RuleNamePrefix
+          REPAIR_STATE_TABLE: !Ref RepairStateTable
+          REPAIR_LEASE_SECONDS: !Ref RepairLeaseSeconds
+          REPAIR_NORMAL_COOLDOWN_SECONDS: '900'
+          REPAIR_TRANSIENT_COOLDOWN_SECONDS: '1800'
+          REPAIR_EXTERNAL_COOLDOWN_SECONDS: '21600'
+          REPAIR_DATA_CONTRACT_COOLDOWN_SECONDS: '21600'
+          REPAIR_METRIC_NAMESPACE: Inqsi/AutoRepair
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RepairStateTable
+        - Statement:
+            - Sid: ReadOnlyTargetStackDiscovery
+              Effect: Allow
+              Action:
+                - cloudformation:DescribeStacks
+                - cloudformation:DescribeStackResource
+              Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${TargetStackName}/*'
+            - Sid: InvokeOnlyTargetSportFunctions
+              Effect: Allow
+              Action:
+                - lambda:GetFunctionConfiguration
+                - lambda:InvokeFunction
+              Resource: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${FunctionNamePrefix}*'
+            - Sid: ReadTargetLiveness
+              Effect: Allow
+              Action: cloudwatch:GetMetricStatistics
+              Resource: '*'
+            - Sid: PublishOnlyAutoRepairMetrics
+              Effect: Allow
+              Action: cloudwatch:PutMetricData
+              Resource: '*'
+              Condition:
+                StringEquals:
+                  cloudwatch:namespace: Inqsi/AutoRepair
+            - Sid: DiscoverTargetRulesReadOnly
+              Effect: Allow
+              Action:
+                - events:ListRuleNamesByTarget
+                - events:DescribeRule
+                - events:ListTargetsByRule
+              Resource: '*'
+            - Sid: EnableOnlyTargetSportRules
+              Effect: Allow
+              Action: events:EnableRule
+              Resource: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${RuleNamePrefix}*'
+            - Sid: ReadOnlyTargetSoccerQueueDepth
+              Effect: Allow
+              Action: sqs:GetQueueAttributes
+              Resource: !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${TargetStackName}-*'
+      Events:
+        RepairCycle:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref RepairCadence
+            Enabled: true
+            Input: !Sub '{"action":"cycle","source":"eventbridge","sport":"${SportName}"}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 300
+              MaximumRetryAttempts: 0
+            DeadLetterConfig:
+              Arn: !GetAtt RepairDeadLetterQueue.Arn
+
+  AutoRepairFunctionErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: !Sub '${SportName} AWS-native auto-repair Lambda errors'
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AutoRepairFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref RepairAlarmTopic]
+
+  AutoRepairLivenessAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: !Sub '${SportName} AWS-native auto-repair has not invoked for twenty minutes'
+      Namespace: AWS/Lambda
+      MetricName: Invocations
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AutoRepairFunction
+      Statistic: Sum
+      Period: 600
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref RepairAlarmTopic]
+
+  AutoRepairUnresolvedFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: !Sub '${SportName} AWS-native auto-repair could not safely repair an operational fault'
+      Namespace: Inqsi/AutoRepair
+      MetricName: RepairFailures
+      Dimensions:
+        - Name: Sport
+          Value: !Ref SportName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref RepairAlarmTopic]
+
+  AutoRepairDeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: !Sub '${SportName} AWS-native auto-repair event entered its DLQ'
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt RepairDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref RepairAlarmTopic]
+
+Outputs:
+  AutoRepairFunctionName:
+    Value: !Ref AutoRepairFunction
+  AutoRepairStateTableName:
+    Value: !Ref RepairStateTable
+  AutoRepairAlarmTopicArn:
+    Value: !Ref RepairAlarmTopic
+  TargetStackName:
+    Value: !Ref TargetStackName
+  SportName:
+    Value: !Ref SportName

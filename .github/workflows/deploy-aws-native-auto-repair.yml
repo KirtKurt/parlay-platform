@@ -1,0 +1,240 @@
+name: Deploy AWS Native Algorithm Auto Repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'aws_auto_repair/**'
+      - 'aws-auto-repair-template.yaml'
+      - 'tests/unit/test_aws_native_auto_repair.py'
+      - '.github/workflows/deploy-aws-native-auto-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-native-algorithm-auto-repair-deploy
+  cancel-in-progress: false
+
+jobs:
+  verify-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - name: Verify fail-closed source contracts
+        env:
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7' 'cfn-lint>=1,<2'
+          python -m py_compile aws_auto_repair/*.py
+          python -m pytest -q tests/unit/test_aws_native_auto_repair.py
+          sam validate --template-file aws-auto-repair-template.yaml --lint
+          ! grep -R -E 'force_publish|clear_lease|bypass_lease|PutItem.*(Prediction|Lock|Settlement|Model)|UpdateItem.*(Prediction|Lock|Settlement|Model)' aws_auto_repair aws-auto-repair-template.yaml
+
+  deploy-isolated-control-planes:
+    needs: verify-source
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - sport: mlb-core
+            repair_stack: parlay-platform-auto-repair-mlb-core
+            target_stack: parlay-platform-dev
+            function_prefix: parlay-platform-dev-
+            rule_prefix: parlay-platform-dev-
+          - sport: mlb-auto
+            repair_stack: parlay-platform-auto-repair-mlb-auto
+            target_stack: parlay-platform-mlb-auto-llm
+            function_prefix: parlay-platform-mlb-auto-llm-
+            rule_prefix: parlay-platform-mlb-auto-llm-
+          - sport: tennis
+            repair_stack: parlay-platform-auto-repair-tennis
+            target_stack: parlay-platform-tennis-learning
+            function_prefix: parlay-platform-tennis-learning-
+            rule_prefix: parlay-platform-tennis-learning-
+          - sport: soccer
+            repair_stack: parlay-platform-auto-repair-soccer
+            target_stack: parlay-platform-soccer-auto
+            function_prefix: parlay-platform-soccer-auto-
+            rule_prefix: parlay-platform-soccer-auto-
+          - sport: nfl
+            repair_stack: parlay-platform-auto-repair-nfl
+            target_stack: parlay-platform-nfl-auto
+            function_prefix: parlay-platform-nfl-auto-
+            rule_prefix: parlay-platform-nfl-auto-
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - uses: aws-actions/setup-sam@v2
+      - name: Verify exact AWS account and target stack
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+          TARGET_STACK: ${{ matrix.target_stack }}
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity
+          status=$(aws cloudformation describe-stacks \
+            --stack-name "$TARGET_STACK" \
+            --region "$REGION" \
+            --query 'Stacks[0].StackStatus' \
+            --output text)
+          case "$status" in
+            CREATE_COMPLETE|UPDATE_COMPLETE) ;;
+            *) echo "::error::Target stack is not stable: $TARGET_STACK=$status"; exit 1 ;;
+          esac
+      - name: Build exact repair artifact
+        run: |
+          set -euo pipefail
+          rm -rf .aws-sam
+          sam build --no-cached --template-file aws-auto-repair-template.yaml
+      - name: Deploy isolated AWS repair control plane
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+          SPORT: ${{ matrix.sport }}
+          REPAIR_STACK: ${{ matrix.repair_stack }}
+          TARGET_STACK: ${{ matrix.target_stack }}
+          FUNCTION_PREFIX: ${{ matrix.function_prefix }}
+          RULE_PREFIX: ${{ matrix.rule_prefix }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            status=$(aws cloudformation describe-stacks \
+              --stack-name "$REPAIR_STACK" --region "$REGION" \
+              --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_MISSING)
+            case "$status" in
+              STACK_MISSING|CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE) break ;;
+              ROLLBACK_COMPLETE)
+                aws cloudformation delete-stack --stack-name "$REPAIR_STACK" --region "$REGION"
+                aws cloudformation wait stack-delete-complete --stack-name "$REPAIR_STACK" --region "$REGION"
+                break
+                ;;
+              *_IN_PROGRESS) sleep 15 ;;
+              *) echo "::error::Repair stack is not updateable: $REPAIR_STACK=$status"; exit 1 ;;
+            esac
+            test "$attempt" != 60
+          done
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "$REPAIR_STACK" \
+            --region "$REGION" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              SportName="$SPORT" \
+              TargetStackName="$TARGET_STACK" \
+              FunctionNamePrefix="$FUNCTION_PREFIX" \
+              RuleNamePrefix="$RULE_PREFIX" \
+              RepairCadence='rate(5 minutes)' \
+              RepairLeaseSeconds='960' \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+      - name: Prove AWS-native repair schedule and fail-closed runtime
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+          SPORT: ${{ matrix.sport }}
+          REPAIR_STACK: ${{ matrix.repair_stack }}
+          TARGET_STACK: ${{ matrix.target_stack }}
+        run: |
+          set -euo pipefail
+          function_name=$(aws cloudformation describe-stacks \
+            --stack-name "$REPAIR_STACK" --region "$REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='AutoRepairFunctionName'].OutputValue" \
+            --output text)
+          test -n "$function_name" && test "$function_name" != None
+          aws lambda get-function-configuration \
+            --function-name "$function_name" --region "$REGION" \
+            --query '{State:State,LastUpdateStatus:LastUpdateStatus}' \
+            --output json | tee /tmp/repair-function.json
+          python - <<'PY'
+          import json
+          value=json.load(open('/tmp/repair-function.json'))
+          assert value['State']=='Active',value
+          assert value['LastUpdateStatus']=='Successful',value
+          PY
+          rules=$(aws events list-rule-names-by-target \
+            --target-arn "$(aws lambda get-function-configuration --function-name "$function_name" --region "$REGION" --query FunctionArn --output text)" \
+            --region "$REGION" --query 'RuleNames' --output json)
+          RULES="$rules" python - <<'PY'
+          import json,os
+          rules=json.loads(os.environ['RULES'])
+          assert rules,rules
+          print(json.dumps(rules,indent=2))
+          PY
+          aws lambda invoke \
+            --function-name "$function_name" \
+            --region "$REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 900 \
+            --payload '{"action":"cycle","source":"deployment_acceptance"}' \
+            /tmp/auto-repair-result.json >/tmp/auto-repair-meta.json
+          SPORT="$SPORT" TARGET_STACK="$TARGET_STACK" python - <<'PY'
+          import json,os
+          meta=json.load(open('/tmp/auto-repair-meta.json'))
+          result=json.load(open('/tmp/auto-repair-result.json'))
+          assert not meta.get('FunctionError'),(meta,result)
+          assert result.get('version')=='INQSI-AWS-NATIVE-AUTO-REPAIR-v1',result
+          assert result.get('sport')==os.environ['SPORT'],result
+          assert result.get('target_stack')==os.environ['TARGET_STACK'],result
+          assert result.get('production_authority_changed') is False,result
+          assert result.get('direct_sport_table_writes') is False,result
+          assert result.get('post_start_prediction_creation_allowed') is False,result
+          assert result.get('immutable_prediction_rewrite_allowed') is False,result
+          assert result.get('execution_lease_bypass_allowed') is False,result
+          assert result.get('gate_relaxation_allowed') is False,result
+          assert result.get('status') in {'HEALTHY_OR_REPAIRED','DEGRADED_FAIL_CLOSED'},result
+          print(json.dumps(result,indent=2,sort_keys=True,default=str))
+          PY
+
+  verify-all-control-planes:
+    needs: deploy-isolated-control-planes
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Require every isolated AWS repair stack
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+          DEPLOY_RESULT: ${{ needs.deploy-isolated-control-planes.result }}
+        run: |
+          set -euo pipefail
+          test "$DEPLOY_RESULT" = success
+          for stack in \
+            parlay-platform-auto-repair-mlb-core \
+            parlay-platform-auto-repair-mlb-auto \
+            parlay-platform-auto-repair-tennis \
+            parlay-platform-auto-repair-soccer \
+            parlay-platform-auto-repair-nfl; do
+            status=$(aws cloudformation describe-stacks \
+              --stack-name "$stack" --region "$REGION" \
+              --query 'Stacks[0].StackStatus' --output text)
+            case "$status" in CREATE_COMPLETE|UPDATE_COMPLETE) ;; *) exit 1 ;; esac
+          done
