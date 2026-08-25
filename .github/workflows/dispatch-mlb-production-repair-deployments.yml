@@ -1,4 +1,4 @@
-name: Dispatch MLB production repair observer
+name: Dispatch verified MLB production repair deployments
 
 on:
   push:
@@ -15,16 +15,37 @@ jobs:
   dispatch:
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch end-to-end production repair observer
+      - name: Dispatch isolated MLB AUTO deployment
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          gh workflow run deploy-mlb-auto-llm.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+
+      - name: Dispatch root production deployment and verifier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run deploy.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+
+      - name: Dispatch end-to-end deployment observer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
           gh workflow run verify-mlb-production-repair-end-to-end.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref main
 
-      - name: Record observer source
-        run: |
-          echo "source_sha=$(gh api --repo "$GITHUB_REPOSITORY" repos/${GITHUB_REPOSITORY}/commits/main --jq .sha)"
+      - name: Record dispatched source
         env:
           GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
+          echo "source_sha=$source_sha"
