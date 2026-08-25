@@ -170,11 +170,12 @@ def test_lambda_invoke_requires_no_function_error(monkeypatch):
         module._invoke("target-tennis-controller", {"action": "autonomous_cycle"})
 
 
-def test_template_grants_no_target_sport_table_write_permissions():
+def test_template_is_iam_compatible_and_has_no_target_sport_table_writes():
     template_path = ROOT / "aws-auto-repair-template.yaml"
     template = yaml.load(template_path.read_text(), Loader=CloudFormationLoader)
     resources = template["Resources"]
     function = resources["AutoRepairFunction"]["Properties"]
+    assert function["Handler"] == "wrapper.lambda_handler"
     assert function["Environment"]["Variables"]["REPAIR_LEASE_SECONDS"]
     policy_text = json.dumps(function["Policies"], sort_keys=True)
     assert "DynamoDBCrudPolicy" in policy_text
@@ -190,10 +191,23 @@ def test_template_grants_no_target_sport_table_write_permissions():
         "bedrock:InvokeModel",
     ):
         assert forbidden not in policy_text
+    assert all(
+        resource.get("Type") not in {"AWS::SQS::Queue", "AWS::SNS::Topic"}
+        for resource in resources.values()
+    )
     schedule = function["Events"]["RepairCycle"]["Properties"]
+    assert schedule["Schedule"] == "rate(5 minutes)"
     assert schedule["Enabled"] is True
     assert schedule["RetryPolicy"]["MaximumRetryAttempts"] == 0
-    assert "RepairDeadLetterQueue" in json.dumps(schedule["DeadLetterConfig"])
+    assert "DeadLetterConfig" not in schedule
+    assert "AutoRepairUnresolvedFailureAlarm" in resources
+
+
+def test_wrapper_disables_automatic_retries_for_mutating_target_invocations():
+    source = (ROOT / "aws_auto_repair" / "wrapper.py").read_text()
+    assert "read_timeout=840" in source
+    assert '"total_max_attempts": 1' in source
+    assert 'core.LAMBDA = boto3.client("lambda"' in source
 
 
 def test_source_contains_explicit_non_authority_guards():
