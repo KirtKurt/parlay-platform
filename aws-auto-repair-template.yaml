@@ -5,7 +5,7 @@ Description: AWS-native isolated operational auto-repair for one Inqsi sports al
 Parameters:
   SportName:
     Type: String
-    AllowedValues: [mlb-core, mlb-auto, tennis, soccer, nfl]
+    AllowedValues: [mlb-auto, tennis, soccer, nfl]
   TargetStackName:
     Type: String
   FunctionNamePrefix:
@@ -58,6 +58,7 @@ Resources:
       Architectures: [arm64]
       Timeout: 900
       MemorySize: 512
+      ReservedConcurrentExecutions: 1
       Tracing: Active
       Environment:
         Variables:
@@ -81,6 +82,7 @@ Resources:
               Action:
                 - cloudformation:DescribeStacks
                 - cloudformation:DescribeStackResource
+                - cloudformation:ListStackResources
               Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${TargetStackName}/*'
             - Sid: InvokeOnlyTargetSportFunctions
               Effect: Allow
@@ -112,7 +114,9 @@ Resources:
               Resource: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${RuleNamePrefix}*'
             - Sid: ReadOnlyTargetSoccerQueueDepth
               Effect: Allow
-              Action: sqs:GetQueueAttributes
+              Action:
+                - sqs:GetQueueAttributes
+                - sqs:GetQueueUrl
               Resource: !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${TargetStackName}-*'
       Events:
         RepairCycle:
@@ -165,9 +169,43 @@ Resources:
   AutoRepairUnresolvedFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmDescription: !Sub '${SportName} AWS-native auto-repair could not safely repair an operational fault'
+      AlarmDescription: !Sub '${SportName} AWS-native auto-repair encountered a control-plane or runtime failure'
       Namespace: Inqsi/AutoRepair
       MetricName: RepairFailures
+      Dimensions:
+        - Name: Sport
+          Value: !Ref SportName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref RepairAlarmTopic]
+
+  AutoRepairExternalBlockerAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: !Sub '${SportName} repair was safely deferred by an external provider or AWS quota'
+      Namespace: Inqsi/AutoRepair
+      MetricName: ExternalBlockers
+      Dimensions:
+        - Name: Sport
+          Value: !Ref SportName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref RepairAlarmTopic]
+
+  AutoRepairDataContractBlockerAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: !Sub '${SportName} repair stopped at a protected chronology or data-contract blocker'
+      Namespace: Inqsi/AutoRepair
+      MetricName: DataContractBlockers
       Dimensions:
         - Name: Sport
           Value: !Ref SportName
