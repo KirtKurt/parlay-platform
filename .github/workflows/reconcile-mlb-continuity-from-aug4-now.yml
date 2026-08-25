@@ -78,18 +78,25 @@ jobs:
               return {
                   'source': 'MLB_OFFICIAL',
                   'sourceUrl': 'official://schedule',
-                  'games': [{'officialGamePk': pk}],
+                  'officialGameCount': 1,
+                  'officialFinalCount': 1,
+                  'games': [{
+                      'officialGamePk': pk,
+                      'officialDate': date,
+                  }],
               }
 
 
           def finalized(date, official):
-              pks = [str(g['officialGamePk']) for g in official['games']]
               return {
                   'ok': True,
-                  'officialGameCount': len(pks),
-                  'finalizedGameCount': len(pks),
-                  'officialGamePks': pks,
-                  'finalizedGamePks': pks,
+                  'requestedSlateDates': [date],
+                  'finalizedSlateDates': [date],
+                  'slates': [{
+                      'slateDateEt': date,
+                      'slateFinalized': True,
+                      'officialGameCount': official['officialGameCount'],
+                  }],
               }
 
 
