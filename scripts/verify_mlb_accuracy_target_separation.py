@@ -20,13 +20,23 @@ def main() -> int:
     installed = policy.install()
     assert installed.get("ok") is True, installed
 
-    # Ninety percent remains visible as an aspiration/reliability dashboard,
-    # but it cannot activate, suspend, or replace production authority.
+    # Ninety percent remains visible as the playability/authority aspiration,
+    # but it cannot stop clean-row collection, challenger training, or
+    # chronological candidate evaluation. A candidate may activate
+    # automatically only after the immutable V2 gates all pass.
     assert installed["rolling24hAllGamesAuditTargetPct"] == 90.0
     assert installed["rolling24hAccuracyAffectsPromotion"] is False
     assert installed["rolling24hSlateAccuracyProgressMilestonesReportingOnly"] is True
-    assert installed["automaticPromotionAfterApplicableGates"] is False
-    assert installed["firstPromotionRequiresManualReview"] is True
+    assert installed["automaticPromotionAfterApplicableGates"] is True
+    assert installed["firstPromotionRequiresManualReview"] is False
+    assert installed["manualReviewCreatesShadowApprovalOnly"] is False
+    assert installed["learningContinuesBelowAspirationalAccuracy"] is True
+    assert installed["aspirationalAccuracyBlocksTraining"] is False
+    assert installed["aspirationalAccuracyBlocksCandidateEvaluation"] is False
+    assert installed["aspirationalAccuracyBlocksPlayableAuthority"] is True
+
+    # Legacy V1 remains permanently inert. Gated automation belongs only to the
+    # immutable prospective V2 trainer/consumer chain.
     assert installed["legacyV1AuthorityEnabled"] is False
     assert legacy_champion.AUTO_PROMOTE is False
     assert legacy_champion.AUTOMATIC_PROMOTION_SUPPORTED is False
@@ -38,7 +48,9 @@ def main() -> int:
     assert installed["playabilitySeparateFromOfficialPick"] is True
     assert official_gate.MIN_OFFICIAL_PROBABILITY_PCT == 60.0
 
-    # The new promotion contract is the production contract.
+    # The V2 promotion contract is unchanged: sufficient clean prospective
+    # evidence, an untouched chronological test, calibration, proper scoring,
+    # and market-skill lift remain mandatory before automatic activation.
     assert promotion_v2.MIN_TOTAL_CLEAN_ROWS == 500
     assert promotion_v2.MIN_PROSPECTIVE_TEST_ROWS == 100
     assert promotion_v2.MIN_PROSPECTIVE_SELECTED_RECOMMENDATIONS == 100
@@ -50,13 +62,14 @@ def main() -> int:
     workflow = (ROOT / ".github/workflows/mlb-rolling-24h-audit.yml").read_text(
         encoding="utf-8"
     )
+    # The read-only audit remains non-promoting. The scheduled AWS trainer, not
+    # the reporting workflow, owns automatic candidate activation.
     assert "INQSI_MLB_ML_AUTO_PROMOTE: 'false'" in workflow
     assert "INQSI_MLB_ML_AUDIT_STORE: 'false'" in workflow
     assert "Commit rolling audit proof and ML artifacts" not in workflow
 
     print(
-        "MLB targets verified: every game retains a locked winner, 90% is dashboard-only, "
-        "legacy V1 is inert, and AWS V2 uses prospective market-skill/manual-first promotion."
+        "MLB targets verified: every game retains a locked winner, 90% blocks playable/authority output rather than learning, legacy V1 is inert, and AWS V2 may promote automatically only after immutable prospective, calibration, and market-skill gates pass."
     )
     return 0
 

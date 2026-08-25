@@ -90,6 +90,8 @@ Globals:
         MLB_HISTORICAL_LEASE_SECONDS: '840'
         MLB_HISTORICAL_HTTP_TIMEOUT_SECONDS: '20'
         MLB_HISTORICAL_POLICY_ENABLED: 'true'
+        MLB_AUTO_LLM_HYPOTHESIS_ENABLED: 'true'
+        MLB_AUTO_LLM_MODEL_ID: 'amazon.nova-lite-v1:0'
         INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha
         INQSI_SLATE_TIMEZONE: America/New_York
 
@@ -173,6 +175,14 @@ Resources:
                 - s3:PutObject
               Resource:
                 - !Sub '${HistoricalArtifactsBucket.Arn}/*'
+        - Statement:
+            - Sid: InvokeBoundedMlbHypothesisModel
+              Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource:
+                - !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/*
+                - !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*
       Events:
         ResumeEveryFiveMinutes:
           Type: Schedule

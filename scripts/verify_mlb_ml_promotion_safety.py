@@ -12,6 +12,8 @@ if str(HELLO_WORLD) not in sys.path:
     sys.path.insert(0, str(HELLO_WORLD))
 
 import mlb_accuracy_target_policy_v1 as accuracy_policy
+import mlb_ml_autonomy_chain_v1 as autonomy_v2
+import mlb_ml_aws_training_v1 as training_v2
 import mlb_ml_champion_challenger_v1 as legacy_champion
 import mlb_ml_champion_runtime_v1 as legacy_runtime
 import mlb_ml_experiment_v2 as experiment_v2
@@ -95,11 +97,17 @@ def _eligible_v2_bundle(manifest: dict) -> dict:
 def main() -> int:
     installed = accuracy_policy.install()
     assert installed["ok"] is True, installed
-    assert installed["automaticPromotionAfterApplicableGates"] is False
+    assert installed["automaticPromotionAfterApplicableGates"] is True
+    assert installed["firstPromotionRequiresManualReview"] is False
+    assert installed["learningContinuesBelowAspirationalAccuracy"] is True
+    assert installed["aspirationalAccuracyBlocksTraining"] is False
+    assert installed["aspirationalAccuracyBlocksCandidateEvaluation"] is False
+    assert installed["aspirationalAccuracyBlocksPlayableAuthority"] is True
     assert installed["rolling24hAccuracyAffectsPromotion"] is False
     assert installed["legacyV1AuthorityEnabled"] is False
     assert legacy_champion.AUTO_PROMOTE is False
 
+    # Legacy V1 remains permanently inert even if a stale payload exists.
     legacy_payload = {
         "directionAuthorityEnabled": True,
         "playabilityAuthorityEnabled": True,
@@ -113,7 +121,7 @@ def main() -> int:
     }
     original_loader = legacy_runtime.champion_store.load_champion
     original_score = legacy_runtime.dual_model.score
-    previous_gate = os.environ.get("INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED")
+    previous_legacy_gate = os.environ.get("INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED")
     try:
         os.environ["INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED"] = "false"
         legacy_runtime.champion_store.load_champion = lambda: legacy_payload
@@ -138,10 +146,10 @@ def main() -> int:
     finally:
         legacy_runtime.champion_store.load_champion = original_loader
         legacy_runtime.dual_model.score = original_score
-        if previous_gate is None:
+        if previous_legacy_gate is None:
             os.environ.pop("INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED", None)
         else:
-            os.environ["INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED"] = previous_gate
+            os.environ["INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED"] = previous_legacy_gate
 
     features = [f"feature{i}" for i in range(8)]
     manifest = experiment_v2.new_manifest(
@@ -158,33 +166,56 @@ def main() -> int:
     manifest["manifestDigest"] = experiment_v2.manifest_digest(manifest)
     bundle = _eligible_v2_bundle(manifest)
 
-    first = promotion_v2.evaluate(
-        bundle,
-        manifest,
-        current_champion=None,
-        automatic_promotion_enabled=False,
-    )
-    assert first["directionPromotionEligible"] is True, first
-    assert first["playabilityPromotionEligible"] is True, first
-    assert first["promotionDecision"] == (
-        "PENDING_MANUAL_FIRST_SHADOW_APPROVAL"
-    ), first
-    assert first["firstPromotionRequiresManualReview"] is True, first
-    assert first["shadowApprovalEligible"] is True, first
-    assert first["runtimeAuthorityActivationEligible"] is False, first
-    assert first["aspirationalDashboard"]["affectsPromotion"] is False, first
+    # Install the canonical autonomy wrapper. The underlying V2 gate remains
+    # unchanged; only the manual-first activation restriction is removed after
+    # the runtime consumer is installed.
+    autonomy_v2.install(training_v2)
+    previous_consumer_gate = os.environ.get("INQSI_MLB_V2_INFERENCE_ENABLED")
+    try:
+        os.environ["INQSI_MLB_V2_INFERENCE_ENABLED"] = "true"
+        first = training_v2.promotion_policy.evaluate(
+            bundle,
+            manifest,
+            current_champion=None,
+            automatic_promotion_enabled=True,
+        )
+        assert first["directionPromotionEligible"] is True, first
+        assert first["playabilityPromotionEligible"] is True, first
+        assert first["promotionDecision"] == "AUTO_SHADOW_APPROVAL_ELIGIBLE", first
+        assert first["firstPromotionRequiresManualReview"] is False, first
+        assert first["manualReviewRequired"] is False, first
+        assert first["runtimeAuthorityActivationEligible"] is True, first
+        assert first["learningContinuesBelowAspirationalAccuracy"] is True, first
+        assert first["aspirationalAccuracyBlocksTraining"] is False, first
+        assert first["aspirationalAccuracyBlocksCandidateEvaluation"] is False, first
+        assert first["aspirationalAccuracyBlocksPlayabilityAuthority"] is True, first
+        assert first["aspirationalDashboard"]["affectsPromotion"] is False, first
 
-    below_aspiration = copy.deepcopy(bundle)
-    below_aspiration["prospectiveTest"]["outcome"]["accuracyPct"] = 55.0
-    still_eligible = promotion_v2.evaluate(
-        below_aspiration,
-        manifest,
-        current_champion=None,
-        automatic_promotion_enabled=False,
-    )
-    assert still_eligible["directionPromotionEligible"] is True, still_eligible
-    assert still_eligible["aspirationalDashboard"]["targetMet"] is False
+        # A challenger below the 90% aspiration can still be trained and
+        # evaluated. It remains eligible only because it passes the fixed market
+        # skill, calibration, proper-scoring, and prospective evidence gates.
+        below_aspiration = copy.deepcopy(bundle)
+        below_aspiration["prospectiveTest"]["outcome"]["accuracyPct"] = 55.0
+        still_eligible = training_v2.promotion_policy.evaluate(
+            below_aspiration,
+            manifest,
+            current_champion=None,
+            automatic_promotion_enabled=True,
+        )
+        assert still_eligible["directionPromotionEligible"] is True, still_eligible
+        assert still_eligible["promotionDecision"] == (
+            "AUTO_SHADOW_APPROVAL_ELIGIBLE"
+        ), still_eligible
+        assert still_eligible["aspirationalDashboard"]["targetMet"] is False
+        assert still_eligible["learningContinuesBelowAspirationalAccuracy"] is True
+    finally:
+        if previous_consumer_gate is None:
+            os.environ.pop("INQSI_MLB_V2_INFERENCE_ENABLED", None)
+        else:
+            os.environ["INQSI_MLB_V2_INFERENCE_ENABLED"] = previous_consumer_gate
 
+    # GitHub has no manual promotion/write path. The deployed AWS trainer owns
+    # automatic compare-and-swap activation after the complete gate passes.
     workflow = (ROOT / ".github/workflows/mlb-ml-promote-champion.yml").read_text(
         encoding="utf-8"
     )
@@ -193,9 +224,7 @@ def main() -> int:
     assert "contents: read" in workflow
 
     print(
-        "MLB ML promotion safety verified: legacy V1 authority is inert, GitHub has no write path, "
-        "V2 uses fixed prospective market-skill gates, 90% is dashboard-only, and first approval "
-        "is manual, shadow-only, and cannot activate runtime authority."
+        "MLB ML promotion safety verified: legacy V1 authority is inert; learning and challenger evaluation continue below the 90% aspiration; GitHub has no promotion write path; and deployed AWS V2 may activate a champion automatically only after immutable prospective, market-skill, calibration, proper-scoring, deployment-identity, and runtime-consumer gates pass. Automatic wagering remains disabled."
     )
     return 0
 
