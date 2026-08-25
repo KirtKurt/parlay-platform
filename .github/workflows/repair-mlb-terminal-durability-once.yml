@@ -1,0 +1,221 @@
+name: Repair MLB terminal durability once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-terminal-durability-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: repair-mlb-terminal-durability-once
+  cancel-in-progress: false
+
+jobs:
+  repair-deploy-and-accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install and test terminal durability repair
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+          python scripts/repair_mlb_terminal_durability_once.py
+          python -m py_compile \
+            hello_world/mlb_prospective_row_repair.py \
+            scripts/reconcile_mlb_prospective_backlog_v4.py \
+            scripts/reconcile_mlb_prospective_backlog_v5.py \
+            tests/unit/test_mlb_terminal_durability_replay.py
+          PYTHONPATH="hello_world:scripts:${PYTHONPATH:-}" python -m pytest -q \
+            tests/unit/test_mlb_terminal_durability_replay.py \
+            tests/unit/test_mlb_prospective_status_lifecycle_repair.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v4.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v5.py \
+            tests/unit/test_mlb_canonical_final_labels_v1.py
+          git diff --check
+          grep -q 'v2-durable-cached-replay' hello_world/mlb_prospective_row_repair.py
+          grep -q 'official_status_terminal_durability_incomplete' scripts/reconcile_mlb_prospective_backlog_v4.py
+
+      - name: Publish tested source repair
+        id: publish
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            hello_world/mlb_prospective_row_repair.py \
+            scripts/reconcile_mlb_prospective_backlog_v4.py \
+            tests/unit/test_mlb_terminal_durability_replay.py
+          git diff --cached --quiet || git commit -m 'Repair MLB durable no-prediction lifecycle continuity'
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              break
+            fi
+            test "$attempt" != 5
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 3))
+          done
+          SOURCE_SHA=$(git rev-parse HEAD)
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "$SOURCE_SHA" > /tmp/mlb-terminal-durability-source-sha
+
+      - name: Deploy repaired root MLB stack
+        env:
+          SOURCE_SHA: ${{ steps.publish.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          gh workflow run deploy.yml --repo "$REPOSITORY" --ref main
+          RUN_ID=''
+          for attempt in $(seq 1 90); do
+            RUN_ID=$(gh run list \
+              --repo "$REPOSITORY" \
+              --workflow deploy.yml \
+              --branch main \
+              --event workflow_dispatch \
+              --limit 30 \
+              --json databaseId,headSha \
+              --jq ".[] | select(.headSha == \"$SOURCE_SHA\") | .databaseId" \
+              | head -n 1)
+            test -z "$RUN_ID" || break
+            sleep 4
+          done
+          test -n "$RUN_ID"
+          echo "$RUN_ID" > /tmp/mlb-terminal-durability-root-deploy-run
+          gh run watch "$RUN_ID" --repo "$REPOSITORY" --exit-status --interval 10
+
+      - name: Reconcile protected continuity and require real training rows
+        run: |
+          set -euo pipefail
+          CONTINUITY_SHA=$(gh api "repos/$REPOSITORY/commits/main" --jq '.sha')
+          gh workflow run repair-mlb-training-continuity-now.yml \
+            --repo "$REPOSITORY" --ref main
+          RUN_ID=''
+          for attempt in $(seq 1 90); do
+            RUN_ID=$(gh run list \
+              --repo "$REPOSITORY" \
+              --workflow repair-mlb-training-continuity-now.yml \
+              --branch main \
+              --event workflow_dispatch \
+              --limit 30 \
+              --json databaseId,headSha \
+              --jq ".[] | select(.headSha == \"$CONTINUITY_SHA\") | .databaseId" \
+              | head -n 1)
+            test -z "$RUN_ID" || break
+            sleep 4
+          done
+          test -n "$RUN_ID"
+          echo "$RUN_ID" > /tmp/mlb-terminal-durability-continuity-run
+          gh run watch "$RUN_ID" --repo "$REPOSITORY" --exit-status --interval 10
+
+      - name: Redeploy and accept isolated MLB Auto authority
+        run: |
+          set -euo pipefail
+          AUTO_SHA=$(gh api "repos/$REPOSITORY/commits/main" --jq '.sha')
+          gh workflow run deploy-mlb-auto-llm.yml \
+            --repo "$REPOSITORY" --ref main
+          RUN_ID=''
+          for attempt in $(seq 1 90); do
+            RUN_ID=$(gh run list \
+              --repo "$REPOSITORY" \
+              --workflow deploy-mlb-auto-llm.yml \
+              --branch main \
+              --event workflow_dispatch \
+              --limit 30 \
+              --json databaseId,headSha \
+              --jq ".[] | select(.headSha == \"$AUTO_SHA\") | .databaseId" \
+              | head -n 1)
+            test -z "$RUN_ID" || break
+            sleep 4
+          done
+          test -n "$RUN_ID"
+          echo "$RUN_ID" > /tmp/mlb-terminal-durability-auto-deploy-run
+          gh run watch "$RUN_ID" --repo "$REPOSITORY" --exit-status --interval 10
+
+      - name: Publish one-shot orchestration evidence
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          SOURCE_SHA: ${{ steps.publish.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def value(path):
+              file = Path(path)
+              return file.read_text(encoding='utf-8').strip() if file.exists() else None
+
+          report = {
+              'proofType': 'MLB_TERMINAL_DURABILITY_END_TO_END_REPAIR',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'jobStatus': os.environ.get('JOB_STATUS'),
+              'sourceSha': os.environ.get('SOURCE_SHA'),
+              'rootDeployRunId': value('/tmp/mlb-terminal-durability-root-deploy-run'),
+              'continuityRunId': value('/tmp/mlb-terminal-durability-continuity-run'),
+              'autoDeployRunId': value('/tmp/mlb-terminal-durability-auto-deploy-run'),
+              'directTableWrite': False,
+              'postStartPredictionCreationAllowed': False,
+              'immutablePredictionRewriteAllowed': False,
+              'productionAuthorityChangedByContinuityRepair': False,
+              'secretExposed': False,
+          }
+          report['ok'] = bool(
+              report['jobStatus'] == 'success'
+              and report['rootDeployRunId']
+              and report['continuityRunId']
+              and report['autoDeployRunId']
+          )
+          report['conclusion'] = 'PASS' if report['ok'] else 'FAIL'
+          Path('runtime_reports/mlb_terminal_durability_repair_latest.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+
+          cp runtime_reports/mlb_terminal_durability_repair_latest.json \
+            /tmp/mlb_terminal_durability_repair_latest.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-terminal-durability-proof origin/main
+            cp /tmp/mlb_terminal_durability_repair_latest.json \
+              runtime_reports/mlb_terminal_durability_repair_latest.json
+            git add runtime_reports/mlb_terminal_durability_repair_latest.json
+            git diff --cached --quiet || \
+              git commit -m 'Publish MLB terminal durability repair proof [skip ci]'
+            git push origin HEAD:main && break
+            test "$attempt" != 5
+            sleep $((attempt * 3))
+          done
+
+          python - <<'PY'
+          import json
+          report=json.load(open('/tmp/mlb_terminal_durability_repair_latest.json'))
+          assert report.get('ok') is True, report
+          print('MLB terminal durability repair: PASS')
+          PY
