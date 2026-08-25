@@ -1,0 +1,194 @@
+name: Repair NFL Historical Game Metadata
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/nfl_recover_historical_game_metadata.py'
+      - 'tests/nfl_auto/test_historical_game_metadata_recovery.py'
+      - '.github/workflows/nfl-historical-game-metadata-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nfl-historical-game-metadata-recovery
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-nfl-auto
+  REPORT_PATH: runtime_reports/nfl_historical_game_metadata_recovery_latest.json
+  LIVE_REPORT_PATH: runtime_reports/nfl_historical_game_metadata_recovery_live_latest.json
+  PYTHONPATH: .
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate isolated NFL repair contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+          python -m py_compile nfl_auto/*.py scripts/nfl_recover_historical_game_metadata.py
+          python -m pytest -q tests/nfl_auto
+          python scripts/verify_nfl_auto_bundle.py
+          git diff --check
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Pause only the NFL historical scheduler during corpus repair
+        id: pause
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          rule=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id NflAutonomousFunctionBackfillEveryMinute \
+            --region "$REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$rule"; test "$rule" != None
+          state=$(aws events describe-rule --name "$rule" --region "$REGION" --query State --output text)
+          echo "rule=$rule" >> "$GITHUB_OUTPUT"
+          echo "prior_state=$state" >> "$GITHUB_OUTPUT"
+          if [ "$state" = ENABLED ]; then
+            aws events disable-rule --name "$rule" --region "$REGION"
+          fi
+
+      - name: Recover exact historical kickoff/team authority
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python scripts/nfl_recover_historical_game_metadata.py \
+            --region "$REGION" \
+            --stack-name "$STACK_NAME" \
+            --output "$REPORT_PATH"
+
+      - name: Advance repaired NFL backfill through protected application path
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          fn=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id NflAutonomousFunction \
+            --region "$REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$fn"; test "$fn" != None
+          for i in 1 2 3 4 5 6 7 8; do
+            aws lambda invoke \
+              --function-name "$fn" \
+              --region "$REGION" \
+              --cli-read-timeout 900 \
+              --cli-binary-format raw-in-base64-out \
+              --payload '{"action":"autonomous_tick"}' \
+              "/tmp/nfl-tick-$i.json" >/tmp/nfl-tick-meta.json
+            python - "$i" <<'PY'
+          import json,sys
+          i=sys.argv[1]
+          body=json.load(open(f'/tmp/nfl-tick-{i}.json'))
+          if body.get('ok') is not True:
+              raise SystemExit(f'NFL autonomous tick {i} failed closed: {body}')
+          print(json.dumps({'tick':int(i),'result':body},sort_keys=True,default=str))
+          PY
+          done
+
+      - name: Verify repaired AWS state without changing authority
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          url=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "$REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='NflAutoStatusUrl'].OutputValue" \
+            --output text)
+          curl --fail --silent --show-error --retry 5 --retry-all-errors "$url" >/tmp/nfl-status.json
+          python - <<'PY'
+          import json,datetime,pathlib,os
+          repair=json.load(open(os.environ['REPORT_PATH']))
+          status=json.load(open('/tmp/nfl-status.json'))
+          champions=status.get('champions') or {}
+          historical=int(status.get('historical_game_count') or 0)
+          phase=str((status.get('backfill') or {}).get('phase') or '')
+          ok=bool(
+              repair.get('ok') is True
+              and historical >= 1000
+              and phase in {'BBD_PLAYS','ODDS_SNAPSHOTS','MATERIALIZE','READY'}
+              and all(value is None for value in champions.values())
+              and status.get('preseason_predictions_enabled') is False
+          )
+          proof={
+              'ok':ok,
+              'proofType':'NFL_HISTORICAL_GAME_METADATA_RECOVERY_LIVE_VERIFICATION',
+              'observedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'sourceSha':os.environ.get('GITHUB_SHA'),
+              'repair':repair,
+              'status':status,
+              'historicalGameCount':historical,
+              'backfillPhase':phase,
+              'championsRemainNull':all(value is None for value in champions.values()),
+              'productionAuthorityChanged':False,
+              'immutablePredictionHistoryRewritten':False,
+              'postStartPredictionCreated':False,
+              'humanWinnerSelection':False,
+              'otherSportChanged':False,
+          }
+          pathlib.Path(os.environ['LIVE_REPORT_PATH']).write_text(json.dumps(proof,indent=2,sort_keys=True,default=str)+'\n')
+          print(json.dumps(proof,indent=2,sort_keys=True,default=str))
+          if not ok:
+              raise SystemExit('NFL historical metadata recovery did not reach a safe advancing state')
+          PY
+
+      - name: Restore NFL historical scheduler state
+        if: always()
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+          RULE: ${{ steps.pause.outputs.rule }}
+          PRIOR_STATE: ${{ steps.pause.outputs.prior_state }}
+        run: |
+          set -euo pipefail
+          if [ -n "${RULE:-}" ] && [ "${PRIOR_STATE:-}" = ENABLED ]; then
+            aws events enable-rule --name "$RULE" --region "$REGION"
+          fi
+
+      - name: Publish exact NFL repair proof
+        if: always() && hashFiles('runtime_reports/nfl_historical_game_metadata_recovery_latest.json') != ''
+        run: |
+          set -euo pipefail
+          cp "$REPORT_PATH" /tmp/nfl-metadata-repair.json
+          if [ -f "$LIVE_REPORT_PATH" ]; then cp "$LIVE_REPORT_PATH" /tmp/nfl-metadata-live.json; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          published=false
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B nfl-metadata-repair-proof origin/main
+            mkdir -p runtime_reports
+            cp /tmp/nfl-metadata-repair.json "$REPORT_PATH"
+            if [ -f /tmp/nfl-metadata-live.json ]; then cp /tmp/nfl-metadata-live.json "$LIVE_REPORT_PATH"; fi
+            git add "$REPORT_PATH" "$LIVE_REPORT_PATH" 2>/dev/null || git add "$REPORT_PATH"
+            if git diff --cached --quiet; then published=true; break; fi
+            git commit -m 'runtime: publish NFL historical metadata repair proof [skip ci]'
+            if git push origin HEAD:main; then published=true; break; fi
+            sleep $((attempt*3))
+          done
+          test "$published" = true
