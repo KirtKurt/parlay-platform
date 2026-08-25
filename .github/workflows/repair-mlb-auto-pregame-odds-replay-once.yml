@@ -54,17 +54,20 @@ jobs:
           grep -q 'postStartOddsFabricationAllowed' \
             mlb_auto_llm/pregame_odds_replay.py
 
-      - name: Publish tested source without triggering competing push deploys
+      - name: Publish tested source without workflow-scope token dependency
         id: publish
         run: |
           set -euo pipefail
+          # The installer also stages local deployment-workflow assertions, but
+          # GITHUB_TOKEN may not modify workflow files. Production source does
+          # not depend on that CI-only edit: SAM packages the complete CodeUri.
+          git checkout -- .github/workflows/deploy-mlb-auto-llm.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
             mlb_auto_llm/pregame_odds_replay.py \
             mlb_auto_llm/orchestrator_v3.py \
-            tests/unit/test_mlb_auto_pregame_odds_replay.py \
-            .github/workflows/deploy-mlb-auto-llm.yml
+            tests/unit/test_mlb_auto_pregame_odds_replay.py
           git diff --cached --quiet || \
             git commit -m 'Repair MLB Auto immutable pregame Odds replay [skip ci]'
           for attempt in 1 2 3 4 5; do
