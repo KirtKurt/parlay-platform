@@ -98,7 +98,6 @@ sam deploy \
     TargetStackName="$TARGET_STACK" \
     FunctionNamePrefix="$TARGET_STACK" \
     RuleNamePrefix="$TARGET_STACK" \
-    "RepairCadence=rate(5 minutes)" \
     RepairLeaseSeconds=960 \
   --no-confirm-changeset \
   --no-fail-on-empty-changeset
