@@ -1,0 +1,65 @@
+name: Verify MLB R7 source-honest repair
+
+on:
+  push:
+    branches:
+      - repair/mlb-r7-source-honest-admission-20260825
+    paths:
+      - 'hello_world/mlb_r7_source_honest_training_repair.py'
+      - 'hello_world/mlb_ml_aws_training_v1_compat.py'
+      - 'tests/unit/test_mlb_r7_source_honest_training_repair.py'
+      - '.github/workflows/verify-mlb-r7-source-honest-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-mlb-r7-source-honest-repair-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-and-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: 'true'
+      SNAPSHOTS_TABLE: ''
+      OUTCOMES_TABLE: ''
+    steps:
+      - name: Checkout exact repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: repair/mlb-r7-source-honest-admission-20260825
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest boto3 requests
+
+      - name: Compile changed trainer modules
+        run: |
+          python -m py_compile \
+            hello_world/mlb_r7_source_honest_training_repair.py \
+            hello_world/mlb_ml_aws_training_v1_compat.py
+
+      - name: Run focused R7 repair tests
+        run: |
+          pytest -q \
+            tests/unit/test_mlb_r7_source_honest_training_repair.py \
+            tests/unit/test_mlb_prospective_trainer_read_repair.py
+
+      - name: Run existing prospective experiment and model contracts
+        run: |
+          pytest -q \
+            tests/unit/test_mlb_ml_experiment_v2.py \
+            tests/unit/test_mlb_ml_dual_model_v2.py \
+            tests/unit/test_mlb_ml_aws_training_v1.py
