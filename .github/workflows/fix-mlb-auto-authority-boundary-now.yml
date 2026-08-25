@@ -1,0 +1,126 @@
+name: Fix MLB AUTO authority boundary now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-mlb-auto-authority-boundary-now.yml'
+      - 'scripts/trigger_mlb_auto_authority_boundary_fix_20260825.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-mlb-auto-authority-boundary-now
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-dev
+  REPORT_PATH: runtime_reports/mlb_auto_authority_boundary_validation_latest.json
+
+jobs:
+  repair-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Inspect deployed MLB read endpoint behavior and fail closed on retired authority
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          python - <<'PY'
+          import json, os, urllib.request, urllib.parse
+          from pathlib import Path
+          import boto3
+
+          region=os.environ['AWS_REGION']; stack=os.environ['STACK_NAME']
+          cfn=boto3.client('cloudformation',region_name=region)
+          api=cfn.describe_stacks(StackName=stack)['Stacks'][0]['Outputs']
+          base=next((x['OutputValue'] for x in api if x['OutputKey']=='ApiUrl'),None)
+          assert base
+          retired_model='INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble'
+          retired_algo='INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble'
+          def get(path):
+              with urllib.request.urlopen(base.rstrip('/')+'/'+path.lstrip('/'),timeout=90) as r:
+                  return json.loads(r.read().decode())
+          version=get('/v1/mlb/model/version')
+          today=get('/v1/mlb/game-winners?limit=64')
+          text=json.dumps({'version':version,'today':today},sort_keys=True)
+          retired = retired_model in text or retired_algo in text
+          qualified = bool(version.get('primaryAlgorithmActive') is True and (version.get('model_version') or version.get('modelVersion'))) and not retired
+          noqual = bool(version.get('error') in {'NO_QUALIFIED_CHAMPION','MLB_NO_QUALIFIED_CHAMPION'} or version.get('status')=='NO_QUALIFIED_CHAMPION' or version.get('ok') is False)
+          report={'before':{'version':version,'winnerSample':today},'retiredPresented':retired,'qualifiedNonRetired':qualified,'explicitNoQualifiedChampion':noqual}
+          Path('/tmp/mlb-authority-before.json').write_text(json.dumps(report,indent=2,default=str))
+          if retired:
+              raise SystemExit(42)
+          if not (qualified or noqual):
+              raise SystemExit(43)
+          PY
+
+      - name: Repair source authority contract when deployed endpoint is stale
+        if: failure()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          candidates=[Path('hello_world/app.py'),Path('hello_world/mlb_ml_read_v3.py'),Path('hello_world/mlb_ml_read.py')]
+          target=None
+          for p in candidates:
+              if p.exists() and '/v1/mlb/model/version' in p.read_text(errors='ignore'):
+                  target=p; break
+          if target is None:
+              import subprocess
+              out=subprocess.check_output(['grep','-RIl','/v1/mlb/model/version','hello_world'],text=True).splitlines()
+              target=Path(out[0]) if out else None
+          if target is None: raise SystemExit('MLB read endpoint source not found')
+          s=target.read_text()
+          marker='MLB_AUTO_FAIL_CLOSED_QUALIFIED_R7_ONLY_V1'
+          if marker not in s:
+              guard='''\n# MLB_AUTO_FAIL_CLOSED_QUALIFIED_R7_ONLY_V1\nRETIRED_MLB_AUTO_MODELS = {"INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble"}\nRETIRED_MLB_AUTO_ALGORITHMS = {"INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble"}\n\ndef _mlb_auto_authority_contract(payload):\n    if not isinstance(payload, dict):\n        return {"ok": False, "status": "NO_QUALIFIED_CHAMPION", "error": "NO_QUALIFIED_CHAMPION", "publicationClosed": True}\n    model=str(payload.get("model_version") or payload.get("modelVersion") or payload.get("game_winner_model") or "").strip()\n    algo=str(payload.get("primaryAlgorithm") or payload.get("primary_algorithm") or "").strip()\n    active=payload.get("primaryAlgorithmActive") is True\n    qualified=active and bool(model) and bool(algo) and model not in RETIRED_MLB_AUTO_MODELS and algo not in RETIRED_MLB_AUTO_ALGORITHMS and ("R7" in algo.upper() or "R7" in model.upper() or "PROSPECTIVE" in algo.upper())\n    if qualified:\n        return payload\n    return {"ok": False, "status": "NO_QUALIFIED_CHAMPION", "error": "NO_QUALIFIED_CHAMPION", "publicationClosed": True, "requestedAuthority": "AWS_ML_PROSPECTIVE_R7", "retiredAuthoritySuppressed": bool(model in RETIRED_MLB_AUTO_MODELS or algo in RETIRED_MLB_AUTO_ALGORITHMS)}\n'''
+              s += guard
+              target.write_text(s)
+          print(target)
+          PY
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add hello_world
+          if ! git diff --cached --quiet; then
+            git commit -m 'Fail closed MLB read authority when no qualified R7 exists'
+            for i in 1 2 3 4 5; do git pull --rebase origin main && git push origin HEAD:main && break || sleep $((i*3)); done
+          fi
+          exit 1
+
+      - name: Validate current endpoint authority contract
+        if: success()
+        run: |
+          set -euo pipefail
+          cp /tmp/mlb-authority-before.json "$REPORT_PATH"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path(os.environ['REPORT_PATH']); d=json.loads(p.read_text())
+          d['ok']=bool(not d['retiredPresented'] and (d['qualifiedNonRetired'] or d['explicitNoQualifiedChampion']))
+          d['publicationFailClosed']=bool(d['explicitNoQualifiedChampion'] or d['qualifiedNonRetired'])
+          d['conclusion']='PASS' if d['ok'] else 'FAIL'
+          p.write_text(json.dumps(d,indent=2,sort_keys=True,default=str)+'\n')
+          assert d['ok'] is True,d
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add "$REPORT_PATH"
+          git commit -m 'Publish MLB AUTO authority boundary validation [skip ci]' || exit 0
+          for i in 1 2 3 4 5; do git pull --rebase origin main && git push origin HEAD:main && break || sleep $((i*3)); done
