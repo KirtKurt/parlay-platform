@@ -1,0 +1,217 @@
+name: NFL Exact Kickoff Authority Diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/nfl-kickoff-authority-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nfl-kickoff-authority-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Prove exact kickoff authority without exposing credentials
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          python - <<'PY'
+          from __future__ import annotations
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+          from datetime import date, datetime, timezone
+          import boto3
+          from nfl_auto.canonical import normalize_team
+
+          region = os.environ['AWS_REGION_VALUE']
+          stack = 'parlay-platform-nfl-auto'
+          cf = boto3.client('cloudformation', region_name=region)
+          sm = boto3.client('secretsmanager', region_name=region)
+
+          def physical(logical: str) -> str:
+              return cf.describe_stack_resource(
+                  StackName=stack,
+                  LogicalResourceId=logical,
+              )['StackResourceDetail']['PhysicalResourceId']
+
+          def secret(logical: str) -> str:
+              value = sm.get_secret_value(SecretId=physical(logical)).get('SecretString', '').strip()
+              if value.startswith('{'):
+                  decoded = json.loads(value)
+                  value = next(
+                      (str(decoded.get(k) or '').strip() for k in ('api_key','key','token','value') if str(decoded.get(k) or '').strip()),
+                      '',
+                  )
+              if not value:
+                  raise RuntimeError(f'{logical}_EMPTY')
+              return value
+
+          bbd_key = secret('NflBbdSecret')
+          odds_key = secret('NflOddsSecret')
+
+          def get_json(url: str, headers: dict[str, str] | None = None):
+              request = urllib.request.Request(
+                  url,
+                  headers={'Accept': 'application/json', 'User-Agent': 'inqsi-nfl-kickoff-diagnostic/1.0', **(headers or {})},
+              )
+              with urllib.request.urlopen(request, timeout=45) as response:
+                  return json.loads(response.read().decode('utf-8')), {k.lower(): v for k, v in response.headers.items()}
+
+          def bbd_games(params: dict[str, object]):
+              url = 'https://api.bigballsdata.com/v1/nfl/games?' + urllib.parse.urlencode(params)
+              payload, headers = get_json(url, {'Authorization': 'Bearer ' + bbd_key})
+              rows = payload.get('data') if isinstance(payload, dict) else []
+              return [dict(row) for row in rows or [] if isinstance(row, dict)], payload.get('pagination') or {}, headers
+
+          odds_cache: dict[str, tuple[list[dict], dict]] = {}
+          def odds_events(snapshot_at: str):
+              if snapshot_at in odds_cache:
+                  return odds_cache[snapshot_at]
+              url = (
+                  'https://api.the-odds-api.com/v4/historical/sports/americanfootball_nfl/events?'
+                  + urllib.parse.urlencode({'apiKey': odds_key, 'date': snapshot_at, 'dateFormat': 'iso'})
+              )
+              payload, headers = get_json(url)
+              rows = payload.get('data') if isinstance(payload, dict) else []
+              result = ([dict(row) for row in rows or [] if isinstance(row, dict)], headers)
+              odds_cache[snapshot_at] = result
+              return result
+
+          def parse_day(value: object) -> date:
+              text = str(value or '').strip()
+              if len(text) < 10:
+                  raise ValueError('BBD_GAME_DATE_MISSING')
+              return date.fromisoformat(text[:10])
+
+          def side_match(raw: object, odds_name: object) -> bool:
+              raw_text = str(raw or '').strip().upper().replace('.', '')
+              try:
+                  odds_team = normalize_team(odds_name)
+              except ValueError:
+                  return False
+              if raw_text == 'LA':
+                  return odds_team in {'LAC', 'LAR'}
+              try:
+                  return normalize_team(raw) == odds_team
+              except ValueError:
+                  return False
+
+          def candidates(row: dict, events: list[dict]) -> list[dict]:
+              target_day = parse_day(row.get('game_date'))
+              output = []
+              for event in events:
+                  try:
+                      commence = datetime.fromisoformat(str(event.get('commence_time') or '').replace('Z', '+00:00')).astimezone(timezone.utc)
+                  except (TypeError, ValueError):
+                      continue
+                  if abs((commence.date() - target_day).days) > 1:
+                      continue
+                  if not side_match(row.get('home_team'), event.get('home_team')):
+                      continue
+                  if not side_match(row.get('away_team'), event.get('away_team')):
+                      continue
+                  output.append(event)
+              return output
+
+          rows, pagination, bbd_headers = bbd_games({'season': 2025, 'type': 'REG', 'limit': 40, 'offset': 0})
+          match_rows = []
+          unique = ambiguous = missing = 0
+          for row in rows:
+              day = parse_day(row.get('game_date'))
+              snapshot = day.isoformat() + 'T00:00:00Z'
+              events, odds_headers = odds_events(snapshot)
+              matches = candidates(row, events)
+              if len(matches) == 1:
+                  unique += 1
+                  event = matches[0]
+                  match_rows.append({
+                      'bbd_game_id': row.get('game_id'),
+                      'bbd_game_date': row.get('game_date'),
+                      'bbd_home': row.get('home_team'),
+                      'bbd_away': row.get('away_team'),
+                      'odds_event_id': event.get('id'),
+                      'odds_commence_time': event.get('commence_time'),
+                      'odds_home': event.get('home_team'),
+                      'odds_away': event.get('away_team'),
+                      'ambiguous_la_resolved': str(row.get('home_team') or '').upper() == 'LA' or str(row.get('away_team') or '').upper() == 'LA',
+                  })
+              elif len(matches) > 1:
+                  ambiguous += 1
+              else:
+                  missing += 1
+
+          tail_rows, tail_pagination, _ = bbd_games({'season': 2025, 'limit': 30, 'offset': 255})
+          post_rows, post_pagination, _ = bbd_games({'season': 2025, 'type': 'POST', 'limit': 30, 'offset': 0})
+          tail_types = sorted({str(row.get('game_type') or '') for row in tail_rows})
+          report = {
+              'proofType': 'NFL_EXACT_KICKOFF_AUTHORITY_DIAGNOSTIC',
+              'observedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+              'sampleSize': len(rows),
+              'uniqueExactMatches': unique,
+              'ambiguousMatches': ambiguous,
+              'missingMatches': missing,
+              'uniqueMatchRate': (unique / len(rows)) if rows else 0.0,
+              'matches': match_rows,
+              'bbdRegularPagination': pagination,
+              'bbdSeasonTailPagination': tail_pagination,
+              'bbdSeasonTailGameTypes': tail_types,
+              'bbdExplicitPostCount': len(post_rows),
+              'bbdExplicitPostPagination': post_pagination,
+              'oddsHistoricalEventSnapshots': len(odds_cache),
+              'bbdRateRemaining': bbd_headers.get('x-ratelimit-remaining'),
+              'oddsRequestsRemaining': next((headers.get('x-requests-remaining') for _, headers in odds_cache.values() if headers.get('x-requests-remaining')), None),
+              'readOnly': True,
+              'secretExposed': False,
+              'productionAuthorityChanged': False,
+              'immutableHistoryRewritten': False,
+          }
+          with open('/tmp/nfl-kickoff-authority.json', 'w') as handle:
+              json.dump(report, handle, indent=2, sort_keys=True, default=str)
+              handle.write('\n')
+          print(json.dumps(report, indent=2, sort_keys=True, default=str))
+          if not rows:
+              raise SystemExit('No BBD regular-season rows returned')
+          if unique == 0:
+              raise SystemExit('No deterministic Odds API kickoff matches found')
+          PY
+      - name: Publish diagnostic evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          test -f /tmp/nfl-kickoff-authority.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main
+            mkdir -p runtime_reports
+            cp /tmp/nfl-kickoff-authority.json runtime_reports/nfl_kickoff_authority_diagnostic_latest.json
+            git add runtime_reports/nfl_kickoff_authority_diagnostic_latest.json
+            git commit -m 'Publish NFL exact-kickoff authority diagnostic [skip ci]' || exit 0
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 2))
+          done
+          exit 1
