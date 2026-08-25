@@ -1,5 +1,4 @@
-# trigger: 2026-08-25T16:18:00Z
-name: Throttle up Bedrock now
+name: Ramp MLB AUTO Bedrock capacity now
 
 on:
   push:
@@ -12,200 +11,507 @@ permissions:
   contents: write
 
 concurrency:
-  group: bedrock-throughput-repair
+  group: mlb-auto-bedrock-capacity-ramp
   cancel-in-progress: false
 
 env:
   AWS_REGION: us-east-1
+  BEDROCK_REGIONS: us-east-1,us-west-2,us-east-2
   REPORT_PATH: runtime_reports/bedrock_throughput_validation_latest.json
 
 jobs:
-  throttle-validate:
+  ramp-and-validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Raise Bedrock throughput without defeating quota backpressure
+      - name: Validate MLB-only Bedrock routing contracts
+        shell: bash
         run: |
           set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
+          python -m py_compile \
+            mlb_auto_llm/model_gateway.py \
+            mlb_auto_llm/production_model_gateway.py \
+            mlb_auto_llm/bedrock_smoke.py \
+            mlb_auto_llm/ml_authority_smoke.py
+          python -m pytest -q \
+            tests/unit/test_mlb_auto_bedrock_smoke.py \
+            tests/unit/test_mlb_auto_production_model_gateway.py
           python - <<'PY'
+          import yaml
           from pathlib import Path
-
-          p=Path('mlb_auto_llm/model_gateway.py')
-          s=p.read_text()
-          s=s.replace('"MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS", "50"', '"MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS", "80"')
-          p.write_text(s)
-
-          p=Path('mlb_auto_llm/bedrock_smoke.py')
-          s=p.read_text()
-          if 'import os\n' not in s:
-              s=s.replace('from __future__ import annotations\n\n', 'from __future__ import annotations\n\nimport os\n')
-          old='''    mantle = mantle_models()\n    runtime = runtime_models()\n    models = configured_models()\n    result = invoke_chain_text(\n        "Return only the word OK.",\n        models,\n        max_tokens=8,\n        temperature=0.0,\n        top_p=0.9,\n    )\n'''
-          new='''    mantle = mantle_models()\n    runtime = runtime_models()\n    route_limit = max(1, int(os.getenv("MLB_AUTO_BEDROCK_SMOKE_ROUTE_LIMIT", "1")))\n    models = list(runtime[:route_limit])\n    result = invoke_chain_text(\n        "Return only the word OK.",\n        models,\n        max_tokens=8,\n        temperature=0.0,\n        top_p=0.9,\n        max_attempts=1,\n    )\n'''
-          if old not in s:
-              raise SystemExit('bedrock smoke source shape changed; refusing blind patch')
-          p.write_text(s.replace(old,new))
-
-          p=Path('nfl_auto/llm_analyst.py')
-          s=p.read_text()
-          if 'from botocore.config import Config' not in s:
-              s=s.replace('import json\n', 'import json\nfrom botocore.config import Config\n')
-          s=s.replace('boto3.client("bedrock-runtime", region_name=region_name)', 'boto3.client("bedrock-runtime", region_name=region_name, config=Config(connect_timeout=5, read_timeout=45, retries={"mode": "adaptive", "total_max_attempts": 4}))')
-          p.write_text(s)
+          template = yaml.safe_load(Path('mlb-auto-llm-template.yaml').read_text())
+          resources = template['Resources']
+          main = resources['MLBAutoLLMFunction']['Properties']
+          smoke = resources['MLBAutoLLMBedrockSmokeFunction']['Properties']
+          assert int(main['MemorySize']) == 10240
+          assert int(main['EphemeralStorage']['Size']) >= 2048
+          env = smoke['Environment']['Variables']
+          assert int(env['MLB_AUTO_BEDROCK_SMOKE_ROUTE_LIMIT']) >= 16
+          assert int(env['MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS']) >= 80
+          print('MLB AUTO compute and diversified Bedrock route contract: PASS')
           PY
-          python -m py_compile mlb_auto_llm/model_gateway.py mlb_auto_llm/bedrock_smoke.py nfl_auto/llm_analyst.py soccer_auto/llm_analyst.py
           git diff --check
-          grep -q 'MLB_AUTO_BEDROCK_SMOKE_ROUTE_LIMIT' mlb_auto_llm/bedrock_smoke.py
-          grep -q 'max_attempts=1' mlb_auto_llm/bedrock_smoke.py
-          grep -q '"MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS", "80"' mlb_auto_llm/model_gateway.py
 
-      - name: Prove existing backpressure contracts still pass
+      - name: Inspect quotas, request large increases, and prove live capacity
+        shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
-          python -m pytest -q tests/unit/test_mlb_auto_bedrock_smoke.py tests/soccer_auto/test_llm_contract.py
-
-      - name: Commit safe throughput repair
-        run: |
-          set -euo pipefail
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add mlb_auto_llm/model_gateway.py mlb_auto_llm/bedrock_smoke.py nfl_auto/llm_analyst.py
-          if ! git diff --cached --quiet; then
-            git commit -m 'Increase safe Bedrock route capacity and repair smoke validation'
-            for i in 1 2 3 4 5 6 7 8; do
-              git fetch origin main
-              git rebase origin/main
-              git push origin HEAD:main && break
-              test "$i" != 8 || exit 1
-              sleep $((i*2))
-            done
-          fi
-
-      - name: Inspect real Bedrock quotas and active inference profiles
-        run: |
-          set -euo pipefail
+          mkdir -p runtime_reports
           python - <<'PY'
-          import json, boto3
+          from __future__ import annotations
+
+          import json
+          import os
+          import re
+          import time
+          from datetime import datetime, timezone
           from pathlib import Path
-          out={'regions':{},'quotaErrors':[]}
-          for region in ('us-east-1','us-west-2','us-east-2'):
-              rows=[]
-              try:
-                  sq=boto3.client('service-quotas',region_name=region)
-                  token=None
-                  for _ in range(20):
-                      kw={'ServiceCode':'bedrock','MaxResults':100}
-                      if token: kw['NextToken']=token
-                      r=sq.list_service_quotas(**kw)
-                      for q in r.get('Quotas') or []:
-                          name=str(q.get('QuotaName') or '')
-                          low=name.lower()
-                          if any(x in low for x in ('requests per minute','tokens per minute','tokens per day','cross-region','on-demand')):
-                              rows.append({k:q.get(k) for k in ('QuotaName','QuotaCode','Value','Adjustable','GlobalQuota')})
-                      token=r.get('NextToken')
-                      if not token: break
-              except Exception as e:
-                  out['quotaErrors'].append({'region':region,'error':type(e).__name__+':'+str(e)[:300]})
-              profiles=[]
-              try:
-                  br=boto3.client('bedrock',region_name=region)
-                  token=None
-                  for _ in range(10):
-                      kw={'typeEquals':'SYSTEM_DEFINED','maxResults':100}
-                      if token: kw['nextToken']=token
-                      r=br.list_inference_profiles(**kw)
-                      profiles.extend([x.get('inferenceProfileId') for x in r.get('inferenceProfileSummaries') or [] if x.get('status')=='ACTIVE'])
-                      token=r.get('nextToken')
-                      if not token: break
-              except Exception as e:
-                  profiles=['CONTROL_PLANE_ERROR:'+type(e).__name__+':'+str(e)[:250]]
-              out['regions'][region]={'quotas':rows,'activeInferenceProfileCount':len([x for x in profiles if not str(x).startswith('CONTROL_PLANE_ERROR:')]),'sampleProfiles':profiles[:30]}
-          Path('/tmp/bedrock-quota.json').write_text(json.dumps(out,indent=2,default=str))
-          print(Path('/tmp/bedrock-quota.json').read_text())
-          PY
+          from typing import Any, Dict, Iterable, List
 
-      - name: Request increases for adjustable Bedrock throughput quotas
-        continue-on-error: true
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json,boto3
-          from pathlib import Path
-          q=json.loads(Path('/tmp/bedrock-quota.json').read_text())
-          requested=[]
-          for region,data in q.get('regions',{}).items():
-              sq=boto3.client('service-quotas',region_name=region)
-              for row in data.get('quotas') or []:
-                  name=str(row.get('QuotaName') or '')
-                  value=float(row.get('Value') or 0)
-                  if row.get('Adjustable') is not True or value <= 0 or 'per minute' not in name.lower():
-                      continue
-                  desired=max(value*2,value+1)
-                  try:
-                      r=sq.request_service_quota_increase(ServiceCode='bedrock',QuotaCode=row['QuotaCode'],DesiredValue=desired)
-                      requested.append({'region':region,'quotaName':name,'quotaCode':row['QuotaCode'],'current':value,'desired':desired,'requestId':(r.get('RequestedQuota') or {}).get('Id'),'status':(r.get('RequestedQuota') or {}).get('Status')})
-                  except Exception as e:
-                      requested.append({'region':region,'quotaName':name,'quotaCode':row.get('QuotaCode'),'current':value,'desired':desired,'error':type(e).__name__+':'+str(e)[:260]})
-          Path('/tmp/bedrock-quota-requests.json').write_text(json.dumps(requested,indent=2,default=str))
-          print(Path('/tmp/bedrock-quota-requests.json').read_text())
-          PY
-
-      - name: Live bounded Bedrock smoke across regions
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json,boto3,time
+          import boto3
           from botocore.config import Config
-          from pathlib import Path
-          regions=['us-east-1','us-west-2','us-east-2']
-          candidates=['amazon.nova-micro-v1:0','amazon.nova-lite-v1:0','us.amazon.nova-micro-v1:0','us.amazon.nova-lite-v1:0','global.amazon.nova-2-lite-v1:0']
-          result=[]; ok=0
-          for region in regions:
-              client=boto3.client('bedrock-runtime',region_name=region,config=Config(connect_timeout=5,read_timeout=30,retries={'mode':'adaptive','total_max_attempts':4}))
-              for model in candidates:
-                  t=time.time()
+
+          REGIONS = [
+              value.strip()
+              for value in os.environ['BEDROCK_REGIONS'].split(',')
+              if value.strip()
+          ]
+          THROUGHPUT_TERMS = (
+              'tokens per minute',
+              'tokens per day',
+              'requests per minute',
+              'input tokens per minute',
+              'output tokens per minute',
+              'model units',
+              'provisioned throughput',
+          )
+          TEXT_PROVIDER_TERMS = (
+              'amazon', 'nova', 'titan', 'openai', 'gpt', 'anthropic', 'claude',
+              'meta', 'llama', 'mistral', 'cohere', 'command', 'ai21', 'jamba',
+              'deepseek', 'qwen', 'xai', 'grok', 'writer', 'palmyra', 'nvidia',
+              'nemotron', 'moonshot', 'kimi', 'zai', 'glm',
+          )
+          NON_TEXT_TERMS = (
+              'embed', 'embedding', 'rerank', 'image', 'canvas', 'video',
+              'audio', 'speech', 'guardrail', 'moderation', 'reel',
+          )
+          ACTIVE_REQUEST_STATUSES = {'PENDING', 'CASE_OPENED'}
+
+          def redact(value: Any) -> str:
+              text = str(value or '')
+              text = re.sub(r'arn:aws[a-zA-Z-]*:[^\s,]+', '[REDACTED_ARN]', text)
+              text = re.sub(r'(?<!\d)\d{12}(?!\d)', '[REDACTED_ACCOUNT]', text)
+              return text[:700]
+
+          def pages(client: Any, method: str, token_key: str, **kwargs: Any) -> Iterable[Dict[str, Any]]:
+              token = None
+              for _ in range(100):
+                  request = dict(kwargs)
+                  if token:
+                      request[token_key] = token
+                  response = getattr(client, method)(**request)
+                  yield response
+                  token = response.get(token_key) or response.get('NextToken') or response.get('nextToken')
+                  if not token:
+                      return
+
+          def relevant_quota(row: Dict[str, Any]) -> bool:
+              name = str(row.get('QuotaName') or '')
+              low = name.lower()
+              return (
+                  any(term in low for term in THROUGHPUT_TERMS)
+                  and any(term in low for term in TEXT_PROVIDER_TERMS)
+                  and not any(term in low for term in NON_TEXT_TERMS)
+              )
+
+          def desired_value(name: str, current: float) -> float:
+              low = name.lower()
+              if 'tokens per day' in low:
+                  return max(current * 10.0, current + 1_000_000.0)
+              if 'tokens per minute' in low:
+                  return max(current * 10.0, current + 100_000.0)
+              if 'requests per minute' in low:
+                  return max(current * 10.0, current + 100.0)
+              if 'model units' in low or 'provisioned throughput' in low:
+                  return max(current + 1.0, 1.0)
+              return max(current * 5.0, current + 1.0)
+
+          def text_candidate(model_id: str) -> bool:
+              low = model_id.lower()
+              return bool(model_id) and not any(term in low for term in NON_TEXT_TERMS)
+
+          def route_priority(model_id: str) -> tuple[int, int, str]:
+              low = model_id.lower()
+              global_profile = low.startswith('global.')
+              regional_profile = low.startswith(('us.', 'eu.', 'apac.'))
+              small = any(
+                  term in low
+                  for term in (
+                      'micro', 'lite', 'mini', 'small', 'flash', 'haiku',
+                      'nano', '7b', '8b', '9b', '12b', '20b',
+                  )
+              )
+              if global_profile and small:
+                  tier = 0
+              elif global_profile:
+                  tier = 1
+              elif regional_profile and small:
+                  tier = 2
+              elif regional_profile:
+                  tier = 3
+              elif small:
+                  tier = 4
+              else:
+                  tier = 5
+              return tier, len(model_id), model_id
+
+          report: Dict[str, Any] = {
+              'proofType': 'MLB_AUTO_BEDROCK_CAPACITY_RAMP_V2',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'sourceSha': os.environ.get('GITHUB_SHA'),
+              'runId': os.environ.get('GITHUB_RUN_ID'),
+              'regions': {},
+              'quotaIncreaseRequests': [],
+              'liveSmoke': [],
+              'secretExposed': False,
+              'productionAuthorityChanged': False,
+              'automaticWagerAllowed': False,
+          }
+
+          all_routes: Dict[str, List[str]] = {}
+          for region in REGIONS:
+              region_report: Dict[str, Any] = {
+                  'quotas': [],
+                  'quotaInspectionErrors': [],
+                  'activeInferenceProfiles': [],
+                  'activeOnDemandModels': [],
+                  'controlPlaneErrors': [],
+              }
+              report['regions'][region] = region_report
+
+              try:
+                  quotas = boto3.client('service-quotas', region_name=region)
+                  for response in pages(
+                      quotas,
+                      'list_service_quotas',
+                      'NextToken',
+                      ServiceCode='bedrock',
+                      MaxResults=100,
+                  ):
+                      for row in response.get('Quotas') or []:
+                          if relevant_quota(row):
+                              region_report['quotas'].append(
+                                  {
+                                      key: row.get(key)
+                                      for key in (
+                                          'QuotaName', 'QuotaCode', 'Value',
+                                          'Adjustable', 'GlobalQuota',
+                                      )
+                                  }
+                              )
+              except Exception as exc:
+                  region_report['quotaInspectionErrors'].append(
+                      {'errorCode': type(exc).__name__, 'message': redact(exc)}
+                  )
+
+              profiles: List[str] = []
+              models: List[str] = []
+              try:
+                  control = boto3.client('bedrock', region_name=region)
+                  for response in pages(
+                      control,
+                      'list_inference_profiles',
+                      'nextToken',
+                      typeEquals='SYSTEM_DEFINED',
+                      maxResults=100,
+                  ):
+                      for row in response.get('inferenceProfileSummaries') or []:
+                          model_id = str(row.get('inferenceProfileId') or '').strip()
+                          if row.get('status') == 'ACTIVE' and text_candidate(model_id):
+                              profiles.append(model_id)
+                  response = control.list_foundation_models(
+                      byOutputModality='TEXT',
+                      byInferenceType='ON_DEMAND',
+                  )
+                  for row in response.get('modelSummaries') or []:
+                      lifecycle = row.get('modelLifecycle') or {}
+                      model_id = str(row.get('modelId') or '').strip()
+                      if (
+                          str(lifecycle.get('status') or 'ACTIVE').upper() != 'END_OF_LIFE'
+                          and text_candidate(model_id)
+                      ):
+                          models.append(model_id)
+              except Exception as exc:
+                  region_report['controlPlaneErrors'].append(
+                      {'errorCode': type(exc).__name__, 'message': redact(exc)}
+                  )
+
+              profiles = sorted(set(profiles), key=route_priority)
+              models = sorted(set(models), key=route_priority)
+              region_report['activeInferenceProfiles'] = profiles
+              region_report['activeOnDemandModels'] = models
+              all_routes[region] = list(dict.fromkeys([*profiles, *models]))
+
+          # Submit quota increases only after the complete read-only inventory exists.
+          for region, region_report in report['regions'].items():
+              try:
+                  quotas = boto3.client('service-quotas', region_name=region)
+              except Exception as exc:
+                  report['quotaIncreaseRequests'].append(
+                      {
+                          'region': region,
+                          'status': 'CLIENT_UNAVAILABLE',
+                          'errorCode': type(exc).__name__,
+                          'message': redact(exc),
+                      }
+                  )
+                  continue
+              request_budget = 40
+              requested_here = 0
+              for row in region_report.get('quotas') or []:
+                  if requested_here >= request_budget:
+                      break
+                  if row.get('Adjustable') is not True:
+                      continue
+                  code = str(row.get('QuotaCode') or '')
+                  name = str(row.get('QuotaName') or '')
                   try:
-                      r=client.converse(modelId=model,messages=[{'role':'user','content':[{'text':'Return exactly: OK'}]}],inferenceConfig={'maxTokens':8,'temperature':0})
-                      text=''.join(str(x.get('text') or '') for x in (((r.get('output') or {}).get('message') or {}).get('content') or []) if isinstance(x,dict)).strip()
-                      result.append({'region':region,'model':model,'ok':bool(text),'latencyMs':round((time.time()-t)*1000),'text':text[:40]})
+                      current = float(row.get('Value') or 0.0)
+                  except (TypeError, ValueError):
+                      current = 0.0
+                  if not code or current < 0:
+                      continue
+                  desired = desired_value(name, current)
+                  existing_active = None
+                  try:
+                      history = quotas.list_requested_service_quota_change_history_by_quota(
+                          ServiceCode='bedrock',
+                          QuotaCode=code,
+                      )
+                      active = [
+                          item
+                          for item in history.get('RequestedQuotas') or []
+                          if str(item.get('Status') or '') in ACTIVE_REQUEST_STATUSES
+                      ]
+                      if active:
+                          existing_active = active[0]
+                  except Exception:
+                      existing_active = None
+
+                  if existing_active:
+                      report['quotaIncreaseRequests'].append(
+                          {
+                              'region': region,
+                              'quotaName': name,
+                              'quotaCode': code,
+                              'current': current,
+                              'desired': desired,
+                              'status': str(existing_active.get('Status') or ''),
+                              'requestId': existing_active.get('Id'),
+                              'existingRequest': True,
+                          }
+                      )
+                      continue
+                  try:
+                      response = quotas.request_service_quota_increase(
+                          ServiceCode='bedrock',
+                          QuotaCode=code,
+                          DesiredValue=desired,
+                      )
+                      value = response.get('RequestedQuota') or {}
+                      report['quotaIncreaseRequests'].append(
+                          {
+                              'region': region,
+                              'quotaName': name,
+                              'quotaCode': code,
+                              'current': current,
+                              'desired': desired,
+                              'status': value.get('Status'),
+                              'requestId': value.get('Id'),
+                              'existingRequest': False,
+                          }
+                      )
+                      requested_here += 1
+                  except Exception as exc:
+                      response = getattr(exc, 'response', {}) or {}
+                      report['quotaIncreaseRequests'].append(
+                          {
+                              'region': region,
+                              'quotaName': name,
+                              'quotaCode': code,
+                              'current': current,
+                              'desired': desired,
+                              'status': 'REQUEST_FAILED',
+                              'errorCode': str(
+                                  (response.get('Error') or {}).get('Code')
+                                  or type(exc).__name__
+                              ),
+                              'message': redact(exc),
+                          }
+                      )
+
+          # Prove immediate capacity by trying diverse active profiles/models once each.
+          client_config = Config(
+              connect_timeout=5,
+              read_timeout=30,
+              retries={'mode': 'standard', 'total_max_attempts': 1},
+          )
+          successes: List[Dict[str, Any]] = []
+          for region in REGIONS:
+              runtime = boto3.client(
+                  'bedrock-runtime',
+                  region_name=region,
+                  config=client_config,
+              )
+              routes = all_routes.get(region) or []
+              attempts_in_region = 0
+              for model_id in routes[:32]:
+                  attempts_in_region += 1
+                  started = time.monotonic()
+                  try:
+                      response = runtime.converse(
+                          modelId=model_id,
+                          messages=[
+                              {
+                                  'role': 'user',
+                                  'content': [{'text': 'Return exactly: OK'}],
+                              }
+                          ],
+                          inferenceConfig={'maxTokens': 8, 'temperature': 0},
+                      )
+                      blocks = (
+                          ((response.get('output') or {}).get('message') or {}).get('content')
+                          or []
+                      )
+                      text = ''.join(
+                          str(block.get('text') or '')
+                          for block in blocks
+                          if isinstance(block, dict)
+                      ).strip()
+                      row = {
+                          'region': region,
+                          'modelId': model_id,
+                          'ok': bool(text),
+                          'latencyMs': round((time.monotonic() - started) * 1000),
+                          'responseNonEmpty': bool(text),
+                      }
+                      report['liveSmoke'].append(row)
                       if text:
-                          ok+=1; break
-                  except Exception as e:
-                      result.append({'region':region,'model':model,'ok':False,'latencyMs':round((time.time()-t)*1000),'error':type(e).__name__+':'+str(e)[:260]})
-          quota=json.loads(Path('/tmp/bedrock-quota.json').read_text())
-          req=json.loads(Path('/tmp/bedrock-quota-requests.json').read_text()) if Path('/tmp/bedrock-quota-requests.json').exists() else []
-          report={'ok':ok>=1,'successfulRegions':len({r['region'] for r in result if r.get('ok')}),'successfulInvocations':ok,'smoke':result,'quotaInspection':quota,'quotaIncreaseRequests':req,'clientPolicy':{'mlbRouteAttemptCeiling':80,'smokeMaxAttempts':1,'soccerBackpressurePreserved':True,'nflAdaptiveAttempts':4}}
-          Path('runtime_reports/bedrock_throughput_validation_latest.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
-          print(json.dumps(report,indent=2,sort_keys=True))
-          assert report['ok'], report
+                          successes.append(row)
+                          break
+                  except Exception as exc:
+                      response = getattr(exc, 'response', {}) or {}
+                      report['liveSmoke'].append(
+                          {
+                              'region': region,
+                              'modelId': model_id,
+                              'ok': False,
+                              'latencyMs': round((time.monotonic() - started) * 1000),
+                              'errorCode': str(
+                                  (response.get('Error') or {}).get('Code')
+                                  or type(exc).__name__
+                              ),
+                              'message': redact(exc),
+                          }
+                      )
+              report['regions'][region]['liveAttemptCount'] = attempts_in_region
+
+          request_rows = report['quotaIncreaseRequests']
+          accepted_statuses = {'PENDING', 'CASE_OPENED', 'APPROVED'}
+          accepted_requests = [
+              row for row in request_rows if str(row.get('status') or '') in accepted_statuses
+          ]
+          submitted_requests = [
+              row for row in accepted_requests if row.get('existingRequest') is False
+          ]
+          report.update(
+              {
+                  'liveCapacityOk': bool(successes),
+                  'successfulInvocationCount': len(successes),
+                  'successfulRegions': sorted({row['region'] for row in successes}),
+                  'selectedRoutes': successes,
+                  'quotaIncreaseAcceptedOrPendingCount': len(accepted_requests),
+                  'quotaIncreaseSubmittedCount': len(submitted_requests),
+                  'quotaIncreaseRequestFailureCount': sum(
+                      row.get('status') == 'REQUEST_FAILED' for row in request_rows
+                  ),
+                  'requestedScalePolicy': {
+                      'tokenQuotaMultiplier': 10,
+                      'requestQuotaMultiplier': 10,
+                      'modelUnitFloorIncrease': 1,
+                  },
+                  'mainLambdaMemoryMb': 10240,
+                  'mainLambdaEphemeralStorageMb': 2048,
+                  'productionRouteAttemptCeiling': 80,
+                  'smokeRouteAttemptCeiling': 16,
+              }
+          )
+          report['ok'] = report['liveCapacityOk']
+          report['conclusion'] = 'PASS' if report['ok'] else 'CAPACITY_REQUESTED_WAITING'
+          Path(os.environ['REPORT_PATH']).write_text(
+              json.dumps(report, indent=2, sort_keys=True, default=str) + '\n'
+          )
+          print(json.dumps(report, indent=2, sort_keys=True, default=str))
           PY
 
-      - name: Publish Bedrock validation proof
+      - name: Publish Bedrock capacity and quota proof
+        if: always()
+        shell: bash
         run: |
           set -euo pipefail
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git fetch origin main
-          git checkout -B bedrock-throughput-proof origin/main
-          git add "$REPORT_PATH"
-          git commit -m 'Publish Bedrock throughput validation [skip ci]' || exit 0
-          for i in 1 2 3 4 5 6 7 8; do
+          test -f "$REPORT_PATH"
+          cp "$REPORT_PATH" /tmp/bedrock-throughput-validation.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5 6 7 8; do
             git fetch origin main
-            git rebase origin/main
-            git push origin HEAD:main && break
-            test "$i" != 8 || exit 1
-            sleep $((i*2))
+            git checkout -B bedrock-throughput-proof origin/main
+            git reset --hard origin/main
+            mkdir -p runtime_reports
+            cp /tmp/bedrock-throughput-validation.json "$REPORT_PATH"
+            git add "$REPORT_PATH"
+            if git diff --cached --quiet; then
+              exit 0
+            fi
+            git commit -m 'Publish MLB AUTO Bedrock capacity validation [skip ci]'
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 3))
           done
+          exit 1
+
+      - name: Require live Bedrock capacity
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(
+              Path('runtime_reports/bedrock_throughput_validation_latest.json').read_text()
+          )
+          assert report.get('liveCapacityOk') is True, report
+          print(
+              'MLB AUTO Bedrock capacity PASS:',
+              report.get('selectedRoutes'),
+              'quota requests submitted:',
+              report.get('quotaIncreaseSubmittedCount'),
+          )
+          PY
