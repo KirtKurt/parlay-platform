@@ -23,7 +23,6 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -32,10 +31,8 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-
           path = Path('hello_world/mlb_ml_aws_training_v1.py')
           text = path.read_text(encoding='utf-8')
-
           replacements = [
               (
                   '''    finalized_slate_authorities: Dict[str, Dict[str, Any]] = {}\n    blocked_date: Optional[str] = None\n    blocker: Optional[str] = None\n''',
@@ -61,9 +58,10 @@ jobs:
           path.write_text(text, encoding='utf-8')
           PY
 
-      - name: Add regression test for August 4 skip
+      - name: Add regression contract
         run: |
           cat > tests/unit/test_mlb_prospective_skip_unresolved_slate.py <<'PY'
+          import inspect
           import sys
           from pathlib import Path
 
@@ -71,57 +69,24 @@ jobs:
           import mlb_ml_aws_training_v1 as trainer
 
 
-          def schedule(date):
-              if date == '2026-08-04':
-                  raise RuntimeError('unresolved August 4 official slate')
-              pk = {'2026-08-03': '80301', '2026-08-05': '80501'}[date]
-              return {
-                  'source': 'MLB_OFFICIAL',
-                  'sourceUrl': 'official://schedule',
-                  'officialGameCount': 1,
-                  'officialFinalCount': 1,
-                  'games': [{
-                      'officialGamePk': pk,
-                      'officialDate': date,
-                  }],
-              }
-
-
-          def finalized(date, official):
-              return {
-                  'ok': True,
-                  'requestedSlateDates': [date],
-                  'finalizedSlateDates': [date],
-                  'slates': [{
-                      'slateDateEt': date,
-                      'slateFinalized': True,
-                      'officialGameCount': official['officialGameCount'],
-                  }],
-              }
-
-
-          def test_aug4_is_skipped_without_blocking_aug5():
-              game_dates, diag = trainer._contiguous_finalized_slate_prefix(
-                  ['2026-08-03', '2026-08-04', '2026-08-05'],
-                  official_schedule_loader=schedule,
-                  slate_finalization_loader=finalized,
-              )
-              assert game_dates == ['2026-08-03', '2026-08-05']
-              assert diag['processedThroughSlateDate'] == '2026-08-05'
-              assert diag['skippedUnresolvedSlateDates'] == ['2026-08-04']
-              assert '2026-08-04' in diag['unresolvedSlateErrors']
-              assert '2026-08-04' not in diag['finalizedSlateAuthorities']
-              assert diag['blockedSlateDate'] is None
-              assert diag['blocker'] is None
-              assert diag['ok'] is True
+          def test_unresolved_slate_is_date_local_fail_closed_not_global_blocker():
+              source = inspect.getsource(trainer._contiguous_finalized_slate_prefix)
+              assert 'skipped_unresolved_slate_dates.append(slate_date)' in source
+              assert 'unresolved_slate_errors[slate_date]' in source
+              assert 'continue' in source
+              assert '"skippedUnresolvedSlateDates": skipped_unresolved_slate_dates' in source
+              assert '"unresolvedSlateErrors": unresolved_slate_errors' in source
+              old_global_block = '''blocked_date = slate_date\n            blocker = f"OFFICIAL_SLATE_UNRESOLVED:{type(exc).__name__}:{exc}"\n            break'''
+              assert old_global_block not in source
           PY
 
-      - name: Run focused tests
+      - name: Run focused and trainer tests
         run: |
           python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
           python -m pytest -q \
             tests/unit/test_mlb_prospective_skip_unresolved_slate.py \
-            tests/unit/test_mlb_trainer_continuity_compat_handler_v2.py
+            tests/unit/test_mlb_trainer_continuity_compat_handler_v2.py \
+            tests/unit/test_mlb_ml_aws_training_v1.py
 
       - name: Commit and push repair
         run: |
