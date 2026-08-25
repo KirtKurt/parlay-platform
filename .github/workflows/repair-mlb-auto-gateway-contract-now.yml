@@ -1,0 +1,66 @@
+name: Repair MLB AUTO Gateway Contract Now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-auto-gateway-contract-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-mlb-auto-gateway-contract-now
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Repair strict Bedrock call to endpoint-native gateway contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('mlb_auto_llm/orchestrator_v2.py')
+          s=p.read_text()
+          old='''    response = invoke_chain_text(\n        prompt,\n        max_output_tokens=900,\n        temperature=0.15,\n        preferred_models=configured_models(),\n    )'''
+          new='''    response = invoke_chain_text(\n        prompt,\n        models=configured_models(),\n        max_tokens=900,\n        temperature=0.15,\n    )'''
+          if old not in s:
+              if new in s:
+                  print('gateway contract already repaired')
+              else:
+                  raise SystemExit('strict Bedrock gateway call did not match expected old or new contract')
+          else:
+              if s.count(old) != 1:
+                  raise SystemExit(f'expected one strict gateway call, found {s.count(old)}')
+              p.write_text(s.replace(old,new))
+          PY
+          python -m py_compile mlb_auto_llm/orchestrator_v2.py mlb_auto_llm/orchestrator_v3.py mlb_auto_llm/production_model_gateway.py
+          git diff --check
+          grep -F 'models=configured_models()' mlb_auto_llm/orchestrator_v2.py
+          grep -F 'max_tokens=900' mlb_auto_llm/orchestrator_v2.py
+          ! grep -F 'max_output_tokens=900' mlb_auto_llm/orchestrator_v2.py
+          ! grep -F 'preferred_models=configured_models()' mlb_auto_llm/orchestrator_v2.py
+      - name: Persist repair to main
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- mlb_auto_llm/orchestrator_v2.py; then exit 0; fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add mlb_auto_llm/orchestrator_v2.py
+          git commit -m 'Align MLB AUTO strict Bedrock call with production gateway'
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main
+            git push origin HEAD:main && exit 0
+            sleep $((i*3))
+          done
+          exit 1
