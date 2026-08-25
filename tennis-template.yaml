@@ -66,8 +66,8 @@ Resources:
       CodeUri: tennis_learning/
       Handler: live_pipeline.lambda_handler
       Runtime: python3.11
-      Timeout: 120
-      MemorySize: 1024
+      Timeout: 900
+      MemorySize: 2048
       Environment:
         Variables:
           TENNIS_LEARNING_TABLE: !Ref TennisLearningTable
@@ -76,6 +76,8 @@ Resources:
           TENNIS_L2: '0.0005'
           ODDS_API_KEY: !Ref OddsApiKey
           TENNIS_ODDS_SPORT_KEY: tennis
+          TENNIS_ODDS_REGIONS: 'us,us2,uk,eu,au,fr,se,us_ex'
+          TENNIS_PREDICTION_CUTOFF_MINUTES: '10'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref TennisLearningTable
