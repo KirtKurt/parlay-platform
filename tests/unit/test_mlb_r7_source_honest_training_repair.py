@@ -20,12 +20,16 @@ import mlb_r7_source_honest_training_repair as repair
 SOURCE_AT = "2026-08-24T12:00:00+00:00"
 PERSISTED_AT = "2026-08-24T12:05:00+00:00"
 LOCK_AT = "2026-08-24T12:15:00+00:00"
+OFFICIAL_GAME_PK = "999001"
+LOCK_PK = "GAME_WINNERS#mlb#2026-08-24"
+LOCK_SK = "LOCKED#GAME#2026-08-24T23:00:00+00:00#r7-source-honest-game"
+STAGE_FINGERPRINT = "stage-r7-source-honest"
 
 
 def incomplete_snapshot():
     row = {
         "gameId": "r7-source-honest-game",
-        "officialGamePk": "999001",
+        "officialGamePk": OFFICIAL_GAME_PK,
         "slateDateEt": "2026-08-24",
         "predictionSourcePullAt": SOURCE_AT,
         "advanced_context": {"fixture": True},
@@ -36,6 +40,23 @@ def incomplete_snapshot():
             "reason": "fixture source unavailable before lock",
         }
     return fundamentals.build(row, captured_at_utc=PERSISTED_AT)
+
+
+def canonical_authority():
+    return {
+        "verified": True,
+        "consistentRead": True,
+        "immutableLocked": True,
+        "stageAuthorityVerified": True,
+        "persistedStageAuthorityValidated": True,
+        "officialAuditEligible": True,
+        "exactLockVectorValidated": True,
+        "selectionLockVectorStatusValidated": True,
+        "sourcePk": LOCK_PK,
+        "sourceSk": LOCK_SK,
+        "stageFingerprint": STAGE_FINGERPRINT,
+        "officialGamePk": OFFICIAL_GAME_PK,
+    }
 
 
 def exact_locked_row():
@@ -63,6 +84,9 @@ def exact_locked_row():
     vector = {
         "version": "MLB-VECTOR-v2",
         "fingerprint": "r7-source-honest-vector",
+        "gameId": "r7-source-honest-game",
+        "officialGamePk": OFFICIAL_GAME_PK,
+        "slateDateEt": "2026-08-24",
         "sourcePullAtUtc": SOURCE_AT,
         "lockAtUtc": LOCK_AT,
         "predictionPersistedAtUtc": PERSISTED_AT,
@@ -91,12 +115,13 @@ def exact_locked_row():
     }
     return {
         "gameId": "r7-source-honest-game",
-        "officialGamePk": "999001",
+        "officialGamePk": OFFICIAL_GAME_PK,
         "slateDateEt": "2026-08-24",
         "commenceTime": "2026-08-24T23:00:00+00:00",
         "predictionPersistedAtUtc": PERSISTED_AT,
         "lockedPrediction": True,
         "immutablePerGameStage": True,
+        "immutableLockedStorage": True,
         "exactVectorVerified": True,
         "trainingEligible": True,
         "frozenFeatureVector": vector,
@@ -106,6 +131,29 @@ def exact_locked_row():
             "version": snapshot["version"],
             "fingerprint": snapshot["fingerprint"],
         },
+        "canonicalLockAuthority": canonical_authority(),
+    }
+
+
+def exact_label(locked):
+    snapshot = locked["fundamentalsSnapshotV2"]
+    vector = locked["frozenFeatureVector"]
+    return {
+        "official_game_pk": OFFICIAL_GAME_PK,
+        "completed": True,
+        "write_once": True,
+        "settlement_fingerprint": "settlement-1",
+        "record_fingerprint": "label-record-1",
+        "canonical_lock_pk": LOCK_PK,
+        "canonical_lock_sk": LOCK_SK,
+        "canonical_stage_fingerprint": STAGE_FINGERPRINT,
+        "frozen_feature_vector_fingerprint": vector["fingerprint"],
+        "fundamentals_snapshot_v2_version": snapshot["version"],
+        "fundamentals_snapshot_v2_fingerprint": snapshot["fingerprint"],
+        "training_eligible": False,
+        "training_exclusion_reasons": list(
+            snapshot["trainingExclusionReasons"]
+        ),
     }
 
 
@@ -130,9 +178,16 @@ def test_source_honest_incomplete_snapshot_is_lock_safe_but_not_a_full_data_pick
         PERSISTED_AT,
         LOCK_AT,
     )
+    full_data_ok, full_data_reasons = fundamentals.validate_snapshot(
+        snapshot,
+        prediction_time_utc=PERSISTED_AT,
+        lock_time_utc=LOCK_AT,
+    )
 
     assert ok is True, reasons
     assert reasons == []
+    assert full_data_ok is False
+    assert full_data_reasons == snapshot["trainingExclusionReasons"]
     assert snapshot["pregameComplete"] is False
     assert snapshot["trainingEligibleAtCapture"] is False
     assert snapshot["trainingExclusionReasons"]
@@ -161,51 +216,59 @@ def test_source_honest_policy_rejects_tamper_and_post_lock_evidence():
     )
 
 
-def test_label_join_is_repaired_in_memory_only_for_exact_safe_missingness():
-    class FakeLabels:
-        @staticmethod
-        def _training_verdict(row):
-            return False, list(
-                row["fundamentalsSnapshotV2"]["trainingExclusionReasons"]
-            )
+def fake_labels_module():
+    def training_verdict(row):
+        return False, list(
+            row["fundamentalsSnapshotV2"]["trainingExclusionReasons"]
+        )
 
-        @staticmethod
-        def _joined_training_row(
-            slate_date, label, locked, *, slate_finalized
-        ):
-            return {
-                "gameId": locked["gameId"],
-                "slateDateEt": slate_date,
-                "slateFinalized": slate_finalized,
-                "labelStatus": "FINAL",
-                "labelFingerprint": label["settlement_fingerprint"],
-                "labelRecordFingerprint": label["record_fingerprint"],
-                "trainingEligible": False,
-                "trainingExclusionReasons": sorted(
-                    {
-                        *label.get("training_exclusion_reasons", []),
-                        *locked["fundamentalsSnapshotV2"][
-                            "trainingExclusionReasons"
-                        ],
-                    }
-                ),
-            }
+    def joined_training_row(slate_date, label, locked, *, slate_finalized):
+        vector = copy.deepcopy(locked["frozenFeatureVector"])
+        snapshot = copy.deepcopy(locked["fundamentalsSnapshotV2"])
+        return {
+            "gameId": locked["gameId"],
+            "officialGamePk": label["official_game_pk"],
+            "slateDateEt": slate_date,
+            "slateFinalized": slate_finalized,
+            "commenceTime": locked["commenceTime"],
+            "predictionPersistedAtUtc": locked["predictionPersistedAtUtc"],
+            "featureSnapshot": vector,
+            "frozenFeatureVector": copy.deepcopy(vector),
+            "fundamentalsSnapshotV2": snapshot,
+            "fundamentalsSnapshotV2Ref": copy.deepcopy(
+                locked["fundamentalsSnapshotRefV2"]
+            ),
+            "labelStatus": "FINAL",
+            "labelFingerprint": label["settlement_fingerprint"],
+            "labelRecordFingerprint": label["record_fingerprint"],
+            "trainingEligible": False,
+            "trainingExclusionReasons": sorted(
+                {
+                    *label.get("training_exclusion_reasons", []),
+                    *locked["fundamentalsSnapshotV2"][
+                        "trainingExclusionReasons"
+                    ],
+                }
+            ),
+            "immutablePregameVectorMutated": False,
+        }
 
+    return SimpleNamespace(
+        _training_verdict=training_verdict,
+        _joined_training_row=joined_training_row,
+    )
+
+
+def test_label_join_is_repaired_in_memory_only_for_exact_bound_missingness():
+    labels = fake_labels_module()
     locked = exact_locked_row()
-    label = {
-        "settlement_fingerprint": "settlement-1",
-        "record_fingerprint": "label-record-1",
-        "training_eligible": False,
-        "training_exclusion_reasons": list(
-            locked["fundamentalsSnapshotV2"]["trainingExclusionReasons"]
-        ),
-    }
+    label = exact_label(locked)
     locked_before = copy.deepcopy(locked)
     label_before = copy.deepcopy(label)
 
-    repair._install_label_patch(FakeLabels)
-    assert FakeLabels._training_verdict(locked) == (True, [])
-    joined = FakeLabels._joined_training_row(
+    repair._install_label_patch(labels)
+    assert labels._training_verdict(locked) == (True, [])
+    joined = labels._joined_training_row(
         "2026-08-24",
         label,
         locked,
@@ -215,15 +278,35 @@ def test_label_join_is_repaired_in_memory_only_for_exact_safe_missingness():
     assert joined["trainingEligible"] is True
     assert joined["trainingExclusionReasons"] == []
     assert joined["r7SourceHonestTrainingAdmission"] is True
+    assert joined["r7SourceHonestLabelLockBindingVersion"] == (
+        repair.LABEL_LOCK_BINDING_VERSION
+    )
     assert joined["productionPickEligibilityChanged"] is False
+    assert repair.row_is_source_honest_training_safe(joined) == (
+        True,
+        [],
+        joined["r7SourceHonestMissingnessMasks"],
+    )
     assert locked == locked_before
     assert label == label_before
 
     unsafe = copy.deepcopy(locked)
     unsafe["exactVectorVerified"] = False
-    eligible, reasons = FakeLabels._training_verdict(unsafe)
+    unsafe["canonicalLockAuthority"]["exactLockVectorValidated"] = False
+    eligible, reasons = labels._training_verdict(unsafe)
     assert eligible is False
     assert reasons
+
+    mismatched = copy.deepcopy(label)
+    mismatched["canonical_stage_fingerprint"] = "wrong-stage"
+    rejected = labels._joined_training_row(
+        "2026-08-24",
+        mismatched,
+        locked,
+        slate_finalized=True,
+    )
+    assert rejected["trainingEligible"] is False
+    assert "r7SourceHonestTrainingAdmission" not in rejected
 
 
 def test_production_r7_experiment_accepts_only_prespecified_masked_missingness():
