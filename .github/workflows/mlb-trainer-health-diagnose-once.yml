@@ -1,3 +1,4 @@
+# Triggered after the branch-local push contract is active.
 name: Verify deployed MLB R7 admission now
 
 "on":
@@ -119,7 +120,7 @@ jobs:
           import os
           from datetime import datetime, timezone
           from pathlib import Path
-          from typing import Any, Mapping
+          from typing import Any
 
           EXPERIMENT = os.environ['EXPERIMENT_ID']
 
