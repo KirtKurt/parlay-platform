@@ -1,0 +1,176 @@
+name: Repair MLB Auto post-cutoff smoke once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-auto-postcutoff-smoke-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-mlb-auto-postcutoff-smoke-once
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Patch only MLB Auto deployment acceptance
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/deploy-mlb-auto-llm.yml')
+          text = path.read_text(encoding='utf-8')
+
+          old_status = """          status=response.get('status')
+          assert status in {'CARD_PUBLISHED','CARD_ALREADY_PUBLISHED','NO_GAMES'}, response
+          card=response.get('card') or {}
+          source=response.get('sourceStatus') or card.get('sourceStatus') or {}
+          if status != 'NO_GAMES':
+              for provider in ('mlbStatsApi','theOddsApi','bigBallsDataPro'):
+                  assert (source.get(provider) or {}).get('ok') is True, (provider, source)
+                  assert not ((source.get(provider) or {}).get('missingGamePks') or []), (provider, source)
+          if status in {'CARD_PUBLISHED','CARD_ALREADY_PUBLISHED'}:
+"""
+          new_status = """          status=response.get('status')
+          assert status in {'CARD_PUBLISHED','CARD_ALREADY_PUBLISHED','NO_GAMES','COLLECTING'}, response
+          card=response.get('card') or {}
+          source=response.get('sourceStatus') or card.get('sourceStatus') or {}
+          if status != 'NO_GAMES':
+              for provider in ('mlbStatsApi','theOddsApi','bigBallsDataPro'):
+                  assert (source.get(provider) or {}).get('ok') is True, (provider, source)
+                  assert not ((source.get(provider) or {}).get('missingGamePks') or []), (provider, source)
+          if status == 'COLLECTING':
+              assert response.get('threeSourceCoverageComplete') is True, response
+              assert response.get('latePublicationPrevented') is True, response
+              assert response.get('postStartPredictionCreationAllowed') is False, response
+              assert response.get('postStartOddsFabricationAllowed') is False, response
+          if status in {'CARD_PUBLISHED','CARD_ALREADY_PUBLISHED'}:
+"""
+          if old_status not in text:
+              raise SystemExit('expected MLB Auto smoke status block not found; refusing broad edit')
+          text = text.replace(old_status, new_status, 1)
+
+          old_fields = """                  'modelAuthorityComplete':card.get('modelAuthorityComplete'),
+                  'decisionAuthority':card.get('decisionAuthority'),
+                  'sourceStatus':source_status,
+                  'pickCount':len(picks),
+"""
+          new_fields = """                  'modelAuthorityComplete':card.get('modelAuthorityComplete'),
+                  'decisionAuthority':card.get('decisionAuthority'),
+                  'sourceStatus':source_status,
+                  'latePublicationPrevented':cycle.get('latePublicationPrevented'),
+                  'postStartPredictionCreationAllowed':cycle.get('postStartPredictionCreationAllowed'),
+                  'postStartOddsFabricationAllowed':cycle.get('postStartOddsFabricationAllowed'),
+                  'pickCount':len(picks),
+"""
+          if old_fields not in text:
+              raise SystemExit('expected MLB Auto proof field block not found; refusing broad edit')
+          text = text.replace(old_fields, new_fields, 1)
+
+          old_ok = """          body['ok']=(
+              body['jobStatus'] == 'success'
+              and body['bedrockSmoke']['ok'] is True
+              and body['providerCycle']['ok'] is True
+              and body['providerCycle']['modelAuthorityComplete'] is True
+              and body['providerCycle']['modelDecisionCount'] == body['providerCycle']['pickCount']
+              and body['publicStatus']['fullyAutonomous'] is True
+              and bool(rules)
+              and all(row.get('state') == 'ENABLED' for row in rules)
+          )
+"""
+          new_ok = """          published_model_authority_ok=(
+              body['providerCycle']['status'] in {'CARD_PUBLISHED','CARD_ALREADY_PUBLISHED'}
+              and body['providerCycle']['modelAuthorityComplete'] is True
+              and body['providerCycle']['pickCount'] > 0
+              and body['providerCycle']['modelDecisionCount'] == body['providerCycle']['pickCount']
+          )
+          postcutoff_collection_ok=(
+              body['providerCycle']['status'] == 'COLLECTING'
+              and body['providerCycle']['threeSourceCoverageComplete'] is True
+              and body['providerCycle']['latePublicationPrevented'] is True
+              and body['providerCycle']['postStartPredictionCreationAllowed'] is False
+              and body['providerCycle']['postStartOddsFabricationAllowed'] is False
+          )
+          no_games_ok=(body['providerCycle']['status'] == 'NO_GAMES')
+          body['ok']=(
+              body['jobStatus'] == 'success'
+              and body['bedrockSmoke']['ok'] is True
+              and body['providerCycle']['ok'] is True
+              and (published_model_authority_ok or postcutoff_collection_ok or no_games_ok)
+              and body['publicStatus']['fullyAutonomous'] is True
+              and bool(rules)
+              and all(row.get('state') == 'ENABLED' for row in rules)
+          )
+"""
+          if old_ok not in text:
+              raise SystemExit('expected MLB Auto proof acceptance block not found; refusing broad edit')
+          text = text.replace(old_ok, new_ok, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Verify fail-closed post-cutoff contract
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'PyYAML>=6,<7'
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          path = Path('.github/workflows/deploy-mlb-auto-llm.yml')
+          text = path.read_text(encoding='utf-8')
+          yaml.safe_load(text)
+          required = [
+              "'COLLECTING'",
+              "response.get('latePublicationPrevented') is True",
+              "response.get('postStartPredictionCreationAllowed') is False",
+              "response.get('postStartOddsFabricationAllowed') is False",
+              "body['providerCycle']['threeSourceCoverageComplete'] is True",
+              "body['bedrockSmoke']['ok'] is True",
+              "body['publicStatus']['fullyAutonomous'] is True",
+              "all(row.get('state') == 'ENABLED' for row in rules)",
+          ]
+          for token in required:
+              assert token in text, token
+          assert "assert status in {'CARD_PUBLISHED','CARD_ALREADY_PUBLISHED','NO_GAMES'}, response" not in text
+          print('MLB Auto post-cutoff smoke remains fail-closed: verified')
+          PY
+          git diff --check
+          changed=$(git diff --name-only)
+          test "$changed" = '.github/workflows/deploy-mlb-auto-llm.yml'
+
+      - name: Commit isolated MLB Auto workflow repair
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/deploy-mlb-auto-llm.yml
+          git commit -m 'Accept fail-closed MLB Auto post-cutoff smoke'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            if git rebase origin/main; then
+              git push origin HEAD:main && exit 0
+            fi
+            git rebase --abort || true
+            git reset --hard origin/main
+            python - <<'PY'
+            raise SystemExit('main advanced during repair; refusing to replay patch without fresh source verification')
+            PY
+            sleep $((attempt * 2))
+          done
+          exit 1
