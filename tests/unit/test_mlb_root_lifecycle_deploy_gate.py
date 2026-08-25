@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -44,7 +45,17 @@ def test_root_lifecycle_missed_lock_diagnostic_is_write_once_and_terminal():
 
     assert result["reason"] == "MISSED_PER_GAME_LOCK_NOT_BACKFILLED"
     diagnostics = legacy.diagnostic_items(missed)
-    assert len(diagnostics) == 2
+    context = json.dumps(
+        {
+            "result": result,
+            "tableItems": list(missed.TABLE.items.values()),
+            "putRequests": missed.TABLE.put_requests,
+        },
+        default=str,
+        indent=2,
+        sort_keys=True,
+    )
+    assert len(diagnostics) == 2, context
     outcome = next(
         item
         for item in diagnostics
