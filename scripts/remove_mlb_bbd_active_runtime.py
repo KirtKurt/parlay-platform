@@ -18,7 +18,6 @@ DEPLOY = ROOT / ".github" / "workflows" / "deploy.yml"
 WORKFLOW_AUTHORITY = ROOT / "scripts" / "verify_mlb_workflow_authority.py"
 ACTIVE_WORKFLOW_PATHS = (
     Path(".github/workflows/deploy.yml"),
-    Path(".github/workflows/deploy-mlb-ranked-v15-10.yml"),
     Path(".github/workflows/mlb-backend-full-recovery.yml"),
     Path(".github/workflows/mlb-historical-optimizer.yml"),
     Path(".github/workflows/mlb-odds-pattern-v7-deploy.yml"),
@@ -222,9 +221,9 @@ jobs:
           LIMIT: ${{ inputs.limit || '25' }}
         run: |
           set -euo pipefail
-          gh workflow run mlb-v8-historical-context-backfill.yml \\
-            --repo \"$GITHUB_REPOSITORY\" \\
-            --ref main \\
+          gh workflow run mlb-v8-historical-context-backfill.yml \
+            --repo \"$GITHUB_REPOSITORY\" \
+            --ref main \
             --field limit=\"$LIMIT\"
           echo \"Dispatched provider-neutral V8 context workflow with limit=$LIMIT\"
 """
