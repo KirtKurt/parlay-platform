@@ -1,0 +1,167 @@
+name: Deploy MLB Auto LLM
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mlb_auto_llm/**'
+      - 'mlb-auto-llm-template.yaml'
+      - '.github/workflows/deploy-mlb-auto-llm.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-auto-llm-deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-mlb-auto-llm
+  LIVE_BEDROCK_MODELS: us.anthropic.claude-sonnet-4-20250514-v1:0,us.meta.llama3-3-70b-instruct-v1:0,meta.llama3-3-70b-instruct-v1:0,mistral.mistral-large-2402-v1:0,mistral.mistral-small-2402-v1:0,cohere.command-r-v1:0,cohere.command-r-plus-v1:0,openai.gpt-5.6-sol,anthropic.claude-opus-4-8,anthropic.claude-opus-4-7,anthropic.claude-opus-4-6-v1,anthropic.claude-sonnet-4-6-v1,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0
+
+jobs:
+  verify-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Verify required credentials and isolated three-source contracts
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
+          test -n "${BBS_API_KEY_VALUE:-}" || { echo '::error::Missing BBS_API_KEY'; exit 1; }
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
+          python -m py_compile mlb_auto_llm/handler.py mlb_auto_llm/orchestrator.py mlb_auto_llm/orchestrator_v2.py mlb_auto_llm/orchestrator_v3.py mlb_auto_llm/ml_authority.py mlb_auto_llm/model_gateway.py
+          PYTHONPATH=mlb_auto_llm python -m pytest -q tests/unit/test_mlb_auto_model_gateway.py tests/unit/test_mlb_auto_ml_authority.py
+          sam validate --template-file mlb-auto-llm-template.yaml --lint
+          python scripts/verify_mlb_no_bbd_runtime.py
+
+      - name: Authenticate both paid data providers
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-all-errors -H "Authorization: Bearer ${BBS_API_KEY_VALUE}" 'https://api.bigballsdata.com/v1/user/me' >/tmp/bbs-account.json
+          python - <<'PY'
+          import json
+          x=json.load(open('/tmp/bbs-account.json')); assert isinstance(x,dict) and x.get('data') is not None,x
+          print('Big Balls Sports Data Pro authentication: OK')
+          PY
+          curl --fail --silent --show-error --retry 3 --retry-all-errors "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/?apiKey=${ODDS_API_KEY_VALUE}&regions=us&markets=h2h&oddsFormat=decimal&dateFormat=iso" >/tmp/odds-mlb.json
+          python - <<'PY'
+          import json
+          x=json.load(open('/tmp/odds-mlb.json')); assert isinstance(x,list),type(x)
+          print('The Odds API MLB authentication: OK; events=',len(x))
+          PY
+
+      - name: Build isolated MLB AUTO stack
+        run: sam build --no-cached --template-file mlb-auto-llm-template.yaml
+
+      - name: Wait for stack updateability
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 80); do
+            s=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_NOT_FOUND)
+            case "$s" in
+              STACK_NOT_FOUND|CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE) break ;;
+              ROLLBACK_COMPLETE) aws cloudformation delete-stack --stack-name "$STACK_NAME" --region "$AWS_REGION"; aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME" --region "$AWS_REGION"; break ;;
+              *_IN_PROGRESS) sleep 15 ;;
+              *) echo "::error::MLB AUTO stack not updateable: $s"; exit 1 ;;
+            esac
+            test "$i" != 80
+          done
+
+      - name: Deploy isolated MLB Auto LLM stack
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+        run: |
+          set -euo pipefail
+          MLB_ML_API_BASE_URL=$(aws cloudformation describe-stacks --stack-name parlay-platform-dev --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+          test -n "$MLB_ML_API_BASE_URL"; test "$MLB_ML_API_BASE_URL" != None
+          sam deploy --template-file .aws-sam/build/template.yaml --stack-name "$STACK_NAME" --region "$AWS_REGION" --resolve-s3 --capabilities CAPABILITY_IAM --parameter-overrides OddsApiKey="${ODDS_API_KEY_VALUE}" BbsApiKey="${BBS_API_KEY_VALUE}" TargetDailyAccuracy='0.70' CardLeadMinutesBeforeSecondGame='45' BedrockModels="${LIVE_BEDROCK_MODELS}" MlbMlApiBaseUrl="${MLB_ML_API_BASE_URL}" --no-confirm-changeset --no-fail-on-empty-changeset
+
+      - name: Prove deployed model authority
+        run: |
+          set -euo pipefail
+          fn=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id MLBAutoLLMBedrockSmokeFunction --region "$AWS_REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          aws lambda invoke --function-name "$fn" --region "$AWS_REGION" --cli-binary-format raw-in-base64-out --cli-read-timeout 240 --payload '{}' /tmp/mlb-auto-bedrock.json >/tmp/mlb-auto-bedrock-meta.json
+          python - <<'PY'
+          import json
+          m=json.load(open('/tmp/mlb-auto-bedrock-meta.json')); r=json.load(open('/tmp/mlb-auto-bedrock.json'))
+          assert not m.get('FunctionError'),(m,r); assert r.get('ok') is True,r; assert r.get('responseNonEmpty') is True,r
+          print('MLB AUTO model authority:',r.get('decisionAuthority'),r.get('modelId'))
+          PY
+
+      - name: Prove autonomous three-source production cycle
+        run: |
+          set -euo pipefail
+          fn=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id MLBAutoLLMFunction --region "$AWS_REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          aws lambda invoke --function-name "$fn" --region "$AWS_REGION" --cli-binary-format raw-in-base64-out --cli-read-timeout 900 --payload '{"mode":"deployment_provider_smoke","force_publish":true}' /tmp/mlb-auto-cycle.json >/tmp/mlb-auto-cycle-meta.json
+          python - <<'PY'
+          import json
+          m=json.load(open('/tmp/mlb-auto-cycle-meta.json')); r=json.load(open('/tmp/mlb-auto-cycle.json'))
+          assert not m.get('FunctionError'),(m,r); assert r.get('ok') is True,r
+          status=r.get('status'); assert status in {'CARD_PUBLISHED','CARD_ALREADY_PUBLISHED','NO_GAMES'},r
+          card=r.get('card') or {}; src=r.get('sourceStatus') or card.get('sourceStatus') or {}
+          if status!='NO_GAMES':
+              for p in ('mlbStatsApi','theOddsApi','bigBallsDataPro'):
+                  assert (src.get(p) or {}).get('ok') is True,(p,src)
+                  assert not ((src.get(p) or {}).get('missingGamePks') or []),(p,src)
+          if status in {'CARD_PUBLISHED','CARD_ALREADY_PUBLISHED'}:
+              assert card.get('threeSourceCoverageComplete') is True,card
+              assert card.get('modelAuthorityComplete') is True,card
+              picks=card.get('picks') or []; assert picks,card
+              authorities={x.get('decisionAuthority') for x in picks}; assert authorities <= {'BEDROCK_LLM','AWS_ML_RANKED_ENSEMBLE'},authorities
+          print('AWS autonomous MLB cycle:',status)
+          PY
+
+      - name: Publish deployment proof
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json,os
+          from datetime import datetime,timezone
+          from pathlib import Path
+          def load(p):
+              try:return json.load(open(p))
+              except:return {}
+          bed=load('/tmp/mlb-auto-bedrock.json'); cyc=load('/tmp/mlb-auto-cycle.json')
+          out={'proofType':'MLB_AUTO_LLM_DEPLOYMENT','createdAtUtc':datetime.now(timezone.utc).isoformat(),'sourceSha':os.environ['GITHUB_SHA'],'runId':os.environ['GITHUB_RUN_ID'],'jobStatus':os.environ['JOB_STATUS'],'bedrock':bed,'cycle':cyc,'ok':os.environ['JOB_STATUS']=='success'}
+          Path('runtime_reports/mlb_auto_llm_deploy_latest.json').write_text(json.dumps(out,indent=2,sort_keys=True,default=str)+'\n')
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          cp runtime_reports/mlb_auto_llm_deploy_latest.json /tmp/mlb-auto-proof.json
+          for i in 1 2 3 4 5; do
+            git reset --hard HEAD; git clean -fd; git fetch origin main; git checkout -B mlb-auto-deploy-proof origin/main
+            mkdir -p runtime_reports; cp /tmp/mlb-auto-proof.json runtime_reports/mlb_auto_llm_deploy_latest.json
+            git add runtime_reports/mlb_auto_llm_deploy_latest.json
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB AUTO deployment proof [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((i*3))
+          done
+          exit 1
