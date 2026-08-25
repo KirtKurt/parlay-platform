@@ -1,0 +1,26 @@
+name: Dispatch exact-date MLB R7 terminal recovery
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/bootstrap-mlb-r7-exact-date-recovery-now.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch existing protected exact-date recovery
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-prospective-settlement-date-recovery-once.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
