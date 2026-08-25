@@ -1,0 +1,125 @@
+name: Repair MLB R7 terminal replay timeout now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-r7-terminal-replay-timeout-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-r7-terminal-replay-timeout-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout canonical main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Patch only the bounded R7 reconciliation timeout surfaces
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          template = Path('template.yaml')
+          text = template.read_text(encoding='utf-8')
+          pattern = re.compile(r'(?ms)(^  MLBDailyPickLockFunction:\n.*?)(?=^  [A-Za-z0-9][A-Za-z0-9_]*:\n)')
+          match = pattern.search(text)
+          if not match:
+              raise SystemExit('MLBDailyPickLockFunction block not found')
+          block = match.group(1)
+          if 'Timeout: 900' not in block:
+              if block.count('Timeout: 300') != 1:
+                  raise SystemExit('Expected exactly one 300-second lock timeout')
+              block = block.replace('Timeout: 300', 'Timeout: 900', 1)
+              text = text[:match.start(1)] + block + text[match.end(1):]
+              template.write_text(text, encoding='utf-8')
+
+          script = Path('scripts/reconcile_mlb_prospective_backlog.py')
+          value = script.read_text(encoding='utf-8')
+          old = 'config = Config(retries={"max_attempts": 3, "mode": "standard"})'
+          new = 'config = Config(connect_timeout=10, read_timeout=930, retries={"max_attempts": 3, "mode": "standard"})'
+          if new not in value:
+              if value.count(old) != 1:
+                  raise SystemExit('Expected exactly one reconciliation boto Config marker')
+              script.write_text(value.replace(old, new, 1), encoding='utf-8')
+
+          workflow = Path('.github/workflows/mlb-prospective-settlement-date-recovery-once.yml')
+          value = workflow.read_text(encoding='utf-8')
+          if '--cli-read-timeout 930' not in value:
+              if value.count('--cli-read-timeout 360') != 1:
+                  raise SystemExit('Expected exactly one protected replay CLI timeout marker')
+              workflow.write_text(value.replace('--cli-read-timeout 360', '--cli-read-timeout 930', 1), encoding='utf-8')
+          PY
+
+          python -m py_compile scripts/reconcile_mlb_prospective_backlog.py scripts/reconcile_mlb_prospective_backlog_v5.py
+          python -m pip install --quiet 'pytest>=8,<9' 'PyYAML>=6,<7'
+          python -m pytest -q tests/unit/test_reconcile_mlb_prospective_backlog_v4.py tests/unit/test_reconcile_mlb_prospective_backlog_v5.py tests/unit/test_mlb_prospective_backlog_workflow.py
+          grep -A12 '^  MLBDailyPickLockFunction:' template.yaml | grep -q 'Timeout: 900'
+          grep -q 'read_timeout=930' scripts/reconcile_mlb_prospective_backlog.py
+          grep -q -- '--cli-read-timeout 930' .github/workflows/mlb-prospective-settlement-date-recovery-once.yml
+          git diff --check
+
+      - name: Raise only the deployed protected lock Lambda timeout
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          LOCK_FN=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id MLBDailyPickLockFunction \
+            --region "$REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$LOCK_FN"
+          test "$LOCK_FN" != None
+          current=$(aws lambda get-function-configuration --function-name "$LOCK_FN" --region "$REGION" --query Timeout --output text)
+          if [ "$current" -lt 900 ]; then
+            aws lambda update-function-configuration --function-name "$LOCK_FN" --region "$REGION" --timeout 900 >/tmp/mlb-r7-lock-timeout-update.json
+            aws lambda wait function-updated-v2 --function-name "$LOCK_FN" --region "$REGION"
+          fi
+          actual=$(aws lambda get-function-configuration --function-name "$LOCK_FN" --region "$REGION" --query Timeout --output text)
+          test "$actual" = 900
+          echo "Protected MLB lock timeout: $actual seconds"
+
+      - name: Persist exact timeout repair to main
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add template.yaml scripts/reconcile_mlb_prospective_backlog.py .github/workflows/mlb-prospective-settlement-date-recovery-once.yml
+          if git diff --cached --quiet; then
+            echo 'Timeout repair already persisted.'
+            exit 0
+          fi
+          git commit -m 'Give MLB R7 protected terminal replay bounded completion time'
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then exit 0; fi
+            test "$attempt" != 5 || exit 1
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 2))
+          done
