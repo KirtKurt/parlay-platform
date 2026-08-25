@@ -6,6 +6,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+# Safe re-trigger: materialize provider-listed full-slate discovery after the
+# complete-key installer drifted from the current Tennis source shape.
 
 REPLACEMENTS = {
     "tennis_learning/live_pipeline.py": (
