@@ -47,8 +47,8 @@ def test_ml_card_matches_every_game_and_uses_bbd_calibration(monkeypatch):
         "fetch_predictions",
         lambda slate: {
             "ok": True,
-            "model_version": ml_authority.EXPECTED_MODEL,
-            "primaryAlgorithm": "INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble",
+            "model_version": "INQSI-MLB-AWS-PROSPECTIVE-R7-candidate",
+            "primaryAlgorithm": "INQSI-MLB-AWS-PROSPECTIVE-R7",
             "winner_predictions": [
                 {
                     "gamePk": "1",
@@ -72,11 +72,37 @@ def test_ml_card_matches_every_game_and_uses_bbd_calibration(monkeypatch):
     assert card["mlPickCount"] == 2
     assert card["fallbackPickCount"] == 0
     assert all(
-        row["decisionAuthority"] == "AWS_ML_RANKED_ENSEMBLE"
+        row["decisionAuthority"] == "AWS_ML_PROSPECTIVE_R7"
         for row in card["picks"]
     )
     assert card["picks"][0]["bbsContextScore"] > card["picks"][1]["bbsContextScore"]
     assert card["picks"][0]["probability"] <= card["picks"][0]["baseModelProbability"]
+
+
+def test_retired_v15_10_is_never_accepted(monkeypatch):
+    monkeypatch.setattr(ml_authority, "fetch_predictions", lambda slate: {
+        "ok": True,
+        "model_version": "INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble",
+        "primaryAlgorithm": "INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble",
+        "winner_predictions": [
+            {"gamePk": "1", "predictedWinner": "Home One", "probability": 0.61},
+            {"gamePk": "2", "predictedWinner": "Away Two", "probability": 0.58},
+        ],
+    })
+    with pytest.raises(RuntimeError, match="MLB_ML_RETIRED_AUTHORITY_REJECTED"):
+        ml_authority.build_card(packet())
+
+
+def test_missing_model_identity_fails_closed(monkeypatch):
+    monkeypatch.setattr(ml_authority, "fetch_predictions", lambda slate: {
+        "ok": True,
+        "winner_predictions": [
+            {"gamePk": "1", "predictedWinner": "Home One", "probability": 0.61},
+            {"gamePk": "2", "predictedWinner": "Away Two", "probability": 0.58},
+        ],
+    })
+    with pytest.raises(RuntimeError, match="MLB_ML_MODEL_IDENTITY_MISSING"):
+        ml_authority.build_card(packet())
 
 
 def test_ml_card_fails_closed_when_a_game_is_missing(monkeypatch):
@@ -85,6 +111,8 @@ def test_ml_card_fails_closed_when_a_game_is_missing(monkeypatch):
         "fetch_predictions",
         lambda slate: {
             "ok": True,
+            "model_version": "INQSI-MLB-AWS-PROSPECTIVE-R7-candidate",
+            "primaryAlgorithm": "INQSI-MLB-AWS-PROSPECTIVE-R7",
             "winner_predictions": [
                 {
                     "gamePk": "1",

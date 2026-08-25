@@ -18,8 +18,10 @@ API_BASE_URL = os.environ.get("MLB_AUTO_ML_API_BASE_URL", "").rstrip("/")
 READ_STACK_NAME = os.environ.get("MLB_AUTO_ML_READ_STACK_NAME", "parlay-platform-dev").strip()
 READ_LOGICAL_ID = os.environ.get("MLB_AUTO_ML_READ_LOGICAL_ID", "MLBV3ReadFunction").strip()
 _READ_FUNCTION_NAME: Optional[str] = None
-AUTHORITY = "AWS_ML_RANKED_ENSEMBLE"
-EXPECTED_MODEL = "INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble"
+AUTHORITY = "AWS_ML_PROSPECTIVE_R7"
+RETIREMENT_POLICY = "MLB-AUTO-RETIRE-V15.10-v1"
+RETIRED_MODELS = {"INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble"}
+RETIRED_ALGORITHMS = {"INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble"}
 
 
 def _normalize(value: Any) -> str:
@@ -359,13 +361,19 @@ def build_card(
         payload.get("model_version")
         or payload.get("game_winner_model")
         or payload.get("modelVersion")
-        or EXPECTED_MODEL
-    )
+        or ""
+    ).strip()
     primary_algorithm = str(
         payload.get("primaryAlgorithm")
         or payload.get("primary_algorithm")
-        or "INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble"
-    )
+        or ""
+    ).strip()
+    if not model_version or not primary_algorithm:
+        raise RuntimeError("MLB_ML_MODEL_IDENTITY_MISSING")
+    if model_version in RETIRED_MODELS or primary_algorithm in RETIRED_ALGORITHMS:
+        raise RuntimeError(
+            "MLB_ML_RETIRED_AUTHORITY_REJECTED:" + model_version + ":" + primary_algorithm
+        )
 
     picks: List[Dict[str, Any]] = []
     used_rows: set[int] = set()
