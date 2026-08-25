@@ -45,3 +45,4 @@ jobs:
           git commit -m 'runtime: publish Soccer controller refresh proof [skip ci]' || exit 0
           for i in 1 2 3 4 5 6 7 8; do git pull --rebase origin main && git push origin HEAD:main && exit 0 || { git rebase --abort 2>/dev/null || true; sleep $((i*2)); }; done
           exit 1
+# ops refresh trigger 2026-08-25
