@@ -1,0 +1,260 @@
+name: Validate Bedrock quota and failover now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/validate-bedrock-quota-and-failover-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bedrock-quota-and-failover-validation
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  REPORT_PATH: runtime_reports/bedrock_quota_and_failover_validation_latest.json
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Inspect applied quotas and prove bounded model-region failover
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          python - <<'PY'
+          from __future__ import annotations
+
+          import datetime as dt
+          import json
+          import os
+          import time
+          from pathlib import Path
+
+          import boto3
+          from botocore.config import Config
+
+          regions = ('us-east-1', 'us-east-2', 'us-west-2')
+          candidates = (
+              'openai.gpt-oss-20b-1:0',
+              'amazon.nova-lite-v1:0',
+              'amazon.nova-micro-v1:0',
+              'openai.gpt-oss-120b-1:0',
+              'us.amazon.nova-2-lite-v1:0',
+              'global.amazon.nova-2-lite-v1:0',
+          )
+          report = {
+              'proofType': 'BEDROCK_QUOTA_AND_FAILOVER_VALIDATION',
+              'createdAtUtc': dt.datetime.now(dt.timezone.utc).isoformat(),
+              'sourceSha': os.environ.get('GITHUB_SHA'),
+              'regions': {},
+              'quotaIncreaseRequests': [],
+              'quotaInspectionErrors': [],
+              'invocations': [],
+          }
+
+          for region in regions:
+              quota_rows = []
+              try:
+                  client = boto3.client('service-quotas', region_name=region)
+                  token = None
+                  for _ in range(30):
+                      kwargs = {'ServiceCode': 'bedrock', 'MaxResults': 100}
+                      if token:
+                          kwargs['NextToken'] = token
+                      response = client.list_service_quotas(**kwargs)
+                      for row in response.get('Quotas') or []:
+                          name = str(row.get('QuotaName') or '')
+                          low = name.lower()
+                          relevant_model = (
+                              'openai gpt oss 20b' in low
+                              or 'gpt oss 20b' in low
+                              or 'nova lite' in low
+                              or 'nova 2 lite' in low
+                          )
+                          relevant_metric = (
+                              'tokens per day' in low
+                              or 'tokens per minute' in low
+                              or 'requests per minute' in low
+                          )
+                          if not (relevant_model and relevant_metric):
+                              continue
+                          normalized = {
+                              key: row.get(key)
+                              for key in (
+                                  'QuotaName',
+                                  'QuotaCode',
+                                  'Value',
+                                  'Adjustable',
+                                  'GlobalQuota',
+                                  'Unit',
+                              )
+                          }
+                          quota_rows.append(normalized)
+
+                          # Request only a directly relevant GPT-OSS 20B increase,
+                          # and only when AWS explicitly exposes it as adjustable.
+                          if (
+                              row.get('Adjustable') is True
+                              and ('openai gpt oss 20b' in low or 'gpt oss 20b' in low)
+                              and float(row.get('Value') or 0) > 0
+                          ):
+                              current = float(row.get('Value') or 0)
+                              desired = current * 2
+                              try:
+                                  requested = client.request_service_quota_increase(
+                                      ServiceCode='bedrock',
+                                      QuotaCode=str(row.get('QuotaCode')),
+                                      DesiredValue=desired,
+                                  ).get('RequestedQuota') or {}
+                                  report['quotaIncreaseRequests'].append({
+                                      'region': region,
+                                      'quotaName': name,
+                                      'quotaCode': row.get('QuotaCode'),
+                                      'current': current,
+                                      'desired': desired,
+                                      'requestId': requested.get('Id'),
+                                      'status': requested.get('Status'),
+                                  })
+                              except Exception as exc:
+                                  report['quotaIncreaseRequests'].append({
+                                      'region': region,
+                                      'quotaName': name,
+                                      'quotaCode': row.get('QuotaCode'),
+                                      'current': current,
+                                      'desired': desired,
+                                      'error': type(exc).__name__ + ':' + str(exc)[:500],
+                                  })
+                      token = response.get('NextToken')
+                      if not token:
+                          break
+              except Exception as exc:
+                  report['quotaInspectionErrors'].append({
+                      'region': region,
+                      'error': type(exc).__name__ + ':' + str(exc)[:500],
+                  })
+
+              report['regions'][region] = {'relevantQuotas': quota_rows}
+              runtime = boto3.client(
+                  'bedrock-runtime',
+                  region_name=region,
+                  config=Config(
+                      connect_timeout=5,
+                      read_timeout=45,
+                      retries={'mode': 'adaptive', 'total_max_attempts': 2},
+                  ),
+              )
+              for model_id in candidates:
+                  started = time.time()
+                  row = {
+                      'region': region,
+                      'modelId': model_id,
+                  }
+                  try:
+                      response = runtime.converse(
+                          modelId=model_id,
+                          messages=[{
+                              'role': 'user',
+                              'content': [{'text': 'Return exactly: OK'}],
+                          }],
+                          inferenceConfig={'maxTokens': 8, 'temperature': 0.0},
+                      )
+                      content = (
+                          ((response.get('output') or {}).get('message') or {}).get('content')
+                          or []
+                      )
+                      text = ''.join(
+                          str(part.get('text') or '')
+                          for part in content
+                          if isinstance(part, dict)
+                      ).strip()
+                      row.update({
+                          'ok': bool(text),
+                          'responseNonEmpty': bool(text),
+                          'text': text[:40],
+                          'latencyMs': round((time.time() - started) * 1000),
+                      })
+                  except Exception as exc:
+                      error = (getattr(exc, 'response', {}) or {}).get('Error') or {}
+                      row.update({
+                          'ok': False,
+                          'errorCode': str(error.get('Code') or type(exc).__name__),
+                          'message': str(error.get('Message') or exc)[:500],
+                          'latencyMs': round((time.time() - started) * 1000),
+                      })
+                  report['invocations'].append(row)
+                  if row.get('ok') is True:
+                      break
+
+          successes = [row for row in report['invocations'] if row.get('ok') is True]
+          report['bedrockAvailable'] = bool(successes)
+          report['successfulRoutes'] = successes
+          report['alternateRouteAvailable'] = any(
+              not (
+                  row.get('region') == 'us-east-1'
+                  and row.get('modelId') == 'openai.gpt-oss-20b-1:0'
+              )
+              for row in successes
+          )
+          report['gptOss20UsEast1'] = next(
+              (
+                  row for row in report['invocations']
+                  if row.get('region') == 'us-east-1'
+                  and row.get('modelId') == 'openai.gpt-oss-20b-1:0'
+              ),
+              None,
+          )
+          report['ok'] = bool(
+              report['bedrockAvailable'] and report['alternateRouteAvailable']
+          )
+          path = Path(os.environ['REPORT_PATH'])
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(json.dumps(report, indent=2, sort_keys=True, default=str) + '\n')
+          print(path.read_text())
+          PY
+
+      - name: Publish quota and failover evidence
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add "$REPORT_PATH"
+          git commit -m 'Publish Bedrock quota and failover validation [skip ci]' || true
+          for i in 1 2 3 4 5 6 7 8; do
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main && break
+            test "$i" != 8 || exit 1
+            sleep $((i * 2))
+          done
+
+      - name: Enforce alternate Bedrock route proof
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          report = json.load(open(os.environ['REPORT_PATH']))
+          assert report.get('bedrockAvailable') is True, report
+          assert report.get('alternateRouteAvailable') is True, report
+          print('Alternate Bedrock route validated:', report.get('successfulRoutes'))
+          PY
