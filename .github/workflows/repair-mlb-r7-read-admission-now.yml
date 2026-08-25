@@ -1,0 +1,87 @@
+# One-shot MLB-only R7 admission repair trigger. This workflow validates the
+# read-only compatibility patch, then delegates AWS deployment, backlog
+# reconciliation, lease-aware trainer invocation, and nonzero-row acceptance to
+# the existing isolated continuity workflow.
+name: Repair MLB R7 read admission now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-r7-read-admission-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: repair-mlb-r7-read-admission-now
+  cancel-in-progress: false
+
+jobs:
+  validate-and-dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact main source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate isolated read-only R7 admission repair
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9'
+          python -m py_compile hello_world/mlb_prospective_trainer_read_repair.py
+          PYTHONPATH="hello_world:${PYTHONPATH:-}" python -m pytest -q \
+            tests/unit/test_mlb_prospective_trainer_read_repair.py
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+
+          path = Path('hello_world/mlb_prospective_trainer_read_repair.py')
+          source = path.read_text(encoding='utf-8')
+          tree = ast.parse(source)
+          imports = {
+              alias.name
+              for node in ast.walk(tree)
+              if isinstance(node, ast.Import)
+              for alias in node.names
+          } | {
+              node.module
+              for node in ast.walk(tree)
+              if isinstance(node, ast.ImportFrom) and node.module
+          }
+          assert 'boto3' not in imports
+          assert 'MLB-PROSPECTIVE-TRAINER-READ-REPAIR-v4' in source
+          assert 'CANONICAL_LOCK_AUTHORITY_REVALIDATION' in source
+          assert 'immutableLockPayloadMutated' in source
+          assert 'immutableLabelPayloadMutated' in source
+          assert 'immutable_tminus45_prediction_not_available' in source
+          assert 'incomplete_slate_coverage' in source
+          assert 'put_item' not in source
+          assert 'update_item' not in source
+          assert 'delete_item' not in source
+          print('MLB R7 read-admission safety validation: PASS')
+          PY
+
+      - name: Dispatch isolated AWS continuity deployment and proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run repair-mlb-training-continuity-now.yml --ref main
+          sleep 5
+          gh run list \
+            --workflow repair-mlb-training-continuity-now.yml \
+            --branch main \
+            --event workflow_dispatch \
+            --limit 3
+          echo 'Dispatched MLB-only continuity workflow; it requires acceptedRowCount > 0 and preserves production authority.'
