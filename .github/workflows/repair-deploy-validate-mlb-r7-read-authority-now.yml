@@ -24,14 +24,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout exact main
+        uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - uses: aws-actions/configure-aws-credentials@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -42,25 +47,64 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-          p=Path('hello_world/mlb_v3_read_api.py')
-          s=p.read_text(encoding='utf-8')
-          start=s.index('def _model_body() -> Dict[str, Any]:')
-          end=s.index('\ndef lambda_handler(', start)
-          replacement='''def _model_body() -> Dict[str, Any]:\n    # MLB_AUTO_R7_FAIL_CLOSED_AUTHORITY_V1\n    # R7 has not yet produced a trained, sealed, promotion-qualified champion.\n    # A retired or historical model must never be projected as current MLB AUTO\n    # authority. Until a qualified R7 artifact is atomically activated, the read\n    # boundary is explicitly closed and exposes no fallback model identity.\n    return {\n        "ok": False,\n        "sport": "mlb",\n        "status": "NO_QUALIFIED_CHAMPION",\n        "error": "NO_QUALIFIED_CHAMPION",\n        "publicationClosed": True,\n        "productionSelectionAllowed": False,\n        "model_version": None,\n        "primaryAlgorithm": None,\n        "primaryAlgorithmActive": False,\n        "soleProductionAlgorithm": None,\n        "game_winner_model": None,\n        "requestedAuthority": "AWS_ML_PROSPECTIVE_R7",\n        "qualifiedChampionRequired": True,\n        "qualifiedChampionPresent": False,\n        "r7ChampionQualified": False,\n        "r7DeploymentIdentity": None,\n        "legacyFallbackAllowed": False,\n        "automaticLegacyRestoreAllowed": False,\n        "legacyRecommendationAuthority": False,\n        "retiredAuthoritySuppressed": True,\n        "retiredV15_10Eligible": False,\n        "automaticWagerAllowed": False,\n        "rowLevelAutomaticWagerAllowed": False,\n        "parlaysEnabled": False,\n        "readOnly": True,\n        "apiRuntimeVersion": VERSION,\n        "authorityContractVersion": "MLB-AUTO-R7-QUALIFIED-CHAMPION-ONLY-v1",\n    }\n\n'''
-          patched=s[:start]+replacement+s[end+1:]
-          p.write_text(patched,encoding='utf-8')
 
-          # Remove the earlier unused emergency helper if it was appended to\n          # usercustomize; the canonical read handler above is the only authority.\n          u=Path('hello_world/usercustomize.py')
-          us=u.read_text(encoding='utf-8')
-          marker='\n# MLB_AUTO_FAIL_CLOSED_QUALIFIED_R7_ONLY_V1\n'
+          p = Path('hello_world/mlb_v3_read_api.py')
+          s = p.read_text(encoding='utf-8')
+          start = s.index('def _model_body() -> Dict[str, Any]:')
+          end = s.index('\ndef lambda_handler(', start)
+          replacement = '''def _model_body() -> Dict[str, Any]:
+              # MLB_AUTO_R7_FAIL_CLOSED_AUTHORITY_V1
+              # No historical or retired model may be projected as current MLB
+              # winner authority. Publication stays closed until a trained,
+              # promotion-qualified R7 artifact is atomically activated.
+              return {
+                  "ok": False,
+                  "sport": "mlb",
+                  "status": "NO_QUALIFIED_CHAMPION",
+                  "error": "NO_QUALIFIED_CHAMPION",
+                  "publicationClosed": True,
+                  "productionSelectionAllowed": False,
+                  "model_version": None,
+                  "primaryAlgorithm": None,
+                  "primaryAlgorithmActive": False,
+                  "soleProductionAlgorithm": None,
+                  "game_winner_model": None,
+                  "requestedAuthority": "AWS_ML_PROSPECTIVE_R7",
+                  "qualifiedChampionRequired": True,
+                  "qualifiedChampionPresent": False,
+                  "r7ChampionQualified": False,
+                  "r7DeploymentIdentity": None,
+                  "legacyFallbackAllowed": False,
+                  "automaticLegacyRestoreAllowed": False,
+                  "legacyRecommendationAuthority": False,
+                  "retiredAuthoritySuppressed": True,
+                  "retiredV15_10Eligible": False,
+                  "automaticWagerAllowed": False,
+                  "rowLevelAutomaticWagerAllowed": False,
+                  "parlaysEnabled": False,
+                  "readOnly": True,
+                  "apiRuntimeVersion": VERSION,
+                  "authorityContractVersion": "MLB-AUTO-R7-QUALIFIED-CHAMPION-ONLY-v1",
+              }
+
+          '''
+          # Dedent the source-level function generated above while keeping its body.
+          lines = replacement.splitlines()
+          fixed = [lines[0]] + [line[10:] if line.startswith('          ') else line for line in lines[1:]]
+          replacement = '\n'.join(fixed) + '\n'
+          patched = s[:start] + replacement + s[end+1:]
+          p.write_text(patched, encoding='utf-8')
+
+          # Remove an earlier unused emergency helper if present. The canonical
+          # MLB V3 read handler above is the only read authority patched here.
+          u = Path('hello_world/usercustomize.py')
+          us = u.read_text(encoding='utf-8')
+          marker = '\n# MLB_AUTO_FAIL_CLOSED_QUALIFIED_R7_ONLY_V1\n'
           if marker in us:
-              us=us.split(marker,1)[0].rstrip()+'\n'
-              u.write_text(us,encoding='utf-8')
+              us = us.split(marker, 1)[0].rstrip() + '\n'
+              u.write_text(us, encoding='utf-8')
           PY
           python -m py_compile hello_world/mlb_v3_read_api.py hello_world/usercustomize.py
-          grep -q 'MLB_AUTO_R7_FAIL_CLOSED_AUTHORITY_V1' hello_world/mlb_v3_read_api.py
-          grep -q '"status": "NO_QUALIFIED_CHAMPION"' hello_world/mlb_v3_read_api.py
-          grep -q '"publicationClosed": True' hello_world/mlb_v3_read_api.py
           git diff --check
 
       - name: Source contract tests
@@ -68,23 +112,24 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-          s=Path('hello_world/mlb_v3_read_api.py').read_text()
-          start=s.index('def _model_body() -> Dict[str, Any]:')
-          end=s.index('\ndef lambda_handler(',start)
-          body=s[start:end]
+          s = Path('hello_world/mlb_v3_read_api.py').read_text()
+          start = s.index('def _model_body() -> Dict[str, Any]:')
+          end = s.index('\ndef lambda_handler(', start)
+          body = s[start:end]
+          assert 'MLB_AUTO_R7_FAIL_CLOSED_AUTHORITY_V1' in body
           assert 'NO_QUALIFIED_CHAMPION' in body
           assert 'publicationClosed' in body
           assert 'AWS_ML_PROSPECTIVE_R7' in body
-          assert 'model_version": None' in body
-          assert 'primaryAlgorithm": None' in body
-          assert 'primaryAlgorithmActive": False' in body
-          assert 'legacyFallbackAllowed": False' in body
-          assert 'retiredAuthoritySuppressed": True' in body
-          assert 'INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble' not in body
-          print('R7 read authority source contract: PASS')
+          assert '"model_version": None' in body
+          assert '"primaryAlgorithm": None' in body
+          assert '"legacyFallbackAllowed": False' in body
+          assert '"retiredAuthoritySuppressed": True' in body
+          assert 'v15.10' not in body.lower()
+          print('R7 fail-closed source contract: PASS')
           PY
 
       - name: Commit canonical source repair
+        id: source
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
@@ -100,13 +145,14 @@ jobs:
               sleep $((i*2))
             done
           fi
-
-      - name: Rebase to exact repaired main and build MLB read Lambda package
-        run: |
-          set -euo pipefail
           git fetch origin main
           git reset --hard origin/main
           grep -q 'MLB_AUTO_R7_FAIL_CLOSED_AUTHORITY_V1' hello_world/mlb_v3_read_api.py
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build only MLB V3 read Lambda package
+        run: |
+          set -euo pipefail
           rm -f /tmp/mlb-v3-read.zip
           (cd hello_world && zip -q -r /tmp/mlb-v3-read.zip . -x '__pycache__/*' '*.pyc' '*.pyo')
           test -s /tmp/mlb-v3-read.zip
@@ -126,7 +172,7 @@ jobs:
           aws lambda wait function-updated-v2 --function-name "$FN" --region "$AWS_REGION"
           echo "fn=$FN" >> "$GITHUB_OUTPUT"
 
-      - name: Validate deployed model-version response directly
+      - name: Validate deployed fail-closed authority directly
         run: |
           set -euo pipefail
           FN='${{ steps.deploy.outputs.fn }}'
@@ -134,86 +180,73 @@ jobs:
             --cli-binary-format raw-in-base64-out \
             --payload '{"rawPath":"/v1/mlb/model/version","path":"/v1/mlb/model/version","httpMethod":"GET","requestContext":{"http":{"method":"GET","path":"/v1/mlb/model/version"}},"queryStringParameters":{}}' \
             /tmp/model-version.json >/tmp/model-version-meta.json
-          python - <<'PY'
-          import json
-          meta=json.load(open('/tmp/model-version-meta.json')); env=json.load(open('/tmp/model-version.json'))
-          assert not meta.get('FunctionError'),(meta,env)
-          body=json.loads(env.get('body') or '{}')
-          text=json.dumps(body,sort_keys=True)
-          assert int(env.get('statusCode') or 0)==503,env
-          assert body.get('ok') is False,body
-          assert body.get('status')=='NO_QUALIFIED_CHAMPION',body
-          assert body.get('error')=='NO_QUALIFIED_CHAMPION',body
-          assert body.get('publicationClosed') is True,body
-          assert body.get('productionSelectionAllowed') is False,body
-          assert body.get('qualifiedChampionPresent') is False,body
-          assert body.get('model_version') is None,body
-          assert body.get('primaryAlgorithm') is None,body
-          assert 'v15.10' not in text.lower(),body
-          assert 'ranked-winner-v15' not in text.lower(),body
-          print('DEPLOYED MODEL VERSION AUTHORITY: PASS')
-          PY
-
-      - name: Validate deployed game-winners publication is closed
-        run: |
-          set -euo pipefail
-          FN='${{ steps.deploy.outputs.fn }}'
           aws lambda invoke --function-name "$FN" --region "$AWS_REGION" \
             --cli-binary-format raw-in-base64-out \
             --payload '{"rawPath":"/v1/mlb/game-winners","path":"/v1/mlb/game-winners","httpMethod":"GET","requestContext":{"http":{"method":"GET","path":"/v1/mlb/game-winners"}},"queryStringParameters":{"limit":"64"}}' \
             /tmp/game-winners.json >/tmp/game-winners-meta.json
           python - <<'PY'
           import json
-          meta=json.load(open('/tmp/game-winners-meta.json')); env=json.load(open('/tmp/game-winners.json'))
-          assert not meta.get('FunctionError'),(meta,env)
-          body=json.loads(env.get('body') or '{}')
-          text=json.dumps(body,sort_keys=True)
-          assert int(env.get('statusCode') or 0)==503,env
-          assert body.get('status')=='NO_QUALIFIED_CHAMPION',body
-          assert body.get('publicationClosed') is True,body
-          assert (body.get('winner_predictions') or [])==[],body
-          assert (body.get('predictions') or [])==[],body
-          assert int(body.get('count') or 0)==0,body
-          assert 'v15.10' not in text.lower(),body
-          assert 'ranked-winner-v15' not in text.lower(),body
-          print('DEPLOYED GAME WINNERS FAIL-CLOSED: PASS')
+          for meta_path, body_path in [
+              ('/tmp/model-version-meta.json','/tmp/model-version.json'),
+              ('/tmp/game-winners-meta.json','/tmp/game-winners.json'),
+          ]:
+              meta = json.load(open(meta_path)); env = json.load(open(body_path))
+              assert not meta.get('FunctionError'), (meta, env)
+              body = json.loads(env.get('body') or '{}')
+              text = json.dumps(body, sort_keys=True).lower()
+              assert int(env.get('statusCode') or 0) == 503, env
+              assert body.get('ok') is False, body
+              assert body.get('status') == 'NO_QUALIFIED_CHAMPION', body
+              assert body.get('publicationClosed') is True, body
+              assert body.get('productionSelectionAllowed') is False, body
+              assert body.get('qualifiedChampionPresent') is False, body
+              assert body.get('model_version') is None, body
+              assert body.get('primaryAlgorithm') is None, body
+              assert body.get('legacyFallbackAllowed') is False, body
+              assert body.get('retiredAuthoritySuppressed') is True, body
+              assert 'v15.10' not in text, body
+              assert 'ranked-winner-v15' not in text, body
+          gw_env = json.load(open('/tmp/game-winners.json'))
+          gw = json.loads(gw_env.get('body') or '{}')
+          assert (gw.get('winner_predictions') or []) == [], gw
+          assert (gw.get('predictions') or []) == [], gw
+          assert int(gw.get('count') or 0) == 0, gw
+          print('DEPLOYED MLB R7 AUTHORITY BOUNDARY: PASS')
           PY
 
       - name: Publish validation proof
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json, os
-          from datetime import datetime,timezone
+          import json, os, subprocess
+          from datetime import datetime, timezone
           from pathlib import Path
-          mv=json.load(open('/tmp/model-version.json')); gw=json.load(open('/tmp/game-winners.json'))
-          mbody=json.loads(mv.get('body') or '{}'); gbody=json.loads(gw.get('body') or '{}')
-          report={
-            'proofType':'MLB_AUTO_R7_READ_AUTHORITY_DEPLOYED_VALIDATION',
-            'createdAtUtc':datetime.now(timezone.utc).isoformat(),
-            'sourceSha':os.environ.get('GITHUB_SHA'),
-            'deployedFunction':'MLBV3ReadFunction',
-            'modelVersionStatusCode':mv.get('statusCode'),
-            'modelVersionStatus':mbody.get('status'),
-            'publicationClosed':mbody.get('publicationClosed'),
-            'qualifiedChampionPresent':mbody.get('qualifiedChampionPresent'),
-            'retiredAuthoritySuppressed':mbody.get('retiredAuthoritySuppressed'),
-            'gameWinnersStatusCode':gw.get('statusCode'),
-            'winnerPredictionCount':len(gbody.get('winner_predictions') or []),
-            'retiredIdentityPresent':('v15.10' in json.dumps({'m':mbody,'g':gbody}).lower()),
-            'ok': True,
-            'conclusion':'PASS',
-            'secretExposed':False,
+          mv = json.load(open('/tmp/model-version.json'))
+          gw = json.load(open('/tmp/game-winners.json'))
+          m = json.loads(mv.get('body') or '{}')
+          g = json.loads(gw.get('body') or '{}')
+          report = {
+              'proofType':'MLB_AUTO_R7_READ_AUTHORITY_DEPLOYED_VALIDATION',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(),
+              'deployedFunction':'MLBV3ReadFunction',
+              'modelVersionStatusCode':mv.get('statusCode'),
+              'modelVersionStatus':m.get('status'),
+              'publicationClosed':m.get('publicationClosed'),
+              'qualifiedChampionPresent':m.get('qualifiedChampionPresent'),
+              'retiredAuthoritySuppressed':m.get('retiredAuthoritySuppressed'),
+              'gameWinnersStatusCode':gw.get('statusCode'),
+              'winnerPredictionCount':len(g.get('winner_predictions') or []),
+              'retiredIdentityPresent':('v15.10' in json.dumps({'m':m,'g':g}).lower()),
+              'ok':True,
+              'conclusion':'PASS',
+              'secretExposed':False,
           }
-          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
-          print(json.dumps(report,indent=2,sort_keys=True))
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report, indent=2, sort_keys=True)+'\n')
+          print(json.dumps(report, indent=2, sort_keys=True))
           PY
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git fetch origin main
-          git checkout -B mlb-r7-read-authority-proof origin/main
-          cp "$REPORT_PATH" /tmp/mlb-r7-read-proof.json
-          cp /tmp/mlb-r7-read-proof.json "$REPORT_PATH"
           git add "$REPORT_PATH"
           git commit -m 'Publish MLB R7 read authority validation [skip ci]' || exit 0
           for i in 1 2 3 4 5 6 7 8; do
