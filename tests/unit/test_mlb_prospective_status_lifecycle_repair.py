@@ -159,29 +159,22 @@ class FakePatch:
         return copy.deepcopy(module.outcome)
 
 
-def test_proven_absence_is_terminalized_without_creating_a_prediction():
+def test_raw_missed_lock_remains_fail_closed_until_post_window_lifecycle_state():
     module = FakeModule()
     prospective.install_prospective_row_repair(module, FakePatch)
 
     result = module.run_lock(slate_date=SLATE, scheduled=True)
 
     assert module.original_calls == 1
-    assert module.outcome["lock_status"] == "LOCKED_NO_PREDICTION_DATA"
-    assert module.outcome["locked_prediction"] is False
-    assert module.outcome["training_eligible"] is False
-    assert result["ok"] is True
-    assert result["lockStatusComplete"] is True
-    assert result["canonicalPredictionComplete"] is False
-    assert result["noPredictionDataCount"] == 1
-    assert result["durableNoPredictionTerminalReconciled"] is True
-    repair = result["missedLockTerminalReconciliation"]
-    assert repair["reconciledCount"] == 1
-    assert repair["remainingMissedCount"] == 0
-    assert repair["postStartPredictionCreationAllowed"] is False
-    assert repair["candidateIntegrityFailuresRelabeled"] is False
+    assert module.outcome is None
+    assert result["ok"] is False
+    assert result["reason"] == "MISSED_PER_GAME_LOCK_NOT_BACKFILLED"
+    assert result["failClosed"] is True
+    assert result["perGameLockProgress"]["missedCount"] == 1
+    assert "missedLockTerminalReconciliation" not in result
 
 
-def test_existing_candidate_is_not_relabelled_as_no_data():
+def test_raw_missed_lock_with_existing_candidate_is_not_relabelled_or_replayed():
     class CandidatePatch(FakePatch):
         @staticmethod
         def _last_prelock_candidate(module, slate, game, scoring):
@@ -195,11 +188,9 @@ def test_existing_candidate_is_not_relabelled_as_no_data():
     assert module.outcome is None
     assert result["ok"] is False
     assert result["reason"] == "MISSED_PER_GAME_LOCK_NOT_BACKFILLED"
-    repair = result["missedLockTerminalReconciliation"]
-    assert repair["reconciledCount"] == 0
-    assert repair["remainingMissedCount"] == 1
-    assert repair["unresolved"][0]["candidatePresent"] is True
-    assert repair["candidateIntegrityFailuresRelabeled"] is False
+    assert result["failClosed"] is True
+    assert result["perGameLockProgress"]["missedCount"] == 1
+    assert "missedLockTerminalReconciliation" not in result
 
 
 def test_existing_post_window_success_contract_is_preserved():
