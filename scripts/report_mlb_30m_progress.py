@@ -367,6 +367,24 @@ def _extract_state(
     pick_count = card.get("gameCount")
     if pick_count is None and isinstance(picks, list):
         pick_count = len(picks)
+    authority_counts = {
+        "BEDROCK_LLM": 0,
+        "AWS_ML_PROSPECTIVE_R7": 0,
+        "UNKNOWN": 0,
+    }
+    card_authority = str(card.get("decisionAuthority") or "").strip()
+    if isinstance(picks, list) and picks:
+        for pick in picks:
+            authority = (
+                str((pick or {}).get("decisionAuthority") or card_authority).strip()
+                if isinstance(pick, Mapping)
+                else card_authority
+            )
+            key = authority if authority in authority_counts else "UNKNOWN"
+            authority_counts[key] += 1
+    elif _integer(pick_count):
+        key = card_authority if card_authority in authority_counts else "UNKNOWN"
+        authority_counts[key] = int(_integer(pick_count) or 0)
     invocations = _number(auto_invocations_35m)
     errors = _number(auto_errors_35m)
     error_rate = errors / invocations if invocations and errors is not None else None
@@ -413,6 +431,18 @@ def _extract_state(
         blockers.append("NO_QUALIFIED_CHAMPION")
     if errors and errors > 0:
         blockers.append(f"MLB_AUTO_LAMBDA_ERRORS_35M:{int(errors)}")
+    if authority_counts["UNKNOWN"] > 0:
+        blockers.append(
+            f"MLB_AUTO_UNKNOWN_PICK_AUTHORITY:{authority_counts['UNKNOWN']}"
+        )
+    if (
+        authority_counts["AWS_ML_PROSPECTIVE_R7"] > 0
+        and model.get("qualifiedChampionPresent") is not True
+    ):
+        blockers.append(
+            "MLB_AUTO_R7_AUTHORITY_WITH_NO_QUALIFIED_CHAMPION:"
+            + str(authority_counts["AWS_ML_PROSPECTIVE_R7"])
+        )
 
     state = {
         "generatedAtUtc": datetime.now(timezone.utc).isoformat(),
@@ -437,8 +467,10 @@ def _extract_state(
             "scheduledGames": _integer(auto.get("scheduledGames")) or 0,
             "cardPublished": bool(auto.get("cardPublished") is True),
             "pickCount": _integer(pick_count) or 0,
-            "llmPickCount": _integer(card.get("llmPickCount")) or 0,
-            "fallbackPickCount": _integer(card.get("fallbackPickCount")) or 0,
+            "cardDecisionAuthority": card_authority or None,
+            "bedrockPickCount": authority_counts["BEDROCK_LLM"],
+            "r7AuthorityPickCount": authority_counts["AWS_ML_PROSPECTIVE_R7"],
+            "unknownAuthorityPickCount": authority_counts["UNKNOWN"],
             "gradedPicks": _integer(audit.get("graded")) or _integer(autonomy.get("recentGradedPicks")) or 0,
             "correctPicks": _integer(audit.get("correct")) or _integer(autonomy.get("recentCorrectPicks")) or 0,
             "accuracy": _normalise_accuracy(_number(audit.get("accuracy")) or _number(autonomy.get("recentAccuracy"))),
@@ -729,10 +761,10 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
         f"| Lambda errors, last 35m | {_fmt_int(auto.get('errors35m'))} | {_fmt_delta(err_delta)} | {_arrow(err_delta, lower_is_better=True)} |",
         f"| Error rate, last 35m | {_fmt_pct(error_rate)} | {_fmt_delta(error_rate_delta, percent=True)} | {_arrow(error_rate_delta, lower_is_better=True)} |",
         f"| Scheduled games / published picks | {_fmt_int(auto.get('scheduledGames'))} / {_fmt_int(auto.get('pickCount'))} | {_fmt_delta(picks_delta)} picks | {_arrow(picks_delta)} |",
-        f"| Bedrock / fallback picks | {_fmt_int(auto.get('llmPickCount'))} / {_fmt_int(auto.get('fallbackPickCount'))} | — | — |",
+        f"| Bedrock / R7 / unknown authority picks | {_fmt_int(auto.get('bedrockPickCount'))} / {_fmt_int(auto.get('r7AuthorityPickCount'))} / {_fmt_int(auto.get('unknownAuthorityPickCount'))} | — | — |",
         f"| Graded / correct / accuracy | {_fmt_int(auto.get('gradedPicks'))} / {_fmt_int(auto.get('correctPicks'))} / {_fmt_pct(auto.get('accuracy'))} | {_fmt_delta(graded_delta)} graded | {_arrow(graded_delta)} |",
         "",
-        f"**Slate:** `{auto.get('slateDateEt') or 'n/a'}` · scheduled games **{_fmt_int(auto.get('scheduledGames'))}** · card published **{auto.get('cardPublished')}** · target accuracy **{_fmt_pct(auto.get('targetAccuracy'))}**.",
+        f"**Slate:** `{auto.get('slateDateEt') or 'n/a'}` · scheduled games **{_fmt_int(auto.get('scheduledGames'))}** · card published **{auto.get('cardPublished')}** · card authority `{auto.get('cardDecisionAuthority') or 'not exposed'}` · target accuracy **{_fmt_pct(auto.get('targetAccuracy'))}**.",
         "",
         "### MLB production authority",
         "",
