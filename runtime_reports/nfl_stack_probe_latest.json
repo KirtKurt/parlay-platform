@@ -1,8 +1,267 @@
 {
+  "alarms": [
+    {
+      "name": "parlay-platform-nfl-auto-NflAutonomousErrorAlarm-d3AWUHWVevNI",
+      "reason": "Threshold Crossed: no datapoints were received for 1 period and 1 missing datapoint was treated as [NonBreaching].",
+      "state": "OK"
+    },
+    {
+      "name": "parlay-platform-nfl-auto-NflLiveErrorAlarm-7lJFF6aTxlgi",
+      "reason": "Threshold Crossed: no datapoints were received for 1 period and 1 missing datapoint was treated as [NonBreaching].",
+      "state": "OK"
+    }
+  ],
   "all_failed_events": [],
-  "commit": "33d5815fca207b98d42cbdf669b88cc09b6bf277",
+  "commit": "db2bb58d5abca9c758d85944f24505fa56f5b281",
+  "immutable_history_rewritten": false,
+  "observed_at_utc": "2026-08-25T07:14:05.779791+00:00",
+  "production_authority_changed": false,
+  "proof_type": "NFL_AUTO_AWS_OPERATIONS_PROOF",
+  "public_status": {
+    "at": "2026-08-25T07:14:05Z",
+    "backfill": {
+      "PK": "NFL_AUTO_BACKFILL",
+      "SK": "CURRENT",
+      "completed": true,
+      "completed_at": "2026-08-25T00:55:12Z",
+      "game_type_index": 0,
+      "last_batch_accepted": 0,
+      "last_batch_rejected": 0,
+      "last_provider": "BBD",
+      "last_transport": {
+        "endpoint": "/v1/nfl/games",
+        "provider": "BBD",
+        "rate_limit": "600",
+        "rate_remaining": "598",
+        "rate_reset": "1787619193",
+        "requests_last": null,
+        "requests_remaining": null,
+        "requests_used": null,
+        "status": 200
+      },
+      "materialize_index": 0,
+      "offset": 0,
+      "phase": "READY",
+      "season_index": 0,
+      "started_at": "2026-08-25T00:35:41Z",
+      "updated_at": "2026-08-25T00:55:12Z"
+    },
+    "champions": {
+      "moneyline_home_win": null,
+      "spread_home_cover": null,
+      "total_over": null
+    },
+    "decision_horizon_minutes": 10,
+    "feature_counts": {
+      "moneyline_home_win": 0,
+      "spread_home_cover": 0,
+      "total_over": 0
+    },
+    "historical_game_count": 0,
+    "live_collection_start_utc": "2026-09-09T04:00:00Z",
+    "live_schedule_game_count": 0,
+    "mode": "HISTORICAL_ONLY",
+    "ok": true,
+    "preseason_collection_enabled": false,
+    "preseason_predictions_enabled": false,
+    "providers": {
+      "dual_provenance_required": true,
+      "odds": "THE_ODDS_API",
+      "statistics": "BBD"
+    },
+    "sport": "NFL",
+    "targets": [
+      "moneyline_home_win",
+      "spread_home_cover",
+      "total_over"
+    ]
+  },
+  "resources": [
+    {
+      "logical_id": "NflArtifactBucket",
+      "physical_id": "parlay-platform-nfl-auto-nflartifactbucket-t3qpobrdt1db",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::S3::Bucket"
+    },
+    {
+      "logical_id": "NflAutonomousErrorAlarm",
+      "physical_id": "parlay-platform-nfl-auto-NflAutonomousErrorAlarm-d3AWUHWVevNI",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::CloudWatch::Alarm"
+    },
+    {
+      "logical_id": "NflAutonomousFunction",
+      "physical_id": "parlay-platform-nfl-auto-NflAutonomousFunction-5lu4xVljBBXV",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::Lambda::Function"
+    },
+    {
+      "logical_id": "NflAutonomousFunctionBackfillEveryMinute",
+      "physical_id": "parlay-platform-nfl-auto-NflAutonomousFunctionBackf-pUvJuxndldDD",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::Events::Rule"
+    },
+    {
+      "logical_id": "NflAutonomousFunctionBackfillEveryMinutePermission",
+      "physical_id": "parlay-platform-nfl-auto-NflAutonomousFunctionBackfillEveryMinutePermission-36fuSjOcMRJ0",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::Lambda::Permission"
+    },
+    {
+      "logical_id": "NflBbdSecret",
+      "physical_id": "arn:aws:secretsmanager:us-east-1:735707987003:secret:NflBbdSecret-M5fRxODCwYVe-c84ttx",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::SecretsManager::Secret"
+    },
+    {
+      "logical_id": "NflFeaturesTable",
+      "physical_id": "parlay-platform-nfl-auto-NflFeaturesTable-40FMELEQ1R7A",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::DynamoDB::Table"
+    },
+    {
+      "logical_id": "NflGamesTable",
+      "physical_id": "parlay-platform-nfl-auto-NflGamesTable-58GT2OKTSPV4",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::DynamoDB::Table"
+    },
+    {
+      "logical_id": "NflLiveErrorAlarm",
+      "physical_id": "parlay-platform-nfl-auto-NflLiveErrorAlarm-7lJFF6aTxlgi",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::CloudWatch::Alarm"
+    },
+    {
+      "logical_id": "NflLiveFunction",
+      "physical_id": "parlay-platform-nfl-auto-NflLiveFunction-HOTx6LXPF8HN",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::Lambda::Function"
+    },
+    {
+      "logical_id": "NflLiveFunctionLiveEveryFiveMinutes",
+      "physical_id": "parlay-platform-nfl-auto-NflLiveFunctionLiveEveryFi-VLmJxR7bxeQS",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::Events::Rule"
+    },
+    {
+      "logical_id": "NflLiveFunctionLiveEveryFiveMinutesPermission",
+      "physical_id": "parlay-platform-nfl-auto-NflLiveFunctionLiveEveryFiveMinutesPermission-Ks9MgpDnBh7I",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::Lambda::Permission"
+    },
+    {
+      "logical_id": "NflModelsTable",
+      "physical_id": "parlay-platform-nfl-auto-NflModelsTable-1V972IWP5CV1Q",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::DynamoDB::Table"
+    },
+    {
+      "logical_id": "NflOddsSecret",
+      "physical_id": "arn:aws:secretsmanager:us-east-1:735707987003:secret:NflOddsSecret-YEcJ3wJRmeZ7-WaHLA3",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::SecretsManager::Secret"
+    },
+    {
+      "logical_id": "NflOddsTable",
+      "physical_id": "parlay-platform-nfl-auto-NflOddsTable-1T6KW3UBJC58J",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::DynamoDB::Table"
+    },
+    {
+      "logical_id": "NflOpsTable",
+      "physical_id": "parlay-platform-nfl-auto-NflOpsTable-3SB8W541E9IQ",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::DynamoDB::Table"
+    },
+    {
+      "logical_id": "NflPredictionsTable",
+      "physical_id": "parlay-platform-nfl-auto-NflPredictionsTable-1SSM4862K7JGN",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::DynamoDB::Table"
+    },
+    {
+      "logical_id": "NflRawBucket",
+      "physical_id": "parlay-platform-nfl-auto-nflrawbucket-t8xsxpagcynl",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::S3::Bucket"
+    },
+    {
+      "logical_id": "NflRuntimeRole",
+      "physical_id": "parlay-platform-nfl-auto-NflRuntimeRole-1j0vecU6Nrkb",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::IAM::Role"
+    },
+    {
+      "logical_id": "NflStateTable",
+      "physical_id": "parlay-platform-nfl-auto-NflStateTable-1D6TOMEZJJZAW",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::DynamoDB::Table"
+    },
+    {
+      "logical_id": "NflStatusFunction",
+      "physical_id": "parlay-platform-nfl-auto-NflStatusFunction-ZoUs25RiLjPW",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::Lambda::Function"
+    },
+    {
+      "logical_id": "NflStatusFunctionURLInvokeAllowPublicAccess",
+      "physical_id": "parlay-platform-nfl-auto-NflStatusFunctionURLInvokeAllowPublicAccess-pY6lD8lQF9M6",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::Lambda::Permission"
+    },
+    {
+      "logical_id": "NflStatusFunctionUrl",
+      "physical_id": "arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-nfl-auto-NflStatusFunction-ZoUs25RiLjPW",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::Lambda::Url"
+    },
+    {
+      "logical_id": "NflStatusFunctionUrlPublicPermissions",
+      "physical_id": "parlay-platform-nfl-auto-NflStatusFunctionUrlPublicPermissions-sllBgMQqP8S2",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::Lambda::Permission"
+    },
+    {
+      "logical_id": "NflTrainingFunction",
+      "physical_id": "parlay-platform-nfl-auto-NflTrainingFunction-thKJaqK47XzZ",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::Lambda::Function"
+    },
+    {
+      "logical_id": "NflTrainingFunctionDailyTraining",
+      "physical_id": "parlay-platform-nfl-auto-NflTrainingFunctionDailyTr-xxoBzlDZSazK",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::Events::Rule"
+    },
+    {
+      "logical_id": "NflTrainingFunctionDailyTrainingPermission",
+      "physical_id": "parlay-platform-nfl-auto-NflTrainingFunctionDailyTrainingPermission-yn9h2lr9i5Q9",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::Lambda::Permission"
+    }
+  ],
   "root_failed_events": [],
-  "run_id": "32820476052",
+  "run_id": "32820580027",
+  "schedules": [
+    {
+      "logical_id": "NflAutonomousFunctionBackfillEveryMinute",
+      "physical_id": "parlay-platform-nfl-auto-NflAutonomousFunctionBackf-pUvJuxndldDD",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::Events::Rule"
+    },
+    {
+      "logical_id": "NflLiveFunctionLiveEveryFiveMinutes",
+      "physical_id": "parlay-platform-nfl-auto-NflLiveFunctionLiveEveryFi-VLmJxR7bxeQS",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::Events::Rule"
+    },
+    {
+      "logical_id": "NflTrainingFunctionDailyTraining",
+      "physical_id": "parlay-platform-nfl-auto-NflTrainingFunctionDailyTr-xxoBzlDZSazK",
+      "status": "CREATE_COMPLETE",
+      "type": "AWS::Events::Rule"
+    }
+  ],
   "stack": "parlay-platform-nfl-auto",
   "stack_status": "CREATE_COMPLETE",
   "status_url": "https://luealzfueoq2qfoyrw3kvbfpte0hpwuk.lambda-url.us-east-1.on.aws/"
