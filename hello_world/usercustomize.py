@@ -319,3 +319,18 @@ try:
     )
 except Exception:
     pass
+
+# MLB_AUTO_FAIL_CLOSED_QUALIFIED_R7_ONLY_V1
+RETIRED_MLB_AUTO_MODELS = {"INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble"}
+RETIRED_MLB_AUTO_ALGORITHMS = {"INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble"}
+
+def _mlb_auto_authority_contract(payload):
+    if not isinstance(payload, dict):
+        return {"ok": False, "status": "NO_QUALIFIED_CHAMPION", "error": "NO_QUALIFIED_CHAMPION", "publicationClosed": True}
+    model=str(payload.get("model_version") or payload.get("modelVersion") or payload.get("game_winner_model") or "").strip()
+    algo=str(payload.get("primaryAlgorithm") or payload.get("primary_algorithm") or "").strip()
+    active=payload.get("primaryAlgorithmActive") is True
+    qualified=active and bool(model) and bool(algo) and model not in RETIRED_MLB_AUTO_MODELS and algo not in RETIRED_MLB_AUTO_ALGORITHMS and ("R7" in algo.upper() or "R7" in model.upper() or "PROSPECTIVE" in algo.upper())
+    if qualified:
+        return payload
+    return {"ok": False, "status": "NO_QUALIFIED_CHAMPION", "error": "NO_QUALIFIED_CHAMPION", "publicationClosed": True, "requestedAuthority": "AWS_ML_PROSPECTIVE_R7", "retiredAuthoritySuppressed": bool(model in RETIRED_MLB_AUTO_MODELS or algo in RETIRED_MLB_AUTO_ALGORITHMS)}
