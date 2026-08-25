@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from botocore.config import Config
 from typing import Any, Mapping, Sequence
 
 try:
@@ -93,7 +94,7 @@ def propose_trials(
             "trials": list(BASELINE_TRIALS),
             "generated_at": now_utc(),
         }
-    client = bedrock_client or boto3.client("bedrock-runtime", region_name=region_name)
+    client = bedrock_client or boto3.client("bedrock-runtime", region_name=region_name, config=Config(connect_timeout=5, read_timeout=45, retries={"mode": "adaptive", "total_max_attempts": 4}))
     system = (
         "You are a bounded NFL model-search analyst. Return JSON only. "
         "Propose up to four residual-logistic hyperparameter trials. "

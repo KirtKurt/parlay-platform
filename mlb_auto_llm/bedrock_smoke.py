@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Dict
 
 try:
@@ -29,13 +30,15 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
     reset_model_state(clear_discovery=True, clear_failures=False)
     mantle = mantle_models()
     runtime = runtime_models()
-    models = configured_models()
+    route_limit = max(1, int(os.getenv("MLB_AUTO_BEDROCK_SMOKE_ROUTE_LIMIT", "1")))
+    models = list(runtime[:route_limit])
     result = invoke_chain_text(
         "Return only the word OK.",
         models,
         max_tokens=8,
         temperature=0.0,
         top_p=0.9,
+        max_attempts=1,
     )
     common = {
         "service": "mlb-auto-llm-bedrock-smoke",

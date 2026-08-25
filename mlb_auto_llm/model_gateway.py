@@ -516,7 +516,7 @@ def invoke_chain_text(
     attempted: List[str] = []
     errors: List[Dict[str, Any]] = []
     max_attempts = max(
-        1, int(os.environ.get("MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS", "50"))
+        1, int(os.environ.get("MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS", "80"))
     )
     eligible: List[str] = []
     for route_id in _ordered_models(models or configured_models()):
