@@ -1,0 +1,393 @@
+name: Repair Soccer auto-repair control plane in isolation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-soccer-auto-repair-control-plane-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repair-soccer-auto-repair-control-plane-now
+  cancel-in-progress: false
+
+jobs:
+  repair-soccer-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    env:
+      SPORT: soccer
+      REPAIR_STACK: parlay-platform-auto-repair-soccer
+      TARGET_STACK: parlay-platform-soccer-auto
+      FUNCTION_PREFIX: parlay-platform-soccer-
+      RULE_PREFIX: parlay-platform-soccer-
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verify Soccer-only target identities and absent optional DLQ function
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7' 'cfn-lint>=1,<2'
+          python -m py_compile aws_auto_repair/*.py
+          python -m pytest -q tests/unit/test_aws_native_auto_repair.py
+
+          target_status=$(aws cloudformation describe-stacks --stack-name "$TARGET_STACK" \
+            --region "$REGION" --query 'Stacks[0].StackStatus' --output text)
+          case "$target_status" in
+            CREATE_COMPLETE|UPDATE_COMPLETE) ;;
+            *) echo "::error::Soccer target stack is not stable: $target_status"; exit 1 ;;
+          esac
+
+          logical_ids=(
+            SoccerInventoryFunction
+            SoccerDispatchFunction
+            SoccerFreezeFunction
+            SoccerSettlementFunction
+            SoccerTrainerFunction
+            SoccerLlmAnalystFunction
+            SoccerHistoricalFunction
+            SoccerControllerFunction
+          )
+          for logical_id in "${logical_ids[@]}"; do
+            function_name=$(aws cloudformation describe-stack-resource \
+              --stack-name "$TARGET_STACK" --logical-resource-id "$logical_id" \
+              --region "$REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+            case "$function_name" in
+              "$FUNCTION_PREFIX"*) ;;
+              *) echo "::error::Unexpected Soccer function identity: $logical_id=$function_name"; exit 1 ;;
+            esac
+            function_arn=$(aws lambda get-function-configuration --function-name "$function_name" \
+              --region "$REGION" --query FunctionArn --output text)
+            rules=$(aws events list-rule-names-by-target --target-arn "$function_arn" \
+              --limit 100 --region "$REGION" --query RuleNames --output json)
+            LOGICAL_ID="$logical_id" FUNCTION_ARN="$function_arn" RULES="$rules" python - <<'PY'
+          import json, os, subprocess
+          logical_id=os.environ['LOGICAL_ID']
+          function_arn=os.environ['FUNCTION_ARN']
+          prefix=os.environ['RULE_PREFIX']
+          rules=json.loads(os.environ['RULES'])
+          assert rules, {'logicalId':logical_id,'reason':'NO_EVENTBRIDGE_RULE_TARGETS_FUNCTION'}
+          accepted=[]
+          for name in rules:
+              rule=json.loads(subprocess.check_output([
+                  'aws','events','describe-rule','--name',name,
+                  '--region',os.environ['REGION'],'--output','json'
+              ]))
+              targets=json.loads(subprocess.check_output([
+                  'aws','events','list-targets-by-rule','--rule',name,
+                  '--region',os.environ['REGION'],'--output','json'
+              ])).get('Targets') or []
+              if (
+                  name.startswith(prefix)
+                  and rule.get('State')=='ENABLED'
+                  and any(row.get('Arn')==function_arn for row in targets)
+              ):
+                  accepted.append(name)
+          assert accepted, {
+              'logicalId':logical_id,
+              'reason':'CORRECTED_SOCCER_PREFIX_MATCHED_NO_ENABLED_CANONICAL_RULE',
+              'prefix':prefix,
+              'observedRules':rules,
+          }
+          print(json.dumps({'logicalId':logical_id,'canonicalRules':accepted},indent=2))
+          PY
+          done
+
+          if aws cloudformation describe-stack-resource \
+            --stack-name "$TARGET_STACK" --logical-resource-id SoccerDlqRecoveryFunction \
+            --region "$REGION" >/tmp/unexpected-soccer-dlq-resource.json 2>/tmp/soccer-dlq-resource-error.txt; then
+            echo '::error::SoccerDlqRecoveryFunction unexpectedly exists; refuse to omit a deployed target.'
+            cat /tmp/unexpected-soccer-dlq-resource.json
+            exit 1
+          fi
+          grep -q 'does not exist' /tmp/soccer-dlq-resource-error.txt
+
+      - name: Build isolated Soccer repair artifact without nonexistent component
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/soccer-auto-repair-code /tmp/soccer-auto-repair-template.yaml .aws-sam
+          cp -R aws_auto_repair /tmp/soccer-auto-repair-code
+          cp aws-auto-repair-template.yaml /tmp/soccer-auto-repair-template.yaml
+
+          python - <<'PY'
+          from pathlib import Path
+          handler=Path('/tmp/soccer-auto-repair-code/handler.py')
+          text=handler.read_text(encoding='utf-8')
+          line='        ("dlq_recovery", "SoccerDlqRecoveryFunction", {"action": "recover_collection_dlq", "max_messages": 5000}, 0, False, False),\n'
+          assert text.count(line)==1, 'Expected exact optional Soccer DLQ component once'
+          text=text.replace(line,'',1)
+          handler.write_text(text,encoding='utf-8')
+
+          template=Path('/tmp/soccer-auto-repair-template.yaml')
+          value=template.read_text(encoding='utf-8')
+          old='      CodeUri: aws_auto_repair/\n'
+          new='      CodeUri: soccer-auto-repair-code/\n'
+          assert value.count(old)==1, 'Expected one repair CodeUri'
+          template.write_text(value.replace(old,new,1),encoding='utf-8')
+          PY
+
+          python -m py_compile /tmp/soccer-auto-repair-code/*.py
+          grep -q '"soccer": (' /tmp/soccer-auto-repair-code/handler.py
+          ! grep -q 'SoccerDlqRecoveryFunction' /tmp/soccer-auto-repair-code/handler.py
+          sam validate --template-file /tmp/soccer-auto-repair-template.yaml --lint
+          sam build --no-cached --template-file /tmp/soccer-auto-repair-template.yaml
+
+      - name: Deploy only the Soccer repair stack
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 80); do
+            status=$(aws cloudformation describe-stacks --stack-name "$REPAIR_STACK" \
+              --region "$REGION" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_MISSING)
+            case "$status" in
+              STACK_MISSING|CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE) break ;;
+              *_IN_PROGRESS) sleep 10 ;;
+              *) echo "::error::Soccer repair stack is not updateable: $status"; exit 1 ;;
+            esac
+            test "$attempt" != 80
+          done
+
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "$REPAIR_STACK" \
+            --region "$REGION" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              SportName="$SPORT" \
+              TargetStackName="$TARGET_STACK" \
+              FunctionNamePrefix="$FUNCTION_PREFIX" \
+              RuleNamePrefix="$RULE_PREFIX" \
+              RepairLeaseSeconds='960' \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+
+      - name: Require a real scheduled Soccer repair cycle with zero unresolved controller failures
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          out=/tmp/soccer-auto-repair-acceptance
+          mkdir -p "$out" runtime_reports
+
+          repair_function=$(aws cloudformation describe-stacks --stack-name "$REPAIR_STACK" \
+            --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='AutoRepairFunctionName'].OutputValue | [0]" --output text)
+          alarm_name=$(aws cloudformation describe-stack-resource --stack-name "$REPAIR_STACK" \
+            --logical-resource-id AutoRepairUnresolvedFailureAlarm --region "$REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          configured_function_prefix=$(aws lambda get-function-configuration --function-name "$repair_function" \
+            --region "$REGION" --query 'Environment.Variables.FUNCTION_NAME_PREFIX' --output text)
+          configured_rule_prefix=$(aws lambda get-function-configuration --function-name "$repair_function" \
+            --region "$REGION" --query 'Environment.Variables.RULE_NAME_PREFIX' --output text)
+          test "$configured_function_prefix" = "$FUNCTION_PREFIX"
+          test "$configured_rule_prefix" = "$RULE_PREFIX"
+
+          aws lambda invoke --function-name "$repair_function" --invocation-type RequestResponse \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"audit","source":"soccer_control_plane_acceptance"}' \
+            --region "$REGION" "$out/audit.json" > "$out/audit-meta.json"
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          out=Path('/tmp/soccer-auto-repair-acceptance')
+          meta=json.load(open(out/'audit-meta.json'))
+          result=json.load(open(out/'audit.json'))
+          assert not meta.get('FunctionError'), (meta,result)
+          assert result.get('sport')=='soccer', result
+          assert result.get('target_stack')=='parlay-platform-soccer-auto', result
+          assert result.get('ok') is True, result
+          assert result.get('status')=='HEALTHY_OR_REPAIRED', result
+          assert result.get('dry_run') is True, result
+          assert float((result.get('metrics') or {}).get('RepairFailures') or 0)==0, result
+          components=result.get('components') or []
+          assert len(components)==8, result
+          assert {c.get('name') for c in components}=={
+              'inventory','dispatch','freeze','settlement','trainer',
+              'llm_analyst','historical','controller'
+          }, result
+          assert all(not c.get('error') for c in components), result
+          for component in components:
+              canonical=((component.get('schedules') or {}).get('canonical_rules') or [])
+              assert canonical and all(v.startswith('parlay-platform-soccer-') for v in canonical), (component,result)
+          for key in ('production_authority_changed','direct_sport_table_writes',
+                      'post_start_prediction_creation_allowed','immutable_prediction_rewrite_allowed',
+                      'execution_lease_bypass_allowed','gate_relaxation_allowed'):
+              assert result.get(key) is False, (key,result)
+          PY
+
+          audit_checked_at=$(python -c "import json; print(json.load(open('$out/audit.json'))['checked_at'])")
+          echo "Waiting for the controller's normal EventBridge cycle after audit at $audit_checked_at"
+          scheduled_ok=false
+          for attempt in $(seq 1 60); do
+            aws lambda invoke --function-name "$repair_function" --invocation-type RequestResponse \
+              --cli-binary-format raw-in-base64-out \
+              --payload '{"action":"status","source":"soccer_control_plane_acceptance"}' \
+              --region "$REGION" "$out/status-probe.json" > "$out/status-probe-meta.json"
+            if AUDIT_CHECKED_AT="$audit_checked_at" python - <<'PY'
+          import json, os, sys
+          from datetime import datetime
+          value=json.load(open('/tmp/soccer-auto-repair-acceptance/status-probe.json'))
+          state=value.get('state') if isinstance(value,dict) else {}
+          if not isinstance(state,dict): sys.exit(1)
+          checked=state.get('checked_at')
+          if not checked or state.get('dry_run') is not False: sys.exit(1)
+          current=datetime.fromisoformat(str(checked).replace('Z','+00:00'))
+          audit=datetime.fromisoformat(os.environ['AUDIT_CHECKED_AT'].replace('Z','+00:00'))
+          sys.exit(0 if current>audit else 1)
+          PY
+            then
+              cp "$out/status-probe.json" "$out/status-final.json"
+              scheduled_ok=true
+              break
+            fi
+            sleep 15
+          done
+          test "$scheduled_ok" = true
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          out=Path('/tmp/soccer-auto-repair-acceptance')
+          response=json.load(open(out/'status-final.json'))
+          state=response.get('state') or {}
+          assert state.get('sport')=='soccer', state
+          assert state.get('target_stack')=='parlay-platform-soccer-auto', state
+          assert state.get('dry_run') is False, state
+          assert float((state.get('metrics') or {}).get('RepairFailures') or 0)==0, state
+          components=state.get('components') or []
+          assert len(components)==8, state
+          assert all(not c.get('error') for c in components), state
+          serialized=json.dumps(components,sort_keys=True).lower()
+          for forbidden in ('target_function_isolation_violation','canonical_schedule_not_found','soccerdlqrecoveryfunction'):
+              assert forbidden not in serialized, (forbidden,state)
+          for component in components:
+              canonical=((component.get('schedules') or {}).get('canonical_rules') or [])
+              assert canonical and all(v.startswith('parlay-platform-soccer-') for v in canonical), (component,state)
+          for key in ('production_authority_changed','direct_sport_table_writes',
+                      'post_start_prediction_creation_allowed','immutable_prediction_rewrite_allowed',
+                      'execution_lease_bypass_allowed','gate_relaxation_allowed'):
+              assert state.get(key) is False, (key,state)
+          PY
+
+          final_state=''
+          for attempt in $(seq 1 45); do
+            final_state=$(aws cloudwatch describe-alarms --alarm-names "$alarm_name" \
+              --region "$REGION" --query 'MetricAlarms[0].StateValue' --output text)
+            echo "Soccer unresolved-repair alarm state: $final_state (attempt $attempt)"
+            [ "$final_state" != ALARM ] && break
+            sleep 20
+          done
+          test "$final_state" = OK
+
+          aws cloudwatch describe-alarms --alarm-names "$alarm_name" --region "$REGION" > "$out/alarm-final.json"
+          aws cloudwatch describe-alarm-history --alarm-name "$alarm_name" --history-item-type StateUpdate \
+            --max-records 20 --region "$REGION" > "$out/alarm-history.json"
+
+          REPAIR_FUNCTION="$repair_function" ALARM_NAME="$alarm_name" FINAL_STATE="$final_state" \
+          CONFIGURED_FUNCTION_PREFIX="$configured_function_prefix" CONFIGURED_RULE_PREFIX="$configured_rule_prefix" \
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          out=Path('/tmp/soccer-auto-repair-acceptance')
+          load=lambda name: json.load(open(out/name))
+          audit=load('audit.json')
+          scheduled_response=load('status-final.json')
+          scheduled=scheduled_response.get('state') or {}
+          repair_statuses={
+              str(c.get('name')):str((c.get('repair') or {}).get('status'))
+              for c in (scheduled.get('components') or [])
+          }
+          report={
+              'proofType':'SOCCER_AUTO_REPAIR_CONTROL_PLANE_ACCEPTANCE_V1',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ.get('GITHUB_SHA'),
+              'scope':'soccer-repair-control-plane-only',
+              'repairStack':os.environ['REPAIR_STACK'],
+              'targetStack':os.environ['TARGET_STACK'],
+              'repairFunction':os.environ['REPAIR_FUNCTION'],
+              'alarmName':os.environ['ALARM_NAME'],
+              'configuredFunctionPrefix':os.environ['CONFIGURED_FUNCTION_PREFIX'],
+              'configuredRulePrefix':os.environ['CONFIGURED_RULE_PREFIX'],
+              'alarmFinalState':os.environ['FINAL_STATE'],
+              'rootCauses':[
+                  'SAM-truncated Soccer function names rejected by the old exact prefix',
+                  'SAM-truncated Soccer EventBridge rule names rejected by the old exact prefix',
+                  'repair controller referenced SoccerDlqRecoveryFunction although that resource is absent from the deployed target stack',
+              ],
+              'componentCountBefore':9,
+              'componentCountAfter':8,
+              'omittedAbsentOptionalComponent':'SoccerDlqRecoveryFunction',
+              'audit':audit,
+              'scheduledCycleState':scheduled,
+              'scheduledCycleRepairStatuses':repair_statuses,
+              'alarm':load('alarm-final.json'),
+              'alarmHistory':load('alarm-history.json'),
+              'repairFailuresAfterFix':float((scheduled.get('metrics') or {}).get('RepairFailures') or 0),
+              'scheduledCycleOkay':scheduled.get('ok'),
+              'scheduledCycleStatus':scheduled.get('status'),
+              'otherSportsDeployed':False,
+              'soccerTargetStackDeployed':False,
+              'targetFunctionInvokedDirectlyByAcceptance':False,
+              'directSportTableWrite':False,
+              'productionAuthorityChanged':False,
+              'promotionAuthorityChanged':False,
+              'shadowOnlyChanged':False,
+              'predictionLogicChanged':False,
+              'freezeLogicChanged':False,
+              'settlementLogicChanged':False,
+              'trainerLogicChanged':False,
+              'immutableHistoryChanged':False,
+              'postStartPredictionCreationAllowed':False,
+              'immutablePredictionRewriteAllowed':False,
+              'gateRelaxationAllowed':False,
+              'secretExposed':False,
+          }
+          report['ok']=bool(
+              report['alarmFinalState']=='OK'
+              and report['audit'].get('ok') is True
+              and report['repairFailuresAfterFix']==0
+              and len(report['scheduledCycleState'].get('components') or [])==8
+          )
+          report['conclusion']='PASS' if report['ok'] else 'FAIL'
+          Path('runtime_reports/soccer_auto_repair_control_plane_acceptance_latest.json').write_text(
+              json.dumps(report,indent=2,sort_keys=True,default=str)+'\n'
+          )
+          print(json.dumps({k:report[k] for k in ('ok','conclusion','alarmFinalState','scheduledCycleOkay','scheduledCycleStatus','repairFailuresAfterFix','componentCountAfter','otherSportsDeployed')},indent=2,sort_keys=True))
+          assert report['ok'] is True, report
+          PY
+
+      - name: Upload Soccer-only acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soccer-auto-repair-control-plane-${{ github.run_id }}
+          path: runtime_reports/soccer_auto_repair_control_plane_acceptance_latest.json
+          if-no-files-found: error
+          retention-days: 90
