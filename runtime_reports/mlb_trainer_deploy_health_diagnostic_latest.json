@@ -1,13 +1,13 @@
 {
   "classification": "TRAINER_LAMBDA_FUNCTION_ERROR",
-  "createdAtUtc": "2026-08-25T05:17:20.340068+00:00",
+  "createdAtUtc": "2026-08-25T05:30:04.770987+00:00",
   "diagnosticOnly": true,
   "lambdaConfiguration": {
     "Architectures": [
       "x86_64"
     ],
-    "CodeSha256": "Qm+AweH0c/9FaViT+UHfMy2i7eObWp29CZPJw49m0p0=",
-    "CodeSize": 1624250,
+    "CodeSha256": "mhCJXNVy+jnl4u1YHJSDJFL0MPSK89tPkKg9IJt8vB4=",
+    "CodeSize": 1648107,
     "Description": "",
     "EphemeralStorage": {
       "Size": 512
@@ -15,11 +15,11 @@
     "FunctionArn": "arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
     "FunctionName": "parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
     "Handler": "mlb_ml_aws_training_v1_compat.lambda_handler",
-    "LastModified": "2026-08-25T05:11:53.000+0000",
+    "LastModified": "2026-08-25T05:17:40.000+0000",
     "LastUpdateStatus": "Successful",
     "MemorySize": 2048,
     "PackageType": "Zip",
-    "RevisionId": "b229ca45-3331-42ef-936e-7bf31ec74004",
+    "RevisionId": "eba1aa34-d43f-43f8-8f88-824d2ce2574c",
     "Runtime": "python3.11",
     "State": "Active",
     "Timeout": 900,
@@ -60,7 +60,7 @@
   "productionAuthorityChanged": false,
   "proofType": "MLB_TRAINER_DEPLOY_HEALTH_DIAGNOSTIC",
   "secretExposed": false,
-  "sourceSha": "04ff505e4f7b59bd04d91fab7bda0eadfdb29cb1",
+  "sourceSha": "265f8e82acefb19727b349222fa87454e30bc8c1",
   "statusAfter": {
     "automaticPromotionEnabled": false,
     "experimentId": "mlb-v2-2026-08-03-future-prospective-r7",
@@ -72,44 +72,40 @@
       "prospectiveTestSealed": false,
       "revision": 0
     },
-    "ok": false,
+    "ok": true,
     "releaseCutoffUtc": "2026-08-03T04:00:00+00:00",
     "runtimeAuthorityActivationAvailable": false,
     "selectionCaptureHealth": {
-      "deploymentIdentityMatches": false,
-      "errors": [
-        "latest_status_deployment_identity_mismatch"
-      ],
+      "deploymentIdentityMatches": true,
+      "errors": [],
       "executionMode": "selection_capture",
       "latestRun": {
         "automaticPromotionEnabled": false,
         "championChanged": false,
-        "createdAtUtc": "2026-08-25T05:07:58.433798+00:00",
+        "createdAtUtc": "2026-08-25T05:27:59.411748+00:00",
         "deploymentIdentity": {
-          "gitSha": "d4c97774cfdc2623e702b553e7bd647e582b74af",
+          "gitSha": "265f8e82acefb19727b349222fa87454e30bc8c1",
           "templateSha256": "9e5519d55d5f7898e819cb68dca35edd2f07c87f1203427b3bd8b77789e8e5cb"
         },
         "executionMode": "selection_capture",
         "liveInferenceAuthority": false,
         "modelTrained": false,
         "ok": true,
-        "runId": "7fc4fca0b10aa78b003f6057",
+        "runId": "038179272c5351d5e67be99f",
         "status": "WAITING_FOR_PERSISTED_CHALLENGER"
       },
-      "ok": false
+      "ok": true
     },
     "trainingHealth": {
-      "deploymentIdentityMatches": false,
-      "errors": [
-        "latest_status_deployment_identity_mismatch"
-      ],
+      "deploymentIdentityMatches": true,
+      "errors": [],
       "executionMode": "training",
       "latestRun": {
         "acceptedRowCount": 0,
         "automaticPromotionEnabled": false,
         "canonicalSlateContinuity": {
-          "blockedSlateDate": "2026-08-04",
-          "blocker": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+          "blockedSlateDate": null,
+          "blocker": null,
           "finalizedGameSlateDates": [
             "2026-08-03"
           ],
@@ -136,19 +132,65 @@
               "version": "MLB-ML-OFFICIAL-FINALIZED-SLATE-AUTHORITY-v1-exact-game-pk-set"
             }
           },
-          "ok": false,
-          "policy": "Training stops at the first unresolved official slate; only an exact official zero-game schedule may be crossed as an off-day.",
+          "ok": true,
+          "policy": "Training excludes unresolved official slates individually and continues with later independently finalized slates; unresolved dates never admit training rows and exact official zero-game schedules remain proven off-days.",
           "processedSlateDates": [
             "2026-08-03"
           ],
           "processedThroughSlateDate": "2026-08-03",
           "provenZeroGameSlateDates": [],
+          "skippedUnresolvedSlateDates": [
+            "2026-08-04",
+            "2026-08-05",
+            "2026-08-06",
+            "2026-08-07",
+            "2026-08-08",
+            "2026-08-09",
+            "2026-08-10",
+            "2026-08-11",
+            "2026-08-12",
+            "2026-08-13",
+            "2026-08-14",
+            "2026-08-15",
+            "2026-08-16",
+            "2026-08-17",
+            "2026-08-18",
+            "2026-08-19",
+            "2026-08-20",
+            "2026-08-21",
+            "2026-08-22",
+            "2026-08-23",
+            "2026-08-24"
+          ],
+          "unresolvedSlateErrors": {
+            "2026-08-04": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-05": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-06": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-07": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-08": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-09": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-10": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-11": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-12": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-13": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-14": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-15": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-16": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-17": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-18": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-19": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-20": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-21": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-22": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-23": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
+            "2026-08-24": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully FINAL"
+          },
           "version": "MLB-ML-CANONICAL-SLATE-CONTINUITY-v2-exact-official-game-set"
         },
         "championChanged": false,
-        "createdAtUtc": "2026-08-25T05:10:58.932125+00:00",
+        "createdAtUtc": "2026-08-25T05:27:58.706764+00:00",
         "deploymentIdentity": {
-          "gitSha": "d4c97774cfdc2623e702b553e7bd647e582b74af",
+          "gitSha": "265f8e82acefb19727b349222fa87454e30bc8c1",
           "templateSha256": "9e5519d55d5f7898e819cb68dca35edd2f07c87f1203427b3bd8b77789e8e5cb"
         },
         "executionMode": "training",
@@ -222,15 +264,14 @@
           "train": 0,
           "validation": 0
         },
-        "productionAuthorityChanged": false,
         "rejectedRowCount": 8,
         "rejectionReasonCounts": {
           "current_canonical_row_not_training_eligible": 8
         },
-        "runId": "1ea9c7275c2991437892432e",
-        "status": "WAITING_FOR_CANONICAL_SLATE_CONTINUITY"
+        "runId": "869c2e1fbacd33b9a093f626",
+        "status": "ACCUMULATING_TRAIN"
       },
-      "ok": false
+      "ok": true
     },
     "v2InferenceConsumerInstalled": false,
     "version": "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow"
@@ -239,7 +280,7 @@
     "ExecutedVersion": "$LATEST",
     "StatusCode": 200,
     "parseError": null,
-    "redactedLogTail": "START RequestId: 0a1b440b-a341-4003-a922-68fb3bcba6af Version: $LATEST\nEND RequestId: 0a1b440b-a341-4003-a922-68fb3bcba6af\nREPORT RequestId: 0a1b440b-a341-4003-a922-68fb3bcba6af\tDuration: 66.58 ms\tBilled Duration: 67 ms\tMemory Size: 2048 MB\tMax Memory Used: 117 MB\t"
+    "redactedLogTail": "START RequestId: 59aa3702-70aa-4f11-a99e-69fb4edeb8a4 Version: $LATEST\nEND RequestId: 59aa3702-70aa-4f11-a99e-69fb4edeb8a4\nREPORT RequestId: 59aa3702-70aa-4f11-a99e-69fb4edeb8a4\tDuration: 55.01 ms\tBilled Duration: 56 ms\tMemory Size: 2048 MB\tMax Memory Used: 116 MB\t"
   },
   "statusResponseParseError": null,
   "trainingInvocation": {
@@ -247,7 +288,7 @@
     "FunctionError": "Unhandled",
     "StatusCode": 200,
     "parseError": null,
-    "redactedLogTail": "START RequestId: 418b1abb-1f38-4697-bc11-82c0fc368a89 Version: $LATEST\n[ERROR] ExecutionLeaseUnavailable: another MLB ML trainer invocation holds the execution lease\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1_compat.py\", line 156, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0return canonical.lambda_handler(event, context)\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1.py\", line 2911, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0lease = service.store.acquire_execution_lease(\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1.py\", line 653, in acquire_execution_lease\n\u00a0\u00a0\u00a0\u00a0raise ExecutionLeaseUnavailable(\nEND RequestId: 418b1abb-1f38-4697-bc11-82c0fc368a89\nREPORT RequestId: 418b1abb-1f38-4697-bc11-82c0fc368a89\tDuration: 80.33 ms\tBilled Duration: 81 ms\tMemory Size: 2048 MB\tMax Memory Used: 117 MB\t"
+    "redactedLogTail": "START RequestId: 84b97202-956f-45eb-9b26-31c07c769327 Version: $LATEST\n[ERROR] ExecutionLeaseUnavailable: another MLB ML trainer invocation holds the execution lease\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1_compat.py\", line 156, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0return canonical.lambda_handler(event, context)\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1.py\", line 2911, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0lease = service.store.acquire_execution_lease(\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1.py\", line 653, in acquire_execution_lease\n\u00a0\u00a0\u00a0\u00a0raise ExecutionLeaseUnavailable(\nEND RequestId: 84b97202-956f-45eb-9b26-31c07c769327\nREPORT RequestId: 84b97202-956f-45eb-9b26-31c07c769327\tDuration: 91.79 ms\tBilled Duration: 92 ms\tMemory Size: 2048 MB\tMax Memory Used: 116 MB\t"
   },
   "trainingResponse": {
     "errorMessage": "another MLB ML trainer invocation holds the execution lease",
@@ -260,5 +301,5 @@
   },
   "trainingResponseParseError": null,
   "version": "MLB-TRAINER-DEPLOY-DIAGNOSTIC-v1-redacted-fail-closed",
-  "workflowRunId": "32812212975"
+  "workflowRunId": "32812977896"
 }
