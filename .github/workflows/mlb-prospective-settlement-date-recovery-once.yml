@@ -5,11 +5,15 @@ on:
     branches: [main]
     paths:
       - "hello_world/mlb_results_scheduler.py"
+      - "scripts/reconcile_mlb_prospective_backlog_v5.py"
       - "tests/unit/test_mlb_results_scheduler_date_binding.py"
+      - "tests/unit/test_reconcile_mlb_prospective_backlog_v5.py"
       - ".github/workflows/mlb-prospective-settlement-date-recovery-once.yml"
   push:
     branches: [main]
     paths:
+      - "scripts/reconcile_mlb_prospective_backlog_v5.py"
+      - "tests/unit/test_reconcile_mlb_prospective_backlog_v5.py"
       - ".github/workflows/mlb-prospective-settlement-date-recovery-once.yml"
   workflow_run:
     workflows: ["Deploy SAM to AWS"]
@@ -84,6 +88,99 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
       - run: python -m pip install --quiet "boto3>=1.34,<2"
+
+      - name: Capture exact protected terminal replay evidence
+        run: |
+          set -euo pipefail
+          LOCK_FN=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id MLBDailyPickLockFunction \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$LOCK_FN"
+          test "$LOCK_FN" != "None"
+          aws lambda invoke \
+            --function-name "$LOCK_FN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 360 \
+            --payload '{"sport":"mlb","run":"prospective_terminal_backlog_reconciliation_v5","slateDateEt":"2026-08-04","force":true}' \
+            /tmp/mlb-r7-terminal-replay.json \
+            >/tmp/mlb-r7-terminal-replay-meta.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          meta = json.loads(Path('/tmp/mlb-r7-terminal-replay-meta.json').read_text())
+          try:
+              body = json.loads(Path('/tmp/mlb-r7-terminal-replay.json').read_text())
+          except Exception as exc:
+              body = {'_parseError': type(exc).__name__}
+
+          safe = {
+              'statusCode': meta.get('StatusCode'),
+              'functionError': meta.get('FunctionError'),
+              'slateDateEt': '2026-08-04',
+              'protectedReplayRequested': True,
+              'directTableWrite': False,
+              'postStartPredictionCreationAllowed': False,
+              'immutablePredictionRewriteAllowed': False,
+          }
+          if isinstance(body, dict):
+              for key in (
+                  'ok', 'reason', 'slateDateEt', 'lockStatusComplete',
+                  'missedGameCount', 'noPredictionDataCount',
+                  'durableNoPredictionTerminalReconciled',
+                  'durableNoPredictionTerminalReconciledCount',
+                  'postStartPredictionCreationAllowed', '_parseError',
+              ):
+                  if key in body:
+                      safe[key] = body.get(key)
+              repair = body.get('missedLockTerminalReconciliation')
+              if isinstance(repair, dict):
+                  repair_safe = {}
+                  for key in (
+                      'ok', 'version', 'slateDateEt', 'manifestGameCount',
+                      'missedBeforeCount', 'reconciledCount',
+                      'remainingMissedCount', 'reason', 'error',
+                      'postStartPredictionCreationAllowed',
+                      'candidateIntegrityFailuresRelabeled',
+                  ):
+                      if key in repair:
+                          repair_safe[key] = repair.get(key)
+                  unresolved = []
+                  for row in (repair.get('unresolved') or [])[:20]:
+                      if not isinstance(row, dict):
+                          continue
+                      unresolved.append({
+                          key: row.get(key)
+                          for key in (
+                              'gameIdentity', 'reason', 'candidatePresent',
+                              'candidateProofPresent', 'candidateErrors'
+                          )
+                          if key in row
+                      })
+                  if unresolved:
+                      repair_safe['unresolved'] = unresolved
+                  progress = repair.get('progressAfter')
+                  if isinstance(progress, dict):
+                      repair_safe['progressAfter'] = {
+                          key: progress.get(key)
+                          for key in (
+                              'manifestGameCount', 'canonicalCount',
+                              'noPredictionDataCount', 'lockOutcomeCount',
+                              'missedCount', 'dueMissingCount'
+                          )
+                          if key in progress
+                      }
+                  safe['missedLockTerminalReconciliation'] = repair_safe
+          Path('/tmp/mlb-r7-terminal-replay-safe.json').write_text(
+              json.dumps(safe, indent=2, sort_keys=True, default=str) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(safe, indent=2, sort_keys=True, default=str))
+          PY
 
       - name: Reconcile exact-date terminal coverage and canonical settlement
         run: |
@@ -200,6 +297,7 @@ jobs:
           path: |
             runtime_reports/mlb_prospective_settlement_date_recovery_latest.json
             runtime_reports/mlb_prospective_settlement_date_recovery_proof_latest.json
+            /tmp/mlb-r7-terminal-replay-safe.json
             /tmp/mlb-settlement-date-training.json
             /tmp/mlb-settlement-date-training-invoke.json
             /tmp/mlb-settlement-date-selection.json
@@ -208,3 +306,4 @@ jobs:
             /tmp/mlb-settlement-date-status-invoke.json
 
 # R7 emergency recovery trigger: 2026-08-25T17:34Z
+# R7 protected replay evidence capture: 2026-08-25T18:30Z
