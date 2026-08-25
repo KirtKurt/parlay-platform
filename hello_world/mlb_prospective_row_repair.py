@@ -11,11 +11,11 @@ MISSED_LOCK_TERMINAL_RECONCILIATION_VERSION = (
     "MLB-MISSED-LOCK-TERMINAL-RECONCILIATION-v2-durable-cached-replay"
 )
 PROMOTED_LOCK_TRAINING_ELIGIBILITY_VERSION = (
-    "MLB-PROMOTED-LOCK-TRAINING-ELIGIBILITY-v1-expired-prelock-state-cleared"
+    "MLB-PROMOTED-LOCK-TRAINING-ELIGIBILITY-v2-verified-empty-exclusions"
 )
 _RUNTIME_PATCH_FLAG = "_INQSI_MLB_MISSED_LOCK_TERMINAL_RECONCILIATION_V1"
 _APPLY_HOOK_FLAG = "_INQSI_MLB_MISSED_LOCK_TERMINAL_APPLY_HOOK_V1"
-_PREPARE_ROW_HOOK_FLAG = "_INQSI_MLB_PROMOTED_LOCK_TRAINING_ELIGIBILITY_V1"
+_PREPARE_ROW_HOOK_FLAG = "_INQSI_MLB_PROMOTED_LOCK_TRAINING_ELIGIBILITY_V2"
 EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS = frozenset(
     {
         "immutable_tminus45_prediction_not_available",
@@ -56,7 +56,7 @@ def _missed_count_from_result(result: Dict[str, Any]) -> int:
 def _cleanup_promoted_lock_training_eligibility(
     row: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Remove only pre-lock exclusions made false by a verified T-45 lock."""
+    """Normalize only stale pre-lock state on a verified immutable lock."""
 
     out = copy.deepcopy(row or {})
     freeze = (
@@ -73,11 +73,14 @@ def _cleanup_promoted_lock_training_eligibility(
         )
         if str(error)
     ]
+    vector = out.get("frozenFeatureVector")
     if not (
         out.get("lockedPrediction") is True
         and out.get("immutablePerGameStage") is True
         and out.get("exactVectorVerified") is True
         and not exact_errors
+        and isinstance(vector, dict)
+        and bool(vector.get("fingerprint"))
     ):
         return out
 
@@ -91,14 +94,23 @@ def _cleanup_promoted_lock_training_eligibility(
         if str(reason)
     }
     cleared = sorted(reasons & EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS)
-    if not cleared:
-        return out
     remaining = sorted(reasons - EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS)
     eligible = not remaining
+    stale_false_boolean = bool(
+        eligible
+        and (
+            out.get("trainingEligible") is not True
+            or freeze.get("trainingEligible") is not True
+        )
+    )
+    if not cleared and not stale_false_boolean:
+        return out
+
     metadata = {
         "trainingEligible": eligible,
         "trainingExclusionReasons": remaining,
         "expiredPrelockTrainingExclusionsCleared": cleared,
+        "staleTrainingEligibleBooleanCleared": stale_false_boolean,
         "promotedLockTrainingEligibilityVersion": (
             PROMOTED_LOCK_TRAINING_ELIGIBILITY_VERSION
         ),
