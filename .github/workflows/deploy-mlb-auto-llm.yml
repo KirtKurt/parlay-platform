@@ -30,6 +30,41 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+
+      - name: Repair lossless persistence for oversized MLB AUTO packets
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('mlb_auto_llm/handler.py')
+          s=p.read_text()
+          marker='MLB_AUTO_PACKET_STORAGE_GZIP_CHUNKED_V1'
+          if marker not in s:
+              old='''def _put(pk: str, sk: str, data: Dict[str, Any], *, condition: Optional[str] = None) -> bool:\n    if TABLE is None:\n        raise RuntimeError("MLB_AUTO_TABLE_NOT_CONFIGURED")\n    kwargs: Dict[str, Any] = {"Item": {"PK": pk, "SK": sk, "data": _ddb(data), "updatedAtUtc": _iso(_now())}}\n    if condition:\n        kwargs["ConditionExpression"] = condition\n    try:\n        TABLE.put_item(**kwargs)\n        return True\n    except Exception as exc:\n        if str((getattr(exc, "response", {}) or {}).get("Error", {}).get("Code", "")) == "ConditionalCheckFailedException":\n            return False\n        raise\n\n\ndef _get(pk: str, sk: str) -> Optional[Dict[str, Any]]:\n    if TABLE is None:\n        return None\n    result = TABLE.get_item(Key={"PK": pk, "SK": sk}, ConsistentRead=True)\n    item = result.get("Item") if isinstance(result, dict) else None\n    return _plain((item or {}).get("data")) if isinstance((item or {}).get("data"), dict) else None\n'''
+              new='''# MLB_AUTO_PACKET_STORAGE_GZIP_CHUNKED_V1\ndef _put(pk: str, sk: str, data: Dict[str, Any], *, condition: Optional[str] = None) -> bool:\n    if TABLE is None:\n        raise RuntimeError("MLB_AUTO_TABLE_NOT_CONFIGURED")\n    kwargs: Dict[str, Any] = {"Item": {"PK": pk, "SK": sk, "data": _ddb(data), "updatedAtUtc": _iso(_now())}}\n    if condition:\n        kwargs["ConditionExpression"] = condition\n    try:\n        TABLE.put_item(**kwargs)\n        return True\n    except Exception as exc:\n        code = str((getattr(exc, "response", {}) or {}).get("Error", {}).get("Code", ""))\n        status = int(((getattr(exc, "response", {}) or {}).get("ResponseMetadata", {}) or {}).get("HTTPStatusCode") or 0)\n        if code == "ConditionalCheckFailedException":\n            return False\n        if not str(pk).startswith("PACKET#") or status != 413:\n            raise\n\n        # DynamoDB has a hard 400 KB item limit. Full expanded provider packets can\n        # exceed it. Persist the exact packet losslessly as deterministic gzip chunks\n        # instead of dropping fields or silently failing the production cycle.\n        import gzip\n        import hashlib\n        raw = json.dumps(_plain(data), separators=(",", ":"), sort_keys=True, default=str).encode("utf-8")\n        compressed = gzip.compress(raw, compresslevel=9, mtime=0)\n        digest = hashlib.sha256(raw).hexdigest()\n        chunk_size = 240000\n        chunks = [compressed[i:i + chunk_size] for i in range(0, len(compressed), chunk_size)] or [b""]\n        for index, chunk in enumerate(chunks):\n            TABLE.put_item(Item={\n                "PK": pk,\n                "SK": f"{sk}#CHUNK#{index:04d}",\n                "data": {\n                    "storageEncoding": "gzip-json-chunk-v1",\n                    "chunkIndex": index,\n                    "chunkCount": len(chunks),\n                    "payload": chunk,\n                },\n                "updatedAtUtc": _iso(_now()),\n            })\n        manifest = {\n            "storageEncoding": "gzip-json-chunked-v1",\n            "chunkCount": len(chunks),\n            "compressedBytes": len(compressed),\n            "uncompressedBytes": len(raw),\n            "sha256": digest,\n        }\n        manifest_kwargs: Dict[str, Any] = {"Item": {"PK": pk, "SK": sk, "data": manifest, "updatedAtUtc": _iso(_now())}}\n        if condition:\n            manifest_kwargs["ConditionExpression"] = condition\n        try:\n            TABLE.put_item(**manifest_kwargs)\n        except Exception as manifest_exc:\n            if str((getattr(manifest_exc, "response", {}) or {}).get("Error", {}).get("Code", "")) == "ConditionalCheckFailedException":\n                return False\n            raise\n        return True\n\n\ndef _get(pk: str, sk: str) -> Optional[Dict[str, Any]]:\n    if TABLE is None:\n        return None\n    result = TABLE.get_item(Key={"PK": pk, "SK": sk}, ConsistentRead=True)\n    item = result.get("Item") if isinstance(result, dict) else None\n    stored = (item or {}).get("data")\n    plain = _plain(stored) if isinstance(stored, dict) else None\n    if not isinstance(plain, dict):\n        return None\n    if plain.get("storageEncoding") != "gzip-json-chunked-v1":\n        return plain\n\n    import gzip\n    import hashlib\n    count = int(plain.get("chunkCount") or 0)\n    if count <= 0:\n        raise RuntimeError("MLB_AUTO_PACKET_CHUNK_MANIFEST_INVALID")\n    parts = []\n    for index in range(count):\n        child = TABLE.get_item(Key={"PK": pk, "SK": f"{sk}#CHUNK#{index:04d}"}, ConsistentRead=True).get("Item") or {}\n        child_data = child.get("data") or {}\n        payload = child_data.get("payload")\n        if payload is None:\n            raise RuntimeError(f"MLB_AUTO_PACKET_CHUNK_MISSING:{index}")\n        parts.append(bytes(payload))\n    raw = gzip.decompress(b"".join(parts))\n    if hashlib.sha256(raw).hexdigest() != str(plain.get("sha256") or ""):\n        raise RuntimeError("MLB_AUTO_PACKET_CHUNK_SHA256_MISMATCH")\n    value = json.loads(raw.decode("utf-8"))\n    return value if isinstance(value, dict) else None\n'''
+              if s.count(old) != 1:
+                  raise SystemExit('MLB AUTO storage function contract did not match expected source')
+              p.write_text(s.replace(old,new))
+          PY
+          python -m py_compile mlb_auto_llm/handler.py
+          git diff --check
+          grep -F 'MLB_AUTO_PACKET_STORAGE_GZIP_CHUNKED_V1' mlb_auto_llm/handler.py
+
+      - name: Persist packet storage repair to main
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- mlb_auto_llm/handler.py; then exit 0; fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add mlb_auto_llm/handler.py
+          git commit -m 'Persist MLB AUTO oversized packets losslessly in DynamoDB'
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main
+            git push origin HEAD:main && exit 0
+            sleep $((i*3))
+          done
+          exit 1
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
