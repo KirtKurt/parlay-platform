@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 try:
     from production_model_gateway import (
@@ -23,6 +23,18 @@ except ModuleNotFoundError:  # pragma: no cover - package import in unit tests
     from mlb_auto_llm.model_gateway import configured_regions
 
 
+def _runtime_route_priority(route_id: str) -> Tuple[int, str]:
+    """Prefer AWS-managed cross-Region profiles over exhausted direct pools."""
+
+    value = str(route_id or "").strip()
+    model_id = value.split("::", 1)[-1].lower()
+    if model_id.startswith("us."):
+        return (0, value)
+    if model_id.startswith("global."):
+        return (1, value)
+    return (2, value)
+
+
 def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
     # Refresh endpoint-native catalogs, but retain warm-container failure
     # cooldowns so a deployment probe cannot repeatedly hammer routes already
@@ -32,12 +44,13 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
     runtime = runtime_models()
 
     # A health check must prove the Bedrock service, not a single model/Region.
-    # Keep the probe bounded, but allow enough model- and Region-diverse routes
-    # to survive an exhausted per-model daily-token pool.
+    # Prefer geographic cross-Region profiles, then global profiles, before
+    # direct model pools. Keep the probe bounded while surviving a depleted
+    # per-model/per-Region daily-token allocation.
     route_limit = max(
         1, int(os.getenv("MLB_AUTO_BEDROCK_SMOKE_ROUTE_LIMIT", "12"))
     )
-    models = list(runtime[:route_limit])
+    models = sorted(runtime, key=_runtime_route_priority)[:route_limit]
     attempt_limit = max(1, len(models))
     result = invoke_chain_text(
         "Return only the word OK.",
@@ -52,6 +65,7 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
         "configuredRegions": configured_regions(),
         "configuredModelCount": len(models),
         "routeAttemptLimit": attempt_limit,
+        "routeSelectionPolicy": "us-cross-region,global-cross-region,direct",
         "failoverEnabled": len(models) > 1,
         "mantleModelCount": len(mantle),
         "runtimeModelCount": len(runtime),

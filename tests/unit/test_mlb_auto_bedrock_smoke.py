@@ -51,6 +51,45 @@ def test_smoke_uses_bounded_runtime_failover(monkeypatch) -> None:
     assert result["runtimeModelCount"] == 3
 
 
+def test_smoke_prefers_cross_region_profiles(monkeypatch) -> None:
+    captured = {}
+    monkeypatch.setenv("MLB_AUTO_BEDROCK_SMOKE_ROUTE_LIMIT", "3")
+    monkeypatch.setattr(bedrock_smoke, "reset_model_state", lambda **kwargs: None)
+    monkeypatch.setattr(
+        bedrock_smoke,
+        "runtime_models",
+        lambda: [
+            "openai.gpt-oss-20b-1:0",
+            "global.amazon.nova-2-lite-v1:0",
+            "us.amazon.nova-2-lite-v1:0",
+        ],
+    )
+
+    def invoke(prompt, models, **kwargs):
+        captured["models"] = list(models)
+        return {
+            "ok": True,
+            "text": "OK",
+            "routeId": models[0],
+            "region": "us-east-1",
+            "modelId": models[0],
+            "endpointFamily": "bedrock-runtime-converse",
+            "attemptedModelIds": [models[0]],
+        }
+
+    monkeypatch.setattr(bedrock_smoke, "invoke_chain_text", invoke)
+    result = bedrock_smoke.lambda_handler({}, None)
+    assert result["ok"] is True
+    assert captured["models"] == [
+        "us.amazon.nova-2-lite-v1:0",
+        "global.amazon.nova-2-lite-v1:0",
+        "openai.gpt-oss-20b-1:0",
+    ]
+    assert result["routeSelectionPolicy"] == (
+        "us-cross-region,global-cross-region,direct"
+    )
+
+
 def test_smoke_empty_runtime_catalog_fails_fast(monkeypatch) -> None:
     monkeypatch.setattr(bedrock_smoke, "reset_model_state", lambda **kwargs: None)
     monkeypatch.setattr(bedrock_smoke, "runtime_models", lambda: [])
