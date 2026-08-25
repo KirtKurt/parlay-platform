@@ -24,8 +24,8 @@ import reconcile_mlb_prospective_backlog_v3 as v3
 import reconcile_mlb_prospective_backlog_v4 as v4
 
 VERSION = (
-    "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5.2-"
-    "redacted-lambda-function-error-evidence"
+    "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5.3-"
+    "full-bearer-redacted-function-error-evidence"
 )
 STATUS_PATH = "/v1/mlb/locks/status"
 SETTLEMENT_RUN = "prospective_backlog_settlement_v4"
@@ -90,7 +90,7 @@ MAX_DIAGNOSTIC_STRING = 480
 _SENSITIVE_ASSIGNMENT_RE = re.compile(
     r"(?i)(api[_-]?key|token|secret|authorization|password|credential)"
     r"(\s*[:=]\s*)"
-    r"(?:\"[^\"]*\"|'[^']*'|[^\s,;\]}]+)"
+    r"(?:\"[^\"]*\"|'[^']*'|(?:bearer\s+)?[^\s,;\]}]+)"
 )
 _BEARER_RE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+")
 _AWS_ACCESS_KEY_RE = re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")
