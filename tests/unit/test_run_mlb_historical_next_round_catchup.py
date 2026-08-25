@@ -95,6 +95,20 @@ def test_active_pipeline_is_advanced_but_not_misclassified_as_ready():
     )
 
 
+def test_active_rematerialization_lag_advances_before_optimization():
+    active = state(phase="BACKFILLING", eligible=4405, target=4405)
+    active["featureRematerializationComplete"] = False
+    active["featureRematerializedSlateCount"] = 336
+    active["featureRematerializationTotalSlateCount"] = 336
+
+    assert (
+        catchup.classify_state(
+            active, expected_ceiling=CEILING
+        )
+        == catchup.ADVANCE_ACTIVE_PIPELINE
+    )
+
+
 def test_rejected_candidate_below_target_waits_for_more_evidence():
     rejected = state(phase="CANDIDATE_REJECTED")
 
