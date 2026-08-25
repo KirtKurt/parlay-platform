@@ -182,6 +182,51 @@ Resources:
                 - aws-marketplace:ViewSubscriptions
               Resource: '*'
 
+  MLBAutoBedrockCapacityManagerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: mlb_auto_llm/
+      Handler: capacity_manager.lambda_handler
+      Runtime: python3.11
+      Timeout: 900
+      MemorySize: 2048
+      ReservedConcurrentExecutions: 1
+      Environment:
+        Variables:
+          MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
+          MLB_AUTO_BEDROCK_MANTLE_DISCOVERY: 'true'
+          MLB_AUTO_BEDROCK_RUNTIME_DISCOVERY: 'true'
+          MLB_AUTO_BEDROCK_RUNTIME_PROVIDERS: 'amazon,openai'
+          MLB_AUTO_BEDROCK_ROUTE_CATALOG_LIMIT: '64'
+          MLB_AUTO_BEDROCK_REGIONS: 'us-east-1,us-west-2,us-east-2'
+          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '80'
+          MLB_AUTO_BEDROCK_SMOKE_ROUTE_LIMIT: '16'
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+                - bedrock:CallWithBearerToken
+                - bedrock-mantle:CallWithBearerToken
+                - bedrock-mantle:CreateInference
+                - bedrock:ListFoundationModels
+                - bedrock:ListInferenceProfiles
+                - bedrock:GetInferenceProfile
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - servicequotas:ListServiceQuotas
+                - servicequotas:GetServiceQuota
+                - servicequotas:GetAWSDefaultServiceQuota
+                - servicequotas:ListRequestedServiceQuotaChangeHistoryByQuota
+                - servicequotas:RequestServiceQuotaIncrease
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - aws-marketplace:ViewSubscriptions
+              Resource: '*'
+
 Outputs:
   MLBAutoLLMStatusUrl:
     Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/mlb-auto-llm/status'
@@ -191,3 +236,5 @@ Outputs:
     Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/mlb-auto-llm/run'
   MLBAutoLLMTableName:
     Value: !Ref MLBAutoLLMTable
+  MLBAutoBedrockCapacityManagerFunctionName:
+    Value: !Ref MLBAutoBedrockCapacityManagerFunction
