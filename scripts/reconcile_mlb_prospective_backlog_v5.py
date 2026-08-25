@@ -90,7 +90,7 @@ MAX_DIAGNOSTIC_STRING = 480
 _SENSITIVE_ASSIGNMENT_RE = re.compile(
     r"(?i)(api[_-]?key|token|secret|authorization|password|credential)"
     r"(\s*[:=]\s*)"
-    r"(?:\"[^\"]*\"|'[^']*'|(?:bearer\s+)?[^\s,;\]}]+)"
+    r"(?:\"[^\"]*\"|'[^']*'|(?:(bearer)\s+)?[^\s,;\]}]+)"
 )
 _BEARER_RE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+")
 _AWS_ACCESS_KEY_RE = re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")
@@ -132,12 +132,14 @@ def _event_slate_date(event: Mapping[str, Any]) -> str:
     )
 
 
+def _redact_sensitive_assignment(match: re.Match[str]) -> str:
+    scheme = "Bearer " if match.group(3) else ""
+    return f"{match.group(1)}{match.group(2)}{scheme}[REDACTED]"
+
+
 def _redacted_bounded_string(value: Any, *, tail: bool = False) -> str:
     text = str(value or "")
-    text = _SENSITIVE_ASSIGNMENT_RE.sub(
-        lambda match: f"{match.group(1)}{match.group(2)}[REDACTED]",
-        text,
-    )
+    text = _SENSITIVE_ASSIGNMENT_RE.sub(_redact_sensitive_assignment, text)
     text = _BEARER_RE.sub("Bearer [REDACTED]", text)
     text = _AWS_ACCESS_KEY_RE.sub("[REDACTED_AWS_ACCESS_KEY]", text)
     if tail:
