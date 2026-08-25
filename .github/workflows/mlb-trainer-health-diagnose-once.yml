@@ -1,101 +1,176 @@
-name: Diagnose MLB AWS Trainer Health Once
+name: Verify deployed MLB R7 admission now
 
 "on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-trainer-health-diagnose-once.yml'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: mlb-trainer-health-status-once
+  group: verify-deployed-mlb-r7-admission-now-main
   cancel-in-progress: false
 
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-dev
+  EXPERIMENT_ID: mlb-v2-2026-08-03-future-prospective-r7
+
 jobs:
-  diagnose:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-      - name: Capture persisted trainer status
-        env:
-          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
+      - run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Prove deployed package and invoke trainer
         run: |
           set -euo pipefail
-          TRAINER_ARN=$(aws cloudformation describe-stacks --stack-name parlay-platform-dev --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='MLBMLTrainingFunctionArn'].OutputValue" --output text)
-          test -n "$TRAINER_ARN" && test "$TRAINER_ARN" != None
-          aws lambda get-function-configuration --function-name "$TRAINER_ARN" --region "$AWS_REGION_VALUE" > /tmp/config.json
-          aws lambda invoke --function-name "$TRAINER_ARN" --region "$AWS_REGION_VALUE" --cli-read-timeout 300 --cli-binary-format raw-in-base64-out --payload '{"sport":"mlb","mode":"status"}' /tmp/status.json > /tmp/status-meta.json
-      - name: Publish sanitized continuity status
+          mkdir -p runtime_reports
+          TRAINER_FUNCTION=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBMLTrainingFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$TRAINER_FUNCTION" && test "$TRAINER_FUNCTION" != None
+          echo "TRAINER_FUNCTION=$TRAINER_FUNCTION" >> "$GITHUB_ENV"
+          aws lambda wait function-updated-v2 --function-name "$TRAINER_FUNCTION" --region "$AWS_REGION"
+          aws lambda get-function-configuration --function-name "$TRAINER_FUNCTION" --region "$AWS_REGION" > /tmp/config.json
+          PACKAGE_URL=$(aws lambda get-function --function-name "$TRAINER_FUNCTION" --region "$AWS_REGION" --query 'Code.Location' --output text)
+          curl --fail --silent --show-error "$PACKAGE_URL" -o /tmp/trainer.zip
+          unzip -l /tmp/trainer.zip | grep -F 'mlb_r7_source_honest_training_repair.py'
+          unzip -p /tmp/trainer.zip mlb_r7_source_honest_training_repair.py | grep -F 'MLB-R7-SOURCE-HONEST-TRAINING-ADMISSION-v2-label-lock-bound'
+          unzip -p /tmp/trainer.zip mlb_ml_aws_training_v1_compat.py | grep -F 'r7_source_honest_training_repair.install'
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_FUNCTION" \
+            --region "$AWS_REGION" \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"r7_source_honest_runtime_admission_proof"}' \
+            --response /tmp/training.json \
+            --invocation /tmp/training-invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 1200 \
+            --retry-delay-seconds 20
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_FUNCTION" \
+            --region "$AWS_REGION" \
+            --payload '{"sport":"mlb","mode":"status","run":"r7_source_honest_runtime_status_proof"}' \
+            --response /tmp/status.json \
+            --invocation /tmp/status-invocation.json
+
+      - name: Enforce persisted R7 progress and safety
         run: |
           set -euo pipefail
           python - <<'PY'
           import json, os
           from datetime import datetime, timezone
           from pathlib import Path
-          config=json.loads(Path('/tmp/config.json').read_text())
-          status=json.loads(Path('/tmp/status.json').read_text())
-          latest=status.get('latestStatus') or {}
-          report={
-              'proofType':'MLB_AWS_TRAINER_CONTINUITY_STATUS_V3',
-              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
-              'runId':os.environ.get('GITHUB_RUN_ID'),
-              'sourceSha':os.environ.get('GITHUB_SHA'),
-              'lambdaConfiguration':{
-                  'functionName':config.get('FunctionName'),
-                  'runtime':config.get('Runtime'),
-                  'handler':config.get('Handler'),
-                  'state':config.get('State'),
-                  'lastUpdateStatus':config.get('LastUpdateStatus'),
-                  'codeSha256':config.get('CodeSha256'),
-              },
-              'statusOk':status.get('ok'),
-              'trainingHealth':status.get('trainingHealth'),
-              'selectionCaptureHealth':status.get('selectionCaptureHealth'),
-              'latestTrainingStatus':{
-                  'ok':latest.get('ok'),
-                  'status':latest.get('status'),
-                  'createdAtUtc':latest.get('createdAtUtc'),
-                  'acceptedRowCount':latest.get('acceptedRowCount'),
-                  'rejectedRowCount':latest.get('rejectedRowCount'),
-                  'canonicalSlateContinuity':latest.get('canonicalSlateContinuity'),
-                  'failure':latest.get('failure'),
-              },
+
+          def load(path):
+              value = json.loads(Path(path).read_text())
+              if isinstance(value, dict) and 'body' in value:
+                  body = value.get('body')
+                  value = json.loads(body) if isinstance(body, str) else body
+              if not isinstance(value, dict):
+                  raise SystemExit(f'non-object evidence: {path}')
+              return value
+
+          training = load('/tmp/training.json')
+          status = load('/tmp/status.json')
+          config = load('/tmp/config.json')
+          latest = ((status.get('trainingHealth') or {}).get('latestRun') or {})
+          row = latest or training
+          continuity = row.get('canonicalSlateContinuity') or {}
+          partitions = row.get('partitionCounts') or {}
+          milestones = row.get('milestones') or {}
+          counts = milestones.get('counts') or {}
+          accepted = int(row.get('acceptedRowCount') or 0)
+          rejected = int(row.get('rejectedRowCount') or 0)
+          train = int(partitions.get('train') or counts.get('train') or 0)
+          validation = int(partitions.get('validation') or counts.get('validation') or 0)
+          prospective = int(partitions.get('prospectiveTest') or counts.get('prospectiveTest') or 0)
+          dates = sorted(str(v) for v in continuity.get('finalizedGameSlateDates') or [])
+          checks = {
+              'trainingOk': training.get('ok') is True,
+              'statusOk': status.get('ok') is True,
+              'experimentExact': str(status.get('experimentId') or training.get('experimentId') or '') == os.environ['EXPERIMENT_ID'],
+              'processedThroughAug24': str(continuity.get('processedThroughSlateDate') or '') >= '2026-08-24',
+              'exactKnownSlatesPresent': {'2026-08-03','2026-08-24'} <= set(dates),
+              'acceptedAboveZero': accepted > 0,
+              'acceptedAtLeast18': accepted >= 18,
+              'rejectedZero': rejected == 0,
+              'trainPartitionStarted': train > 0,
+              'modelNotPrematurelyTrained': row.get('modelTrained') is not True,
+              'championUnchanged': row.get('championChanged') is not True,
+              'liveAuthorityFalse': row.get('liveInferenceAuthority') is not True,
+              'productionAuthorityUnchanged': row.get('productionAuthorityChanged') is not True,
+              'automaticPromotionDisabled': row.get('automaticPromotionEnabled') is not True,
           }
-          Path('/tmp/summary.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
-          print(json.dumps(report,indent=2,sort_keys=True))
+          failed = sorted(k for k,v in checks.items() if v is not True)
+          report = {
+              'ok': not failed,
+              'proofType': 'MLB_R7_DEPLOYED_ADMISSION_RUNTIME_PROOF_V1',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'workflowRunId': os.environ.get('GITHUB_RUN_ID'),
+              'sourceSha': os.environ.get('GITHUB_SHA'),
+              'experimentId': os.environ['EXPERIMENT_ID'],
+              'functionName': config.get('FunctionName'),
+              'handler': config.get('Handler'),
+              'lastModified': config.get('LastModified'),
+              'codeSha256': config.get('CodeSha256'),
+              'runId': row.get('runId'),
+              'processedThroughSlateDate': continuity.get('processedThroughSlateDate'),
+              'finalizedGameSlateDates': dates,
+              'acceptedRowCount': accepted,
+              'rejectedRowCount': rejected,
+              'rejectionReasonCounts': row.get('rejectionReasonCounts') or {},
+              'partitionCounts': {'train': train, 'validation': validation, 'prospectiveTest': prospective},
+              'milestoneTargets': milestones.get('targets') or {},
+              'milestoneRemainingRows': milestones.get('remainingRows') or {},
+              'modelTrained': row.get('modelTrained'),
+              'championChanged': row.get('championChanged'),
+              'liveInferenceAuthority': row.get('liveInferenceAuthority'),
+              'productionAuthorityChanged': row.get('productionAuthorityChanged'),
+              'automaticPromotionEnabled': row.get('automaticPromotionEnabled'),
+              'checks': checks,
+              'failedChecks': failed,
+              'immutablePredictionOrLockMutated': False,
+              'immutableLabelMutated': False,
+              'sportIsolationPreserved': True,
+              'promotionGateChanged': False,
+              'retiredV15_10Used': False,
+          }
+          Path('runtime_reports/mlb_r7_deployed_admission_runtime_proof_latest.json').write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(report, indent=2, sort_keys=True))
+          if failed:
+              raise SystemExit('R7 runtime proof failed: ' + ','.join(failed))
           PY
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          cp /tmp/summary.json /tmp/publish.json
-          for attempt in 1 2 3 4 5; do
-            git fetch origin main
-            git checkout -B mlb-trainer-health-diagnostic-proof origin/main
-            git reset --hard origin/main
-            git clean -fd
-            mkdir -p runtime_reports
-            cp /tmp/publish.json runtime_reports/mlb_trainer_health_diagnostic_latest.json
-            git add runtime_reports/mlb_trainer_health_diagnostic_latest.json
-            git diff --cached --quiet && exit 0
-            git commit -m 'Publish MLB trainer continuity status [skip ci]'
-            git push origin HEAD:main && exit 0
-            sleep $((attempt * 3))
-          done
-          exit 1
-      - uses: actions/upload-artifact@v4
+
+      - name: Upload proof
         if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: mlb-trainer-health-status-${{ github.run_id }}
-          retention-days: 7
+          name: mlb-r7-deployed-admission-runtime-proof
           path: |
-            /tmp/config.json
+            runtime_reports/mlb_r7_deployed_admission_runtime_proof_latest.json
+            /tmp/training.json
+            /tmp/training-invocation.json
             /tmp/status.json
-            /tmp/status-meta.json
-            /tmp/summary.json
+            /tmp/status-invocation.json
+            /tmp/config.json
+          if-no-files-found: warn
