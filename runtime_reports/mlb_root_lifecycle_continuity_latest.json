@@ -4,19 +4,54 @@
     "ok": false
   },
   "conclusion": "FAIL",
-  "createdAtUtc": "2026-08-25T02:26:38.061645+00:00",
+  "createdAtUtc": "2026-08-25T07:23:03.163894+00:00",
+  "diagnosticDurability": {
+    "contract": "append_only_missed_lock_start_and_terminal_outcome_once",
+    "logTail": [
+      "F                                                                        [100%]",
+      "=================================== FAILURES ===================================",
+      "____ test_root_lifecycle_missed_lock_diagnostic_is_write_once_and_terminal _____",
+      "",
+      "    def test_root_lifecycle_missed_lock_diagnostic_is_write_once_and_terminal():",
+      "        missed = legacy.build_module(",
+      "            [legacy.pull(\"2026-07-13T17:15:00+00:00\", [legacy.G1], \"diagnostic-gate\")],",
+      "            \"2026-07-13T18:01:00+00:00\",",
+      "        )",
+      "        result = missed.run_lock(legacy.SLATE, force=True)",
+      "    ",
+      "        assert result[\"reason\"] == \"MISSED_PER_GAME_LOCK_NOT_BACKFILLED\"",
+      "        diagnostics = legacy.diagnostic_items(missed)",
+      ">       assert len(diagnostics) == 2",
+      "E       assert 0 == 2",
+      "E        +  where 0 = len([])",
+      "",
+      "tests/unit/test_mlb_root_lifecycle_deploy_gate.py:47: AssertionError",
+      "=========================== short test summary info ============================",
+      "FAILED tests/unit/test_mlb_root_lifecycle_deploy_gate.py::test_root_lifecycle_missed_lock_diagnostic_is_write_once_and_terminal - assert 0 == 2",
+      " +  where 0 = len([])",
+      "1 failed in 0.08s"
+    ],
+    "ok": false,
+    "returnCode": 1
+  },
   "directTableWrite": false,
   "identity": {
-    "error": "mlb-root-lifecycle-identity.json_missing",
+    "error": "identity.json_missing",
     "ok": false
   },
   "immutablePredictionRewriteAllowed": false,
   "ok": false,
   "postStartPredictionCreationAllowed": false,
   "productionAuthorityChangedByRepair": false,
-  "proofType": "MLB_ROOT_DURABLE_LIFECYCLE_CONTINUITY_DEPLOYMENT",
+  "proofType": "MLB_ROOT_DURABLE_LIFECYCLE_CONTINUITY_DEPLOYMENT_V2",
   "secretExposed": false,
-  "sourceSha": "4fc4c443da57f9a9a3bf0235d67b0693a152efe7",
+  "source": {
+    "checkoutSha": "79b3def61c5c23646e4cd3968f16a52abcdedcda",
+    "githubSha": "79b3def61c5c23646e4cd3968f16a52abcdedcda",
+    "immutableCheckout": true,
+    "ok": true
+  },
+  "sourceSha": "79b3def61c5c23646e4cd3968f16a52abcdedcda",
   "trainer": {
     "error": "trainer-proof.json_missing",
     "ok": false
