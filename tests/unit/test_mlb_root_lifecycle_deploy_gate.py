@@ -5,11 +5,39 @@ import sys
 from pathlib import Path
 
 
+ROOT = Path(__file__).resolve().parents[2]
 UNIT_DIR = Path(__file__).resolve().parent
+HELLO_WORLD = ROOT / "hello_world"
 if str(UNIT_DIR) not in sys.path:
     sys.path.insert(0, str(UNIT_DIR))
+if str(HELLO_WORLD) not in sys.path:
+    sys.path.insert(0, str(HELLO_WORLD))
 
 import test_mlb_daily_per_game_lock as legacy
+import mlb_prospective_row_repair as row_repair
+import mlb_prospective_trainer_read_repair as trainer_read_repair
+
+
+def _verified_stale_eligibility_lock(*reasons: str) -> dict:
+    return {
+        "lockedPrediction": True,
+        "immutablePerGameStage": True,
+        "immutableLockedStorage": True,
+        "exactVectorVerified": True,
+        "exactVectorValidationErrors": [],
+        "frozenFeatureVector": {
+            "fingerprint": "sha256:root-lifecycle-gate",
+            "version": "MLB-ML-CLEAN-COHORT-v1",
+        },
+        "trainingEligible": False,
+        "trainingEligibilityStatus": "INELIGIBLE",
+        "trainingExclusionReasons": list(reasons),
+        "mlFeatureFreeze": {
+            "trainingEligible": False,
+            "trainingExclusionReasons": list(reasons),
+            "exactVectorValidationErrors": [],
+        },
+    }
 
 
 def test_root_lifecycle_never_creates_prediction_before_due_or_after_start():
@@ -34,6 +62,35 @@ def test_root_lifecycle_never_creates_prediction_before_due_or_after_start():
     assert legacy.staged_items(missed) == []
     assert missed.mlb_game_winner_engine.canonical_new_writes == 0
     assert missed.mlb_game_winner_engine.prediction_calls == 0
+
+    # R7 may clear only a stale false eligibility boolean after immutable lock
+    # and exact frozen-vector proof are already present. A substantive exclusion
+    # remains authoritative in both canonical materialization and trainer reads.
+    stale = _verified_stale_eligibility_lock()
+    for repaired in (
+        row_repair._cleanup_promoted_lock_training_eligibility(stale),
+        trainer_read_repair._copy_with_stale_prelock_exclusions_cleared(stale),
+    ):
+        assert repaired["trainingEligible"] is True
+        assert repaired["trainingEligibilityStatus"] == "ELIGIBLE"
+        assert repaired["trainingExclusionReasons"] == []
+        assert repaired["mlFeatureFreeze"]["trainingEligible"] is True
+
+    substantive = _verified_stale_eligibility_lock(
+        "lock_reliability:stale_or_missing_source_at_lock"
+    )
+    assert (
+        row_repair._cleanup_promoted_lock_training_eligibility(substantive)[
+            "trainingEligible"
+        ]
+        is False
+    )
+    assert (
+        trainer_read_repair._copy_with_stale_prelock_exclusions_cleared(substantive)[
+            "trainingEligible"
+        ]
+        is False
+    )
 
 
 def test_root_lifecycle_missed_lock_diagnostic_is_write_once_and_terminal():
