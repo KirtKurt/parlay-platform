@@ -1,3 +1,4 @@
+# trigger: 2026-08-25T16:13:30Z
 name: Throttle up Bedrock now
 
 on:
@@ -138,7 +139,6 @@ jobs:
           ok=0
           for region in regions:
               client=boto3.client('bedrock-runtime',region_name=region,config=Config(connect_timeout=5,read_timeout=30,retries={'mode':'adaptive','total_max_attempts':6}))
-              region_ok=False
               for model in candidates:
                   t=time.time()
                   try:
@@ -146,11 +146,10 @@ jobs:
                       text=''.join(str(x.get('text') or '') for x in (((r.get('output') or {}).get('message') or {}).get('content') or []) if isinstance(x,dict)).strip()
                       result.append({'region':region,'model':model,'ok':bool(text),'latencyMs':round((time.time()-t)*1000),'text':text[:40]})
                       if text:
-                          ok+=1; region_ok=True; break
+                          ok+=1
+                          break
                   except Exception as e:
                       result.append({'region':region,'model':model,'ok':False,'latencyMs':round((time.time()-t)*1000),'error':type(e).__name__+':'+str(e)[:260]})
-              if not region_ok:
-                  pass
           quota=json.loads(Path('/tmp/bedrock-quota.json').read_text())
           report={'ok':ok>=1,'successfulRegions':len({r['region'] for r in result if r.get('ok')}),'successfulInvocations':ok,'smoke':result,'quotaInspection':quota,'clientPolicy':{'retryMode':'adaptive','attempts':6,'mlbModelRouteAttempts':80,'soccerTransientRetryMinutes':3,'soccerDailyTokenRetryHours':2}}
           Path('runtime_reports/bedrock_throughput_validation_latest.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
