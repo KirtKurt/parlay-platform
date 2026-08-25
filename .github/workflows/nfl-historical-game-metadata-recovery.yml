@@ -43,16 +43,23 @@ jobs:
           from pathlib import Path
           import base64
 
-          parts = sorted(
-              Path('.nfl_bundle').glob('part*'),
-              key=lambda path: int(path.name.removeprefix('part')),
-          )
-          if not parts:
-              raise SystemExit('NFL bundle parts missing')
+          # part05a..part05d are the repaired replacement shards for part05.
+          # Use an explicit immutable order so the legacy aggregate part05 is
+          # never concatenated together with its replacement shards.
+          names = [
+              'part00', 'part01', 'part02', 'part03', 'part04',
+              'part05a', 'part05b', 'part05c', 'part05d',
+              'part06', 'part07', 'part08',
+          ]
+          parts = [Path('.nfl_bundle') / name for name in names]
+          missing = [str(path) for path in parts if not path.is_file()]
+          if missing:
+              raise SystemExit(f'NFL bundle parts missing: {missing}')
           encoded = b''.join(path.read_bytes() for path in parts)
           Path('/tmp/nfl-auto.zip').write_bytes(base64.b64decode(encoded, validate=True))
           print({'partCount': len(parts), 'firstPart': parts[0].name, 'lastPart': parts[-1].name})
           PY
+          unzip -tq /tmp/nfl-auto.zip
           unzip -p /tmp/nfl-auto.zip nfl-auto-template.yaml > nfl-auto-template.yaml
           python - <<'PY'
           import hashlib,json,pathlib
@@ -62,7 +69,7 @@ jobs:
           observed=hashlib.sha256(path.read_bytes()).hexdigest()
           assert observed == expected, (observed,expected)
           assert path.stat().st_size == 13220, path.stat().st_size
-          print({'templateSha256':observed,'source':'checksum-controlled .nfl_bundle'})
+          print({'templateSha256':observed,'source':'checksum-controlled .nfl_bundle repaired shards'})
           PY
 
       - name: Validate isolated NFL repair contracts
