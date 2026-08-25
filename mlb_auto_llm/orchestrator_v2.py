@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import handler as base
@@ -78,225 +78,156 @@ def _core_market_summary(game: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "eventId": event.get("id"),
         "commenceTime": event.get("commence_time"),
-        "consensus": game.get("marketConsensus") or {},
         "bookmakers": books,
         "expandedMarkets": expanded_summary,
-        "expandedErrors": expanded.get("errors") or {},
     }
 
 
-def _bbs_summary(game: Dict[str, Any]) -> Dict[str, Any]:
-    bbs = game.get("bbs") if isinstance(game.get("bbs"), dict) else {}
-    league = (
-        game.get("bbsLeagueContext")
-        if isinstance(game.get("bbsLeagueContext"), dict)
-        else {}
-    )
-    return {
-        "match": base._compact_for_llm(bbs.get("match"), limit=800),
-        "detail": base._compact_for_llm(bbs.get("detail"), limit=900),
-        "statistics": base._compact_for_llm(bbs.get("statistics"), limit=1200),
-        "lineups": base._compact_for_llm(bbs.get("lineups"), limit=1200),
-        "teamForm": base._compact_for_llm(bbs.get("teamForm"), limit=700),
-        "players": base._compact_for_llm(bbs.get("players"), limit=1800),
-        "events": base._compact_for_llm(bbs.get("events"), limit=500),
-        "weather": base._compact_for_llm(bbs.get("weather"), limit=400),
-        "standings": base._compact_for_llm(league.get("standings"), limit=600),
-        "injuries": base._compact_for_llm(league.get("injuries"), limit=700),
+def _compact_bbs(game: Dict[str, Any]) -> Dict[str, Any]:
+    value = game.get("bbs") if isinstance(game.get("bbs"), dict) else {}
+    match = value.get("match") if isinstance(value.get("match"), dict) else {}
+    compact: Dict[str, Any] = {
+        "match": match,
+        "detail": value.get("detail"),
+        "odds": value.get("odds"),
+        "statistics": value.get("statistics"),
+        "lineups": value.get("lineups"),
     }
+    return compact
 
 
-def _decision_game(game: Dict[str, Any]) -> Dict[str, Any]:
+def _strict_packet(game: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
     official = game.get("official") if isinstance(game.get("official"), dict) else {}
+    safe_official = {
+        "gamePk": official.get("gamePk"),
+        "officialDate": official.get("officialDate"),
+        "gameDate": official.get("gameDate"),
+        "gameType": official.get("gameType"),
+        "gameNumber": official.get("gameNumber"),
+        "doubleHeader": official.get("doubleHeader"),
+        "venue": official.get("venue"),
+        "home": _without_scores(official.get("home")),
+        "away": _without_scores(official.get("away")),
+    }
     return {
-        "gamePk": str(game.get("gamePk") or ""),
-        "gameDate": game.get("gameDate"),
-        "homeTeam": (game.get("home") or {}).get("name"),
-        "awayTeam": (game.get("away") or {}).get("name"),
-        "officialMlb": {
-            "gamePk": official.get("gamePk"),
-            "officialDate": official.get("officialDate"),
-            "gameDate": official.get("gameDate"),
-            "gameType": official.get("gameType"),
-            "gameNumber": official.get("gameNumber"),
-            "doubleHeader": official.get("doubleHeader"),
-            "venue": official.get("venue") or {},
-            "home": _without_scores(official.get("home")),
-            "away": _without_scores(official.get("away")),
-        },
+        "officialMlb": safe_official,
         "theOddsApi": _core_market_summary(game),
-        "bigBallsDataPro": _bbs_summary(game),
+        "bigBallsDataPro": _compact_bbs(game),
+        "autonomyState": state,
     }
 
 
-def _parse_pick(
-    raw: Dict[str, Any],
-    game: Dict[str, Any],
-    *,
-    model_id: str,
-    endpoint_family: str,
-) -> Dict[str, Any]:
-    game_pk = str(game.get("gamePk") or "")
+def _strict_bedrock_decision(game: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
     home = str((game.get("home") or {}).get("name") or "")
     away = str((game.get("away") or {}).get("name") or "")
-    if str(raw.get("gamePk") or "") != game_pk:
-        raise RuntimeError(f"BEDROCK_GAME_PK_MISMATCH:{game_pk}")
-    winner = str(raw.get("winner") or "")
-    if winner not in {home, away}:
-        raise RuntimeError(f"BEDROCK_WINNER_NOT_EXACT_TEAM:{game_pk}")
-    loser = away if winner == home else home
-    try:
-        probability = float(raw.get("probability") or 0.5)
-    except (TypeError, ValueError):
-        probability = 0.5
-    probability = min(max(probability, 0.50), 0.95)
-    return {
-        "gamePk": game_pk,
-        "gameDate": game.get("gameDate"),
-        "homeTeam": home,
-        "awayTeam": away,
-        "predictedWinner": winner,
-        "predictedLoser": loser,
-        "probability": round(probability, 6),
-        "decisionAuthority": "BEDROCK_LLM",
-        "llmModelId": model_id,
-        "endpointFamily": endpoint_family,
-        "confidence": str(raw.get("confidence") or "MODEL"),
-        "rationale": raw.get("rationale"),
-        "sourceWeights": raw.get("source_weights") or {},
-        "disagreements": raw.get("disagreements") or [],
-        "sourcePresence": {
-            "mlbStatsApi": bool(game.get("official")),
-            "theOddsApi": bool(game.get("oddsCore")),
-            "theOddsApiExpanded": bool(game.get("oddsExpanded")),
-            "bigBallsDataPro": bool(game.get("bbs")),
-        },
-    }
-
-
-def _strict_bedrock_card(packet: Dict[str, Any]) -> Dict[str, Any]:
-    games = [row for row in packet.get("games") or [] if isinstance(row, dict)]
-    if not games:
-        raise RuntimeError("BEDROCK_CARD_HAS_NO_GAMES")
-
-    state = base._recent_accuracy_state()
     prompt = (
         "You are the autonomous MLB winner-selection analyst for Inqsi. "
-        "Choose exactly one winner for every scheduled game in this slate using the supplied point-in-time evidence from MLB Stats API, The Odds API, and Big Balls Sports Data Pro. "
-        "Never invent missing data, never use final scores or outcomes, never omit a game, and never claim a guarantee. "
-        f"When evidence conflicts, use marketAnchorWeight={state.get('marketAnchorWeight')} as the default weight on normalized multi-book consensus. "
-        "Return ONLY a JSON object with one key named picks. picks must be an array containing exactly one object per game. "
-        "Each object must contain gamePk, winner, probability, confidence, rationale, source_weights, and disagreements. "
-        "gamePk must exactly match the supplied gamePk; winner must exactly match that game's homeTeam or awayTeam; probability must be between 0.50 and 0.95. "
-        "Keep each rationale to one concise sentence.\n"
-        "SLATE="
+        "Choose exactly one winner using only the supplied pregame evidence. "
+        "Do not invent missing data and do not copy a result from postgame fields. "
+        "Return ONLY JSON with winner, loser, probability, confidence, rationale, "
+        "source_weights, disagreements. "
+        f"winner must be exactly {home!r} or {away!r}; loser must be the other team; "
+        "probability must be between 0.50 and 0.95.\n"
+        "DATA="
         + base.json.dumps(
-            {
-                "slateDateEt": packet.get("slateDateEt"),
-                "autonomyState": state,
-                "games": [_decision_game(game) for game in games],
-            },
+            base._compact_for_llm(_strict_packet(game, state), 30000),
             separators=(",", ":"),
             default=str,
         )
     )
-
-    remaining = configured_models()
-    errors: List[Dict[str, Any]] = []
-    while remaining:
-        result = invoke_chain_text(
-            prompt,
-            remaining,
-            max_tokens=max(500, min(1800, len(games) * 150)),
-            temperature=0.1,
-            top_p=0.9,
-        )
-        if result.get("ok") is not True:
-            errors.extend(result.get("errors") or [])
-            break
-
-        model_id = str(result.get("modelId") or "")
-        endpoint_family = str(result.get("endpointFamily") or "")
-        errors.extend(result.get("errorsBeforeSuccess") or [])
-        parsed = base._extract_json(str(result.get("text") or ""))
-        raw_picks = parsed.get("picks") if isinstance(parsed, dict) else None
-        try:
-            if not isinstance(raw_picks, list) or len(raw_picks) != len(games):
-                raise RuntimeError("BEDROCK_CARD_GAME_COUNT_MISMATCH")
-            by_pk = {
-                str(row.get("gamePk") or ""): row
-                for row in raw_picks
-                if isinstance(row, dict)
-            }
-            expected = {str(game.get("gamePk") or "") for game in games}
-            if set(by_pk) != expected:
-                raise RuntimeError("BEDROCK_CARD_GAME_SET_MISMATCH")
-            picks = [
-                _parse_pick(
-                    by_pk[str(game.get("gamePk") or "")],
-                    game,
-                    model_id=model_id,
-                    endpoint_family=endpoint_family,
-                )
-                for game in games
-            ]
-        except Exception as exc:
-            errors.append(
-                {
-                    "modelId": model_id,
-                    "endpointFamily": endpoint_family,
-                    "errorCode": type(exc).__name__,
-                    "message": str(exc)[:480],
-                }
-            )
-            remaining = [value for value in remaining if value != model_id]
-            continue
-
-        return {
-            "version": base.VERSION,
-            "authority": "MLB_AUTO_LLM_PRIMARY",
-            "slateDateEt": packet.get("slateDateEt"),
-            "publishedAtUtc": base._iso(base._now()),
-            "deadline": packet.get("deadline"),
-            "targetDailyAccuracy": base.TARGET_ACCURACY,
-            "targetIsGoalNotGuarantee": True,
-            "autonomyState": state,
-            "gameCount": len(picks),
-            "llmPickCount": len(picks),
-            "fallbackPickCount": 0,
-            "picks": picks,
-            "sourceStatus": packet.get("sourceStatus"),
-            "bedrockBatch": {
-                "modelId": model_id,
-                "endpointFamily": endpoint_family,
-                "usage": result.get("usage") or {},
-                "attemptedModelIds": result.get("attemptedModelIds") or [],
-                "errorsBeforeSuccess": errors,
-            },
-        }
-
-    raise RuntimeError(
-        "BEDROCK_AUTHORITY_UNAVAILABLE:"
-        + base.json.dumps(errors, sort_keys=True, separators=(",", ":"))[:12000]
+    response = invoke_chain_text(
+        prompt,
+        max_output_tokens=900,
+        temperature=0.15,
+        preferred_models=configured_models(),
     )
+    if response.get("ok") is not True:
+        raise RuntimeError(
+            "BEDROCK_AUTHORITY_UNAVAILABLE:"
+            + base.json.dumps(
+                response,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            )[:12000]
+        )
+    parsed = base._extract_json(str(response.get("text") or ""))
+    winner = str(parsed.get("winner") or "")
+    if winner not in {home, away}:
+        raise RuntimeError("LLM_WINNER_NOT_EXACT_TEAM")
+    loser = away if winner == home else home
+    probability = min(max(float(parsed.get("probability") or 0.5), 0.50), 0.95)
+    return {
+        "ok": True,
+        "authority": "BEDROCK_LLM",
+        "modelId": response.get("modelId"),
+        "winner": winner,
+        "loser": loser,
+        "probability": round(probability, 6),
+        "confidence": str(parsed.get("confidence") or "MODEL"),
+        "rationale": parsed.get("rationale"),
+        "sourceWeights": parsed.get("source_weights") or {},
+        "disagreements": parsed.get("disagreements") or [],
+        "errorsBeforeSuccess": response.get("errorsBeforeSuccess") or [],
+    }
 
 
-def _strict_bedrock_decision(
-    game: Dict[str, Any], state: Dict[str, Any]
-) -> Dict[str, Any]:
-    """Fail closed if legacy code tries to bypass the slate-level authority."""
+def _build_strict_bedrock_card(packet: Dict[str, Any]) -> Dict[str, Any]:
+    state = base._recent_accuracy_state()
+    picks = []
+    for game in packet.get("games") or []:
+        decision = _strict_bedrock_decision(game, state)
+        picks.append(
+            {
+                "gamePk": game.get("gamePk"),
+                "gameDate": game.get("gameDate"),
+                "homeTeam": (game.get("home") or {}).get("name"),
+                "awayTeam": (game.get("away") or {}).get("name"),
+                "predictedWinner": decision.get("winner"),
+                "predictedLoser": decision.get("loser"),
+                "probability": decision.get("probability"),
+                "decisionAuthority": decision.get("authority"),
+                "llmModelId": decision.get("modelId"),
+                "confidence": decision.get("confidence"),
+                "rationale": decision.get("rationale"),
+                "sourceWeights": decision.get("sourceWeights"),
+                "disagreements": decision.get("disagreements"),
+                "sourcePresence": {
+                    "mlbStatsApi": bool(game.get("official")),
+                    "theOddsApi": bool(game.get("oddsCore")),
+                    "theOddsApiExpanded": bool(game.get("oddsExpanded")),
+                    "bigBallsDataPro": bool(game.get("bbs")),
+                },
+            }
+        )
+    return {
+        "version": base.VERSION,
+        "authority": "MLB_AUTO_LLM_BEDROCK",
+        "slateDateEt": packet.get("slateDateEt"),
+        "publishedAtUtc": base._iso(base._now()),
+        "deadline": packet.get("deadline"),
+        "targetDailyAccuracy": base.TARGET_ACCURACY,
+        "dataSources": [
+            "MLB Stats API",
+            "The Odds API",
+            "Big Balls Sports Data Pro",
+            "Amazon Bedrock",
+        ],
+        "fullyAutonomous": True,
+        "decisionPolicy": "BEDROCK_ONLY_NO_MARKET_DECISION_FALLBACK",
+        "modelState": state,
+        "picks": picks,
+        "sourceStatus": packet.get("sourceStatus"),
+    }
 
-    raise RuntimeError("BEDROCK_BATCH_CARD_AUTHORITY_REQUIRED")
+
+base._build_card = _build_strict_bedrock_card
+
+import orchestrator as production
 
 
-base._bedrock_decision = _strict_bedrock_decision
-
-import orchestrator as production  # noqa: E402
-
-# The established production wrapper still enforces complete three-source
-# coverage and rejects non-Bedrock picks. Replace only its underlying card
-# builder so all games are decided in one quota-efficient Bedrock invocation.
-production._ORIGINAL_BUILD_CARD = _strict_bedrock_card
+production._build_card_three_source_bedrock = _build_strict_bedrock_card
+production._ORIGINAL_BUILD_CARD = _build_strict_bedrock_card
 
 
 def _run_payload(event: Any) -> Optional[Dict[str, Any]]:
@@ -322,6 +253,41 @@ def _run_payload(event: Any) -> Optional[Dict[str, Any]]:
     return event
 
 
+def _next_future_provider_probe(
+    slate: str,
+    now: Any,
+) -> Optional[Dict[str, Any]]:
+    """Return the next pre-cutoff MLB slate for read-only deployment proof.
+
+    The live Odds endpoint can legitimately stop returning games after they
+    begin. A deployment performed after today's immutable card cutoff must not
+    reinterpret that absence as broken provider coverage and must never create
+    a late card. Instead, validate all three providers against the next slate
+    whose publication deadline is still in the future. This path is used only
+    by deployment_provider_smoke and performs no prediction write.
+    """
+    try:
+        anchor = datetime.strptime(slate, "%Y-%m-%d").date()
+    except Exception:
+        return None
+    for offset in range(1, 8):
+        candidate = (anchor + timedelta(days=offset)).isoformat()
+        candidate_schedule = base._official_schedule(candidate)
+        if not candidate_schedule.get("games"):
+            continue
+        candidate_deadline = base._deadline(candidate_schedule)
+        candidate_deadline_dt = base._parse(candidate_deadline.get("publishDeadlineUtc"))
+        if candidate_deadline_dt is None or now >= candidate_deadline_dt:
+            continue
+        return {
+            "slate": candidate,
+            "schedule": candidate_schedule,
+            "deadline": candidate_deadline,
+            "deadlineDt": candidate_deadline_dt,
+        }
+    return None
+
+
 def _late_guard(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     now = base._now()
     slate = str(
@@ -339,22 +305,38 @@ def _late_guard(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
     if payload.get("mode") == "deployment_provider_smoke":
-        # After the immutable cutoff, deployment verification may inspect fresh
-        # provider coverage but may never create or relabel a late prediction.
-        packet = production._assemble_with_full_bbd(slate, expanded=False)
+        # Never publish or relabel a card after the immutable cutoff. Current
+        # live odds may legitimately omit games that have already started, so
+        # validate provider completeness on the next still-pre-cutoff slate.
+        probe = _next_future_provider_probe(slate, now)
+        if probe is None:
+            raise RuntimeError(
+                "NO_FUTURE_PRE_CUTOFF_SLATE_FOR_PROVIDER_SMOKE:"
+                + base.json.dumps(
+                    {"requestedSlateDateEt": slate, "nowUtc": base._iso(now)},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            )
+        probe_slate = str(probe["slate"])
+        probe_deadline = probe["deadline"]
+        probe_deadline_dt = probe["deadlineDt"]
+        packet = production._assemble_with_full_bbd(probe_slate, expanded=False)
         result = {
             "ok": True,
             "status": "COLLECTING",
-            "slateDateEt": slate,
-            "deadline": deadline,
+            "requestedSlateDateEt": slate,
+            "slateDateEt": probe_slate,
+            "deadline": probe_deadline,
             "nextFinalWindowAtUtc": base._iso(
-                deadline_dt - timedelta(minutes=base.FINAL_WINDOW_MINUTES)
+                probe_deadline_dt - timedelta(minutes=base.FINAL_WINDOW_MINUTES)
             ),
             "sourceStatus": packet.get("sourceStatus") or {},
             "threeSourceCoverageComplete": packet.get(
                 "threeSourceCoverageComplete"
             ),
             "latePublicationPrevented": True,
+            "providerProbeUsedFutureSlate": True,
         }
         production._validate_deployment_smoke(result)
         return result
