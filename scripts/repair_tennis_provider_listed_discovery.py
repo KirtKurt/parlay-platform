@@ -41,8 +41,6 @@ REPLACEMENTS = {
 }
 
 DISCOVERY_TEST = '''
-
-
 def test_every_provider_listed_non_outright_tennis_key_is_inventoried():
     assert 'sports = _get("/sports/", {"all": "true"})' in PIPELINE
     assert 'and bool(sport.get("active", False))' not in PIPELINE
@@ -98,7 +96,12 @@ def apply(*, check_only: bool = False) -> dict[str, object]:
         test_updated = test_original
         already_repaired.append(test_relative)
     else:
-        test_updated = test_original.rstrip() + DISCOVERY_TEST + "\n"
+        test_updated = (
+            test_original.rstrip()
+            + "\n\n"
+            + DISCOVERY_TEST.strip()
+            + "\n"
+        )
         changed.append(test_relative)
         if not check_only:
             test_path.write_text(test_updated, encoding="utf-8")
