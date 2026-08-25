@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Dict
 
 try:
@@ -27,15 +28,25 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
     # cooldowns so a deployment probe cannot repeatedly hammer routes already
     # proven unavailable, EOL, account-denied, or daily-token exhausted.
     reset_model_state(clear_discovery=True, clear_failures=False)
-    mantle = mantle_models()
+    # This deployment probe is deliberately bounded. Production predictions
+    # continue to use configured_models() and the complete failover catalog.
+    mantle = []
     runtime = runtime_models()
-    models = configured_models()
+    smoke_limit = max(
+        1,
+        min(
+            int(os.environ.get("MLB_AUTO_BEDROCK_SMOKE_ROUTE_LIMIT", "1")),
+            3,
+        ),
+    )
+    models = runtime[:smoke_limit]
     result = invoke_chain_text(
         "Return only the word OK.",
         models,
         max_tokens=8,
         temperature=0.0,
         top_p=0.9,
+        max_attempts=smoke_limit,
     )
     common = {
         "service": "mlb-auto-llm-bedrock-smoke",
