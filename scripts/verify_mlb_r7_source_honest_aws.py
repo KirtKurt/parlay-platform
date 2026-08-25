@@ -82,11 +82,39 @@ def main() -> int:
 
     canonical = labels.load_canonical_training_rows(slate_dates=EXPECTED_DATES)
     rows = list(canonical.get("rows") or [])
+    feature_vector_versions = sorted(
+        {
+            str(
+                (
+                    row.get("featureSnapshot")
+                    or row.get("frozenFeatureVector")
+                    or {}
+                ).get("version")
+                or ""
+            )
+            for row in rows
+            if str(
+                (
+                    row.get("featureSnapshot")
+                    or row.get("frozenFeatureVector")
+                    or {}
+                ).get("version")
+                or ""
+            )
+        }
+    )
+    if len(feature_vector_versions) != 1:
+        raise RuntimeError(
+            "R7_IMMUTABLE_VECTOR_VERSION_NOT_UNIQUE:"
+            + ",".join(feature_vector_versions)
+        )
+    feature_vector_version = feature_vector_versions[0]
+
     manifest = experiment.new_manifest(
         experiment_id=experiment.PRODUCTION_EXPERIMENT_ID,
         release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
         release_cutoff_utc=experiment.PRODUCTION_RELEASE_CUTOFF_UTC,
-        feature_vector_version="MLB-VECTOR-v2",
+        feature_vector_version=feature_vector_version,
         model_feature_schemas={
             "outcome": list(dual_model.OUTCOME_FEATURES),
             "reliability": list(dual_model.RELIABILITY_FEATURES),
@@ -160,6 +188,7 @@ def main() -> int:
         "exactFinalizedDates": sorted(canonical.get("finalizedSlateDates") or [])
         == EXPECTED_DATES,
         "canonicalRowCount18": len(rows) == EXPECTED_ROW_COUNT,
+        "singleExactFeatureVectorVersion": len(feature_vector_versions) == 1,
         "acceptedRowCount18": int(filtered.get("acceptedRowCount") or 0)
         == EXPECTED_ROW_COUNT,
         "rejectedRowCount0": int(filtered.get("rejectedRowCount") or 0) == 0,
@@ -202,7 +231,7 @@ def main() -> int:
 
     report = {
         "ok": ok,
-        "proofType": "MLB_R7_SOURCE_HONEST_AWS_READ_ONLY_PROOF_V1",
+        "proofType": "MLB_R7_SOURCE_HONEST_AWS_READ_ONLY_PROOF_V2",
         "createdAtUtc": datetime.now(timezone.utc).isoformat(),
         "sourceSha": os.environ.get("GITHUB_SHA"),
         "experimentId": experiment.PRODUCTION_EXPERIMENT_ID,
@@ -214,7 +243,9 @@ def main() -> int:
             "ok": canonical.get("ok"),
             "finalizedSlateDates": canonical.get("finalizedSlateDates"),
             "rowCount": len(rows),
+            "featureVectorVersions": feature_vector_versions,
         },
+        "manifestFeatureVectorVersion": feature_vector_version,
         "filter": {
             "acceptedRowCount": filtered.get("acceptedRowCount"),
             "rejectedRowCount": filtered.get("rejectedRowCount"),
