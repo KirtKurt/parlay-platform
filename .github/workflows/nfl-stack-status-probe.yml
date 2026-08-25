@@ -1,5 +1,5 @@
 name: NFL Auto AWS Stack Probe
-# Ops refresh trigger 2026-08-25T07:12Z; no runtime logic change.
+# Ops observability refresh: read-only AWS/runtime proof only.
 on:
   push:
     branches: [main]
@@ -17,7 +17,7 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Query NFL stack and complete failure events
+      - name: Query NFL stack, runtime status, schedules, alarms, and failure events
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
         run: |
@@ -26,17 +26,25 @@ jobs:
           status=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$AWS_REGION_VALUE" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo MISSING)
           url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='NflAutoStatusUrl'].OutputValue" --output text 2>/dev/null || true)
           aws cloudformation describe-stack-events --stack-name "$stack" --region "$AWS_REGION_VALUE" --max-items 100 --output json >/tmp/events.json 2>/dev/null || echo '{"StackEvents":[]}' >/tmp/events.json
+          aws cloudformation list-stack-resources --stack-name "$stack" --region "$AWS_REGION_VALUE" --output json >/tmp/resources.json 2>/dev/null || echo '{"StackResourceSummaries":[]}' >/tmp/resources.json
+          aws cloudwatch describe-alarms --region "$AWS_REGION_VALUE" --output json >/tmp/alarms.json 2>/dev/null || echo '{"MetricAlarms":[],"CompositeAlarms":[]}' >/tmp/alarms.json
+          if [ -n "$url" ] && [ "$url" != "None" ]; then
+            curl -fsS --retry 2 --retry-all-errors --retry-delay 2 --max-time 30 "$url" >/tmp/status.json || echo '{"query_error":"status_url_unreachable"}' >/tmp/status.json
+          else
+            echo '{"query_error":"status_url_missing"}' >/tmp/status.json
+          fi
           echo "STACK_STATUS=$status" >> "$GITHUB_ENV"
           echo "STATUS_URL=$url" >> "$GITHUB_ENV"
-      - name: Publish root failure probe
+      - name: Publish read-only NFL operations proof
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git pull --rebase origin main || true
           mkdir -p runtime_reports
           python - <<'PY'
-          import json,os
-          raw=json.load(open('/tmp/events.json'))
+          import json,os,datetime
+          load=lambda p: json.load(open(p))
+          raw=load('/tmp/events.json'); resources=load('/tmp/resources.json'); status_body=load('/tmp/status.json'); alarms_raw=load('/tmp/alarms.json')
           failed=[]; roots=[]
           for e in raw.get('StackEvents',[]):
               status=str(e.get('ResourceStatus') or '')
@@ -45,9 +53,32 @@ jobs:
                   row={'logical_id':e.get('LogicalResourceId'),'type':e.get('ResourceType'),'status':status,'reason':reason[:1800]}
                   failed.append(row)
                   if reason and 'creation cancelled' not in reason.lower() and e.get('ResourceType')!='AWS::CloudFormation::Stack': roots.append(row)
-          r={'run_id':os.environ.get('GITHUB_RUN_ID'),'commit':os.environ.get('GITHUB_SHA'),'stack':'parlay-platform-nfl-auto','stack_status':os.environ.get('STACK_STATUS','UNKNOWN'),'status_url':os.environ.get('STATUS_URL',''),'root_failed_events':roots[:20],'all_failed_events':failed[:40]}
-          open('runtime_reports/nfl_stack_probe_latest.json','w').write(json.dumps(r,indent=2,sort_keys=True)+'\n')
+          resource_rows=[]
+          schedule_rows=[]
+          for x in resources.get('StackResourceSummaries',[]):
+              row={'logical_id':x.get('LogicalResourceId'),'physical_id':x.get('PhysicalResourceId'),'type':x.get('ResourceType'),'status':x.get('ResourceStatus')}
+              resource_rows.append(row)
+              if x.get('ResourceType') in {'AWS::Events::Rule','AWS::Scheduler::Schedule'}: schedule_rows.append(row)
+          alarms=[]
+          for a in (alarms_raw.get('MetricAlarms') or [])+(alarms_raw.get('CompositeAlarms') or []):
+              name=str(a.get('AlarmName') or '')
+              dims=a.get('Dimensions') or []
+              hay=' '.join([name]+[str(d.get('Value') or '') for d in dims]).lower()
+              if 'nfl' in hay:
+                  alarms.append({'name':name,'state':a.get('StateValue'),'reason':str(a.get('StateReason') or '')[:1000]})
+          r={
+            'proof_type':'NFL_AUTO_AWS_OPERATIONS_PROOF',
+            'observed_at_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'run_id':os.environ.get('GITHUB_RUN_ID'),'commit':os.environ.get('GITHUB_SHA'),
+            'stack':'parlay-platform-nfl-auto','stack_status':os.environ.get('STACK_STATUS','UNKNOWN'),
+            'status_url':os.environ.get('STATUS_URL',''),'public_status':status_body,
+            'root_failed_events':roots[:20],'all_failed_events':failed[:40],
+            'resources':resource_rows,'schedules':schedule_rows,'alarms':alarms,
+            'production_authority_changed':False,'immutable_history_rewritten':False,
+          }
+          open('runtime_reports/nfl_stack_probe_latest.json','w').write(json.dumps(r,indent=2,sort_keys=True,default=str)+'\n')
+          print(json.dumps(r,indent=2,sort_keys=True,default=str))
           PY
           git add runtime_reports/nfl_stack_probe_latest.json
-          git commit -m 'Publish NFL Auto root rollback diagnostic [skip ci]' || true
+          git commit -m 'Publish NFL Auto read-only operations proof [skip ci]' || true
           git push origin HEAD:main || true
