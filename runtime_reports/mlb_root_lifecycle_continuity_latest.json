@@ -1,18 +1,53 @@
 {
   "backlog": {
-    "error": "backlog.json_missing",
-    "ok": false
+    "automaticWagerAllowed": false,
+    "directTableWrite": false,
+    "error": "ReconciliationError:lambda_application_status_not_success:{\"applicationStatusCode\":409,\"authoritativeSettlement\":true,\"canonicalLockCount\":0,\"eventKind\":\"prospective_backlog_settlement_v4\",\"identityRejectionCount\":0,\"immutablePregameRowsMutated\":false,\"labelConflictCount\":0,\"labelCreatedCount\":0,\"labelIdempotentCount\":0,\"labelPolicyDriftIdempotentCount\":0,\"labelWouldCreateCount\":0,\"labelWriteCount\":0,\"lockTerminalConflictCount\":0,\"missingCanonicalLockCount\":15,\"missingCanonicalLocksObservedCount\":15,\"missingCanonicalLocksSample\":[{\"officialGamePk\":\"822865\",\"reason\":\"MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME\"},{\"officialGamePk\":\"823108\",\"reason\":\"MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME\"},{\"officialGamePk\":\"823432\",\"reason\":\"MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME\"},{\"officialGamePk\":\"823517\",\"reason\":\"MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME\"},{\"officialGamePk\":\"823756\",\"reason\":\"MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME\"},{\"officialGamePk\":\"824084\",\"reason\":\"MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME\"},{\"officialGamePk\":\"824161\",\"reason\":\"MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME\"},{\"officialGamePk\":\"824321\",\"reason\":\"MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME\"}],\"officialFinalCount\":15,\"officialGameCount\":15,\"overall_status\":\"FAILED_CLOSED\",\"rejectedCanonicalLockCount\":0,\"skippedNotFinalCount\":0,\"slateDateEt\":\"2026-08-04\",\"slate_date_et\":\"2026-08-04\",\"status\":\"FAILED_CLOSED\",\"terminalNoPredictionCount\":0,\"terminalNoPredictionExcludedCount\":0}",
+    "immutablePredictionRewriteAllowed": false,
+    "mutatingFailureDiagnosticsWhitelisted": true,
+    "mutatingNonSuccessStatusesStillFailClosed": true,
+    "ok": false,
+    "postStartPredictionCreationAllowed": false,
+    "productionAuthorityChanged": false,
+    "promotionAuthorityChanged": false,
+    "readOnlyNonSuccessStatusBodiesPreserved": true,
+    "stackName": "parlay-platform-dev",
+    "version": "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5-readable-incomplete-status"
   },
   "conclusion": "FAIL",
-  "createdAtUtc": "2026-08-25T08:01:43.171950+00:00",
+  "createdAtUtc": "2026-08-25T08:21:39.243583+00:00",
   "diagnosticDurability": {
-    "error": "diagnostic-proof.json_missing",
-    "ok": false
+    "contract": "append_only_missed_lock_start_and_terminal_outcome_once",
+    "immutablePredictionRewriteAllowed": false,
+    "ok": true,
+    "postStartPredictionCreationAllowed": false
   },
   "directTableWrite": false,
   "identity": {
-    "error": "identity.json_missing",
-    "ok": false
+    "MLBDailyPickLockFunction": {
+      "deployRunId": "lifecycle-32825394371-1",
+      "functionName": "parlay-platform-dev-MLBDailyPickLockFunction-BQIhMFw1k5YP",
+      "gitSha": "6caeda0b5d5342aed5914f3cd3cab1451d36991b",
+      "lastUpdateStatus": "Successful",
+      "state": "Active",
+      "templateSha256": "9e5519d55d5f7898e819cb68dca35edd2f07c87f1203427b3bd8b77789e8e5cb"
+    },
+    "MLBMLTrainingFunction": {
+      "deployRunId": "lifecycle-32825394371-1",
+      "functionName": "parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
+      "gitSha": "6caeda0b5d5342aed5914f3cd3cab1451d36991b",
+      "lastUpdateStatus": "Successful",
+      "state": "Active",
+      "templateSha256": "9e5519d55d5f7898e819cb68dca35edd2f07c87f1203427b3bd8b77789e8e5cb"
+    },
+    "MLBV3ReadFunction": {
+      "deployRunId": "lifecycle-32825394371-1",
+      "functionName": "parlay-platform-dev-MLBV3ReadFunction-QnN5BEYDgbli",
+      "gitSha": "6caeda0b5d5342aed5914f3cd3cab1451d36991b",
+      "lastUpdateStatus": "Successful",
+      "state": "Active",
+      "templateSha256": "9e5519d55d5f7898e819cb68dca35edd2f07c87f1203427b3bd8b77789e8e5cb"
+    }
   },
   "immutablePredictionRewriteAllowed": false,
   "ok": false,
@@ -21,12 +56,12 @@
   "proofType": "MLB_ROOT_DURABLE_LIFECYCLE_CONTINUITY_DEPLOYMENT_V3",
   "secretExposed": false,
   "source": {
-    "checkoutSha": "ef23e571be280343efcd2bb8b03e221d75789cd5",
-    "githubSha": "ef23e571be280343efcd2bb8b03e221d75789cd5",
+    "checkoutSha": "6caeda0b5d5342aed5914f3cd3cab1451d36991b",
+    "githubSha": "6caeda0b5d5342aed5914f3cd3cab1451d36991b",
     "immutableCheckout": true,
     "ok": true
   },
-  "sourceSha": "ef23e571be280343efcd2bb8b03e221d75789cd5",
+  "sourceSha": "6caeda0b5d5342aed5914f3cd3cab1451d36991b",
   "trainer": {
     "error": "trainer-proof.json_missing",
     "ok": false
