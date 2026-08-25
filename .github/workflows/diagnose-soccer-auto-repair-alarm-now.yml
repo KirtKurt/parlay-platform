@@ -1,0 +1,96 @@
+name: Diagnose Soccer auto-repair alarm
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-soccer-auto-repair-alarm-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-soccer-auto-repair-alarm-now
+  cancel-in-progress: false
+
+jobs:
+  diagnose-soccer-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      REPAIR_STACK: parlay-platform-auto-repair-soccer
+      SPORT: soccer
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Capture Soccer-only read-only alarm evidence
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/soccer-repair runtime_reports
+          repair_function=$(aws cloudformation describe-stacks --stack-name "$REPAIR_STACK" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='AutoRepairFunctionName'].OutputValue | [0]" --output text)
+          alarm_name=$(aws cloudformation describe-stack-resource --stack-name "$REPAIR_STACK" --logical-resource-id AutoRepairUnresolvedFailureAlarm --region "$REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          aws cloudwatch describe-alarms --alarm-names "$alarm_name" --region "$REGION" > /tmp/soccer-repair/alarm.json
+          aws cloudwatch describe-alarm-history --alarm-name "$alarm_name" --history-item-type StateUpdate --max-records 20 --region "$REGION" > /tmp/soccer-repair/alarm-history.json
+          aws lambda invoke --function-name "$repair_function" --invocation-type RequestResponse --cli-binary-format raw-in-base64-out --payload '{"action":"status","source":"soccer_alarm_diagnostic"}' --region "$REGION" /tmp/soccer-repair/controller-status.json > /tmp/soccer-repair/controller-meta.json
+          start_time=$(date -u -d '12 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          end_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          aws cloudwatch get-metric-statistics --namespace Inqsi/AutoRepair --metric-name RepairFailures --dimensions Name=Sport,Value="$SPORT" --start-time "$start_time" --end-time "$end_time" --period 300 --statistics Sum --region "$REGION" > /tmp/soccer-repair/failures.json
+          ALARM_NAME="$alarm_name" REPAIR_FUNCTION="$repair_function" python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          root=Path('/tmp/soccer-repair')
+          alarm_rows=json.load(open(root/'alarm.json')).get('MetricAlarms') or []
+          alarm=alarm_rows[0] if alarm_rows else {}
+          status=json.load(open(root/'controller-status.json'))
+          state=status.get('state') if isinstance(status,dict) else {}
+          report={
+            'proofType':'SOCCER_AUTO_REPAIR_UNRESOLVED_FAILURE_ALARM_DIAGNOSTIC_V1',
+            'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+            'sourceSha':os.environ.get('GITHUB_SHA'),
+            'scope':'soccer-only',
+            'alarmName':os.environ['ALARM_NAME'],
+            'alarm':alarm,
+            'alarmHistory':json.load(open(root/'alarm-history.json')).get('AlarmHistoryItems') or [],
+            'repairFunctionName':os.environ['REPAIR_FUNCTION'],
+            'controllerStatus':status,
+            'latestControllerState':state,
+            'repairFailureDatapoints':json.load(open(root/'failures.json')).get('Datapoints') or [],
+            'alarmCurrentlyInAlarm':alarm.get('StateValue')=='ALARM',
+            'latestControllerOkay':state.get('ok') if isinstance(state,dict) else None,
+            'latestControllerStatus':state.get('status') if isinstance(state,dict) else None,
+            'readOnlyDiagnostic':True,
+            'repairCycleInvoked':False,
+            'targetFunctionInvoked':False,
+            'directSportTableWrite':False,
+            'productionAuthorityChanged':False,
+            'promotionAuthorityChanged':False,
+            'shadowOnlyChanged':False,
+            'immutableHistoryChanged':False,
+            'otherSportsInspected':False,
+            'secretExposed':False,
+          }
+          Path('runtime_reports/soccer_auto_repair_alarm_diagnostic_latest.json').write_text(json.dumps(report,indent=2,sort_keys=True,default=str)+'\n')
+          print(json.dumps({'alarmCurrentlyInAlarm':report['alarmCurrentlyInAlarm'],'latestControllerOkay':report['latestControllerOkay'],'latestControllerStatus':report['latestControllerStatus'],'componentCount':len(state.get('components') or []) if isinstance(state,dict) else 0},indent=2))
+          PY
+
+      - name: Upload Soccer-only diagnostic evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: soccer-auto-repair-alarm-diagnostic-${{ github.run_id }}
+          path: runtime_reports/soccer_auto_repair_alarm_diagnostic_latest.json
+          if-no-files-found: error
+          retention-days: 30
