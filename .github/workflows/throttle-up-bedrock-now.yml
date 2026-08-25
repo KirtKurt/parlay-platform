@@ -49,7 +49,8 @@ jobs:
             mlb_auto_llm/production_model_gateway.py \
             mlb_auto_llm/bedrock_smoke.py \
             mlb_auto_llm/ml_authority_smoke.py \
-            mlb_auto_llm/capacity_manager.py
+            mlb_auto_llm/capacity_manager.py \
+            scripts/run_mlb_bedrock_capacity_ramp.py
           python -m pytest -q \
             tests/unit/test_mlb_auto_bedrock_smoke.py \
             tests/unit/test_mlb_auto_production_model_gateway.py \
@@ -81,135 +82,23 @@ jobs:
           PY
           git diff --check
 
-      - name: Wait for isolated capacity-manager Lambda deployment
-        id: manager
-        shell: bash
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 180); do
-            function_name=$(aws cloudformation describe-stack-resource \
-              --stack-name "$STACK_NAME" \
-              --logical-resource-id MLBAutoBedrockCapacityManagerFunction \
-              --region "$AWS_REGION" \
-              --query 'StackResourceDetail.PhysicalResourceId' \
-              --output text 2>/dev/null || true)
-            if [ -n "$function_name" ] && [ "$function_name" != "None" ]; then
-              handler=$(aws lambda get-function-configuration \
-                --function-name "$function_name" \
-                --region "$AWS_REGION" \
-                --query 'Handler' \
-                --output text 2>/dev/null || true)
-              update_status=$(aws lambda get-function-configuration \
-                --function-name "$function_name" \
-                --region "$AWS_REGION" \
-                --query 'LastUpdateStatus' \
-                --output text 2>/dev/null || true)
-              if [ "$handler" = 'capacity_manager.lambda_handler' ] && [ "$update_status" = 'Successful' ]; then
-                echo "function_name=$function_name" >> "$GITHUB_OUTPUT"
-                echo "Capacity manager ready: $function_name"
-                exit 0
-              fi
-            fi
-            sleep 20
-          done
-          echo 'MLB AUTO capacity-manager Lambda did not become ready.' >&2
-          exit 1
-
       - name: Request 10x quotas and require live Lambda-role capacity
         shell: bash
-        env:
-          CAPACITY_FUNCTION: ${{ steps.manager.outputs.function_name }}
         run: |
           set -euo pipefail
-          test -n "$CAPACITY_FUNCTION"
-          mkdir -p runtime_reports /tmp/mlb-bedrock-capacity
-          success=false
-          for attempt in $(seq 1 8); do
-            payload=$(python - <<PY
-          import json
-          print(json.dumps({
-              'requestQuotaIncreases': True,
-              'desiredMultiplier': 10,
-              'maxQuotaRequests': 30,
-              'maxRoutesPerRegion': 24 if $attempt == 1 else 12,
-          }, separators=(',', ':')))
-          PY
-            )
-            set +e
-            aws lambda invoke \
-              --function-name "$CAPACITY_FUNCTION" \
-              --region "$AWS_REGION" \
-              --cli-binary-format raw-in-base64-out \
-              --cli-connect-timeout 30 \
-              --cli-read-timeout 900 \
-              --payload "$payload" \
-              "/tmp/mlb-bedrock-capacity/response-$attempt.json" \
-              >"/tmp/mlb-bedrock-capacity/invocation-$attempt.json"
-            invoke_rc=$?
-            set -e
-            ATTEMPT="$attempt" INVOKE_RC="$invoke_rc" python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          attempt = int(os.environ['ATTEMPT'])
-          invoke_rc = int(os.environ['INVOKE_RC'])
-          response_path = Path(f'/tmp/mlb-bedrock-capacity/response-{attempt}.json')
-          invocation_path = Path(f'/tmp/mlb-bedrock-capacity/invocation-{attempt}.json')
-          invocation = (
-              json.loads(invocation_path.read_text())
-              if invocation_path.exists() and invocation_path.stat().st_size
-              else {}
-          )
-          response = (
-              json.loads(response_path.read_text())
-              if response_path.exists() and response_path.stat().st_size
-              else {}
-          )
-          report = dict(response) if isinstance(response, dict) else {}
-          report.update({
-              'sourceSha': os.environ.get('GITHUB_SHA'),
-              'runId': os.environ.get('GITHUB_RUN_ID'),
-              'runAttempt': os.environ.get('GITHUB_RUN_ATTEMPT'),
-              'capacityWorkflowAttempt': attempt,
-              'lambdaInvocationExitCode': invoke_rc,
-              'lambdaFunctionError': invocation.get('FunctionError'),
-              'lambdaStatusCode': invocation.get('StatusCode'),
-          })
-          Path('runtime_reports/bedrock_throughput_validation_latest.json').write_text(
-              json.dumps(report, indent=2, sort_keys=True, default=str) + '\n'
-          )
-          print(json.dumps({
-              'attempt': attempt,
-              'ok': report.get('ok'),
-              'liveCapacityOk': report.get('liveCapacityOk'),
-              'successfulRegions': report.get('successfulRegions'),
-              'quotaIncreaseSubmittedCount': report.get('quotaIncreaseSubmittedCount'),
-              'quotaIncreaseAcceptedOrPendingCount': report.get('quotaIncreaseAcceptedOrPendingCount'),
-              'quotaIncreaseRequestFailureCount': report.get('quotaIncreaseRequestFailureCount'),
-              'lambdaFunctionError': report.get('lambdaFunctionError'),
-          }, indent=2, sort_keys=True))
-          PY
-            if python - <<'PY'
-          import json
-          from pathlib import Path
-          report = json.loads(Path('runtime_reports/bedrock_throughput_validation_latest.json').read_text())
-          raise SystemExit(0 if (
-              report.get('liveCapacityOk') is True
-              and report.get('capacityManagerRoleUsed') is True
-              and report.get('lambdaFunctionError') in (None, '')
-          ) else 1)
-          PY
-            then
-              success=true
-              break
-            fi
-            if [ "$attempt" != 8 ]; then
-              echo 'Capacity not live yet; preserving quota requests and retrying in five minutes.'
-              sleep 300
-            fi
-          done
-          test "$success" = true
+          python scripts/run_mlb_bedrock_capacity_ramp.py \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --logical-id MLBAutoBedrockCapacityManagerFunction \
+            --output "$REPORT_PATH" \
+            --wait-seconds 3600 \
+            --poll-seconds 20 \
+            --max-attempts 8 \
+            --retry-seconds 300 \
+            --desired-multiplier 10 \
+            --max-quota-requests 30 \
+            --first-max-routes 24 \
+            --retry-max-routes 12
 
       - name: Publish Bedrock capacity and quota proof
         if: always()
@@ -259,6 +148,7 @@ jobs:
           assert report.get('automaticWagerAllowed') is False, report
           assert report.get('secretExposed') is False, report
           assert report.get('lambdaFunctionError') in (None, ''), report
+          assert not report.get('lambdaInvocationError'), report
           print(json.dumps({
               'liveCapacityOk': report.get('liveCapacityOk'),
               'successfulRegions': report.get('successfulRegions'),
