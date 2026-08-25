@@ -1,4 +1,4 @@
-# One-shot trigger after registration; MLB-only, fail-closed, timeout restored on exit.
+# One-shot trigger after registration; MLB-only, fail-closed, lease-compatible timeout preserved.
 name: Repair MLB R7 backlog timeout now
 
 on:
@@ -71,27 +71,22 @@ jobs:
           ORIGINAL_TIMEOUT=$(aws lambda get-function-configuration \
             --function-name "$LOCK_FN" --region "$AWS_REGION" \
             --query Timeout --output text)
-          test "$ORIGINAL_TIMEOUT" -ge 60
-          test "$ORIGINAL_TIMEOUT" -le 900
+          # The protected MLB lock uses a fixed 360-second global mutation lease
+          # with a 60-second timeout safety margin. Raising Lambda above 300s
+          # makes the lock intentionally fail closed before any mutation.
+          test "$ORIGINAL_TIMEOUT" = '300'
           echo "lock_fn=$LOCK_FN" >> "$GITHUB_OUTPUT"
           echo "trainer=$TRAINER" >> "$GITHUB_OUTPUT"
           echo "original_timeout=$ORIGINAL_TIMEOUT" >> "$GITHUB_OUTPUT"
-          echo "MLB lock function: $LOCK_FN; original timeout: $ORIGINAL_TIMEOUT"
+          echo "MLB lock function: $LOCK_FN; lease-compatible timeout: $ORIGINAL_TIMEOUT"
 
-      - name: Temporarily extend only the MLB lock function timeout
+      - name: Verify MLB lock timeout remains lease-compatible
         run: |
           set -euo pipefail
-          aws lambda update-function-configuration \
-            --function-name '${{ steps.mlb.outputs.lock_fn }}' \
-            --timeout 900 \
-            --region "$AWS_REGION" >/tmp/mlb-r7-timeout-update.json
-          aws lambda wait function-updated-v2 \
-            --function-name '${{ steps.mlb.outputs.lock_fn }}' \
-            --region "$AWS_REGION"
           CURRENT=$(aws lambda get-function-configuration \
             --function-name '${{ steps.mlb.outputs.lock_fn }}' \
             --region "$AWS_REGION" --query Timeout --output text)
-          test "$CURRENT" = '900'
+          test "$CURRENT" = '300'
 
       - name: Reconcile prospective backlog through yesterday with existing fail-closed V5 repair
         id: reconcile
@@ -151,22 +146,15 @@ jobs:
           print(json.dumps(evidence, indent=2, sort_keys=True))
           PY
 
-      - name: Restore original MLB lock timeout
+      - name: Verify MLB lock timeout unchanged
         if: always()
         run: |
           set -euo pipefail
           LOCK_FN='${{ steps.mlb.outputs.lock_fn }}'
           ORIGINAL='${{ steps.mlb.outputs.original_timeout }}'
           if [ -n "$LOCK_FN" ] && [ -n "$ORIGINAL" ]; then
-            aws lambda update-function-configuration \
-              --function-name "$LOCK_FN" \
-              --timeout "$ORIGINAL" \
-              --region "$AWS_REGION" >/tmp/mlb-r7-timeout-restore.json
-            aws lambda wait function-updated-v2 \
-              --function-name "$LOCK_FN" \
-              --region "$AWS_REGION"
-            RESTORED=$(aws lambda get-function-configuration \
+            CURRENT=$(aws lambda get-function-configuration \
               --function-name "$LOCK_FN" --region "$AWS_REGION" \
               --query Timeout --output text)
-            test "$RESTORED" = "$ORIGINAL"
+            test "$CURRENT" = "$ORIGINAL"
           fi
