@@ -265,9 +265,14 @@ def _install_diagnostic_wrapper(patch_module: Any) -> None:
     if not callable(original):
         return
 
-    def diagnostic_history(module: Any, slate_date: str, game: Any) -> Dict[str, Any]:
+    def diagnostic_history(
+        module: Any,
+        slate_date: str,
+        game: Any,
+        limit: int = 20,
+    ) -> Dict[str, Any]:
         if _INCLUDE_ATTEMPT_DIAGNOSTICS.get():
-            return original(module, slate_date, game)
+            return original(module, slate_date, game, limit=limit)
         return _summary_diagnostics(patch_module, slate_date, game)
 
     patch_module._diagnostic_history = diagnostic_history
