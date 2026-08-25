@@ -1414,6 +1414,8 @@ def _contiguous_finalized_slate_prefix(
     zero_game_dates: List[str] = []
     processed: List[str] = []
     finalized_slate_authorities: Dict[str, Dict[str, Any]] = {}
+    skipped_unresolved_slate_dates: List[str] = []
+    unresolved_slate_errors: Dict[str, str] = {}
     blocked_date: Optional[str] = None
     blocker: Optional[str] = None
     for slate_date in slate_dates:
@@ -1484,9 +1486,14 @@ def _contiguous_finalized_slate_prefix(
             ):
                 raise TrainingContractError("official game slate is not fully finalized")
         except Exception as exc:
-            blocked_date = slate_date
-            blocker = f"OFFICIAL_SLATE_UNRESOLVED:{type(exc).__name__}:{exc}"
-            break
+            # Fail closed for this date only: never admit its rows, but do not
+            # let one permanently unresolved historical slate block later clean
+            # independently finalized dates from prospective training.
+            skipped_unresolved_slate_dates.append(slate_date)
+            unresolved_slate_errors[slate_date] = (
+                f"OFFICIAL_SLATE_UNRESOLVED:{type(exc).__name__}:{exc}"
+            )
+            continue
         finalized_slate_authorities[slate_date] = (
             experiment.build_official_finalized_slate_authority(
                 slate_date_et=slate_date,
@@ -1505,11 +1512,14 @@ def _contiguous_finalized_slate_prefix(
         "provenZeroGameSlateDates": zero_game_dates,
         "finalizedGameSlateDates": game_dates,
         "finalizedSlateAuthorities": finalized_slate_authorities,
+        "skippedUnresolvedSlateDates": skipped_unresolved_slate_dates,
+        "unresolvedSlateErrors": unresolved_slate_errors,
         "blockedSlateDate": blocked_date,
         "blocker": blocker,
         "policy": (
-            "Training stops at the first unresolved official slate; only an exact "
-            "official zero-game schedule may be crossed as an off-day."
+            "Training excludes unresolved official slates individually and continues "
+            "with later independently finalized slates; unresolved dates never admit "
+            "training rows and exact official zero-game schedules remain proven off-days."
         ),
     }
 

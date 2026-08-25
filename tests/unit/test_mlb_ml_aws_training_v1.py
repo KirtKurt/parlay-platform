@@ -2102,8 +2102,10 @@ def test_partial_prior_et_slate_cannot_freeze_or_deadlock_manifest(monkeypatch):
     partial = training.run()
 
     assert requested == ["2026-08-03"]
-    assert partial["status"] == "CANONICAL_SLATE_CONTINUITY_BLOCKED"
+    assert partial["status"] == "ACCUMULATING_TRAIN"
     assert partial["acceptedRowCount"] == 0
+    assert partial["canonicalSlateContinuity"]["skippedUnresolvedSlateDates"] == ["2026-08-03"]
+    assert "2026-08-03" in partial["canonicalSlateContinuity"]["unresolvedSlateErrors"]
     assert store.manifest["assignedSlateDates"] == {}
     assert store.manifest["partitions"]["train"]["frozen"] is False
 
