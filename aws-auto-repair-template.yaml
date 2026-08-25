@@ -12,9 +12,6 @@ Parameters:
     Type: String
   RuleNamePrefix:
     Type: String
-  RepairCadence:
-    Type: String
-    Default: rate(5 minutes)
   RepairLeaseSeconds:
     Type: Number
     Default: 960
@@ -40,20 +37,11 @@ Resources:
         AttributeName: ttl
         Enabled: true
 
-  RepairDeadLetterQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      MessageRetentionPeriod: 1209600
-      SqsManagedSseEnabled: true
-
-  RepairAlarmTopic:
-    Type: AWS::SNS::Topic
-
   AutoRepairFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: aws_auto_repair/
-      Handler: handler.lambda_handler
+      Handler: wrapper.lambda_handler
       Runtime: python3.11
       Architectures: [arm64]
       Timeout: 900
@@ -118,14 +106,12 @@ Resources:
         RepairCycle:
           Type: Schedule
           Properties:
-            Schedule: !Ref RepairCadence
+            Schedule: rate(5 minutes)
             Enabled: true
             Input: !Sub '{"action":"cycle","source":"eventbridge","sport":"${SportName}"}'
             RetryPolicy:
               MaximumEventAgeInSeconds: 300
               MaximumRetryAttempts: 0
-            DeadLetterConfig:
-              Arn: !GetAtt RepairDeadLetterQueue.Arn
 
   AutoRepairFunctionErrorAlarm:
     Type: AWS::CloudWatch::Alarm
@@ -142,7 +128,6 @@ Resources:
       Threshold: 0
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
-      AlarmActions: [!Ref RepairAlarmTopic]
 
   AutoRepairLivenessAlarm:
     Type: AWS::CloudWatch::Alarm
@@ -160,7 +145,6 @@ Resources:
       Threshold: 1
       ComparisonOperator: LessThanThreshold
       TreatMissingData: breaching
-      AlarmActions: [!Ref RepairAlarmTopic]
 
   AutoRepairUnresolvedFailureAlarm:
     Type: AWS::CloudWatch::Alarm
@@ -177,33 +161,15 @@ Resources:
       Threshold: 0
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
-      AlarmActions: [!Ref RepairAlarmTopic]
-
-  AutoRepairDeadLetterAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmDescription: !Sub '${SportName} AWS-native auto-repair event entered its DLQ'
-      Namespace: AWS/SQS
-      MetricName: ApproximateNumberOfMessagesVisible
-      Dimensions:
-        - Name: QueueName
-          Value: !GetAtt RepairDeadLetterQueue.QueueName
-      Statistic: Maximum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 0
-      ComparisonOperator: GreaterThanThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref RepairAlarmTopic]
 
 Outputs:
   AutoRepairFunctionName:
     Value: !Ref AutoRepairFunction
   AutoRepairStateTableName:
     Value: !Ref RepairStateTable
-  AutoRepairAlarmTopicArn:
-    Value: !Ref RepairAlarmTopic
   TargetStackName:
     Value: !Ref TargetStackName
   SportName:
     Value: !Ref SportName
+  EffectiveRepairCadence:
+    Value: rate(5 minutes)
