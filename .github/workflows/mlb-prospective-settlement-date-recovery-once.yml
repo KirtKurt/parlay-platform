@@ -91,7 +91,7 @@ jobs:
           python scripts/reconcile_mlb_prospective_backlog_v5.py \
             --stack-name parlay-platform-dev \
             --region "${{ secrets.AWS_REGION }}" \
-            --max-slate-days 14 \
+            --max-slate-days 30 \
             --output runtime_reports/mlb_prospective_settlement_date_recovery_latest.json
 
       - name: Invoke trainer, selection capture, and bound status
