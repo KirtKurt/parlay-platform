@@ -132,3 +132,4 @@ def test_root_lifecycle_missed_lock_diagnostic_is_write_once_and_terminal():
 
 
 # Exact-source deployment retrigger after preserving diagnostic history limit.
+# Exact-source acceptance retrigger after full Bearer credential redaction.
