@@ -14,7 +14,7 @@
         "routeId": "openai.gpt-oss-20b-1:0"
       }
     ],
-    "checkedAtUtc": "2026-08-25T05:53:59.281091+00:00",
+    "checkedAtUtc": "2026-08-25T06:03:34.672300+00:00",
     "decisionAuthority": "AWS_ML_PROSPECTIVE_R7",
     "endpointFamily": "aws-ml-readonly-api",
     "mlFallbackAttempted": true,
@@ -24,28 +24,27 @@
     "primaryAlgorithm": "INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble",
     "responseNonEmpty": true
   },
-  "createdAtUtc": "2026-08-25T05:56:03.665479+00:00",
+  "createdAtUtc": "2026-08-25T06:04:37.665902+00:00",
   "cycle": {
-    "errorMessage": "An error occurred (413) when calling the PutItem operation: ",
-    "errorType": "ClientError",
-    "requestId": "3b18a731-f495-49d0-bf94-4a7a79d9a67c",
+    "errorMessage": "invoke_chain_text() got an unexpected keyword argument 'max_output_tokens'",
+    "errorType": "TypeError",
+    "requestId": "9c1cbc11-1676-496f-8462-356da915fd4e",
     "stackTrace": [
       "  File \"/var/task/orchestrator_v3.py\", line 310, in lambda_handler\n    return strict_bedrock.lambda_handler(event, context)\n",
       "  File \"/var/task/orchestrator_v2.py\", line 381, in lambda_handler\n    return production.lambda_handler(event, context)\n",
       "  File \"/var/task/orchestrator.py\", line 269, in lambda_handler\n    result = base.lambda_handler(event, context)\n",
-      "  File \"/var/task/handler.py\", line 861, in lambda_handler\n    return _run(event)\n",
-      "  File \"/var/task/handler.py\", line 801, in _run\n    _put(f\"PACKET#{slate}\", \"FINAL_INPUT\", packet)\n",
-      "  File \"/var/task/handler.py\", line 138, in _put\n    TABLE.put_item(**kwargs)\n",
-      "  File \"/var/lang/lib/python3.11/site-packages/boto3/resources/factory.py\", line 581, in do_action\n    response = action(self, *args, **kwargs)\n",
-      "  File \"/var/lang/lib/python3.11/site-packages/boto3/resources/action.py\", line 88, in __call__\n    response = getattr(parent.meta.client, operation_name)(*args, **params)\n",
-      "  File \"/var/task/botocore/client.py\", line 606, in _api_call\n    return self._make_api_call(operation_name, kwargs)\n",
-      "  File \"/var/task/botocore/context.py\", line 123, in wrapper\n    return func(*args, **kwargs)\n",
-      "  File \"/var/task/botocore/client.py\", line 1094, in _make_api_call\n    raise error_class(parsed_response, operation_name)\n"
+      "  File \"/var/task/handler.py\", line 929, in lambda_handler\n    return _run(event)\n",
+      "  File \"/var/task/handler.py\", line 870, in _run\n    card = _build_card(packet)\n",
+      "  File \"/var/task/orchestrator_v3.py\", line 225, in _build_card_three_source_model\n    card = _model_card(packet)\n",
+      "  File \"/var/task/orchestrator_v3.py\", line 209, in _model_card\n    return _STRICT_BEDROCK_CARD(packet)\n",
+      "  File \"/var/task/orchestrator_v2.py\", line 179, in _build_strict_bedrock_card\n    decision = _strict_bedrock_decision(game, state)\n",
+      "  File \"/var/task/orchestrator_v2.py\", line 138, in _strict_bedrock_decision\n    response = invoke_chain_text(\n",
+      "  File \"/var/task/orchestrator_v3.py\", line 23, in _invoke_endpoint_native_chain\n    result = dict(production_gateway.invoke_chain_text(*args, **kwargs))\n"
     ]
   },
   "jobStatus": "failure",
   "ok": false,
   "proofType": "MLB_AUTO_LLM_DEPLOYMENT",
-  "runId": "32814552535",
-  "sourceSha": "e8e5bd8c123f776dc7dea4776e428d77ff2285f3"
+  "runId": "32815192178",
+  "sourceSha": "6ffc63d13a806bed95c175ad5096a6f39bbafefc"
 }
