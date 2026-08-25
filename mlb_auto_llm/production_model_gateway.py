@@ -454,20 +454,14 @@ def invoke_chain_text(
     max_tokens: int = 900,
     temperature: float = 0.0,
     top_p: float = 0.9,
-    max_attempts: Optional[int] = None,
 ) -> Dict[str, Any]:
     global _PREFERRED_ROUTE
 
-    catalog = _ordered_routes(
-        configured_models() if models is None else models
-    )
+    catalog = _ordered_routes(models or configured_models())
     now = time.time()
-    configured_max_attempts = (
-        max_attempts
-        if max_attempts is not None
-        else int(os.environ.get("MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS", "8"))
+    max_attempts = max(
+        1, int(os.environ.get("MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS", "8"))
     )
-    max_attempts = max(1, int(configured_max_attempts))
     attempted: List[str] = []
     errors: List[Dict[str, Any]] = []
     for route_id in catalog:
