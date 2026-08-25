@@ -7,9 +7,11 @@ on:
       - '.github/workflows/deploy-mlb-root-lifecycle-continuity-once.yml'
       - 'hello_world/mlb_prospective_row_repair.py'
       - 'hello_world/mlb_prospective_trainer_read_repair.py'
+      - 'scripts/reconcile_mlb_prospective_backlog_v5.py'
       - 'tests/unit/test_mlb_root_lifecycle_deploy_gate.py'
       - 'tests/unit/test_mlb_stale_eligibility_boolean_repair.py'
       - 'tests/unit/test_mlb_protected_terminal_force_replay.py'
+      - 'tests/unit/test_reconcile_mlb_prospective_backlog_v5.py'
   workflow_dispatch:
 
 permissions:
@@ -81,7 +83,8 @@ jobs:
             scripts/invoke_mlb_trainer_with_retry.py \
             tests/unit/test_mlb_root_lifecycle_deploy_gate.py \
             tests/unit/test_mlb_stale_eligibility_boolean_repair.py \
-            tests/unit/test_mlb_protected_terminal_force_replay.py
+            tests/unit/test_mlb_protected_terminal_force_replay.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v5.py
           PYTHONPATH="hello_world:scripts:${PYTHONPATH:-}" python -m pytest -q \
             tests/unit/test_mlb_terminal_durability_replay.py \
             tests/unit/test_mlb_prospective_status_lifecycle_repair.py \
