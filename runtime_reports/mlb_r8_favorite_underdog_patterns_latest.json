@@ -1,118 +1,246 @@
 {
-  "artifactCount": 14,
+  "artifactCount": 341,
+  "bestOutOfSampleModel": "logistic",
   "byFavoriteProbabilityBand": {
     "50-55": {
-      "favoriteWinRate": 0.5616438356164384,
-      "favoriteWins": 41,
-      "games": 73,
-      "underdogWinRate": 0.4383561643835616
+      "favoriteWinRate": 0.5312324141812043,
+      "favoriteWins": 944,
+      "games": 1777,
+      "underdogWinRate": 0.46876758581879574
     },
     "55-60": {
-      "favoriteWinRate": 0.603448275862069,
-      "favoriteWins": 35,
-      "games": 58,
-      "underdogWinRate": 0.39655172413793105
+      "favoriteWinRate": 0.5400144196106705,
+      "favoriteWins": 749,
+      "games": 1387,
+      "underdogWinRate": 0.45998558038932946
     },
     "60-65": {
-      "favoriteWinRate": 0.6071428571428571,
-      "favoriteWins": 17,
-      "games": 28,
-      "underdogWinRate": 0.3928571428571429
+      "favoriteWinRate": 0.5840840840840841,
+      "favoriteWins": 389,
+      "games": 666,
+      "underdogWinRate": 0.4159159159159159
     },
     "65-70": {
-      "favoriteWinRate": 0.7142857142857143,
-      "favoriteWins": 10,
-      "games": 14,
-      "underdogWinRate": 0.2857142857142857
+      "favoriteWinRate": 0.6893939393939394,
+      "favoriteWins": 182,
+      "games": 264,
+      "underdogWinRate": 0.31060606060606055
     },
     "70+": {
-      "favoriteWinRate": 1.0,
-      "favoriteWins": 4,
-      "games": 4,
-      "underdogWinRate": 0.0
+      "favoriteWinRate": 0.7571428571428571,
+      "favoriteWins": 106,
+      "games": 140,
+      "underdogWinRate": 0.24285714285714288
     }
   },
-  "favoriteWinRate": 0.6045197740112994,
-  "favoriteWins": 107,
-  "gameCount": 177,
-  "meansWhenFavoriteWins": {
-    "favoriteDelta": 0.002776659018034568,
-    "favoriteDivergence": 0.01751874061443183,
-    "favoriteReversals": 7.4392523364485985
+  "chronologicalSplit": {
+    "firstTestDate": "2026-06-03",
+    "testDateCount": 69,
+    "testGameCount": 914,
+    "trainDateCount": 272,
+    "trainGameCount": 3320
   },
-  "meansWhenUnderdogWins": {
-    "underdogDelta": -0.0055054009682581105,
-    "underdogDivergence": 0.016838928806899217,
-    "underdogReversals": 7.714285714285714
+  "favoriteWinMeans": {
+    "deltaGap": 0.006129373184705517,
+    "divergenceGap": 0.0,
+    "favoriteBookAgreement": 0.729535864978903,
+    "favoriteDelta": 0.00306468659235276,
+    "favoriteDivergence": 0.016800914268362842,
+    "favoriteNegativeMove": 0.3206751054852321,
+    "favoritePositiveMove": 0.42447257383966247,
+    "favoriteProb": 0.5763865923900348,
+    "favoriteReversals": 8.736708860759494,
+    "probGap": 0.15277318478006943,
+    "reversalGap": 0.0,
+    "underdogBookAgreement": 0.729535864978903,
+    "underdogDelta": -0.0030646865923527576,
+    "underdogDivergence": 0.016800914268362842,
+    "underdogNegativeMove": 0.42447257383966247,
+    "underdogPositiveMove": 0.3206751054852321,
+    "underdogProb": 0.42361340760996524,
+    "underdogReversals": 8.736708860759494
   },
-  "note": "descriptive hypothesis evidence; only chronological out-of-sample validation may promote a learned interaction",
+  "favoriteWinRate": 0.5597543693906472,
+  "favoriteWins": 2370,
+  "gameCount": 4234,
+  "immutableHistoryRewritten": false,
+  "missingArtifactCount": 0,
+  "note": "Pattern evidence is diagnostic. Production promotion remains governed by chronological holdout/audit gates; Bedrock may audit hypotheses but cannot select winners or bypass the ML gate.",
+  "outOfSampleModels": {
+    "hist_gradient_boosting": {
+      "accuracy": 0.5328227571115973,
+      "brier": 0.25921558728058053,
+      "logLoss": 0.715437141276494,
+      "rocAuc": 0.5163386258871735,
+      "testGames": 914
+    },
+    "logistic": {
+      "accuracy": 0.5536105032822757,
+      "brier": 0.245788758119942,
+      "logLoss": 0.6846345683064686,
+      "rocAuc": 0.5261188751493866,
+      "testGames": 914
+    },
+    "random_forest": {
+      "accuracy": 0.47045951859956237,
+      "brier": 0.2516110355899105,
+      "logLoss": 0.6962020429675293,
+      "rocAuc": 0.51019243433087,
+      "testGames": 914
+    }
+  },
   "postLockDataExcluded": true,
-  "sourceAuthority": "immutable pregame historical The Odds API snapshots joined to official final MLB outcomes",
-  "topFavoriteWinTags": [
+  "promotionAuthorityChanged": false,
+  "sourceAuthority": "exact completedSlates immutable S3 artifact pointers from the live MLB historical optimizer state",
+  "topNumericPatternContrasts": [
     {
-      "games": 141,
-      "tag": "FAVORITE",
-      "winRate": 0.624113475177305
+      "absoluteDifference": 0.14687483022763104,
+      "difference": -0.14687483022763104,
+      "favoriteWinMean": 8.736708860759494,
+      "feature": "favoriteReversals",
+      "underdogWinMean": 8.883583690987125
     },
     {
-      "games": 177,
-      "tag": "REVERSAL",
-      "winRate": 0.6045197740112994
+      "absoluteDifference": 0.14687483022763104,
+      "difference": -0.14687483022763104,
+      "favoriteWinMean": 8.736708860759494,
+      "feature": "underdogReversals",
+      "underdogWinMean": 8.883583690987125
     },
     {
-      "games": 76,
-      "tag": "POSITIVE_MOVE",
-      "winRate": 0.5921052631578947
+      "absoluteDifference": 0.028013346371851322,
+      "difference": 0.028013346371851322,
+      "favoriteWinMean": 0.42447257383966247,
+      "feature": "favoritePositiveMove",
+      "underdogWinMean": 0.39645922746781115
     },
     {
-      "games": 51,
-      "tag": "NEGATIVE_MOVE",
-      "winRate": 0.5882352941176471
+      "absoluteDifference": 0.028013346371851322,
+      "difference": 0.028013346371851322,
+      "favoriteWinMean": 0.42447257383966247,
+      "feature": "underdogNegativeMove",
+      "underdogWinMean": 0.39645922746781115
     },
     {
-      "games": 126,
-      "tag": "BOOK_AGREEMENT",
-      "winRate": 0.5714285714285714
+      "absoluteDifference": 0.023322596210062635,
+      "difference": 0.023322596210062635,
+      "favoriteWinMean": 0.15277318478006943,
+      "feature": "probGap",
+      "underdogWinMean": 0.1294505885700068
     },
     {
-      "games": 36,
-      "tag": "PICKEM",
-      "winRate": 0.5277777777777778
+      "absoluteDifference": 0.019453649879574764,
+      "difference": -0.019453649879574764,
+      "favoriteWinMean": 0.3206751054852321,
+      "feature": "favoriteNegativeMove",
+      "underdogWinMean": 0.34012875536480686
+    },
+    {
+      "absoluteDifference": 0.019453649879574764,
+      "difference": -0.019453649879574764,
+      "favoriteWinMean": 0.3206751054852321,
+      "feature": "underdogPositiveMove",
+      "underdogWinMean": 0.34012875536480686
+    },
+    {
+      "absoluteDifference": 0.01402636678075364,
+      "difference": -0.01402636678075364,
+      "favoriteWinMean": 0.729535864978903,
+      "feature": "favoriteBookAgreement",
+      "underdogWinMean": 0.7435622317596566
+    },
+    {
+      "absoluteDifference": 0.01402636678075364,
+      "difference": -0.01402636678075364,
+      "favoriteWinMean": 0.729535864978903,
+      "feature": "underdogBookAgreement",
+      "underdogWinMean": 0.7435622317596566
+    },
+    {
+      "absoluteDifference": 0.011661298105031359,
+      "difference": 0.011661298105031359,
+      "favoriteWinMean": 0.5763865923900348,
+      "feature": "favoriteProb",
+      "underdogWinMean": 0.5647252942850034
+    },
+    {
+      "absoluteDifference": 0.011661298105031359,
+      "difference": -0.011661298105031359,
+      "favoriteWinMean": 0.42361340760996524,
+      "feature": "underdogProb",
+      "underdogWinMean": 0.4352747057149966
+    },
+    {
+      "absoluteDifference": 0.0019973586000103325,
+      "difference": 0.0019973586000103325,
+      "favoriteWinMean": 0.006129373184705517,
+      "feature": "deltaGap",
+      "underdogWinMean": 0.0041320145846951845
+    },
+    {
+      "absoluteDifference": 0.0009986793000051684,
+      "difference": 0.0009986793000051684,
+      "favoriteWinMean": 0.00306468659235276,
+      "feature": "favoriteDelta",
+      "underdogWinMean": 0.0020660072923475914
+    },
+    {
+      "absoluteDifference": 0.000998679300005164,
+      "difference": -0.000998679300005164,
+      "favoriteWinMean": -0.0030646865923527576,
+      "feature": "underdogDelta",
+      "underdogWinMean": -0.0020660072923475935
+    },
+    {
+      "absoluteDifference": 0.00017147161176281345,
+      "difference": 0.00017147161176281345,
+      "favoriteWinMean": 0.016800914268362842,
+      "feature": "favoriteDivergence",
+      "underdogWinMean": 0.01662944265660003
+    },
+    {
+      "absoluteDifference": 0.00017147161176281345,
+      "difference": 0.00017147161176281345,
+      "favoriteWinMean": 0.016800914268362842,
+      "feature": "underdogDivergence",
+      "underdogWinMean": 0.01662944265660003
+    },
+    {
+      "absoluteDifference": 0.0,
+      "difference": 0.0,
+      "favoriteWinMean": 0.0,
+      "feature": "divergenceGap",
+      "underdogWinMean": 0.0
+    },
+    {
+      "absoluteDifference": 0.0,
+      "difference": 0.0,
+      "favoriteWinMean": 0.0,
+      "feature": "reversalGap",
+      "underdogWinMean": 0.0
     }
   ],
-  "topUnderdogWinTags": [
-    {
-      "games": 46,
-      "tag": "PICKEM",
-      "winRate": 0.43478260869565216
-    },
-    {
-      "games": 126,
-      "tag": "BOOK_AGREEMENT",
-      "winRate": 0.42857142857142855
-    },
-    {
-      "games": 51,
-      "tag": "POSITIVE_MOVE",
-      "winRate": 0.4117647058823529
-    },
-    {
-      "games": 76,
-      "tag": "NEGATIVE_MOVE",
-      "winRate": 0.40789473684210525
-    },
-    {
-      "games": 177,
-      "tag": "REVERSAL",
-      "winRate": 0.3954802259887006
-    },
-    {
-      "games": 131,
-      "tag": "UNDERDOG",
-      "winRate": 0.3816793893129771
-    }
-  ],
-  "underdogWinRate": 0.3954802259887006,
-  "underdogWins": 70,
-  "version": "MLB-R8-FAVORITE-UNDERDOG-PATTERN-EVIDENCE-v2"
+  "underdogWinMeans": {
+    "deltaGap": 0.0041320145846951845,
+    "divergenceGap": 0.0,
+    "favoriteBookAgreement": 0.7435622317596566,
+    "favoriteDelta": 0.0020660072923475914,
+    "favoriteDivergence": 0.01662944265660003,
+    "favoriteNegativeMove": 0.34012875536480686,
+    "favoritePositiveMove": 0.39645922746781115,
+    "favoriteProb": 0.5647252942850034,
+    "favoriteReversals": 8.883583690987125,
+    "probGap": 0.1294505885700068,
+    "reversalGap": 0.0,
+    "underdogBookAgreement": 0.7435622317596566,
+    "underdogDelta": -0.0020660072923475935,
+    "underdogDivergence": 0.01662944265660003,
+    "underdogNegativeMove": 0.39645922746781115,
+    "underdogPositiveMove": 0.34012875536480686,
+    "underdogProb": 0.4352747057149966,
+    "underdogReversals": 8.883583690987125
+  },
+  "underdogWinRate": 0.44024563060935284,
+  "underdogWins": 1864,
+  "version": "MLB-R8-FAVORITE-UNDERDOG-PATTERN-EVIDENCE-v3-authoritative-corpus"
 }
