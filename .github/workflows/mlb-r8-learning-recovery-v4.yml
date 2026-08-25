@@ -1,0 +1,18 @@
+name: MLB R8 Learning Recovery V4
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mlb-r8-learning-recovery-v4.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo MLB R8 recovery workflow registered
