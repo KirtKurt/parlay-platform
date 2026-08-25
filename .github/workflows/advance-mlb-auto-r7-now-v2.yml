@@ -1,0 +1,103 @@
+name: Advance MLB AUTO R7 now v2
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/advance-mlb-auto-r7-now-v2.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: advance-mlb-auto-r7-now-v2
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-dev
+  REPORT_PATH: runtime_reports/mlb_auto_r7_advancement_latest.json
+
+jobs:
+  advance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: main, fetch-depth: 1}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Prepare
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          python -m py_compile scripts/reconcile_mlb_prospective_backlog_v5.py scripts/invoke_mlb_trainer_with_retry.py
+      - name: Resolve functions
+        id: mlb
+        run: |
+          set -euo pipefail
+          LOCK_FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id MLBDailyPickLockFunction --region "$AWS_REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          TRAINER=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id MLBMLTrainingFunction --region "$AWS_REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          ORIGINAL_TIMEOUT=$(aws lambda get-function-configuration --function-name "$LOCK_FN" --region "$AWS_REGION" --query Timeout --output text)
+          echo "lock_fn=$LOCK_FN" >> "$GITHUB_OUTPUT"
+          echo "trainer=$TRAINER" >> "$GITHUB_OUTPUT"
+          echo "original_timeout=$ORIGINAL_TIMEOUT" >> "$GITHUB_OUTPUT"
+      - name: Reconcile and train
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-auto-r7
+          aws lambda update-function-configuration --function-name '${{ steps.mlb.outputs.lock_fn }}' --timeout 900 --region "$AWS_REGION" >/dev/null
+          aws lambda wait function-updated-v2 --function-name '${{ steps.mlb.outputs.lock_fn }}' --region "$AWS_REGION"
+          python scripts/reconcile_mlb_prospective_backlog_v5.py --stack-name "$STACK_NAME" --region "$AWS_REGION" --max-slate-days 30 --output /tmp/mlb-auto-r7/backlog.json
+          python - <<'PY'
+          import json
+          d=json.load(open('/tmp/mlb-auto-r7/backlog.json'))
+          assert d.get('ok') is True,d
+          for key in ('directTableWrite','postStartPredictionCreationAllowed','immutablePredictionRewriteAllowed','productionAuthorityChanged','promotionAuthorityChanged'):
+              assert d.get(key) is False,(key,d)
+          PY
+          python scripts/invoke_mlb_trainer_with_retry.py --function-name '${{ steps.mlb.outputs.trainer }}' --region "$AWS_REGION" --payload '{"sport":"mlb","mode":"scheduled","run":"mlb_auto_r7_force_advancement_v2_20260825"}' --response /tmp/mlb-auto-r7/training.json --invocation /tmp/mlb-auto-r7/training-invocation.json --retry-execution-lease --deadline-seconds 1800 --retry-delay-seconds 20
+          python scripts/invoke_mlb_trainer_with_retry.py --function-name '${{ steps.mlb.outputs.trainer }}' --region "$AWS_REGION" --status-training-result /tmp/mlb-auto-r7/training.json --response /tmp/mlb-auto-r7/status.json --invocation /tmp/mlb-auto-r7/status-invocation.json
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          training=json.loads(Path('/tmp/mlb-auto-r7/training.json').read_text())
+          status=json.loads(Path('/tmp/mlb-auto-r7/status.json').read_text())
+          latest=((status.get('trainingHealth') or {}).get('latestRun') or training)
+          accepted=int(latest.get('acceptedRowCount',training.get('acceptedRowCount')) or 0)
+          parts=latest.get('partitionCounts',training.get('partitionCounts')) or {}
+          report={'proofType':'MLB_AUTO_R7_ADVANCEMENT','createdAtUtc':datetime.now(timezone.utc).isoformat(),'sourceSha':os.environ.get('GITHUB_SHA'),'experimentId':status.get('experimentId') or training.get('experimentId'),'acceptedRowCount':accepted,'partitionCounts':parts,'modelTrained':bool(latest.get('modelTrained',training.get('modelTrained'))),'championChanged':bool(latest.get('championChanged',training.get('championChanged'))),'liveInferenceAuthority':bool(latest.get('liveInferenceAuthority',training.get('liveInferenceAuthority'))),'canonicalSlateContinuity':latest.get('canonicalSlateContinuity') or {},'trainingStatus':latest.get('status') or training.get('status')}
+          report['advancing']=accepted>0 or sum(int(v or 0) for v in parts.values())>0
+          report['ok']=report['advancing'] and report['experimentId']=='mlb-v2-2026-08-03-future-prospective-r7'
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True,default=str)+'\n')
+          print(json.dumps(report,indent=2,sort_keys=True,default=str))
+          assert report['ok'] is True,report
+          PY
+      - name: Restore timeout
+        if: always()
+        run: |
+          aws lambda update-function-configuration --function-name '${{ steps.mlb.outputs.lock_fn }}' --timeout '${{ steps.mlb.outputs.original_timeout }}' --region "$AWS_REGION" >/dev/null || true
+          aws lambda wait function-updated-v2 --function-name '${{ steps.mlb.outputs.lock_fn }}' --region "$AWS_REGION" || true
+      - name: Publish proof
+        if: always()
+        run: |
+          set -euo pipefail
+          test -f "$REPORT_PATH" || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git pull --rebase origin main
+          git add "$REPORT_PATH"
+          git diff --cached --quiet && exit 0
+          git commit -m 'Publish MLB AUTO R7 advancement proof [skip ci]'
+          for attempt in 1 2 3 4 5; do
+            git push origin HEAD:main && exit 0
+            git pull --rebase origin main
+            sleep $((attempt*3))
+          done
+          exit 1
