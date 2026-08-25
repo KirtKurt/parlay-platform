@@ -19,7 +19,7 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Probe BBD NFL games query contract without exposing credentials
+      - name: Probe BBD NFL games and deployed storage without exposing credentials
         env:
           REGION: ${{ secrets.AWS_REGION }}
         run: |
@@ -28,8 +28,10 @@ jobs:
           python - <<'PY'
           import boto3,json,urllib.parse,urllib.request,os
           region=os.environ['REGION']; stack='parlay-platform-nfl-auto'
-          cf=boto3.client('cloudformation',region_name=region); sm=boto3.client('secretsmanager',region_name=region)
-          resource=cf.describe_stack_resource(StackName=stack,LogicalResourceId='NflBbdSecret')['StackResourceDetail']['PhysicalResourceId']
+          cf=boto3.client('cloudformation',region_name=region); sm=boto3.client('secretsmanager',region_name=region); ddb=boto3.client('dynamodb',region_name=region)
+          def physical(logical):
+              return cf.describe_stack_resource(StackName=stack,LogicalResourceId=logical)['StackResourceDetail']['PhysicalResourceId']
+          resource=physical('NflBbdSecret')
           secret=sm.get_secret_value(SecretId=resource).get('SecretString','').strip()
           if secret.startswith('{'):
               decoded=json.loads(secret)
@@ -45,10 +47,33 @@ jobs:
               data=payload.get('data') if isinstance(payload,dict) else None
               pagination=payload.get('pagination') if isinstance(payload,dict) else None
               rows=data if isinstance(data,list) else []
-              return {'count':len(rows),'pagination':pagination or {},'sampleKeys':sorted((rows[0] if rows and isinstance(rows[0],dict) else {}).keys()),'status':200,'rateRemaining':headers.get('x-ratelimit-remaining')}
-          report={'proofType':'NFL_BBD_QUERY_CONTRACT_DIAGNOSTIC','seasonOnly':call({'season':2025,'limit':5,'offset':0}),'seasonTypeReg':call({'season':2025,'type':'REG','limit':5,'offset':0}),'seasonTypePost':call({'season':2025,'type':'POST','limit':5,'offset':0}),'secretExposed':False}
-          open('/tmp/nfl-bbd-diagnostic.json','w').write(json.dumps(report,indent=2,sort_keys=True)+'\n')
-          print(json.dumps(report,indent=2,sort_keys=True))
+              sample=rows[0] if rows and isinstance(rows[0],dict) else {}
+              return {'count':len(rows),'pagination':pagination or {},'sampleKeys':sorted(sample.keys()),'sampleGameType':sample.get('game_type'),'sampleSeason':sample.get('season'),'status':200,'rateRemaining':headers.get('x-ratelimit-remaining')}
+          games_table=physical('NflGamesTable'); ops_table=physical('NflOpsTable'); state_table=physical('NflStateTable')
+          game_count=ddb.scan(TableName=games_table,Select='COUNT',ConsistentRead=True).get('Count',0)
+          exclusions=ddb.scan(TableName=ops_table,FilterExpression='PK = :p',ExpressionAttributeValues={':p':{'S':'BACKFILL_EXCLUSION'}},ProjectionExpression='PK,SK,reason',Limit=100).get('Items',[])
+          state=ddb.get_item(TableName=state_table,Key={'PK':{'S':'NFL_AUTO_BACKFILL'},'SK':{'S':'CURRENT'}},ConsistentRead=True).get('Item',{})
+          def plain(v):
+              if 'S' in v:return v['S']
+              if 'N' in v:return int(v['N']) if v['N'].isdigit() else float(v['N'])
+              if 'BOOL' in v:return v['BOOL']
+              if 'NULL' in v:return None
+              if 'M' in v:return {k:plain(x) for k,x in v['M'].items()}
+              if 'L' in v:return [plain(x) for x in v['L']]
+              return None
+          report={
+            'proofType':'NFL_BBD_QUERY_CONTRACT_DIAGNOSTIC',
+            'seasonOnly':call({'season':2025,'limit':5,'offset':0}),
+            'seasonTypeReg':call({'season':2025,'type':'REG','limit':5,'offset':0}),
+            'seasonTypePost':call({'season':2025,'type':'POST','limit':5,'offset':0}),
+            'gamesTableItemCount':int(game_count or 0),
+            'backfillExclusionCountSample':len(exclusions),
+            'backfillExclusionSample':[{'sk':plain(x.get('SK',{'S':''})),'reason':plain(x.get('reason',{'S':''}))} for x in exclusions[:20]],
+            'backfillState':{k:plain(v) for k,v in state.items() if k not in {'PK','SK'}},
+            'readOnly':True,'secretExposed':False,'productionAuthorityChanged':False,'immutableHistoryRewritten':False,
+          }
+          open('/tmp/nfl-bbd-diagnostic.json','w').write(json.dumps(report,indent=2,sort_keys=True,default=str)+'\n')
+          print(json.dumps(report,indent=2,sort_keys=True,default=str))
           PY
       - name: Publish diagnostic
         run: |
@@ -61,7 +86,7 @@ jobs:
             mkdir -p runtime_reports
             cp /tmp/nfl-bbd-diagnostic.json runtime_reports/nfl_bbd_query_contract_latest.json
             git add runtime_reports/nfl_bbd_query_contract_latest.json
-            git commit -m 'Publish NFL BBD query contract diagnostic [skip ci]' || exit 0
+            git commit -m 'Publish NFL BBD storage diagnostic [skip ci]' || exit 0
             git push origin HEAD:main && exit 0
             sleep $((i*2))
           done
