@@ -66,151 +66,23 @@ def _today_et() -> str:
 
 
 def _model_body() -> Dict[str, Any]:
-    runtime = getattr(ENGINE, "MLB_ML_RUNTIME_INSTALL_V3", RUNTIME_INSTALL) if ENGINE is not None else RUNTIME_INSTALL
-    steps = runtime.get("steps") or {}
-    ranked_version = (
-        getattr(ENGINE, "MLB_RANKED_WINNER_VERSION", None)
-        if ENGINE is not None
-        else runtime.get("rankedWinnerVersion")
-    )
-    ranked_policy = (
-        getattr(ENGINE, "MLB_RANKED_WINNER_POLICY_VERSION", None)
-        if ENGINE is not None
-        else runtime.get("rankedWinnerPolicyVersion")
-    )
-    historical_version = runtime.get("historicalDailyPolicyVersion")
-    historical_active = runtime.get("historicalDailyChampionActive") is True
-    cutover_active = runtime.get("historicalProductionCutoverActive") is True
-    authority_coherent = steps.get("historicalAuthorityStateCoherent") is True
-    runtime_ready = bool(
-        ENGINE_IMPORT_OK
-        and runtime.get("ok") is True
-        and steps.get("rankedWinnerV15_10SelectionInstalled") is True
-        and runtime.get("historicalDailyChampionOutermostAuthorityInstalled") is True
-        and authority_coherent
-        and ranked_version
-    )
-    primary = historical_version if historical_active else (ranked_version or MODEL_VERSION)
-    authority_source = runtime.get("productionAuthoritySource") or (
-        "mlb_historical_daily_champion_only"
-        if historical_active
-        else "mlb_ranked_winner_v15_10_active_ensemble"
-    )
+    # MLB_AUTO_R7_FAIL_CLOSED_AUTHORITY_V1
     return {
-        "ok": runtime_ready,
-        "sport": "mlb",
-        "model_version": HISTORICAL_MODEL_VERSION if historical_active else MODEL_VERSION,
-        "primaryAlgorithm": primary,
-        "primaryAlgorithmActive": runtime_ready,
-        "historicalDailyChampionActive": historical_active,
-        "historicalDailyPolicyVersion": historical_version,
-        "historicalRuntimeExtensionVersion": runtime.get("historicalRuntimeExtensionVersion"),
-        "historicalApiExtensionVersion": HISTORICAL_API_EXTENSION_VERSION,
-        "historicalDailyChampionLoadStatus": runtime.get("historicalDailyChampionLoadStatus"),
-        "historicalDailyPromotionGateVersion": runtime.get("historicalDailyPromotionGateVersion"),
-        "historicalProductionCutoverActive": cutover_active,
-        "historicalProductionCutoverStatus": runtime.get("historicalProductionCutoverStatus"),
-        "historicalProductionCutoverVersion": runtime.get("historicalProductionCutoverVersion"),
-        "historicalAuthorityStateCoherent": authority_coherent,
-        "incumbentAlgorithm": ranked_version,
-        "incumbentRole": (
-            "quarantined_feature_and_explicit_rollback_artifact_only"
-            if cutover_active
-            else "active_until_historical_gate"
-        ),
-        "rankedWinnerPolicyVersion": ranked_policy,
-        "rankedWinnerFirstSlateDateEt": runtime.get("rankedWinnerFirstSlateDate") or "2026-07-24",
-        "precisionHitRateEvidencePassed": historical_active,
-        "dailySlateAccuracyEvidencePassed": historical_active,
-        "dailySlateAccuracyRequirement": 0.80,
-        "dailySlateAccuracyTargetHigh": 0.90,
-        "accuracyEvidenceScope": "complete_day_slate_not_individual_game",
-        "requiredEvidencePartitions": {
-            "trainingGames": 1000,
-            "walkForwardGames": 200,
-            "untouchedAuditGames": 200,
-        },
-        "allowedProductionOutput": ["PICK"],
-        "productionSelectionAllowed": runtime_ready,
-        "automaticWagerAllowed": False,
-        "predictionOnlyWagerSafetyInstalled": runtime.get(
-            "predictionOnlyWagerSafetyInstalled"
-        ) is True,
-        "rowLevelAutomaticWagerAllowed": False,
-        "legacyRecommendationAuthority": False,
-        "legacyAlgorithmAuthorityDisabled": cutover_active,
-        "incumbentProductionAuthorityDestroyed": cutover_active,
-        "legacyFallbackAllowed": False,
-        "automaticLegacyRestoreAllowed": False,
-        "soleProductionAlgorithm": primary,
-        "game_winner_model": getattr(ENGINE, "MODEL_VERSION", None) if ENGINE is not None else None,
-        "game_winner_engine": getattr(ENGINE, "ENGINE", None) if ENGINE is not None else None,
-        "gameWinnerDiagnosticRole": (
-            "historical_daily_champion_direction_and_immutable_audit"
-            if historical_active
-            else "active_ranked_model_direction_and_immutable_audit"
-        ),
-        "ml_optimization_version": OPTIMIZATION_VERSION,
-        "ml_runtime_install": runtime,
-        "engine_import_ok": ENGINE_IMPORT_OK,
-        "engine_import_error": ENGINE_IMPORT_ERROR,
-        "apiRuntimeVersion": VERSION,
-        "persistedPrelockPublicReadVersion": persisted_prelock_read.VERSION,
-        "pick_type": (
-            "individual_game_moneyline_pick_evaluated_as_complete_daily_slate"
-            if historical_active
-            else "individual_game_moneyline_ranked_pick"
-        ),
-        "requiredWinnerPickPolicy": (
-            "one winner PICK for every valid MLB game on the complete slate"
-            if historical_active
-            else "one active-model ranked winner PICK for every valid MLB game"
-        ),
-        "playablePolicy": (
-            "winner predictions cover the slate; the 80 percent requirement is evaluated by day, not assigned per game"
-            if historical_active
-            else "winner prediction is always returned; precision and trade qualification are separate"
-        ),
-        "mlDirectionPolicy": (
-            "the historical daily champion is the sole outermost direction authority; the prior selector is quarantined and has no automatic fallback path"
-            if historical_active
-            else "active exported ensemble is sole direction authority until the immutable historical daily gate passes"
-        ),
-        "mlReliabilityPolicy": (
-            "the 80 percent requirement applies only to complete-day held-out slate accuracy, never to an individual game label"
-            if historical_active
-            else "model probability is reported honestly; no 80-90% label is assigned without evidence"
-        ),
-        "productionAuthoritySource": authority_source,
-        "productionAuthorityLifecycleState": runtime.get("productionAuthorityLifecycleState") or (
-            "HISTORICAL_DAILY_ONLY" if historical_active else "INCUMBENT_UNTIL_HISTORICAL_GATE"
-        ),
-        "automaticPromotionPolicy": (
-            "automatic atomic fail-closed champion plus historical-only cutover after the immutable 1000/200/200 every-day gate passes"
-            if historical_active
-            else "winner model fixed for release; precision/trade promotion remains disabled"
-        ),
-        "legacyV1AuthorityEnabled": False,
-        "awsNativeTrainingInstalled": True,
-        "awsNativeTrainingAuthority": historical_active,
-        "awsNativeTrainingHealthSource": (
-            "mlb_historical_optimizer_status_and_versioned_champion_artifact"
-            if historical_active
-            else "separate_mode_specific_status_contract"
-        ),
-        "firstPromotionRequiresManualReview": not historical_active,
-        "manualReviewCreatesShadowApprovalOnly": not historical_active,
-        "v2InferenceConsumerInstalled": historical_active,
-        "runtimeAuthorityActivationAvailable": historical_active,
-        "parlaysEnabled": False,
-        "readOnly": True,
-        "sourcePolicy": (
-            "The Odds API historical 15-minute snapshots from 01:00 ET, per-game T-45 clipping, immutable complete-slate datasets, official FINAL labels, chronological whole-day partitions, and an untouched audit."
-            if historical_active
-            else "Canonical 15-minute market slots, exported active ensemble, immutable pre-lock snapshots, official FINAL labels, and separate precision/trade qualification."
-        ),
+        "ok": False, "sport": "mlb",
+        "status": "NO_QUALIFIED_CHAMPION", "error": "NO_QUALIFIED_CHAMPION",
+        "publicationClosed": True, "productionSelectionAllowed": False,
+        "model_version": None, "primaryAlgorithm": None, "primaryAlgorithmActive": False,
+        "soleProductionAlgorithm": None, "game_winner_model": None,
+        "requestedAuthority": "AWS_ML_PROSPECTIVE_R7",
+        "qualifiedChampionRequired": True, "qualifiedChampionPresent": False,
+        "r7ChampionQualified": False, "r7DeploymentIdentity": None,
+        "legacyFallbackAllowed": False, "automaticLegacyRestoreAllowed": False,
+        "legacyRecommendationAuthority": False, "retiredAuthoritySuppressed": True,
+        "retiredV15_10Eligible": False, "automaticWagerAllowed": False,
+        "rowLevelAutomaticWagerAllowed": False, "parlaysEnabled": False,
+        "readOnly": True, "apiRuntimeVersion": VERSION,
+        "authorityContractVersion": "MLB-AUTO-R7-QUALIFIED-CHAMPION-ONLY-v1",
     }
-
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     event = event or {}
