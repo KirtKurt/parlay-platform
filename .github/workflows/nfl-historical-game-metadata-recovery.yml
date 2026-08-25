@@ -2,10 +2,9 @@ name: Repair NFL Historical Game Metadata
 
 "on":
   push:
-    branches: [main]
+    branches:
+      - automation/nfl-historical-recovery-20260825-0528
     paths:
-      - 'scripts/nfl_recover_historical_game_metadata.py'
-      - 'tests/nfl_auto/test_historical_game_metadata_recovery.py'
       - '.github/workflows/nfl-historical-game-metadata-recovery.yml'
   workflow_dispatch:
 
@@ -36,16 +35,13 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Restore checksum-controlled NFL template source
+      - name: Restore checksum-controlled NFL release artifacts
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
           import base64
 
-          # part05a..part05d are the repaired replacement shards for part05.
-          # Use an explicit immutable order so the legacy aggregate part05 is
-          # never concatenated together with its replacement shards.
           names = [
               'part00', 'part01', 'part02', 'part03', 'part04',
               'part05a', 'part05b', 'part05c', 'part05d',
@@ -60,16 +56,21 @@ jobs:
           print({'partCount': len(parts), 'firstPart': parts[0].name, 'lastPart': parts[-1].name})
           PY
           unzip -tq /tmp/nfl-auto.zip
+          mkdir -p .github/workflows
           unzip -p /tmp/nfl-auto.zip nfl-auto-template.yaml > nfl-auto-template.yaml
+          unzip -p /tmp/nfl-auto.zip .github/workflows/deploy-nfl-auto.yml > .github/workflows/deploy-nfl-auto.yml
           python - <<'PY'
-          import hashlib,json,pathlib
-          manifest=json.loads(pathlib.Path('NFL_AUTO_MANIFEST.json').read_text())
-          expected=next(row['sha256'] for row in manifest['files'] if row['path']=='nfl-auto-template.yaml')
-          path=pathlib.Path('nfl-auto-template.yaml')
-          observed=hashlib.sha256(path.read_bytes()).hexdigest()
-          assert observed == expected, (observed,expected)
-          assert path.stat().st_size == 13220, path.stat().st_size
-          print({'templateSha256':observed,'source':'checksum-controlled .nfl_bundle repaired shards'})
+          import hashlib, json, pathlib
+
+          manifest = json.loads(pathlib.Path('NFL_AUTO_MANIFEST.json').read_text())
+          expected = {row['path']: row for row in manifest['files']}
+          for name in ('nfl-auto-template.yaml', '.github/workflows/deploy-nfl-auto.yml'):
+              path = pathlib.Path(name)
+              row = expected[name]
+              observed = hashlib.sha256(path.read_bytes()).hexdigest()
+              assert observed == row['sha256'], (name, observed, row['sha256'])
+              assert path.stat().st_size == int(row['bytes']), (name, path.stat().st_size, row['bytes'])
+              print({'path': name, 'sha256': observed, 'bytes': path.stat().st_size})
           PY
 
       - name: Validate isolated NFL repair contracts
@@ -107,7 +108,7 @@ jobs:
             aws events disable-rule --name "$rule" --region "$REGION"
           fi
 
-      - name: Recover exact historical kickoff/team authority
+      - name: Recover exact historical kickoff and team authority
         env:
           REGION: ${{ secrets.AWS_REGION }}
         run: |
@@ -138,12 +139,12 @@ jobs:
               --payload '{"action":"autonomous_tick"}' \
               "/tmp/nfl-tick-$i.json" >/tmp/nfl-tick-meta.json
             python - "$i" <<'PY'
-          import json,sys
-          i=sys.argv[1]
-          body=json.load(open(f'/tmp/nfl-tick-{i}.json'))
+          import json, sys
+          i = sys.argv[1]
+          body = json.load(open(f'/tmp/nfl-tick-{i}.json'))
           if body.get('ok') is not True:
               raise SystemExit(f'NFL autonomous tick {i} failed closed: {body}')
-          print(json.dumps({'tick':int(i),'result':body},sort_keys=True,default=str))
+          print(json.dumps({'tick': int(i), 'result': body}, sort_keys=True, default=str))
           PY
           done
 
@@ -159,37 +160,38 @@ jobs:
             --output text)
           curl --fail --silent --show-error --retry 5 --retry-all-errors "$url" >/tmp/nfl-status.json
           python - <<'PY'
-          import json,datetime,pathlib,os
-          repair=json.load(open(os.environ['REPORT_PATH']))
-          status=json.load(open('/tmp/nfl-status.json'))
-          champions=status.get('champions') or {}
-          historical=int(status.get('historical_game_count') or 0)
-          phase=str((status.get('backfill') or {}).get('phase') or '')
-          ok=bool(
+          import datetime, json, os, pathlib
+
+          repair = json.load(open(os.environ['REPORT_PATH']))
+          status = json.load(open('/tmp/nfl-status.json'))
+          champions = status.get('champions') or {}
+          historical = int(status.get('historical_game_count') or 0)
+          phase = str((status.get('backfill') or {}).get('phase') or '')
+          ok = bool(
               repair.get('ok') is True
               and historical >= 1000
-              and phase in {'BBD_PLAYS','ODDS_SNAPSHOTS','MATERIALIZE','READY'}
+              and phase in {'BBD_PLAYS', 'ODDS_SNAPSHOTS', 'MATERIALIZE', 'READY'}
               and all(value is None for value in champions.values())
               and status.get('preseason_predictions_enabled') is False
           )
-          proof={
-              'ok':ok,
-              'proofType':'NFL_HISTORICAL_GAME_METADATA_RECOVERY_LIVE_VERIFICATION',
-              'observedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
-              'sourceSha':os.environ.get('GITHUB_SHA'),
-              'repair':repair,
-              'status':status,
-              'historicalGameCount':historical,
-              'backfillPhase':phase,
-              'championsRemainNull':all(value is None for value in champions.values()),
-              'productionAuthorityChanged':False,
-              'immutablePredictionHistoryRewritten':False,
-              'postStartPredictionCreated':False,
-              'humanWinnerSelection':False,
-              'otherSportChanged':False,
+          proof = {
+              'ok': ok,
+              'proofType': 'NFL_HISTORICAL_GAME_METADATA_RECOVERY_LIVE_VERIFICATION',
+              'observedAtUtc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'sourceSha': os.environ.get('GITHUB_SHA'),
+              'repair': repair,
+              'status': status,
+              'historicalGameCount': historical,
+              'backfillPhase': phase,
+              'championsRemainNull': all(value is None for value in champions.values()),
+              'productionAuthorityChanged': False,
+              'immutablePredictionHistoryRewritten': False,
+              'postStartPredictionCreated': False,
+              'humanWinnerSelection': False,
+              'otherSportChanged': False,
           }
-          pathlib.Path(os.environ['LIVE_REPORT_PATH']).write_text(json.dumps(proof,indent=2,sort_keys=True,default=str)+'\n')
-          print(json.dumps(proof,indent=2,sort_keys=True,default=str))
+          pathlib.Path(os.environ['LIVE_REPORT_PATH']).write_text(json.dumps(proof, indent=2, sort_keys=True, default=str) + '\n')
+          print(json.dumps(proof, indent=2, sort_keys=True, default=str))
           if not ok:
               raise SystemExit('NFL historical metadata recovery did not reach a safe advancing state')
           PY
@@ -206,25 +208,14 @@ jobs:
             aws events enable-rule --name "$RULE" --region "$REGION"
           fi
 
-      - name: Publish exact NFL repair proof
+      - name: Publish isolated NFL repair proof to repair branch
         if: always() && hashFiles('runtime_reports/nfl_historical_game_metadata_recovery_latest.json') != ''
         run: |
           set -euo pipefail
-          cp "$REPORT_PATH" /tmp/nfl-metadata-repair.json
-          if [ -f "$LIVE_REPORT_PATH" ]; then cp "$LIVE_REPORT_PATH" /tmp/nfl-metadata-live.json; fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          published=false
-          for attempt in 1 2 3 4 5; do
-            git fetch origin main
-            git checkout -B nfl-metadata-repair-proof origin/main
-            mkdir -p runtime_reports
-            cp /tmp/nfl-metadata-repair.json "$REPORT_PATH"
-            if [ -f /tmp/nfl-metadata-live.json ]; then cp /tmp/nfl-metadata-live.json "$LIVE_REPORT_PATH"; fi
-            git add "$REPORT_PATH" "$LIVE_REPORT_PATH" 2>/dev/null || git add "$REPORT_PATH"
-            if git diff --cached --quiet; then published=true; break; fi
-            git commit -m 'runtime: publish NFL historical metadata repair proof [skip ci]'
-            if git push origin HEAD:main; then published=true; break; fi
-            sleep $((attempt*3))
-          done
-          test "$published" = true
+          git add "$REPORT_PATH"
+          if [ -f "$LIVE_REPORT_PATH" ]; then git add "$LIVE_REPORT_PATH"; fi
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'runtime: publish isolated NFL historical recovery proof [skip ci]'
+          git push origin HEAD:${GITHUB_REF_NAME}
