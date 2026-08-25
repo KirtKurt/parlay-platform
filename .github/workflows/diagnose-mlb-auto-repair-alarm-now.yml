@@ -1,0 +1,275 @@
+name: Diagnose MLB AUTO unresolved repair alarm
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-mlb-auto-repair-alarm-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-mlb-auto-repair-alarm-now
+  cancel-in-progress: false
+
+jobs:
+  diagnose-mlb-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      REPAIR_STACK: parlay-platform-auto-repair-mlb-auto
+      TARGET_STACK: parlay-platform-mlb-auto-llm
+      SPORT: mlb-auto
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Capture MLB-only alarm, controller, schedule, metric, and log evidence
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-auto-alarm runtime_reports
+          out=/tmp/mlb-auto-alarm
+
+          aws cloudformation describe-stacks \
+            --stack-name "$REPAIR_STACK" --region "$REGION" \
+            > "$out/repair-stack.json"
+          aws cloudformation describe-stacks \
+            --stack-name "$TARGET_STACK" --region "$REGION" \
+            > "$out/target-stack.json"
+
+          repair_function=$(aws cloudformation describe-stacks \
+            --stack-name "$REPAIR_STACK" --region "$REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='AutoRepairFunctionName'].OutputValue | [0]" \
+            --output text)
+          state_table=$(aws cloudformation describe-stacks \
+            --stack-name "$REPAIR_STACK" --region "$REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='AutoRepairStateTableName'].OutputValue | [0]" \
+            --output text)
+          alarm_name=$(aws cloudformation describe-stack-resource \
+            --stack-name "$REPAIR_STACK" \
+            --logical-resource-id AutoRepairUnresolvedFailureAlarm \
+            --region "$REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          target_function=$(aws cloudformation describe-stack-resource \
+            --stack-name "$TARGET_STACK" \
+            --logical-resource-id MLBAutoLLMFunction \
+            --region "$REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' --output text)
+
+          printf '%s' "$repair_function" > "$out/repair-function-name.txt"
+          printf '%s' "$state_table" > "$out/state-table-name.txt"
+          printf '%s' "$alarm_name" > "$out/alarm-name.txt"
+          printf '%s' "$target_function" > "$out/target-function-name.txt"
+
+          aws cloudwatch describe-alarms \
+            --alarm-names "$alarm_name" --region "$REGION" \
+            > "$out/alarm.json"
+          aws cloudwatch describe-alarm-history \
+            --alarm-name "$alarm_name" --history-item-type StateUpdate \
+            --max-records 20 --region "$REGION" \
+            > "$out/alarm-history.json"
+
+          start_time=$(date -u -d '8 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          end_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          for metric in Checks RepairAttempts RepairSuccesses RepairFailures RepairDeferred SchedulesEnabled UnhealthyComponents; do
+            aws cloudwatch get-metric-statistics \
+              --namespace Inqsi/AutoRepair \
+              --metric-name "$metric" \
+              --dimensions Name=Sport,Value="$SPORT" \
+              --start-time "$start_time" --end-time "$end_time" \
+              --period 300 --statistics Sum \
+              --region "$REGION" \
+              > "$out/metric-${metric}.json"
+          done
+
+          aws lambda get-function-configuration \
+            --function-name "$repair_function" --region "$REGION" \
+            --query '{FunctionName:FunctionName,FunctionArn:FunctionArn,State:State,LastUpdateStatus:LastUpdateStatus,LastModified:LastModified,Timeout:Timeout,MemorySize:MemorySize,Runtime:Runtime}' \
+            > "$out/repair-function-config.json"
+          aws lambda get-function-configuration \
+            --function-name "$target_function" --region "$REGION" \
+            --query '{FunctionName:FunctionName,FunctionArn:FunctionArn,State:State,LastUpdateStatus:LastUpdateStatus,LastModified:LastModified,Timeout:Timeout,MemorySize:MemorySize,Runtime:Runtime}' \
+            > "$out/target-function-config.json"
+
+          aws lambda invoke \
+            --function-name "$repair_function" \
+            --invocation-type RequestResponse \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"status","source":"mlb_alarm_diagnostic"}' \
+            --region "$REGION" \
+            "$out/controller-status.json" \
+            > "$out/controller-status-meta.json"
+
+          target_arn=$(aws lambda get-function-configuration \
+            --function-name "$target_function" --region "$REGION" \
+            --query FunctionArn --output text)
+          aws events list-rule-names-by-target \
+            --target-arn "$target_arn" --limit 100 --region "$REGION" \
+            > "$out/target-rules.json"
+          python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          out = Path('/tmp/mlb-auto-alarm')
+          rules = json.load(open(out / 'target-rules.json')).get('RuleNames') or []
+          details = []
+          for name in rules:
+              rule = json.loads(subprocess.check_output([
+                  'aws','events','describe-rule','--name',name,'--region',os.environ['REGION'],'--output','json'
+              ]))
+              targets = json.loads(subprocess.check_output([
+                  'aws','events','list-targets-by-rule','--rule',name,'--region',os.environ['REGION'],'--output','json'
+              ]))
+              details.append({'rule': rule, 'targets': targets.get('Targets') or []})
+          (out / 'target-rule-details.json').write_text(json.dumps(details, indent=2, default=str) + '\n')
+          PY
+
+          start_ms=$(( ($(date -u +%s) - 28800) * 1000 ))
+          for pair in "repair:$repair_function" "target:$target_function"; do
+            label=${pair%%:*}
+            function=${pair#*:}
+            aws logs filter-log-events \
+              --log-group-name "/aws/lambda/$function" \
+              --start-time "$start_ms" --limit 300 \
+              --region "$REGION" \
+              > "$out/${label}-logs.json" 2> "$out/${label}-logs-error.txt" || true
+          done
+
+          aws dynamodb get-item \
+            --table-name "$state_table" \
+            --key '{"PK":{"S":"STATE"},"SK":{"S":"STATE"}}' \
+            --consistent-read --region "$REGION" \
+            > "$out/controller-state-ddb.json"
+
+          python - <<'PY'
+          from __future__ import annotations
+          import json
+          import os
+          import re
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          src = Path('/tmp/mlb-auto-alarm')
+          dest = Path('runtime_reports/mlb_auto_repair_alarm_diagnostic_latest.json')
+
+          secret_key = re.compile(r'(?i)(secret|token|password|authorization|api[_-]?key|credential)')
+          bearer = re.compile(r'(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+')
+          aws_key = re.compile(r'\b(?:AKIA|ASIA)[0-9A-Z]{16}\b')
+
+          def load(name, default=None):
+              path = src / name
+              if not path.exists() or not path.read_text(errors='replace').strip():
+                  return default
+              try:
+                  return json.loads(path.read_text(errors='replace'))
+              except Exception:
+                  return {'raw': path.read_text(errors='replace')[:12000]}
+
+          def sanitize(value, depth=0):
+              if depth > 12:
+                  return '[DEPTH_LIMIT]'
+              if isinstance(value, dict):
+                  out = {}
+                  for key, item in value.items():
+                      if secret_key.search(str(key)):
+                          out[str(key)] = '[REDACTED]'
+                      else:
+                          out[str(key)] = sanitize(item, depth + 1)
+                  return out
+              if isinstance(value, list):
+                  return [sanitize(item, depth + 1) for item in value[:500]]
+              if isinstance(value, str):
+                  value = bearer.sub('Bearer [REDACTED]', value)
+                  value = aws_key.sub('[REDACTED_AWS_ACCESS_KEY]', value)
+                  return value[:16000]
+              return value
+
+          alarm = load('alarm.json', {})
+          alarms = alarm.get('MetricAlarms') or []
+          alarm_row = alarms[0] if alarms else {}
+          status = load('controller-status.json', {})
+          status_meta = load('controller-status-meta.json', {})
+          state = status.get('state') if isinstance(status, dict) else None
+          components = state.get('components') if isinstance(state, dict) else []
+          component = components[0] if isinstance(components, list) and components else {}
+          repair = component.get('repair') if isinstance(component, dict) else {}
+
+          metrics = {}
+          for path in sorted(src.glob('metric-*.json')):
+              name = path.stem.removeprefix('metric-')
+              data = load(path.name, {})
+              points = sorted(
+                  data.get('Datapoints') or [],
+                  key=lambda row: str(row.get('Timestamp') or ''),
+              )
+              metrics[name] = points
+
+          report = {
+              'proofType': 'MLB_AUTO_REPAIR_UNRESOLVED_FAILURE_ALARM_DIAGNOSTIC_V1',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'sourceSha': os.environ.get('GITHUB_SHA'),
+              'scope': 'mlb-auto-only',
+              'repairStack': os.environ['REPAIR_STACK'],
+              'targetStack': os.environ['TARGET_STACK'],
+              'sport': os.environ['SPORT'],
+              'alarmName': (src / 'alarm-name.txt').read_text(),
+              'alarm': alarm_row,
+              'alarmHistory': load('alarm-history.json', {}).get('AlarmHistoryItems') or [],
+              'repairFunction': load('repair-function-config.json', {}),
+              'targetFunction': load('target-function-config.json', {}),
+              'targetRules': load('target-rule-details.json', []),
+              'controllerStatusInvokeMeta': status_meta,
+              'controllerStatus': status,
+              'latestControllerState': state,
+              'latestComponent': component,
+              'latestRepair': repair,
+              'metrics': metrics,
+              'repairLogs': load('repair-logs.json', {}),
+              'targetLogs': load('target-logs.json', {}),
+              'controllerStateDdb': load('controller-state-ddb.json', {}),
+              'readOnlyDiagnostic': True,
+              'repairCycleInvoked': False,
+              'targetFunctionInvoked': False,
+              'directSportTableWrite': False,
+              'productionAuthorityChanged': False,
+              'postStartPredictionCreationAllowed': False,
+              'immutablePredictionRewriteAllowed': False,
+              'otherSportsInspected': False,
+              'secretExposed': False,
+          }
+          report['alarmCurrentlyInAlarm'] = alarm_row.get('StateValue') == 'ALARM'
+          report['latestControllerOkay'] = state.get('ok') if isinstance(state, dict) else None
+          report['latestControllerStatus'] = state.get('status') if isinstance(state, dict) else None
+          report['latestRepairClassification'] = repair.get('status') if isinstance(repair, dict) else None
+          report = sanitize(report)
+          dest.write_text(json.dumps(report, indent=2, sort_keys=True, default=str) + '\n')
+          print(json.dumps({
+              'alarmCurrentlyInAlarm': report.get('alarmCurrentlyInAlarm'),
+              'latestControllerOkay': report.get('latestControllerOkay'),
+              'latestControllerStatus': report.get('latestControllerStatus'),
+              'latestRepairClassification': report.get('latestRepairClassification'),
+              'alarmName': report.get('alarmName'),
+              'readOnlyDiagnostic': True,
+          }, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload MLB-only diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-auto-repair-alarm-diagnostic-${{ github.run_id }}
+          path: runtime_reports/mlb_auto_repair_alarm_diagnostic_latest.json
+          if-no-files-found: error
+          retention-days: 30
