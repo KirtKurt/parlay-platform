@@ -1,0 +1,176 @@
+name: Throttle up Bedrock now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/throttle-up-bedrock-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bedrock-throughput-repair
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  REPORT_PATH: runtime_reports/bedrock_throughput_validation_latest.json
+
+jobs:
+  throttle-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Raise bounded Bedrock client throughput
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          p=Path('mlb_auto_llm/model_gateway.py')
+          s=p.read_text()
+          s=s.replace('retries={"max_attempts": 1, "mode": "standard"}', 'retries={"max_attempts": 6, "mode": "adaptive"}')
+          s=s.replace('"MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS", "50"', '"MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS", "80"')
+          p.write_text(s)
+
+          p=Path('soccer_auto/llm_analyst.py')
+          s=p.read_text()
+          s=s.replace('DAILY_TOKEN_RETRY_HOURS = 6', 'DAILY_TOKEN_RETRY_HOURS = int(os.getenv("SOCCER_AUTO_LLM_DAILY_TOKEN_RETRY_HOURS", "2"))')
+          s=s.replace('TRANSIENT_RETRY_MINUTES = 15', 'TRANSIENT_RETRY_MINUTES = int(os.getenv("SOCCER_AUTO_LLM_TRANSIENT_RETRY_MINUTES", "3"))')
+          s=s.replace('retries={"mode": "standard", "total_max_attempts": 1}', 'retries={"mode": "adaptive", "total_max_attempts": 6}')
+          p.write_text(s)
+
+          p=Path('nfl_auto/llm_analyst.py')
+          s=p.read_text()
+          if 'from botocore.config import Config' not in s:
+              s=s.replace('import json\n', 'import json\nfrom botocore.config import Config\n')
+          s=s.replace('boto3.client("bedrock-runtime", region_name=region_name)', 'boto3.client("bedrock-runtime", region_name=region_name, config=Config(connect_timeout=5, read_timeout=45, retries={"mode": "adaptive", "total_max_attempts": 6}))')
+          p.write_text(s)
+          PY
+          python -m py_compile mlb_auto_llm/model_gateway.py soccer_auto/llm_analyst.py nfl_auto/llm_analyst.py
+          git diff --check
+          grep -q '"max_attempts": 6, "mode": "adaptive"' mlb_auto_llm/model_gateway.py
+          grep -q '"total_max_attempts": 6' soccer_auto/llm_analyst.py
+          grep -q '"total_max_attempts": 6' nfl_auto/llm_analyst.py
+
+      - name: Run bounded Bedrock contract tests
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+          tests=()
+          [ -f tests/unit/test_mlb_auto_bedrock_smoke.py ] && tests+=(tests/unit/test_mlb_auto_bedrock_smoke.py)
+          [ -f tests/soccer_auto/test_llm_contract.py ] && tests+=(tests/soccer_auto/test_llm_contract.py)
+          if [ ${#tests[@]} -gt 0 ]; then python -m pytest -q "${tests[@]}"; fi
+
+      - name: Commit throughput repair
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add mlb_auto_llm/model_gateway.py soccer_auto/llm_analyst.py nfl_auto/llm_analyst.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'Increase bounded Bedrock throughput and adaptive retries'
+            for i in 1 2 3 4 5 6 7 8; do
+              git fetch origin main
+              git rebase origin/main
+              git push origin HEAD:main && break
+              test "$i" != 8 || exit 1
+              sleep $((i*2))
+            done
+          fi
+
+      - name: Inspect Bedrock service quotas and live model access
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, boto3
+          from pathlib import Path
+          region='us-east-1'
+          sq=boto3.client('service-quotas',region_name=region)
+          br=boto3.client('bedrock',region_name=region)
+          quotas=[]
+          token=None
+          for _ in range(20):
+              kw={'ServiceCode':'bedrock','MaxResults':100}
+              if token: kw['NextToken']=token
+              r=sq.list_service_quotas(**kw)
+              for q in r.get('Quotas') or []:
+                  name=str(q.get('QuotaName') or '')
+                  if any(x in name.lower() for x in ('requests per minute','tokens per minute','tokens per day','cross-region','on-demand')):
+                      quotas.append({k:q.get(k) for k in ('QuotaName','QuotaCode','Value','Adjustable','GlobalQuota')})
+              token=r.get('NextToken')
+              if not token: break
+          models=[]
+          try:
+              r=br.list_inference_profiles(typeEquals='SYSTEM_DEFINED',maxResults=1000)
+              models=[x.get('inferenceProfileId') for x in r.get('inferenceProfileSummaries') or [] if x.get('status')=='ACTIVE']
+          except Exception as e:
+              models=['CONTROL_PLANE_ERROR:'+str(e)[:200]]
+          Path('/tmp/bedrock-quota.json').write_text(json.dumps({'quotas':quotas,'activeInferenceProfiles':len(models),'sampleProfiles':models[:25]},indent=2,default=str))
+          print(Path('/tmp/bedrock-quota.json').read_text())
+          PY
+
+      - name: Live bounded Bedrock smoke across regions
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, boto3, time
+          from botocore.config import Config
+          from pathlib import Path
+          regions=['us-east-1','us-west-2','us-east-2']
+          candidates=['amazon.nova-micro-v1:0','amazon.nova-lite-v1:0','us.amazon.nova-micro-v1:0','global.amazon.nova-2-lite-v1:0']
+          result=[]
+          ok=0
+          for region in regions:
+              client=boto3.client('bedrock-runtime',region_name=region,config=Config(connect_timeout=5,read_timeout=30,retries={'mode':'adaptive','total_max_attempts':6}))
+              region_ok=False
+              for model in candidates:
+                  t=time.time()
+                  try:
+                      r=client.converse(modelId=model,messages=[{'role':'user','content':[{'text':'Return exactly: OK'}]}],inferenceConfig={'maxTokens':8,'temperature':0})
+                      text=''.join(str(x.get('text') or '') for x in (((r.get('output') or {}).get('message') or {}).get('content') or []) if isinstance(x,dict)).strip()
+                      result.append({'region':region,'model':model,'ok':bool(text),'latencyMs':round((time.time()-t)*1000),'text':text[:40]})
+                      if text:
+                          ok+=1; region_ok=True; break
+                  except Exception as e:
+                      result.append({'region':region,'model':model,'ok':False,'latencyMs':round((time.time()-t)*1000),'error':type(e).__name__+':'+str(e)[:260]})
+              if not region_ok:
+                  pass
+          quota=json.loads(Path('/tmp/bedrock-quota.json').read_text())
+          report={'ok':ok>=1,'successfulRegions':len({r['region'] for r in result if r.get('ok')}),'successfulInvocations':ok,'smoke':result,'quotaInspection':quota,'clientPolicy':{'retryMode':'adaptive','attempts':6,'mlbModelRouteAttempts':80,'soccerTransientRetryMinutes':3,'soccerDailyTokenRetryHours':2}}
+          Path('runtime_reports/bedrock_throughput_validation_latest.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(report,indent=2,sort_keys=True))
+          assert report['ok'], report
+          PY
+
+      - name: Publish Bedrock validation proof
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git fetch origin main
+          git checkout -B bedrock-throughput-proof origin/main
+          git add "$REPORT_PATH"
+          git commit -m 'Publish Bedrock throughput validation [skip ci]' || exit 0
+          for i in 1 2 3 4 5 6 7 8; do
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main && break
+            test "$i" != 8 || exit 1
+            sleep $((i*2))
+          done
