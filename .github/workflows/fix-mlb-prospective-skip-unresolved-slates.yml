@@ -1,0 +1,132 @@
+name: Fix MLB prospective unresolved-slate blocking
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fix-mlb-prospective-skip-unresolved-slates.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-prospective-unresolved-slate-fix
+  cancel-in-progress: false
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Patch continuity policy to skip isolated unresolved slates
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('hello_world/mlb_ml_aws_training_v1.py')
+          text = path.read_text()
+
+          old_init = '''    finalized_slate_authorities: Dict[str, Dict[str, Any]] = {}\n    blocked_date: Optional[str] = None\n    blocker: Optional[str] = None\n'''
+          new_init = '''    finalized_slate_authorities: Dict[str, Dict[str, Any]] = {}\n    skipped_unresolved_slate_dates: List[str] = []\n    unresolved_slate_errors: Dict[str, str] = {}\n    blocked_date: Optional[str] = None\n    blocker: Optional[str] = None\n'''
+          if old_init not in text:
+              raise SystemExit('expected continuity initializer not found')
+          text = text.replace(old_init, new_init, 1)
+
+          old_except = '''        except Exception as exc:\n            blocked_date = slate_date\n            blocker = f"OFFICIAL_SLATE_UNRESOLVED:{type(exc).__name__}:{exc}"\n            break\n'''
+          new_except = '''        except Exception as exc:\n            # An unresolved historical slate must never poison later clean dates.\n            # Exclude the unresolved date itself from training, retain the exact\n            # failure as audit telemetry, and continue evaluating later slates.\n            # This preserves fail-closed row admission without making continuity\n            # depend on every prior calendar date being recoverable forever.\n            skipped_unresolved_slate_dates.append(slate_date)\n            unresolved_slate_errors[slate_date] = (\n                f"OFFICIAL_SLATE_UNRESOLVED:{type(exc).__name__}:{exc}"\n            )\n            continue\n'''
+          if old_except not in text:
+              raise SystemExit('expected unresolved-slate blocker not found')
+          text = text.replace(old_except, new_except, 1)
+
+          old_return = '''        "provenZeroGameSlateDates": zero_game_dates,\n        "finalizedGameSlateDates": game_dates,\n        "finalizedSlateAuthorities": finalized_slate_authorities,\n        "blockedSlateDate": blocked_date,\n        "blocker": blocker,\n'''
+          new_return = '''        "provenZeroGameSlateDates": zero_game_dates,\n        "finalizedGameSlateDates": game_dates,\n        "finalizedSlateAuthorities": finalized_slate_authorities,\n        "skippedUnresolvedSlateDates": skipped_unresolved_slate_dates,\n        "unresolvedSlateErrors": unresolved_slate_errors,\n        "blockedSlateDate": blocked_date,\n        "blocker": blocker,\n'''
+          if old_return not in text:
+              raise SystemExit('expected continuity return block not found')
+          text = text.replace(old_return, new_return, 1)
+
+          old_policy = '''            "Training stops at the first unresolved official slate; only an exact "\n            "official zero-game schedule may be crossed as an off-day."\n'''
+          new_policy = '''            "Training excludes unresolved official slates individually and continues "\n            "with later independently finalized slates; unresolved dates never admit "\n            "training rows and exact official zero-game schedules remain proven off-days."\n'''
+          if old_policy not in text:
+              raise SystemExit('expected continuity policy text not found')
+          text = text.replace(old_policy, new_policy, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Add regression tests
+        run: |
+          cat > tests/unit/test_mlb_prospective_skip_unresolved_slate.py <<'PY'
+          from hello_world import mlb_ml_aws_training_v1 as trainer
+
+
+          def _schedule(date):
+              if date == "2026-08-04":
+                  raise RuntimeError("missing official reconciliation")
+              pk = {"2026-08-03": 80301, "2026-08-05": 80501}[date]
+              return {
+                  "source": "MLB_OFFICIAL",
+                  "sourceUrl": "https://example.invalid/official",
+                  "games": [{"officialGamePk": str(pk)}],
+              }
+
+
+          def _finalization(date, official):
+              games = official["games"]
+              return {
+                  "ok": True,
+                  "officialGameCount": len(games),
+                  "finalizedGameCount": len(games),
+                  "officialGamePks": [str(g["officialGamePk"]) for g in games],
+                  "finalizedGamePks": [str(g["officialGamePk"]) for g in games],
+              }
+
+
+          def test_unresolved_day_is_excluded_but_later_finalized_day_continues():
+              game_dates, diag = trainer._contiguous_finalized_slate_prefix(
+                  ["2026-08-03", "2026-08-04", "2026-08-05"],
+                  official_schedule_loader=_schedule,
+                  slate_finalization_loader=_finalization,
+              )
+              assert game_dates == ["2026-08-03", "2026-08-05"]
+              assert diag["processedThroughSlateDate"] == "2026-08-05"
+              assert diag["skippedUnresolvedSlateDates"] == ["2026-08-04"]
+              assert "2026-08-04" in diag["unresolvedSlateErrors"]
+              assert "2026-08-04" not in diag["finalizedSlateAuthorities"]
+              assert diag["blockedSlateDate"] is None
+              assert diag["blocker"] is None
+              assert diag["ok"] is True
+
+
+          def test_unresolved_day_never_becomes_training_game_date():
+              game_dates, diag = trainer._contiguous_finalized_slate_prefix(
+                  ["2026-08-04", "2026-08-05"],
+                  official_schedule_loader=_schedule,
+                  slate_finalization_loader=_finalization,
+              )
+              assert "2026-08-04" not in game_dates
+              assert "2026-08-04" not in diag["processedSlateDates"]
+              assert game_dates == ["2026-08-05"]
+          PY
+
+      - name: Run focused prospective trainer tests
+        run: |
+          python -m pytest -q \
+            tests/unit/test_mlb_prospective_skip_unresolved_slate.py \
+            tests/unit/test_mlb_trainer_continuity_compat_handler_v2.py
+
+      - name: Commit repair to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hello_world/mlb_ml_aws_training_v1.py tests/unit/test_mlb_prospective_skip_unresolved_slate.py
+          git diff --cached --check
+          git commit -m "Allow MLB prospective training to skip isolated unresolved slates"
+          git push origin HEAD:main
