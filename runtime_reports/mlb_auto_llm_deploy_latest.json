@@ -1,94 +1,38 @@
 {
+  "acceptanceMode": null,
   "autonomousRules": [],
-  "bedrockSmoke": {
+  "conclusion": "FAIL",
+  "immutableCardRewriteAllowed": false,
+  "jobStatus": "failure",
+  "modelAuthorityProof": {
     "attemptedModelIds": [],
-    "bedrockAvailable": false,
-    "decisionAuthority": "AWS_ML_RANKED_ENSEMBLE",
-    "endpointFamily": "aws-ml-readonly-api",
+    "bedrockAvailable": null,
+    "decisionAuthority": null,
     "errors": [],
     "errorsBeforeSuccess": [],
-    "modelId": "INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble",
-    "ok": true
+    "modelId": null,
+    "ok": null,
+    "predictionCount": null,
+    "responseNonEmpty": null
   },
-  "conclusion": "FAIL",
-  "jobStatus": "failure",
   "ok": false,
+  "postStartOddsFabricationAllowed": false,
+  "postStartPredictionCreationAllowed": false,
   "providerCycle": {
-    "bedrockAuthorityComplete": null,
-    "bedrockDecisionCount": 0,
     "decisionAuthority": null,
     "gamePks": [],
-    "mlAuthorityComplete": null,
-    "mlDecisionCount": 0,
+    "latePublicationPrevented": null,
     "modelAuthorityComplete": null,
     "modelDecisionCount": 0,
-    "ok": true,
+    "ok": null,
     "pickCount": 0,
-    "sourceStatus": {
-      "bigBallsDataPro": {
-        "events": 19,
-        "matchedGames": 10,
-        "missingGamePks": [],
-        "ok": true,
-        "scheduledGames": 10
-      },
-      "mlbStatsApi": {
-        "games": 10,
-        "matchedGames": 10,
-        "missingGamePks": [],
-        "ok": true,
-        "scheduledGames": 10
-      },
-      "theOddsApi": {
-        "events": 20,
-        "matchedGames": 10,
-        "missingGamePks": [],
-        "ok": true,
-        "persistedPregameEvidenceByGamePk": {
-          "822695": {
-            "capturedAtUtc": "2026-08-24T21:32:47.996706+00:00",
-            "capturedBeforeGameStart": true,
-            "eventId": "e3da176886eb60e63e5b0017a5f213bc",
-            "replayedAfterLiveEndpointRemoval": true,
-            "source": "The Odds API",
-            "version": "MLB-AUTO-PREGAME-ODDS-REPLAY-v1-immutable-evidence-only"
-          },
-          "823828": {
-            "capturedAtUtc": "2026-08-24T21:32:47.996706+00:00",
-            "capturedBeforeGameStart": true,
-            "eventId": "4849fd0ae15d275efe31050173d07d4e",
-            "replayedAfterLiveEndpointRemoval": true,
-            "source": "The Odds API",
-            "version": "MLB-AUTO-PREGAME-ODDS-REPLAY-v1-immutable-evidence-only"
-          },
-          "824235": {
-            "capturedAtUtc": "2026-08-24T21:32:47.996706+00:00",
-            "capturedBeforeGameStart": true,
-            "eventId": "b5df91df571dbd961d2781f345abe770",
-            "replayedAfterLiveEndpointRemoval": true,
-            "source": "The Odds API",
-            "version": "MLB-AUTO-PREGAME-ODDS-REPLAY-v1-immutable-evidence-only"
-          }
-        },
-        "persistedPregameRecoveredGamePks": [
-          "822695",
-          "823828",
-          "824235"
-        ],
-        "persistedPregameRecoveryCount": 3,
-        "postStartOddsFabricationAllowed": false,
-        "pregameReplayVersion": "MLB-AUTO-PREGAME-ODDS-REPLAY-v1-immutable-evidence-only",
-        "quota": {
-          "last": "15",
-          "remaining": "24692347",
-          "used": "307653"
-        },
-        "replayPolicy": "Only an actual stored The Odds API event with real core-market prices, matching teams/start time, and a packet timestamp strictly before first pitch may be replayed.",
-        "scheduledGames": 10
-      }
-    },
-    "status": "COLLECTING",
-    "threeSourceCoverageComplete": true
+    "postStartOddsFabricationAllowed": null,
+    "postStartPredictionCreationAllowed": null,
+    "providerProbeUsedFutureSlate": null,
+    "providerProbeUsedPersistedPregameEvidence": null,
+    "sourceStatus": {},
+    "status": null,
+    "threeSourceCoverageComplete": null
   },
   "publicStatus": {
     "cardLeadMinutesBeforeSecondGame": null,
@@ -97,11 +41,11 @@
     "targetDailyAccuracy": null,
     "threeSourcePolicy": null
   },
-  "publishedAtUtc": "2026-08-25T02:26:05.526934+00:00",
-  "runAttempt": "2",
-  "runId": "32800538087",
+  "publishedAtUtc": "2026-08-25T02:29:08.126056+00:00",
+  "runAttempt": "1",
+  "runId": "32801512344",
   "secretExposed": false,
   "service": "mlb-auto-llm",
-  "sourceSha": "52b61f8434a5ef73a0b511f06cf5d70e646546ca",
+  "sourceSha": "e3371a3bf580d20cd97fac993a444ab83cad2560",
   "workflow": "Deploy MLB Auto LLM"
 }
