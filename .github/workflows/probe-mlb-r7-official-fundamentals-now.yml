@@ -1,0 +1,235 @@
+name: Probe MLB R7 official fundamentals now
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/probe-mlb-r7-official-fundamentals-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: probe-mlb-r7-official-fundamentals-now
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Inspect exact T-45 official MLB source capability
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import urllib.parse
+          import urllib.request
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+          from typing import Any
+
+          UA = {"Accept": "application/json", "User-Agent": "inqsi-r7-source-capability/1.0"}
+
+          def get(url: str) -> Any:
+              request = urllib.request.Request(url, headers=UA)
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  return json.loads(response.read().decode("utf-8"))
+
+          def fp(value: Any) -> str:
+              raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+              return hashlib.sha256(raw.encode()).hexdigest()
+
+          def url(base: str, **params: Any) -> str:
+              return base + "?" + urllib.parse.urlencode(params, doseq=True)
+
+          schedule_url = url(
+              "https://statsapi.mlb.com/api/v1/schedule",
+              sportId=1,
+              startDate="2026-08-24",
+              endDate="2026-08-24",
+              hydrate="probablePitcher,venue(location,fieldInfo),weather",
+          )
+          schedule = get(schedule_url)
+          games = [
+              game
+              for date_row in schedule.get("dates") or []
+              for game in date_row.get("games") or []
+          ]
+          result: dict[str, Any] = {
+              "proofType": "MLB_R7_OFFICIAL_SOURCE_CAPABILITY_PROBE",
+              "createdAtUtc": datetime.now(timezone.utc).isoformat(),
+              "readOnly": True,
+              "productionAuthorityChanged": False,
+              "promotionGateChanged": False,
+              "admissionGateChanged": False,
+              "immutablePredictionChanged": False,
+              "schedule": {
+                  "endpoint": schedule_url,
+                  "gameCount": len(games),
+                  "payloadFingerprint": fp(schedule),
+              },
+              "games": [],
+          }
+
+          observed_keys: set[str] = set()
+          for game in games:
+              game_pk = str(game.get("gamePk") or "")
+              start = datetime.fromisoformat(str(game.get("gameDate")).replace("Z", "+00:00"))
+              lock = start - timedelta(minutes=45)
+              timecode = lock.astimezone(timezone.utc).strftime("%Y%m%d_%H%M%S")
+              feed_url = url(
+                  f"https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live",
+                  timecode=timecode,
+              )
+              try:
+                  feed = get(feed_url)
+              except Exception as exc:
+                  result["games"].append({
+                      "gamePk": game_pk,
+                      "lockAtUtc": lock.isoformat(),
+                      "feedEndpoint": feed_url,
+                      "error": f"{type(exc).__name__}:{exc}",
+                  })
+                  continue
+              game_data = feed.get("gameData") or {}
+              live_data = feed.get("liveData") or {}
+              box = (live_data.get("boxscore") or {}).get("teams") or {}
+              probable = game_data.get("probablePitchers") or {}
+              row: dict[str, Any] = {
+                  "gamePk": game_pk,
+                  "lockAtUtc": lock.isoformat(),
+                  "feedEndpoint": feed_url,
+                  "payloadFingerprint": fp(feed),
+                  "status": game_data.get("status"),
+                  "weatherKeys": sorted((game_data.get("weather") or {}).keys()),
+                  "venueKeys": sorted((game_data.get("venue") or {}).keys()),
+                  "venueFieldInfoKeys": sorted(((game_data.get("venue") or {}).get("fieldInfo") or {}).keys()),
+                  "homeBattingOrderCount": len(((box.get("home") or {}).get("battingOrder") or [])),
+                  "awayBattingOrderCount": len(((box.get("away") or {}).get("battingOrder") or [])),
+                  "probablePitchers": probable,
+                  "playerStatKeys": {},
+                  "teamAdvancedHittingKeys": {},
+              }
+              for side in ("home", "away"):
+                  pitcher_id = str((probable.get(side) or {}).get("id") or "")
+                  if not pitcher_id:
+                      continue
+                  stats_url = url(
+                      f"https://statsapi.mlb.com/api/v1/people/{pitcher_id}/stats",
+                      stats=["season", "seasonAdvanced"],
+                      group="pitching",
+                      season=2026,
+                  )
+                  try:
+                      payload = get(stats_url)
+                      splits = [
+                          split
+                          for block in payload.get("stats") or []
+                          for split in block.get("splits") or []
+                      ]
+                      keys = sorted({key for split in splits for key in (split.get("stat") or {}).keys()})
+                      row["playerStatKeys"][side] = {
+                          "endpoint": stats_url,
+                          "keys": keys,
+                          "payloadFingerprint": fp(payload),
+                      }
+                      observed_keys.update(keys)
+                  except Exception as exc:
+                      row["playerStatKeys"][side] = {"endpoint": stats_url, "error": f"{type(exc).__name__}:{exc}"}
+
+              teams = game.get("teams") or {}
+              for side in ("home", "away"):
+                  team_id = str((((teams.get(side) or {}).get("team") or {}).get("id")) or "")
+                  if not team_id:
+                      continue
+                  stats_url = url(
+                      f"https://statsapi.mlb.com/api/v1/teams/{team_id}/stats",
+                      stats=["season", "seasonAdvanced"],
+                      group="hitting",
+                      season=2026,
+                  )
+                  try:
+                      payload = get(stats_url)
+                      splits = [
+                          split
+                          for block in payload.get("stats") or []
+                          for split in block.get("splits") or []
+                      ]
+                      keys = sorted({key for split in splits for key in (split.get("stat") or {}).keys()})
+                      row["teamAdvancedHittingKeys"][side] = {
+                          "endpoint": stats_url,
+                          "keys": keys,
+                          "payloadFingerprint": fp(payload),
+                      }
+                      observed_keys.update(keys)
+                  except Exception as exc:
+                      row["teamAdvancedHittingKeys"][side] = {"endpoint": stats_url, "error": f"{type(exc).__name__}:{exc}"}
+              result["games"].append(row)
+
+          needles = {
+              "fip": ("fip",),
+              "xfip": ("xfip", "xFip", "xFIP"),
+              "kMinusBb": ("kMinusBb", "strikeoutMinusWalk", "strikeoutWalk"),
+              "wrcPlus": ("wrcPlus", "wRCPlus", "wrc+"),
+              "pitchMix": ("pitchMix", "pitchArsenal", "pitchType"),
+              "averageVelocity": ("averageVelocity", "avgVelocity", "releaseSpeed"),
+          }
+          result["exactAdvancedKeyCapability"] = {
+              label: sorted(key for key in observed_keys if any(needle.lower() in key.lower() for needle in values))
+              for label, values in needles.items()
+          }
+          result["confirmedLineupAtTMinus45GameCount"] = sum(
+              1
+              for row in result["games"]
+              if row.get("homeBattingOrderCount") == 9 and row.get("awayBattingOrderCount") == 9
+          )
+          result["gameFeedSuccessCount"] = sum("error" not in row for row in result["games"])
+          result["officialOnlyCanSatisfyAllStrictR7Groups"] = bool(
+              result["confirmedLineupAtTMinus45GameCount"]
+              and all(result["exactAdvancedKeyCapability"].get(name) for name in ("fip", "xfip", "wrcPlus", "pitchMix", "averageVelocity"))
+          )
+          Path("runtime_reports/mlb_r7_official_source_capability_latest.json").write_text(
+              json.dumps(result, indent=2, sort_keys=True, default=str) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps({
+              "gameCount": len(games),
+              "gameFeedSuccessCount": result["gameFeedSuccessCount"],
+              "confirmedLineupAtTMinus45GameCount": result["confirmedLineupAtTMinus45GameCount"],
+              "exactAdvancedKeyCapability": result["exactAdvancedKeyCapability"],
+              "officialOnlyCanSatisfyAllStrictR7Groups": result["officialOnlyCanSatisfyAllStrictR7Groups"],
+          }, indent=2, sort_keys=True))
+          PY
+      - name: Commit only the redacted capability proof
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime_reports/mlb_r7_official_source_capability_latest.json
+          test "$(git diff --cached --name-only | wc -l)" -le 1
+          if git diff --cached --quiet; then
+            echo "Capability proof unchanged."
+          else
+            git commit -m "Record MLB R7 official fundamentals capability proof"
+            for attempt in 1 2 3; do
+              git fetch origin main
+              git rebase origin/main
+              if git push origin HEAD:main; then exit 0; fi
+              git rebase --abort || true
+              sleep $((attempt * 2))
+            done
+            exit 1
+          fi
