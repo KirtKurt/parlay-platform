@@ -1,0 +1,68 @@
+name: NFL Auto Backfill Provider Diagnostic
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/nfl-backfill-provider-diagnostic.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Probe BBD NFL games query contract without exposing credentials
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          python - <<'PY'
+          import boto3,json,urllib.parse,urllib.request,os
+          region=os.environ['REGION']; stack='parlay-platform-nfl-auto'
+          cf=boto3.client('cloudformation',region_name=region); sm=boto3.client('secretsmanager',region_name=region)
+          resource=cf.describe_stack_resource(StackName=stack,LogicalResourceId='NflBbdSecret')['StackResourceDetail']['PhysicalResourceId']
+          secret=sm.get_secret_value(SecretId=resource).get('SecretString','').strip()
+          if secret.startswith('{'):
+              decoded=json.loads(secret)
+              secret=next((str(decoded.get(k) or '').strip() for k in ('api_key','key','token','value') if str(decoded.get(k) or '').strip()),'')
+          if not secret: raise SystemExit('BBD secret resolved empty')
+          base='https://api.bigballsdata.com/v1/nfl/games'
+          def call(params):
+              url=base+'?'+urllib.parse.urlencode(params)
+              req=urllib.request.Request(url,headers={'Authorization':'Bearer '+secret,'Accept':'application/json','User-Agent':'inqsi-nfl-contract-diagnostic/1.0'})
+              with urllib.request.urlopen(req,timeout=30) as r:
+                  payload=json.loads(r.read().decode())
+                  headers={k.lower():v for k,v in r.headers.items()}
+              data=payload.get('data') if isinstance(payload,dict) else None
+              pagination=payload.get('pagination') if isinstance(payload,dict) else None
+              rows=data if isinstance(data,list) else []
+              return {'count':len(rows),'pagination':pagination or {},'sampleKeys':sorted((rows[0] if rows and isinstance(rows[0],dict) else {}).keys()),'status':200,'rateRemaining':headers.get('x-ratelimit-remaining')}
+          report={'proofType':'NFL_BBD_QUERY_CONTRACT_DIAGNOSTIC','seasonOnly':call({'season':2025,'limit':5,'offset':0}),'seasonTypeReg':call({'season':2025,'type':'REG','limit':5,'offset':0}),'seasonTypePost':call({'season':2025,'type':'POST','limit':5,'offset':0}),'secretExposed':False}
+          open('/tmp/nfl-bbd-diagnostic.json','w').write(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(report,indent=2,sort_keys=True))
+          PY
+      - name: Publish diagnostic
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for i in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main
+            mkdir -p runtime_reports
+            cp /tmp/nfl-bbd-diagnostic.json runtime_reports/nfl_bbd_query_contract_latest.json
+            git add runtime_reports/nfl_bbd_query_contract_latest.json
+            git commit -m 'Publish NFL BBD query contract diagnostic [skip ci]' || exit 0
+            git push origin HEAD:main && exit 0
+            sleep $((i*2))
+          done
+          exit 1
