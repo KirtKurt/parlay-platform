@@ -1,4 +1,5 @@
 name: MLB Historical Ingestion Watchdog
+# Ops repair trigger 2026-08-25T07:14Z; invokes existing fail-closed MLB-only watchdog.
 
 "on":
   schedule:
@@ -75,11 +76,6 @@ jobs:
               --output "$WATCHDOG_REPORT"
           }
 
-          # An active optimizer can already own the lease and legitimately need more
-          # than the watchdog's immediate before/after probe to persist a material
-          # counter/cursor change. Retry only that exact liveness condition. All real
-          # configuration, quota, state-integrity, and provider failures still fail
-          # closed on the first attempt.
           delays=(0 30 60 120)
           watchdog_ok=false
           for attempt in 1 2 3 4; do
