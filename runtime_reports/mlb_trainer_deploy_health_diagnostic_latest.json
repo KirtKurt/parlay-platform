@@ -1,6 +1,6 @@
 {
-  "classification": "TRAINER_HEALTHY",
-  "createdAtUtc": "2026-08-25T02:31:01.491249+00:00",
+  "classification": "TRAINER_LAMBDA_FUNCTION_ERROR",
+  "createdAtUtc": "2026-08-25T02:31:47.805558+00:00",
   "diagnosticOnly": true,
   "lambdaConfiguration": {
     "Architectures": [
@@ -56,11 +56,11 @@
   },
   "lambdaConfigurationParseError": null,
   "modelOrPromotionGateChanged": false,
-  "ok": true,
+  "ok": false,
   "productionAuthorityChanged": false,
   "proofType": "MLB_TRAINER_DEPLOY_HEALTH_DIAGNOSTIC",
   "secretExposed": false,
-  "sourceSha": "e3371a3bf580d20cd97fac993a444ab83cad2560",
+  "sourceSha": "7970069cf40a811322c95c58c1849686e9e89cb2",
   "statusAfter": {
     "automaticPromotionEnabled": false,
     "experimentId": "mlb-v2-2026-08-03-future-prospective-r7",
@@ -237,162 +237,26 @@
     "ExecutedVersion": "$LATEST",
     "StatusCode": 200,
     "parseError": null,
-    "redactedLogTail": "START RequestId: 71855ac7-5756-4d47-bec4-6488e97ef432 Version: $LATEST\nEND RequestId: 71855ac7-5756-4d47-bec4-6488e97ef432\nREPORT RequestId: 71855ac7-5756-4d47-bec4-6488e97ef432\tDuration: 57.12 ms\tBilled Duration: 58 ms\tMemory Size: 2048 MB\tMax Memory Used: 177 MB\t"
+    "redactedLogTail": "START RequestId: 1b85aee7-0291-43b7-b33d-26f22a7388b3 Version: $LATEST\nEND RequestId: 1b85aee7-0291-43b7-b33d-26f22a7388b3\nREPORT RequestId: 1b85aee7-0291-43b7-b33d-26f22a7388b3\tDuration: 92.37 ms\tBilled Duration: 93 ms\tMemory Size: 2048 MB\tMax Memory Used: 177 MB\t"
   },
   "statusResponseParseError": null,
   "trainingInvocation": {
     "ExecutedVersion": "$LATEST",
+    "FunctionError": "Unhandled",
     "StatusCode": 200,
     "parseError": null,
-    "redactedLogTail": "START RequestId: 782493f1-b7a9-44b4-b29c-5c277d74f2b3 Version: $LATEST\nEND RequestId: 782493f1-b7a9-44b4-b29c-5c277d74f2b3\nREPORT RequestId: 782493f1-b7a9-44b4-b29c-5c277d74f2b3\tDuration: 39655.10 ms\tBilled Duration: 40326 ms\tMemory Size: 2048 MB\tMax Memory Used: 177 MB\tInit Duration: 670.68 ms\t"
+    "redactedLogTail": "START RequestId: d069b4eb-dd5f-4c6c-8863-dfe605fb6e7a Version: $LATEST\n[ERROR] ExecutionLeaseUnavailable: another MLB ML trainer invocation holds the execution lease\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1_compat.py\", line 156, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0return canonical.lambda_handler(event, context)\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1.py\", line 2901, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0lease = service.store.acquire_execution_lease(\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1.py\", line 653, in acquire_execution_lease\n\u00a0\u00a0\u00a0\u00a0raise ExecutionLeaseUnavailable(\nEND RequestId: d069b4eb-dd5f-4c6c-8863-dfe605fb6e7a\nREPORT RequestId: d069b4eb-dd5f-4c6c-8863-dfe605fb6e7a\tDuration: 79.81 ms\tBilled Duration: 80 ms\tMemory Size: 2048 MB\tMax Memory Used: 177 MB\t"
   },
   "trainingResponse": {
-    "acceptedRowCount": 0,
-    "automaticPromotionEnabled": false,
-    "canonicalSlateContinuity": {
-      "blockedSlateDate": "2026-08-04",
-      "blocker": "OFFICIAL_SLATE_UNRESOLVED:TrainingContractError:official game slate is not fully finalized",
-      "finalizedGameSlateDates": [
-        "2026-08-03"
-      ],
-      "finalizedSlateAuthorities": {
-        "2026-08-03": {
-          "authorityFingerprint": "a561ddecbf4d6d64c318183335ee8b10eb3287bdce4c89a31f159c5d7b8c2658",
-          "officialGameCount": 8,
-          "officialGamePks": [
-            "822867",
-            "823431",
-            "823520",
-            "823757",
-            "824160",
-            "824324",
-            "824647",
-            "825095"
-          ],
-          "officialGameSetFingerprint": "23e4a80cef84566d70bc7d76d56e6f2bc8f52fdadd3743f2d274b55e2ed7838b",
-          "officialGameSetFingerprintVersion": "MLB-ML-OFFICIAL-GAME-PK-SET-SHA256-v1",
-          "scheduleSource": "MLB Stats API exact-date official FINAL",
-          "scheduleSourceUrl": "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2026-08-03&endDate=2026-08-03&hydrate=linescore",
-          "slateDateEt": "2026-08-03",
-          "slateFinalized": true,
-          "version": "MLB-ML-OFFICIAL-FINALIZED-SLATE-AUTHORITY-v1-exact-game-pk-set"
-        }
-      },
-      "ok": false,
-      "policy": "Training stops at the first unresolved official slate; only an exact official zero-game schedule may be crossed as an off-day.",
-      "processedSlateDates": [
-        "2026-08-03"
-      ],
-      "processedThroughSlateDate": "2026-08-03",
-      "provenZeroGameSlateDates": [],
-      "version": "MLB-ML-CANONICAL-SLATE-CONTINUITY-v2-exact-official-game-set"
-    },
-    "championChanged": false,
-    "continuityWaitCompatibilityVersion": "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v5-persisted-return",
-    "createdAtUtc": "2026-08-25T02:31:00.253106+00:00",
-    "deploymentIdentity": {
-      "gitSha": "07a486b11733a96b5a0950906b1214e8f5af33c4",
-      "templateSha256": "9e5519d55d5f7898e819cb68dca35edd2f07c87f1203427b3bd8b77789e8e5cb"
-    },
-    "executionMode": "training",
-    "experimentId": "mlb-v2-2026-08-03-future-prospective-r7",
-    "liveInferenceAuthority": false,
-    "milestones": {
-      "aspirationalAccuracyAffectsPromotion": false,
-      "aspirationalAccuracyPct": 90,
-      "assumedCleanGamesPerFullSlate": 15,
-      "automaticPromotionEnabled": false,
-      "counts": {
-        "completedFinalizedSlates": 0,
-        "integrityClean": 0,
-        "prospectiveTest": 0,
-        "settledProspectiveSelectedRecommendations": 0,
-        "train": 0,
-        "validation": 0
-      },
-      "experimentId": "mlb-v2-2026-08-03-future-prospective-r7",
-      "firstFullCleanSlateProof": {
-        "achieved": false,
-        "authority": "one nonempty verified official FINAL gamePk set must exactly equal the same immutable slate's unique, current, post-cutoff clean eligible gamePk set",
-        "completedFinalizedSlateCount": 0,
-        "completedFinalizedSlateDates": [],
-        "currentCleanGames": 0,
-        "evaluatedSlateProofs": [],
-        "exactOfficialGameSetEqualityRequired": true,
-        "globalIntegrityCleanGames": 0,
-        "planningEstimateCleanGames": 15,
-        "qualifyingOfficialGameSetFingerprint": null,
-        "qualifyingSlateDate": null,
-        "remainingCleanGames": 15,
-        "state": "WAITING_FOR_FIRST_COMPLETE_FINALIZED_SLATE",
-        "targetCleanGames": 15
-      },
-      "firstPromotionRequiresManualReview": true,
-      "ok": true,
-      "projectedFullCleanSlatesRemaining": {
-        "firstFullCleanSlateProof": 1,
-        "mechanicalShadowTrainerProof": 10,
-        "prospectiveSelectedRecommendations": 7,
-        "prospectiveTest": 7,
-        "totalClean": 34,
-        "train": 20,
-        "validation": 7
-      },
-      "remainingRows": {
-        "firstFullCleanSlateProof": 15,
-        "mechanicalShadowTrainerProof": 140,
-        "prospectiveSelectedRecommendations": 100,
-        "prospectiveTest": 100,
-        "totalClean": 500,
-        "train": 300,
-        "validation": 100
-      },
-      "stage": "COLLECTING_TRAIN",
-      "targets": {
-        "firstFullCleanSlateProof": 15,
-        "mechanicalShadowTrainerProof": 140,
-        "prospectiveSelectedRecommendations": 100,
-        "prospectiveTest": 100,
-        "totalClean": 500,
-        "train": 300,
-        "validation": 100
-      },
-      "version": "MLB-ML-EXPERIMENT-v2-fixed-slate-future-prospective-cutover"
-    },
-    "modelTrained": false,
-    "ok": true,
-    "partitionCounts": {
-      "prospectiveTest": 0,
-      "train": 0,
-      "validation": 0
-    },
-    "productionAuthorityChanged": false,
-    "rejectedRowCount": 8,
-    "rejectionReasonCounts": {
-      "current_canonical_row_not_training_eligible": 8
-    },
-    "releaseCutoffUtc": "2026-08-03T04:00:00+00:00",
-    "rowsRequired": {
-      "prospectiveTest": 100,
-      "train": 300,
-      "validation": 100
-    },
-    "runId": "5da55dae50c0d1fcba23aef2",
-    "selectionCaptureBeforeTraining": {
-      "collisionPolicy": "separate_global_lease_domain",
-      "healthEvaluatedByTraining": false,
-      "independentHeartbeatRequired": true,
-      "invokedByTraining": false,
-      "manifestConditionCheckRequired": true,
-      "selectionWritesIdempotent": true,
-      "status": "OWNED_BY_INDEPENDENT_SELECTION_CAPTURE_CADENCE"
-    },
-    "status": "WAITING_FOR_CANONICAL_SLATE_CONTINUITY",
-    "version": "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow",
-    "waitReason": "canonical_slate_continuity",
-    "waiting": true
+    "errorMessage": "another MLB ML trainer invocation holds the execution lease",
+    "errorType": "ExecutionLeaseUnavailable",
+    "stackTrace": [
+      "  File \"/var/task/mlb_ml_aws_training_v1_compat.py\", line 156, in lambda_handler\n    return canonical.lambda_handler(event, context)\n",
+      "  File \"/var/task/mlb_ml_aws_training_v1.py\", line 2901, in lambda_handler\n    lease = service.store.acquire_execution_lease(\n",
+      "  File \"/var/task/mlb_ml_aws_training_v1.py\", line 653, in acquire_execution_lease\n    raise ExecutionLeaseUnavailable(\n"
+    ]
   },
   "trainingResponseParseError": null,
   "version": "MLB-TRAINER-DEPLOY-DIAGNOSTIC-v1-redacted-fail-closed",
-  "workflowRunId": "32801611897"
+  "workflowRunId": "32801655566"
 }
