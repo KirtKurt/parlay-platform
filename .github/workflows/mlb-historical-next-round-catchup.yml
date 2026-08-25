@@ -46,12 +46,55 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
-          python -m py_compile \
-            scripts/run_mlb_historical_watchdog.py \
-            scripts/run_mlb_historical_next_round_catchup.py
-          python -m pytest -q \
-            tests/unit/test_run_mlb_historical_watchdog.py \
-            tests/unit/test_run_mlb_historical_next_round_catchup.py
+          python -m py_compile scripts/run_mlb_historical_watchdog.py scripts/run_mlb_historical_next_round_catchup.py
+          python -m pytest -q tests/unit/test_run_mlb_historical_watchdog.py tests/unit/test_run_mlb_historical_next_round_catchup.py
+
+      - name: Repair historical Lambda provider credential drift without changing model authority
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${ODDS_API_KEY_VALUE:-}"
+          python - <<'PY'
+          import hashlib,json,os
+          import boto3
+          region=os.environ['AWS_REGION_VALUE']; stack=os.environ['STACK_NAME']; desired=os.environ['ODDS_API_KEY_VALUE']
+          cf=boto3.client('cloudformation',region_name=region); lam=boto3.client('lambda',region_name=region)
+          outputs={x['OutputKey']:x['OutputValue'] for x in cf.describe_stacks(StackName=stack)['Stacks'][0].get('Outputs',[])}
+          fn=outputs.get('HistoricalOptimizerFunctionName')
+          if not fn: raise SystemExit('HistoricalOptimizerFunctionName output missing')
+          cfg=lam.get_function_configuration(FunctionName=fn)
+          if cfg.get('Handler')!='mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler': raise SystemExit(f"unexpected handler: {cfg.get('Handler')}")
+          env=dict((cfg.get('Environment') or {}).get('Variables') or {}); current=env.get('ODDS_API_KEY',''); changed=current!=desired
+          before=hashlib.sha256(current.encode()).hexdigest()[:12] if current else None; after=hashlib.sha256(desired.encode()).hexdigest()[:12]
+          if changed:
+              env['ODDS_API_KEY']=desired
+              lam.update_function_configuration(FunctionName=fn,Environment={'Variables':env})
+              lam.get_waiter('function_updated_v2').wait(FunctionName=fn,WaiterConfig={'Delay':2,'MaxAttempts':120})
+          final=((lam.get_function_configuration(FunctionName=fn).get('Environment') or {}).get('Variables') or {}).get('ODDS_API_KEY','')
+          if final!=desired: raise SystemExit('historical Lambda ODDS_API_KEY did not converge to current secret')
+          print(json.dumps({'functionName':fn,'credentialChanged':changed,'previousFingerprint':before,'currentFingerprint':after,'productionAuthorityChanged':False},sort_keys=True))
+          PY
+
+      - name: Prove provider quota from installed credential
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,urllib.parse,urllib.request
+          url='https://api.the-odds-api.com/v4/sports?'+urllib.parse.urlencode({'apiKey':os.environ['ODDS_API_KEY_VALUE']})
+          with urllib.request.urlopen(urllib.request.Request(url,headers={'user-agent':'inqsi-mlb-history-key-proof/1.0'}),timeout=30) as r:
+              r.read()
+              def n(k):
+                  v=r.headers.get(k)
+                  try:return int(v) if v is not None else None
+                  except:return v
+              q={'remaining':n('x-requests-remaining'),'used':n('x-requests-used'),'last':n('x-requests-last')}
+          print(json.dumps(q,sort_keys=True))
+          if not isinstance(q.get('remaining'),int) or q['remaining']<=100: raise SystemExit(f'provider quota unavailable: {q}')
+          PY
 
       - name: Advance only when the canonical next round is ready
         id: catchup
@@ -60,14 +103,7 @@ jobs:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
-          python scripts/run_mlb_historical_next_round_catchup.py \
-            --region "$AWS_REGION_VALUE" \
-            --stack-name "$STACK_NAME" \
-            --expected-handler mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler \
-            --expected-max-credits 300000 \
-            --template mlb_historical_optimizer/template.yaml \
-            --max-attempts 4 \
-            --output "$REPORT_PATH"
+          python scripts/run_mlb_historical_next_round_catchup.py --region "$AWS_REGION_VALUE" --stack-name "$STACK_NAME" --expected-handler mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler --expected-max-credits 300000 --template mlb_historical_optimizer/template.yaml --max-attempts 8 --output "$REPORT_PATH"
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -82,30 +118,16 @@ jobs:
         run: |
           set -euo pipefail
           cp "$REPORT_PATH" /tmp/mlb-historical-next-round-catchup.json
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           published=false
           for attempt in 1 2 3 4 5; do
-            git fetch origin main
-            git checkout -B historical-next-round-proof origin/main
-            mkdir -p "$(dirname "$REPORT_PATH")"
-            cp /tmp/mlb-historical-next-round-catchup.json "$REPORT_PATH"
-            git add "$REPORT_PATH"
-            if git diff --cached --quiet; then
-              published=true
-              break
-            fi
+            git fetch origin main; git checkout -B historical-next-round-proof origin/main; mkdir -p "$(dirname "$REPORT_PATH")"; cp /tmp/mlb-historical-next-round-catchup.json "$REPORT_PATH"; git add "$REPORT_PATH"
+            if git diff --cached --quiet; then published=true; break; fi
             git commit -m "chore: publish MLB historical next-round proof [skip ci]"
-            if git push origin HEAD:main; then
-              published=true
-              break
-            fi
-            sleep $((attempt * 3))
+            if git push origin HEAD:main; then published=true; break; fi
+            sleep $((attempt*3))
           done
-          test "$published" = true || {
-            echo '::error::Unable to publish MLB historical next-round proof after bounded retries.'
-            exit 1
-          }
+          test "$published" = true || exit 1
 
       - name: Fail closed on a real catch-up blocker
         if: steps.catchup.outcome == 'failure'
