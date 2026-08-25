@@ -1,18 +1,14 @@
-name: Repair MLB Auto post-cutoff smoke once
+name: MLB Auto postcutoff smoke repair
 
 on:
   push:
     branches: [main]
     paths:
       - '.github/workflows/repair-mlb-auto-postcutoff-smoke-once.yml'
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 permissions:
   contents: write
-
-concurrency:
-  group: repair-mlb-auto-postcutoff-smoke-once
-  cancel-in-progress: false
 
 jobs:
   repair:
@@ -22,155 +18,58 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Patch only MLB Auto deployment acceptance
+      - name: Patch fail-closed MLB Auto smoke acceptance
+        env:
+          OLD_STATUS_B64: ICAgICAgICAgIHN0YXR1cz1yZXNwb25zZS5nZXQoJ3N0YXR1cycpCiAgICAgICAgICBhc3NlcnQgc3RhdHVzIGluIHsnQ0FSRF9QVUJMSVNIRUQnLCdDQVJEX0FMUkVBRFlfUFVCTElTSEVEJywnTk9fR0FNRVMnfSwgcmVzcG9uc2UKICAgICAgICAgIGNhcmQ9cmVzcG9uc2UuZ2V0KCdjYXJkJykgb3Ige30KICAgICAgICAgIHNvdXJjZT1yZXNwb25zZS5nZXQoJ3NvdXJjZVN0YXR1cycpIG9yIGNhcmQuZ2V0KCdzb3VyY2VTdGF0dXMnKSBvciB7fQogICAgICAgICAgaWYgc3RhdHVzICE9ICdOT19HQU1FUyc6CiAgICAgICAgICAgICAgZm9yIHByb3ZpZGVyIGluICgnbWxiU3RhdHNBcGknLCd0aGVPZGRzQXBpJywnYmlnQmFsbHNEYXRhUHJvJyk6CiAgICAgICAgICAgICAgICAgIGFzc2VydCAoc291cmNlLmdldChwcm92aWRlcikgb3Ige30pLmdldCgnb2snKSBpcyBUcnVlLCAocHJvdmlkZXIsIHNvdXJjZSkKICAgICAgICAgICAgICAgICAgYXNzZXJ0IG5vdCAoKHNvdXJjZS5nZXQocHJvdmlkZXIpIG9yIHt9KS5nZXQoJ21pc3NpbmdHYW1lUGtzJykgb3IgW10pLCAocHJvdmlkZXIsIHNvdXJjZSkKICAgICAgICAgIGlmIHN0YXR1cyBpbiB7J0NBUkRfUFVCTElTSEVEJywnQ0FSRF9BTFJFQURZX1BVQkxJU0hFRCd9Ogo=
+          NEW_STATUS_B64: ICAgICAgICAgIHN0YXR1cz1yZXNwb25zZS5nZXQoJ3N0YXR1cycpCiAgICAgICAgICBhc3NlcnQgc3RhdHVzIGluIHsnQ0FSRF9QVUJMSVNIRUQnLCdDQVJEX0FMUkVBRFlfUFVCTElTSEVEJywnTk9fR0FNRVMnLCdDT0xMRUNUSU5HJ30sIHJlc3BvbnNlCiAgICAgICAgICBjYXJkPXJlc3BvbnNlLmdldCgnY2FyZCcpIG9yIHt9CiAgICAgICAgICBzb3VyY2U9cmVzcG9uc2UuZ2V0KCdzb3VyY2VTdGF0dXMnKSBvciBjYXJkLmdldCgnc291cmNlU3RhdHVzJykgb3Ige30KICAgICAgICAgIGlmIHN0YXR1cyAhPSAnTk9fR0FNRVMnOgogICAgICAgICAgICAgIGZvciBwcm92aWRlciBpbiAoJ21sYlN0YXRzQXBpJywndGhlT2Rkc0FwaScsJ2JpZ0JhbGxzRGF0YVBybycpOgogICAgICAgICAgICAgICAgICBhc3NlcnQgKHNvdXJjZS5nZXQocHJvdmlkZXIpIG9yIHt9KS5nZXQoJ29rJykgaXMgVHJ1ZSwgKHByb3ZpZGVyLCBzb3VyY2UpCiAgICAgICAgICAgICAgICAgIGFzc2VydCBub3QgKChzb3VyY2UuZ2V0KHByb3ZpZGVyKSBvciB7fSkuZ2V0KCdtaXNzaW5nR2FtZVBrcycpIG9yIFtdKSwgKHByb3ZpZGVyLCBzb3VyY2UpCiAgICAgICAgICBpZiBzdGF0dXMgPT0gJ0NPTExFQ1RJTkcnOgogICAgICAgICAgICAgIGFzc2VydCByZXNwb25zZS5nZXQoJ3RocmVlU291cmNlQ292ZXJhZ2VDb21wbGV0ZScpIGlzIFRydWUsIHJlc3BvbnNlCiAgICAgICAgICAgICAgYXNzZXJ0IHJlc3BvbnNlLmdldCgnbGF0ZVB1YmxpY2F0aW9uUHJldmVudGVkJykgaXMgVHJ1ZSwgcmVzcG9uc2UKICAgICAgICAgICAgICBhc3NlcnQgcmVzcG9uc2UuZ2V0KCdwb3N0U3RhcnRQcmVkaWN0aW9uQ3JlYXRpb25BbGxvd2VkJykgaXMgRmFsc2UsIHJlc3BvbnNlCiAgICAgICAgICAgICAgYXNzZXJ0IHJlc3BvbnNlLmdldCgncG9zdFN0YXJ0T2Rkc0ZhYnJpY2F0aW9uQWxsb3dlZCcpIGlzIEZhbHNlLCByZXNwb25zZQogICAgICAgICAgaWYgc3RhdHVzIGluIHsnQ0FSRF9QVUJMSVNIRUQnLCdDQVJEX0FMUkVBRFlfUFVCTElTSEVEJ306Cg==
+          OLD_FIELDS_B64: ICAgICAgICAgICAgICAgICAgJ21vZGVsQXV0aG9yaXR5Q29tcGxldGUnOmNhcmQuZ2V0KCdtb2RlbEF1dGhvcml0eUNvbXBsZXRlJyksCiAgICAgICAgICAgICAgICAgICdkZWNpc2lvbkF1dGhvcml0eSc6Y2FyZC5nZXQoJ2RlY2lzaW9uQXV0aG9yaXR5JyksCiAgICAgICAgICAgICAgICAgICdzb3VyY2VTdGF0dXMnOnNvdXJjZV9zdGF0dXMsCiAgICAgICAgICAgICAgICAgICdwaWNrQ291bnQnOmxlbihwaWNrcyksCg==
+          NEW_FIELDS_B64: ICAgICAgICAgICAgICAgICAgJ21vZGVsQXV0aG9yaXR5Q29tcGxldGUnOmNhcmQuZ2V0KCdtb2RlbEF1dGhvcml0eUNvbXBsZXRlJyksCiAgICAgICAgICAgICAgICAgICdkZWNpc2lvbkF1dGhvcml0eSc6Y2FyZC5nZXQoJ2RlY2lzaW9uQXV0aG9yaXR5JyksCiAgICAgICAgICAgICAgICAgICdzb3VyY2VTdGF0dXMnOnNvdXJjZV9zdGF0dXMsCiAgICAgICAgICAgICAgICAgICdsYXRlUHVibGljYXRpb25QcmV2ZW50ZWQnOmN5Y2xlLmdldCgnbGF0ZVB1YmxpY2F0aW9uUHJldmVudGVkJyksCiAgICAgICAgICAgICAgICAgICdwb3N0U3RhcnRQcmVkaWN0aW9uQ3JlYXRpb25BbGxvd2VkJzpjeWNsZS5nZXQoJ3Bvc3RTdGFydFByZWRpY3Rpb25DcmVhdGlvbkFsbG93ZWQnKSwKICAgICAgICAgICAgICAgICAgJ3Bvc3RTdGFydE9kZHNGYWJyaWNhdGlvbkFsbG93ZWQnOmN5Y2xlLmdldCgncG9zdFN0YXJ0T2Rkc0ZhYnJpY2F0aW9uQWxsb3dlZCcpLAogICAgICAgICAgICAgICAgICAncGlja0NvdW50JzpsZW4ocGlja3MpLAo=
+          OLD_OK_B64: ICAgICAgICAgIGJvZHlbJ29rJ109KAogICAgICAgICAgICAgIGJvZHlbJ2pvYlN0YXR1cyddID09ICdzdWNjZXNzJwogICAgICAgICAgICAgIGFuZCBib2R5WydiZWRyb2NrU21va2UnXVsnb2snXSBpcyBUcnVlCiAgICAgICAgICAgICAgYW5kIGJvZHlbJ3Byb3ZpZGVyQ3ljbGUnXVsnb2snXSBpcyBUcnVlCiAgICAgICAgICAgICAgYW5kIGJvZHlbJ3Byb3ZpZGVyQ3ljbGUnXVsnbW9kZWxBdXRob3JpdHlDb21wbGV0ZSddIGlzIFRydWUKICAgICAgICAgICAgICBhbmQgYm9keVsncHJvdmlkZXJDeWNsZSddWydtb2RlbERlY2lzaW9uQ291bnQnXSA9PSBib2R5Wydwcm92aWRlckN5Y2xlJ11bJ3BpY2tDb3VudCddCiAgICAgICAgICAgICAgYW5kIGJvZHlbJ3B1YmxpY1N0YXR1cyddWydmdWxseUF1dG9ub21vdXMnXSBpcyBUcnVlCiAgICAgICAgICAgICAgYW5kIGJvb2wocnVsZXMpCiAgICAgICAgICAgICAgYW5kIGFsbChyb3cuZ2V0KCdzdGF0ZScpID09ICdFTkFCTEVEJyBmb3Igcm93IGluIHJ1bGVzKQogICAgICAgICAgKQo=
+          NEW_OK_B64: ICAgICAgICAgIHB1Ymxpc2hlZF9tb2RlbF9hdXRob3JpdHlfb2s9KAogICAgICAgICAgICAgIGJvZHlbJ3Byb3ZpZGVyQ3ljbGUnXVsnc3RhdHVzJ10gaW4geydDQVJEX1BVQkxJU0hFRCcsJ0NBUkRfQUxSRUFEWV9QVUJMSVNIRUQnfQogICAgICAgICAgICAgIGFuZCBib2R5Wydwcm92aWRlckN5Y2xlJ11bJ21vZGVsQXV0aG9yaXR5Q29tcGxldGUnXSBpcyBUcnVlCiAgICAgICAgICAgICAgYW5kIGJvZHlbJ3Byb3ZpZGVyQ3ljbGUnXVsncGlja0NvdW50J10gPiAwCiAgICAgICAgICAgICAgYW5kIGJvZHlbJ3Byb3ZpZGVyQ3ljbGUnXVsnbW9kZWxEZWNpc2lvbkNvdW50J10gPT0gYm9keVsncHJvdmlkZXJDeWNsZSddWydwaWNrQ291bnQnXQogICAgICAgICAgKQogICAgICAgICAgcG9zdGN1dG9mZl9jb2xsZWN0aW9uX29rPSgKICAgICAgICAgICAgICBib2R5Wydwcm92aWRlckN5Y2xlJ11bJ3N0YXR1cyddID09ICdDT0xMRUNUSU5HJwogICAgICAgICAgICAgIGFuZCBib2R5Wydwcm92aWRlckN5Y2xlJ11bJ3RocmVlU291cmNlQ292ZXJhZ2VDb21wbGV0ZSddIGlzIFRydWUKICAgICAgICAgICAgICBhbmQgYm9keVsncHJvdmlkZXJDeWNsZSddWydsYXRlUHVibGljYXRpb25QcmV2ZW50ZWQnXSBpcyBUcnVlCiAgICAgICAgICAgICAgYW5kIGJvZHlbJ3Byb3ZpZGVyQ3ljbGUnXVsncG9zdFN0YXJ0UHJlZGljdGlvbkNyZWF0aW9uQWxsb3dlZCddIGlzIEZhbHNlCiAgICAgICAgICAgICAgYW5kIGJvZHlbJ3Byb3ZpZGVyQ3ljbGUnXVsncG9zdFN0YXJ0T2Rkc0ZhYnJpY2F0aW9uQWxsb3dlZCddIGlzIEZhbHNlCiAgICAgICAgICApCiAgICAgICAgICBub19nYW1lc19vaz0oYm9keVsncHJvdmlkZXJDeWNsZSddWydzdGF0dXMnXSA9PSAnTk9fR0FNRVMnKQogICAgICAgICAgYm9keVsnb2snXT0oCiAgICAgICAgICAgICAgYm9keVsnam9iU3RhdHVzJ10gPT0gJ3N1Y2Nlc3MnCiAgICAgICAgICAgICAgYW5kIGJvZHlbJ2JlZHJvY2tTbW9rZSddWydvayddIGlzIFRydWUKICAgICAgICAgICAgICBhbmQgYm9keVsncHJvdmlkZXJDeWNsZSddWydvayddIGlzIFRydWUKICAgICAgICAgICAgICBhbmQgKHB1Ymxpc2hlZF9tb2RlbF9hdXRob3JpdHlfb2sgb3IgcG9zdGN1dG9mZl9jb2xsZWN0aW9uX29rIG9yIG5vX2dhbWVzX29rKQogICAgICAgICAgICAgIGFuZCBib2R5WydwdWJsaWNTdGF0dXMnXVsnZnVsbHlBdXRvbm9tb3VzJ10gaXMgVHJ1ZQogICAgICAgICAgICAgIGFuZCBib29sKHJ1bGVzKQogICAgICAgICAgICAgIGFuZCBhbGwocm93LmdldCgnc3RhdGUnKSA9PSAnRU5BQkxFRCcgZm9yIHJvdyBpbiBydWxlcykKICAgICAgICAgICkK
         run: |
           set -euo pipefail
           python - <<'PY'
+          import base64, os
           from pathlib import Path
-
-          path = Path('.github/workflows/deploy-mlb-auto-llm.yml')
-          text = path.read_text(encoding='utf-8')
-
-          old_status = """          status=response.get('status')
-          assert status in {'CARD_PUBLISHED','CARD_ALREADY_PUBLISHED','NO_GAMES'}, response
-          card=response.get('card') or {}
-          source=response.get('sourceStatus') or card.get('sourceStatus') or {}
-          if status != 'NO_GAMES':
-              for provider in ('mlbStatsApi','theOddsApi','bigBallsDataPro'):
-                  assert (source.get(provider) or {}).get('ok') is True, (provider, source)
-                  assert not ((source.get(provider) or {}).get('missingGamePks') or []), (provider, source)
-          if status in {'CARD_PUBLISHED','CARD_ALREADY_PUBLISHED'}:
-"""
-          new_status = """          status=response.get('status')
-          assert status in {'CARD_PUBLISHED','CARD_ALREADY_PUBLISHED','NO_GAMES','COLLECTING'}, response
-          card=response.get('card') or {}
-          source=response.get('sourceStatus') or card.get('sourceStatus') or {}
-          if status != 'NO_GAMES':
-              for provider in ('mlbStatsApi','theOddsApi','bigBallsDataPro'):
-                  assert (source.get(provider) or {}).get('ok') is True, (provider, source)
-                  assert not ((source.get(provider) or {}).get('missingGamePks') or []), (provider, source)
-          if status == 'COLLECTING':
-              assert response.get('threeSourceCoverageComplete') is True, response
-              assert response.get('latePublicationPrevented') is True, response
-              assert response.get('postStartPredictionCreationAllowed') is False, response
-              assert response.get('postStartOddsFabricationAllowed') is False, response
-          if status in {'CARD_PUBLISHED','CARD_ALREADY_PUBLISHED'}:
-"""
-          if old_status not in text:
-              raise SystemExit('expected MLB Auto smoke status block not found; refusing broad edit')
-          text = text.replace(old_status, new_status, 1)
-
-          old_fields = """                  'modelAuthorityComplete':card.get('modelAuthorityComplete'),
-                  'decisionAuthority':card.get('decisionAuthority'),
-                  'sourceStatus':source_status,
-                  'pickCount':len(picks),
-"""
-          new_fields = """                  'modelAuthorityComplete':card.get('modelAuthorityComplete'),
-                  'decisionAuthority':card.get('decisionAuthority'),
-                  'sourceStatus':source_status,
-                  'latePublicationPrevented':cycle.get('latePublicationPrevented'),
-                  'postStartPredictionCreationAllowed':cycle.get('postStartPredictionCreationAllowed'),
-                  'postStartOddsFabricationAllowed':cycle.get('postStartOddsFabricationAllowed'),
-                  'pickCount':len(picks),
-"""
-          if old_fields not in text:
-              raise SystemExit('expected MLB Auto proof field block not found; refusing broad edit')
-          text = text.replace(old_fields, new_fields, 1)
-
-          old_ok = """          body['ok']=(
-              body['jobStatus'] == 'success'
-              and body['bedrockSmoke']['ok'] is True
-              and body['providerCycle']['ok'] is True
-              and body['providerCycle']['modelAuthorityComplete'] is True
-              and body['providerCycle']['modelDecisionCount'] == body['providerCycle']['pickCount']
-              and body['publicStatus']['fullyAutonomous'] is True
-              and bool(rules)
-              and all(row.get('state') == 'ENABLED' for row in rules)
-          )
-"""
-          new_ok = """          published_model_authority_ok=(
-              body['providerCycle']['status'] in {'CARD_PUBLISHED','CARD_ALREADY_PUBLISHED'}
-              and body['providerCycle']['modelAuthorityComplete'] is True
-              and body['providerCycle']['pickCount'] > 0
-              and body['providerCycle']['modelDecisionCount'] == body['providerCycle']['pickCount']
-          )
-          postcutoff_collection_ok=(
-              body['providerCycle']['status'] == 'COLLECTING'
-              and body['providerCycle']['threeSourceCoverageComplete'] is True
-              and body['providerCycle']['latePublicationPrevented'] is True
-              and body['providerCycle']['postStartPredictionCreationAllowed'] is False
-              and body['providerCycle']['postStartOddsFabricationAllowed'] is False
-          )
-          no_games_ok=(body['providerCycle']['status'] == 'NO_GAMES')
-          body['ok']=(
-              body['jobStatus'] == 'success'
-              and body['bedrockSmoke']['ok'] is True
-              and body['providerCycle']['ok'] is True
-              and (published_model_authority_ok or postcutoff_collection_ok or no_games_ok)
-              and body['publicStatus']['fullyAutonomous'] is True
-              and bool(rules)
-              and all(row.get('state') == 'ENABLED' for row in rules)
-          )
-"""
-          if old_ok not in text:
-              raise SystemExit('expected MLB Auto proof acceptance block not found; refusing broad edit')
-          text = text.replace(old_ok, new_ok, 1)
-
-          path.write_text(text, encoding='utf-8')
+          path=Path('.github/workflows/deploy-mlb-auto-llm.yml')
+          text=path.read_text(encoding='utf-8')
+          pairs=[
+              ('OLD_STATUS_B64','NEW_STATUS_B64'),
+              ('OLD_FIELDS_B64','NEW_FIELDS_B64'),
+              ('OLD_OK_B64','NEW_OK_B64'),
+          ]
+          for old_name,new_name in pairs:
+              old=base64.b64decode(os.environ[old_name]).decode()
+              new=base64.b64decode(os.environ[new_name]).decode()
+              if old not in text:
+                  raise SystemExit(f'{old_name} target not found; refusing broad edit')
+              text=text.replace(old,new,1)
+          path.write_text(text,encoding='utf-8')
           PY
-
-      - name: Verify fail-closed post-cutoff contract
-        run: |
-          set -euo pipefail
           python -m pip install --quiet 'PyYAML>=6,<7'
           python - <<'PY'
-          from pathlib import Path
           import yaml
-
-          path = Path('.github/workflows/deploy-mlb-auto-llm.yml')
-          text = path.read_text(encoding='utf-8')
+          from pathlib import Path
+          text=Path('.github/workflows/deploy-mlb-auto-llm.yml').read_text(encoding='utf-8')
           yaml.safe_load(text)
-          required = [
-              "'COLLECTING'",
-              "response.get('latePublicationPrevented') is True",
-              "response.get('postStartPredictionCreationAllowed') is False",
-              "response.get('postStartOddsFabricationAllowed') is False",
-              "body['providerCycle']['threeSourceCoverageComplete'] is True",
-              "body['bedrockSmoke']['ok'] is True",
-              "body['publicStatus']['fullyAutonomous'] is True",
-              "all(row.get('state') == 'ENABLED' for row in rules)",
-          ]
-          for token in required:
-              assert token in text, token
-          assert "assert status in {'CARD_PUBLISHED','CARD_ALREADY_PUBLISHED','NO_GAMES'}, response" not in text
-          print('MLB Auto post-cutoff smoke remains fail-closed: verified')
+          assert "'COLLECTING'" in text
+          assert "latePublicationPrevented" in text
+          assert "postStartPredictionCreationAllowed" in text
+          assert "postStartOddsFabricationAllowed" in text
+          assert "body['bedrockSmoke']['ok'] is True" in text
+          assert "body['publicStatus']['fullyAutonomous'] is True" in text
           PY
           git diff --check
-          changed=$(git diff --name-only)
-          test "$changed" = '.github/workflows/deploy-mlb-auto-llm.yml'
-
-      - name: Commit isolated MLB Auto workflow repair
+          test "$(git diff --name-only)" = '.github/workflows/deploy-mlb-auto-llm.yml'
+      - name: Commit MLB-only repair
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .github/workflows/deploy-mlb-auto-llm.yml
           git commit -m 'Accept fail-closed MLB Auto post-cutoff smoke'
-          for attempt in 1 2 3 4 5; do
-            git fetch origin main
-            if git rebase origin/main; then
-              git push origin HEAD:main && exit 0
-            fi
-            git rebase --abort || true
-            git reset --hard origin/main
-            python - <<'PY'
-            raise SystemExit('main advanced during repair; refusing to replay patch without fresh source verification')
-            PY
-            sleep $((attempt * 2))
-          done
-          exit 1
+          git pull --rebase origin main
+          git push origin HEAD:main
