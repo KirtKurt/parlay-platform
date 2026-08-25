@@ -1,6 +1,6 @@
 name: Publish Tennis Daily Card
 
-on:
+"on":
   push:
     branches: [main]
     paths:
@@ -16,17 +16,24 @@ concurrency:
   group: publish-tennis-daily-card
   cancel-in-progress: false
 
+env:
+  REQUIRED_H2H_REGIONS: 'us,us2,uk,eu,au,fr,se,us_ex'
+  NON_H2H_PROVIDER_REGIONS: 'us_dfs'
+
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Build daily card from DynamoDB
+
+      - name: Build complete daily card from the all-match coverage ledger
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
           TABLE_NAME: inqis_tennis_learning
@@ -35,6 +42,7 @@ jobs:
           python - <<'PY'
           import json
           import os
+          from collections import Counter
           from datetime import datetime, timedelta, timezone
           from decimal import Decimal
           from zoneinfo import ZoneInfo
@@ -42,8 +50,25 @@ jobs:
           import boto3
           from boto3.dynamodb.conditions import Attr
 
-          table = boto3.resource('dynamodb', region_name=os.environ['AWS_REGION_VALUE']).Table(os.environ['TABLE_NAME'])
-          cutoff_minutes = max(0, int(os.getenv('TENNIS_PREDICTION_CUTOFF_MINUTES', '10')))
+          table = boto3.resource(
+              'dynamodb',
+              region_name=os.environ['AWS_REGION_VALUE'],
+          ).Table(os.environ['TABLE_NAME'])
+          cutoff_minutes = max(
+              0,
+              int(os.getenv('TENNIS_PREDICTION_CUTOFF_MINUTES', '10')),
+          )
+          required_regions = tuple(
+              x.strip()
+              for x in os.environ['REQUIRED_H2H_REGIONS'].split(',')
+              if x.strip()
+          )
+          required_region_set = set(required_regions)
+          non_h2h_regions = tuple(
+              x.strip()
+              for x in os.environ['NON_H2H_PROVIDER_REGIONS'].split(',')
+              if x.strip()
+          )
 
           def scan_prefix(prefix):
               out = []
@@ -60,42 +85,98 @@ jobs:
               raw = str(value or '').strip()
               if not raw:
                   raise ValueError('missing timestamp')
-              dt = datetime.fromisoformat(raw.replace('Z','+00:00'))
+              dt = datetime.fromisoformat(raw.replace('Z', '+00:00'))
               if dt.tzinfo is None:
                   dt = dt.replace(tzinfo=timezone.utc)
               return dt.astimezone(timezone.utc)
+
+          def decimal_to_native(value):
+              if isinstance(value, Decimal):
+                  return int(value) if value == value.to_integral_value() else float(value)
+              return value
 
           eastern = ZoneInfo('America/New_York')
           now = datetime.now(timezone.utc)
           today = now.astimezone(eastern).date()
 
+          coverage = {}
+          malformed_coverage_rows = []
+          for item in scan_prefix('COVERAGE#'):
+              event_id = str(
+                  item.get('event_id')
+                  or str(item.get('PK', '')).split('#', 1)[-1]
+              )
+              try:
+                  commence_utc = parse_utc(item.get('commence_time'))
+                  commence_et = commence_utc.astimezone(eastern)
+              except Exception as exc:
+                  malformed_coverage_rows.append(
+                      {
+                          'event_id': event_id,
+                          'reason': str(exc),
+                          'raw_commence_time': str(item.get('commence_time') or ''),
+                      }
+                  )
+                  continue
+              if commence_et.date() != today:
+                  continue
+              evaluated_regions = tuple(
+                  str(x).strip()
+                  for x in (item.get('evaluated_regions') or [])
+                  if str(x).strip()
+              )
+              coverage[event_id] = {
+                  'event_id': event_id,
+                  'sport_key': str(item.get('sport_key') or ''),
+                  'player': str(item.get('player') or ''),
+                  'opponent': str(item.get('opponent') or ''),
+                  'commence_time': commence_et.isoformat(),
+                  'commence_time_utc': commence_utc.isoformat(),
+                  'evaluation_status': str(
+                      item.get('evaluation_status') or 'MISSING_STATUS'
+                  ),
+                  'evaluation_reason': str(item.get('reason') or ''),
+                  'evaluated_regions': list(evaluated_regions),
+                  'regions_complete': set(evaluated_regions) == required_region_set,
+                  'non_h2h_provider_regions': [
+                      str(x)
+                      for x in (
+                          item.get('non_h2h_provider_regions')
+                          or non_h2h_regions
+                      )
+                  ],
+                  'bookmaker_count': int(item.get('bookmaker_count') or 0),
+                  'coverage_updated_at': str(item.get('updated_at') or ''),
+                  'prediction_cutoff_minutes': cutoff_minutes,
+              }
+
           live = {}
           deadlines = {}
           for item in scan_prefix('LIVE#'):
-              event_id = str(item.get('event_id') or str(item.get('PK','')).split('#',1)[-1])
-              raw = str(item.get('commence_time') or '')
+              event_id = str(
+                  item.get('event_id')
+                  or str(item.get('PK', '')).split('#', 1)[-1]
+              )
+              if event_id not in coverage:
+                  continue
               try:
-                  commence_utc = parse_utc(raw)
-                  dt = commence_utc.astimezone(eastern)
+                  commence_utc = parse_utc(
+                      item.get('commence_time')
+                      or coverage[event_id]['commence_time_utc']
+                  )
               except Exception:
                   continue
-              if dt.date() != today:
-                  continue
-              live[event_id] = {
-                  'event_id': event_id,
-                  'player': str(item.get('player') or ''),
-                  'opponent': str(item.get('opponent') or ''),
-                  'commence_time': dt.isoformat(),
-                  'updated_at': str(item.get('updated_at') or ''),
-              }
-              deadlines[event_id] = commence_utc - timedelta(minutes=cutoff_minutes)
+              live[event_id] = item
+              deadlines[event_id] = commence_utc - timedelta(
+                  minutes=cutoff_minutes
+              )
 
           latest = {}
           timing_violation_records_ignored = 0
           malformed_prediction_timestamps = 0
           for item in scan_prefix('PREDICTION#'):
-              event_id = str(item.get('PK','')).split('#',1)[-1]
-              if event_id not in live:
+              event_id = str(item.get('PK', '')).split('#', 1)[-1]
+              if event_id not in coverage:
                   continue
               stamp = str(item.get('SK') or '')
               try:
@@ -103,70 +184,208 @@ jobs:
               except Exception:
                   malformed_prediction_timestamps += 1
                   continue
-              if stamp_dt > deadlines[event_id]:
+              deadline = deadlines.get(event_id)
+              if deadline is None:
+                  try:
+                      deadline = (
+                          parse_utc(coverage[event_id]['commence_time_utc'])
+                          - timedelta(minutes=cutoff_minutes)
+                      )
+                  except Exception:
+                      malformed_prediction_timestamps += 1
+                      continue
+              if stamp_dt > deadline:
                   timing_violation_records_ignored += 1
                   continue
-              if event_id not in latest or stamp > str(latest[event_id].get('SK') or ''):
+              if event_id not in latest or stamp > str(
+                  latest[event_id].get('SK') or ''
+              ):
                   latest[event_id] = item
 
           picks = []
-          for event_id, event in live.items():
+          unpredicted_matches = []
+          for event_id, event in coverage.items():
               pred = latest.get(event_id)
-              if not pred:
+              if pred is None:
+                  unpredicted_matches.append(
+                      {
+                          **event,
+                          'reason': (
+                              event['evaluation_reason']
+                              or event['evaluation_status']
+                          ),
+                      }
+                  )
                   continue
-              p = float(pred.get('probability'))
-              pick = event['player'] if p >= 0.5 else event['opponent']
-              confidence = p if p >= 0.5 else 1.0 - p
-              band = 'STRONG' if confidence >= 0.60 else ('WATCH' if confidence >= 0.55 else 'PASS')
-              picks.append({
-                  **event,
-                  'pick': pick,
-                  'probability': round(confidence, 6),
-                  'probability_pct': round(confidence * 100, 2),
-                  'band': band,
-                  'model_version': int(pred.get('model_version') or 0),
-                  'prediction_timestamp': str(pred.get('SK') or ''),
-                  'prediction_cutoff_minutes': cutoff_minutes,
-                  't10_compliant': True,
-              })
 
-          picks.sort(key=lambda x: (x['commence_time'], -x['probability']))
+              try:
+                  p = float(pred.get('probability'))
+              except (TypeError, ValueError):
+                  unpredicted_matches.append(
+                      {
+                          **event,
+                          'reason': 'MALFORMED_PREDICTION_PROBABILITY',
+                      }
+                  )
+                  continue
+
+              player = event['player']
+              opponent = event['opponent']
+              pick = player if p >= 0.5 else opponent
+              confidence = p if p >= 0.5 else 1.0 - p
+              band = (
+                  'STRONG'
+                  if confidence >= 0.60
+                  else ('WATCH' if confidence >= 0.55 else 'PASS')
+              )
+              picks.append(
+                  {
+                      **event,
+                      'pick': pick,
+                      'probability': round(confidence, 6),
+                      'probability_pct': round(confidence * 100, 2),
+                      'band': band,
+                      'model_version': int(pred.get('model_version') or 0),
+                      'prediction_timestamp': str(pred.get('SK') or ''),
+                      't10_compliant': True,
+                  }
+              )
+
+          picks.sort(
+              key=lambda x: (x['commence_time'], -x['probability'])
+          )
+          unpredicted_matches.sort(
+              key=lambda x: (x['commence_time'], x['event_id'])
+          )
+
+          status_counts = Counter(
+              event['evaluation_status'] for event in coverage.values()
+          )
+          hard_failure_statuses = {
+              'PREDICTION_ERROR',
+              'MALFORMED_PROVIDER_EVENT',
+              'MISSING_STATUS',
+          }
+          coverage_failures = [
+              event
+              for event in coverage.values()
+              if (
+                  not event['regions_complete']
+                  or event['evaluation_status'] in hard_failure_statuses
+              )
+          ]
+          inventory_match_count = len(coverage)
+          prediction_count = len(picks)
+          full_slate_evaluated = bool(
+              inventory_match_count > 0
+              and not malformed_coverage_rows
+              and not coverage_failures
+              and prediction_count + len(unpredicted_matches)
+                  == inventory_match_count
+          )
+
           payload = {
               'service': 'tennis-daily-card',
               'date_et': str(today),
               'generated_at': now.isoformat(),
-              'source': 'inqis_tennis_learning DynamoDB latest prediction at or before T-10 cutoff',
+              'source': (
+                  'inqis_tennis_learning all-match COVERAGE ledger plus '
+                  'latest model prediction at or before T-10'
+              ),
+              'coverage_contract': (
+                  'ALL_ACTIVE_NON_OUTRIGHT_MATCHES_'
+                  'ALL_H2H_BOOKMAKER_REGIONS'
+              ),
+              'required_h2h_regions': list(required_regions),
+              'non_h2h_provider_regions': list(non_h2h_regions),
+              'full_slate_evaluated': full_slate_evaluated,
               'prediction_cutoff_minutes': cutoff_minutes,
-              'timing_violation_records_ignored': timing_violation_records_ignored,
-              'malformed_prediction_timestamps': malformed_prediction_timestamps,
-              'match_count': len(picks),
-              'official_pick_count': sum(p['band'] == 'STRONG' for p in picks),
+              'timing_violation_records_ignored': (
+                  timing_violation_records_ignored
+              ),
+              'malformed_prediction_timestamps': (
+                  malformed_prediction_timestamps
+              ),
+              'malformed_coverage_rows': malformed_coverage_rows,
+              'coverage_failure_count': len(coverage_failures),
+              'coverage_failures': coverage_failures,
+              'coverage_status_counts': dict(sorted(status_counts.items())),
+              'inventory_match_count': inventory_match_count,
+              'evaluated_match_count': inventory_match_count,
+              'prediction_count': prediction_count,
+              'unpredicted_match_count': len(unpredicted_matches),
+              'match_count': inventory_match_count,
+              'official_pick_count': sum(
+                  p['band'] == 'STRONG' for p in picks
+              ),
               'watch_count': sum(p['band'] == 'WATCH' for p in picks),
               'pass_count': sum(p['band'] == 'PASS' for p in picks),
               'picks': picks,
+              'unpredicted_matches': unpredicted_matches,
           }
 
           os.makedirs('runtime', exist_ok=True)
           with open('runtime/tennis_daily_card.json', 'w') as f:
-              json.dump(payload, f, indent=2, sort_keys=True, default=lambda x: float(x) if isinstance(x, Decimal) else str(x))
+              json.dump(
+                  payload,
+                  f,
+                  indent=2,
+                  sort_keys=True,
+                  default=decimal_to_native,
+              )
               f.write('\n')
-          print(json.dumps(payload, indent=2))
+          print(json.dumps(payload, indent=2, default=decimal_to_native))
           PY
-      - name: Commit daily card
+
+      - name: Commit complete daily card
         run: |
           set -euo pipefail
+          cp runtime/tennis_daily_card.json /tmp/tennis_daily_card.json
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          published=false
           for attempt in $(seq 1 20); do
-            cp runtime/tennis_daily_card.json /tmp/tennis_daily_card.json
             git fetch origin main
             git reset --hard origin/main
             mkdir -p runtime
             cp /tmp/tennis_daily_card.json runtime/tennis_daily_card.json
             git add runtime/tennis_daily_card.json
-            if git diff --cached --quiet; then exit 0; fi
-            git commit -m 'Publish tennis daily card [skip ci]'
-            if git push origin HEAD:main; then exit 0; fi
+            if git diff --cached --quiet; then
+              published=true
+              break
+            fi
+            git commit -m 'Publish complete tennis daily card [skip ci]'
+            if git push origin HEAD:main; then
+              published=true
+              break
+            fi
             sleep 3
           done
-          exit 1
+          test "$published" = true
+
+      - name: Enforce complete all-match card
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          card=json.load(open('runtime/tennis_daily_card.json'))
+          required={'us','us2','uk','eu','au','fr','se','us_ex'}
+          assert card.get('full_slate_evaluated') is True, card
+          assert set(card.get('required_h2h_regions') or []) == required, card
+          assert int(card.get('inventory_match_count') or 0) > 0, card
+          assert int(card.get('evaluated_match_count') or 0) == int(
+              card.get('inventory_match_count') or 0
+          ), card
+          assert int(card.get('prediction_count') or 0) + int(
+              card.get('unpredicted_match_count') or 0
+          ) == int(card.get('inventory_match_count') or 0), card
+          assert int(card.get('official_pick_count') or 0) + int(
+              card.get('watch_count') or 0
+          ) + int(card.get('pass_count') or 0) == int(
+              card.get('prediction_count') or 0
+          ), card
+          assert int(card.get('timing_violation_records_ignored') or 0) == 0, card
+          assert int(card.get('malformed_prediction_timestamps') or 0) == 0, card
+          assert int(card.get('coverage_failure_count') or 0) == 0, card
+          print(json.dumps(card, indent=2, sort_keys=True))
+          PY
