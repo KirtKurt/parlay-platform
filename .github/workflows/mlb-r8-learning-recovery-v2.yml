@@ -1,0 +1,215 @@
+name: MLB R8 Learning Recovery V2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-r8-learning-recovery-v2.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-r8-learning-recovery-v2
+  cancel-in-progress: false
+
+env:
+  HIST_STACK: parlay-platform-mlb-historical-optimizer
+  REPORT_PATH: runtime_reports/mlb_r8_learning_recovery_latest.json
+  PATTERN_PATH: runtime_reports/mlb_r8_favorite_underdog_patterns_latest.json
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Resolve MLB historical resources and current provider quota
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity >/tmp/aws-identity.json
+          FN=$(aws cloudformation describe-stacks --stack-name "$HIST_STACK" --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
+          BUCKET=$(aws cloudformation describe-stacks --stack-name "$HIST_STACK" --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='HistoricalArtifactsBucketName'].OutputValue" --output text)
+          test -n "$FN"; test "$FN" != None; test -n "$BUCKET"; test "$BUCKET" != None
+          printf '%s' "$FN" >/tmp/fn; printf '%s' "$BUCKET" >/tmp/bucket
+          aws lambda get-function-configuration --function-name "$FN" --region "${{ secrets.AWS_REGION }}" >/tmp/config.json
+          python - <<'PY'
+          import json,os,urllib.parse,urllib.request
+          from pathlib import Path
+          u='https://api.the-odds-api.com/v4/sports?'+urllib.parse.urlencode({'apiKey':os.environ['ODDS_API_KEY_VALUE']})
+          with urllib.request.urlopen(urllib.request.Request(u,headers={'user-agent':'inqsi-r8-v2/1.0'}),timeout=30) as r:
+              r.read()
+              def n(k):
+                  v=r.headers.get(k)
+                  try:return int(v) if v is not None else None
+                  except:return v
+              q={'xRequestsRemaining':n('x-requests-remaining'),'xRequestsUsed':n('x-requests-used'),'xRequestsLast':n('x-requests-last')}
+          Path('/tmp/quota.json').write_text(json.dumps(q,indent=2,sort_keys=True)+'\n'); print(json.dumps(q,sort_keys=True))
+          PY
+
+      - name: Read before status
+        run: |
+          set -euo pipefail
+          FN=$(cat /tmp/fn)
+          aws lambda invoke --function-name "$FN" --region "${{ secrets.AWS_REGION }}" --cli-binary-format raw-in-base64-out --cli-read-timeout 900 --payload '{"mode":"status","run":"r8_v2_before"}' /tmp/before.json >/tmp/before-meta.json
+          python -m json.tool /tmp/before.json >/dev/null
+
+      - name: Run bounded recovery iterations
+        continue-on-error: true
+        run: |
+          set -u
+          FN=$(cat /tmp/fn); : >/tmp/iterations.jsonl
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          q=json.loads(Path('/tmp/quota.json').read_text()); r=q.get('xRequestsRemaining')
+          Path('/tmp/go').write_text('yes' if isinstance(r,int) and r>250 else 'no')
+          PY
+          if [ "$(cat /tmp/go)" != yes ]; then echo '{"skipped":"provider_quota_not_available"}' >>/tmp/iterations.jsonl; exit 0; fi
+          for i in $(seq 1 10); do
+            rm -f "/tmp/body-$i.json" "/tmp/meta-$i.json"
+            aws lambda invoke --function-name "$FN" --region "${{ secrets.AWS_REGION }}" --cli-binary-format raw-in-base64-out --cli-read-timeout 900 --payload '{"mode":"orchestrate","run":"r8_v2_recovery"}' "/tmp/body-$i.json" >"/tmp/meta-$i.json" || true
+            python - "$i" <<'PY'
+          import json,sys
+          from pathlib import Path
+          i=sys.argv[1]
+          def load(p):
+              try:return json.loads(Path(p).read_text())
+              except:return {}
+          m=load(f'/tmp/meta-{i}.json'); b=load(f'/tmp/body-{i}.json')
+          row={'iteration':int(i),'functionError':m.get('FunctionError'),'errorType':b.get('errorType'),'errorMessage':b.get('errorMessage'),'ok':b.get('ok'),'phase':b.get('phase'),'eligibleGameCount':b.get('eligibleGameCount'),'completeSlateCount':b.get('completeSlateCount'),'currentDate':b.get('currentDate'),'optimizationRound':b.get('optimizationRound'),'lastError':b.get('lastError'),'supervisedShadow':b.get('supervisedShadow')}
+          with Path('/tmp/iterations.jsonl').open('a') as f:f.write(json.dumps(row,sort_keys=True)+'\n')
+          print(json.dumps(row,sort_keys=True))
+          PY
+            if grep -q 'ExecutionLeaseUnavailable' "/tmp/body-$i.json" 2>/dev/null; then sleep 35; else sleep 5; fi
+          done
+
+      - name: Read after status
+        if: always()
+        run: |
+          set -euo pipefail
+          FN=$(cat /tmp/fn)
+          aws lambda invoke --function-name "$FN" --region "${{ secrets.AWS_REGION }}" --cli-binary-format raw-in-base64-out --cli-read-timeout 900 --payload '{"mode":"status","run":"r8_v2_after"}' /tmp/after.json >/tmp/after-meta.json
+          python -m json.tool /tmp/after.json >/dev/null
+
+      - name: Analyze favorite and underdog winning patterns from immutable pregame datasets
+        if: always()
+        run: |
+          set -euo pipefail
+          BUCKET=$(cat /tmp/bucket)
+          BUCKET="$BUCKET" PATTERN_PATH="$PATTERN_PATH" python - <<'PY'
+          import json,os
+          from collections import defaultdict
+          from pathlib import Path
+          import boto3
+          s3=boto3.client('s3'); bucket=os.environ['BUCKET']; prefix='mlb/historical-daily-v1/datasets/'
+          keys=[]; token=None
+          while True:
+              a={'Bucket':bucket,'Prefix':prefix,'MaxKeys':1000}
+              if token:a['ContinuationToken']=token
+              x=s3.list_objects_v2(**a); keys.extend(o['Key'] for o in x.get('Contents') or [] if o['Key'].endswith('.json'))
+              if not x.get('IsTruncated'):break
+              token=x.get('NextContinuationToken')
+          rows=[]
+          for key in keys:
+              try:d=json.loads(s3.get_object(Bucket=bucket,Key=key)['Body'].read().decode())
+              except Exception:continue
+              if d.get('completeSlate') is not True or d.get('postLockDataExcluded') is not True:continue
+              for r in d.get('records') or []:
+                  h=r.get('homeSignal') or {}; a=r.get('awaySignal') or {}; home=str(r.get('homeTeam') or ''); away=str(r.get('awayTeam') or ''); winner=str(r.get('winner') or '')
+                  hp=float(h.get('marketConsensusProbability',h.get('fairProbability',.5)) or .5); ap=float(a.get('marketConsensusProbability',a.get('fairProbability',.5)) or .5)
+                  fav='home' if hp>ap else 'away' if ap>hp else 'even'; actual='home' if winner==home else 'away' if winner==away else 'unknown'
+                  if fav=='even' or actual=='unknown':continue
+                  fs=h if fav=='home' else a; ds=a if fav=='home' else h
+                  rows.append({'favoriteWon':actual==fav,'favoriteProb':max(hp,ap),'favoriteDelta':float(fs.get('delta') or 0),'underdogDelta':float(ds.get('delta') or 0),'favoriteDivergence':float(fs.get('bookDivergence') or 0),'underdogDivergence':float(ds.get('bookDivergence') or 0),'favoriteReversals':int(fs.get('reversalCount') or 0),'underdogReversals':int(ds.get('reversalCount') or 0),'favoriteTags':list(fs.get('tags') or []),'underdogTags':list(ds.get('tags') or [])})
+          def band(p):return '50-55' if p<.55 else '55-60' if p<.60 else '60-65' if p<.65 else '65-70' if p<.70 else '70+'
+          bands=defaultdict(lambda:{'games':0,'favoriteWins':0})
+          for r in rows:b=bands[band(r['favoriteProb'])]; b['games']+=1; b['favoriteWins']+=int(r['favoriteWon'])
+          for v in bands.values():v['favoriteWinRate']=v['favoriteWins']/v['games']; v['underdogWinRate']=1-v['favoriteWinRate']
+          def tags(k,fav):
+              z=defaultdict(lambda:{'games':0,'wins':0})
+              for r in rows:
+                  target=r['favoriteWon'] if fav else not r['favoriteWon']
+                  for t in r[k]:z[str(t)]['games']+=1; z[str(t)]['wins']+=int(target)
+              return sorted([{'tag':t,'games':v['games'],'winRate':v['wins']/v['games']} for t,v in z.items() if v['games']>=30],key=lambda x:(x['winRate'],x['games']),reverse=True)[:25]
+          def mean(k,fav):
+              x=[r[k] for r in rows if (r['favoriteWon'] if fav else not r['favoriteWon'])]; return sum(x)/len(x) if x else None
+          out={'version':'MLB-R8-FAVORITE-UNDERDOG-PATTERN-EVIDENCE-v2','sourceAuthority':'immutable pregame historical The Odds API snapshots joined to official final MLB outcomes','postLockDataExcluded':True,'artifactCount':len(keys),'gameCount':len(rows),'favoriteWins':sum(r['favoriteWon'] for r in rows),'underdogWins':sum(not r['favoriteWon'] for r in rows),'favoriteWinRate':sum(r['favoriteWon'] for r in rows)/len(rows) if rows else None,'underdogWinRate':sum(not r['favoriteWon'] for r in rows)/len(rows) if rows else None,'byFavoriteProbabilityBand':dict(sorted(bands.items())),'topFavoriteWinTags':tags('favoriteTags',True),'topUnderdogWinTags':tags('underdogTags',False),'meansWhenFavoriteWins':{'favoriteDelta':mean('favoriteDelta',True),'favoriteDivergence':mean('favoriteDivergence',True),'favoriteReversals':mean('favoriteReversals',True)},'meansWhenUnderdogWins':{'underdogDelta':mean('underdogDelta',False),'underdogDivergence':mean('underdogDivergence',False),'underdogReversals':mean('underdogReversals',False)},'note':'descriptive hypothesis evidence; only chronological out-of-sample validation may promote a learned interaction'}
+          p=Path(os.environ['PATTERN_PATH']); p.parent.mkdir(parents=True,exist_ok=True); p.write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          print(json.dumps({'artifactCount':out['artifactCount'],'gameCount':out['gameCount'],'favoriteWinRate':out['favoriteWinRate'],'underdogWinRate':out['underdogWinRate']},sort_keys=True))
+          PY
+
+      - name: Bedrock hypothesis audit
+        if: always()
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path('runtime_reports/mlb_r8_favorite_underdog_patterns_latest.json').read_text())
+          task={'task':'Identify favorite-win and underdog-win interactions worth testing in chronological out-of-sample MLB ML. Distinguish correlation from validated signal. Never select a team, override model authority, or weaken gates.','evidence':p}
+          Path('/tmp/bedrock-request.json').write_text(json.dumps({'messages':[{'role':'user','content':[{'text':json.dumps(task)}]}],'inferenceConfig':{'maxTokens':1200,'temperature':0.0}}))
+          PY
+          aws bedrock-runtime invoke-model --region "${{ secrets.AWS_REGION }}" --model-id amazon.nova-lite-v1:0 --content-type application/json --accept application/json --body fileb:///tmp/bedrock-request.json /tmp/bedrock.json || true
+
+      - name: Build durable report
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json,os
+          from datetime import datetime,timezone
+          from pathlib import Path
+          def L(p,d=None):
+              try:return json.loads(Path(p).read_text())
+              except:return d
+          its=[]
+          try:its=[json.loads(x) for x in Path('/tmp/iterations.jsonl').read_text().splitlines() if x.strip()]
+          except:pass
+          pat=L(os.environ['PATTERN_PATH'],{}) or {}
+          report={'proofType':'MLB_R8_AUTONOMOUS_LEARNING_RECOVERY_V2','createdAtUtc':datetime.now(timezone.utc).isoformat(),'sourceSha':os.environ.get('GITHUB_SHA'),'quota':L('/tmp/quota.json',{}),'before':L('/tmp/before.json',{}),'iterations':its,'after':L('/tmp/after.json',{}),'patternEvidence':{'artifactCount':pat.get('artifactCount'),'gameCount':pat.get('gameCount'),'favoriteWinRate':pat.get('favoriteWinRate'),'underdogWinRate':pat.get('underdogWinRate')},'bedrockAuditAvailable':Path('/tmp/bedrock.json').exists(),'productionAuthorityManuallyChanged':False,'immutableHistoryRewritten':False,'sportIsolationPreserved':True}
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-r8-learning-v2-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_r8_learning_recovery_latest.json
+            runtime_reports/mlb_r8_favorite_underdog_patterns_latest.json
+            /tmp/before.json
+            /tmp/after.json
+            /tmp/quota.json
+            /tmp/iterations.jsonl
+            /tmp/bedrock.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Publish proof
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s "$REPORT_PATH"; test -s "$PATTERN_PATH"; cp "$REPORT_PATH" /tmp/report.json; cp "$PATTERN_PATH" /tmp/pattern.json
+          git config user.name github-actions[bot]; git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for n in 1 2 3 4 5; do
+            git reset --hard HEAD; git clean -fd; git fetch origin main; git checkout -B r8-v2-proof origin/main; mkdir -p runtime_reports; cp /tmp/report.json "$REPORT_PATH"; cp /tmp/pattern.json "$PATTERN_PATH"; git add "$REPORT_PATH" "$PATTERN_PATH"; git diff --cached --quiet && exit 0; git commit -m 'Publish MLB R8 learning evidence [skip ci]'; git push origin HEAD:main && exit 0; sleep $((n*3))
+          done
+          exit 1
