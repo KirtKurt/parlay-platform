@@ -1,10 +1,24 @@
 {
   "bedrock": {
-    "bedrockAttemptedModelIds": [
-      "openai.gpt-oss-20b-1:0"
+    "attemptedModelIds": [
+      "openai.gpt-oss-20b-1:0",
+      "us-east-2::openai.gpt-oss-20b-1:0",
+      "us-west-2::openai.gpt-oss-20b-1:0",
+      "amazon.nova-lite-v1:0",
+      "us-east-2::amazon.nova-lite-v1:0",
+      "us-west-2::amazon.nova-lite-v1:0",
+      "amazon.nova-micro-v1:0",
+      "openai.gpt-oss-120b-1:0"
     ],
     "bedrockAvailable": false,
-    "bedrockErrors": [
+    "configuredModelCount": 32,
+    "configuredRegions": [
+      "us-east-1",
+      "us-west-2",
+      "us-east-2"
+    ],
+    "decisionAuthority": "BEDROCK_LLM",
+    "errors": [
       {
         "endpointFamily": "bedrock-runtime-converse",
         "errorCode": "ThrottlingException",
@@ -12,37 +26,110 @@
         "modelId": "openai.gpt-oss-20b-1:0",
         "region": "us-east-1",
         "routeId": "openai.gpt-oss-20b-1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "openai.gpt-oss-20b-1:0",
+        "region": "us-east-2",
+        "routeId": "us-east-2::openai.gpt-oss-20b-1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "openai.gpt-oss-20b-1:0",
+        "region": "us-west-2",
+        "routeId": "us-west-2::openai.gpt-oss-20b-1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "amazon.nova-lite-v1:0",
+        "region": "us-east-1",
+        "routeId": "amazon.nova-lite-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "amazon.nova-lite-v1:0",
+        "region": "us-east-2",
+        "routeId": "us-east-2::amazon.nova-lite-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "amazon.nova-lite-v1:0",
+        "region": "us-west-2",
+        "routeId": "us-west-2::amazon.nova-lite-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "amazon.nova-micro-v1:0",
+        "region": "us-east-1",
+        "routeId": "amazon.nova-micro-v1:0"
+      },
+      {
+        "endpointFamily": "bedrock-runtime-converse",
+        "errorCode": "ThrottlingException",
+        "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+        "modelId": "openai.gpt-oss-120b-1:0",
+        "region": "us-east-1",
+        "routeId": "openai.gpt-oss-120b-1:0"
       }
     ],
-    "checkedAtUtc": "2026-08-25T06:09:24.186327+00:00",
-    "decisionAuthority": "AWS_ML_PROSPECTIVE_R7",
-    "endpointFamily": "aws-ml-readonly-api",
-    "mlFallbackAttempted": true,
-    "modelId": "INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble",
-    "ok": true,
-    "predictionCount": 15,
-    "primaryAlgorithm": "INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble",
-    "responseNonEmpty": true
+    "mantleModelCount": 0,
+    "mantleModelIds": [],
+    "mlFallbackAttempted": false,
+    "ok": false,
+    "runtimeModelCount": 32,
+    "runtimeModelIds": [
+      "openai.gpt-oss-20b-1:0",
+      "us-east-2::openai.gpt-oss-20b-1:0",
+      "us-west-2::openai.gpt-oss-20b-1:0",
+      "amazon.nova-lite-v1:0",
+      "us-east-2::amazon.nova-lite-v1:0",
+      "us-west-2::amazon.nova-lite-v1:0",
+      "amazon.nova-micro-v1:0",
+      "openai.gpt-oss-120b-1:0",
+      "us-east-2::openai.gpt-oss-120b-1:0",
+      "us-west-2::openai.gpt-oss-120b-1:0",
+      "amazon.nova-pro-v1:0",
+      "amazon.nova-sonic-v1:0",
+      "amazon.nova-2-sonic-v1:0",
+      "us-west-2::amazon.nova-2-sonic-v1:0",
+      "us-east-2::us.amazon.nova-pro-v1:0",
+      "us-west-2::us.amazon.nova-pro-v1:0",
+      "us.amazon.nova-pro-v1:0",
+      "us-east-2::us.amazon.nova-lite-v1:0",
+      "us-west-2::us.amazon.nova-lite-v1:0",
+      "us.amazon.nova-lite-v1:0",
+      "us-east-2::us.amazon.nova-micro-v1:0",
+      "us-west-2::us.amazon.nova-micro-v1:0",
+      "us.amazon.nova-micro-v1:0",
+      "us-east-2::us.amazon.nova-2-lite-v1:0",
+      "us-west-2::us.amazon.nova-2-lite-v1:0",
+      "us.amazon.nova-2-lite-v1:0",
+      "us-east-2::us.amazon.nova-premier-v1:0",
+      "us-west-2::us.amazon.nova-premier-v1:0",
+      "us.amazon.nova-premier-v1:0",
+      "global.amazon.nova-2-lite-v1:0",
+      "us-east-2::global.amazon.nova-2-lite-v1:0",
+      "us-west-2::global.amazon.nova-2-lite-v1:0"
+    ],
+    "service": "mlb-auto-llm-bedrock-smoke"
   },
-  "createdAtUtc": "2026-08-25T06:10:35.515769+00:00",
-  "cycle": {
-    "errorMessage": "MLB_ML_RETIRED_AUTHORITY_REJECTED:INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble:INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble",
-    "errorType": "RuntimeError",
-    "requestId": "16a036e1-bb24-4584-b5e8-ad5240dfea81",
-    "stackTrace": [
-      "  File \"/var/task/orchestrator_v3.py\", line 310, in lambda_handler\n    return strict_bedrock.lambda_handler(event, context)\n",
-      "  File \"/var/task/orchestrator_v2.py\", line 381, in lambda_handler\n    return production.lambda_handler(event, context)\n",
-      "  File \"/var/task/orchestrator.py\", line 269, in lambda_handler\n    result = base.lambda_handler(event, context)\n",
-      "  File \"/var/task/handler.py\", line 929, in lambda_handler\n    return _run(event)\n",
-      "  File \"/var/task/handler.py\", line 870, in _run\n    card = _build_card(packet)\n",
-      "  File \"/var/task/orchestrator_v3.py\", line 225, in _build_card_three_source_model\n    card = _model_card(packet)\n",
-      "  File \"/var/task/orchestrator_v3.py\", line 213, in _model_card\n    return build_ml_card(packet, bedrock_failure=str(exc))\n",
-      "  File \"/var/task/ml_authority.py\", line 374, in build_card\n    raise RuntimeError(\n"
-    ]
-  },
+  "createdAtUtc": "2026-08-25T16:01:26.856037+00:00",
+  "cycle": {},
   "jobStatus": "failure",
   "ok": false,
   "proofType": "MLB_AUTO_LLM_DEPLOYMENT",
-  "runId": "32815605228",
-  "sourceSha": "2939600f608ff44cfe27dabe3d2702337a8033e3"
+  "runId": "32868986283",
+  "sourceSha": "46b05977f453e43c9754dac525052f5d038fa115"
 }
