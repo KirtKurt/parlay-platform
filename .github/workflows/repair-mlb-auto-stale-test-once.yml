@@ -1,0 +1,57 @@
+name: Repair MLB Auto stale test once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-auto-stale-test-once.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: repair-mlb-auto-stale-test-once
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Remove only stale missing MLB Auto test reference
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path=Path('.github/workflows/deploy-mlb-auto-llm.yml')
+          text=path.read_text(encoding='utf-8')
+          stale='  tests/unit/test_mlb_auto_direct_read.py \\\n'
+          if stale not in text:
+              raise SystemExit('stale test reference not found; refusing broad edit')
+          text=text.replace(stale,'',1)
+          path.write_text(text,encoding='utf-8')
+          PY
+          grep -q 'tests/unit/test_mlb_auto_model_gateway.py' .github/workflows/deploy-mlb-auto-llm.yml
+          grep -q 'tests/unit/test_mlb_auto_ml_authority.py' .github/workflows/deploy-mlb-auto-llm.yml
+          grep -q 'tests/unit/test_mlb_auto_pregame_odds_replay.py' .github/workflows/deploy-mlb-auto-llm.yml
+          ! grep -q 'tests/unit/test_mlb_auto_direct_read.py' .github/workflows/deploy-mlb-auto-llm.yml
+          git diff --check
+          test "$(git diff --name-only)" = '.github/workflows/deploy-mlb-auto-llm.yml'
+      - name: Commit MLB-only workflow repair and dispatch deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/deploy-mlb-auto-llm.yml
+          git commit -m 'Remove stale MLB Auto direct-read test reference'
+          git pull --rebase origin main
+          git push origin HEAD:main
+          sleep 5
+          gh workflow run deploy-mlb-auto-llm.yml --ref main
