@@ -1,0 +1,66 @@
+name: MLB 30-minute production progress pulse
+
+on:
+  schedule:
+    - cron: '0,30 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-30m-progress-pulse.yml'
+      - 'scripts/report_mlb_30m_progress.py'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: mlb-30m-production-progress-pulse
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  MLB_ROOT_STACK: parlay-platform-dev
+  MLB_AUTO_STACK: parlay-platform-mlb-auto-llm
+  MLB_PROGRESS_ISSUE_NUMBER: '567'
+  MLB_R7_EXPERIMENT_ID: mlb-v2-2026-08-03-future-prospective-r7
+
+jobs:
+  read-only-progress-pulse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact main source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure read/proof AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Validate pulse cannot invoke mutation modes
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/report_mlb_30m_progress.py
+          grep -q '"mode": "status"' scripts/report_mlb_30m_progress.py
+          ! grep -Eq '"mode": "(scheduled|selection_capture|manual_review)"' scripts/report_mlb_30m_progress.py
+          ! grep -Ei 'aws[^[:alnum:]]+dynamodb' scripts/report_mlb_30m_progress.py
+          ! grep -Eq 'put_item|update_item|delete_item|promote_candidate|manual_review\(' scripts/report_mlb_30m_progress.py
+          grep -q 'UNSAFE_RETIRED_V15_10_AUTHORITY_LEAK' scripts/report_mlb_30m_progress.py
+
+      - name: Collect AWS runtime evidence and post numeric issue pulse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python scripts/report_mlb_30m_progress.py
