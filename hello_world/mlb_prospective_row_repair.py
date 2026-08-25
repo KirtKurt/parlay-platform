@@ -5,16 +5,17 @@ import functools
 import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 
 MISSED_LOCK_TERMINAL_RECONCILIATION_VERSION = (
-    "MLB-MISSED-LOCK-TERMINAL-RECONCILIATION-v2-durable-cached-replay"
+    "MLB-MISSED-LOCK-TERMINAL-RECONCILIATION-v3-protected-force-replay"
 )
 PROMOTED_LOCK_TRAINING_ELIGIBILITY_VERSION = (
     "MLB-PROMOTED-LOCK-TRAINING-ELIGIBILITY-v2-verified-empty-exclusions"
 )
-_RUNTIME_PATCH_FLAG = "_INQSI_MLB_MISSED_LOCK_TERMINAL_RECONCILIATION_V1"
-_APPLY_HOOK_FLAG = "_INQSI_MLB_MISSED_LOCK_TERMINAL_APPLY_HOOK_V1"
+_RUNTIME_PATCH_FLAG = "_INQSI_MLB_MISSED_LOCK_TERMINAL_RECONCILIATION_V3"
+_APPLY_HOOK_FLAG = "_INQSI_MLB_MISSED_LOCK_TERMINAL_APPLY_HOOK_V3"
 _PREPARE_ROW_HOOK_FLAG = "_INQSI_MLB_PROMOTED_LOCK_TRAINING_ELIGIBILITY_V2"
 EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS = frozenset(
     {
@@ -32,6 +33,7 @@ _POST_WINDOW_REPAIR_REASONS = (
     _CACHED_TERMINAL_RECONCILIATION_REASONS
     | _EXISTING_POST_WINDOW_SUCCESS_REASONS
 )
+_RAW_MISSED_REASON = "MISSED_PER_GAME_LOCK_NOT_BACKFILLED"
 
 
 def _int(value: Any, default: int = 0) -> int:
@@ -73,15 +75,13 @@ def _cleanup_promoted_lock_training_eligibility(
         )
         if str(error)
     ]
-    vector = out.get("frozenFeatureVector")
-    if not (
+    verified_lock = bool(
         out.get("lockedPrediction") is True
         and out.get("immutablePerGameStage") is True
         and out.get("exactVectorVerified") is True
         and not exact_errors
-        and isinstance(vector, dict)
-        and bool(vector.get("fingerprint"))
-    ):
+    )
+    if not verified_lock:
         return out
 
     reasons = {
@@ -96,8 +96,13 @@ def _cleanup_promoted_lock_training_eligibility(
     cleared = sorted(reasons & EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS)
     remaining = sorted(reasons - EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS)
     eligible = not remaining
+    vector = out.get("frozenFeatureVector")
+    exact_vector_present = bool(
+        isinstance(vector, dict) and vector.get("fingerprint")
+    )
     stale_false_boolean = bool(
         eligible
+        and exact_vector_present
         and (
             out.get("trainingEligible") is not True
             or freeze.get("trainingEligible") is not True
@@ -143,6 +148,155 @@ def _install_prepare_row_training_cleanup(patch: Any) -> None:
 
     patch._prepare_row = prepare_row
     setattr(patch, _PREPARE_ROW_HOOK_FLAG, True)
+
+
+def _identity_values(value: Dict[str, Any], patch: Any) -> set[str]:
+    values = {
+        str(value.get(key) or "").strip()
+        for key in (
+            "gameIdentity",
+            "gameId",
+            "game_id",
+            "id",
+            "providerEventId",
+            "provider_event_id",
+            "officialGamePk",
+            "official_game_pk",
+        )
+    }
+    try:
+        values.add(str(patch.game_identity(value) or "").strip())
+    except Exception:
+        pass
+    expanded = {item for item in values if item}
+    expanded.update(
+        item.split(":", 1)[1]
+        for item in list(expanded)
+        if ":" in item and item.split(":", 1)[1]
+    )
+    return expanded
+
+
+def _ensure_missed_lock_diagnostics(
+    module: Any,
+    patch: Any,
+    slate: str,
+    result: Dict[str, Any],
+    force: bool,
+) -> Dict[str, Any]:
+    """Backstop the append-only START/OUTCOME pair for a terminal miss."""
+
+    out = copy.deepcopy(result)
+    existing_summary = out.get("perGameLockAttemptDiagnostics") or {}
+    if _int(existing_summary.get("attemptedGameCount"), 0) > 0:
+        return out
+    progress = out.get("perGameLockProgress") or {}
+    statuses = [
+        row
+        for row in (progress.get("games") or [])
+        if isinstance(row, dict)
+        and str(row.get("state") or "") == "MISSED_NOT_BACKFILLED"
+    ]
+    if not statuses:
+        return out
+    try:
+        attempted_at = module._now_utc().astimezone(timezone.utc)
+        pulls = sorted(
+            module._pulls_for_date(slate),
+            key=lambda pull: patch._pull_at(module, pull)
+            or datetime.min.replace(tzinfo=timezone.utc),
+        )
+        manifest = module._latest_games_for_date(slate, pulls)
+        summaries: List[Dict[str, Any]] = []
+        for status in statuses:
+            status_ids = _identity_values(status, patch)
+            game = next(
+                (
+                    candidate
+                    for candidate in manifest
+                    if status_ids & _identity_values(candidate, patch)
+                ),
+                None,
+            )
+            if not isinstance(game, dict):
+                continue
+            history = patch._diagnostic_history(module, slate, game, limit=20)
+            latest = history.get("latestAttempt") or {}
+            if latest.get("outcome") == "MISSED_NOT_BACKFILLED":
+                continue
+            attempt_id = uuid4().hex
+            base = patch._diagnostic_base(
+                module,
+                slate,
+                pulls,
+                manifest,
+                game,
+                status,
+                attempted_at,
+                attempt_id,
+                force,
+            )
+            start_item = {
+                **base,
+                "SK": patch._diagnostic_sk(
+                    module, game, attempted_at, attempt_id, "START"
+                ),
+                "record_type": patch.ATTEMPT_RECORD_TYPE,
+                "diagnostic_event": "ATTEMPT_STARTED",
+                "created_at": attempted_at.isoformat(),
+            }
+            start_write = patch._put_diagnostic(module, start_item)
+            outcome_item = {
+                **base,
+                "SK": patch._diagnostic_sk(
+                    module, game, attempted_at, attempt_id, "OUTCOME"
+                ),
+                "record_type": patch.ATTEMPT_OUTCOME_RECORD_TYPE,
+                "diagnostic_event": "ATTEMPT_OUTCOME",
+                "outcome": "MISSED_NOT_BACKFILLED",
+                "reason": "MISSED_NOT_BACKFILLED",
+                "state_after_attempt": "MISSED_NOT_BACKFILLED",
+                "state_errors_after_attempt": list(status.get("errors") or []),
+                "failure_details": [],
+                "exception_type": None,
+                "exception_message": None,
+                "stage_present_after_attempt": False,
+                "canonical_proven_after_attempt": False,
+                "finished_at_utc": attempted_at.isoformat(),
+                "elapsed_milliseconds": 0,
+                "created_at": attempted_at.isoformat(),
+            }
+            outcome_write = patch._put_diagnostic(module, outcome_item)
+            summaries.append(
+                {
+                    "attemptId": attempt_id,
+                    "gameIdentity": str(status.get("gameIdentity") or ""),
+                    "stateAtAttempt": "MISSED_NOT_BACKFILLED",
+                    "stateAfterAttempt": "MISSED_NOT_BACKFILLED",
+                    "outcome": "MISSED_NOT_BACKFILLED",
+                    "reason": "MISSED_NOT_BACKFILLED",
+                    "startWrite": start_write,
+                    "outcomeWrite": outcome_write,
+                }
+            )
+        out["perGameLockAttemptDiagnostics"] = {
+            "version": patch.ATTEMPT_DIAGNOSTICS_VERSION,
+            "appendOnly": True,
+            "writeOnce": True,
+            "attemptedGameCount": len(summaries),
+            "attempts": summaries,
+            "terminalMissedLockBackstop": True,
+        }
+    except Exception as exc:
+        errors = list(out.get("lifecycleDiagnosticErrors") or [])
+        errors.append(
+            {
+                "checkpoint": "MISSED_LOCK_DIAGNOSTIC_BACKSTOP",
+                "error": f"{type(exc).__name__}:{exc}",
+            }
+        )
+        out["lifecycleDiagnosticErrors"] = errors
+    return out
 
 
 def _repair_proven_no_prediction_misses(
@@ -389,11 +543,21 @@ def install_prospective_row_repair(module: Any, patch: Any) -> Any:
             return result
         if _missed_count_from_result(result) <= 0:
             return result
-        if str(result.get("reason") or "") not in _POST_WINDOW_REPAIR_REASONS:
-            return result
         slate = str(
             slate_date or result.get("slateDateEt") or module._today_et()
         )
+        reason = str(result.get("reason") or "")
+        if reason == _RAW_MISSED_REASON:
+            result = _ensure_missed_lock_diagnostics(
+                module, patch, slate, result, force
+            )
+            # Only the explicit protected reconciliation invocation is both
+            # forced and method-less/scheduled. Ordinary scheduled processing
+            # and manual force probes remain fail closed.
+            if not (force and scheduled):
+                return result
+        elif reason not in _POST_WINDOW_REPAIR_REASONS:
+            return result
         return _attach_repair(
             result,
             _repair_proven_no_prediction_misses(module, patch, slate),
