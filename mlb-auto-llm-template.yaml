@@ -75,7 +75,7 @@ Resources:
           MLB_AUTO_BEDROCK_RUNTIME_PROVIDERS: 'amazon,openai'
           MLB_AUTO_BEDROCK_ROUTE_CATALOG_LIMIT: '64'
           MLB_AUTO_BEDROCK_REGIONS: 'us-east-1,us-west-2,us-east-2'
-          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '8'
+          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '80'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref MLBAutoLLMTable
@@ -152,7 +152,7 @@ Resources:
           MLB_AUTO_BEDROCK_RUNTIME_PROVIDERS: 'amazon,openai'
           MLB_AUTO_BEDROCK_ROUTE_CATALOG_LIMIT: '64'
           MLB_AUTO_BEDROCK_REGIONS: 'us-east-1,us-west-2,us-east-2'
-          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '8'
+          MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '80'
       Policies:
         - Statement:
             - Effect: Allow
