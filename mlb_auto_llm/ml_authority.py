@@ -197,7 +197,8 @@ def _http_json(path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, 
             "user-agent": "inqsi-mlb-auto-ml-authority/1.0",
         },
     )
-    with urllib.request.urlopen(request, timeout=25) as response:
+    timeout_seconds = float(os.environ.get("MLB_AUTO_ML_HTTP_TIMEOUT_SECONDS", "60"))
+    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
         payload = json.loads(response.read().decode("utf-8"))
     if not isinstance(payload, dict):
         raise RuntimeError("MLB_ML_API_RESPONSE_NOT_OBJECT")
@@ -207,7 +208,7 @@ def _http_json(path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, 
 def fetch_predictions(slate: str) -> Dict[str, Any]:
     payload = _http_json(
         "/v1/mlb/game-winners",
-        {"game_date_et": slate, "date": slate, "limit": 500},
+        {"game_date_et": slate, "limit": 64},
     )
     if payload.get("ok") is not True:
         raise RuntimeError(
