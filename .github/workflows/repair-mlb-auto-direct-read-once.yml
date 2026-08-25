@@ -46,26 +46,25 @@ jobs:
           PYTHONPATH=mlb_auto_llm python -m pytest -q tests/unit/test_mlb_auto_model_gateway.py tests/unit/test_mlb_auto_ml_authority.py
           sam validate --template-file mlb-auto-llm-template.yaml --lint
           git diff --check
-          changed=$(git diff --name-only | grep -v '^.github/workflows/repair-mlb-auto-direct-read-once.yml$' | grep -v '^scripts/repair_mlb_auto_direct_read_once.py$' || true)
+          changed=$(git diff --name-only || true)
           test -n "$changed"
-          if echo "$changed" | grep -Ev '^(mlb_auto_llm/|mlb-auto-llm-template.yaml$|.github/workflows/deploy-mlb-auto-llm.yml$)'; then
+          if echo "$changed" | grep -Ev '^(mlb_auto_llm/ml_authority.py|mlb-auto-llm-template.yaml)$'; then
             echo '::error::Repair escaped MLB Auto isolation'
             exit 1
           fi
 
-      - name: Commit tested repair and dispatch canonical deployment
+      - name: Commit tested source repair and dispatch canonical deployment
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git rm .github/workflows/repair-mlb-auto-direct-read-once.yml scripts/repair_mlb_auto_direct_read_once.py
-          git add mlb_auto_llm/ml_authority.py mlb-auto-llm-template.yaml .github/workflows/deploy-mlb-auto-llm.yml
+          git add mlb_auto_llm/ml_authority.py mlb-auto-llm-template.yaml
           git commit -m 'Route MLB Auto model reads directly through AWS Lambda'
           git pull --rebase origin main
           git push origin HEAD:main
           sleep 5
           gh workflow run deploy-mlb-auto-llm.yml --ref main
 
-# one-shot trigger revision 2
+# source-only one-shot trigger
