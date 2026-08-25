@@ -1,0 +1,59 @@
+name: Repair MLB V8 Range Contract Now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-v8-range-contract-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-mlb-v8-range-contract-now
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Patch only stale verified constants
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('.github/workflows/mlb-v8-incremental-range-extension-deploy.yml')
+          s=p.read_text()
+          replacements={
+            "HISTORICAL_MAX_CREDITS: '300000'":"HISTORICAL_MAX_CREDITS: '1000000'",
+            "MLB-HISTORICAL-INCREMENTAL-RANGE-EXTENSION-v1-settled-horizon":"MLB-HISTORICAL-INCREMENTAL-RANGE-EXTENSION-v2-waiting-resume",
+          }
+          for old,new in replacements.items():
+              count=s.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one occurrence of {old!r}, found {count}')
+              s=s.replace(old,new)
+          p.write_text(s)
+          PY
+          git diff --check
+          grep -F "HISTORICAL_MAX_CREDITS: '1000000'" .github/workflows/mlb-v8-incremental-range-extension-deploy.yml
+          grep -F "MLB-HISTORICAL-INCREMENTAL-RANGE-EXTENSION-v2-waiting-resume" .github/workflows/mlb-v8-incremental-range-extension-deploy.yml
+      - name: Commit repair to main
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/mlb-v8-incremental-range-extension-deploy.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'Align MLB V8 range extension contract with repaired runtime'
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main
+            git push origin HEAD:main && exit 0
+            sleep $((i*3))
+          done
+          exit 1
