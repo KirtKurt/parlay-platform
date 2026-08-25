@@ -1,0 +1,121 @@
+name: Repair Tennis Provider-Listed Discovery
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/repair_tennis_provider_listed_discovery.py'
+      - '.github/workflows/repair-tennis-provider-listed-discovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-tennis-provider-listed-discovery
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Materialize exact Tennis-only discovery repair
+        run: |
+          set -euo pipefail
+          python scripts/repair_tennis_provider_listed_discovery.py \
+            | tee /tmp/tennis-provider-discovery-repair.json
+          python - <<'PY'
+          import json
+          proof=json.load(open('/tmp/tennis-provider-discovery-repair.json'))
+          assert proof['ok'] is True, proof
+          assert proof['sports_discovery_all_parameter'] is True, proof
+          assert proof['active_metadata_filter_removed'] is True, proof
+          assert proof['event_inventory_authority'] == (
+              'THE_ODDS_API_EVENTS_ENDPOINT'
+          ), proof
+          assert proof['immutable_prediction_history_rewritten'] is False, proof
+          assert proof['model_authority_changed'] is False, proof
+          assert proof['human_winner_selection'] is False, proof
+          assert proof['other_sport_changed'] is False, proof
+          PY
+
+      - name: Validate provider-listed full-slate contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet pytest boto3
+          python -m py_compile \
+            tennis_learning/handler.py \
+            tennis_learning/backfill.py \
+            tennis_learning/bootstrap_handler.py \
+            tennis_learning/live_pipeline.py \
+            tennis_learning/autonomous_controller.py \
+            scripts/repair_tennis_provider_listed_discovery.py
+          python -m pytest -q \
+            tests/test_tennis_learning_handler.py \
+            tests/test_tennis_autonomy_contract.py \
+            tests/test_tennis_backfill_contract.py \
+            tests/test_tennis_full_region_contract.py
+          sam validate --template-file tennis-template.yaml
+          git diff --check
+          python scripts/repair_tennis_provider_listed_discovery.py --check \
+            > /tmp/tennis-provider-discovery-check.json
+
+      - name: Publish exact tested Tennis source to main
+        run: |
+          set -euo pipefail
+          mkdir -p \
+            /tmp/tennis-provider-source/tennis_learning \
+            /tmp/tennis-provider-source/tests \
+            /tmp/tennis-provider-source/.github/workflows
+          cp tennis_learning/live_pipeline.py \
+            /tmp/tennis-provider-source/tennis_learning/live_pipeline.py
+          cp tests/test_tennis_full_region_contract.py \
+            /tmp/tennis-provider-source/tests/test_tennis_full_region_contract.py
+          cp .github/workflows/deploy-tennis-learning.yml \
+            /tmp/tennis-provider-source/.github/workflows/deploy-tennis-learning.yml
+          cp .github/workflows/publish-tennis-daily-card.yml \
+            /tmp/tennis-provider-source/.github/workflows/publish-tennis-daily-card.yml
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          published=false
+          for attempt in $(seq 1 20); do
+            git fetch origin main
+            git checkout -B tennis-provider-discovery-tested origin/main
+            mkdir -p tennis_learning tests .github/workflows
+            cp /tmp/tennis-provider-source/tennis_learning/live_pipeline.py \
+              tennis_learning/live_pipeline.py
+            cp /tmp/tennis-provider-source/tests/test_tennis_full_region_contract.py \
+              tests/test_tennis_full_region_contract.py
+            cp /tmp/tennis-provider-source/.github/workflows/deploy-tennis-learning.yml \
+              .github/workflows/deploy-tennis-learning.yml
+            cp /tmp/tennis-provider-source/.github/workflows/publish-tennis-daily-card.yml \
+              .github/workflows/publish-tennis-daily-card.yml
+            git add \
+              tennis_learning/live_pipeline.py \
+              tests/test_tennis_full_region_contract.py \
+              .github/workflows/deploy-tennis-learning.yml \
+              .github/workflows/publish-tennis-daily-card.yml
+            if git diff --cached --quiet; then
+              published=true
+              break
+            fi
+            git commit -m 'Evaluate every provider-listed Tennis competition'
+            if git push origin HEAD:main; then
+              published=true
+              break
+            fi
+            sleep $((attempt * 3))
+          done
+          test "$published" = true
