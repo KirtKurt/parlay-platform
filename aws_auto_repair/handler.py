@@ -1,418 +1,1104 @@
 """AWS-native, sport-isolated operational auto-repair.
 
-Only two target mutations are allowed: re-enable a canonical EventBridge rule,
-and invoke an existing idempotent sport Lambda with its normal schedule payload.
-The controller never writes sport predictions, locks, labels, models or authority.
+This control plane is deliberately narrow. It may re-enable allowlisted EventBridge
+rules and invoke the same fail-closed Lambda entry points that AWS already schedules.
+It cannot update target code/configuration, write target tables, clear target leases,
+rewrite locks/predictions, change promotion gates, or select winners.
 """
 from __future__ import annotations
 
 import json
+import math
 import os
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-VERSION = "INQSI-AWS-NATIVE-AUTO-REPAIR-v1"
-SPORT = os.environ["SPORT_NAME"].lower().strip()
-TARGET_STACK = os.environ["TARGET_STACK_NAME"].strip()
-FUNCTION_PREFIX = os.environ["FUNCTION_NAME_PREFIX"].strip()
-RULE_PREFIX = os.environ["RULE_NAME_PREFIX"].strip()
-STATE_TABLE = os.environ["REPAIR_STATE_TABLE"].strip()
-LEASE_SECONDS = max(60, int(os.getenv("REPAIR_LEASE_SECONDS", "960")))
-NORMAL_COOLDOWN = max(60, int(os.getenv("REPAIR_NORMAL_COOLDOWN_SECONDS", "900")))
-TRANSIENT_COOLDOWN = max(60, int(os.getenv("REPAIR_TRANSIENT_COOLDOWN_SECONDS", "1800")))
-EXTERNAL_COOLDOWN = max(300, int(os.getenv("REPAIR_EXTERNAL_COOLDOWN_SECONDS", "21600")))
-DATA_COOLDOWN = max(300, int(os.getenv("REPAIR_DATA_CONTRACT_COOLDOWN_SECONDS", "21600")))
-METRIC_NAMESPACE = os.getenv("REPAIR_METRIC_NAMESPACE", "Inqsi/AutoRepair")
 
-CFG = Config(retries={"mode": "adaptive", "max_attempts": 5})
-CFN = boto3.client("cloudformation", config=CFG)
-LAMBDA = boto3.client("lambda", config=CFG)
-CW = boto3.client("cloudwatch", config=CFG)
-EVENTS = boto3.client("events", config=CFG)
-SQS = boto3.client("sqs", config=CFG)
-TABLE = boto3.resource("dynamodb", config=CFG).Table(STATE_TABLE)
+SPORT_NAME = os.getenv("SPORT_NAME", "").strip()
+TARGET_STACK_NAME = os.getenv("TARGET_STACK_NAME", "").strip()
+FUNCTION_NAME_PREFIX = os.getenv("FUNCTION_NAME_PREFIX", "").strip()
+RULE_NAME_PREFIX = os.getenv("RULE_NAME_PREFIX", "").strip()
+STATE_TABLE_NAME = os.getenv("REPAIR_STATE_TABLE", "").strip()
+LEASE_SECONDS = int(os.getenv("REPAIR_LEASE_SECONDS", "960"))
+NORMAL_COOLDOWN_SECONDS = int(os.getenv("REPAIR_NORMAL_COOLDOWN_SECONDS", "900"))
+TRANSIENT_COOLDOWN_SECONDS = int(os.getenv("REPAIR_TRANSIENT_COOLDOWN_SECONDS", "1800"))
+EXTERNAL_COOLDOWN_SECONDS = int(os.getenv("REPAIR_EXTERNAL_COOLDOWN_SECONDS", "21600"))
+DATA_CONTRACT_COOLDOWN_SECONDS = int(
+    os.getenv("REPAIR_DATA_CONTRACT_COOLDOWN_SECONDS", "21600")
+)
+METRIC_NAMESPACE = os.getenv("REPAIR_METRIC_NAMESPACE", "Inqsi/AutoRepair").strip()
 
-# name, logical id, normal schedule payload, liveness window, advisory, scheduled
-SPORT_CONFIGS: Mapping[str, tuple[tuple[Any, ...], ...]] = {
-    "mlb-core": (
-        ("audited_pull", "MLBAuditedPullFunction", {"sport": "mlb", "t": "HOT", "run": "aws_native_auto_repair", "days_ahead": 0}, 35, False, True),
-        ("daily_lock", "MLBDailyPickLockFunction", {"sport": "mlb", "run": "daily_lock_check", "auto_ingest": False}, 8, False, True),
-        ("settlement", "MLBResultsSchedulerFunction", {"sport": "mlb", "days_from": 3, "run": "results_pull_15m"}, 35, False, True),
-        ("selection_capture", "MLBMLTrainingFunction", {"sport": "mlb", "mode": "selection_capture", "run": "aws_native_prospective_selection_capture"}, 35, False, True),
-    ),
-    "mlb-auto": (
-        ("autonomous_cycle", "MLBAutoLLMFunction", {"mode": "autonomous_cycle", "repair_source": "aws_native_auto_repair"}, 18, False, True),
-    ),
-    "tennis": (
-        ("autonomous_controller", "TennisAutonomousControllerFunction", {"action": "autonomous_cycle", "repair_source": "aws_native_auto_repair"}, 35, False, True),
-    ),
-    "soccer": (
-        ("inventory", "SoccerInventoryFunction", {"action": "fixture_inventory"}, 45, False, True),
-        ("dispatch", "SoccerDispatchFunction", {"action": "adaptive_dispatch"}, 12, False, True),
-        ("freeze", "SoccerFreezeFunction", {"action": "freeze_t45_training_and_t10_final_decision"}, 12, False, True),
-        ("settlement", "SoccerSettlementFunction", {"action": "settle_all_active_soccer"}, 25, False, True),
-        ("trainer", "SoccerTrainerFunction", {"action": "train_evaluate_promote"}, 780, False, True),
-        ("llm_analyst", "SoccerLlmAnalystFunction", {"action": "analyze_soccer_learning"}, 130, True, True),
-        ("historical", "SoccerHistoricalFunction", {"mode": "featured", "repair_source": "aws_native_auto_repair"}, 130, True, True),
-        ("controller", "SoccerControllerFunction", {"action": "autonomous_cycle", "repair_source": "aws_native_auto_repair"}, 35, False, True),
-        ("dlq_recovery", "SoccerDlqRecoveryFunction", {"action": "recover_collection_dlq", "max_messages": 5000}, 0, False, False),
-    ),
-    "nfl": (
-        ("autonomous_tick", "NflAutonomousFunction", {"action": "autonomous_tick", "repair_source": "aws_native_auto_repair"}, 35, False, True),
-    ),
+BOTO_CONFIG = Config(retries={"mode": "adaptive", "max_attempts": 5})
+_CFN = None
+_LAMBDA = None
+_CLOUDWATCH = None
+_EVENTS = None
+_SQS = None
+_TABLE = None
+
+STABLE_STACK_STATUSES = {
+    "CREATE_COMPLETE",
+    "UPDATE_COMPLETE",
+    "UPDATE_ROLLBACK_COMPLETE",
+    "IMPORT_COMPLETE",
 }
 
-LEASE_MARKERS = ("executionleaseunavailable", "execution_lease_unavailable", "lease unavailable", "lease held", "overlap_skipped")
-EXTERNAL_MARKERS = ("daily_token_quota", "too many tokens per day", "throttlingexception", "deferred_bbd_rate_limit", "deferred_shared_quota_reserve", "shared_quota_reserve", "provider_rate_limit", "too many requests", "service unavailable")
-DATA_MARKERS = ("bbd_kickoff_missing", "nfl_team_unrecognized", "authoritative kickoff", "missing authoritative", "source contract", "three_source_game_coverage_incomplete", "authoritative_card_deadline_missed", "no_future_pre_cutoff_slate")
+SAFE_DEFERRED_STATUSES = {
+    "HISTORICAL_ONLY",
+    "TRAINING_DEFERRED_BACKFILL_NOT_READY",
+    "TRAINING_RETRY_NOT_DUE",
+    "DEFERRED_BBD_RATE_LIMIT",
+    "DEFERRED_SHARED_QUOTA_RESERVE",
+    "DEFERRED_QUOTA",
+    "REJECTED_BY_GATE",
+    "NO_GAMES",
+    "COLLECTING",
+    "CARD_ALREADY_PUBLISHED",
+    "CARD_PUBLISHED",
+    "HISTORICAL_READY",
+    "READY",
+}
+
+# Every repair payload is static and reviewed. No caller may supply a target
+# function name or arbitrary payload at runtime.
+SPORT_CONFIGS: dict[str, dict[str, Any]] = {
+    "mlb-auto": {
+        "components": [
+            {
+                "name": "autonomous_cycle",
+                "logical_id": "MLBAutoLLMFunction",
+                "lookback_minutes": 20,
+                "payload": {"mode": "autonomous_cycle"},
+            },
+        ],
+        "rule_target_logical_ids": ["MLBAutoLLMFunction"],
+    },
+    "tennis": {
+        "components": [
+            {
+                "name": "autonomous_controller",
+                "logical_id": "TennisAutonomousControllerFunction",
+                "lookback_minutes": 25,
+                "payload": {"action": "autonomous_cycle"},
+            },
+        ],
+        # The live pipeline is a rule target but is intentionally repaired by
+        # the controller so collection and settlement remain one gated cycle.
+        "rule_target_logical_ids": [
+            "TennisAutonomousControllerFunction",
+            "TennisLivePipelineFunction",
+        ],
+    },
+    "soccer": {
+        "components": [
+            {
+                "name": "inventory",
+                "logical_id": "SoccerInventoryFunction",
+                "lookback_minutes": 45,
+                "payload": {"action": "fixture_inventory"},
+            },
+            {
+                "name": "dispatch",
+                "logical_id": "SoccerDispatchFunction",
+                "lookback_minutes": 10,
+                "payload": {"action": "adaptive_dispatch"},
+            },
+            {
+                "name": "freeze",
+                "logical_id": "SoccerFreezeFunction",
+                "lookback_minutes": 10,
+                "payload": {"action": "freeze_t45_training_and_t10_final_decision"},
+            },
+            {
+                "name": "settlement",
+                "logical_id": "SoccerSettlementFunction",
+                "lookback_minutes": 20,
+                "payload": {"action": "settle_all_active_soccer"},
+            },
+            {
+                "name": "trainer",
+                "logical_id": "SoccerTrainerFunction",
+                "lookback_minutes": 780,
+                "payload": {"action": "train_evaluate_promote"},
+            },
+            {
+                "name": "llm_analyst",
+                "logical_id": "SoccerLlmAnalystFunction",
+                "lookback_minutes": 130,
+                "payload": {"action": "analyze_soccer_learning"},
+            },
+            {
+                "name": "historical",
+                "logical_id": "SoccerHistoricalFunction",
+                "lookback_minutes": 130,
+                "payload": {"mode": "featured"},
+            },
+            {
+                "name": "controller",
+                "logical_id": "SoccerControllerFunction",
+                "lookback_minutes": 45,
+                "payload": {"action": "autonomous_cycle"},
+            },
+        ],
+        "rule_target_logical_ids": [
+            "SoccerCatalogFunction",
+            "SoccerDispatchFunction",
+            "SoccerInventoryFunction",
+            "SoccerOutrightDispatchFunction",
+            "SoccerFreezeFunction",
+            "SoccerSettlementFunction",
+            "SoccerTrainerFunction",
+            "SoccerLlmAnalystFunction",
+            "SoccerHistoricalFunction",
+            "SoccerControllerFunction",
+        ],
+        "dlq": {
+            "queue_logical_id": "SoccerCollectionDeadLetterQueue",
+            "recovery_logical_id": "SoccerDlqRecoveryFunction",
+            "component_name": "collection_dlq",
+            "payload": {"action": "recover_collection_dlq", "max_messages": 5000},
+        },
+    },
+    "nfl": {
+        "components": [
+            {
+                "name": "autonomous_historical",
+                "logical_id": "NflAutonomousFunction",
+                "lookback_minutes": 10,
+                "payload": {"action": "autonomous_tick"},
+            },
+            {
+                "name": "live_cycle",
+                "logical_id": "NflLiveFunction",
+                "lookback_minutes": 15,
+                "payload": {"action": "live_tick"},
+            },
+            {
+                "name": "trainer",
+                "logical_id": "NflTrainingFunction",
+                "lookback_minutes": 1560,
+                "payload": {"action": "train"},
+            },
+        ],
+        "rule_target_logical_ids": [
+            "NflAutonomousFunction",
+            "NflLiveFunction",
+            "NflTrainingFunction",
+        ],
+    },
+}
 
 
-def now() -> datetime:
+class RepairConfigurationError(RuntimeError):
+    """Raised when the repair stack is not safely scoped to its target."""
+
+
+def _client(name: str) -> Any:
+    global _CFN, _LAMBDA, _CLOUDWATCH, _EVENTS, _SQS
+    if name == "cloudformation":
+        if _CFN is None:
+            _CFN = boto3.client(name, config=BOTO_CONFIG)
+        return _CFN
+    if name == "lambda":
+        if _LAMBDA is None:
+            _LAMBDA = boto3.client(name, config=BOTO_CONFIG)
+        return _LAMBDA
+    if name == "cloudwatch":
+        if _CLOUDWATCH is None:
+            _CLOUDWATCH = boto3.client(name, config=BOTO_CONFIG)
+        return _CLOUDWATCH
+    if name == "events":
+        if _EVENTS is None:
+            _EVENTS = boto3.client(name, config=BOTO_CONFIG)
+        return _EVENTS
+    if name == "sqs":
+        if _SQS is None:
+            _SQS = boto3.client(name, config=BOTO_CONFIG)
+        return _SQS
+    raise ValueError(name)
+
+
+def _table() -> Any:
+    global _TABLE
+    if _TABLE is None:
+        _TABLE = boto3.resource("dynamodb", config=BOTO_CONFIG).Table(STATE_TABLE_NAME)
+    return _TABLE
+
+
+def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def iso(value: datetime | None = None) -> str:
-    return (value or now()).astimezone(timezone.utc).isoformat()
+def _iso(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat()
 
 
-def plain(value: Any) -> Any:
-    if isinstance(value, Decimal):
-        return int(value) if value == value.to_integral_value() else float(value)
-    if isinstance(value, Mapping):
-        return {str(k): plain(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [plain(v) for v in value]
-    return value
-
-
-def ddb(value: Any) -> Any:
+def _ddb(value: Any) -> Any:
     if isinstance(value, float):
         return Decimal(str(round(value, 8)))
     if isinstance(value, Mapping):
-        return {str(k): ddb(v) for k, v in value.items() if v is not None}
-    if isinstance(value, (list, tuple)):
-        return [ddb(v) for v in value if v is not None]
+        return {str(key): _ddb(item) for key, item in value.items() if item is not None}
+    if isinstance(value, list):
+        return [_ddb(item) for item in value if item is not None]
     return value
 
 
-def conditional(exc: ClientError) -> bool:
-    return str((exc.response.get("Error") or {}).get("Code") or "") == "ConditionalCheckFailedException"
+def _plain(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    if isinstance(value, Mapping):
+        return {str(key): _plain(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_plain(item) for item in value]
+    return value
 
 
-def acquire(owner: str, observed: datetime) -> bool:
-    current = int(observed.timestamp())
-    expires = current + LEASE_SECONDS
+def _safe_text(value: Any, limit: int = 4000) -> str:
     try:
-        TABLE.put_item(
-            Item={"PK": "LEASE", "SK": "GLOBAL", "owner": owner, "expires_at_epoch": expires, "ttl": expires + 86400},
-            ConditionExpression="attribute_not_exists(PK) OR expires_at_epoch < :now",
-            ExpressionAttributeValues={":now": current},
+        text = json.dumps(value, sort_keys=True, default=str, separators=(",", ":"))
+    except Exception:
+        text = str(value)
+    return text[:limit]
+
+
+def _validate_runtime() -> dict[str, Any]:
+    missing = [
+        name
+        for name, value in (
+            ("SPORT_NAME", SPORT_NAME),
+            ("TARGET_STACK_NAME", TARGET_STACK_NAME),
+            ("FUNCTION_NAME_PREFIX", FUNCTION_NAME_PREFIX),
+            ("RULE_NAME_PREFIX", RULE_NAME_PREFIX),
+            ("REPAIR_STATE_TABLE", STATE_TABLE_NAME),
+        )
+        if not value
+    ]
+    if missing:
+        raise RepairConfigurationError("MISSING_ENVIRONMENT:" + ",".join(missing))
+    config = SPORT_CONFIGS.get(SPORT_NAME)
+    if config is None:
+        raise RepairConfigurationError(f"UNSUPPORTED_SPORT:{SPORT_NAME}")
+    if SPORT_NAME not in TARGET_STACK_NAME and not (
+        SPORT_NAME == "mlb-auto" and "mlb-auto" in TARGET_STACK_NAME
+    ):
+        raise RepairConfigurationError(
+            f"TARGET_STACK_SPORT_MISMATCH:{SPORT_NAME}:{TARGET_STACK_NAME}"
+        )
+    if not FUNCTION_NAME_PREFIX.startswith(TARGET_STACK_NAME):
+        raise RepairConfigurationError(
+            f"FUNCTION_PREFIX_NOT_TARGET_SCOPED:{FUNCTION_NAME_PREFIX}"
+        )
+    if not RULE_NAME_PREFIX.startswith(TARGET_STACK_NAME):
+        raise RepairConfigurationError(
+            f"RULE_PREFIX_NOT_TARGET_SCOPED:{RULE_NAME_PREFIX}"
+        )
+    return config
+
+
+def _stack_state() -> dict[str, Any]:
+    response = _client("cloudformation").describe_stacks(StackName=TARGET_STACK_NAME)
+    stacks = response.get("Stacks") or []
+    if len(stacks) != 1:
+        raise RuntimeError(f"TARGET_STACK_NOT_UNIQUE:{TARGET_STACK_NAME}")
+    stack = stacks[0]
+    status = str(stack.get("StackStatus") or "UNKNOWN")
+    return {
+        "stack_name": TARGET_STACK_NAME,
+        "stack_id": stack.get("StackId"),
+        "status": status,
+        "stable": status in STABLE_STACK_STATUSES,
+        "status_reason": stack.get("StackStatusReason"),
+    }
+
+
+def _stack_resources() -> dict[str, dict[str, Any]]:
+    client = _client("cloudformation")
+    output: dict[str, dict[str, Any]] = {}
+    token = None
+    while True:
+        kwargs: dict[str, Any] = {"StackName": TARGET_STACK_NAME}
+        if token:
+            kwargs["NextToken"] = token
+        page = client.list_stack_resources(**kwargs)
+        for row in page.get("StackResourceSummaries") or []:
+            logical_id = str(row.get("LogicalResourceId") or "")
+            if logical_id:
+                output[logical_id] = dict(row)
+        token = page.get("NextToken")
+        if not token:
+            return output
+
+
+def _physical_resource(
+    resources: Mapping[str, Mapping[str, Any]], logical_id: str, expected_type: str
+) -> str:
+    row = resources.get(logical_id)
+    if not row:
+        raise RepairConfigurationError(f"TARGET_RESOURCE_MISSING:{logical_id}")
+    actual_type = str(row.get("ResourceType") or "")
+    if actual_type != expected_type:
+        raise RepairConfigurationError(
+            f"TARGET_RESOURCE_TYPE_MISMATCH:{logical_id}:{actual_type}:{expected_type}"
+        )
+    status = str(row.get("ResourceStatus") or "")
+    if status and not status.endswith("_COMPLETE"):
+        raise RuntimeError(f"TARGET_RESOURCE_NOT_STABLE:{logical_id}:{status}")
+    physical_id = str(row.get("PhysicalResourceId") or "")
+    if not physical_id:
+        raise RepairConfigurationError(f"TARGET_RESOURCE_PHYSICAL_ID_MISSING:{logical_id}")
+    return physical_id
+
+
+def _target_function(
+    resources: Mapping[str, Mapping[str, Any]], logical_id: str
+) -> dict[str, Any]:
+    name = _physical_resource(resources, logical_id, "AWS::Lambda::Function")
+    if not name.startswith(FUNCTION_NAME_PREFIX):
+        raise RepairConfigurationError(
+            f"TARGET_FUNCTION_PREFIX_VIOLATION:{logical_id}:{name}"
+        )
+    config = _client("lambda").get_function_configuration(FunctionName=name)
+    arn = str(config.get("FunctionArn") or "")
+    if not arn or not arn.rsplit(":", 1)[-1].startswith(FUNCTION_NAME_PREFIX):
+        raise RepairConfigurationError(
+            f"TARGET_FUNCTION_ARN_PREFIX_VIOLATION:{logical_id}:{arn}"
+        )
+    return {
+        "logical_id": logical_id,
+        "name": name,
+        "arn": arn,
+        "state": config.get("State"),
+        "last_update_status": config.get("LastUpdateStatus"),
+        "runtime": config.get("Runtime"),
+        "timeout": config.get("Timeout"),
+        "memory_size": config.get("MemorySize"),
+    }
+
+
+def _metric_sum(
+    *, function_name: str, metric_name: str, lookback_minutes: int, observed: datetime
+) -> tuple[float, str | None]:
+    duration_seconds = max(60, lookback_minutes * 60)
+    period = max(60, int(math.ceil(duration_seconds / 1440.0 / 60.0) * 60))
+    response = _client("cloudwatch").get_metric_statistics(
+        Namespace="AWS/Lambda",
+        MetricName=metric_name,
+        Dimensions=[{"Name": "FunctionName", "Value": function_name}],
+        StartTime=observed - timedelta(minutes=lookback_minutes),
+        EndTime=observed,
+        Period=period,
+        Statistics=["Sum"],
+    )
+    points = response.get("Datapoints") or []
+    total = sum(float(point.get("Sum") or 0.0) for point in points)
+    stamps = [
+        point.get("Timestamp")
+        for point in points
+        if point.get("Timestamp") and float(point.get("Sum") or 0.0) > 0.0
+    ]
+    latest = max(stamps).astimezone(timezone.utc).isoformat() if stamps else None
+    return total, latest
+
+
+def _function_health(function: Mapping[str, Any], lookback_minutes: int) -> dict[str, Any]:
+    if function.get("state") != "Active":
+        return {
+            "healthy": False,
+            "reason": f"FUNCTION_STATE_{function.get('state')}",
+            "lookback_minutes": lookback_minutes,
+        }
+    if function.get("last_update_status") not in {None, "Successful"}:
+        return {
+            "healthy": False,
+            "reason": f"FUNCTION_UPDATE_{function.get('last_update_status')}",
+            "lookback_minutes": lookback_minutes,
+        }
+    observed = _now()
+    invocations, latest_invocation = _metric_sum(
+        function_name=str(function["name"]),
+        metric_name="Invocations",
+        lookback_minutes=lookback_minutes,
+        observed=observed,
+    )
+    errors, latest_error = _metric_sum(
+        function_name=str(function["name"]),
+        metric_name="Errors",
+        lookback_minutes=lookback_minutes,
+        observed=observed,
+    )
+    if invocations < 1:
+        reason = "NO_RECENT_INVOCATION"
+    elif errors > 0 and (
+        not latest_invocation or not latest_error or latest_error >= latest_invocation
+    ):
+        reason = "RECENT_LAMBDA_ERRORS"
+    elif errors > 0:
+        reason = "RECOVERED_AFTER_ERROR"
+    else:
+        reason = "HEALTHY"
+    return {
+        "healthy": reason in {"HEALTHY", "RECOVERED_AFTER_ERROR"},
+        "reason": reason,
+        "lookback_minutes": lookback_minutes,
+        "invocations": int(invocations),
+        "errors": int(errors),
+        "latest_invocation_metric_bucket_at": latest_invocation,
+        "latest_error_metric_bucket_at": latest_error,
+    }
+
+
+def _unwrap_lambda_payload(payload: Any) -> tuple[Any, int | None]:
+    if not isinstance(payload, Mapping):
+        return payload, None
+    status_code = payload.get("statusCode")
+    body = payload.get("body")
+    if body is not None:
+        try:
+            decoded = json.loads(body) if isinstance(body, str) else body
+        except Exception:
+            decoded = body
+        return decoded, int(status_code) if status_code is not None else None
+    return dict(payload), int(status_code) if status_code is not None else None
+
+
+def _classification_text(payload: Any, function_error: Any = None) -> str:
+    return (_safe_text(payload, 12000) + " " + str(function_error or "")).lower()
+
+
+def classify_result(
+    payload: Any, *, function_error: Any = None, status_code: int | None = None
+) -> str:
+    """Classify target results without ever changing target authority or gates."""
+    text = _classification_text(payload, function_error)
+    if any(
+        token in text
+        for token in (
+            "executionleaseunavailable",
+            "execution_lease_unavailable",
+            "lease unavailable",
+            "holds the execution lease",
+            "concurrent execution",
+        )
+    ):
+        return "PROTECTED_DEFERRED"
+    if any(
+        token in text
+        for token in (
+            "daily_token_quota",
+            "too many tokens per day",
+            "marketplace subscription",
+            "deferred_bbd_rate_limit",
+            "deferred_shared_quota_reserve",
+            "provider_rate_limit",
+            "throttlingexception",
+            "http_429",
+            '"statuscode":429',
+            '"status_code":429',
+        )
+    ):
+        return "EXTERNAL_BLOCKER"
+    if any(
+        token in text
+        for token in (
+            "data_contract",
+            "kickoff_missing",
+            "historical_schedule_event_ambiguous",
+            "chronology",
+            "three_source_game_coverage_incomplete",
+            "training_eligible",
+            "immutable evidence missing",
+            "provider evidence missing",
+        )
+    ):
+        return "DATA_CONTRACT_BLOCKER"
+    if function_error:
+        return "FAILED"
+    if status_code is not None and not 200 <= status_code < 300:
+        return "FAILED"
+    if isinstance(payload, Mapping):
+        status = str(payload.get("status") or "").upper()
+        if status in SAFE_DEFERRED_STATUSES or status.startswith("DEFERRED_"):
+            return "SAFE_DEFERRED"
+        if payload.get("ok") is False:
+            return "FAILED"
+        if payload.get("ok") is True:
+            return "SUCCESS"
+    return "SUCCESS"
+
+
+def _invoke(function: Mapping[str, Any], payload: Mapping[str, Any]) -> dict[str, Any]:
+    response = _client("lambda").invoke(
+        FunctionName=str(function["name"]),
+        InvocationType="RequestResponse",
+        Payload=json.dumps(dict(payload), separators=(",", ":")).encode("utf-8"),
+    )
+    raw = response["Payload"].read().decode("utf-8")
+    try:
+        parsed = json.loads(raw or "{}")
+    except Exception:
+        parsed = {"raw": raw[:4000]}
+    unwrapped, status_code = _unwrap_lambda_payload(parsed)
+    classification = classify_result(
+        unwrapped,
+        function_error=response.get("FunctionError"),
+        status_code=status_code,
+    )
+    return {
+        "classification": classification,
+        "function_error": response.get("FunctionError"),
+        "status_code": status_code,
+        "executed_version": response.get("ExecutedVersion"),
+        "response": _safe_text(unwrapped),
+    }
+
+
+def _conditional_failure(exc: ClientError) -> bool:
+    return str((exc.response.get("Error") or {}).get("Code") or "") == (
+        "ConditionalCheckFailedException"
+    )
+
+
+def _acquire_lease(holder: str, now_epoch: int) -> bool:
+    try:
+        _table().update_item(
+            Key={"PK": f"LEASE#{SPORT_NAME}", "SK": "ACTIVE"},
+            UpdateExpression=(
+                "SET lease_until_epoch=:until, holder=:holder, acquired_at=:at, ttl=:ttl"
+            ),
+            ConditionExpression=(
+                "attribute_not_exists(lease_until_epoch) OR lease_until_epoch < :now"
+            ),
+            ExpressionAttributeValues={
+                ":until": now_epoch + LEASE_SECONDS,
+                ":holder": holder,
+                ":at": _iso(_now()),
+                ":ttl": now_epoch + LEASE_SECONDS + 86400,
+                ":now": now_epoch,
+            },
         )
         return True
     except ClientError as exc:
-        if conditional(exc):
+        if _conditional_failure(exc):
             return False
         raise
 
 
-def release(owner: str) -> None:
+def _release_lease(holder: str, now_epoch: int) -> None:
     try:
-        TABLE.delete_item(
-            Key={"PK": "LEASE", "SK": "GLOBAL"},
-            ConditionExpression="#owner=:owner",
-            ExpressionAttributeNames={"#owner": "owner"},
-            ExpressionAttributeValues={":owner": owner},
+        _table().update_item(
+            Key={"PK": f"LEASE#{SPORT_NAME}", "SK": "ACTIVE"},
+            UpdateExpression=(
+                "SET lease_until_epoch=:now, released_at=:at REMOVE holder"
+            ),
+            ConditionExpression="holder=:holder",
+            ExpressionAttributeValues={
+                ":now": now_epoch,
+                ":at": _iso(_now()),
+                ":holder": holder,
+            },
         )
     except ClientError as exc:
-        if not conditional(exc):
+        if not _conditional_failure(exc):
             raise
 
 
-def get_state(pk: str) -> dict[str, Any]:
-    return plain(TABLE.get_item(Key={"PK": pk, "SK": "STATE"}, ConsistentRead=True).get("Item") or {})
-
-
-def put_component(name: str, classification: str, next_at: datetime, evidence: str, function_name: str | None = None) -> None:
-    TABLE.put_item(Item=ddb({
-        "PK": f"COMPONENT#{name}", "SK": "STATE", "checked_at": iso(),
-        "classification": classification, "next_attempt_at": iso(next_at),
-        "next_attempt_epoch": int(next_at.timestamp()), "last_evidence": evidence[:4000],
-        "last_function_name": function_name,
-    }))
-
-
-def persist(result: Mapping[str, Any]) -> None:
-    stamp = now()
-    ttl = int((stamp + timedelta(days=30)).timestamp())
-    run_id = str(result.get("run_id") or uuid.uuid4().hex)
-    TABLE.put_item(Item=ddb({"PK": "RUN", "SK": f"{iso(stamp)}#{run_id}", "ttl": ttl, **dict(result)}))
-    TABLE.put_item(Item=ddb({"PK": "STATE", "SK": "STATE", "ttl": ttl, **dict(result)}))
-
-
-def resolve(logical_id: str) -> dict[str, Any]:
-    detail = CFN.describe_stack_resource(StackName=TARGET_STACK, LogicalResourceId=logical_id).get("StackResourceDetail") or {}
-    name = str(detail.get("PhysicalResourceId") or "")
-    if not name.startswith(FUNCTION_PREFIX):
-        raise RuntimeError(f"TARGET_FUNCTION_ISOLATION_VIOLATION:{logical_id}:{name}")
-    config = LAMBDA.get_function_configuration(FunctionName=name)
-    arn = str(config.get("FunctionArn") or "")
-    if f":function:{FUNCTION_PREFIX}" not in arn:
-        raise RuntimeError(f"TARGET_FUNCTION_ARN_ISOLATION_VIOLATION:{logical_id}:{arn}")
-    return {"name": name, "arn": arn, "environment": ((config.get("Environment") or {}).get("Variables") or {})}
-
-
-def metric(name: str, metric_name: str, minutes: int, observed: datetime) -> tuple[int, str | None]:
-    page = CW.get_metric_statistics(
-        Namespace="AWS/Lambda", MetricName=metric_name,
-        Dimensions=[{"Name": "FunctionName", "Value": name}],
-        StartTime=observed - timedelta(minutes=minutes), EndTime=observed,
-        Period=max(60, min(300, minutes * 60)), Statistics=["Sum"],
+def _component_state(name: str) -> dict[str, Any]:
+    response = _table().get_item(
+        Key={"PK": f"COMPONENT#{SPORT_NAME}", "SK": name},
+        ConsistentRead=True,
     )
-    points = page.get("Datapoints") or []
-    total = int(sum(float(row.get("Sum") or 0) for row in points))
-    timestamps = [row["Timestamp"] for row in points if float(row.get("Sum") or 0) > 0 and row.get("Timestamp")]
-    return total, max(timestamps).astimezone(timezone.utc).isoformat() if timestamps else None
+    return _plain(response.get("Item") or {})
 
 
-def health(name: str, minutes: int, observed: datetime) -> dict[str, Any]:
-    invocations, latest = metric(name, "Invocations", minutes, observed)
-    errors, latest_error = metric(name, "Errors", minutes, observed)
-    if invocations < 1:
-        reason = "NO_RECENT_INVOCATION"
-    elif errors and (not latest or not latest_error or latest_error >= latest):
-        reason = "RECENT_UNRECOVERED_ERROR"
-    elif errors:
-        reason = "RECOVERED_AFTER_ERROR"
-    else:
-        reason = "HEALTHY"
-    return {"healthy": reason in {"HEALTHY", "RECOVERED_AFTER_ERROR"}, "reason": reason, "lookback_minutes": minutes, "invocations": invocations, "errors": errors, "latest_invocation_at": latest, "latest_error_at": latest_error}
+def _cooldown_ready(name: str, now_epoch: int) -> tuple[bool, dict[str, Any]]:
+    state = _component_state(name)
+    return now_epoch >= int(state.get("next_allowed_epoch") or 0), state
 
 
-def repair_rules(function_arn: str, dry_run: bool) -> dict[str, Any]:
-    names: list[str] = []
+def _cooldown_seconds(classification: str) -> int:
+    if classification == "EXTERNAL_BLOCKER":
+        return EXTERNAL_COOLDOWN_SECONDS
+    if classification == "DATA_CONTRACT_BLOCKER":
+        return DATA_CONTRACT_COOLDOWN_SECONDS
+    if classification in {"PROTECTED_DEFERRED", "FAILED"}:
+        return TRANSIENT_COOLDOWN_SECONDS
+    return NORMAL_COOLDOWN_SECONDS
+
+
+def _record_component(
+    *, name: str, classification: str, detail: Mapping[str, Any], now_epoch: int
+) -> None:
+    cooldown = _cooldown_seconds(classification)
+    _table().put_item(
+        Item=_ddb(
+            {
+                "PK": f"COMPONENT#{SPORT_NAME}",
+                "SK": name,
+                "last_classification": classification,
+                "last_detail": dict(detail),
+                "last_attempt_at": _iso(_now()),
+                "next_allowed_epoch": now_epoch + cooldown,
+                "ttl": now_epoch + 90 * 86400,
+            }
+        )
+    )
+
+
+def _target_rule_names(function_arn: str) -> Iterable[str]:
+    client = _client("events")
     token = None
     while True:
         kwargs: dict[str, Any] = {"TargetArn": function_arn, "Limit": 100}
         if token:
             kwargs["NextToken"] = token
-        page = EVENTS.list_rule_names_by_target(**kwargs)
-        names += [str(v) for v in page.get("RuleNames") or []]
+        page = client.list_rule_names_by_target(**kwargs)
+        yield from [str(name) for name in page.get("RuleNames") or []]
         token = page.get("NextToken")
         if not token:
             break
-    canonical = sorted(v for v in names if v.startswith(RULE_PREFIX))
-    enabled: list[str] = []
-    for rule_name in canonical:
-        state = str(EVENTS.describe_rule(Name=rule_name).get("State") or "")
-        targets = EVENTS.list_targets_by_rule(Rule=rule_name).get("Targets") or []
-        if not any(str(row.get("Arn") or "") == function_arn for row in targets):
-            raise RuntimeError(f"CANONICAL_RULE_TARGET_MISMATCH:{rule_name}")
-        if state == "DISABLED":
-            if not dry_run:
-                EVENTS.enable_rule(Name=rule_name)
-            enabled.append(rule_name)
-        elif state != "ENABLED":
-            raise RuntimeError(f"CANONICAL_RULE_STATE_INVALID:{rule_name}:{state}")
-    return {"canonical_rules": canonical, "enabled_rules": enabled, "noncanonical_rules_ignored": sorted(set(names) - set(canonical))}
 
 
-def unwrap(value: Any) -> dict[str, Any]:
-    if not isinstance(value, Mapping):
-        return {"raw": value}
-    result = dict(value)
-    if "statusCode" not in result or "body" not in result:
+def _repair_rules(
+    *,
+    config: Mapping[str, Any],
+    resources: Mapping[str, Mapping[str, Any]],
+    functions: Mapping[str, Mapping[str, Any]],
+    dry_run: bool,
+) -> list[dict[str, Any]]:
+    stack_rule_names = {
+        str(row.get("PhysicalResourceId") or "")
+        for row in resources.values()
+        if row.get("ResourceType") == "AWS::Events::Rule"
+        and str(row.get("PhysicalResourceId") or "").startswith(RULE_NAME_PREFIX)
+    }
+    results: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for logical_id in config.get("rule_target_logical_ids") or []:
+        function = functions.get(str(logical_id))
+        if not function:
+            function = _target_function(resources, str(logical_id))
+        for rule_name in _target_rule_names(str(function["arn"])):
+            if rule_name in seen:
+                continue
+            seen.add(rule_name)
+            if rule_name not in stack_rule_names or not rule_name.startswith(RULE_NAME_PREFIX):
+                results.append(
+                    {
+                        "rule_name": rule_name,
+                        "status": "SKIPPED_NOT_TARGET_STACK_RULE",
+                    }
+                )
+                continue
+            before = _client("events").describe_rule(Name=rule_name)
+            state_before = str(before.get("State") or "UNKNOWN")
+            if state_before == "DISABLED" and not dry_run:
+                _client("events").enable_rule(Name=rule_name)
+            after = _client("events").describe_rule(Name=rule_name)
+            state_after = str(after.get("State") or "UNKNOWN")
+            results.append(
+                {
+                    "rule_name": rule_name,
+                    "state_before": state_before,
+                    "state_after": state_after,
+                    "repaired": state_before == "DISABLED" and state_after == "ENABLED",
+                    "dry_run": dry_run,
+                }
+            )
+    return results
+
+
+def _queue_url(physical_id: str) -> str:
+    if physical_id.startswith("https://"):
+        return physical_id
+    if not physical_id.startswith(TARGET_STACK_NAME):
+        raise RepairConfigurationError(
+            f"TARGET_QUEUE_PREFIX_VIOLATION:{physical_id}"
+        )
+    return str(_client("sqs").get_queue_url(QueueName=physical_id)["QueueUrl"])
+
+
+def _queue_depth(queue_url: str) -> dict[str, int]:
+    attrs = _client("sqs").get_queue_attributes(
+        QueueUrl=queue_url,
+        AttributeNames=[
+            "ApproximateNumberOfMessages",
+            "ApproximateNumberOfMessagesNotVisible",
+            "ApproximateNumberOfMessagesDelayed",
+        ],
+    ).get("Attributes") or {}
+    visible = int(attrs.get("ApproximateNumberOfMessages") or 0)
+    inflight = int(attrs.get("ApproximateNumberOfMessagesNotVisible") or 0)
+    delayed = int(attrs.get("ApproximateNumberOfMessagesDelayed") or 0)
+    return {
+        "visible": visible,
+        "inflight": inflight,
+        "delayed": delayed,
+        "total": visible + inflight + delayed,
+    }
+
+
+def _repair_dlq(
+    *,
+    spec: Mapping[str, Any],
+    resources: Mapping[str, Mapping[str, Any]],
+    functions: Mapping[str, Mapping[str, Any]],
+    now_epoch: int,
+    dry_run: bool,
+) -> dict[str, Any]:
+    physical = _physical_resource(
+        resources, str(spec["queue_logical_id"]), "AWS::SQS::Queue"
+    )
+    queue_url = _queue_url(physical)
+    before = _queue_depth(queue_url)
+    result: dict[str, Any] = {
+        "component": spec["component_name"],
+        "queue_url_suffix": queue_url.rsplit("/", 1)[-1],
+        "before": before,
+        "dry_run": dry_run,
+    }
+    if before["total"] <= 0:
+        result["status"] = "HEALTHY_EMPTY"
         return result
-    body = result.get("body")
-    try:
-        parsed = json.loads(body) if isinstance(body, str) else dict(body or {})
-    except (json.JSONDecodeError, TypeError, ValueError):
-        parsed = {"raw_body": body}
-    parsed["http_status_code"] = int(result.get("statusCode") or 0)
-    return parsed
-
-
-def invoke(name: str, payload: Mapping[str, Any]) -> dict[str, Any]:
-    response = LAMBDA.invoke(FunctionName=name, InvocationType="RequestResponse", Payload=json.dumps(dict(payload), separators=(",", ":")).encode())
-    result = unwrap(json.loads(response["Payload"].read().decode() or "{}"))
-    if response.get("FunctionError"):
-        raise RuntimeError("TARGET_FUNCTION_ERROR:" + json.dumps(result, sort_keys=True, default=str)[:1500])
+    ready, cooldown = _cooldown_ready(str(spec["component_name"]), now_epoch)
+    if not ready:
+        result.update(
+            {
+                "status": "COOLDOWN_ACTIVE",
+                "cooldown": cooldown,
+            }
+        )
+        return result
+    if dry_run:
+        result["status"] = "WOULD_INVOKE_RECOVERY"
+        return result
+    function = functions.get(str(spec["recovery_logical_id"]))
+    if not function:
+        function = _target_function(resources, str(spec["recovery_logical_id"]))
+    invocation = _invoke(function, spec["payload"])
+    after = _queue_depth(queue_url)
+    result.update(
+        {
+            "status": "RECOVERY_INVOKED",
+            "invocation": invocation,
+            "after": after,
+        }
+    )
+    _record_component(
+        name=str(spec["component_name"]),
+        classification=str(invocation["classification"]),
+        detail=result,
+        now_epoch=now_epoch,
+    )
     return result
 
 
-def classify(result: Mapping[str, Any] | None = None, error: Exception | None = None) -> tuple[str, int, str]:
-    text = json.dumps(result or {}, sort_keys=True, default=str) + (f" {error}" if error else "")
-    lowered = text.lower()
-    if any(v in lowered for v in LEASE_MARKERS):
-        return "DEFERRED_ACTIVE_LEASE", TRANSIENT_COOLDOWN, text
-    if any(v in lowered for v in EXTERNAL_MARKERS):
-        return "DEFERRED_EXTERNAL_CAPACITY", EXTERNAL_COOLDOWN, text
-    if any(v in lowered for v in DATA_MARKERS):
-        return "BLOCKED_AUTHORITATIVE_DATA_CONTRACT", DATA_COOLDOWN, text
-    if error or int((result or {}).get("http_status_code") or 200) >= 400 or (result or {}).get("ok") is False:
-        return "FAILED", NORMAL_COOLDOWN, text
-    return "SUCCEEDED", NORMAL_COOLDOWN, text
-
-
-def cooldown(name: str, observed: datetime) -> tuple[bool, dict[str, Any]]:
-    state = get_state(f"COMPONENT#{name}")
-    return int(observed.timestamp()) < int(state.get("next_attempt_epoch") or 0), state
-
-
-def dlq_depth(function: Mapping[str, Any]) -> int:
-    url = str((function.get("environment") or {}).get("SOCCER_AUTO_COLLECTION_DLQ_URL") or "")
-    if not url:
-        raise RuntimeError("SOCCER_DLQ_URL_NOT_CONFIGURED")
-    attrs = SQS.get_queue_attributes(QueueUrl=url, AttributeNames=["ApproximateNumberOfMessages", "ApproximateNumberOfMessagesNotVisible", "ApproximateNumberOfMessagesDelayed"]).get("Attributes") or {}
-    return sum(int(attrs.get(v) or 0) for v in ("ApproximateNumberOfMessages", "ApproximateNumberOfMessagesNotVisible", "ApproximateNumberOfMessagesDelayed"))
-
-
-def put_metrics(metrics: Mapping[str, float]) -> None:
-    CW.put_metric_data(Namespace=METRIC_NAMESPACE, MetricData=[{
-        "MetricName": name, "Dimensions": [{"Name": "Sport", "Value": SPORT}],
-        "Timestamp": now(), "Value": float(value), "Unit": "Count",
-    } for name, value in metrics.items()])
-
-
-def attempt(component: tuple[Any, ...], observed: datetime, dry_run: bool) -> tuple[dict[str, Any], bool, dict[str, float]]:
-    name, logical_id, payload, minutes, advisory, scheduled = component
-    detail: dict[str, Any] = {"name": name, "logical_id": logical_id, "advisory": advisory}
-    counts = {"attempts": 0.0, "successes": 0.0, "failures": 0.0, "deferred": 0.0, "enabled": 0.0, "unhealthy": 0.0}
-    okay = True
-    try:
-        function = resolve(logical_id)
-        detail["function_name"] = function["name"]
-        if not scheduled:
-            depth = dlq_depth(function)
-            detail["dlq_depth"] = depth
-            needs_repair = depth > 0
-        else:
-            schedules = repair_rules(function["arn"], dry_run)
-            if not schedules["canonical_rules"]:
-                raise RuntimeError(f"CANONICAL_SCHEDULE_NOT_FOUND:{logical_id}")
-            detail["schedules"] = schedules
-            counts["enabled"] += len(schedules["enabled_rules"])
-            state = health(function["name"], minutes, observed)
-            detail["health_before"] = state
-            needs_repair = not state["healthy"] or bool(schedules["enabled_rules"])
-            counts["unhealthy"] += 0 if state["healthy"] else 1
-        active, prior = cooldown(name, observed)
-        if needs_repair and active:
-            detail["repair"] = {"status": "COOLDOWN_ACTIVE", "next_attempt_at": prior.get("next_attempt_at"), "last_classification": prior.get("classification")}
-            counts["deferred"] += 1
-        elif needs_repair and dry_run:
-            detail["repair"] = {"status": "DRY_RUN"}
-        elif needs_repair:
-            counts["attempts"] += 1
-            result = None
-            error = None
-            try:
-                result = invoke(function["name"], payload)
-            except Exception as exc:
-                error = exc
-            classification, seconds, evidence = classify(result, error)
-            next_at = observed + timedelta(seconds=seconds)
-            put_component(name, classification, next_at, evidence, function["name"])
-            detail["repair"] = {"status": classification, "result": result, "error": str(error)[:1500] if error else None, "next_attempt_at": iso(next_at)}
-            if classification == "SUCCEEDED":
-                counts["successes"] += 1
-            elif classification.startswith(("DEFERRED_", "BLOCKED_")):
-                counts["deferred"] += 1
-                okay = advisory or not classification.startswith("BLOCKED_")
-            else:
-                counts["failures"] += 1
-                okay = advisory
-        else:
-            detail["repair"] = {"status": "NOT_REQUIRED"}
-    except Exception as exc:
-        classification, seconds, evidence = classify(error=exc)
-        next_at = observed + timedelta(seconds=seconds)
-        put_component(name, classification, next_at, evidence)
-        detail["error"] = str(exc)[:1500]
-        detail["repair"] = {"status": classification, "next_attempt_at": iso(next_at)}
-        counts["failures"] += 1
-        okay = advisory
-    return detail, okay, counts
-
-
-def run_cycle(dry_run: bool = False) -> dict[str, Any]:
-    observed = now()
-    run_id = uuid.uuid4().hex
-    owner = f"{run_id}:{uuid.uuid4().hex[:8]}"
-    if SPORT not in SPORT_CONFIGS:
-        raise RuntimeError(f"UNSUPPORTED_SPORT_CONFIG:{SPORT}")
-    if not acquire(owner, observed):
-        result = safety_result(run_id, observed, "DEFERRED_ACTIVE_REPAIR_LEASE", True, dry_run, [])
-        persist(result)
-        put_metrics({"RepairDeferred": 1})
-        return result
-    try:
-        stack_status = str((CFN.describe_stacks(StackName=TARGET_STACK).get("Stacks") or [{}])[0].get("StackStatus") or "UNKNOWN")
-        if stack_status not in {"CREATE_COMPLETE", "UPDATE_COMPLETE"}:
-            result = safety_result(run_id, observed, "TARGET_STACK_NOT_STABLE", False, dry_run, [], stack_status)
-            persist(result)
-            put_metrics({"Checks": 1, "RepairFailures": 1})
-            return result
-        components: list[dict[str, Any]] = []
-        overall = True
-        metrics = {"Checks": 1.0, "RepairAttempts": 0.0, "RepairSuccesses": 0.0, "RepairFailures": 0.0, "RepairDeferred": 0.0, "SchedulesEnabled": 0.0, "UnhealthyComponents": 0.0}
-        for component in SPORT_CONFIGS[SPORT]:
-            detail, okay, counts = attempt(component, observed, dry_run)
-            components.append(detail)
-            overall = overall and okay
-            metrics["RepairAttempts"] += counts["attempts"]
-            metrics["RepairSuccesses"] += counts["successes"]
-            metrics["RepairFailures"] += counts["failures"]
-            metrics["RepairDeferred"] += counts["deferred"]
-            metrics["SchedulesEnabled"] += counts["enabled"]
-            metrics["UnhealthyComponents"] += counts["unhealthy"]
-        result = safety_result(run_id, observed, "HEALTHY_OR_REPAIRED" if overall else "DEGRADED_FAIL_CLOSED", overall, dry_run, components, stack_status)
-        result["metrics"] = metrics
-        persist(result)
-        put_metrics(metrics)
-        return result
-    finally:
-        release(owner)
-
-
-def safety_result(run_id: str, observed: datetime, status: str, okay: bool, dry_run: bool, components: list[dict[str, Any]], stack_status: str | None = None) -> dict[str, Any]:
-    return {
-        "ok": okay, "version": VERSION, "sport": SPORT, "run_id": run_id,
-        "checked_at": iso(observed), "status": status, "target_stack": TARGET_STACK,
-        "target_stack_status": stack_status, "dry_run": dry_run, "components": components,
-        "production_authority_changed": False, "direct_sport_table_writes": False,
-        "post_start_prediction_creation_allowed": False,
-        "immutable_prediction_rewrite_allowed": False,
-        "execution_lease_bypass_allowed": False, "gate_relaxation_allowed": False,
+def _persist_report(report: Mapping[str, Any], now_epoch: int) -> None:
+    observed_at = str(report.get("observed_at") or _iso(_now()))
+    item = {
+        "PK": f"RUN#{SPORT_NAME}",
+        "SK": observed_at,
+        "report": dict(report),
+        "ttl": now_epoch + 30 * 86400,
     }
+    latest = {
+        "PK": f"STATUS#{SPORT_NAME}",
+        "SK": "LATEST",
+        "report": dict(report),
+        "updated_at": observed_at,
+        "ttl": now_epoch + 90 * 86400,
+    }
+    _table().put_item(Item=_ddb(item))
+    _table().put_item(Item=_ddb(latest))
+
+
+def _publish_metrics(counts: Mapping[str, int]) -> None:
+    data = []
+    for name, value in counts.items():
+        data.append(
+            {
+                "MetricName": name,
+                "Dimensions": [{"Name": "Sport", "Value": SPORT_NAME}],
+                "Unit": "Count",
+                "Value": int(value),
+            }
+        )
+    if data:
+        _client("cloudwatch").put_metric_data(
+            Namespace=METRIC_NAMESPACE,
+            MetricData=data,
+        )
+
+
+def _count_outcomes(
+    component_results: Iterable[Mapping[str, Any]],
+    dlq_result: Mapping[str, Any] | None,
+    rule_results: Iterable[Mapping[str, Any]],
+    dry_run: bool,
+) -> dict[str, int]:
+    classifications: list[str] = []
+    attempts = 0
+    for row in component_results:
+        invocation = row.get("invocation")
+        if isinstance(invocation, Mapping):
+            attempts += 1
+            classifications.append(str(invocation.get("classification") or "FAILED"))
+    if dlq_result and isinstance(dlq_result.get("invocation"), Mapping):
+        attempts += 1
+        classifications.append(
+            str((dlq_result.get("invocation") or {}).get("classification") or "FAILED")
+        )
+    successes = sum(
+        value in {"SUCCESS", "SAFE_DEFERRED"} for value in classifications
+    )
+    return {
+        "RepairAttempts": attempts,
+        "RepairSuccesses": successes,
+        "RepairFailures": sum(value == "FAILED" for value in classifications),
+        "ExternalBlockers": sum(
+            value == "EXTERNAL_BLOCKER" for value in classifications
+        ),
+        "DataContractBlockers": sum(
+            value == "DATA_CONTRACT_BLOCKER" for value in classifications
+        ),
+        "ProtectedDeferrals": sum(
+            value == "PROTECTED_DEFERRED" for value in classifications
+        ),
+        "RulesEnabled": sum(bool(row.get("repaired")) for row in rule_results),
+        "DryRunCycles": int(dry_run),
+    }
+
+
+def run_cycle(event: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    event = dict(event or {})
+    config = _validate_runtime()
+    requested_sport = str(event.get("sport") or SPORT_NAME)
+    if requested_sport != SPORT_NAME:
+        raise RepairConfigurationError(
+            f"EVENT_SPORT_MISMATCH:{requested_sport}:{SPORT_NAME}"
+        )
+    action = str(event.get("action") or "cycle").lower()
+    if action != "cycle":
+        raise RepairConfigurationError(f"UNSUPPORTED_ACTION:{action}")
+    dry_run = bool(event.get("dry_run", False))
+    now = _now()
+    now_epoch = int(now.timestamp())
+    holder = f"{SPORT_NAME}:{uuid.uuid4()}"
+    if not _acquire_lease(holder, now_epoch):
+        report = {
+            "ok": True,
+            "sport": SPORT_NAME,
+            "target_stack": TARGET_STACK_NAME,
+            "observed_at": _iso(now),
+            "status": "REPAIR_LEASE_HELD",
+            "repair_attempted": False,
+            "immutable_prediction_history_rewritten": False,
+            "promotion_gate_changed": False,
+            "winner_authority_changed": False,
+            "other_sport_changed": False,
+        }
+        _publish_metrics({"ProtectedDeferrals": 1})
+        return report
+
+    try:
+        stack = _stack_state()
+        if not stack["stable"]:
+            report = {
+                "ok": True,
+                "sport": SPORT_NAME,
+                "target_stack": TARGET_STACK_NAME,
+                "observed_at": _iso(now),
+                "status": "TARGET_STACK_BUSY_OR_UNSAFE",
+                "stack": stack,
+                "repair_attempted": False,
+                "immutable_prediction_history_rewritten": False,
+                "promotion_gate_changed": False,
+                "winner_authority_changed": False,
+                "other_sport_changed": False,
+            }
+            _persist_report(report, now_epoch)
+            _publish_metrics({"ProtectedDeferrals": 1})
+            return report
+
+        resources = _stack_resources()
+        functions: dict[str, dict[str, Any]] = {}
+        required_function_ids = {
+            str(row["logical_id"]) for row in config.get("components") or []
+        }
+        required_function_ids.update(
+            str(item) for item in config.get("rule_target_logical_ids") or []
+        )
+        dlq_spec = config.get("dlq")
+        if isinstance(dlq_spec, Mapping):
+            required_function_ids.add(str(dlq_spec["recovery_logical_id"]))
+        for logical_id in sorted(required_function_ids):
+            functions[logical_id] = _target_function(resources, logical_id)
+
+        rule_results = _repair_rules(
+            config=config,
+            resources=resources,
+            functions=functions,
+            dry_run=dry_run,
+        )
+
+        component_results: list[dict[str, Any]] = []
+        any_repair_invoked = False
+        for spec in config.get("components") or []:
+            name = str(spec["name"])
+            function = functions[str(spec["logical_id"])]
+            health = _function_health(function, int(spec["lookback_minutes"]))
+            row: dict[str, Any] = {
+                "component": name,
+                "function_logical_id": spec["logical_id"],
+                "function_name": function["name"],
+                "health_before": health,
+                "dry_run": dry_run,
+            }
+            if health["healthy"]:
+                row["status"] = "HEALTHY_NO_REPAIR"
+                component_results.append(row)
+                continue
+            ready, cooldown = _cooldown_ready(name, now_epoch)
+            if not ready:
+                row.update({"status": "COOLDOWN_ACTIVE", "cooldown": cooldown})
+                component_results.append(row)
+                continue
+            if dry_run:
+                row["status"] = "WOULD_INVOKE_SAFE_ENTRYPOINT"
+                component_results.append(row)
+                continue
+            invocation = _invoke(function, spec["payload"])
+            any_repair_invoked = True
+            row.update(
+                {
+                    "status": "SAFE_ENTRYPOINT_INVOKED",
+                    "invocation": invocation,
+                }
+            )
+            _record_component(
+                name=name,
+                classification=str(invocation["classification"]),
+                detail=row,
+                now_epoch=now_epoch,
+            )
+            component_results.append(row)
+
+        dlq_result = None
+        if isinstance(dlq_spec, Mapping):
+            dlq_result = _repair_dlq(
+                spec=dlq_spec,
+                resources=resources,
+                functions=functions,
+                now_epoch=now_epoch,
+                dry_run=dry_run,
+            )
+            any_repair_invoked = any_repair_invoked or bool(
+                isinstance(dlq_result.get("invocation"), Mapping)
+            )
+
+        # Soccer's controller is observational. Refresh it once after another
+        # component/DLQ repair so authority reflects the repaired runtime state.
+        if SPORT_NAME == "soccer" and any_repair_invoked and not dry_run:
+            controller = next(
+                (
+                    row
+                    for row in config.get("components") or []
+                    if row.get("name") == "controller"
+                ),
+                None,
+            )
+            if controller:
+                invocation = _invoke(
+                    functions[str(controller["logical_id"])], controller["payload"]
+                )
+                component_results.append(
+                    {
+                        "component": "controller_post_repair_refresh",
+                        "function_logical_id": controller["logical_id"],
+                        "function_name": functions[str(controller["logical_id"])]["name"],
+                        "status": "POST_REPAIR_REFRESH_INVOKED",
+                        "invocation": invocation,
+                        "dry_run": False,
+                    }
+                )
+
+        counts = _count_outcomes(
+            component_results, dlq_result, rule_results, dry_run
+        )
+        unresolved = (
+            counts["RepairFailures"]
+            + counts["ExternalBlockers"]
+            + counts["DataContractBlockers"]
+        )
+        report = {
+            "ok": counts["RepairFailures"] == 0,
+            "sport": SPORT_NAME,
+            "target_stack": TARGET_STACK_NAME,
+            "observed_at": _iso(now),
+            "status": (
+                "DRY_RUN"
+                if dry_run
+                else "REPAIRED_OR_HEALTHY"
+                if unresolved == 0
+                else "SAFE_REPAIR_COMPLETED_WITH_BLOCKERS"
+            ),
+            "stack": stack,
+            "components": component_results,
+            "rules": rule_results,
+            "dlq": dlq_result,
+            "metrics": counts,
+            "repair_attempted": bool(counts["RepairAttempts"] or counts["RulesEnabled"]),
+            "safe_aws_operations": [
+                "events:EnableRule on target-stack rules only",
+                "lambda:InvokeFunction on static target-stack entrypoints only",
+                "sqs:GetQueueAttributes read-only",
+                "cloudwatch read/write isolated repair metrics",
+                "dynamodb writes to isolated repair state only",
+            ],
+            "forbidden_operations_available": False,
+            "immutable_prediction_history_rewritten": False,
+            "promotion_gate_changed": False,
+            "winner_authority_changed": False,
+            "other_sport_changed": False,
+        }
+        _persist_report(report, now_epoch)
+        _publish_metrics(counts)
+        return report
+    finally:
+        _release_lease(holder, int(time.time()))
 
 
 def lambda_handler(event: Mapping[str, Any] | None, context: Any) -> dict[str, Any]:
     del context
-    request = dict(event or {})
-    action = str(request.get("action") or "cycle").lower().strip()
-    if action == "status":
-        return {"ok": True, "version": VERSION, "sport": SPORT, "target_stack": TARGET_STACK, "state": get_state("STATE"), "read_only": True}
-    if action not in {"cycle", "audit"}:
-        return {"ok": False, "version": VERSION, "sport": SPORT, "error": f"UNSUPPORTED_ACTION:{action}"}
-    return run_cycle(dry_run=bool(request.get("dry_run")) or action == "audit")
-
-
-# Stable test/diagnostic aliases; these do not add runtime authority.
-_classification = classify
-_unwrap_lambda_payload = unwrap
-_repair_schedules = repair_rules
-_invoke = invoke
-TRANSIENT_COOLDOWN_SECONDS = TRANSIENT_COOLDOWN
-EXTERNAL_COOLDOWN_SECONDS = EXTERNAL_COOLDOWN
-DATA_CONTRACT_COOLDOWN_SECONDS = DATA_COOLDOWN
-
-
-def _resolve_function(component: Any) -> dict[str, Any]:
-    logical_id = component[1] if isinstance(component, tuple) else component.logical_id
-    return resolve(str(logical_id))
+    try:
+        return run_cycle(event)
+    except Exception as exc:
+        now = _now()
+        now_epoch = int(now.timestamp())
+        report = {
+            "ok": False,
+            "sport": SPORT_NAME or "UNKNOWN",
+            "target_stack": TARGET_STACK_NAME or "UNKNOWN",
+            "observed_at": _iso(now),
+            "status": "AUTO_REPAIR_CONTROL_PLANE_FAILED",
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:1000],
+            "immutable_prediction_history_rewritten": False,
+            "promotion_gate_changed": False,
+            "winner_authority_changed": False,
+            "other_sport_changed": False,
+        }
+        try:
+            if STATE_TABLE_NAME:
+                _persist_report(report, now_epoch)
+            if METRIC_NAMESPACE and SPORT_NAME:
+                _publish_metrics({"RepairFailures": 1})
+        except Exception:
+            pass
+        raise
