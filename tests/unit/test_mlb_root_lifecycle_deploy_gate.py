@@ -129,3 +129,6 @@ def test_root_lifecycle_missed_lock_diagnostic_is_write_once_and_terminal():
     assert repeated["reason"] == "MISSED_PER_GAME_LOCK_NOT_BACKFILLED"
     assert {(item["PK"], item["SK"]) for item in legacy.diagnostic_items(missed)} == first_keys
     assert repeated["perGameLockAttemptDiagnostics"]["attemptedGameCount"] == 0
+
+
+# Exact-source deployment retrigger after dedicated MLB lifecycle queue repair.
