@@ -5,12 +5,17 @@ on:
     branches: [main]
     paths:
       - 'scripts/verify_mlb_no_bbd_runtime.py'
+      - 'scripts/run_mlb_bedrock_capacity_ramp.py'
       - 'tests/unit/test_verify_mlb_no_bbd_runtime.py'
       - 'tests/unit/test_mlb_auto_model_gateway.py'
       - 'tests/unit/test_mlb_auto_ml_authority.py'
+      - 'tests/unit/test_mlb_auto_bedrock_smoke.py'
+      - 'tests/unit/test_mlb_auto_production_model_gateway.py'
+      - 'tests/unit/test_mlb_auto_capacity_manager.py'
       - 'mlb_auto_llm/**'
       - 'mlb-auto-llm-template.yaml'
       - '.github/workflows/deploy-mlb-auto-llm.yml'
+      - '.github/workflows/throttle-up-bedrock-now.yml'
       - '.github/workflows/verify-mlb-auto-production-chain.yml'
 
 permissions:
@@ -37,14 +42,17 @@ jobs:
           set -euo pipefail
           python -m py_compile \
             scripts/verify_mlb_no_bbd_runtime.py \
+            scripts/run_mlb_bedrock_capacity_ramp.py \
             mlb_auto_llm/handler.py \
             mlb_auto_llm/model_gateway.py \
+            mlb_auto_llm/production_model_gateway.py \
             mlb_auto_llm/orchestrator.py \
             mlb_auto_llm/orchestrator_v2.py \
             mlb_auto_llm/orchestrator_v3.py \
             mlb_auto_llm/ml_authority.py \
             mlb_auto_llm/ml_authority_smoke.py \
-            mlb_auto_llm/bedrock_smoke.py
+            mlb_auto_llm/bedrock_smoke.py \
+            mlb_auto_llm/capacity_manager.py
       - name: Verify provider boundary, quota recovery, and immutable authority
         run: |
           set -euo pipefail
@@ -52,17 +60,27 @@ jobs:
           python -m pytest -q \
             tests/unit/test_verify_mlb_no_bbd_runtime.py \
             tests/unit/test_mlb_auto_model_gateway.py \
-            tests/unit/test_mlb_auto_ml_authority.py
+            tests/unit/test_mlb_auto_ml_authority.py \
+            tests/unit/test_mlb_auto_bedrock_smoke.py \
+            tests/unit/test_mlb_auto_production_model_gateway.py \
+            tests/unit/test_mlb_auto_capacity_manager.py
           sam validate --template-file mlb-auto-llm-template.yaml --lint
           grep -q 'list_inference_profiles' mlb_auto_llm/model_gateway.py
           grep -q 'list_foundation_models' mlb_auto_llm/model_gateway.py
           grep -q 'BEDROCK_BATCH_CARD_AUTHORITY_REQUIRED' mlb_auto_llm/orchestrator_v2.py
           grep -q 'AUTHORITATIVE_CARD_DEADLINE_MISSED' mlb_auto_llm/orchestrator_v2.py
-          grep -q 'AWS_ML_RANKED_ENSEMBLE' mlb_auto_llm/ml_authority.py
+          grep -q 'AUTHORITY = "AWS_ML_PROSPECTIVE_R7"' mlb_auto_llm/ml_authority.py
           grep -q 'MODEL_DECISION_AUTHORITY_REQUIRED' mlb_auto_llm/orchestrator_v3.py
           grep -q 'Handler: orchestrator_v3.lambda_handler' mlb-auto-llm-template.yaml
+          grep -q 'Handler: capacity_manager.lambda_handler' mlb-auto-llm-template.yaml
+          grep -q 'servicequotas:RequestServiceQuotaIncrease' mlb-auto-llm-template.yaml
+          grep -q 'MemorySize: 10240' mlb-auto-llm-template.yaml
           grep -q 'bedrock:ListInferenceProfiles' mlb-auto-llm-template.yaml
           grep -q 'bedrock:ListFoundationModels' mlb-auto-llm-template.yaml
+          if grep -q 'AWS_ML_RANKED_ENSEMBLE' mlb_auto_llm/ml_authority.py; then
+            echo '::error::MLB AUTO source reintroduced retired ranked-ensemble authority'
+            exit 1
+          fi
           if grep -q 'FALLBACK_MARKET_CONSENSUS' mlb_auto_llm/orchestrator_v2.py; then
             echo '::error::Strict MLB AUTO V2 authority retains a market-only fallback'
             exit 1
