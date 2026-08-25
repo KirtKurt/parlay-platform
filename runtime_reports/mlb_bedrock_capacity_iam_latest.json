@@ -1,0 +1,3555 @@
+{
+  "activation": {
+    "circuitBreakerAdded": false,
+    "configuredModelCount": 23,
+    "configuredModelRoutes": [
+      "openai.gpt-oss-20b-1:0",
+      "us-east-2::openai.gpt-oss-20b-1:0",
+      "us-west-2::openai.gpt-oss-20b-1:0",
+      "openai.gpt-oss-120b-1:0",
+      "us-east-2::openai.gpt-oss-120b-1:0",
+      "us-west-2::openai.gpt-oss-120b-1:0",
+      "amazon.nova-micro-v1:0",
+      "amazon.nova-lite-v1:0",
+      "amazon.nova-pro-v1:0",
+      "amazon.nova-2-lite-v1:0",
+      "us-east-2::amazon.nova-micro-v1:0",
+      "us-east-2::amazon.nova-lite-v1:0",
+      "us-east-2::amazon.nova-pro-v1:0",
+      "us-east-2::amazon.nova-2-lite-v1:0",
+      "us-west-2::amazon.nova-micro-v1:0",
+      "us-west-2::amazon.nova-lite-v1:0",
+      "us-west-2::amazon.nova-pro-v1:0",
+      "us-west-2::amazon.nova-2-lite-v1:0",
+      "us.amazon.nova-micro-v1:0",
+      "us.amazon.nova-lite-v1:0",
+      "us.amazon.nova-pro-v1:0",
+      "us.amazon.nova-2-lite-v1:0",
+      "global.amazon.nova-2-lite-v1:0"
+    ],
+    "dailyThrottleStillPresent": true,
+    "gptOssRouteCount": 6,
+    "iamInvocationPermitted": true,
+    "mainFunction": "parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-12y7VtBpCSdF",
+    "modelGatewayChanged": false,
+    "novaRouteCount": 17,
+    "provisionedModelActivated": false,
+    "smokeFunction": "parlay-platform-mlb-auto--MLBAutoLLMBedrockSmokeFu-jmtHYAjEbLXo",
+    "smokeFunctionError": null,
+    "smokeInvocation": {
+      "attemptedModelIds": [
+        "us-east-2::us.amazon.nova-2-lite-v1:0",
+        "us-east-2::us.amazon.nova-lite-v1:0",
+        "us-east-2::us.amazon.nova-micro-v1:0",
+        "us-east-2::us.amazon.nova-premier-v1:0",
+        "us-east-2::us.amazon.nova-pro-v1:0",
+        "us-west-2::us.amazon.nova-2-lite-v1:0",
+        "us-west-2::us.amazon.nova-lite-v1:0",
+        "us-west-2::us.amazon.nova-micro-v1:0",
+        "us-west-2::us.amazon.nova-premier-v1:0",
+        "us-west-2::us.amazon.nova-pro-v1:0",
+        "us.amazon.nova-2-lite-v1:0",
+        "us.amazon.nova-lite-v1:0"
+      ],
+      "bedrockAvailable": false,
+      "configuredModelCount": 12,
+      "configuredRegions": [
+        "us-east-1",
+        "us-east-2",
+        "us-west-2"
+      ],
+      "decisionAuthority": "BEDROCK_LLM",
+      "errors": [
+        {
+          "endpointFamily": "bedrock-runtime-converse",
+          "errorCode": "ThrottlingException",
+          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+          "modelId": "us.amazon.nova-2-lite-v1:0",
+          "region": "us-east-2",
+          "routeId": "us-east-2::us.amazon.nova-2-lite-v1:0"
+        },
+        {
+          "endpointFamily": "bedrock-runtime-converse",
+          "errorCode": "ThrottlingException",
+          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+          "modelId": "us.amazon.nova-lite-v1:0",
+          "region": "us-east-2",
+          "routeId": "us-east-2::us.amazon.nova-lite-v1:0"
+        },
+        {
+          "endpointFamily": "bedrock-runtime-converse",
+          "errorCode": "ThrottlingException",
+          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+          "modelId": "us.amazon.nova-micro-v1:0",
+          "region": "us-east-2",
+          "routeId": "us-east-2::us.amazon.nova-micro-v1:0"
+        },
+        {
+          "endpointFamily": "bedrock-runtime-converse",
+          "errorCode": "ThrottlingException",
+          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens, please wait before trying again.",
+          "modelId": "us.amazon.nova-premier-v1:0",
+          "region": "us-east-2",
+          "routeId": "us-east-2::us.amazon.nova-premier-v1:0"
+        },
+        {
+          "endpointFamily": "bedrock-runtime-converse",
+          "errorCode": "ThrottlingException",
+          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+          "modelId": "us.amazon.nova-pro-v1:0",
+          "region": "us-east-2",
+          "routeId": "us-east-2::us.amazon.nova-pro-v1:0"
+        },
+        {
+          "endpointFamily": "bedrock-runtime-converse",
+          "errorCode": "ThrottlingException",
+          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+          "modelId": "us.amazon.nova-2-lite-v1:0",
+          "region": "us-west-2",
+          "routeId": "us-west-2::us.amazon.nova-2-lite-v1:0"
+        },
+        {
+          "endpointFamily": "bedrock-runtime-converse",
+          "errorCode": "ThrottlingException",
+          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+          "modelId": "us.amazon.nova-lite-v1:0",
+          "region": "us-west-2",
+          "routeId": "us-west-2::us.amazon.nova-lite-v1:0"
+        },
+        {
+          "endpointFamily": "bedrock-runtime-converse",
+          "errorCode": "ThrottlingException",
+          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+          "modelId": "us.amazon.nova-micro-v1:0",
+          "region": "us-west-2",
+          "routeId": "us-west-2::us.amazon.nova-micro-v1:0"
+        },
+        {
+          "endpointFamily": "bedrock-runtime-converse",
+          "errorCode": "ThrottlingException",
+          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens, please wait before trying again.",
+          "modelId": "us.amazon.nova-premier-v1:0",
+          "region": "us-west-2",
+          "routeId": "us-west-2::us.amazon.nova-premier-v1:0"
+        },
+        {
+          "endpointFamily": "bedrock-runtime-converse",
+          "errorCode": "ThrottlingException",
+          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+          "modelId": "us.amazon.nova-pro-v1:0",
+          "region": "us-west-2",
+          "routeId": "us-west-2::us.amazon.nova-pro-v1:0"
+        },
+        {
+          "endpointFamily": "bedrock-runtime-converse",
+          "errorCode": "ThrottlingException",
+          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+          "modelId": "us.amazon.nova-2-lite-v1:0",
+          "region": "us-east-1",
+          "routeId": "us.amazon.nova-2-lite-v1:0"
+        },
+        {
+          "endpointFamily": "bedrock-runtime-converse",
+          "errorCode": "ThrottlingException",
+          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
+          "modelId": "us.amazon.nova-lite-v1:0",
+          "region": "us-east-1",
+          "routeId": "us.amazon.nova-lite-v1:0"
+        }
+      ],
+      "failoverEnabled": true,
+      "mantleModelCount": 0,
+      "mantleModelIds": [],
+      "mlFallbackAttempted": false,
+      "ok": false,
+      "routeAttemptLimit": 12,
+      "routeSelectionPolicy": "us-cross-region,global-cross-region,direct",
+      "runtimeModelCount": 32,
+      "runtimeModelIds": [
+        "openai.gpt-oss-20b-1:0",
+        "us-east-2::openai.gpt-oss-20b-1:0",
+        "us-west-2::openai.gpt-oss-20b-1:0",
+        "amazon.nova-lite-v1:0",
+        "us-east-2::amazon.nova-lite-v1:0",
+        "us-west-2::amazon.nova-lite-v1:0",
+        "amazon.nova-micro-v1:0",
+        "openai.gpt-oss-120b-1:0",
+        "us-east-2::openai.gpt-oss-120b-1:0",
+        "us-west-2::openai.gpt-oss-120b-1:0",
+        "amazon.nova-pro-v1:0",
+        "amazon.nova-sonic-v1:0",
+        "amazon.nova-2-sonic-v1:0",
+        "us-west-2::amazon.nova-2-sonic-v1:0",
+        "us-east-2::us.amazon.nova-pro-v1:0",
+        "us-west-2::us.amazon.nova-pro-v1:0",
+        "us.amazon.nova-pro-v1:0",
+        "us-east-2::us.amazon.nova-lite-v1:0",
+        "us-west-2::us.amazon.nova-lite-v1:0",
+        "us.amazon.nova-lite-v1:0",
+        "us-east-2::us.amazon.nova-micro-v1:0",
+        "us-west-2::us.amazon.nova-micro-v1:0",
+        "us.amazon.nova-micro-v1:0",
+        "us-east-2::us.amazon.nova-2-lite-v1:0",
+        "us-west-2::us.amazon.nova-2-lite-v1:0",
+        "us.amazon.nova-2-lite-v1:0",
+        "us-east-2::us.amazon.nova-premier-v1:0",
+        "us-west-2::us.amazon.nova-premier-v1:0",
+        "us.amazon.nova-premier-v1:0",
+        "global.amazon.nova-2-lite-v1:0",
+        "us-east-2::global.amazon.nova-2-lite-v1:0",
+        "us-west-2::global.amazon.nova-2-lite-v1:0"
+      ],
+      "service": "mlb-auto-llm-bedrock-smoke"
+    }
+  },
+  "circuitBreakerAdded": false,
+  "completedAtUtc": "2026-08-25T17:44:54.758608+00:00",
+  "createdAtUtc": "2026-08-25T17:43:57.831843+00:00",
+  "dedicatedCapacity": {
+    "commitmentDuration": null,
+    "created": false,
+    "error": {
+      "code": "ValidationException",
+      "message": "Your account is not authorized to perform this action. Please create a support case (https://console.aws.amazon.com/support/home) with details about your use case and we will get back to you.",
+      "type": "ValidationException"
+    },
+    "existing": [],
+    "modelId": "amazon.nova-lite-v1:0:24k",
+    "modelUnits": 1,
+    "noCommitment": true,
+    "ok": false,
+    "provisionedModelName": "inqsi-mlb-auto-nova-lite-1mu",
+    "purchaseRequested": true,
+    "region": "us-east-1",
+    "status": "CREATE_BLOCKED"
+  },
+  "discovery": [
+    {
+      "errors": [],
+      "foundationModels": [
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-08-06T00:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "openai.gpt-oss-120b-1:0",
+          "modelName": "gpt-oss-120b",
+          "providerName": "OpenAI"
+        },
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND",
+            "INFERENCE_PROFILE"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2024-12-03T00:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-pro-v1:0",
+          "modelName": "Nova Pro",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "PROVISIONED"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2024-12-03T00:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-pro-v1:0:24k",
+          "modelName": "Nova Pro",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "PROVISIONED"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2024-12-03T00:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-pro-v1:0:300k",
+          "modelName": "Nova Pro",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "INFERENCE_PROFILE"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-12-02T08:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-2-lite-v1:0",
+          "modelName": "Nova 2 Lite",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "PROVISIONED"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-12-02T08:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-2-lite-v1:0:256k",
+          "modelName": "Nova 2 Lite",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-12-02T18:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-2-sonic-v1:0",
+          "modelName": "Nova 2 Sonic",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-08-06T00:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "openai.gpt-oss-20b-1:0",
+          "modelName": "gpt-oss-20b",
+          "providerName": "OpenAI"
+        },
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-12-02T00:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "openai.gpt-oss-safeguard-120b",
+          "modelName": "GPT OSS Safeguard 120B",
+          "providerName": "OpenAI"
+        },
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-12-02T00:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "openai.gpt-oss-safeguard-20b",
+          "modelName": "GPT OSS Safeguard 20B",
+          "providerName": "OpenAI"
+        },
+        {
+          "inferenceTypesSupported": [],
+          "lifecycle": {
+            "endOfLifeTime": "2026-09-14T07:00:00+00:00",
+            "legacyTime": "2026-03-13T07:00:00+00:00",
+            "startOfLifeTime": "2025-04-30T08:00:00+00:00",
+            "status": "LEGACY"
+          },
+          "modelId": "amazon.nova-premier-v1:0:8k",
+          "modelName": "Nova Premier",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [],
+          "lifecycle": {
+            "endOfLifeTime": "2026-09-14T07:00:00+00:00",
+            "legacyTime": "2026-03-13T07:00:00+00:00",
+            "startOfLifeTime": "2025-04-30T08:00:00+00:00",
+            "status": "LEGACY"
+          },
+          "modelId": "amazon.nova-premier-v1:0:20k",
+          "modelName": "Nova Premier",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [],
+          "lifecycle": {
+            "endOfLifeTime": "2026-09-14T07:00:00+00:00",
+            "legacyTime": "2026-03-13T07:00:00+00:00",
+            "startOfLifeTime": "2025-04-30T08:00:00+00:00",
+            "status": "LEGACY"
+          },
+          "modelId": "amazon.nova-premier-v1:0:1000k",
+          "modelName": "Nova Premier",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [],
+          "lifecycle": {
+            "endOfLifeTime": "2026-09-14T07:00:00+00:00",
+            "legacyTime": "2026-03-13T07:00:00+00:00",
+            "startOfLifeTime": "2025-04-30T08:00:00+00:00",
+            "status": "LEGACY"
+          },
+          "modelId": "amazon.nova-premier-v1:0:mm",
+          "modelName": "Nova Premier",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "INFERENCE_PROFILE"
+          ],
+          "lifecycle": {
+            "endOfLifeTime": "2026-09-14T07:00:00+00:00",
+            "legacyTime": "2026-03-13T07:00:00+00:00",
+            "startOfLifeTime": "2025-04-30T08:00:00+00:00",
+            "status": "LEGACY"
+          },
+          "modelId": "amazon.nova-premier-v1:0",
+          "modelName": "Nova Premier",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "PROVISIONED"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2024-12-03T08:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-lite-v1:0:24k",
+          "modelName": "Nova Lite",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "PROVISIONED"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2024-12-03T08:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-lite-v1:0:300k",
+          "modelName": "Nova Lite",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND",
+            "INFERENCE_PROFILE"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2024-12-03T08:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-lite-v1:0",
+          "modelName": "Nova Lite",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "PROVISIONED"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2024-12-03T08:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-micro-v1:0:24k",
+          "modelName": "Nova Micro",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "PROVISIONED"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2024-12-03T08:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-micro-v1:0:128k",
+          "modelName": "Nova Micro",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND",
+            "INFERENCE_PROFILE"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2024-12-03T08:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-micro-v1:0",
+          "modelName": "Nova Micro",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND"
+          ],
+          "lifecycle": {
+            "endOfLifeTime": "2026-09-14T07:00:00+00:00",
+            "legacyTime": "2026-03-13T07:00:00+00:00",
+            "startOfLifeTime": "2025-04-08T08:00:00+00:00",
+            "status": "LEGACY"
+          },
+          "modelId": "amazon.nova-sonic-v1:0",
+          "modelName": "Nova Sonic",
+          "providerName": "Amazon"
+        }
+      ],
+      "inferenceProfiles": [
+        {
+          "inferenceProfileId": "us.amazon.nova-premier-v1:0",
+          "inferenceProfileName": "US Nova Premier",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-premier-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-premier-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-premier-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        },
+        {
+          "inferenceProfileId": "global.amazon.nova-2-lite-v1:0",
+          "inferenceProfileName": "GLOBAL Amazon Nova 2 Lite",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-lite-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        },
+        {
+          "inferenceProfileId": "us.amazon.nova-micro-v1:0",
+          "inferenceProfileName": "US Nova Micro",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-micro-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-micro-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-micro-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        },
+        {
+          "inferenceProfileId": "us.amazon.nova-lite-v1:0",
+          "inferenceProfileName": "US Nova Lite",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-lite-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-lite-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-lite-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        },
+        {
+          "inferenceProfileId": "us.amazon.nova-2-lite-v1:0",
+          "inferenceProfileName": "US Amazon Nova 2 Lite",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-lite-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-2-lite-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-2-lite-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        },
+        {
+          "inferenceProfileId": "us.amazon.nova-pro-v1:0",
+          "inferenceProfileName": "US Nova Pro",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-pro-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-pro-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        }
+      ],
+      "ok": true,
+      "region": "us-east-1"
+    },
+    {
+      "errors": [],
+      "foundationModels": [
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-08-06T00:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "openai.gpt-oss-120b-1:0",
+          "modelName": "gpt-oss-120b",
+          "providerName": "OpenAI"
+        },
+        {
+          "inferenceTypesSupported": [
+            "INFERENCE_PROFILE"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2024-12-03T00:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-pro-v1:0",
+          "modelName": "Nova Pro",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "INFERENCE_PROFILE"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-12-02T08:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-2-lite-v1:0",
+          "modelName": "Nova 2 Lite",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-08-06T00:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "openai.gpt-oss-20b-1:0",
+          "modelName": "gpt-oss-20b",
+          "providerName": "OpenAI"
+        },
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-12-02T00:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "openai.gpt-oss-safeguard-120b",
+          "modelName": "GPT OSS Safeguard 120B",
+          "providerName": "OpenAI"
+        },
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-12-02T00:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "openai.gpt-oss-safeguard-20b",
+          "modelName": "GPT OSS Safeguard 20B",
+          "providerName": "OpenAI"
+        },
+        {
+          "inferenceTypesSupported": [],
+          "lifecycle": {
+            "endOfLifeTime": "2026-09-14T07:00:00+00:00",
+            "legacyTime": "2026-03-13T07:00:00+00:00",
+            "startOfLifeTime": "2025-04-30T08:00:00+00:00",
+            "status": "LEGACY"
+          },
+          "modelId": "amazon.nova-premier-v1:0:8k",
+          "modelName": "Nova Premier",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [],
+          "lifecycle": {
+            "endOfLifeTime": "2026-09-14T07:00:00+00:00",
+            "legacyTime": "2026-03-13T07:00:00+00:00",
+            "startOfLifeTime": "2025-04-30T08:00:00+00:00",
+            "status": "LEGACY"
+          },
+          "modelId": "amazon.nova-premier-v1:0:20k",
+          "modelName": "Nova Premier",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [],
+          "lifecycle": {
+            "endOfLifeTime": "2026-09-14T07:00:00+00:00",
+            "legacyTime": "2026-03-13T07:00:00+00:00",
+            "startOfLifeTime": "2025-04-30T08:00:00+00:00",
+            "status": "LEGACY"
+          },
+          "modelId": "amazon.nova-premier-v1:0:1000k",
+          "modelName": "Nova Premier",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [],
+          "lifecycle": {
+            "endOfLifeTime": "2026-09-14T07:00:00+00:00",
+            "legacyTime": "2026-03-13T07:00:00+00:00",
+            "startOfLifeTime": "2025-04-30T08:00:00+00:00",
+            "status": "LEGACY"
+          },
+          "modelId": "amazon.nova-premier-v1:0:mm",
+          "modelName": "Nova Premier",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "INFERENCE_PROFILE"
+          ],
+          "lifecycle": {
+            "endOfLifeTime": "2026-09-14T07:00:00+00:00",
+            "legacyTime": "2026-03-13T07:00:00+00:00",
+            "startOfLifeTime": "2025-04-30T08:00:00+00:00",
+            "status": "LEGACY"
+          },
+          "modelId": "amazon.nova-premier-v1:0",
+          "modelName": "Nova Premier",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND",
+            "INFERENCE_PROFILE"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2024-12-03T08:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-lite-v1:0",
+          "modelName": "Nova Lite",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "INFERENCE_PROFILE"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2024-12-03T08:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-micro-v1:0",
+          "modelName": "Nova Micro",
+          "providerName": "Amazon"
+        }
+      ],
+      "inferenceProfiles": [
+        {
+          "inferenceProfileId": "us.amazon.nova-premier-v1:0",
+          "inferenceProfileName": "US Nova Premier",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-premier-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-premier-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-premier-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        },
+        {
+          "inferenceProfileId": "us.amazon.nova-micro-v1:0",
+          "inferenceProfileName": "US Nova Micro",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-micro-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-micro-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-micro-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        },
+        {
+          "inferenceProfileId": "global.amazon.nova-2-lite-v1:0",
+          "inferenceProfileName": "GLOBAL Amazon Nova 2 Lite",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-2-lite-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        },
+        {
+          "inferenceProfileId": "us.amazon.nova-2-lite-v1:0",
+          "inferenceProfileName": "US Amazon Nova 2 Lite",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-lite-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-2-lite-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-2-lite-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        },
+        {
+          "inferenceProfileId": "us.amazon.nova-pro-v1:0",
+          "inferenceProfileName": "US Nova Pro",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-pro-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-pro-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        },
+        {
+          "inferenceProfileId": "us.amazon.nova-lite-v1:0",
+          "inferenceProfileName": "US Nova Lite",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-lite-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-lite-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-lite-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        }
+      ],
+      "ok": true,
+      "region": "us-east-2"
+    },
+    {
+      "errors": [],
+      "foundationModels": [
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-08-06T00:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "openai.gpt-oss-120b-1:0",
+          "modelName": "gpt-oss-120b",
+          "providerName": "OpenAI"
+        },
+        {
+          "inferenceTypesSupported": [
+            "INFERENCE_PROFILE"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2024-12-03T00:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-pro-v1:0",
+          "modelName": "Nova Pro",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "INFERENCE_PROFILE"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-12-02T08:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-2-lite-v1:0",
+          "modelName": "Nova 2 Lite",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-12-02T18:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-2-sonic-v1:0",
+          "modelName": "Nova 2 Sonic",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-08-06T00:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "openai.gpt-oss-20b-1:0",
+          "modelName": "gpt-oss-20b",
+          "providerName": "OpenAI"
+        },
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-12-02T00:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "openai.gpt-oss-safeguard-120b",
+          "modelName": "GPT OSS Safeguard 120B",
+          "providerName": "OpenAI"
+        },
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2025-12-02T00:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "openai.gpt-oss-safeguard-20b",
+          "modelName": "GPT OSS Safeguard 20B",
+          "providerName": "OpenAI"
+        },
+        {
+          "inferenceTypesSupported": [],
+          "lifecycle": {
+            "endOfLifeTime": "2026-09-14T07:00:00+00:00",
+            "legacyTime": "2026-03-13T07:00:00+00:00",
+            "startOfLifeTime": "2025-04-30T08:00:00+00:00",
+            "status": "LEGACY"
+          },
+          "modelId": "amazon.nova-premier-v1:0:8k",
+          "modelName": "Nova Premier",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [],
+          "lifecycle": {
+            "endOfLifeTime": "2026-09-14T07:00:00+00:00",
+            "legacyTime": "2026-03-13T07:00:00+00:00",
+            "startOfLifeTime": "2025-04-30T08:00:00+00:00",
+            "status": "LEGACY"
+          },
+          "modelId": "amazon.nova-premier-v1:0:20k",
+          "modelName": "Nova Premier",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [],
+          "lifecycle": {
+            "endOfLifeTime": "2026-09-14T07:00:00+00:00",
+            "legacyTime": "2026-03-13T07:00:00+00:00",
+            "startOfLifeTime": "2025-04-30T08:00:00+00:00",
+            "status": "LEGACY"
+          },
+          "modelId": "amazon.nova-premier-v1:0:1000k",
+          "modelName": "Nova Premier",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [],
+          "lifecycle": {
+            "endOfLifeTime": "2026-09-14T07:00:00+00:00",
+            "legacyTime": "2026-03-13T07:00:00+00:00",
+            "startOfLifeTime": "2025-04-30T08:00:00+00:00",
+            "status": "LEGACY"
+          },
+          "modelId": "amazon.nova-premier-v1:0:mm",
+          "modelName": "Nova Premier",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "INFERENCE_PROFILE"
+          ],
+          "lifecycle": {
+            "endOfLifeTime": "2026-09-14T07:00:00+00:00",
+            "legacyTime": "2026-03-13T07:00:00+00:00",
+            "startOfLifeTime": "2025-04-30T08:00:00+00:00",
+            "status": "LEGACY"
+          },
+          "modelId": "amazon.nova-premier-v1:0",
+          "modelName": "Nova Premier",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "ON_DEMAND",
+            "INFERENCE_PROFILE"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2024-12-03T08:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-lite-v1:0",
+          "modelName": "Nova Lite",
+          "providerName": "Amazon"
+        },
+        {
+          "inferenceTypesSupported": [
+            "INFERENCE_PROFILE"
+          ],
+          "lifecycle": {
+            "startOfLifeTime": "2024-12-03T08:00:00+00:00",
+            "status": "ACTIVE"
+          },
+          "modelId": "amazon.nova-micro-v1:0",
+          "modelName": "Nova Micro",
+          "providerName": "Amazon"
+        }
+      ],
+      "inferenceProfiles": [
+        {
+          "inferenceProfileId": "us.amazon.nova-premier-v1:0",
+          "inferenceProfileName": "US Nova Premier",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-premier-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-premier-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-premier-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        },
+        {
+          "inferenceProfileId": "global.amazon.nova-2-lite-v1:0",
+          "inferenceProfileName": "GLOBAL Amazon Nova 2 Lite",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-2-lite-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        },
+        {
+          "inferenceProfileId": "us.amazon.nova-2-lite-v1:0",
+          "inferenceProfileName": "US Amazon Nova 2 Lite",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-lite-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-2-lite-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-2-lite-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        },
+        {
+          "inferenceProfileId": "us.amazon.nova-micro-v1:0",
+          "inferenceProfileName": "US Nova Micro",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-micro-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-micro-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-micro-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        },
+        {
+          "inferenceProfileId": "us.amazon.nova-lite-v1:0",
+          "inferenceProfileName": "US Nova Lite",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-lite-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-lite-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-lite-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        },
+        {
+          "inferenceProfileId": "us.amazon.nova-pro-v1:0",
+          "inferenceProfileName": "US Nova Pro",
+          "models": [
+            {
+              "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-pro-v1:0"
+            },
+            {
+              "modelArn": "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-pro-v1:0"
+            }
+          ],
+          "status": "ACTIVE"
+        }
+      ],
+      "ok": true,
+      "region": "us-west-2"
+    }
+  ],
+  "modelGatewayChanged": false,
+  "ok": false,
+  "productionAuthorityChanged": false,
+  "proofType": "MLB_BEDROCK_CAPACITY_AND_IAM",
+  "purchaseProvisionedThroughput": true,
+  "quotaRequests": [
+    {
+      "errors": [
+        {
+          "adjustable": true,
+          "code": "IllegalArgumentException",
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-DC7FF66C",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Micro",
+          "type": "IllegalArgumentException",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "code": "IllegalArgumentException",
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-71C69B70",
+          "quotaName": "Global cross-region model inference tokens per minute for Amazon Nova 2 Lite",
+          "type": "IllegalArgumentException",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "code": "IllegalArgumentException",
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-C6F5908D",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova 2 Lite",
+          "type": "IllegalArgumentException",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "code": "IllegalArgumentException",
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-7C42E72A",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Lite",
+          "type": "IllegalArgumentException",
+          "unit": "None"
+        }
+      ],
+      "existingRequests": [],
+      "matchedQuotas": [
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-89F8391A",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-D5F39C2F",
+          "quotaName": "Global cross-region model inference requests per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-531AA149",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment requests per minute for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-D690997B",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Pro (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-127FC9D0",
+          "quotaName": "Model units per provisioned model for the 300k context length variant for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-DC7FF66C",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-7374C882",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment requests per minute for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-07D3BCF0",
+          "quotaName": "Model units per provisioned model for Amazon Nova 2 Lite V1.0 256K",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-AA71BFED",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment tokens per minute for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-CFA4FA0D",
+          "quotaName": "On-demand model inference tokens per minute for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-AF7F0545",
+          "quotaName": "On-demand model inference requests per minute for OpenAI GPT OSS 20B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-BF13118E",
+          "quotaName": "On-Demand, latency-optimized model inference tokens per minute for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-210172B5",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova 2 Lite (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-81D9AFEF",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment requests per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-F2717A44",
+          "quotaName": "On-demand model inference requests per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-3AE9B770",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment requests per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-9DC5F595",
+          "quotaName": "On-demand model inference tokens per minute for OpenAI GPT OSS 120B",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-9C8C5911",
+          "quotaName": "Model units per provisioned model for the 24k context length variant for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-70423BF8",
+          "quotaName": "On-demand model inference tokens per minute for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-88A6D90B",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment tokens per day for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-AC096F71",
+          "quotaName": "Model units per provisioned model for the 128k context length variant for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-71C69B70",
+          "quotaName": "Global cross-region model inference tokens per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-25B50707",
+          "quotaName": "On-demand model inference requests per minute for OpenAI GPT OSS 120B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-FB6C5C02",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment tokens per day for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-F06F1187",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-0704A05C",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment tokens per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-CE33604C",
+          "quotaName": "On-demand model inference tokens per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-8CAEE163",
+          "quotaName": "No-commitment model units for Provisioned Throughput created for base model Amazon Nova 2 Lite V1.0 256K",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-D5E3ED5D",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment tokens per day for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-45E0AD92",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-B706E06A",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment tokens per day for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-ED46B8C5",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-C0326783",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-036E14D8",
+          "quotaName": "On-demand model inference tokens per minute for OpenAI GPT OSS 20B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-0FA1782C",
+          "quotaName": "Model invocation max tokens per day for OpenAI GPT OSS 20B (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-153ADCCB",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment tokens per minute for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-98317D9C",
+          "quotaName": "On-Demand, latency-optimized model inference requests per minute for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-03EBF703",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment tokens per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-4532261E",
+          "quotaName": "Model units per provisioned model for the 24k context length variant for Amazon Nova Lite ",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-C6F5908D",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-145AFCE6",
+          "quotaName": "Model invocation max latency-optimized tokens per day for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-7C42E72A",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-3F110E0F",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-5CC0F091",
+          "quotaName": "No-commitment model units for Provisioned Throughput created for custom model Amazon Nova 2 Lite V1.0 256K",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-E386A278",
+          "quotaName": "On-demand model inference requests per minute for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-E118F160",
+          "quotaName": "On-demand model inference requests per minute for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-AD940EDE",
+          "quotaName": "Global cross-region model inference tokens per day for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-E0B2EE2A",
+          "quotaName": "Model units per provisioned model for the 24k context length variant for Amazon Nova Micro ",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-E48B7984",
+          "quotaName": "Model units per provisioned model for the 300k context length variant for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-D2912E70",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Micro (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-41FDDA6B",
+          "quotaName": "Model invocation max tokens per day for OpenAI GPT OSS 120B (doubled for cross-region calls)",
+          "unit": "None"
+        }
+      ],
+      "nonAdjustableQuotas": [
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-89F8391A",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-531AA149",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment requests per minute for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-D690997B",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Pro (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-7374C882",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment requests per minute for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-AA71BFED",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment tokens per minute for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-CFA4FA0D",
+          "quotaName": "On-demand model inference tokens per minute for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-AF7F0545",
+          "quotaName": "On-demand model inference requests per minute for OpenAI GPT OSS 20B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-BF13118E",
+          "quotaName": "On-Demand, latency-optimized model inference tokens per minute for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-210172B5",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova 2 Lite (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-81D9AFEF",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment requests per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-F2717A44",
+          "quotaName": "On-demand model inference requests per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-3AE9B770",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment requests per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-9DC5F595",
+          "quotaName": "On-demand model inference tokens per minute for OpenAI GPT OSS 120B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-70423BF8",
+          "quotaName": "On-demand model inference tokens per minute for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-88A6D90B",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment tokens per day for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-25B50707",
+          "quotaName": "On-demand model inference requests per minute for OpenAI GPT OSS 120B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-FB6C5C02",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment tokens per day for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-F06F1187",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-0704A05C",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment tokens per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-CE33604C",
+          "quotaName": "On-demand model inference tokens per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-8CAEE163",
+          "quotaName": "No-commitment model units for Provisioned Throughput created for base model Amazon Nova 2 Lite V1.0 256K",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-D5E3ED5D",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment tokens per day for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-45E0AD92",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-B706E06A",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment tokens per day for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-ED46B8C5",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-036E14D8",
+          "quotaName": "On-demand model inference tokens per minute for OpenAI GPT OSS 20B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-0FA1782C",
+          "quotaName": "Model invocation max tokens per day for OpenAI GPT OSS 20B (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-153ADCCB",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment tokens per minute for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-98317D9C",
+          "quotaName": "On-Demand, latency-optimized model inference requests per minute for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-03EBF703",
+          "quotaName": "(Model customization) Sum of on demand custom model deployment tokens per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-145AFCE6",
+          "quotaName": "Model invocation max latency-optimized tokens per day for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-3F110E0F",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-5CC0F091",
+          "quotaName": "No-commitment model units for Provisioned Throughput created for custom model Amazon Nova 2 Lite V1.0 256K",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-E386A278",
+          "quotaName": "On-demand model inference requests per minute for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-E118F160",
+          "quotaName": "On-demand model inference requests per minute for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-AD940EDE",
+          "quotaName": "Global cross-region model inference tokens per day for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-D2912E70",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Micro (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-41FDDA6B",
+          "quotaName": "Model invocation max tokens per day for OpenAI GPT OSS 120B (doubled for cross-region calls)",
+          "unit": "None"
+        }
+      ],
+      "ok": false,
+      "region": "us-east-1",
+      "submittedRequests": [
+        {
+          "adjustable": true,
+          "caseId": null,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-D5F39C2F",
+          "quotaName": "Global cross-region model inference requests per minute for Amazon Nova 2 Lite",
+          "requestId": "f8c24bce6f0a413489aed55427dd62454WsjsVq9",
+          "status": "PENDING",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": null,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-127FC9D0",
+          "quotaName": "Model units per provisioned model for the 300k context length variant for Amazon Nova Lite",
+          "requestId": "ca301e704ead4d30b6c3a4c70d7fd4c3zK5RA0gD",
+          "status": "PENDING",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": null,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-07D3BCF0",
+          "quotaName": "Model units per provisioned model for Amazon Nova 2 Lite V1.0 256K",
+          "requestId": "94f0e91037ca47779447ad3e71114e59ZLYM2yIM",
+          "status": "PENDING",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": null,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-9C8C5911",
+          "quotaName": "Model units per provisioned model for the 24k context length variant for Amazon Nova Pro",
+          "requestId": "6c0d6fcf37a44ef4bcf9a520313c840dytJh9Wdg",
+          "status": "PENDING",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": null,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-AC096F71",
+          "quotaName": "Model units per provisioned model for the 128k context length variant for Amazon Nova Micro",
+          "requestId": "c51d307630604ee99cf873806dc9cbdcOhs97W6z",
+          "status": "PENDING",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": null,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-C0326783",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Pro",
+          "requestId": "380d9c66ee7c4e7faec85a59c0b4db81c5qrqbXD",
+          "status": "PENDING",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": null,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-4532261E",
+          "quotaName": "Model units per provisioned model for the 24k context length variant for Amazon Nova Lite ",
+          "requestId": "bcc52ddcd89d4e348517c90b1e381db75E22PiLB",
+          "status": "PENDING",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": null,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-E0B2EE2A",
+          "quotaName": "Model units per provisioned model for the 24k context length variant for Amazon Nova Micro ",
+          "requestId": "b8fa58b17d954d478f3148a1d216df32TNsYb6UQ",
+          "status": "PENDING",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": null,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-E48B7984",
+          "quotaName": "Model units per provisioned model for the 300k context length variant for Amazon Nova Pro",
+          "requestId": "0547c5e1dd5f4fe19e475db6043ac335CIu6vTaT",
+          "status": "PENDING",
+          "unit": "None"
+        }
+      ]
+    },
+    {
+      "errors": [
+        {
+          "adjustable": true,
+          "code": "IllegalArgumentException",
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-DC7FF66C",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Micro",
+          "type": "IllegalArgumentException",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "code": "IllegalArgumentException",
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-71C69B70",
+          "quotaName": "Global cross-region model inference tokens per minute for Amazon Nova 2 Lite",
+          "type": "IllegalArgumentException",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "code": "IllegalArgumentException",
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-C6F5908D",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova 2 Lite",
+          "type": "IllegalArgumentException",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "code": "IllegalArgumentException",
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-7C42E72A",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Lite",
+          "type": "IllegalArgumentException",
+          "unit": "None"
+        }
+      ],
+      "existingRequests": [],
+      "matchedQuotas": [
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-89F8391A",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-D5F39C2F",
+          "quotaName": "Global cross-region model inference requests per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-D690997B",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Pro (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-DC7FF66C",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-AF7F0545",
+          "quotaName": "On-demand model inference requests per minute for OpenAI GPT OSS 20B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-BF13118E",
+          "quotaName": "On-Demand, latency-optimized model inference tokens per minute for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-210172B5",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova 2 Lite (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-F2717A44",
+          "quotaName": "On-demand model inference requests per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-9DC5F595",
+          "quotaName": "On-demand model inference tokens per minute for OpenAI GPT OSS 120B",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-71C69B70",
+          "quotaName": "Global cross-region model inference tokens per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-25B50707",
+          "quotaName": "On-demand model inference requests per minute for OpenAI GPT OSS 120B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-F06F1187",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-CE33604C",
+          "quotaName": "On-demand model inference tokens per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-45E0AD92",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-ED46B8C5",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-C0326783",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-036E14D8",
+          "quotaName": "On-demand model inference tokens per minute for OpenAI GPT OSS 20B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-0FA1782C",
+          "quotaName": "Model invocation max tokens per day for OpenAI GPT OSS 20B (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-98317D9C",
+          "quotaName": "On-Demand, latency-optimized model inference requests per minute for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-C6F5908D",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-145AFCE6",
+          "quotaName": "Model invocation max latency-optimized tokens per day for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-7C42E72A",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-3F110E0F",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-AD940EDE",
+          "quotaName": "Global cross-region model inference tokens per day for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-D2912E70",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Micro (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-41FDDA6B",
+          "quotaName": "Model invocation max tokens per day for OpenAI GPT OSS 120B (doubled for cross-region calls)",
+          "unit": "None"
+        }
+      ],
+      "nonAdjustableQuotas": [
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-89F8391A",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-D690997B",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Pro (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-AF7F0545",
+          "quotaName": "On-demand model inference requests per minute for OpenAI GPT OSS 20B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-BF13118E",
+          "quotaName": "On-Demand, latency-optimized model inference tokens per minute for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-210172B5",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova 2 Lite (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-F2717A44",
+          "quotaName": "On-demand model inference requests per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-9DC5F595",
+          "quotaName": "On-demand model inference tokens per minute for OpenAI GPT OSS 120B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-25B50707",
+          "quotaName": "On-demand model inference requests per minute for OpenAI GPT OSS 120B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-F06F1187",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-CE33604C",
+          "quotaName": "On-demand model inference tokens per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-45E0AD92",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-ED46B8C5",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-036E14D8",
+          "quotaName": "On-demand model inference tokens per minute for OpenAI GPT OSS 20B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-0FA1782C",
+          "quotaName": "Model invocation max tokens per day for OpenAI GPT OSS 20B (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-98317D9C",
+          "quotaName": "On-Demand, latency-optimized model inference requests per minute for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-145AFCE6",
+          "quotaName": "Model invocation max latency-optimized tokens per day for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-3F110E0F",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-AD940EDE",
+          "quotaName": "Global cross-region model inference tokens per day for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-D2912E70",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Micro (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-41FDDA6B",
+          "quotaName": "Model invocation max tokens per day for OpenAI GPT OSS 120B (doubled for cross-region calls)",
+          "unit": "None"
+        }
+      ],
+      "ok": false,
+      "region": "us-east-2",
+      "submittedRequests": [
+        {
+          "adjustable": true,
+          "caseId": null,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-D5F39C2F",
+          "quotaName": "Global cross-region model inference requests per minute for Amazon Nova 2 Lite",
+          "requestId": "f97241da53bd4e12aa4abc23e0ceb9a26HvbI7Tz",
+          "status": "PENDING",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": null,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-C0326783",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Pro",
+          "requestId": "1a0d87cc9b95423bb4fd8facf40216a3IH6VK6QJ",
+          "status": "PENDING",
+          "unit": "None"
+        }
+      ]
+    },
+    {
+      "errors": [
+        {
+          "adjustable": true,
+          "code": "IllegalArgumentException",
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-DC7FF66C",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Micro",
+          "type": "IllegalArgumentException",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "code": "IllegalArgumentException",
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-71C69B70",
+          "quotaName": "Global cross-region model inference tokens per minute for Amazon Nova 2 Lite",
+          "type": "IllegalArgumentException",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "code": "IllegalArgumentException",
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-C6F5908D",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova 2 Lite",
+          "type": "IllegalArgumentException",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "code": "IllegalArgumentException",
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-7C42E72A",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Lite",
+          "type": "IllegalArgumentException",
+          "unit": "None"
+        }
+      ],
+      "existingRequests": [],
+      "matchedQuotas": [
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-89F8391A",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-D5F39C2F",
+          "quotaName": "Global cross-region model inference requests per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-D690997B",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Pro (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-DC7FF66C",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-07D3BCF0",
+          "quotaName": "Model units per provisioned model for Amazon Nova 2 Lite V1.0 256K",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-AF7F0545",
+          "quotaName": "On-demand model inference requests per minute for OpenAI GPT OSS 20B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-BF13118E",
+          "quotaName": "On-Demand, latency-optimized model inference tokens per minute for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-210172B5",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova 2 Lite (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-9DC5F595",
+          "quotaName": "On-demand model inference tokens per minute for OpenAI GPT OSS 120B",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-71C69B70",
+          "quotaName": "Global cross-region model inference tokens per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-25B50707",
+          "quotaName": "On-demand model inference requests per minute for OpenAI GPT OSS 120B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-F06F1187",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-8CAEE163",
+          "quotaName": "No-commitment model units for Provisioned Throughput created for base model Amazon Nova 2 Lite V1.0 256K",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-45E0AD92",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-ED46B8C5",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-C0326783",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-036E14D8",
+          "quotaName": "On-demand model inference tokens per minute for OpenAI GPT OSS 20B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-0FA1782C",
+          "quotaName": "Model invocation max tokens per day for OpenAI GPT OSS 20B (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-98317D9C",
+          "quotaName": "On-Demand, latency-optimized model inference requests per minute for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-C6F5908D",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-145AFCE6",
+          "quotaName": "Model invocation max latency-optimized tokens per day for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-7C42E72A",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-3F110E0F",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-5CC0F091",
+          "quotaName": "No-commitment model units for Provisioned Throughput created for custom model Amazon Nova 2 Lite V1.0 256K",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-AD940EDE",
+          "quotaName": "Global cross-region model inference tokens per day for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-D2912E70",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Micro (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-41FDDA6B",
+          "quotaName": "Model invocation max tokens per day for OpenAI GPT OSS 120B (doubled for cross-region calls)",
+          "unit": "None"
+        }
+      ],
+      "nonAdjustableQuotas": [
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-89F8391A",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-D690997B",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Pro (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-AF7F0545",
+          "quotaName": "On-demand model inference requests per minute for OpenAI GPT OSS 20B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-BF13118E",
+          "quotaName": "On-Demand, latency-optimized model inference tokens per minute for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-210172B5",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova 2 Lite (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-9DC5F595",
+          "quotaName": "On-demand model inference tokens per minute for OpenAI GPT OSS 120B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-25B50707",
+          "quotaName": "On-demand model inference requests per minute for OpenAI GPT OSS 120B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-F06F1187",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-8CAEE163",
+          "quotaName": "No-commitment model units for Provisioned Throughput created for base model Amazon Nova 2 Lite V1.0 256K",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-45E0AD92",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Lite (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-ED46B8C5",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Pro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-036E14D8",
+          "quotaName": "On-demand model inference tokens per minute for OpenAI GPT OSS 20B",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_20b"
+          ],
+          "quotaCode": "L-0FA1782C",
+          "quotaName": "Model invocation max tokens per day for OpenAI GPT OSS 20B (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-98317D9C",
+          "quotaName": "On-Demand, latency-optimized model inference requests per minute for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-145AFCE6",
+          "quotaName": "Model invocation max latency-optimized tokens per day for Amazon Nova Pro V1",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-3F110E0F",
+          "quotaName": "Cross-region model inference requests per minute for Amazon Nova Micro",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-5CC0F091",
+          "quotaName": "No-commitment model units for Provisioned Throughput created for custom model Amazon Nova 2 Lite V1.0 256K",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-AD940EDE",
+          "quotaName": "Global cross-region model inference tokens per day for Amazon Nova 2 Lite",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-D2912E70",
+          "quotaName": "Model invocation max tokens per day for Amazon Nova Micro (doubled for cross-region calls)",
+          "unit": "None"
+        },
+        {
+          "adjustable": false,
+          "currentValue": 0.0,
+          "desiredValue": 100000000.0,
+          "modelFamilies": [
+            "openai_gpt_oss_120b"
+          ],
+          "quotaCode": "L-41FDDA6B",
+          "quotaName": "Model invocation max tokens per day for OpenAI GPT OSS 120B (doubled for cross-region calls)",
+          "unit": "None"
+        }
+      ],
+      "ok": false,
+      "region": "us-west-2",
+      "submittedRequests": [
+        {
+          "adjustable": true,
+          "caseId": null,
+          "currentValue": 0.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-D5F39C2F",
+          "quotaName": "Global cross-region model inference requests per minute for Amazon Nova 2 Lite",
+          "requestId": "387986a6bb1444ba8bf592e946edfe82UElRNwqB",
+          "status": "PENDING",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": null,
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-07D3BCF0",
+          "quotaName": "Model units per provisioned model for Amazon Nova 2 Lite V1.0 256K",
+          "requestId": "07b265b1bb59422ba674745407968a4fuYl2fAOj",
+          "status": "PENDING",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": null,
+          "currentValue": 0.0,
+          "desiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-C0326783",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Pro",
+          "requestId": "445e258dcaff4860bfa7f2ecba1e77b2Y3Yfdw6C",
+          "status": "PENDING",
+          "unit": "None"
+        }
+      ]
+    }
+  ],
+  "regions": [
+    "us-east-1",
+    "us-east-2",
+    "us-west-2"
+  ],
+  "requestQuotaIncreases": true,
+  "secretExposed": false,
+  "version": "MLB-BEDROCK-CAPACITY-CONTROL-v1-no-circuit-breaker"
+}
