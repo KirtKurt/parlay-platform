@@ -1,0 +1,224 @@
+name: MLB R8 Pattern Learning V2 Now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-r8-pattern-learning-v2-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-r8-pattern-learning-v2-now
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-mlb-historical-optimizer
+  REPORT_PATH: runtime_reports/mlb_r8_favorite_underdog_patterns_latest.json
+
+jobs:
+  authoritative-pattern-learning:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Install analysis runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2' 'scikit-learn>=1.5,<2' 'numpy>=1.26,<3'
+      - name: Resolve live MLB historical optimizer and authoritative completed-slate pointers
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
+          BUCKET_NAME=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='HistoricalArtifactsBucketName'].OutputValue" --output text)
+          test -n "$FUNCTION_NAME"; test "$FUNCTION_NAME" != None
+          test -n "$BUCKET_NAME"; test "$BUCKET_NAME" != None
+          echo "$BUCKET_NAME" >/tmp/bucket.txt
+          aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"r8_pattern_learning_v2"}' /tmp/status.json >/tmp/status-meta.json
+          python -m json.tool /tmp/status.json >/dev/null
+      - name: Learn favorite and underdog patterns from the exact immutable corpus
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json, os, math, statistics
+          from collections import Counter, defaultdict
+          from pathlib import Path
+          import boto3
+          import numpy as np
+          from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+          from sklearn.linear_model import LogisticRegression
+          from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
+          from sklearn.pipeline import make_pipeline
+          from sklearn.preprocessing import StandardScaler
+
+          status=json.load(open('/tmp/status.json'))
+          state=status.get('state') if isinstance(status.get('state'),dict) else status
+          completed=[x for x in (state.get('completedSlates') or []) if isinstance(x,dict)]
+          bucket=Path('/tmp/bucket.txt').read_text().strip()
+          s3=boto3.client('s3')
+          records=[]; artifact_keys=[]; missing=[]
+          for slate in completed:
+              art=slate.get('artifact') or {}; key=str(art.get('key') or '')
+              if not key: continue
+              try:
+                  obj=s3.get_object(Bucket=bucket,Key=key)
+                  ds=json.loads(obj['Body'].read().decode())
+              except Exception as exc:
+                  missing.append({'slateDateEt':slate.get('slateDateEt'),'key':key,'error':type(exc).__name__})
+                  continue
+              if ds.get('completeSlate') is not True or ds.get('postLockDataExcluded') is not True:
+                  continue
+              artifact_keys.append(key)
+              for r in ds.get('records') or []:
+                  h=r.get('homeSignal') or {}; a=r.get('awaySignal') or {}
+                  home=str(r.get('homeTeam') or ''); away=str(r.get('awayTeam') or ''); winner=str(r.get('winner') or '')
+                  if winner not in {home,away}: continue
+                  hp=float(h.get('marketConsensusProbability',h.get('fairProbability',0.5)) or 0.5)
+                  ap=float(a.get('marketConsensusProbability',a.get('fairProbability',0.5)) or 0.5)
+                  if abs(hp-ap)<1e-12: continue
+                  favorite='home' if hp>ap else 'away'; actual='home' if winner==home else 'away'
+                  fs=h if favorite=='home' else a; dsig=a if favorite=='home' else h
+                  def f(d,k,default=0.0):
+                      try:return float(d.get(k,default) or default)
+                      except:return default
+                  def i(d,k,default=0):
+                      try:return int(d.get(k,default) or default)
+                      except:return default
+                  rec={
+                    'date':str(r.get('slateDateEt') or slate.get('slateDateEt') or ''),
+                    'gamePk':str(r.get('officialGamePk') or ''),
+                    'favoriteWon':int(actual==favorite),
+                    'favoriteProb':max(hp,ap),'underdogProb':min(hp,ap),'probGap':abs(hp-ap),
+                    'favoriteDelta':f(fs,'delta'),'underdogDelta':f(dsig,'delta'),
+                    'deltaGap':f(fs,'delta')-f(dsig,'delta'),
+                    'favoriteDivergence':f(fs,'bookDivergence'),'underdogDivergence':f(dsig,'bookDivergence'),
+                    'divergenceGap':f(fs,'bookDivergence')-f(dsig,'bookDivergence'),
+                    'favoriteReversals':i(fs,'reversalCount'),'underdogReversals':i(dsig,'reversalCount'),
+                    'reversalGap':i(fs,'reversalCount')-i(dsig,'reversalCount'),
+                    'favoritePositiveMove':int('POSITIVE_MOVE' in (fs.get('tags') or [])),
+                    'favoriteNegativeMove':int('NEGATIVE_MOVE' in (fs.get('tags') or [])),
+                    'underdogPositiveMove':int('POSITIVE_MOVE' in (dsig.get('tags') or [])),
+                    'underdogNegativeMove':int('NEGATIVE_MOVE' in (dsig.get('tags') or [])),
+                    'favoriteBookAgreement':int('BOOK_AGREEMENT' in (fs.get('tags') or [])),
+                    'underdogBookAgreement':int('BOOK_AGREEMENT' in (dsig.get('tags') or [])),
+                  }
+                  records.append(rec)
+          records.sort(key=lambda x:(x['date'],x['gamePk']))
+          feature_names=[k for k in records[0] if k not in {'date','gamePk','favoriteWon'}] if records else []
+          X=np.array([[float(r[k]) for k in feature_names] for r in records],dtype=float) if records else np.empty((0,0))
+          y=np.array([r['favoriteWon'] for r in records],dtype=int) if records else np.array([],dtype=int)
+          dates=sorted(set(r['date'] for r in records))
+          split=max(1,int(len(dates)*0.8)) if dates else 0
+          train_dates=set(dates[:split]); test_dates=set(dates[split:])
+          train_idx=[n for n,r in enumerate(records) if r['date'] in train_dates]
+          test_idx=[n for n,r in enumerate(records) if r['date'] in test_dates]
+          models={
+            'logistic':make_pipeline(StandardScaler(),LogisticRegression(max_iter=5000,C=0.5)),
+            'hist_gradient_boosting':HistGradientBoostingClassifier(max_iter=300,learning_rate=0.05,max_leaf_nodes=15,l2_regularization=1.0,random_state=42),
+            'random_forest':RandomForestClassifier(n_estimators=500,max_depth=6,min_samples_leaf=20,class_weight='balanced_subsample',random_state=42,n_jobs=-1),
+          }
+          evaluations={}; best=None
+          if train_idx and test_idx and len(set(y[train_idx]))==2 and len(set(y[test_idx]))==2:
+              for name,m in models.items():
+                  m.fit(X[train_idx],y[train_idx]); p=m.predict_proba(X[test_idx])[:,1]; pred=(p>=0.5).astype(int)
+                  row={'accuracy':float(accuracy_score(y[test_idx],pred)),'brier':float(brier_score_loss(y[test_idx],p)),'logLoss':float(log_loss(y[test_idx],p)),'rocAuc':float(roc_auc_score(y[test_idx],p)),'testGames':len(test_idx)}
+                  evaluations[name]=row
+                  if best is None or (row['brier'],row['logLoss'],-row['accuracy']) < (evaluations[best]['brier'],evaluations[best]['logLoss'],-evaluations[best]['accuracy']):best=name
+          fav=[r for r in records if r['favoriteWon']==1]; dog=[r for r in records if r['favoriteWon']==0]
+          def mean(rows,k): return statistics.fmean(float(r[k]) for r in rows) if rows else None
+          def band(p):
+              if p<.55:return '50-55'
+              if p<.60:return '55-60'
+              if p<.65:return '60-65'
+              if p<.70:return '65-70'
+              return '70+'
+          bands=defaultdict(lambda:{'games':0,'favoriteWins':0})
+          for r in records:
+              b=band(r['favoriteProb']); bands[b]['games']+=1; bands[b]['favoriteWins']+=r['favoriteWon']
+          for v in bands.values():
+              v['favoriteWinRate']=v['favoriteWins']/v['games']; v['underdogWinRate']=1-v['favoriteWinRate']
+          contrasts=[]
+          for k in feature_names:
+              a=mean(fav,k); b=mean(dog,k)
+              if a is None or b is None: continue
+              contrasts.append({'feature':k,'favoriteWinMean':a,'underdogWinMean':b,'difference':a-b,'absoluteDifference':abs(a-b)})
+          contrasts.sort(key=lambda z:z['absoluteDifference'],reverse=True)
+          result={
+            'version':'MLB-R8-FAVORITE-UNDERDOG-PATTERN-EVIDENCE-v3-authoritative-corpus',
+            'sourceAuthority':'exact completedSlates immutable S3 artifact pointers from the live MLB historical optimizer state',
+            'postLockDataExcluded':True,
+            'artifactCount':len(artifact_keys),'missingArtifactCount':len(missing),'gameCount':len(records),
+            'favoriteWins':int(y.sum()) if len(y) else 0,'underdogWins':int(len(y)-y.sum()) if len(y) else 0,
+            'favoriteWinRate':float(y.mean()) if len(y) else None,'underdogWinRate':float(1-y.mean()) if len(y) else None,
+            'byFavoriteProbabilityBand':dict(sorted(bands.items())),
+            'chronologicalSplit':{'trainDateCount':len(train_dates),'testDateCount':len(test_dates),'trainGameCount':len(train_idx),'testGameCount':len(test_idx),'firstTestDate':min(test_dates) if test_dates else None},
+            'outOfSampleModels':evaluations,'bestOutOfSampleModel':best,
+            'topNumericPatternContrasts':contrasts[:20],
+            'favoriteWinMeans':{k:mean(fav,k) for k in feature_names},
+            'underdogWinMeans':{k:mean(dog,k) for k in feature_names},
+            'promotionAuthorityChanged':False,'immutableHistoryRewritten':False,
+            'note':'Pattern evidence is diagnostic. Production promotion remains governed by chronological holdout/audit gates; Bedrock may audit hypotheses but cannot select winners or bypass the ML gate.'
+          }
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')
+          assert len(records)>=1000, {'gameCount':len(records),'artifactCount':len(artifact_keys),'missing':missing[:5]}
+          assert len(artifact_keys)>=100, {'artifactCount':len(artifact_keys)}
+          assert test_idx and evaluations, result
+          print(json.dumps({'games':len(records),'artifacts':len(artifact_keys),'best':best,'models':evaluations},sort_keys=True))
+          PY
+      - name: Bedrock hypothesis audit using the full authoritative corpus summary
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.load(open('runtime_reports/mlb_r8_favorite_underdog_patterns_latest.json'))
+          compact={k:p.get(k) for k in ['version','gameCount','artifactCount','favoriteWinRate','underdogWinRate','byFavoriteProbabilityBand','chronologicalSplit','outOfSampleModels','bestOutOfSampleModel','topNumericPatternContrasts']}
+          req={'messages':[{'role':'user','content':[{'text':json.dumps({'task':'Audit these MLB favorite/underdog diagnostics. Identify interactions and regime hypotheses worth testing next in chronological out-of-sample ML. Do not choose teams, do not use postgame information, and do not weaken promotion gates.','evidence':compact})}]}],'inferenceConfig':{'maxTokens':1600,'temperature':0.0}}
+          Path('/tmp/bedrock-request.json').write_text(json.dumps(req))
+          PY
+          aws bedrock-runtime invoke-model --region "${{ secrets.AWS_REGION }}" --model-id amazon.nova-lite-v1:0 --content-type application/json --accept application/json --body fileb:///tmp/bedrock-request.json /tmp/bedrock-pattern-audit-v2.json || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-r8-pattern-learning-v2-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_r8_favorite_underdog_patterns_latest.json
+            /tmp/status.json
+            /tmp/bedrock-pattern-audit-v2.json
+          retention-days: 90
+          if-no-files-found: warn
+      - name: Publish authoritative pattern proof
+        run: |
+          set -euo pipefail
+          cp "$REPORT_PATH" /tmp/pattern-proof.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git reset --hard HEAD
+            git clean -fd
+            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+            git checkout -B mlb-r8-pattern-v2-proof refs/remotes/origin/main
+            mkdir -p runtime_reports
+            cp /tmp/pattern-proof.json "$REPORT_PATH"
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish authoritative MLB favorite-underdog pattern evidence [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt*3))
+          done
+          exit 1
