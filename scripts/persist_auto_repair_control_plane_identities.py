@@ -162,7 +162,10 @@ def test_absent_optional_soccer_dlq_component_is_not_a_repair_failure(monkeypatc
     assert counts["attempts"] == 0
     assert writes and writes[0][0][1] == "NOT_DEPLOYED_OPTIONAL"
 '''
-    path.write_text(text.rstrip() + block + "\n", encoding="utf-8")
+    path.write_text(
+        text.rstrip() + block.rstrip() + "\n",
+        encoding="utf-8",
+    )
 
 
 def patch_workflows() -> None:
