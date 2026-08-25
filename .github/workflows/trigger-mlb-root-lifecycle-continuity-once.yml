@@ -1,0 +1,21 @@
+name: Trigger MLB root lifecycle continuity once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/trigger-mlb-root-lifecycle-continuity-once.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch registered root lifecycle workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-mlb-root-lifecycle-continuity-once.yml --repo "${{ github.repository }}" --ref main
