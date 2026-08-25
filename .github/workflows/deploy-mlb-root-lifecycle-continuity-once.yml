@@ -1,0 +1,311 @@
+name: Deploy MLB root lifecycle continuity once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-mlb-root-lifecycle-continuity-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-mlb-root-lifecycle-continuity-once
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-dev
+
+jobs:
+  deploy-reconcile-train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Checkout exact main source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup AWS SAM
+        uses: aws-actions/setup-sam@v2
+
+      - name: Test exact lifecycle source and validate template
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
+          python -m py_compile \
+            hello_world/mlb_prospective_row_repair.py \
+            scripts/reconcile_mlb_prospective_backlog.py \
+            scripts/reconcile_mlb_prospective_backlog_v4.py \
+            scripts/reconcile_mlb_prospective_backlog_v5.py \
+            scripts/invoke_mlb_trainer_with_retry.py
+          PYTHONPATH="hello_world:scripts:${PYTHONPATH:-}" python -m pytest -q \
+            tests/unit/test_mlb_terminal_durability_replay.py \
+            tests/unit/test_mlb_prospective_status_lifecycle_repair.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v4.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v5.py \
+            tests/unit/test_mlb_canonical_final_labels_v1.py \
+            tests/unit/test_mlb_daily_per_game_lock.py
+          grep -q 'v2-durable-cached-replay' hello_world/mlb_prospective_row_repair.py
+          grep -q 'official_status_terminal_durability_incomplete' \
+            scripts/reconcile_mlb_prospective_backlog_v4.py
+          sam validate --template-file template.yaml --lint
+          git diff --check
+
+      - name: Wait for root stack updateability
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 80); do
+            status=$(aws cloudformation describe-stacks \
+              --stack-name "$STACK_NAME" --region "$AWS_REGION" \
+              --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_MISSING)
+            echo "CloudFormation status: $status"
+            case "$status" in
+              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE|STACK_MISSING)
+                exit 0 ;;
+              *_IN_PROGRESS) sleep 15 ;;
+              *) echo "::error::Root stack not updateable: $status"; exit 1 ;;
+            esac
+          done
+          echo '::error::Timed out waiting for root stack updateability'
+          exit 1
+
+      - name: Build exact root stack source
+        id: identity
+        run: |
+          set -euo pipefail
+          rm -rf .aws-sam
+          TEMPLATE_SHA256=$(sha256sum template.yaml | awk '{print $1}')
+          echo "template_sha256=$TEMPLATE_SHA256" >> "$GITHUB_OUTPUT"
+          sam build --no-cached --template-file template.yaml
+
+      - name: Deploy exact lifecycle repair to root AWS stack
+        id: deploy
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+          TEMPLATE_SHA256: ${{ steps.identity.outputs.template_sha256 }}
+        run: |
+          set -euo pipefail
+          test -n "${ODDS_API_KEY_VALUE:-}"
+          test -n "${INQSI_ADMIN_API_TOKEN_VALUE:-}"
+          DEPLOY_RUN_ID="lifecycle-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "deploy_run_id=$DEPLOY_RUN_ID" >> "$GITHUB_OUTPUT"
+          parameter_overrides=(
+            "OddsApiKey=${ODDS_API_KEY_VALUE}"
+            "InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}"
+            "DeployGitSha=${GITHUB_SHA}"
+            "DeployTemplateSha256=${TEMPLATE_SHA256}"
+            "DeployRunId=${DEPLOY_RUN_ID}"
+          )
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides "${parameter_overrides[@]}"
+
+      - name: Prove deployed lock and trainer identity
+        env:
+          TEMPLATE_SHA256: ${{ steps.identity.outputs.template_sha256 }}
+          DEPLOY_RUN_ID: ${{ steps.deploy.outputs.deploy_run_id }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import boto3
+
+          cf=boto3.client('cloudformation',region_name=os.environ['AWS_REGION'])
+          lam=boto3.client('lambda',region_name=os.environ['AWS_REGION'])
+          checks={}
+          for logical in ('MLBDailyPickLockFunction','MLBMLTrainingFunction','MLBV3ReadFunction'):
+              physical=cf.describe_stack_resource(
+                  StackName=os.environ['STACK_NAME'],LogicalResourceId=logical
+              )['StackResourceDetail']['PhysicalResourceId']
+              config=lam.get_function_configuration(FunctionName=physical)
+              env=(config.get('Environment') or {}).get('Variables') or {}
+              checks[logical]={
+                  'functionName':physical,
+                  'state':config.get('State'),
+                  'lastUpdateStatus':config.get('LastUpdateStatus'),
+                  'gitSha':env.get('INQSI_DEPLOY_GIT_SHA'),
+                  'templateSha256':env.get('INQSI_DEPLOY_TEMPLATE_SHA256'),
+                  'deployRunId':env.get('INQSI_DEPLOY_RUN_ID'),
+              }
+              assert config.get('State') == 'Active', checks[logical]
+              assert config.get('LastUpdateStatus') == 'Successful', checks[logical]
+              assert env.get('INQSI_DEPLOY_GIT_SHA') == os.environ['GITHUB_SHA'], checks[logical]
+              assert env.get('INQSI_DEPLOY_TEMPLATE_SHA256') == os.environ['TEMPLATE_SHA256'], checks[logical]
+              assert env.get('INQSI_DEPLOY_RUN_ID') == os.environ['DEPLOY_RUN_ID'], checks[logical]
+          open('/tmp/mlb-root-lifecycle-identity.json','w').write(
+              json.dumps(checks,indent=2,sort_keys=True)+'\n'
+          )
+          print(json.dumps(checks,indent=2,sort_keys=True))
+          PY
+
+      - name: Reconcile every official prospective slate safely
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-root-lifecycle runtime_reports
+          python scripts/reconcile_mlb_prospective_backlog_v5.py \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --max-slate-days 30 \
+            --output /tmp/mlb-root-lifecycle/backlog.json
+
+      - name: Invoke trainer and require admitted real rows
+        env:
+          AWS_MAX_ATTEMPTS: '10'
+          AWS_RETRY_MODE: standard
+        run: |
+          set -euo pipefail
+          TRAINER=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBMLTrainingFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$TRAINER"
+          test "$TRAINER" != 'None'
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER" --region "$AWS_REGION" \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"durable_lifecycle_continuity_training"}' \
+            --response /tmp/mlb-root-lifecycle/training.json \
+            --invocation /tmp/mlb-root-lifecycle/training-invocation.json \
+            --retry-execution-lease --deadline-seconds 1800 --retry-delay-seconds 20
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER" --region "$AWS_REGION" \
+            --payload '{"sport":"mlb","mode":"selection_capture","run":"durable_lifecycle_continuity_selection"}' \
+            --response /tmp/mlb-root-lifecycle/selection.json \
+            --invocation /tmp/mlb-root-lifecycle/selection-invocation.json \
+            --retry-execution-lease --deadline-seconds 1800 --retry-delay-seconds 20
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER" --region "$AWS_REGION" \
+            --status-training-result /tmp/mlb-root-lifecycle/training.json \
+            --status-selection-capture-result /tmp/mlb-root-lifecycle/selection.json \
+            --response /tmp/mlb-root-lifecycle/status.json \
+            --invocation /tmp/mlb-root-lifecycle/status-invocation.json
+          python - <<'PY'
+          import json
+          from datetime import datetime,timedelta
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          training=json.loads(Path('/tmp/mlb-root-lifecycle/training.json').read_text())
+          status=json.loads(Path('/tmp/mlb-root-lifecycle/status.json').read_text())
+          latest=((status.get('trainingHealth') or {}).get('latestRun') or training)
+          continuity=latest.get('canonicalSlateContinuity') or {}
+          accepted=int(latest.get('acceptedRowCount') or training.get('acceptedRowCount') or 0)
+          yesterday=(datetime.now(ZoneInfo('America/New_York')).date()-timedelta(days=1)).isoformat()
+          processed=str(continuity.get('processedThroughSlateDate') or '')
+          proof={
+              'acceptedRowCount':accepted,
+              'rejectedRowCount':latest.get('rejectedRowCount'),
+              'partitionCounts':latest.get('partitionCounts'),
+              'canonicalSlateContinuity':continuity,
+              'processedThroughSlateDate':processed,
+              'requiredProcessedThroughSlateDate':yesterday,
+              'modelTrained':latest.get('modelTrained'),
+              'liveInferenceAuthority':latest.get('liveInferenceAuthority'),
+              'productionAuthorityChanged':latest.get('productionAuthorityChanged'),
+          }
+          proof['ok']=(
+              accepted > 0
+              and not continuity.get('blockedSlateDate')
+              and processed >= yesterday
+              and proof['liveInferenceAuthority'] is not True
+              and proof['productionAuthorityChanged'] is not True
+          )
+          Path('/tmp/mlb-root-lifecycle/trainer-proof.json').write_text(
+              json.dumps(proof,indent=2,sort_keys=True,default=str)+'\n'
+          )
+          print(json.dumps(proof,indent=2,sort_keys=True,default=str))
+          assert proof['ok'] is True, proof
+          PY
+
+      - name: Publish durable root lifecycle evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json
+          from datetime import datetime,timezone
+          from pathlib import Path
+
+          def load(path):
+              p=Path(path)
+              if not p.exists(): return {'ok':False,'error':p.name+'_missing'}
+              try: return json.loads(p.read_text())
+              except Exception as exc: return {'ok':False,'error':type(exc).__name__}
+
+          identity=load('/tmp/mlb-root-lifecycle-identity.json')
+          backlog=load('/tmp/mlb-root-lifecycle/backlog.json')
+          trainer=load('/tmp/mlb-root-lifecycle/trainer-proof.json')
+          report={
+              'proofType':'MLB_ROOT_DURABLE_LIFECYCLE_CONTINUITY_DEPLOYMENT',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':'${{ github.sha }}',
+              'identity':identity,
+              'backlog':backlog,
+              'trainer':trainer,
+              'directTableWrite':False,
+              'postStartPredictionCreationAllowed':False,
+              'immutablePredictionRewriteAllowed':False,
+              'productionAuthorityChangedByRepair':False,
+              'secretExposed':False,
+          }
+          report['ok']=(
+              isinstance(identity,dict) and len(identity)==3
+              and backlog.get('ok') is True
+              and trainer.get('ok') is True
+          )
+          report['conclusion']='PASS' if report['ok'] else 'FAIL'
+          Path('runtime_reports/mlb_root_lifecycle_continuity_latest.json').write_text(
+              json.dumps(report,indent=2,sort_keys=True,default=str)+'\n'
+          )
+          print(json.dumps(report,indent=2,sort_keys=True,default=str))
+          PY
+          cp runtime_reports/mlb_root_lifecycle_continuity_latest.json \
+            /tmp/mlb_root_lifecycle_continuity_latest.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-root-lifecycle-proof origin/main
+            cp /tmp/mlb_root_lifecycle_continuity_latest.json \
+              runtime_reports/mlb_root_lifecycle_continuity_latest.json
+            git add runtime_reports/mlb_root_lifecycle_continuity_latest.json
+            git diff --cached --quiet || \
+              git commit -m 'Publish MLB root lifecycle continuity proof [skip ci]'
+            git push origin HEAD:main && break
+            test "$attempt" != 5
+            sleep $((attempt*3))
+          done
+          python - <<'PY'
+          import json
+          report=json.load(open('/tmp/mlb_root_lifecycle_continuity_latest.json'))
+          assert report.get('ok') is True, report
+          print('MLB root durable lifecycle continuity: PASS')
+          PY
