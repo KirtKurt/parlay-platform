@@ -221,3 +221,49 @@ def test_source_contains_explicit_non_authority_guards():
         '"gate_relaxation_allowed": False',
     ):
         assert marker in source
+
+
+def test_absent_optional_soccer_dlq_component_is_not_a_repair_failure(monkeypatch):
+    module = load_module(monkeypatch, "soccer")
+    component = next(
+        row
+        for row in module.SPORT_CONFIGS["soccer"]
+        if row[1] == "SoccerDlqRecoveryFunction"
+    )
+
+    class MissingOptionalResource:
+        @staticmethod
+        def describe_stack_resource(**kwargs):
+            logical_id = kwargs["LogicalResourceId"]
+            raise module.ClientError(
+                {
+                    "Error": {
+                        "Code": "ValidationError",
+                        "Message": (
+                            f"Logical Resource ID '{logical_id}' doesn't exist"
+                        ),
+                    }
+                },
+                "DescribeStackResource",
+            )
+
+    writes = []
+    monkeypatch.setattr(module, "CFN", MissingOptionalResource())
+    monkeypatch.setattr(
+        module,
+        "put_component",
+        lambda *args, **kwargs: writes.append((args, kwargs)),
+    )
+
+    detail, okay, counts = module.attempt(
+        component,
+        module.now(),
+        dry_run=True,
+    )
+
+    assert okay is True
+    assert detail["optional_not_deployed"] is True
+    assert detail["repair"]["status"] == "NOT_DEPLOYED_OPTIONAL"
+    assert counts["failures"] == 0
+    assert counts["attempts"] == 0
+    assert writes and writes[0][0][1] == "NOT_DEPLOYED_OPTIONAL"

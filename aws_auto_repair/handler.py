@@ -71,6 +71,7 @@ SPORT_CONFIGS: Mapping[str, tuple[tuple[Any, ...], ...]] = {
 LEASE_MARKERS = ("executionleaseunavailable", "execution_lease_unavailable", "lease unavailable", "lease held", "overlap_skipped")
 EXTERNAL_MARKERS = ("daily_token_quota", "too many tokens per day", "throttlingexception", "deferred_bbd_rate_limit", "deferred_shared_quota_reserve", "shared_quota_reserve", "provider_rate_limit", "too many requests", "service unavailable")
 DATA_MARKERS = ("bbd_kickoff_missing", "nfl_team_unrecognized", "authoritative kickoff", "missing authoritative", "source contract", "three_source_game_coverage_incomplete", "authoritative_card_deadline_missed", "no_future_pre_cutoff_slate")
+OPTIONAL_LOGICAL_IDS = frozenset({"SoccerDlqRecoveryFunction"})
 
 
 def now() -> datetime:
@@ -103,6 +104,26 @@ def ddb(value: Any) -> Any:
 
 def conditional(exc: ClientError) -> bool:
     return str((exc.response.get("Error") or {}).get("Code") or "") == "ConditionalCheckFailedException"
+
+
+
+def optional_logical_resource_absent(logical_id: str, exc: Exception) -> bool:
+    """Recognize only an explicitly optional logical resource absent from its stack."""
+
+    if logical_id not in OPTIONAL_LOGICAL_IDS or not isinstance(exc, ClientError):
+        return False
+    error = exc.response.get("Error") or {}
+    code = str(error.get("Code") or "")
+    message = str(error.get("Message") or "")
+    lowered = message.lower()
+    return bool(
+        code == "ValidationError"
+        and logical_id.lower() in lowered
+        and any(
+            marker in lowered
+            for marker in ("does not exist", "doesn't exist", "not found")
+        )
+    )
 
 
 def acquire(owner: str, observed: datetime) -> bool:
@@ -330,6 +351,21 @@ def attempt(component: tuple[Any, ...], observed: datetime, dry_run: bool) -> tu
         else:
             detail["repair"] = {"status": "NOT_REQUIRED"}
     except Exception as exc:
+        if optional_logical_resource_absent(str(logical_id), exc):
+            evidence = f"OPTIONAL_LOGICAL_RESOURCE_NOT_DEPLOYED:{logical_id}"
+            next_at = observed + timedelta(seconds=DATA_COOLDOWN)
+            put_component(
+                name,
+                "NOT_DEPLOYED_OPTIONAL",
+                next_at,
+                evidence,
+            )
+            detail["optional_not_deployed"] = True
+            detail["repair"] = {
+                "status": "NOT_DEPLOYED_OPTIONAL",
+                "next_attempt_at": iso(next_at),
+            }
+            return detail, True, counts
         classification, seconds, evidence = classify(error=exc)
         next_at = observed + timedelta(seconds=seconds)
         put_component(name, classification, next_at, evidence)
