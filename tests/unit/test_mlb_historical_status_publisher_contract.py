@@ -34,4 +34,7 @@ def test_next_round_workflow_is_readiness_aware():
         in source
     )
     assert "--template mlb_historical_optimizer/template.yaml" in source
-    assert "Advance only when the canonical next round is ready" in source
+    assert (
+        "Advance bounded historical pipeline until it waits or reaches a new experiment"
+        in source
+    )
