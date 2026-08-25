@@ -1,0 +1,53 @@
+{
+  "proofType": "MLB_AUTO_REPAIR_SCHEDULE_IDENTITY_ACCEPTANCE_V1",
+  "createdAtUtc": "2026-08-25T18:51:20.224635+00:00",
+  "sourceSha": "b6fe9a30ae11297ded4e0a1b79f0529d396e37de",
+  "scope": "mlb-auto-only",
+  "rootCause": "CANONICAL_SCHEDULE_NOT_FOUND:MLBAutoLLMFunction",
+  "previousConfiguredRulePrefix": "parlay-platform-mlb-auto-llm-",
+  "correctedConfiguredRulePrefix": "parlay-platform-mlb-auto-",
+  "canonicalRule": "parlay-platform-mlb-auto--MLBAutoLLMFunctionAutonom-2Fnhw1x0m9iq",
+  "canonicalSchedule": {
+    "state": "ENABLED",
+    "expression": "cron(2/5 * * * ? *)",
+    "targetPayload": {
+      "mode": "autonomous_cycle"
+    }
+  },
+  "targetHealthAfterFix": {
+    "healthy": true,
+    "reason": "HEALTHY",
+    "lookbackMinutes": 18,
+    "invocations": 3,
+    "errors": 0,
+    "latestInvocationAtUtc": "2026-08-25T18:39:00+00:00"
+  },
+  "controllerAfterFix": {
+    "ok": true,
+    "status": "HEALTHY_OR_REPAIRED",
+    "repairStatus": "NOT_REQUIRED",
+    "repairFailures": 0,
+    "unhealthyComponents": 0
+  },
+  "alarm": {
+    "name": "parlay-platform-auto-repair-mlb-auto-AutoRepairUnresolvedFailureAlarm-AOubAIJG88TV",
+    "previousState": "ALARM",
+    "previousDatapoint": 2.0,
+    "previousDatapointAtUtc": "2026-08-25T15:37:00+00:00",
+    "finalState": "OK",
+    "finalDatapoint": 0.0,
+    "finalDatapointAtUtc": "2026-08-25T18:46:00+00:00",
+    "transitionedToOkAtUtc": "2026-08-25T18:51:08.199+00:00"
+  },
+  "workflowRunId": 32885608983,
+  "otherSportsDeployed": false,
+  "directSportTableWrite": false,
+  "targetFunctionInvokedByAcceptance": false,
+  "productionAuthorityChanged": false,
+  "postStartPredictionCreationAllowed": false,
+  "immutablePredictionRewriteAllowed": false,
+  "gateRelaxationAllowed": false,
+  "secretExposed": false,
+  "ok": true,
+  "conclusion": "PASS"
+}
