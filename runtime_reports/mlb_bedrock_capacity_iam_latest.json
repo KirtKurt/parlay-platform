@@ -27,7 +27,7 @@
       "us.amazon.nova-2-lite-v1:0",
       "global.amazon.nova-2-lite-v1:0"
     ],
-    "dailyThrottleStillPresent": true,
+    "dailyThrottleStillPresent": false,
     "gptOssRouteCount": 6,
     "iamInvocationPermitted": true,
     "mainFunction": "parlay-platform-mlb-auto-llm-MLBAutoLLMFunction-12y7VtBpCSdF",
@@ -38,20 +38,9 @@
     "smokeFunctionError": null,
     "smokeInvocation": {
       "attemptedModelIds": [
-        "us-east-2::us.amazon.nova-2-lite-v1:0",
-        "us-east-2::us.amazon.nova-lite-v1:0",
-        "us-east-2::us.amazon.nova-micro-v1:0",
-        "us-east-2::us.amazon.nova-premier-v1:0",
-        "us-east-2::us.amazon.nova-pro-v1:0",
-        "us-west-2::us.amazon.nova-2-lite-v1:0",
-        "us-west-2::us.amazon.nova-lite-v1:0",
-        "us-west-2::us.amazon.nova-micro-v1:0",
-        "us-west-2::us.amazon.nova-premier-v1:0",
-        "us-west-2::us.amazon.nova-pro-v1:0",
-        "us.amazon.nova-2-lite-v1:0",
-        "us.amazon.nova-lite-v1:0"
+        "us-east-2::us.amazon.nova-2-lite-v1:0"
       ],
-      "bedrockAvailable": false,
+      "bedrockAvailable": true,
       "configuredModelCount": 12,
       "configuredRegions": [
         "us-east-1",
@@ -59,110 +48,18 @@
         "us-west-2"
       ],
       "decisionAuthority": "BEDROCK_LLM",
-      "errors": [
-        {
-          "endpointFamily": "bedrock-runtime-converse",
-          "errorCode": "ThrottlingException",
-          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-          "modelId": "us.amazon.nova-2-lite-v1:0",
-          "region": "us-east-2",
-          "routeId": "us-east-2::us.amazon.nova-2-lite-v1:0"
-        },
-        {
-          "endpointFamily": "bedrock-runtime-converse",
-          "errorCode": "ThrottlingException",
-          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-          "modelId": "us.amazon.nova-lite-v1:0",
-          "region": "us-east-2",
-          "routeId": "us-east-2::us.amazon.nova-lite-v1:0"
-        },
-        {
-          "endpointFamily": "bedrock-runtime-converse",
-          "errorCode": "ThrottlingException",
-          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-          "modelId": "us.amazon.nova-micro-v1:0",
-          "region": "us-east-2",
-          "routeId": "us-east-2::us.amazon.nova-micro-v1:0"
-        },
-        {
-          "endpointFamily": "bedrock-runtime-converse",
-          "errorCode": "ThrottlingException",
-          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens, please wait before trying again.",
-          "modelId": "us.amazon.nova-premier-v1:0",
-          "region": "us-east-2",
-          "routeId": "us-east-2::us.amazon.nova-premier-v1:0"
-        },
-        {
-          "endpointFamily": "bedrock-runtime-converse",
-          "errorCode": "ThrottlingException",
-          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-          "modelId": "us.amazon.nova-pro-v1:0",
-          "region": "us-east-2",
-          "routeId": "us-east-2::us.amazon.nova-pro-v1:0"
-        },
-        {
-          "endpointFamily": "bedrock-runtime-converse",
-          "errorCode": "ThrottlingException",
-          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-          "modelId": "us.amazon.nova-2-lite-v1:0",
-          "region": "us-west-2",
-          "routeId": "us-west-2::us.amazon.nova-2-lite-v1:0"
-        },
-        {
-          "endpointFamily": "bedrock-runtime-converse",
-          "errorCode": "ThrottlingException",
-          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-          "modelId": "us.amazon.nova-lite-v1:0",
-          "region": "us-west-2",
-          "routeId": "us-west-2::us.amazon.nova-lite-v1:0"
-        },
-        {
-          "endpointFamily": "bedrock-runtime-converse",
-          "errorCode": "ThrottlingException",
-          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-          "modelId": "us.amazon.nova-micro-v1:0",
-          "region": "us-west-2",
-          "routeId": "us-west-2::us.amazon.nova-micro-v1:0"
-        },
-        {
-          "endpointFamily": "bedrock-runtime-converse",
-          "errorCode": "ThrottlingException",
-          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens, please wait before trying again.",
-          "modelId": "us.amazon.nova-premier-v1:0",
-          "region": "us-west-2",
-          "routeId": "us-west-2::us.amazon.nova-premier-v1:0"
-        },
-        {
-          "endpointFamily": "bedrock-runtime-converse",
-          "errorCode": "ThrottlingException",
-          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-          "modelId": "us.amazon.nova-pro-v1:0",
-          "region": "us-west-2",
-          "routeId": "us-west-2::us.amazon.nova-pro-v1:0"
-        },
-        {
-          "endpointFamily": "bedrock-runtime-converse",
-          "errorCode": "ThrottlingException",
-          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-          "modelId": "us.amazon.nova-2-lite-v1:0",
-          "region": "us-east-1",
-          "routeId": "us.amazon.nova-2-lite-v1:0"
-        },
-        {
-          "endpointFamily": "bedrock-runtime-converse",
-          "errorCode": "ThrottlingException",
-          "message": "An error occurred (ThrottlingException) when calling the Converse operation (reached max retries: 1): Too many tokens per day, please wait before trying again.",
-          "modelId": "us.amazon.nova-lite-v1:0",
-          "region": "us-east-1",
-          "routeId": "us.amazon.nova-lite-v1:0"
-        }
-      ],
+      "endpointFamily": "bedrock-runtime-converse",
+      "errorsBeforeSuccess": [],
       "failoverEnabled": true,
       "mantleModelCount": 0,
       "mantleModelIds": [],
       "mlFallbackAttempted": false,
-      "ok": false,
+      "modelId": "us.amazon.nova-2-lite-v1:0",
+      "ok": true,
+      "region": "us-east-2",
+      "responseNonEmpty": true,
       "routeAttemptLimit": 12,
+      "routeId": "us-east-2::us.amazon.nova-2-lite-v1:0",
       "routeSelectionPolicy": "us-cross-region,global-cross-region,direct",
       "runtimeModelCount": 32,
       "runtimeModelIds": [
@@ -203,8 +100,8 @@
     }
   },
   "circuitBreakerAdded": false,
-  "completedAtUtc": "2026-08-25T17:44:54.758608+00:00",
-  "createdAtUtc": "2026-08-25T17:43:57.831843+00:00",
+  "completedAtUtc": "2026-08-25T17:50:23.969485+00:00",
+  "createdAtUtc": "2026-08-25T17:49:27.769608+00:00",
   "dedicatedCapacity": {
     "commitmentDuration": null,
     "created": false,
@@ -1139,69 +1036,139 @@
   "purchaseProvisionedThroughput": true,
   "quotaRequests": [
     {
-      "errors": [
+      "errors": [],
+      "existingRequests": [
         {
           "adjustable": true,
-          "code": "IllegalArgumentException",
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
-          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
-          "modelFamilies": [
-            "amazon_nova_micro"
-          ],
-          "quotaCode": "L-DC7FF66C",
-          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Micro",
-          "type": "IllegalArgumentException",
-          "unit": "None"
-        },
-        {
-          "adjustable": true,
-          "code": "IllegalArgumentException",
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
-          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "caseId": "178768003600374",
+          "currentValue": 20.0,
+          "desiredValue": 2000.0,
+          "existingDesiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
-          "quotaCode": "L-71C69B70",
-          "quotaName": "Global cross-region model inference tokens per minute for Amazon Nova 2 Lite",
-          "type": "IllegalArgumentException",
+          "quotaCode": "L-D5F39C2F",
+          "quotaName": "Global cross-region model inference requests per minute for Amazon Nova 2 Lite",
+          "status": "CASE_OPENED",
           "unit": "None"
         },
         {
           "adjustable": true,
-          "code": "IllegalArgumentException",
+          "caseId": "178768003600157",
           "currentValue": 0.0,
-          "desiredValue": 2000000.0,
-          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
-          "modelFamilies": [
-            "amazon_nova_2_lite"
-          ],
-          "quotaCode": "L-C6F5908D",
-          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova 2 Lite",
-          "type": "IllegalArgumentException",
-          "unit": "None"
-        },
-        {
-          "adjustable": true,
-          "code": "IllegalArgumentException",
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
-          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "desiredValue": 1.0,
+          "existingDesiredValue": 1.0,
           "modelFamilies": [
             "amazon_nova_lite"
           ],
-          "quotaCode": "L-7C42E72A",
-          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Lite",
-          "type": "IllegalArgumentException",
+          "quotaCode": "L-127FC9D0",
+          "quotaName": "Model units per provisioned model for the 300k context length variant for Amazon Nova Lite",
+          "status": "CASE_OPENED",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": "178768003600052",
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "existingDesiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-07D3BCF0",
+          "quotaName": "Model units per provisioned model for Amazon Nova 2 Lite V1.0 256K",
+          "status": "CASE_OPENED",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": "178768003700730",
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "existingDesiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-9C8C5911",
+          "quotaName": "Model units per provisioned model for the 24k context length variant for Amazon Nova Pro",
+          "status": "CASE_OPENED",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": "178768003700722",
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "existingDesiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-AC096F71",
+          "quotaName": "Model units per provisioned model for the 128k context length variant for Amazon Nova Micro",
+          "status": "CASE_OPENED",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": "178768003700062",
+          "currentValue": 2000000.0,
+          "desiredValue": 20000000.0,
+          "existingDesiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-C0326783",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Pro",
+          "status": "CASE_OPENED",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": "178768003700647",
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "existingDesiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_lite"
+          ],
+          "quotaCode": "L-4532261E",
+          "quotaName": "Model units per provisioned model for the 24k context length variant for Amazon Nova Lite ",
+          "status": "CASE_OPENED",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": "178768003700992",
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "existingDesiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_micro"
+          ],
+          "quotaCode": "L-E0B2EE2A",
+          "quotaName": "Model units per provisioned model for the 24k context length variant for Amazon Nova Micro ",
+          "status": "CASE_OPENED",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": "178768003700379",
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "existingDesiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-E48B7984",
+          "quotaName": "Model units per provisioned model for the 300k context length variant for Amazon Nova Pro",
+          "status": "CASE_OPENED",
           "unit": "None"
         }
       ],
-      "existingRequests": [],
       "matchedQuotas": [
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 200.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_lite"
@@ -1212,7 +1179,7 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
+          "currentValue": 20.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
@@ -1223,7 +1190,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_micro"
@@ -1234,8 +1201,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 230400000.0,
+          "desiredValue": 2304000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
           ],
@@ -1256,8 +1223,8 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
           "modelFamilies": [
             "amazon_nova_micro"
           ],
@@ -1267,7 +1234,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_lite"
@@ -1289,8 +1256,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 4000000.0,
+          "desiredValue": 40000000.0,
           "modelFamilies": [
             "amazon_nova_micro"
           ],
@@ -1300,8 +1267,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 4000000.0,
+          "desiredValue": 40000000.0,
           "modelFamilies": [
             "amazon_nova_micro"
           ],
@@ -1311,7 +1278,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
@@ -1322,7 +1289,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 40000.0,
           "desiredValue": 2000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -1333,8 +1300,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 216000000.0,
+          "desiredValue": 2160000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -1344,7 +1311,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 10.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -1355,7 +1322,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 13.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -1366,7 +1333,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 20.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
@@ -1377,8 +1344,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 100000000.0,
+          "desiredValue": 1000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
           ],
@@ -1399,8 +1366,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 4000000.0,
+          "desiredValue": 40000000.0,
           "modelFamilies": [
             "amazon_nova_lite"
           ],
@@ -1410,8 +1377,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 216000000.0,
+          "desiredValue": 2160000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -1432,8 +1399,8 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -1443,7 +1410,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
@@ -1454,8 +1421,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 207360000.0,
+          "desiredValue": 2073600000.0,
           "modelFamilies": [
             "amazon_nova_micro"
           ],
@@ -1465,7 +1432,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 20.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
@@ -1476,8 +1443,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 4000000.0,
+          "desiredValue": 40000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -1487,8 +1454,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 1000000.0,
+          "desiredValue": 10000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
           ],
@@ -1509,8 +1476,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 184320000.0,
+          "desiredValue": 1843200000.0,
           "modelFamilies": [
             "amazon_nova_pro"
           ],
@@ -1520,8 +1487,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 564480001.0,
+          "desiredValue": 5644800010.0,
           "modelFamilies": [
             "amazon_nova_lite"
           ],
@@ -1531,8 +1498,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 564480001.0,
+          "desiredValue": 5644800010.0,
           "modelFamilies": [
             "amazon_nova_lite"
           ],
@@ -1542,7 +1509,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 25.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -1553,8 +1520,8 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 2000000.0,
+          "desiredValue": 20000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
           ],
@@ -1564,8 +1531,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 100000000.0,
+          "desiredValue": 1000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
           ],
@@ -1575,8 +1542,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 5400000000.0,
+          "desiredValue": 54000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
           ],
@@ -1586,8 +1553,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 4000000.0,
+          "desiredValue": 40000000.0,
           "modelFamilies": [
             "amazon_nova_lite"
           ],
@@ -1597,7 +1564,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 1.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -1608,8 +1575,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 800000.0,
+          "desiredValue": 8000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
           ],
@@ -1630,8 +1597,8 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -1641,7 +1608,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 2160000.0,
           "desiredValue": 100000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -1652,8 +1619,8 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
           "modelFamilies": [
             "amazon_nova_lite"
           ],
@@ -1663,7 +1630,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 200.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_micro"
@@ -1685,7 +1652,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_lite"
@@ -1696,7 +1663,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_micro"
@@ -1707,8 +1674,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 432000000.0,
+          "desiredValue": 4320000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -1740,8 +1707,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 207360000.0,
+          "desiredValue": 2073600000.0,
           "modelFamilies": [
             "amazon_nova_micro"
           ],
@@ -1751,8 +1718,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 5400000000.0,
+          "desiredValue": 54000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
           ],
@@ -1764,7 +1731,7 @@
       "nonAdjustableQuotas": [
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 200.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_lite"
@@ -1775,7 +1742,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_micro"
@@ -1786,8 +1753,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 230400000.0,
+          "desiredValue": 2304000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
           ],
@@ -1797,7 +1764,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_lite"
@@ -1808,8 +1775,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 4000000.0,
+          "desiredValue": 40000000.0,
           "modelFamilies": [
             "amazon_nova_micro"
           ],
@@ -1819,8 +1786,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 4000000.0,
+          "desiredValue": 40000000.0,
           "modelFamilies": [
             "amazon_nova_micro"
           ],
@@ -1830,7 +1797,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
@@ -1841,7 +1808,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 40000.0,
           "desiredValue": 2000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -1852,8 +1819,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 216000000.0,
+          "desiredValue": 2160000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -1863,7 +1830,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 10.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -1874,7 +1841,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 13.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -1885,7 +1852,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 20.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
@@ -1896,8 +1863,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 100000000.0,
+          "desiredValue": 1000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
           ],
@@ -1907,8 +1874,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 4000000.0,
+          "desiredValue": 40000000.0,
           "modelFamilies": [
             "amazon_nova_lite"
           ],
@@ -1918,8 +1885,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 216000000.0,
+          "desiredValue": 2160000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -1929,7 +1896,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
@@ -1940,8 +1907,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 207360000.0,
+          "desiredValue": 2073600000.0,
           "modelFamilies": [
             "amazon_nova_micro"
           ],
@@ -1951,7 +1918,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 20.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
@@ -1962,8 +1929,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 4000000.0,
+          "desiredValue": 40000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -1973,8 +1940,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 1000000.0,
+          "desiredValue": 10000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
           ],
@@ -1995,8 +1962,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 184320000.0,
+          "desiredValue": 1843200000.0,
           "modelFamilies": [
             "amazon_nova_pro"
           ],
@@ -2006,8 +1973,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 564480001.0,
+          "desiredValue": 5644800010.0,
           "modelFamilies": [
             "amazon_nova_lite"
           ],
@@ -2017,8 +1984,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 564480001.0,
+          "desiredValue": 5644800010.0,
           "modelFamilies": [
             "amazon_nova_lite"
           ],
@@ -2028,7 +1995,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 25.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -2039,8 +2006,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 100000000.0,
+          "desiredValue": 1000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
           ],
@@ -2050,8 +2017,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 5400000000.0,
+          "desiredValue": 54000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
           ],
@@ -2061,8 +2028,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 4000000.0,
+          "desiredValue": 40000000.0,
           "modelFamilies": [
             "amazon_nova_lite"
           ],
@@ -2072,7 +2039,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 1.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -2083,8 +2050,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 800000.0,
+          "desiredValue": 8000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
           ],
@@ -2094,7 +2061,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 2160000.0,
           "desiredValue": 100000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -2105,7 +2072,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 200.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_micro"
@@ -2127,7 +2094,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_lite"
@@ -2138,7 +2105,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_micro"
@@ -2149,8 +2116,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 432000000.0,
+          "desiredValue": 4320000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -2160,8 +2127,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 207360000.0,
+          "desiredValue": 2073600000.0,
           "modelFamilies": [
             "amazon_nova_micro"
           ],
@@ -2171,8 +2138,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 5400000000.0,
+          "desiredValue": 54000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
           ],
@@ -2181,132 +2148,62 @@
           "unit": "None"
         }
       ],
-      "ok": false,
+      "ok": true,
       "region": "us-east-1",
       "submittedRequests": [
         {
           "adjustable": true,
           "caseId": null,
-          "currentValue": 0.0,
-          "desiredValue": 2000.0,
-          "modelFamilies": [
-            "amazon_nova_2_lite"
-          ],
-          "quotaCode": "L-D5F39C2F",
-          "quotaName": "Global cross-region model inference requests per minute for Amazon Nova 2 Lite",
-          "requestId": "f8c24bce6f0a413489aed55427dd62454WsjsVq9",
-          "status": "PENDING",
-          "unit": "None"
-        },
-        {
-          "adjustable": true,
-          "caseId": null,
-          "currentValue": 0.0,
-          "desiredValue": 1.0,
-          "modelFamilies": [
-            "amazon_nova_lite"
-          ],
-          "quotaCode": "L-127FC9D0",
-          "quotaName": "Model units per provisioned model for the 300k context length variant for Amazon Nova Lite",
-          "requestId": "ca301e704ead4d30b6c3a4c70d7fd4c3zK5RA0gD",
-          "status": "PENDING",
-          "unit": "None"
-        },
-        {
-          "adjustable": true,
-          "caseId": null,
-          "currentValue": 0.0,
-          "desiredValue": 1.0,
-          "modelFamilies": [
-            "amazon_nova_2_lite"
-          ],
-          "quotaCode": "L-07D3BCF0",
-          "quotaName": "Model units per provisioned model for Amazon Nova 2 Lite V1.0 256K",
-          "requestId": "94f0e91037ca47779447ad3e71114e59ZLYM2yIM",
-          "status": "PENDING",
-          "unit": "None"
-        },
-        {
-          "adjustable": true,
-          "caseId": null,
-          "currentValue": 0.0,
-          "desiredValue": 1.0,
-          "modelFamilies": [
-            "amazon_nova_pro"
-          ],
-          "quotaCode": "L-9C8C5911",
-          "quotaName": "Model units per provisioned model for the 24k context length variant for Amazon Nova Pro",
-          "requestId": "6c0d6fcf37a44ef4bcf9a520313c840dytJh9Wdg",
-          "status": "PENDING",
-          "unit": "None"
-        },
-        {
-          "adjustable": true,
-          "caseId": null,
-          "currentValue": 0.0,
-          "desiredValue": 1.0,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
           "modelFamilies": [
             "amazon_nova_micro"
           ],
-          "quotaCode": "L-AC096F71",
-          "quotaName": "Model units per provisioned model for the 128k context length variant for Amazon Nova Micro",
-          "requestId": "c51d307630604ee99cf873806dc9cbdcOhs97W6z",
+          "quotaCode": "L-DC7FF66C",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Micro",
+          "requestId": "e8a74e3e82c944e095c5c50090119df91p7JpaXw",
           "status": "PENDING",
           "unit": "None"
         },
         {
           "adjustable": true,
           "caseId": null,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
           "modelFamilies": [
-            "amazon_nova_pro"
+            "amazon_nova_2_lite"
           ],
-          "quotaCode": "L-C0326783",
-          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Pro",
-          "requestId": "380d9c66ee7c4e7faec85a59c0b4db81c5qrqbXD",
+          "quotaCode": "L-71C69B70",
+          "quotaName": "Global cross-region model inference tokens per minute for Amazon Nova 2 Lite",
+          "requestId": "faff95de56eb4ed9afe86a53b84f4994XuBqvOSA",
           "status": "PENDING",
           "unit": "None"
         },
         {
           "adjustable": true,
           "caseId": null,
-          "currentValue": 0.0,
-          "desiredValue": 1.0,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-C6F5908D",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova 2 Lite",
+          "requestId": "19855e0ebd8e4325a8f67c5d14d8de1eAM6M8mHX",
+          "status": "PENDING",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": null,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
           "modelFamilies": [
             "amazon_nova_lite"
           ],
-          "quotaCode": "L-4532261E",
-          "quotaName": "Model units per provisioned model for the 24k context length variant for Amazon Nova Lite ",
-          "requestId": "bcc52ddcd89d4e348517c90b1e381db75E22PiLB",
-          "status": "PENDING",
-          "unit": "None"
-        },
-        {
-          "adjustable": true,
-          "caseId": null,
-          "currentValue": 0.0,
-          "desiredValue": 1.0,
-          "modelFamilies": [
-            "amazon_nova_micro"
-          ],
-          "quotaCode": "L-E0B2EE2A",
-          "quotaName": "Model units per provisioned model for the 24k context length variant for Amazon Nova Micro ",
-          "requestId": "b8fa58b17d954d478f3148a1d216df32TNsYb6UQ",
-          "status": "PENDING",
-          "unit": "None"
-        },
-        {
-          "adjustable": true,
-          "caseId": null,
-          "currentValue": 0.0,
-          "desiredValue": 1.0,
-          "modelFamilies": [
-            "amazon_nova_pro"
-          ],
-          "quotaCode": "L-E48B7984",
-          "quotaName": "Model units per provisioned model for the 300k context length variant for Amazon Nova Pro",
-          "requestId": "0547c5e1dd5f4fe19e475db6043ac335CIu6vTaT",
+          "quotaCode": "L-7C42E72A",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Lite",
+          "requestId": "f654fac86a974f848cef69170ca0112a4IsbpQjx",
           "status": "PENDING",
           "unit": "None"
         }
@@ -2316,66 +2213,67 @@
       "errors": [
         {
           "adjustable": true,
-          "code": "IllegalArgumentException",
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
-          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
-          "modelFamilies": [
-            "amazon_nova_micro"
-          ],
-          "quotaCode": "L-DC7FF66C",
-          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Micro",
-          "type": "IllegalArgumentException",
-          "unit": "None"
-        },
-        {
-          "adjustable": true,
-          "code": "IllegalArgumentException",
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
-          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
-          "modelFamilies": [
-            "amazon_nova_2_lite"
-          ],
-          "quotaCode": "L-71C69B70",
-          "quotaName": "Global cross-region model inference tokens per minute for Amazon Nova 2 Lite",
-          "type": "IllegalArgumentException",
-          "unit": "None"
-        },
-        {
-          "adjustable": true,
-          "code": "IllegalArgumentException",
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
-          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "code": "QuotaExceededException",
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
+          "message": "This account has reached the maximum number of open service quota increase (SQI) requests. Before opening another SQI request, wait for an open SQI request to be accepted or rejected.",
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
           "quotaCode": "L-C6F5908D",
           "quotaName": "Cross-region model inference tokens per minute for Amazon Nova 2 Lite",
-          "type": "IllegalArgumentException",
+          "type": "QuotaExceededException",
           "unit": "None"
         },
         {
           "adjustable": true,
-          "code": "IllegalArgumentException",
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
-          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "code": "QuotaExceededException",
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
+          "message": "This account has reached the maximum number of open service quota increase (SQI) requests. Before opening another SQI request, wait for an open SQI request to be accepted or rejected.",
           "modelFamilies": [
             "amazon_nova_lite"
           ],
           "quotaCode": "L-7C42E72A",
           "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Lite",
-          "type": "IllegalArgumentException",
+          "type": "QuotaExceededException",
           "unit": "None"
         }
       ],
-      "existingRequests": [],
+      "existingRequests": [
+        {
+          "adjustable": true,
+          "caseId": "178767986700885",
+          "currentValue": 20.0,
+          "desiredValue": 2000.0,
+          "existingDesiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-D5F39C2F",
+          "quotaName": "Global cross-region model inference requests per minute for Amazon Nova 2 Lite",
+          "status": "CASE_OPENED",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": "178767986700903",
+          "currentValue": 2000000.0,
+          "desiredValue": 20000000.0,
+          "existingDesiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-C0326783",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Pro",
+          "status": "CASE_OPENED",
+          "unit": "None"
+        }
+      ],
       "matchedQuotas": [
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 200.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_lite"
@@ -2386,7 +2284,7 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
+          "currentValue": 20.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
@@ -2397,8 +2295,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 230400000.0,
+          "desiredValue": 2304000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
           ],
@@ -2408,8 +2306,8 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
           "modelFamilies": [
             "amazon_nova_micro"
           ],
@@ -2419,7 +2317,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
@@ -2430,7 +2328,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 40000.0,
           "desiredValue": 2000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -2441,8 +2339,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 216000000.0,
+          "desiredValue": 2160000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -2452,7 +2350,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 13.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -2463,8 +2361,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 100000000.0,
+          "desiredValue": 1000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
           ],
@@ -2474,8 +2372,8 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -2485,7 +2383,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
@@ -2496,7 +2394,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 20.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
@@ -2507,8 +2405,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 1000000.0,
+          "desiredValue": 10000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
           ],
@@ -2518,8 +2416,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 564480001.0,
+          "desiredValue": 5644800010.0,
           "modelFamilies": [
             "amazon_nova_lite"
           ],
@@ -2529,7 +2427,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 25.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -2540,8 +2438,8 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 2000000.0,
+          "desiredValue": 20000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
           ],
@@ -2551,8 +2449,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 100000000.0,
+          "desiredValue": 1000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
           ],
@@ -2562,8 +2460,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 5400000000.0,
+          "desiredValue": 54000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
           ],
@@ -2573,7 +2471,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 1.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -2584,8 +2482,8 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -2595,7 +2493,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 2160000.0,
           "desiredValue": 100000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -2606,8 +2504,8 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
           "modelFamilies": [
             "amazon_nova_lite"
           ],
@@ -2617,7 +2515,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 200.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_micro"
@@ -2628,8 +2526,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 432000000.0,
+          "desiredValue": 4320000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -2639,8 +2537,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 207360000.0,
+          "desiredValue": 2073600000.0,
           "modelFamilies": [
             "amazon_nova_micro"
           ],
@@ -2650,8 +2548,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 5400000000.0,
+          "desiredValue": 54000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
           ],
@@ -2663,7 +2561,7 @@
       "nonAdjustableQuotas": [
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 200.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_lite"
@@ -2674,8 +2572,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 230400000.0,
+          "desiredValue": 2304000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
           ],
@@ -2685,7 +2583,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
@@ -2696,7 +2594,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 40000.0,
           "desiredValue": 2000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -2707,8 +2605,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 216000000.0,
+          "desiredValue": 2160000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -2718,7 +2616,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 13.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -2729,8 +2627,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 100000000.0,
+          "desiredValue": 1000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
           ],
@@ -2740,7 +2638,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
@@ -2751,7 +2649,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 20.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
@@ -2762,8 +2660,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 1000000.0,
+          "desiredValue": 10000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
           ],
@@ -2773,8 +2671,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 564480001.0,
+          "desiredValue": 5644800010.0,
           "modelFamilies": [
             "amazon_nova_lite"
           ],
@@ -2784,7 +2682,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 25.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -2795,8 +2693,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 100000000.0,
+          "desiredValue": 1000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
           ],
@@ -2806,8 +2704,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 5400000000.0,
+          "desiredValue": 54000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
           ],
@@ -2817,7 +2715,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 1.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -2828,7 +2726,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 2160000.0,
           "desiredValue": 100000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -2839,7 +2737,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 200.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_micro"
@@ -2850,8 +2748,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 432000000.0,
+          "desiredValue": 4320000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -2861,8 +2759,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 207360000.0,
+          "desiredValue": 2073600000.0,
           "modelFamilies": [
             "amazon_nova_micro"
           ],
@@ -2872,8 +2770,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 5400000000.0,
+          "desiredValue": 54000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
           ],
@@ -2888,28 +2786,28 @@
         {
           "adjustable": true,
           "caseId": null,
-          "currentValue": 0.0,
-          "desiredValue": 2000.0,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
           "modelFamilies": [
-            "amazon_nova_2_lite"
+            "amazon_nova_micro"
           ],
-          "quotaCode": "L-D5F39C2F",
-          "quotaName": "Global cross-region model inference requests per minute for Amazon Nova 2 Lite",
-          "requestId": "f97241da53bd4e12aa4abc23e0ceb9a26HvbI7Tz",
+          "quotaCode": "L-DC7FF66C",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Micro",
+          "requestId": "720e6666697848e493ff3f15b5ed9fe2giaKUbHC",
           "status": "PENDING",
           "unit": "None"
         },
         {
           "adjustable": true,
           "caseId": null,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
           "modelFamilies": [
-            "amazon_nova_pro"
+            "amazon_nova_2_lite"
           ],
-          "quotaCode": "L-C0326783",
-          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Pro",
-          "requestId": "1a0d87cc9b95423bb4fd8facf40216a3IH6VK6QJ",
+          "quotaCode": "L-71C69B70",
+          "quotaName": "Global cross-region model inference tokens per minute for Amazon Nova 2 Lite",
+          "requestId": "4365b27150fa4d7092c7f5ed57275841yLNPDTUE",
           "status": "PENDING",
           "unit": "None"
         }
@@ -2919,66 +2817,109 @@
       "errors": [
         {
           "adjustable": true,
-          "code": "IllegalArgumentException",
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
-          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "code": "QuotaExceededException",
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
+          "message": "This account has reached the maximum number of open service quota increase (SQI) requests. Before opening another SQI request, wait for an open SQI request to be accepted or rejected.",
           "modelFamilies": [
             "amazon_nova_micro"
           ],
           "quotaCode": "L-DC7FF66C",
           "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Micro",
-          "type": "IllegalArgumentException",
+          "type": "QuotaExceededException",
           "unit": "None"
         },
         {
           "adjustable": true,
-          "code": "IllegalArgumentException",
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
-          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "code": "QuotaExceededException",
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
+          "message": "This account has reached the maximum number of open service quota increase (SQI) requests. Before opening another SQI request, wait for an open SQI request to be accepted or rejected.",
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
           "quotaCode": "L-71C69B70",
           "quotaName": "Global cross-region model inference tokens per minute for Amazon Nova 2 Lite",
-          "type": "IllegalArgumentException",
+          "type": "QuotaExceededException",
           "unit": "None"
         },
         {
           "adjustable": true,
-          "code": "IllegalArgumentException",
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
-          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "code": "QuotaExceededException",
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
+          "message": "This account has reached the maximum number of open service quota increase (SQI) requests. Before opening another SQI request, wait for an open SQI request to be accepted or rejected.",
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
           "quotaCode": "L-C6F5908D",
           "quotaName": "Cross-region model inference tokens per minute for Amazon Nova 2 Lite",
-          "type": "IllegalArgumentException",
+          "type": "QuotaExceededException",
           "unit": "None"
         },
         {
           "adjustable": true,
-          "code": "IllegalArgumentException",
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
-          "message": "You must provide a quota value greater than the default quota value of 8000000.0",
+          "code": "QuotaExceededException",
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
+          "message": "This account has reached the maximum number of open service quota increase (SQI) requests. Before opening another SQI request, wait for an open SQI request to be accepted or rejected.",
           "modelFamilies": [
             "amazon_nova_lite"
           ],
           "quotaCode": "L-7C42E72A",
           "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Lite",
-          "type": "IllegalArgumentException",
+          "type": "QuotaExceededException",
           "unit": "None"
         }
       ],
-      "existingRequests": [],
+      "existingRequests": [
+        {
+          "adjustable": true,
+          "caseId": "178767989400802",
+          "currentValue": 20.0,
+          "desiredValue": 2000.0,
+          "existingDesiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-D5F39C2F",
+          "quotaName": "Global cross-region model inference requests per minute for Amazon Nova 2 Lite",
+          "status": "CASE_OPENED",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": "178767989400898",
+          "currentValue": 0.0,
+          "desiredValue": 1.0,
+          "existingDesiredValue": 1.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-07D3BCF0",
+          "quotaName": "Model units per provisioned model for Amazon Nova 2 Lite V1.0 256K",
+          "status": "CASE_OPENED",
+          "unit": "None"
+        },
+        {
+          "adjustable": true,
+          "caseId": "178767989400840",
+          "currentValue": 2000000.0,
+          "desiredValue": 20000000.0,
+          "existingDesiredValue": 2000000.0,
+          "modelFamilies": [
+            "amazon_nova_pro"
+          ],
+          "quotaCode": "L-C0326783",
+          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Pro",
+          "status": "CASE_OPENED",
+          "unit": "None"
+        }
+      ],
       "matchedQuotas": [
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 200.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_lite"
@@ -2989,7 +2930,7 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
+          "currentValue": 20.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
@@ -3000,8 +2941,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 230400000.0,
+          "desiredValue": 2304000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
           ],
@@ -3011,8 +2952,8 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
           "modelFamilies": [
             "amazon_nova_micro"
           ],
@@ -3033,7 +2974,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
@@ -3044,7 +2985,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 40000.0,
           "desiredValue": 2000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -3055,8 +2996,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 216000000.0,
+          "desiredValue": 2160000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -3066,8 +3007,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 100000000.0,
+          "desiredValue": 1000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
           ],
@@ -3077,8 +3018,8 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -3088,7 +3029,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
@@ -3099,7 +3040,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 20.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
@@ -3121,8 +3062,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 564480001.0,
+          "desiredValue": 5644800010.0,
           "modelFamilies": [
             "amazon_nova_lite"
           ],
@@ -3132,7 +3073,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 25.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -3143,8 +3084,8 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 2000000.0,
+          "desiredValue": 20000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
           ],
@@ -3154,8 +3095,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 100000000.0,
+          "desiredValue": 1000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
           ],
@@ -3165,8 +3106,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 5400000000.0,
+          "desiredValue": 54000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
           ],
@@ -3176,7 +3117,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 1.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -3187,8 +3128,8 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -3198,7 +3139,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 2160000.0,
           "desiredValue": 100000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -3209,8 +3150,8 @@
         },
         {
           "adjustable": true,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 8000000.0,
+          "desiredValue": 80000000.0,
           "modelFamilies": [
             "amazon_nova_lite"
           ],
@@ -3220,7 +3161,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 200.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_micro"
@@ -3242,8 +3183,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 432000000.0,
+          "desiredValue": 4320000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -3253,8 +3194,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 207360000.0,
+          "desiredValue": 2073600000.0,
           "modelFamilies": [
             "amazon_nova_micro"
           ],
@@ -3264,8 +3205,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 5400000000.0,
+          "desiredValue": 54000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
           ],
@@ -3277,7 +3218,7 @@
       "nonAdjustableQuotas": [
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 200.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_lite"
@@ -3288,8 +3229,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 230400000.0,
+          "desiredValue": 2304000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
           ],
@@ -3299,7 +3240,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
@@ -3310,7 +3251,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 40000.0,
           "desiredValue": 2000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -3321,8 +3262,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 216000000.0,
+          "desiredValue": 2160000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -3332,8 +3273,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 100000000.0,
+          "desiredValue": 1000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
           ],
@@ -3343,7 +3284,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 100.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
@@ -3354,7 +3295,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 20.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
@@ -3376,8 +3317,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 564480001.0,
+          "desiredValue": 5644800010.0,
           "modelFamilies": [
             "amazon_nova_lite"
           ],
@@ -3387,7 +3328,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 25.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -3398,8 +3339,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
+          "currentValue": 100000000.0,
+          "desiredValue": 1000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
           ],
@@ -3409,8 +3350,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 5400000000.0,
+          "desiredValue": 54000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_20b"
           ],
@@ -3420,7 +3361,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 1.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -3431,7 +3372,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 2160000.0,
           "desiredValue": 100000000.0,
           "modelFamilies": [
             "amazon_nova_pro"
@@ -3442,7 +3383,7 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
+          "currentValue": 200.0,
           "desiredValue": 2000.0,
           "modelFamilies": [
             "amazon_nova_micro"
@@ -3464,8 +3405,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 432000000.0,
+          "desiredValue": 4320000000.0,
           "modelFamilies": [
             "amazon_nova_2_lite"
           ],
@@ -3475,8 +3416,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 207360000.0,
+          "desiredValue": 2073600000.0,
           "modelFamilies": [
             "amazon_nova_micro"
           ],
@@ -3486,8 +3427,8 @@
         },
         {
           "adjustable": false,
-          "currentValue": 0.0,
-          "desiredValue": 100000000.0,
+          "currentValue": 5400000000.0,
+          "desiredValue": 54000000000.0,
           "modelFamilies": [
             "openai_gpt_oss_120b"
           ],
@@ -3498,50 +3439,7 @@
       ],
       "ok": false,
       "region": "us-west-2",
-      "submittedRequests": [
-        {
-          "adjustable": true,
-          "caseId": null,
-          "currentValue": 0.0,
-          "desiredValue": 2000.0,
-          "modelFamilies": [
-            "amazon_nova_2_lite"
-          ],
-          "quotaCode": "L-D5F39C2F",
-          "quotaName": "Global cross-region model inference requests per minute for Amazon Nova 2 Lite",
-          "requestId": "387986a6bb1444ba8bf592e946edfe82UElRNwqB",
-          "status": "PENDING",
-          "unit": "None"
-        },
-        {
-          "adjustable": true,
-          "caseId": null,
-          "currentValue": 0.0,
-          "desiredValue": 1.0,
-          "modelFamilies": [
-            "amazon_nova_2_lite"
-          ],
-          "quotaCode": "L-07D3BCF0",
-          "quotaName": "Model units per provisioned model for Amazon Nova 2 Lite V1.0 256K",
-          "requestId": "07b265b1bb59422ba674745407968a4fuYl2fAOj",
-          "status": "PENDING",
-          "unit": "None"
-        },
-        {
-          "adjustable": true,
-          "caseId": null,
-          "currentValue": 0.0,
-          "desiredValue": 2000000.0,
-          "modelFamilies": [
-            "amazon_nova_pro"
-          ],
-          "quotaCode": "L-C0326783",
-          "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Pro",
-          "requestId": "445e258dcaff4860bfa7f2ecba1e77b2Y3Yfdw6C",
-          "status": "PENDING",
-          "unit": "None"
-        }
-      ]
+      "submittedRequests": []
     }
   ],
   "regions": [
