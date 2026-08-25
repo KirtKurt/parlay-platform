@@ -2,9 +2,8 @@ name: Repair MLB root lifecycle concurrency once
 
 on:
   push:
-    branches: [main]
-    paths:
-      - '.github/workflows/repair-mlb-root-lifecycle-concurrency-once.yml'
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -21,39 +20,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Give MLB lifecycle deployment a lossless dedicated queue
+      - name: Give MLB lifecycle deployment a dedicated queue
+        shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          for attempt in 1 2 3 4 5; do
-            git fetch origin main
-            git checkout -B mlb-lifecycle-concurrency-repair origin/main
-            python - <<'PY'
-          from pathlib import Path
-          path=Path('.github/workflows/deploy-mlb-root-lifecycle-continuity-once.yml')
-          text=path.read_text()
-          old='  group: parlay-platform-deploy\n  cancel-in-progress: false\n'
-          new='  group: mlb-root-lifecycle-continuity-deploy\n  cancel-in-progress: false\n'
-          if old in text:
-              assert text.count(old) == 1, text.count(old)
-              path.write_text(text.replace(old,new,1))
-          else:
-              assert new in text, 'expected lifecycle concurrency block not found'
-          PY
-            grep -A2 '^concurrency:' .github/workflows/deploy-mlb-root-lifecycle-continuity-once.yml
-            if git diff --quiet -- .github/workflows/deploy-mlb-root-lifecycle-continuity-once.yml; then
-              echo 'MLB lifecycle deployment already has dedicated concurrency.'
-              exit 0
-            fi
-            git add .github/workflows/deploy-mlb-root-lifecycle-continuity-once.yml
-            git commit -m 'Isolate MLB lifecycle deployment concurrency'
-            if git push origin HEAD:main; then
-              exit 0
-            fi
-            test "$attempt" != 5
-            sleep $((attempt * 3))
-          done
-          exit 1
-
-# registered retry after initial workflow installation
+          git fetch origin main
+          git checkout -B mlb-lifecycle-concurrency-repair origin/main
+          file='.github/workflows/deploy-mlb-root-lifecycle-continuity-once.yml'
+          if grep -q '^  group: parlay-platform-deploy$' "$file"; then
+            sed -i 's/^  group: parlay-platform-deploy$/  group: mlb-root-lifecycle-continuity-deploy/' "$file"
+          fi
+          grep -q '^  group: mlb-root-lifecycle-continuity-deploy$' "$file"
+          if git diff --quiet -- "$file"; then
+            echo 'MLB lifecycle deployment already has dedicated concurrency.'
+            exit 0
+          fi
+          git add "$file"
+          git commit -m 'Isolate MLB lifecycle deployment concurrency'
+          git push origin HEAD:main
