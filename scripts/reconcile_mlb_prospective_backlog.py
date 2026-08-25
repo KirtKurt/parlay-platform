@@ -432,7 +432,7 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parser().parse_args(argv)
     session = boto3.session.Session(region_name=args.region)
-    config = Config(retries={"max_attempts": 3, "mode": "standard"})
+    config = Config(connect_timeout=10, read_timeout=930, retries={"max_attempts": 3, "mode": "standard"})
     cloudformation = session.client("cloudformation", config=config)
     lambda_client = session.client("lambda", config=config)
     try:
