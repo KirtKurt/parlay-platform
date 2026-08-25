@@ -24,6 +24,8 @@ def _copy_contract(tmp_path: Path) -> Path:
         "hello_world/mlb_result_signals.py",
         "scripts/verify_mlb_release_activation_predeploy.py",
         "scripts/invoke_mlb_trainer_with_retry.py",
+        "scripts/verify_mlb_authority_response.py",
+        "scripts/verify_mlb_trainer_deploy_response.py",
     ):
         source = ROOT / relative
         target = tmp_path / relative
@@ -649,21 +651,19 @@ def test_rejects_reintroduced_retired_provider_patcher(tmp_path: Path) -> None:
     )
 
 
-def test_rejects_live_authority_claim_in_deploy_smoke(tmp_path: Path) -> None:
+def test_rejects_live_authority_claim_in_trainer_verifier(tmp_path: Path) -> None:
     root = _copy_contract(tmp_path)
-    deploy = root / ".github/workflows/deploy.yml"
-    text = deploy.read_text(encoding="utf-8")
-    deploy.write_text(
-        text.replace(
-            "'awsNativeTrainingAuthority': False",
-            "'awsNativeTrainingAuthority': True",
-            1,
-        ),
+    verifier = root / "scripts/verify_mlb_trainer_deploy_response.py"
+    text = verifier.read_text(encoding="utf-8")
+    marker = 'status_after.get("automaticPromotionEnabled") is False'
+    assert marker in text
+    verifier.write_text(
+        text.replace(marker, 'status_after.get("automaticPromotionEnabled") is True', 1),
         encoding="utf-8",
     )
 
     assert (
-        "canonical_deploy_allows_training_to_claim_live_authority"
+        "canonical_deploy_does_not_require_automatic_promotion_off"
         in authority.verify_repository(root)
     )
 

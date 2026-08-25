@@ -1,0 +1,256 @@
+name: Repair MLB R7 runtime admission now
+
+"on":
+  push:
+    branches:
+      - repair/run-mlb-r7-runtime-admission-20260825
+    paths:
+      - '.github/r7-runtime-admission-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repair-mlb-r7-runtime-admission-now
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-dev
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout exact trigger source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify fail-closed R7 runtime contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
+          python -m py_compile \
+            scripts/invoke_mlb_trainer_with_retry.py \
+            hello_world/mlb_prospective_trainer_read_repair.py \
+            hello_world/mlb_ml_aws_training_v1.py \
+            hello_world/mlb_ml_aws_training_v1_compat.py
+          PYTHONPATH="hello_world:scripts:${PYTHONPATH:-}" python -m pytest -q \
+            tests/unit/test_mlb_trainer_invoke_retry.py \
+            tests/unit/test_mlb_prospective_trainer_read_repair.py \
+            tests/unit/test_mlb_r7_runtime_admission_workflow.py
+          git diff --check
+
+      - name: Resolve current deployed MLB trainer only
+        id: trainer
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-r7-runtime-admission
+          TRAINER_FN=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBMLTrainingFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$TRAINER_FN"
+          test "$TRAINER_FN" != 'None'
+          echo "function_name=$TRAINER_FN" >> "$GITHUB_OUTPUT"
+          export TRAINER_FN
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import boto3
+
+          client = boto3.client('lambda', region_name=os.environ['AWS_REGION'])
+          cfg = client.get_function_configuration(FunctionName=os.environ['TRAINER_FN'])
+          variables = (cfg.get('Environment') or {}).get('Variables') or {}
+          proof = {
+              'functionName': os.environ['TRAINER_FN'],
+              'handler': cfg.get('Handler'),
+              'state': cfg.get('State'),
+              'lastUpdateStatus': cfg.get('LastUpdateStatus'),
+              'timeoutSeconds': cfg.get('Timeout'),
+              'memorySizeMb': cfg.get('MemorySize'),
+              'deployGitSha': variables.get('INQSI_DEPLOY_GIT_SHA'),
+              'deployTemplateSha256': variables.get('INQSI_DEPLOY_TEMPLATE_SHA256'),
+              'experimentId': variables.get('MLB_ML_EXPERIMENT_ID'),
+              'legacyV1AuthorityEnabled': variables.get('INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED'),
+              'automaticPromotionEnabled': variables.get('INQSI_MLB_ML_AUTO_PROMOTE'),
+              'onlyMlbTrainerResolved': True,
+              'sharedRootStackDeployedByThisWorkflow': False,
+              'directTableWrite': False,
+          }
+          assert proof['handler'] == 'mlb_ml_aws_training_v1_compat.lambda_handler', proof
+          assert proof['state'] == 'Active', proof
+          assert proof['lastUpdateStatus'] == 'Successful', proof
+          assert proof['experimentId'] == 'mlb-v2-2026-08-03-future-prospective-r7', proof
+          assert proof['legacyV1AuthorityEnabled'] == 'false', proof
+          assert proof['automaticPromotionEnabled'] == 'false', proof
+          assert proof['deployGitSha'], proof
+          assert proof['deployTemplateSha256'], proof
+          Path('/tmp/mlb-r7-runtime-admission/deployed-trainer.json').write_text(
+              json.dumps(proof, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(proof, indent=2, sort_keys=True))
+          PY
+
+      - name: Invoke current deployed R7 trainer with lease-safe retry
+        env:
+          TRAINER_FN: ${{ steps.trainer.outputs.function_name }}
+          AWS_MAX_ATTEMPTS: '10'
+          AWS_RETRY_MODE: standard
+        run: |
+          set -euo pipefail
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_FN" \
+            --region "$AWS_REGION" \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"r7_runtime_admission_identity_refresh"}' \
+            --response /tmp/mlb-r7-runtime-admission/training.json \
+            --invocation /tmp/mlb-r7-runtime-admission/training-invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 1800 \
+            --retry-delay-seconds 30
+
+      - name: Invoke selection capture and bind status
+        env:
+          TRAINER_FN: ${{ steps.trainer.outputs.function_name }}
+          AWS_MAX_ATTEMPTS: '10'
+          AWS_RETRY_MODE: standard
+        run: |
+          set -euo pipefail
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_FN" \
+            --region "$AWS_REGION" \
+            --payload '{"sport":"mlb","mode":"selection_capture","run":"r7_runtime_admission_identity_refresh_selection"}' \
+            --response /tmp/mlb-r7-runtime-admission/selection.json \
+            --invocation /tmp/mlb-r7-runtime-admission/selection-invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 1800 \
+            --retry-delay-seconds 30
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_FN" \
+            --region "$AWS_REGION" \
+            --status-training-result /tmp/mlb-r7-runtime-admission/training.json \
+            --status-selection-capture-result /tmp/mlb-r7-runtime-admission/selection.json \
+            --response /tmp/mlb-r7-runtime-admission/status.json \
+            --invocation /tmp/mlb-r7-runtime-admission/status-invocation.json
+
+      - name: Require admitted exact slates and current deployment identity
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from datetime import datetime, timedelta
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          root = Path('/tmp/mlb-r7-runtime-admission')
+          deployed = json.loads((root / 'deployed-trainer.json').read_text())
+          training = json.loads((root / 'training.json').read_text())
+          selection = json.loads((root / 'selection.json').read_text())
+          status = json.loads((root / 'status.json').read_text())
+          health = status.get('trainingHealth') or {}
+          selection_health = status.get('selectionCaptureHealth') or {}
+          latest = health.get('latestRun') or training
+          continuity = latest.get('canonicalSlateContinuity') or training.get('canonicalSlateContinuity') or {}
+          milestones = latest.get('milestones') or training.get('milestones') or {}
+          first_slate = milestones.get('firstFullCleanSlateProof') or {}
+          counts = milestones.get('counts') or {}
+          partitions = latest.get('partitionCounts') or training.get('partitionCounts') or {}
+          identity = latest.get('deploymentIdentity') or training.get('deploymentIdentity') or {}
+          accepted = int(latest.get('acceptedRowCount', training.get('acceptedRowCount', 0)) or 0)
+          train_rows = int(partitions.get('train', 0) or 0)
+          yesterday = (
+              datetime.now(ZoneInfo('America/New_York')).date() - timedelta(days=1)
+          ).isoformat()
+          processed = str(continuity.get('processedThroughSlateDate') or '')
+          finalized_dates = set(continuity.get('finalizedGameSlateDates') or [])
+          exact_identity_match = bool(
+              identity.get('gitSha') == deployed.get('deployGitSha')
+              and identity.get('templateSha256') == deployed.get('deployTemplateSha256')
+          )
+          evidence = {
+              'ok': bool(
+                  training.get('ok') is True
+                  and selection.get('ok') is True
+                  and accepted >= 18
+                  and train_rows >= 18
+                  and {'2026-08-03', '2026-08-24'} <= finalized_dates
+                  and first_slate.get('achieved') is True
+                  and int(counts.get('integrityClean', 0) or 0) >= 18
+                  and not continuity.get('blockedSlateDate')
+                  and processed >= yesterday
+                  and exact_identity_match
+                  and health.get('deploymentIdentityMatches') is True
+                  and selection_health.get('deploymentIdentityMatches') is True
+                  and latest.get('liveInferenceAuthority') is not True
+                  and latest.get('productionAuthorityChanged') is not True
+                  and latest.get('automaticPromotionEnabled') is not True
+                  and latest.get('championChanged') is not True
+              ),
+              'acceptedRowCount': accepted,
+              'rejectedRowCount': latest.get('rejectedRowCount', training.get('rejectedRowCount')),
+              'partitionCounts': partitions,
+              'integrityCleanCount': counts.get('integrityClean'),
+              'completedFinalizedSlateCount': counts.get('completedFinalizedSlates'),
+              'firstFullCleanSlateProofAchieved': first_slate.get('achieved'),
+              'finalizedGameSlateDates': sorted(finalized_dates),
+              'skippedUnresolvedSlateDates': continuity.get('skippedUnresolvedSlateDates'),
+              'processedThroughSlateDate': processed,
+              'requiredProcessedThroughSlateDate': yesterday,
+              'trainingRunDeploymentIdentity': identity,
+              'deployedTrainerIdentity': {
+                  'gitSha': deployed.get('deployGitSha'),
+                  'templateSha256': deployed.get('deployTemplateSha256'),
+              },
+              'exactDeploymentIdentityMatch': exact_identity_match,
+              'trainingHealthDeploymentIdentityMatches': health.get('deploymentIdentityMatches'),
+              'selectionCaptureDeploymentIdentityMatches': selection_health.get('deploymentIdentityMatches'),
+              'modelTrained': latest.get('modelTrained', training.get('modelTrained')),
+              'championChanged': latest.get('championChanged', training.get('championChanged')),
+              'liveInferenceAuthority': latest.get('liveInferenceAuthority', training.get('liveInferenceAuthority')),
+              'productionAuthorityChanged': latest.get('productionAuthorityChanged', training.get('productionAuthorityChanged')),
+              'automaticPromotionEnabled': latest.get('automaticPromotionEnabled', training.get('automaticPromotionEnabled')),
+              'historicalGapRelaxed': False,
+              'unresolvedDatesFabricated': False,
+              'immutablePredictionRewriteAllowed': False,
+              'postStartPredictionCreationAllowed': False,
+              'directTableWrite': False,
+              'sharedRootStackDeployedByThisWorkflow': False,
+              'otherSportChanged': False,
+          }
+          (root / 'acceptance.json').write_text(
+              json.dumps(evidence, indent=2, sort_keys=True, default=str) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(evidence, indent=2, sort_keys=True, default=str))
+          if not evidence['ok']:
+              raise SystemExit('R7 runtime admission and deployment identity acceptance failed')
+          PY
+
+      - name: Upload immutable R7 admission evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-r7-runtime-admission-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 90
+          path: /tmp/mlb-r7-runtime-admission

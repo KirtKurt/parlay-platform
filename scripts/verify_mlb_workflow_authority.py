@@ -625,50 +625,114 @@ def verify_repository(root: Path = ROOT) -> List[str]:
         ):
             if token in deploy:
                 errors.append(f"canonical_deploy_retired_provider_token_present:{token}")
-        ranked_runtime_tokens = {
-            "'automaticPromotionPolicy': 'winner model fixed for release; precision/trade promotion remains disabled'": (
-                "canonical_deploy_does_not_require_fixed_ranked_release_policy"
+        authority_verifier_path = root / "scripts/verify_mlb_authority_response.py"
+        authority_verifier = (
+            authority_verifier_path.read_text(encoding="utf-8")
+            if authority_verifier_path.is_file()
+            else ""
+        )
+        trainer_verifier_path = root / "scripts/verify_mlb_trainer_deploy_response.py"
+        trainer_verifier = (
+            trainer_verifier_path.read_text(encoding="utf-8")
+            if trainer_verifier_path.is_file()
+            else ""
+        )
+        if not authority_verifier:
+            errors.append("canonical_r7_authority_verifier_missing")
+        if not trainer_verifier:
+            errors.append("canonical_r7_trainer_verifier_missing")
+        if deploy.count("python scripts/verify_mlb_authority_response.py") != 2:
+            errors.append(
+                "canonical_deploy_must_verify_fail_closed_r7_authority_exactly_twice"
+            )
+        for token, error in (
+            (
+                "--output /tmp/mlb-capacity-model-contract.json",
+                "canonical_deploy_missing_pretrainer_r7_authority_evidence",
             ),
-            "'awsNativeTrainingInstalled': True": (
-                "canonical_deploy_does_not_require_aws_training_installation"
+            (
+                "--output /tmp/mlb-model-authority-contract.json",
+                "canonical_deploy_missing_postdeploy_r7_authority_evidence",
             ),
-            "'awsNativeTrainingAuthority': False": (
-                "canonical_deploy_allows_training_to_claim_live_authority"
-            ),
-            "'awsNativeTrainingHealthSource': 'separate_mode_specific_status_contract'": (
-                "canonical_deploy_does_not_require_split_training_health"
-            ),
-            "'manualReviewCreatesShadowApprovalOnly': True": (
-                "canonical_deploy_does_not_require_shadow_only_training_approval"
-            ),
-            "'v2InferenceConsumerInstalled': False": (
-                "canonical_deploy_allows_unreviewed_v2_inference"
-            ),
-            "'runtimeAuthorityActivationAvailable': False": (
-                "canonical_deploy_does_not_require_ranked_runtime_activation"
-            ),
-            "'primaryAlgorithm': 'INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble'": (
-                "canonical_deploy_does_not_require_ranked_winner_primary"
-            ),
-            "'allowedProductionOutput': ['PICK']": (
-                "canonical_deploy_does_not_require_ranked_pick_output"
-            ),
-            "'legacyRecommendationAuthority': False": (
-                "canonical_deploy_allows_legacy_recommendation_authority"
-            ),
-            "'legacyFallbackAllowed': False": (
-                "canonical_deploy_allows_legacy_fallback"
-            ),
-            "'automaticWagerAllowed': False": (
-                "canonical_deploy_allows_automatic_wagering"
-            ),
-            "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-stage-promotion-authority-verified-active-model-authority": (
-                "canonical_deploy_does_not_require_ranked_runtime_identity"
-            ),
-        }
-        for token, error in ranked_runtime_tokens.items():
+        ):
             if token not in deploy:
                 errors.append(error)
+        for token, error in (
+            (
+                'AUTHORITY_CONTRACT = "MLB-AUTO-R7-QUALIFIED-CHAMPION-ONLY-v1"',
+                "canonical_r7_authority_contract_identity_missing",
+            ),
+            (
+                '"automaticWagerAllowed": False',
+                "canonical_r7_authority_allows_automatic_wagering",
+            ),
+            (
+                '"rowLevelAutomaticWagerAllowed": False',
+                "canonical_r7_authority_allows_row_wagering",
+            ),
+            (
+                '"legacyFallbackAllowed": False',
+                "canonical_r7_authority_allows_legacy_fallback",
+            ),
+            (
+                '"legacyRecommendationAuthority": False',
+                "canonical_r7_authority_allows_legacy_recommendation_authority",
+            ),
+            (
+                '"retiredV15_10Eligible": False',
+                "canonical_r7_authority_allows_retired_v15_10",
+            ),
+            (
+                '"publicationClosed": True',
+                "canonical_r7_no_champion_state_does_not_close_publication",
+            ),
+            (
+                '"productionSelectionAllowed": False',
+                "canonical_r7_no_champion_state_allows_production_selection",
+            ),
+            (
+                'body.get("requestedAuthority") != "AWS_ML_PROSPECTIVE_R7"',
+                "canonical_r7_qualified_state_has_wrong_authority",
+            ),
+        ):
+            if token not in authority_verifier:
+                errors.append(error)
+        for token, error in (
+            (
+                'status_after.get("automaticPromotionEnabled") is False',
+                "canonical_deploy_does_not_require_automatic_promotion_off",
+            ),
+            (
+                'status_after.get("firstPromotionRequiresManualReview") is True',
+                "canonical_deploy_does_not_require_manual_first_promotion",
+            ),
+            (
+                'status_after.get("v2InferenceConsumerInstalled") is False',
+                "canonical_deploy_allows_unreviewed_v2_inference",
+            ),
+            (
+                'top_level_live_authority = status_after.get("liveInferenceAuthority")',
+                "canonical_deploy_does_not_require_live_r7_authority_off",
+            ),
+            (
+                'activation_available = status_after.get("runtimeAuthorityActivationAvailable")',
+                "canonical_deploy_does_not_require_ranked_runtime_activation",
+            ),
+            (
+                'runtime_authority_activation_must_remain_unavailable_before_manual_approval',
+                "canonical_deploy_allows_runtime_activation_before_manual_approval",
+            ),
+        ):
+            if token not in trainer_verifier:
+                errors.append(error)
+        for retired in (
+            "INQSI-MLB-RANKED-WINNER-v15.10",
+            "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10",
+            "AWS_ML_SPORTSFEED_V15.10",
+            "ENSEMBLE_LOGREG_HGB_CAL_V15.10",
+        ):
+            if retired in deploy:
+                errors.append("canonical_deploy_retired_v15_10_marker_present:" + retired)
 
         for token, error in (
             (
