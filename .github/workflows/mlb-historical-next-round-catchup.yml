@@ -96,7 +96,7 @@ jobs:
           if not isinstance(q.get('remaining'),int) or q['remaining']<=100: raise SystemExit(f'provider quota unavailable: {q}')
           PY
 
-      - name: Advance only when the canonical next round is ready
+      - name: Advance bounded historical pipeline until it waits or reaches a new experiment
         id: catchup
         continue-on-error: true
         env:
@@ -118,7 +118,30 @@ jobs:
           PY
           )"
           echo "Using deployed historical credit budget: ${EXPECTED_MAX_CREDITS}"
-          python scripts/run_mlb_historical_next_round_catchup.py --region "$AWS_REGION_VALUE" --stack-name "$STACK_NAME" --expected-handler mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler --expected-max-credits "$EXPECTED_MAX_CREDITS" --template mlb_historical_optimizer/template.yaml --max-attempts 8 --output "$REPORT_PATH"
+          for pass in 1 2 3 4 5 6 7 8; do
+            echo "Historical catch-up pass ${pass}/8"
+            python scripts/run_mlb_historical_next_round_catchup.py \
+              --region "$AWS_REGION_VALUE" \
+              --stack-name "$STACK_NAME" \
+              --expected-handler mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler \
+              --expected-max-credits "$EXPECTED_MAX_CREDITS" \
+              --template mlb_historical_optimizer/template.yaml \
+              --max-attempts 8 \
+              --output "$REPORT_PATH"
+            STOP="$(python - <<'PY'
+          import json, os
+          p=os.environ['REPORT_PATH']
+          v=json.load(open(p, encoding='utf-8'))
+          action=str(v.get('finalAction') or '')
+          advanced=bool(v.get('newExperimentCompleted'))
+          print('true' if advanced or action in {'WAITING_FOR_SETTLED_EVIDENCE','CHAMPION_WAITING_FOR_NEW_EVIDENCE'} else 'false')
+          PY
+            )"
+            if [ "$STOP" = "true" ]; then
+              echo "Historical controller reached a bounded stop condition."
+              break
+            fi
+          done
 
       - uses: actions/upload-artifact@v4
         if: always()
