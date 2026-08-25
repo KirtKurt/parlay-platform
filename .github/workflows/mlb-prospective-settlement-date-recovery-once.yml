@@ -104,7 +104,7 @@ jobs:
             --function-name "$LOCK_FN" \
             --region "${{ secrets.AWS_REGION }}" \
             --cli-binary-format raw-in-base64-out \
-            --cli-read-timeout 360 \
+            --cli-read-timeout 930 \
             --payload '{"sport":"mlb","run":"prospective_terminal_backlog_reconciliation_v5","slateDateEt":"2026-08-04","force":true}' \
             /tmp/mlb-r7-terminal-replay.json \
             >/tmp/mlb-r7-terminal-replay-meta.json
