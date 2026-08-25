@@ -16,13 +16,13 @@ concurrency:
 
 env:
   AWS_REGION: us-east-1
-  BEDROCK_REGIONS: us-east-1,us-west-2,us-east-2
+  STACK_NAME: parlay-platform-mlb-auto-llm
   REPORT_PATH: runtime_reports/bedrock_throughput_validation_latest.json
 
 jobs:
   ramp-and-validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,7 +39,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Validate MLB-only Bedrock routing contracts
+      - name: Validate MLB-only Bedrock capacity contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -48,427 +48,168 @@ jobs:
             mlb_auto_llm/model_gateway.py \
             mlb_auto_llm/production_model_gateway.py \
             mlb_auto_llm/bedrock_smoke.py \
-            mlb_auto_llm/ml_authority_smoke.py
+            mlb_auto_llm/ml_authority_smoke.py \
+            mlb_auto_llm/capacity_manager.py
           python -m pytest -q \
             tests/unit/test_mlb_auto_bedrock_smoke.py \
-            tests/unit/test_mlb_auto_production_model_gateway.py
+            tests/unit/test_mlb_auto_production_model_gateway.py \
+            tests/unit/test_mlb_auto_capacity_manager.py
           python - <<'PY'
           import yaml
           from pathlib import Path
+
           template = yaml.safe_load(Path('mlb-auto-llm-template.yaml').read_text())
           resources = template['Resources']
           main = resources['MLBAutoLLMFunction']['Properties']
           smoke = resources['MLBAutoLLMBedrockSmokeFunction']['Properties']
+          manager = resources['MLBAutoBedrockCapacityManagerFunction']['Properties']
           assert int(main['MemorySize']) == 10240
           assert int(main['EphemeralStorage']['Size']) >= 2048
-          env = smoke['Environment']['Variables']
-          assert int(env['MLB_AUTO_BEDROCK_SMOKE_ROUTE_LIMIT']) >= 16
-          assert int(env['MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS']) >= 80
-          print('MLB AUTO compute and diversified Bedrock route contract: PASS')
+          assert int(smoke['Environment']['Variables']['MLB_AUTO_BEDROCK_SMOKE_ROUTE_LIMIT']) >= 16
+          assert int(smoke['Environment']['Variables']['MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS']) >= 80
+          assert manager['Handler'] == 'capacity_manager.lambda_handler'
+          actions = {
+              action
+              for policy in manager['Policies']
+              for statement in policy.get('Statement', [])
+              for action in statement.get('Action', [])
+          }
+          assert 'servicequotas:ListServiceQuotas' in actions
+          assert 'servicequotas:RequestServiceQuotaIncrease' in actions
+          assert 'bedrock:InvokeModel' in actions
+          print('MLB AUTO maximum compute, route diversification, and isolated quota role: PASS')
           PY
           git diff --check
 
-      - name: Inspect quotas, request large increases, and prove live capacity
+      - name: Wait for isolated capacity-manager Lambda deployment
+        id: manager
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p runtime_reports
-          python - <<'PY'
-          from __future__ import annotations
+          for attempt in $(seq 1 180); do
+            function_name=$(aws cloudformation describe-stack-resource \
+              --stack-name "$STACK_NAME" \
+              --logical-resource-id MLBAutoBedrockCapacityManagerFunction \
+              --region "$AWS_REGION" \
+              --query 'StackResourceDetail.PhysicalResourceId' \
+              --output text 2>/dev/null || true)
+            if [ -n "$function_name" ] && [ "$function_name" != "None" ]; then
+              handler=$(aws lambda get-function-configuration \
+                --function-name "$function_name" \
+                --region "$AWS_REGION" \
+                --query 'Handler' \
+                --output text 2>/dev/null || true)
+              update_status=$(aws lambda get-function-configuration \
+                --function-name "$function_name" \
+                --region "$AWS_REGION" \
+                --query 'LastUpdateStatus' \
+                --output text 2>/dev/null || true)
+              if [ "$handler" = 'capacity_manager.lambda_handler' ] && [ "$update_status" = 'Successful' ]; then
+                echo "function_name=$function_name" >> "$GITHUB_OUTPUT"
+                echo "Capacity manager ready: $function_name"
+                exit 0
+              fi
+            fi
+            sleep 20
+          done
+          echo 'MLB AUTO capacity-manager Lambda did not become ready.' >&2
+          exit 1
 
+      - name: Request 10x quotas and require live Lambda-role capacity
+        shell: bash
+        env:
+          CAPACITY_FUNCTION: ${{ steps.manager.outputs.function_name }}
+        run: |
+          set -euo pipefail
+          test -n "$CAPACITY_FUNCTION"
+          mkdir -p runtime_reports /tmp/mlb-bedrock-capacity
+          success=false
+          for attempt in $(seq 1 8); do
+            payload=$(python - <<PY
+          import json
+          print(json.dumps({
+              'requestQuotaIncreases': True,
+              'desiredMultiplier': 10,
+              'maxQuotaRequests': 30,
+              'maxRoutesPerRegion': 24 if $attempt == 1 else 12,
+          }, separators=(',', ':')))
+          PY
+            )
+            set +e
+            aws lambda invoke \
+              --function-name "$CAPACITY_FUNCTION" \
+              --region "$AWS_REGION" \
+              --cli-binary-format raw-in-base64-out \
+              --cli-connect-timeout 30 \
+              --cli-read-timeout 900 \
+              --payload "$payload" \
+              "/tmp/mlb-bedrock-capacity/response-$attempt.json" \
+              >"/tmp/mlb-bedrock-capacity/invocation-$attempt.json"
+            invoke_rc=$?
+            set -e
+            ATTEMPT="$attempt" INVOKE_RC="$invoke_rc" python - <<'PY'
           import json
           import os
-          import re
-          import time
-          from datetime import datetime, timezone
           from pathlib import Path
-          from typing import Any, Dict, Iterable, List
 
-          import boto3
-          from botocore.config import Config
-
-          REGIONS = [
-              value.strip()
-              for value in os.environ['BEDROCK_REGIONS'].split(',')
-              if value.strip()
-          ]
-          THROUGHPUT_TERMS = (
-              'tokens per minute',
-              'tokens per day',
-              'requests per minute',
-              'input tokens per minute',
-              'output tokens per minute',
-              'model units',
-              'provisioned throughput',
+          attempt = int(os.environ['ATTEMPT'])
+          invoke_rc = int(os.environ['INVOKE_RC'])
+          response_path = Path(f'/tmp/mlb-bedrock-capacity/response-{attempt}.json')
+          invocation_path = Path(f'/tmp/mlb-bedrock-capacity/invocation-{attempt}.json')
+          invocation = (
+              json.loads(invocation_path.read_text())
+              if invocation_path.exists() and invocation_path.stat().st_size
+              else {}
           )
-          TEXT_PROVIDER_TERMS = (
-              'amazon', 'nova', 'titan', 'openai', 'gpt', 'anthropic', 'claude',
-              'meta', 'llama', 'mistral', 'cohere', 'command', 'ai21', 'jamba',
-              'deepseek', 'qwen', 'xai', 'grok', 'writer', 'palmyra', 'nvidia',
-              'nemotron', 'moonshot', 'kimi', 'zai', 'glm',
+          response = (
+              json.loads(response_path.read_text())
+              if response_path.exists() and response_path.stat().st_size
+              else {}
           )
-          NON_TEXT_TERMS = (
-              'embed', 'embedding', 'rerank', 'image', 'canvas', 'video',
-              'audio', 'speech', 'guardrail', 'moderation', 'reel',
-          )
-          ACTIVE_REQUEST_STATUSES = {'PENDING', 'CASE_OPENED'}
-
-          def redact(value: Any) -> str:
-              text = str(value or '')
-              text = re.sub(r'arn:aws[a-zA-Z-]*:[^\s,]+', '[REDACTED_ARN]', text)
-              text = re.sub(r'(?<!\d)\d{12}(?!\d)', '[REDACTED_ACCOUNT]', text)
-              return text[:700]
-
-          def pages(client: Any, method: str, token_key: str, **kwargs: Any) -> Iterable[Dict[str, Any]]:
-              token = None
-              for _ in range(100):
-                  request = dict(kwargs)
-                  if token:
-                      request[token_key] = token
-                  response = getattr(client, method)(**request)
-                  yield response
-                  token = response.get(token_key) or response.get('NextToken') or response.get('nextToken')
-                  if not token:
-                      return
-
-          def relevant_quota(row: Dict[str, Any]) -> bool:
-              name = str(row.get('QuotaName') or '')
-              low = name.lower()
-              return (
-                  any(term in low for term in THROUGHPUT_TERMS)
-                  and any(term in low for term in TEXT_PROVIDER_TERMS)
-                  and not any(term in low for term in NON_TEXT_TERMS)
-              )
-
-          def desired_value(name: str, current: float) -> float:
-              low = name.lower()
-              if 'tokens per day' in low:
-                  return max(current * 10.0, current + 1_000_000.0)
-              if 'tokens per minute' in low:
-                  return max(current * 10.0, current + 100_000.0)
-              if 'requests per minute' in low:
-                  return max(current * 10.0, current + 100.0)
-              if 'model units' in low or 'provisioned throughput' in low:
-                  return max(current + 1.0, 1.0)
-              return max(current * 5.0, current + 1.0)
-
-          def text_candidate(model_id: str) -> bool:
-              low = model_id.lower()
-              return bool(model_id) and not any(term in low for term in NON_TEXT_TERMS)
-
-          def route_priority(model_id: str) -> tuple[int, int, str]:
-              low = model_id.lower()
-              global_profile = low.startswith('global.')
-              regional_profile = low.startswith(('us.', 'eu.', 'apac.'))
-              small = any(
-                  term in low
-                  for term in (
-                      'micro', 'lite', 'mini', 'small', 'flash', 'haiku',
-                      'nano', '7b', '8b', '9b', '12b', '20b',
-                  )
-              )
-              if global_profile and small:
-                  tier = 0
-              elif global_profile:
-                  tier = 1
-              elif regional_profile and small:
-                  tier = 2
-              elif regional_profile:
-                  tier = 3
-              elif small:
-                  tier = 4
-              else:
-                  tier = 5
-              return tier, len(model_id), model_id
-
-          report: Dict[str, Any] = {
-              'proofType': 'MLB_AUTO_BEDROCK_CAPACITY_RAMP_V2',
-              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+          report = dict(response) if isinstance(response, dict) else {}
+          report.update({
               'sourceSha': os.environ.get('GITHUB_SHA'),
               'runId': os.environ.get('GITHUB_RUN_ID'),
-              'regions': {},
-              'quotaIncreaseRequests': [],
-              'liveSmoke': [],
-              'secretExposed': False,
-              'productionAuthorityChanged': False,
-              'automaticWagerAllowed': False,
-          }
-
-          all_routes: Dict[str, List[str]] = {}
-          for region in REGIONS:
-              region_report: Dict[str, Any] = {
-                  'quotas': [],
-                  'quotaInspectionErrors': [],
-                  'activeInferenceProfiles': [],
-                  'activeOnDemandModels': [],
-                  'controlPlaneErrors': [],
-              }
-              report['regions'][region] = region_report
-
-              try:
-                  quotas = boto3.client('service-quotas', region_name=region)
-                  for response in pages(
-                      quotas,
-                      'list_service_quotas',
-                      'NextToken',
-                      ServiceCode='bedrock',
-                      MaxResults=100,
-                  ):
-                      for row in response.get('Quotas') or []:
-                          if relevant_quota(row):
-                              region_report['quotas'].append(
-                                  {
-                                      key: row.get(key)
-                                      for key in (
-                                          'QuotaName', 'QuotaCode', 'Value',
-                                          'Adjustable', 'GlobalQuota',
-                                      )
-                                  }
-                              )
-              except Exception as exc:
-                  region_report['quotaInspectionErrors'].append(
-                      {'errorCode': type(exc).__name__, 'message': redact(exc)}
-                  )
-
-              profiles: List[str] = []
-              models: List[str] = []
-              try:
-                  control = boto3.client('bedrock', region_name=region)
-                  for response in pages(
-                      control,
-                      'list_inference_profiles',
-                      'nextToken',
-                      typeEquals='SYSTEM_DEFINED',
-                      maxResults=100,
-                  ):
-                      for row in response.get('inferenceProfileSummaries') or []:
-                          model_id = str(row.get('inferenceProfileId') or '').strip()
-                          if row.get('status') == 'ACTIVE' and text_candidate(model_id):
-                              profiles.append(model_id)
-                  response = control.list_foundation_models(
-                      byOutputModality='TEXT',
-                      byInferenceType='ON_DEMAND',
-                  )
-                  for row in response.get('modelSummaries') or []:
-                      lifecycle = row.get('modelLifecycle') or {}
-                      model_id = str(row.get('modelId') or '').strip()
-                      if (
-                          str(lifecycle.get('status') or 'ACTIVE').upper() != 'END_OF_LIFE'
-                          and text_candidate(model_id)
-                      ):
-                          models.append(model_id)
-              except Exception as exc:
-                  region_report['controlPlaneErrors'].append(
-                      {'errorCode': type(exc).__name__, 'message': redact(exc)}
-                  )
-
-              profiles = sorted(set(profiles), key=route_priority)
-              models = sorted(set(models), key=route_priority)
-              region_report['activeInferenceProfiles'] = profiles
-              region_report['activeOnDemandModels'] = models
-              all_routes[region] = list(dict.fromkeys([*profiles, *models]))
-
-          # Submit quota increases only after the complete read-only inventory exists.
-          for region, region_report in report['regions'].items():
-              try:
-                  quotas = boto3.client('service-quotas', region_name=region)
-              except Exception as exc:
-                  report['quotaIncreaseRequests'].append(
-                      {
-                          'region': region,
-                          'status': 'CLIENT_UNAVAILABLE',
-                          'errorCode': type(exc).__name__,
-                          'message': redact(exc),
-                      }
-                  )
-                  continue
-              request_budget = 40
-              requested_here = 0
-              for row in region_report.get('quotas') or []:
-                  if requested_here >= request_budget:
-                      break
-                  if row.get('Adjustable') is not True:
-                      continue
-                  code = str(row.get('QuotaCode') or '')
-                  name = str(row.get('QuotaName') or '')
-                  try:
-                      current = float(row.get('Value') or 0.0)
-                  except (TypeError, ValueError):
-                      current = 0.0
-                  if not code or current < 0:
-                      continue
-                  desired = desired_value(name, current)
-                  existing_active = None
-                  try:
-                      history = quotas.list_requested_service_quota_change_history_by_quota(
-                          ServiceCode='bedrock',
-                          QuotaCode=code,
-                      )
-                      active = [
-                          item
-                          for item in history.get('RequestedQuotas') or []
-                          if str(item.get('Status') or '') in ACTIVE_REQUEST_STATUSES
-                      ]
-                      if active:
-                          existing_active = active[0]
-                  except Exception:
-                      existing_active = None
-
-                  if existing_active:
-                      report['quotaIncreaseRequests'].append(
-                          {
-                              'region': region,
-                              'quotaName': name,
-                              'quotaCode': code,
-                              'current': current,
-                              'desired': desired,
-                              'status': str(existing_active.get('Status') or ''),
-                              'requestId': existing_active.get('Id'),
-                              'existingRequest': True,
-                          }
-                      )
-                      continue
-                  try:
-                      response = quotas.request_service_quota_increase(
-                          ServiceCode='bedrock',
-                          QuotaCode=code,
-                          DesiredValue=desired,
-                      )
-                      value = response.get('RequestedQuota') or {}
-                      report['quotaIncreaseRequests'].append(
-                          {
-                              'region': region,
-                              'quotaName': name,
-                              'quotaCode': code,
-                              'current': current,
-                              'desired': desired,
-                              'status': value.get('Status'),
-                              'requestId': value.get('Id'),
-                              'existingRequest': False,
-                          }
-                      )
-                      requested_here += 1
-                  except Exception as exc:
-                      response = getattr(exc, 'response', {}) or {}
-                      report['quotaIncreaseRequests'].append(
-                          {
-                              'region': region,
-                              'quotaName': name,
-                              'quotaCode': code,
-                              'current': current,
-                              'desired': desired,
-                              'status': 'REQUEST_FAILED',
-                              'errorCode': str(
-                                  (response.get('Error') or {}).get('Code')
-                                  or type(exc).__name__
-                              ),
-                              'message': redact(exc),
-                          }
-                      )
-
-          # Prove immediate capacity by trying diverse active profiles/models once each.
-          client_config = Config(
-              connect_timeout=5,
-              read_timeout=30,
-              retries={'mode': 'standard', 'total_max_attempts': 1},
-          )
-          successes: List[Dict[str, Any]] = []
-          for region in REGIONS:
-              runtime = boto3.client(
-                  'bedrock-runtime',
-                  region_name=region,
-                  config=client_config,
-              )
-              routes = all_routes.get(region) or []
-              attempts_in_region = 0
-              for model_id in routes[:32]:
-                  attempts_in_region += 1
-                  started = time.monotonic()
-                  try:
-                      response = runtime.converse(
-                          modelId=model_id,
-                          messages=[
-                              {
-                                  'role': 'user',
-                                  'content': [{'text': 'Return exactly: OK'}],
-                              }
-                          ],
-                          inferenceConfig={'maxTokens': 8, 'temperature': 0},
-                      )
-                      blocks = (
-                          ((response.get('output') or {}).get('message') or {}).get('content')
-                          or []
-                      )
-                      text = ''.join(
-                          str(block.get('text') or '')
-                          for block in blocks
-                          if isinstance(block, dict)
-                      ).strip()
-                      row = {
-                          'region': region,
-                          'modelId': model_id,
-                          'ok': bool(text),
-                          'latencyMs': round((time.monotonic() - started) * 1000),
-                          'responseNonEmpty': bool(text),
-                      }
-                      report['liveSmoke'].append(row)
-                      if text:
-                          successes.append(row)
-                          break
-                  except Exception as exc:
-                      response = getattr(exc, 'response', {}) or {}
-                      report['liveSmoke'].append(
-                          {
-                              'region': region,
-                              'modelId': model_id,
-                              'ok': False,
-                              'latencyMs': round((time.monotonic() - started) * 1000),
-                              'errorCode': str(
-                                  (response.get('Error') or {}).get('Code')
-                                  or type(exc).__name__
-                              ),
-                              'message': redact(exc),
-                          }
-                      )
-              report['regions'][region]['liveAttemptCount'] = attempts_in_region
-
-          request_rows = report['quotaIncreaseRequests']
-          accepted_statuses = {'PENDING', 'CASE_OPENED', 'APPROVED'}
-          accepted_requests = [
-              row for row in request_rows if str(row.get('status') or '') in accepted_statuses
-          ]
-          submitted_requests = [
-              row for row in accepted_requests if row.get('existingRequest') is False
-          ]
-          report.update(
-              {
-                  'liveCapacityOk': bool(successes),
-                  'successfulInvocationCount': len(successes),
-                  'successfulRegions': sorted({row['region'] for row in successes}),
-                  'selectedRoutes': successes,
-                  'quotaIncreaseAcceptedOrPendingCount': len(accepted_requests),
-                  'quotaIncreaseSubmittedCount': len(submitted_requests),
-                  'quotaIncreaseRequestFailureCount': sum(
-                      row.get('status') == 'REQUEST_FAILED' for row in request_rows
-                  ),
-                  'requestedScalePolicy': {
-                      'tokenQuotaMultiplier': 10,
-                      'requestQuotaMultiplier': 10,
-                      'modelUnitFloorIncrease': 1,
-                  },
-                  'mainLambdaMemoryMb': 10240,
-                  'mainLambdaEphemeralStorageMb': 2048,
-                  'productionRouteAttemptCeiling': 80,
-                  'smokeRouteAttemptCeiling': 16,
-              }
-          )
-          report['ok'] = report['liveCapacityOk']
-          report['conclusion'] = 'PASS' if report['ok'] else 'CAPACITY_REQUESTED_WAITING'
-          Path(os.environ['REPORT_PATH']).write_text(
+              'runAttempt': os.environ.get('GITHUB_RUN_ATTEMPT'),
+              'capacityWorkflowAttempt': attempt,
+              'lambdaInvocationExitCode': invoke_rc,
+              'lambdaFunctionError': invocation.get('FunctionError'),
+              'lambdaStatusCode': invocation.get('StatusCode'),
+          })
+          Path('runtime_reports/bedrock_throughput_validation_latest.json').write_text(
               json.dumps(report, indent=2, sort_keys=True, default=str) + '\n'
           )
-          print(json.dumps(report, indent=2, sort_keys=True, default=str))
+          print(json.dumps({
+              'attempt': attempt,
+              'ok': report.get('ok'),
+              'liveCapacityOk': report.get('liveCapacityOk'),
+              'successfulRegions': report.get('successfulRegions'),
+              'quotaIncreaseSubmittedCount': report.get('quotaIncreaseSubmittedCount'),
+              'quotaIncreaseAcceptedOrPendingCount': report.get('quotaIncreaseAcceptedOrPendingCount'),
+              'quotaIncreaseRequestFailureCount': report.get('quotaIncreaseRequestFailureCount'),
+              'lambdaFunctionError': report.get('lambdaFunctionError'),
+          }, indent=2, sort_keys=True))
           PY
+            if python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('runtime_reports/bedrock_throughput_validation_latest.json').read_text())
+          raise SystemExit(0 if (
+              report.get('liveCapacityOk') is True
+              and report.get('capacityManagerRoleUsed') is True
+              and report.get('lambdaFunctionError') in (None, '')
+          ) else 1)
+          PY
+            then
+              success=true
+              break
+            fi
+            if [ "$attempt" != 8 ]; then
+              echo 'Capacity not live yet; preserving quota requests and retrying in five minutes.'
+              sleep 300
+            fi
+          done
+          test "$success" = true
 
       - name: Publish Bedrock capacity and quota proof
         if: always()
@@ -497,21 +238,34 @@ jobs:
           done
           exit 1
 
-      - name: Require live Bedrock capacity
+      - name: Enforce capacity and authority boundaries
         if: always()
         shell: bash
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
+
           report = json.loads(
               Path('runtime_reports/bedrock_throughput_validation_latest.json').read_text()
           )
           assert report.get('liveCapacityOk') is True, report
-          print(
-              'MLB AUTO Bedrock capacity PASS:',
-              report.get('selectedRoutes'),
-              'quota requests submitted:',
-              report.get('quotaIncreaseSubmittedCount'),
-          )
+          assert report.get('capacityManagerRoleUsed') is True, report
+          assert report.get('mainLambdaMemoryMb') == 10240, report
+          assert report.get('mainLambdaEphemeralStorageMb') == 2048, report
+          assert report.get('productionRouteAttemptCeiling') == 80, report
+          assert report.get('smokeRouteAttemptCeiling') == 16, report
+          assert report.get('productionAuthorityChanged') is False, report
+          assert report.get('automaticWagerAllowed') is False, report
+          assert report.get('secretExposed') is False, report
+          assert report.get('lambdaFunctionError') in (None, ''), report
+          print(json.dumps({
+              'liveCapacityOk': report.get('liveCapacityOk'),
+              'successfulRegions': report.get('successfulRegions'),
+              'applicationRoute': (report.get('applicationSmoke') or {}).get('routeId'),
+              'quotaIncreaseSubmittedCount': report.get('quotaIncreaseSubmittedCount'),
+              'quotaIncreaseAcceptedOrPendingCount': report.get('quotaIncreaseAcceptedOrPendingCount'),
+              'mainLambdaMemoryMb': report.get('mainLambdaMemoryMb'),
+              'productionRouteAttemptCeiling': report.get('productionRouteAttemptCeiling'),
+          }, indent=2, sort_keys=True))
           PY
