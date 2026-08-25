@@ -58,6 +58,19 @@ jobs:
           path.write_text(text, encoding='utf-8')
           PY
 
+      - name: Align legacy regression with date-local skip policy
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/unit/test_mlb_ml_aws_training_v1.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''    assert requested == ["2026-08-03"]\n    assert partial["status"] == "CANONICAL_SLATE_CONTINUITY_BLOCKED"\n    assert partial["acceptedRowCount"] == 0\n    assert store.manifest["assignedSlateDates"] == {}\n    assert store.manifest["partitions"]["train"]["frozen"] is False\n'''
+          new = '''    assert requested == ["2026-08-03"]\n    assert partial["status"] == "ACCUMULATING_TRAIN"\n    assert partial["acceptedRowCount"] == 0\n    assert partial["canonicalSlateContinuity"]["skippedUnresolvedSlateDates"] == ["2026-08-03"]\n    assert "2026-08-03" in partial["canonicalSlateContinuity"]["unresolvedSlateErrors"]\n    assert store.manifest["assignedSlateDates"] == {}\n    assert store.manifest["partitions"]["train"]["frozen"] is False\n'''
+          if old not in text:
+              raise SystemExit('legacy continuity regression block not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
       - name: Add regression contract
         run: |
           cat > tests/unit/test_mlb_prospective_skip_unresolved_slate.py <<'PY'
@@ -92,7 +105,9 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add hello_world/mlb_ml_aws_training_v1.py tests/unit/test_mlb_prospective_skip_unresolved_slate.py
+          git add hello_world/mlb_ml_aws_training_v1.py \
+            tests/unit/test_mlb_prospective_skip_unresolved_slate.py \
+            tests/unit/test_mlb_ml_aws_training_v1.py
           git diff --cached --check
           git commit -m 'Allow MLB prospective training to skip isolated unresolved slates'
           git push origin HEAD:main
