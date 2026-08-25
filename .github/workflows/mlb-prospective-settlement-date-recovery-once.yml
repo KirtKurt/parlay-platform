@@ -7,6 +7,10 @@ on:
       - "hello_world/mlb_results_scheduler.py"
       - "tests/unit/test_mlb_results_scheduler_date_binding.py"
       - ".github/workflows/mlb-prospective-settlement-date-recovery-once.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/mlb-prospective-settlement-date-recovery-once.yml"
   workflow_run:
     workflows: ["Deploy SAM to AWS"]
     types: [completed]
@@ -56,6 +60,7 @@ jobs:
   recover:
     if: >-
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.head_branch == 'main' &&
        github.event.workflow_run.conclusion == 'success' &&
