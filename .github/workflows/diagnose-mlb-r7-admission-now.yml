@@ -55,11 +55,10 @@ jobs:
 
           import json
           import os
-          import sys
           from collections import Counter
           from datetime import datetime, timezone
           from pathlib import Path
-          from typing import Any, Dict, Iterable
+          from typing import Any, Dict
 
           import boto3
 
@@ -70,18 +69,28 @@ jobs:
 
           cf = boto3.client('cloudformation', region_name=REGION)
           lam = boto3.client('lambda', region_name=REGION)
-          trainer = cf.describe_stack_resource(
-              StackName=STACK,
-              LogicalResourceId='MLBMLTrainingFunction',
-          )['StackResourceDetail']['PhysicalResourceId']
+
+          def physical_resource(logical_id: str) -> str:
+              return str(cf.describe_stack_resource(
+                  StackName=STACK,
+                  LogicalResourceId=logical_id,
+              )['StackResourceDetail']['PhysicalResourceId'])
+
+          trainer = physical_resource('MLBMLTrainingFunction')
           config = lam.get_function_configuration(FunctionName=trainer)
           variables = ((config.get('Environment') or {}).get('Variables') or {})
           for key, value in variables.items():
               if isinstance(value, str):
                   os.environ[key] = value
 
-          # Install the exact deployed compatibility boundary before importing
-          # and evaluating canonical label joins. No persistence APIs are called.
+          # The trainer package intentionally does not need every application
+          # table variable at runtime. The canonical label reader does, so bind
+          # those exact physical resources from the same CloudFormation stack.
+          os.environ['SNAPSHOTS_TABLE'] = physical_resource('SnapshotsTable')
+          os.environ['OUTCOMES_TABLE'] = physical_resource('OutcomesTable')
+
+          # Install the exact source compatibility boundary before importing and
+          # evaluating canonical label joins. No persistence APIs are called.
           import mlb_prospective_trainer_read_repair as read_repair
           import mlb_canonical_final_labels_v1 as labels
           import mlb_fundamentals_snapshot_v2 as fundamentals
