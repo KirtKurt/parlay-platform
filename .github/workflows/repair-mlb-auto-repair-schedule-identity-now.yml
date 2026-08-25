@@ -1,0 +1,320 @@
+name: Repair MLB AUTO auto-repair schedule identity
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-auto-repair-schedule-identity-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repair-mlb-auto-repair-schedule-identity-now
+  cancel-in-progress: false
+
+jobs:
+  repair-mlb-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SPORT: mlb-auto
+      REPAIR_STACK: parlay-platform-auto-repair-mlb-auto
+      TARGET_STACK: parlay-platform-mlb-auto-llm
+      FUNCTION_PREFIX: parlay-platform-mlb-auto-llm-
+      RULE_PREFIX: parlay-platform-mlb-auto-
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Setup Python and SAM
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verify MLB-only repair source and exact target schedule
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7' 'cfn-lint>=1,<2'
+          python -m py_compile aws_auto_repair/*.py
+          python -m pytest -q tests/unit/test_aws_native_auto_repair.py
+          sam validate --template-file aws-auto-repair-template.yaml --lint
+
+          target_status=$(aws cloudformation describe-stacks \
+            --stack-name "$TARGET_STACK" --region "$REGION" \
+            --query 'Stacks[0].StackStatus' --output text)
+          case "$target_status" in
+            CREATE_COMPLETE|UPDATE_COMPLETE) ;;
+            *) echo "::error::MLB AUTO target stack is not stable: $target_status"; exit 1 ;;
+          esac
+
+          target_function=$(aws cloudformation describe-stack-resource \
+            --stack-name "$TARGET_STACK" \
+            --logical-resource-id MLBAutoLLMFunction \
+            --region "$REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          target_arn=$(aws lambda get-function-configuration \
+            --function-name "$target_function" --region "$REGION" \
+            --query FunctionArn --output text)
+          rules=$(aws events list-rule-names-by-target \
+            --target-arn "$target_arn" --limit 100 --region "$REGION" \
+            --query RuleNames --output json)
+          TARGET_ARN="$target_arn" RULES="$rules" python - <<'PY'
+          import json, os, subprocess
+          target_arn = os.environ['TARGET_ARN']
+          prefix = os.environ['RULE_PREFIX']
+          rules = json.loads(os.environ['RULES'])
+          assert rules, 'No EventBridge rule targets the MLB AUTO function'
+          accepted = []
+          for name in rules:
+              rule = json.loads(subprocess.check_output([
+                  'aws','events','describe-rule','--name',name,
+                  '--region',os.environ['REGION'],'--output','json'
+              ]))
+              targets = json.loads(subprocess.check_output([
+                  'aws','events','list-targets-by-rule','--rule',name,
+                  '--region',os.environ['REGION'],'--output','json'
+              ])).get('Targets') or []
+              if (
+                  name.startswith(prefix)
+                  and rule.get('State') == 'ENABLED'
+                  and rule.get('ScheduleExpression') == 'cron(2/5 * * * ? *)'
+                  and any(row.get('Arn') == target_arn for row in targets)
+              ):
+                  accepted.append(name)
+          assert accepted, {
+              'reason': 'Corrected MLB rule prefix still matched no canonical target schedule',
+              'rulePrefix': prefix,
+              'observedRules': rules,
+          }
+          print(json.dumps({'canonicalMlbAutoRules': accepted, 'rulePrefix': prefix}, indent=2))
+          PY
+
+      - name: Build and deploy only the MLB AUTO repair stack
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          rm -rf .aws-sam
+          sam build --no-cached --template-file aws-auto-repair-template.yaml
+
+          for attempt in $(seq 1 80); do
+            status=$(aws cloudformation describe-stacks \
+              --stack-name "$REPAIR_STACK" --region "$REGION" \
+              --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_MISSING)
+            case "$status" in
+              STACK_MISSING|CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE) break ;;
+              *_IN_PROGRESS) sleep 10 ;;
+              *) echo "::error::MLB AUTO repair stack is not updateable: $status"; exit 1 ;;
+            esac
+            test "$attempt" != 80
+          done
+
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "$REPAIR_STACK" \
+            --region "$REGION" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              SportName="$SPORT" \
+              TargetStackName="$TARGET_STACK" \
+              FunctionNamePrefix="$FUNCTION_PREFIX" \
+              RuleNamePrefix="$RULE_PREFIX" \
+              RepairLeaseSeconds='960' \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+
+      - name: Require healthy MLB repair cycle and cleared alarm
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-auto-repair runtime_reports
+          out=/tmp/mlb-auto-repair
+
+          repair_function=$(aws cloudformation describe-stacks \
+            --stack-name "$REPAIR_STACK" --region "$REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='AutoRepairFunctionName'].OutputValue | [0]" \
+            --output text)
+          alarm_name=$(aws cloudformation describe-stack-resource \
+            --stack-name "$REPAIR_STACK" \
+            --logical-resource-id AutoRepairUnresolvedFailureAlarm \
+            --region "$REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          target_function=$(aws cloudformation describe-stack-resource \
+            --stack-name "$TARGET_STACK" \
+            --logical-resource-id MLBAutoLLMFunction \
+            --region "$REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' --output text)
+
+          configured_rule_prefix=$(aws lambda get-function-configuration \
+            --function-name "$repair_function" --region "$REGION" \
+            --query 'Environment.Variables.RULE_NAME_PREFIX' --output text)
+          test "$configured_rule_prefix" = "$RULE_PREFIX"
+
+          aws lambda invoke \
+            --function-name "$repair_function" \
+            --invocation-type RequestResponse \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"audit","source":"mlb_schedule_identity_acceptance"}' \
+            --region "$REGION" \
+            "$out/audit.json" > "$out/audit-meta.json"
+
+          aws lambda invoke \
+            --function-name "$repair_function" \
+            --invocation-type RequestResponse \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"cycle","source":"mlb_schedule_identity_acceptance"}' \
+            --region "$REGION" \
+            "$out/cycle.json" > "$out/cycle-meta.json"
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          out = Path('/tmp/mlb-auto-repair')
+          for name in ('audit', 'cycle'):
+              meta = json.load(open(out / f'{name}-meta.json'))
+              result = json.load(open(out / f'{name}.json'))
+              assert not meta.get('FunctionError'), (name, meta, result)
+              assert result.get('sport') == 'mlb-auto', result
+              assert result.get('target_stack') == 'parlay-platform-mlb-auto-llm', result
+              assert result.get('ok') is True, result
+              assert result.get('status') == 'HEALTHY_OR_REPAIRED', result
+              assert float((result.get('metrics') or {}).get('RepairFailures') or 0) == 0, result
+              components = result.get('components') or []
+              assert len(components) == 1, result
+              component = components[0]
+              schedules = component.get('schedules') or {}
+              canonical = schedules.get('canonical_rules') or []
+              assert canonical, result
+              assert all(rule.startswith('parlay-platform-mlb-auto-') for rule in canonical), result
+              assert (component.get('repair') or {}).get('status') in {'NOT_REQUIRED','DRY_RUN','SUCCEEDED'}, result
+              for key in (
+                  'production_authority_changed','direct_sport_table_writes',
+                  'post_start_prediction_creation_allowed','immutable_prediction_rewrite_allowed',
+                  'execution_lease_bypass_allowed','gate_relaxation_allowed',
+              ):
+                  assert result.get(key) is False, (key, result)
+          PY
+
+          final_state=''
+          for attempt in $(seq 1 45); do
+            final_state=$(aws cloudwatch describe-alarms \
+              --alarm-names "$alarm_name" --region "$REGION" \
+              --query 'MetricAlarms[0].StateValue' --output text)
+            echo "MLB AUTO unresolved-repair alarm state: $final_state (attempt $attempt)"
+            [ "$final_state" != ALARM ] && break
+            sleep 20
+          done
+          test "$final_state" = OK
+
+          aws cloudwatch describe-alarms \
+            --alarm-names "$alarm_name" --region "$REGION" \
+            > "$out/alarm-final.json"
+          aws cloudwatch describe-alarm-history \
+            --alarm-name "$alarm_name" --history-item-type StateUpdate \
+            --max-records 20 --region "$REGION" \
+            > "$out/alarm-history.json"
+
+          target_arn=$(aws lambda get-function-configuration \
+            --function-name "$target_function" --region "$REGION" \
+            --query FunctionArn --output text)
+          aws events list-rule-names-by-target \
+            --target-arn "$target_arn" --limit 100 --region "$REGION" \
+            > "$out/target-rules.json"
+
+          REPAIR_FUNCTION="$repair_function" ALARM_NAME="$alarm_name" \
+          CONFIGURED_RULE_PREFIX="$configured_rule_prefix" FINAL_STATE="$final_state" \
+          python - <<'PY'
+          from __future__ import annotations
+          import json, os, re
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          out = Path('/tmp/mlb-auto-repair')
+          secret = re.compile(r'(?i)(secret|token|password|authorization|api[_-]?key|credential)')
+          def load(name):
+              return json.load(open(out / name))
+          def safe(value):
+              if isinstance(value, dict):
+                  return {str(k): ('[REDACTED]' if secret.search(str(k)) else safe(v)) for k,v in value.items()}
+              if isinstance(value, list):
+                  return [safe(v) for v in value]
+              if isinstance(value, str):
+                  return value[:16000]
+              return value
+          report = {
+              'proofType': 'MLB_AUTO_REPAIR_SCHEDULE_IDENTITY_ACCEPTANCE_V1',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'sourceSha': os.environ.get('GITHUB_SHA'),
+              'scope': 'mlb-auto-only',
+              'repairStack': os.environ['REPAIR_STACK'],
+              'targetStack': os.environ['TARGET_STACK'],
+              'repairFunction': os.environ['REPAIR_FUNCTION'],
+              'alarmName': os.environ['ALARM_NAME'],
+              'configuredRulePrefix': os.environ['CONFIGURED_RULE_PREFIX'],
+              'alarmFinalState': os.environ['FINAL_STATE'],
+              'audit': load('audit.json'),
+              'cycle': load('cycle.json'),
+              'alarm': load('alarm-final.json'),
+              'alarmHistory': load('alarm-history.json'),
+              'targetRules': load('target-rules.json'),
+              'canonicalScheduleResolved': True,
+              'repairFailuresAfterFix': 0,
+              'otherSportsDeployed': False,
+              'directSportTableWrite': False,
+              'targetFunctionInvokedByAcceptance': False,
+              'productionAuthorityChanged': False,
+              'postStartPredictionCreationAllowed': False,
+              'immutablePredictionRewriteAllowed': False,
+              'gateRelaxationAllowed': False,
+              'secretExposed': False,
+          }
+          report['ok'] = bool(
+              report['alarmFinalState'] == 'OK'
+              and report['audit'].get('ok') is True
+              and report['cycle'].get('ok') is True
+              and float((report['cycle'].get('metrics') or {}).get('RepairFailures') or 0) == 0
+          )
+          report['conclusion'] = 'PASS' if report['ok'] else 'FAIL'
+          report = safe(report)
+          Path('runtime_reports/mlb_auto_repair_schedule_identity_acceptance_latest.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True, default=str) + '\n'
+          )
+          print(json.dumps({
+              'ok': report['ok'],
+              'conclusion': report['conclusion'],
+              'alarmFinalState': report['alarmFinalState'],
+              'configuredRulePrefix': report['configuredRulePrefix'],
+              'canonicalScheduleResolved': report['canonicalScheduleResolved'],
+              'repairFailuresAfterFix': report['repairFailuresAfterFix'],
+              'otherSportsDeployed': False,
+          }, indent=2, sort_keys=True))
+          assert report['ok'] is True, report
+          PY
+
+      - name: Upload MLB-only acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-auto-repair-schedule-identity-${{ github.run_id }}
+          path: runtime_reports/mlb_auto_repair_schedule_identity_acceptance_latest.json
+          if-no-files-found: error
+          retention-days: 90
