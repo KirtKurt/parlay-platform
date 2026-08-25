@@ -68,6 +68,8 @@ Resources:
           MLB_AUTO_FINAL_COLLECTION_WINDOW_MINUTES: '20'
           MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
           MLB_AUTO_ML_API_BASE_URL: !Ref MlbMlApiBaseUrl
+          MLB_AUTO_ML_READ_STACK_NAME: parlay-platform-dev
+          MLB_AUTO_ML_READ_LOGICAL_ID: MLBV3ReadFunction
           MLB_AUTO_BEDROCK_MANTLE_DISCOVERY: 'true'
           MLB_AUTO_BEDROCK_RUNTIME_DISCOVERY: 'true'
           MLB_AUTO_BEDROCK_RUNTIME_PROVIDERS: 'amazon,openai'
@@ -93,6 +95,14 @@ Resources:
                 - bedrock:ListInferenceProfiles
                 - bedrock:GetInferenceProfile
               Resource: '*'
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:parlay-platform-dev-MLBV3ReadFunction-*'
+            - Effect: Allow
+              Action:
+                - cloudformation:DescribeStackResource
+              Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/parlay-platform-dev/*'
             - Effect: Allow
               Action:
                 - aws-marketplace:ViewSubscriptions
@@ -135,6 +145,8 @@ Resources:
         Variables:
           MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
           MLB_AUTO_ML_API_BASE_URL: !Ref MlbMlApiBaseUrl
+          MLB_AUTO_ML_READ_STACK_NAME: parlay-platform-dev
+          MLB_AUTO_ML_READ_LOGICAL_ID: MLBV3ReadFunction
           MLB_AUTO_BEDROCK_MANTLE_DISCOVERY: 'true'
           MLB_AUTO_BEDROCK_RUNTIME_DISCOVERY: 'true'
           MLB_AUTO_BEDROCK_RUNTIME_PROVIDERS: 'amazon,openai'
@@ -154,6 +166,14 @@ Resources:
                 - bedrock:ListInferenceProfiles
                 - bedrock:GetInferenceProfile
               Resource: '*'
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:parlay-platform-dev-MLBV3ReadFunction-*'
+            - Effect: Allow
+              Action:
+                - cloudformation:DescribeStackResource
+              Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/parlay-platform-dev/*'
             - Effect: Allow
               Action:
                 - aws-marketplace:ViewSubscriptions
