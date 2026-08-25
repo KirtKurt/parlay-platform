@@ -1,0 +1,133 @@
+name: Deploy MLB Auto prospective authority
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mlb_auto_llm/**'
+      - 'mlb-auto-llm-template.yaml'
+      - '.github/workflows/deploy-mlb-auto-prospective.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-auto-llm-deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-mlb-auto-llm
+  LIVE_BEDROCK_MODELS: us.anthropic.claude-sonnet-4-20250514-v1:0,us.meta.llama3-3-70b-instruct-v1:0,meta.llama3-3-70b-instruct-v1:0,mistral.mistral-large-2402-v1:0,mistral.mistral-small-2402-v1:0,cohere.command-r-v1:0,cohere.command-r-plus-v1:0,openai.gpt-5.6-sol,anthropic.claude-opus-4-8,anthropic.claude-opus-4-7,anthropic.claude-opus-4-6-v1,anthropic.claude-sonnet-4-6-v1,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0
+
+jobs:
+  verify-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Verify prospective-only source contract
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
+          PYTHONPATH=mlb_auto_llm python -m pytest -q \
+            tests/unit/test_mlb_auto_ml_authority.py \
+            tests/unit/test_mlb_auto_direct_read.py \
+            tests/unit/test_mlb_auto_model_gateway.py
+          grep -q 'AUTHORITY = "AWS_ML_PROSPECTIVE_R7"' mlb_auto_llm/ml_authority.py
+          grep -q 'MLB_ML_RETIRED_AUTHORITY_REJECTED' mlb_auto_llm/ml_authority.py
+          grep -q 'INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble' mlb_auto_llm/ml_authority.py
+          sam validate --template-file mlb-auto-llm-template.yaml --lint
+
+      - name: Authenticate providers
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${ODDS_API_KEY_VALUE:-}"
+          test -n "${BBS_API_KEY_VALUE:-}"
+          aws sts get-caller-identity
+
+      - name: Build isolated MLB Auto stack
+        run: sam build --no-cached --template-file mlb-auto-llm-template.yaml
+
+      - name: Deploy prospective-only MLB Auto authority
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+        run: |
+          set -euo pipefail
+          MLB_ML_API_BASE_URL=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+          test -n "$MLB_ML_API_BASE_URL"
+          test "$MLB_ML_API_BASE_URL" != 'None'
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              OddsApiKey="${ODDS_API_KEY_VALUE}" \
+              BbsApiKey="${BBS_API_KEY_VALUE}" \
+              TargetDailyAccuracy='0.80' \
+              CardLeadMinutesBeforeSecondGame='45' \
+              BedrockModels="${LIVE_BEDROCK_MODELS}" \
+              MlbMlApiBaseUrl="${MLB_ML_API_BASE_URL}" \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+
+      - name: Prove retired model cannot be accepted by deployed stack
+        run: |
+          set -euo pipefail
+          function_name=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" --logical-resource-id MLBAutoLLMFunction \
+            --region "$AWS_REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          code_location=$(aws lambda get-function --function-name "$function_name" --region "$AWS_REGION" --query 'Code.Location' --output text)
+          curl --fail --silent --show-error "$code_location" -o /tmp/mlb-auto.zip
+          python - <<'PY'
+          import zipfile
+          z=zipfile.ZipFile('/tmp/mlb-auto.zip')
+          text=z.read('ml_authority.py').decode()
+          assert 'AUTHORITY = "AWS_ML_PROSPECTIVE_R7"' in text
+          assert 'MLB_ML_RETIRED_AUTHORITY_REJECTED' in text
+          assert 'RETIRED_MODELS = {"INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble"}' in text
+          print('Deployed MLB Auto authority rejects retired V15.10: PASS')
+          PY
+
+      - name: Probe runtime without allowing retired fallback
+        run: |
+          set -euo pipefail
+          function_name=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" --logical-resource-id MLBAutoLLMFunction \
+            --region "$AWS_REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          aws lambda invoke --function-name "$function_name" --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out --cli-read-timeout 900 \
+            --payload '{"mode":"deployment_provider_smoke","force_publish":false}' \
+            /tmp/mlb-auto-prospective-probe.json > /tmp/mlb-auto-prospective-meta.json || true
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          meta=json.loads(Path('/tmp/mlb-auto-prospective-meta.json').read_text() or '{}')
+          body=json.loads(Path('/tmp/mlb-auto-prospective-probe.json').read_text() or '{}')
+          text=json.dumps(body,sort_keys=True)
+          assert 'AWS_ML_RANKED_ENSEMBLE' not in text
+          assert 'INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble' not in text or 'RETIRED' in text or 'REJECTED' in text
+          print(json.dumps({'functionError':meta.get('FunctionError'),'runtime':body},indent=2,default=str)[:20000])
+          PY
