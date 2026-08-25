@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import gzip
 import hashlib
 import json
@@ -34,11 +35,31 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _decode_payload(path: Path) -> bytes:
+    # Base64 padding is transport syntax, not part of the signed source. Restore
+    # omitted trailing '=' characters while retaining strict alphabet, gzip,
+    # and SHA-256 verification. Any truncation or mutation still fails closed.
+    encoded = "".join(path.read_text(encoding="utf-8").split())
+    remainder = len(encoded) % 4
+    if remainder == 1:
+        raise RuntimeError(
+            f"invalid base64 payload length for {path}: length={len(encoded)} remainder={remainder}"
+        )
+    padded = encoded + ("=" * ((4 - remainder) % 4))
+    try:
+        compressed = base64.b64decode(padded, validate=True)
+        return gzip.decompress(compressed)
+    except (binascii.Error, gzip.BadGzipFile, EOFError, OSError) as exc:
+        raise RuntimeError(
+            f"unable to decode checksum-locked payload {path}: "
+            f"length={len(encoded)} remainder={remainder}: {exc}"
+        ) from exc
+
+
 def install(root: Path) -> dict[str, str]:
     written: dict[str, str] = {}
     for destination, (payload_path, expected_sha256) in MANIFEST.items():
-        encoded = (root / payload_path).read_text(encoding="utf-8").strip()
-        data = gzip.decompress(base64.b64decode(encoded, validate=True))
+        data = _decode_payload(root / payload_path)
         actual_sha256 = _sha256(data)
         if actual_sha256 != expected_sha256:
             raise RuntimeError(
