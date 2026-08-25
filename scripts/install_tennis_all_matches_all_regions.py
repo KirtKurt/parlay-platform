@@ -18,11 +18,7 @@ MANIFEST = {
     ),
     "tests/test_tennis_live_coverage_contract.py": (
         "scripts/tennis_all_regions_payloads/test_tennis_live_coverage_contract.py.gz.b64",
-        "2a0137dee83c4a8d18a9a249aaf2095b78a9e166a5f803f61d5c0c85d996f802",
-    ),
-    ".github/workflows/deploy-tennis-learning.yml": (
-        "scripts/tennis_all_regions_payloads/deploy-tennis-learning.yml.gz.b64",
-        "27c7c68bc70eb63745f593142323493d09950440d411fdb3c6c0750d7d7e13cd",
+        "585c8318591bd1037bee33d8912f75b4dd79c1a87fa3a8e9ce45a0523c68fb90",
     ),
     ".github/workflows/publish-tennis-daily-card.yml": (
         "scripts/tennis_all_regions_payloads/publish-tennis-daily-card.yml.gz.b64",
@@ -38,7 +34,7 @@ def _sha256(data: bytes) -> str:
 def _decode_payload(path: Path) -> bytes:
     # Base64 padding is transport syntax, not part of the signed source. Restore
     # omitted trailing '=' characters while retaining strict alphabet, gzip,
-    # and SHA-256 verification. Any truncation or mutation still fails closed.
+    # CRC, and SHA-256 verification. Any truncation or mutation fails closed.
     encoded = "".join(path.read_text(encoding="utf-8").split())
     remainder = len(encoded) % 4
     if remainder == 1:
