@@ -5,11 +5,11 @@ import functools
 from typing import Any, Dict, List, Optional, Tuple
 
 
-VERSION = "MLB-PROSPECTIVE-TRAINER-READ-REPAIR-v1-stale-prelock-state-only"
-_INSTALL_FLAG = "_INQSI_MLB_PROSPECTIVE_TRAINER_READ_REPAIR_V1"
-_AUTHORITY_FLAG = "_INQSI_MLB_PROSPECTIVE_AUTHORITY_READ_REPAIR_V1"
-_VERDICT_FLAG = "_INQSI_MLB_PROSPECTIVE_VERDICT_READ_REPAIR_V1"
-_JOIN_FLAG = "_INQSI_MLB_PROSPECTIVE_JOIN_READ_REPAIR_V1"
+VERSION = "MLB-PROSPECTIVE-TRAINER-READ-REPAIR-v2-verified-empty-exclusions"
+_INSTALL_FLAG = "_INQSI_MLB_PROSPECTIVE_TRAINER_READ_REPAIR_V2"
+_AUTHORITY_FLAG = "_INQSI_MLB_PROSPECTIVE_AUTHORITY_READ_REPAIR_V2"
+_VERDICT_FLAG = "_INQSI_MLB_PROSPECTIVE_VERDICT_READ_REPAIR_V2"
+_JOIN_FLAG = "_INQSI_MLB_PROSPECTIVE_JOIN_READ_REPAIR_V2"
 EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS = frozenset(
     {
         "immutable_tminus45_prediction_not_available",
@@ -39,7 +39,9 @@ def _copy_with_stale_prelock_exclusions_cleared(
 
     The stale exclusions are valid while a prediction is merely pre-lock. They
     become false only after the same selection has a verified immutable T-45
-    lock and exact vector. Every other exclusion remains authoritative.
+    lock and exact vector. A legacy false eligibility boolean with no remaining
+    exclusion is also stale once every immutable-vector proof is present.
+    Every substantive exclusion remains authoritative.
     """
 
     out = copy.deepcopy(row or {})
@@ -56,29 +58,43 @@ def _copy_with_stale_prelock_exclusions_cleared(
         out.get("immutablePerGameStage") is True
         or out.get("immutableLockedStorage") is True
     )
-    if not (
+    vector = out.get("frozenFeatureVector")
+    verified_lock = bool(
         out.get("lockedPrediction") is True
         and immutable_lock
         and out.get("exactVectorVerified") is True
         and not exact_errors
-        and isinstance(out.get("frozenFeatureVector"), dict)
-        and bool((out.get("frozenFeatureVector") or {}).get("fingerprint"))
-    ):
+        and isinstance(vector, dict)
+        and bool(vector.get("fingerprint"))
+    )
+    if not verified_lock:
         return out
 
     row_reasons = _strings(out.get("trainingExclusionReasons"))
     freeze_reasons = _strings(freeze.get("trainingExclusionReasons"))
     all_reasons = row_reasons | freeze_reasons
     cleared = sorted(all_reasons & EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS)
-    if not cleared:
+    remaining = sorted(all_reasons - EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS)
+
+    # Do not infer eligibility through any surviving exclusion.  The only
+    # no-reason correction allowed here is the legacy false boolean on a fully
+    # verified immutable lock; the immutable payload itself is never written.
+    eligible = not remaining
+    stale_false_boolean = bool(
+        eligible
+        and (
+            out.get("trainingEligible") is not True
+            or freeze.get("trainingEligible") is not True
+        )
+    )
+    if not cleared and not stale_false_boolean:
         return out
 
-    remaining = sorted(all_reasons - EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS)
-    eligible = not remaining
     metadata = {
         "trainingEligible": eligible,
         "trainingExclusionReasons": remaining,
         "expiredPrelockTrainingExclusionsClearedAtRead": cleared,
+        "staleTrainingEligibleBooleanClearedAtRead": stale_false_boolean,
         "prospectiveTrainerReadRepairVersion": VERSION,
     }
     freeze.update(metadata)
@@ -105,11 +121,20 @@ def _copy_with_stale_prelock_exclusions_cleared(
         authority_integrity = all(
             authority.get(flag) is True for flag in _AUTHORITY_INTEGRITY_FLAGS
         )
+        authority_stale_false = bool(
+            eligible
+            and authority_integrity
+            and not authority_remaining
+            and authority.get("learningEligible") is not True
+        )
         authority.update(
             {
                 "trainingExclusionReasons": authority_remaining,
                 "expiredPrelockTrainingExclusionsClearedAtRead": (
                     authority_cleared
+                ),
+                "staleLearningEligibleBooleanClearedAtRead": (
+                    authority_stale_false
                 ),
                 "learningEligible": bool(
                     eligible and authority_integrity and not authority_remaining
@@ -127,7 +152,7 @@ def _label_with_stale_prelock_state_cleared(
     current_lock_eligible: bool,
     current_lock_exclusions: List[str],
 ) -> Dict[str, Any]:
-    """Correct an immutable label only in memory for a verified current lock."""
+    """Correct only named stale pre-lock label exclusions in memory."""
 
     out = copy.deepcopy(label or {})
     label_reasons = _strings(out.get("training_exclusion_reasons"))
