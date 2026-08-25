@@ -7,8 +7,9 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
-VERSION = "MLB-R7-SOURCE-HONEST-TRAINING-ADMISSION-v1"
+VERSION = "MLB-R7-SOURCE-HONEST-TRAINING-ADMISSION-v2-label-lock-bound"
 SNAPSHOT_POLICY_VERSION = "MLB-R7-SNAPSHOT-POLICY-v1-lock-safe-missingness"
+LABEL_LOCK_BINDING_VERSION = "MLB-R7-LABEL-LOCK-BINDING-v1-exact-immutable"
 MODEL_POLICY_VERSION = "MLB-R7-MODEL-POLICY-v1-inactive-all-missing-features"
 INCOMPLETE_PREFIX = "fundamentals_v2_incomplete:"
 REQUIRED_MISSINGNESS_MASKS = frozenset(
@@ -39,9 +40,9 @@ _AUTHORITY_INTEGRITY_FLAGS = (
     "exactLockVectorValidated",
     "selectionLockVectorStatusValidated",
 )
-_LABEL_PATCH_FLAG = "_INQSI_MLB_R7_SOURCE_HONEST_LABEL_PATCH_V1"
-_EXPERIMENT_PATCH_FLAG = "_INQSI_MLB_R7_SOURCE_HONEST_EXPERIMENT_PATCH_V1"
-_DUAL_PATCH_FLAG = "_INQSI_MLB_R7_SOURCE_HONEST_DUAL_PATCH_V1"
+_LABEL_PATCH_FLAG = "_INQSI_MLB_R7_SOURCE_HONEST_LABEL_PATCH_V2"
+_EXPERIMENT_PATCH_FLAG = "_INQSI_MLB_R7_SOURCE_HONEST_EXPERIMENT_PATCH_V2"
+_DUAL_PATCH_FLAG = "_INQSI_MLB_R7_SOURCE_HONEST_DUAL_PATCH_V2"
 
 
 def _strings(values: Any) -> set[str]:
@@ -98,6 +99,14 @@ def _source_honest_incomplete_reasons(values: Iterable[Any]) -> set[str]:
     }
 
 
+def _authority_integrity_proven(authority: Any) -> bool:
+    return bool(
+        isinstance(authority, Mapping)
+        and authority
+        and all(authority.get(flag) is True for flag in _AUTHORITY_INTEGRITY_FLAGS)
+    )
+
+
 def validate_snapshot_for_r7_training(
     snapshot: Any,
     prediction_time_utc: Any,
@@ -106,9 +115,9 @@ def validate_snapshot_for_r7_training(
     """Accept complete or honestly incomplete immutable pre-lock V2 evidence.
 
     This is intentionally narrower than production-pick eligibility and broader
-    than ``validate_snapshot``.  The schema, exact fingerprint, source
+    than ``validate_snapshot``. The schema, exact fingerprint, source
     provenance, missing-value masks, no-postgame policy, and time boundary must
-    all validate.  The only tolerated training exclusions are the V2 builder's
+    all validate. The only tolerated training exclusions are the V2 builder's
     exact ``fundamentals_v2_incomplete:<group>`` reasons.
     """
 
@@ -137,9 +146,10 @@ def validate_snapshot_for_r7_training(
     reasons: List[str] = []
     if actual_exclusions != expected_exclusions:
         reasons.append("r7_fundamentals_v2_incomplete_reason_contract_mismatch")
-    if snapshot.get("pregameComplete") is not (not missing_groups):
+    expected_complete = not missing_groups
+    if snapshot.get("pregameComplete") is not expected_complete:
         reasons.append("r7_fundamentals_v2_pregame_complete_contract_mismatch")
-    if snapshot.get("trainingEligibleAtCapture") is not (not missing_groups):
+    if snapshot.get("trainingEligibleAtCapture") is not expected_complete:
         reasons.append("r7_fundamentals_v2_capture_eligibility_contract_mismatch")
     if snapshot.get("missingValuesAreNull") is not True:
         reasons.append("r7_fundamentals_v2_null_missingness_policy_missing")
@@ -220,11 +230,7 @@ def _exact_lock_proven(row: Mapping[str, Any]) -> Tuple[bool, List[str]]:
     if isinstance(freeze, Mapping) and "exactVectorVerified" in freeze:
         stored_values.append(freeze.get("exactVectorVerified"))
     stored_exact = bool(stored_values and all(value is True for value in stored_values))
-    authority_exact = bool(
-        isinstance(authority, Mapping)
-        and authority
-        and all(authority.get(flag) is True for flag in _AUTHORITY_INTEGRITY_FLAGS)
-    )
+    authority_exact = _authority_integrity_proven(authority)
     immutable = bool(
         row.get("immutablePerGameStage") is True
         or row.get("immutableLockedStorage") is True
@@ -243,9 +249,118 @@ def _exact_lock_proven(row: Mapping[str, Any]) -> Tuple[bool, List[str]]:
     return not reasons, sorted(set(reasons))
 
 
+def _label_lock_binding_reasons(
+    label: Mapping[str, Any], locked: Mapping[str, Any]
+) -> List[str]:
+    """Prove the write-once FINAL label belongs to this exact immutable lock."""
+
+    authority = locked.get("canonicalLockAuthority") or {}
+    vector = _vector(locked)
+    snapshot = _snapshot(locked)
+    reasons: List[str] = []
+    if not _authority_integrity_proven(authority):
+        reasons.append("r7_label_lock_canonical_authority_not_proven")
+    if label.get("write_once") is not True or label.get("completed") is not True:
+        reasons.append("r7_label_not_write_once_final")
+    if not str(label.get("settlement_fingerprint") or ""):
+        reasons.append("r7_label_settlement_fingerprint_missing")
+    if not str(label.get("record_fingerprint") or ""):
+        reasons.append("r7_label_record_fingerprint_missing")
+
+    official_game_pk = str(
+        locked.get("officialGamePk")
+        or vector.get("officialGamePk")
+        or authority.get("officialGamePk")
+        or ""
+    )
+    if not official_game_pk or str(label.get("official_game_pk") or "") != official_game_pk:
+        reasons.append("r7_label_official_game_pk_not_bound_to_lock")
+
+    comparisons = {
+        "canonical_lock_pk": authority.get("sourcePk"),
+        "canonical_lock_sk": authority.get("sourceSk"),
+        "canonical_stage_fingerprint": authority.get("stageFingerprint"),
+        "frozen_feature_vector_fingerprint": vector.get("fingerprint"),
+        "fundamentals_snapshot_v2_version": snapshot.get("version"),
+        "fundamentals_snapshot_v2_fingerprint": snapshot.get("fingerprint"),
+    }
+    for field, expected in comparisons.items():
+        if not str(expected or "") or str(label.get(field) or "") != str(expected):
+            reasons.append(f"r7_label_{field}_not_bound_to_lock")
+    return sorted(set(reasons))
+
+
+def _joined_row_source_honest_proof(
+    row: Mapping[str, Any],
+) -> Optional[Tuple[bool, List[str], Dict[str, float]]]:
+    annotation_fields = {
+        "r7SourceHonestTrainingAdmission",
+        "r7SourceHonestTrainingPolicyVersion",
+        "r7SourceHonestSnapshotPolicyVersion",
+        "r7SourceHonestLabelLockBindingVersion",
+        "r7SourceHonestMissingnessMasks",
+    }
+    if not (annotation_fields & set(row)):
+        return None
+
+    reasons: List[str] = []
+    if row.get("r7SourceHonestTrainingAdmission") is not True:
+        reasons.append("r7_joined_source_honest_admission_not_proven")
+    if row.get("r7SourceHonestTrainingPolicyVersion") != VERSION:
+        reasons.append("r7_joined_training_policy_version_mismatch")
+    if row.get("r7SourceHonestSnapshotPolicyVersion") != SNAPSHOT_POLICY_VERSION:
+        reasons.append("r7_joined_snapshot_policy_version_mismatch")
+    if (
+        row.get("r7SourceHonestLabelLockBindingVersion")
+        != LABEL_LOCK_BINDING_VERSION
+    ):
+        reasons.append("r7_joined_label_lock_binding_version_mismatch")
+    if row.get("slateFinalized") is not True or row.get("labelStatus") != "FINAL":
+        reasons.append("r7_joined_row_not_finalized")
+    if not str(row.get("labelFingerprint") or ""):
+        reasons.append("r7_joined_label_fingerprint_missing")
+    if not str(row.get("labelRecordFingerprint") or ""):
+        reasons.append("r7_joined_label_record_fingerprint_missing")
+    for field in (
+        "immutablePregameVectorMutated",
+        "immutableLockPayloadMutated",
+        "immutableLabelPayloadMutated",
+        "productionPickEligibilityChanged",
+    ):
+        if row.get(field) is not False:
+            reasons.append(f"r7_joined_{field}_must_be_false")
+
+    vector = _vector(row)
+    if not str(vector.get("fingerprint") or ""):
+        reasons.append("r7_joined_frozen_vector_fingerprint_missing")
+    snapshot = _snapshot(row)
+    snapshot_ok, snapshot_reasons = validate_snapshot_for_r7_training(
+        snapshot,
+        _prediction_time(row),
+        _lock_time(row),
+    )
+    if not snapshot_ok:
+        reasons.extend(snapshot_reasons)
+
+    masks_raw = row.get("r7SourceHonestMissingnessMasks") or {}
+    masks = dict(masks_raw) if isinstance(masks_raw, Mapping) else {}
+    expected_masks = derived_missingness(snapshot) if snapshot_ok else {}
+    if set(masks) != REQUIRED_MISSINGNESS_MASKS:
+        reasons.append("r7_joined_missingness_mask_set_mismatch")
+    if masks != expected_masks:
+        reasons.append("r7_joined_missingness_mask_values_mismatch")
+    if any(value not in {0.0, 1.0} for value in masks.values()):
+        reasons.append("r7_joined_missingness_mask_not_binary")
+    return not reasons, sorted(set(reasons)), masks if not reasons else {}
+
+
 def row_is_source_honest_training_safe(
     row: Mapping[str, Any],
 ) -> Tuple[bool, List[str], Dict[str, float]]:
+    joined_proof = _joined_row_source_honest_proof(row)
+    if joined_proof is not None:
+        return joined_proof
+
     exact, exact_reasons = _exact_lock_proven(row)
     if not exact:
         return False, exact_reasons, {}
@@ -299,9 +414,7 @@ def _install_label_patch(labels: Any) -> None:
         @functools.wraps(original_verdict)
         def training_verdict(row: Dict[str, Any]) -> Tuple[bool, List[str]]:
             eligible, reasons = original_verdict(row)
-            safe, _safety_reasons, _masks = row_is_source_honest_training_safe(
-                row
-            )
+            safe, _safety_reasons, _masks = row_is_source_honest_training_safe(row)
             if not safe:
                 return bool(eligible), sorted(
                     set(str(value) for value in (reasons or []) if str(value))
@@ -334,30 +447,34 @@ def _install_label_patch(labels: Any) -> None:
             )
             if not isinstance(joined, dict):
                 return joined
-            safe, safety_reasons, masks = row_is_source_honest_training_safe(
-                locked
-            )
-            if not safe:
+            safe, safety_reasons, masks = row_is_source_honest_training_safe(locked)
+            binding_reasons = _label_lock_binding_reasons(label, locked)
+            if not safe or binding_reasons:
                 return joined
             exclusions = _strings(joined.get("trainingExclusionReasons"))
             remaining = sorted(
                 exclusions - _source_honest_incomplete_reasons(exclusions)
             )
+            admitted = bool(
+                slate_finalized
+                and joined.get("labelStatus") == "FINAL"
+                and bool(joined.get("labelFingerprint"))
+                and bool(joined.get("labelRecordFingerprint"))
+                and not remaining
+            )
             out = copy.deepcopy(joined)
             out.update(
                 {
-                    "trainingEligible": bool(
-                        slate_finalized
-                        and out.get("labelStatus") == "FINAL"
-                        and bool(out.get("labelFingerprint"))
-                        and bool(out.get("labelRecordFingerprint"))
-                        and not remaining
-                    ),
+                    "trainingEligible": admitted,
                     "trainingExclusionReasons": remaining,
-                    "r7SourceHonestTrainingAdmission": bool(not remaining),
+                    "r7SourceHonestTrainingAdmission": admitted,
                     "r7SourceHonestMissingnessMasks": masks,
                     "r7SourceHonestTrainingPolicyVersion": VERSION,
-                    "r7SourceHonestSafetyReasons": safety_reasons,
+                    "r7SourceHonestSnapshotPolicyVersion": SNAPSHOT_POLICY_VERSION,
+                    "r7SourceHonestLabelLockBindingVersion": LABEL_LOCK_BINDING_VERSION,
+                    "r7SourceHonestSafetyReasons": sorted(
+                        set(safety_reasons + binding_reasons)
+                    ),
                     "immutablePregameVectorMutated": False,
                     "immutableLockPayloadMutated": False,
                     "immutableLabelPayloadMutated": False,
@@ -396,7 +513,7 @@ def _install_experiment_patch(experiment: Any) -> None:
         effective_validator = snapshot_validator
         if is_r7 and effective_validator is None:
             effective_validator = validate_snapshot_for_r7_training
-        ok, reasons = original_validate(
+        _ok, reasons = original_validate(
             row,
             manifest,
             snapshot_validator=effective_validator,
@@ -527,6 +644,7 @@ def install(
         "ok": True,
         "version": VERSION,
         "snapshotPolicyVersion": SNAPSHOT_POLICY_VERSION,
+        "labelLockBindingVersion": LABEL_LOCK_BINDING_VERSION,
         "modelPolicyVersion": MODEL_POLICY_VERSION,
         "immutablePredictionOrLockMutated": False,
         "immutableLabelMutated": False,
