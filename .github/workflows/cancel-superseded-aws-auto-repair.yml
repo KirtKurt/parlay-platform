@@ -1,0 +1,23 @@
+name: Cancel Superseded AWS Auto Repair Runs
+
+on:
+  push:
+    branches:
+      - automation/aws-native-algorithm-auto-repair-20260825
+    paths:
+      - '.github/workflows/cancel-superseded-aws-auto-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-native-algorithm-auto-repair-deploy
+  cancel-in-progress: true
+
+jobs:
+  cancel-and-retire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: echo 'Superseded auto-repair runs cancelled; no AWS credentials or AWS actions used.'
