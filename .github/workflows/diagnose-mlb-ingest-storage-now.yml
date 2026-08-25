@@ -1,0 +1,90 @@
+name: Diagnose MLB Ingest Storage Now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-mlb-ingest-storage-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: diagnose-mlb-ingest-storage-now
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet 'boto3>=1.34,<2'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Run protected candidate path with production writes intercepted
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          SIGNALS_TABLE: parlay_platform_signal_ledger
+          SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
+          PREDICTIONS_TABLE: parlay_platform_predictions
+          OUTCOMES_TABLE: parlay_platform_outcomes
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          PYTHONPATH: ${{ github.workspace }}/hello_world
+        run: |
+          set -euo pipefail
+          SLATE_DATE=$(TZ=America/New_York date +%F)
+          python scripts/diagnose_mlb_scoring_engine.py --slate-date "$SLATE_DATE" --output /tmp/mlb_ingest_storage_diagnostic.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('/tmp/mlb_ingest_storage_diagnostic.json')
+          d=json.loads(p.read_text())
+          assert (d.get('writePrevention') or {}).get('productionWritesPerformed') is False
+          out={
+            'proofType':d.get('proofType'),
+            'version':d.get('version'),
+            'createdAtUtc':d.get('createdAtUtc'),
+            'slateDateEt':d.get('slateDateEt'),
+            'readOnly':True,
+            'productionWritesPerformed':False,
+            'publicPersistedRead':d.get('publicPersistedRead'),
+            'protectedCandidateGenerationNoWrite':d.get('protectedCandidateGenerationNoWrite'),
+            'writePrevention':d.get('writePrevention'),
+            'runtimeInstall':d.get('runtimeInstall'),
+            'secretExposed':False,
+          }
+          Path('/tmp/mlb_ingest_storage_min.json').write_text(json.dumps(out,indent=2,sort_keys=True,default=str)+'\n')
+          PY
+      - name: Publish diagnostic evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s /tmp/mlb_ingest_storage_min.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-ingest-storage-proof origin/main
+            git reset --hard origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb_ingest_storage_min.json runtime_reports/mlb_ingest_storage_diagnostic_latest.json
+            git add runtime_reports/mlb_ingest_storage_diagnostic_latest.json
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB ingest storage diagnostic [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt*3))
+          done
+          exit 1
