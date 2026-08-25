@@ -155,6 +155,58 @@ def test_existing_exact_lock_and_label_become_eligible_read_only():
     assert source_label["training_eligible"] is False
 
 
+def test_stale_false_label_boolean_with_no_reasons_is_repaired_read_only():
+    module = repair.install(_labels_module())
+    source_lock = _locked()
+    source_label = {
+        "training_eligible": False,
+        "training_exclusion_reasons": [],
+    }
+
+    authority = _authority(module, source_lock)
+    locked = copy.deepcopy(source_lock)
+    locked["canonicalLockAuthority"] = authority
+    result = module._joined_training_row(
+        "2026-08-05",
+        source_label,
+        locked,
+        slate_finalized=True,
+    )
+
+    assert authority["learningEligible"] is True
+    assert result["trainingEligible"] is True
+    assert result["trainingExclusionReasons"] == []
+    assert source_lock["trainingEligible"] is False
+    assert source_label == {
+        "training_eligible": False,
+        "training_exclusion_reasons": [],
+    }
+
+
+def test_substantive_label_reason_blocks_stale_false_boolean_repair():
+    module = repair.install(_labels_module())
+    source_lock = _locked()
+    source_label = {
+        "training_eligible": False,
+        "training_exclusion_reasons": [REAL],
+    }
+
+    authority = _authority(module, source_lock)
+    locked = copy.deepcopy(source_lock)
+    locked["canonicalLockAuthority"] = authority
+    result = module._joined_training_row(
+        "2026-08-05",
+        source_label,
+        locked,
+        slate_finalized=True,
+    )
+
+    assert authority["learningEligible"] is True
+    assert result["trainingEligible"] is False
+    assert result["trainingExclusionReasons"] == [REAL]
+    assert source_label["training_eligible"] is False
+
+
 def test_real_reliability_exclusion_remains_ineligible():
     module = repair.install(_labels_module())
     source_lock = _locked(STALE, REAL)
