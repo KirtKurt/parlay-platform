@@ -148,7 +148,6 @@ jobs:
               TargetStackName="$TARGET_STACK" \
               FunctionNamePrefix="$FUNCTION_PREFIX" \
               RuleNamePrefix="$RULE_PREFIX" \
-              RepairCadence='rate(5 minutes)' \
               RepairLeaseSeconds='960' \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
