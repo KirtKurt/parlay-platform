@@ -1,0 +1,23 @@
+name: Bootstrap MLB R7 official fundamentals capability probe
+
+"on":
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  dispatch:
+    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'Bootstrap MLB R7 official fundamentals capability probe'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch the read-only capability probe
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run probe-mlb-r7-official-fundamentals-now.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
