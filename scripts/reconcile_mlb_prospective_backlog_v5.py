@@ -1,32 +1,31 @@
 #!/usr/bin/env python3
-"""Reconcile MLB prospective backlog while preserving readable status bodies.
+"""Reconcile MLB prospective backlog with settlement-triggered terminal replay.
 
-The protected lock status route intentionally may return a non-2xx application
-status while still carrying the exact official-schedule lifecycle body needed to
-decide whether a protected reconciliation is required. V4 discarded that body
-inside the generic API-Gateway adapter and therefore failed before it could make
-the status-first decision. This v5 adapter accepts non-2xx application bodies
-only for the read-only lock-status GET route. Mutating lock, settlement, trainer,
-promotion, and production-authority calls retain the existing fail-closed 2xx
-requirement and v4 backpressure behavior.
-
-For failed mutating calls, a strict whitelist of bounded diagnostic fields is
-included in the raised error. This exposes the exact canonical-settlement blocker
-without treating a 409 as success, continuing to another slate, or writing any
-storage directly.
+Read-only lock status bodies may project a missed lifecycle game as terminal
+coverage before a durable no-prediction outcome exists. Canonical settlement is
+the stronger durability authority. When, and only when, settlement returns the
+exact conflict-free 409 shape proving official finals lack a canonical lock or
+durable terminal outcome, this adapter invokes the existing protected lock
+replay, verifies the exact-date official status, and retries the full bounded
+reconciliation. The 409 is never treated as success and no storage is written
+directly by this script.
 """
 from __future__ import annotations
 
 import json
 import sys
 from contextlib import contextmanager
-from typing import Any, Dict, Iterable, Mapping
+from typing import Any, Dict, Iterable, Mapping, Optional
 
 import reconcile_mlb_prospective_backlog as base
+import reconcile_mlb_prospective_backlog_v3 as v3
 import reconcile_mlb_prospective_backlog_v4 as v4
 
-VERSION = "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5-readable-incomplete-status"
+VERSION = "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5.1-settlement-triggered-terminal-replay"
 STATUS_PATH = "/v1/mlb/locks/status"
+SETTLEMENT_RUN = "prospective_backlog_settlement_v4"
+TERMINAL_REPLAY_RUN = "prospective_terminal_backlog_reconciliation_v5"
+MISSING_LOCK_REASON = "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
 SAFE_APPLICATION_FIELDS = (
     "error",
     "reason",
@@ -85,6 +84,18 @@ MAX_DIAGNOSTIC_ITEMS = 8
 MAX_DIAGNOSTIC_STRING = 480
 
 
+class DurableTerminalReplayRequired(base.ReconciliationError):
+    """A conflict-free settlement gap requires the protected terminal replay."""
+
+    def __init__(self, slate_date: str, detail: Mapping[str, Any]):
+        self.slate_date = slate_date
+        self.detail = dict(detail)
+        super().__init__(
+            "settlement_requires_protected_terminal_replay:"
+            + json.dumps(self.detail, sort_keys=True, separators=(",", ":"))
+        )
+
+
 def _is_read_only_status_event(event: Mapping[str, Any]) -> bool:
     return (
         str(event.get("httpMethod") or "").upper() == "GET"
@@ -120,10 +131,7 @@ def _safe_failure_row(value: Any) -> Any:
 def _safe_failure_sample(values: Any) -> list[Any]:
     if not isinstance(values, Iterable) or isinstance(values, (str, bytes, Mapping)):
         return []
-    return [
-        _safe_failure_row(value)
-        for value in list(values)[:MAX_DIAGNOSTIC_ITEMS]
-    ]
+    return [_safe_failure_row(value) for value in list(values)[:MAX_DIAGNOSTIC_ITEMS]]
 
 
 def _safe_application_detail(
@@ -152,12 +160,90 @@ def _safe_application_detail(
     return json.dumps(detail, sort_keys=True, default=str, separators=(",", ":"))
 
 
+def _nonnegative_integer(value: Any, *, field: str) -> int:
+    return base._integer(value, field=field)
+
+
+def _terminal_replay_detail(
+    application_status: int,
+    application: Mapping[str, Any],
+    event: Mapping[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Recognize only the exact conflict-free durable-terminal settlement gap."""
+
+    if application_status != 409 or str(event.get("run") or "") != SETTLEMENT_RUN:
+        return None
+    if application.get("authoritativeSettlement") is not True:
+        return None
+    if str(application.get("status") or application.get("overall_status") or "") != "FAILED_CLOSED":
+        return None
+    if application.get("immutablePregameRowsMutated") is not False:
+        return None
+
+    slate_date = str(event.get("slate_date") or event.get("slateDateEt") or "")
+    returned_date = str(
+        application.get("slateDateEt") or application.get("slate_date_et") or ""
+    )
+    if not slate_date or returned_date != slate_date:
+        return None
+
+    try:
+        official = _nonnegative_integer(application.get("officialGameCount"), field="official_game_count")
+        finals = _nonnegative_integer(application.get("officialFinalCount"), field="official_final_count")
+        canonical = _nonnegative_integer(application.get("canonicalLockCount"), field="canonical_lock_count")
+        terminal = _nonnegative_integer(application.get("terminalNoPredictionCount"), field="terminal_no_prediction_count")
+        missing = _nonnegative_integer(application.get("missingCanonicalLockCount"), field="missing_canonical_lock_count")
+        rejected = _nonnegative_integer(application.get("rejectedCanonicalLockCount"), field="rejected_canonical_lock_count")
+        conflicts = _nonnegative_integer(application.get("lockTerminalConflictCount"), field="lock_terminal_conflict_count")
+        identity_rejections = _nonnegative_integer(application.get("identityRejectionCount"), field="identity_rejection_count")
+        label_conflicts = _nonnegative_integer(application.get("labelConflictCount"), field="label_conflict_count")
+        skipped = _nonnegative_integer(application.get("skippedNotFinalCount"), field="skipped_not_final_count")
+    except base.ReconciliationError:
+        return None
+
+    if not official or finals != official or skipped:
+        return None
+    if not missing or rejected or conflicts or identity_rejections or label_conflicts:
+        return None
+    if canonical + terminal + missing != official:
+        return None
+
+    missing_rows = application.get("missingCanonicalLocks") or []
+    if not isinstance(missing_rows, list) or len(missing_rows) != missing:
+        return None
+    if any(
+        not isinstance(row, Mapping)
+        or not str(row.get("officialGamePk") or "")
+        or str(row.get("reason") or "") != MISSING_LOCK_REASON
+        for row in missing_rows
+    ):
+        return None
+
+    return {
+        "applicationStatusCode": application_status,
+        "slateDateEt": slate_date,
+        "officialGameCount": official,
+        "officialFinalCount": finals,
+        "canonicalLockCount": canonical,
+        "terminalNoPredictionCount": terminal,
+        "missingCanonicalLockCount": missing,
+        "missingOfficialGamePks": [
+            str(row.get("officialGamePk")) for row in missing_rows[:MAX_DIAGNOSTIC_ITEMS]
+        ],
+        "missingOfficialGamePkCount": len(missing_rows),
+        "authoritativeSettlement": True,
+        "conflictFree": True,
+        "immutablePregameRowsMutated": False,
+    }
+
+
 def invoke_json_preserving_status_body(
     lambda_client: Any,
     function_name: str,
     event: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Perform one SDK delivery and preserve only read-only status error bodies."""
+    """Perform one SDK delivery; preserve status evidence and signal safe replay."""
+
     response = lambda_client.invoke(
         FunctionName=function_name,
         InvocationType="RequestResponse",
@@ -170,16 +256,11 @@ def invoke_json_preserving_status_body(
     if response.get("FunctionError"):
         raise base.ReconciliationError("lambda_function_error")
 
-    payload = base._json_object(
-        payload_bytes.decode("utf-8"),
-        error="lambda_response_json_invalid",
-    )
+    payload = base._json_object(payload_bytes.decode("utf-8"), error="lambda_response_json_invalid")
     if "statusCode" not in payload:
         return payload
 
-    application_status = base._integer(
-        payload.get("statusCode"), field="application_status_code"
-    )
+    application_status = base._integer(payload.get("statusCode"), field="application_status_code")
     body = payload.get("body")
     application = (
         base._json_object(body, error="application_body_json_invalid")
@@ -189,15 +270,14 @@ def invoke_json_preserving_status_body(
     if 200 <= application_status < 300:
         return application
     if not _is_read_only_status_event(event):
+        replay_detail = _terminal_replay_detail(application_status, application, event)
+        if replay_detail is not None:
+            raise DurableTerminalReplayRequired(replay_detail["slateDateEt"], replay_detail)
         raise base.ReconciliationError(
             "lambda_application_status_not_success:"
             + _safe_application_detail(application_status, application, event)
         )
 
-    # Preserve exact provider/status evidence without declaring it healthy.
-    # V4 still validates official authority, exact date, counts, and terminal
-    # coverage. Only the recognized incomplete-terminal errors may trigger the
-    # protected mutation; 5xx/unhealthy bodies remain fail-closed.
     application = dict(application)
     application["_applicationStatusCode"] = application_status
     application["_nonSuccessStatusBodyPreserved"] = True
@@ -214,28 +294,95 @@ def _status_body_adapter():
         base.invoke_json = original
 
 
+def _execute_protected_terminal_replay(
+    cloudformation: Any,
+    lambda_client: Any,
+    *,
+    stack_name: str,
+    request: DurableTerminalReplayRequired,
+) -> Dict[str, Any]:
+    functions = base.resolve_stack_functions(cloudformation, stack_name)
+    replay = v4.invoke_json_with_backpressure(
+        lambda_client,
+        functions.lock,
+        {
+            "sport": "mlb",
+            "run": TERMINAL_REPLAY_RUN,
+            "slateDateEt": request.slate_date,
+            "force": True,
+        },
+    )
+    status = v4.invoke_json_with_backpressure(
+        lambda_client,
+        functions.lock,
+        {
+            "httpMethod": "GET",
+            "path": STATUS_PATH,
+            "queryStringParameters": {"date": request.slate_date},
+        },
+    )
+    evidence = v3.validate_lock_result(replay, status, request.slate_date)
+    return {
+        "slateDateEt": request.slate_date,
+        "settlementFailure": dict(request.detail),
+        "lockEvidence": evidence,
+        "protectedLockReplay": True,
+        "settlement409TreatedAsSuccess": False,
+        "directTableWrite": False,
+        "postStartPredictionCreationAllowed": False,
+    }
+
+
 def reconcile(*args: Any, **kwargs: Any) -> Dict[str, Any]:
-    with _status_body_adapter():
-        value = v4.reconcile(*args, **kwargs)
+    stack_name = str(kwargs.get("stack_name") or "")
+    if len(args) < 2 or not stack_name:
+        raise base.ReconciliationError("reconcile_arguments_invalid")
+    cloudformation, lambda_client = args[0], args[1]
+    max_replays = int(kwargs.get("max_slate_days") or base.DEFAULT_MAX_SLATE_DAYS)
+    repaired: Dict[str, Dict[str, Any]] = {}
+
+    for _ in range(max_replays + 1):
+        try:
+            with _status_body_adapter():
+                value = v4.reconcile(*args, **kwargs)
+            break
+        except DurableTerminalReplayRequired as request:
+            if request.slate_date in repaired:
+                raise base.ReconciliationError(
+                    "settlement_terminal_replay_failed_to_close_gap:"
+                    + request.slate_date
+                ) from request
+            repaired[request.slate_date] = _execute_protected_terminal_replay(
+                cloudformation,
+                lambda_client,
+                stack_name=stack_name,
+                request=request,
+            )
+    else:
+        raise base.ReconciliationError("settlement_terminal_replay_bound_exhausted")
+
     value = dict(value)
     value["version"] = VERSION
     value["readOnlyNonSuccessStatusBodiesPreserved"] = True
     value["mutatingNonSuccessStatusesStillFailClosed"] = True
     value["mutatingFailureDiagnosticsWhitelisted"] = True
+    value["settlementTriggeredProtectedTerminalReplayCount"] = len(repaired)
+    value["settlementTriggeredProtectedTerminalReplays"] = list(repaired.values())
+    value["settlement409TreatedAsSuccess"] = False
+    value["directTableWrite"] = False
+    value["postStartPredictionCreationAllowed"] = False
+    value["immutablePredictionRewriteAllowed"] = False
+    value["promotionAuthorityChanged"] = False
+    value["productionAuthorityChanged"] = False
+    value["automaticWagerAllowed"] = False
     return value
 
 
 def main() -> int:
     args = base._parser().parse_args()
     session = base.boto3.session.Session(region_name=args.region)
-    cloudformation = session.client(
-        "cloudformation",
-        config=v4.control_plane_config(),
-    )
-    lambda_client = session.client(
-        "lambda",
-        config=v4.durable_lambda_config(),
-    )
+    cloudformation = session.client("cloudformation", config=v4.control_plane_config())
+    lambda_client = session.client("lambda", config=v4.durable_lambda_config())
     try:
         report = reconcile(
             cloudformation,
@@ -252,6 +399,7 @@ def main() -> int:
             "readOnlyNonSuccessStatusBodiesPreserved": True,
             "mutatingNonSuccessStatusesStillFailClosed": True,
             "mutatingFailureDiagnosticsWhitelisted": True,
+            "settlement409TreatedAsSuccess": False,
             "directTableWrite": False,
             "postStartPredictionCreationAllowed": False,
             "immutablePredictionRewriteAllowed": False,
