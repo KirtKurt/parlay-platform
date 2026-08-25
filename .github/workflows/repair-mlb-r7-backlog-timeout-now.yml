@@ -1,0 +1,171 @@
+name: Repair MLB R7 backlog timeout now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-r7-backlog-timeout-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repair-mlb-r7-backlog-timeout-now
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-dev
+
+jobs:
+  reconcile-r7-backlog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact main source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install repair dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          python -m py_compile \
+            scripts/reconcile_mlb_prospective_backlog_v5.py \
+            scripts/invoke_mlb_trainer_with_retry.py
+
+      - name: Resolve MLB-only function identities and preserve original timeout
+        id: mlb
+        run: |
+          set -euo pipefail
+          LOCK_FN=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBDailyPickLockFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          TRAINER=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBMLTrainingFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$LOCK_FN" && test "$LOCK_FN" != 'None'
+          test -n "$TRAINER" && test "$TRAINER" != 'None'
+          ORIGINAL_TIMEOUT=$(aws lambda get-function-configuration \
+            --function-name "$LOCK_FN" --region "$AWS_REGION" \
+            --query Timeout --output text)
+          test "$ORIGINAL_TIMEOUT" -ge 60
+          test "$ORIGINAL_TIMEOUT" -le 900
+          echo "lock_fn=$LOCK_FN" >> "$GITHUB_OUTPUT"
+          echo "trainer=$TRAINER" >> "$GITHUB_OUTPUT"
+          echo "original_timeout=$ORIGINAL_TIMEOUT" >> "$GITHUB_OUTPUT"
+          echo "MLB lock function: $LOCK_FN; original timeout: $ORIGINAL_TIMEOUT"
+
+      - name: Temporarily extend only the MLB lock function timeout
+        run: |
+          set -euo pipefail
+          aws lambda update-function-configuration \
+            --function-name '${{ steps.mlb.outputs.lock_fn }}' \
+            --timeout 900 \
+            --region "$AWS_REGION" >/tmp/mlb-r7-timeout-update.json
+          aws lambda wait function-updated-v2 \
+            --function-name '${{ steps.mlb.outputs.lock_fn }}' \
+            --region "$AWS_REGION"
+          CURRENT=$(aws lambda get-function-configuration \
+            --function-name '${{ steps.mlb.outputs.lock_fn }}' \
+            --region "$AWS_REGION" --query Timeout --output text)
+          test "$CURRENT" = '900'
+
+      - name: Reconcile prospective backlog through yesterday with existing fail-closed V5 repair
+        id: reconcile
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-r7-timeout-repair
+          python scripts/reconcile_mlb_prospective_backlog_v5.py \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --max-slate-days 30 \
+            --output /tmp/mlb-r7-timeout-repair/backlog.json
+          python - <<'PY'
+          import json
+          p='/tmp/mlb-r7-timeout-repair/backlog.json'
+          d=json.load(open(p))
+          assert d.get('directTableWrite') is False, d
+          assert d.get('postStartPredictionCreationAllowed') is False, d
+          assert d.get('immutablePredictionRewriteAllowed') is False, d
+          assert d.get('productionAuthorityChanged') is False, d
+          assert d.get('promotionAuthorityChanged') is False, d
+          assert d.get('ok') is True, d
+          print(json.dumps(d, indent=2, sort_keys=True))
+          PY
+
+      - name: Invoke R7 trainer after successful reconciliation
+        run: |
+          set -euo pipefail
+          TRAINER='${{ steps.mlb.outputs.trainer }}'
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER" --region "$AWS_REGION" \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"r7_backlog_timeout_repair_training"}' \
+            --response /tmp/mlb-r7-timeout-repair/training.json \
+            --invocation /tmp/mlb-r7-timeout-repair/training-invocation.json \
+            --retry-execution-lease --deadline-seconds 1800 --retry-delay-seconds 20
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER" --region "$AWS_REGION" \
+            --status-training-result /tmp/mlb-r7-timeout-repair/training.json \
+            --response /tmp/mlb-r7-timeout-repair/status.json \
+            --invocation /tmp/mlb-r7-timeout-repair/status-invocation.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          training=json.loads(Path('/tmp/mlb-r7-timeout-repair/training.json').read_text())
+          status=json.loads(Path('/tmp/mlb-r7-timeout-repair/status.json').read_text())
+          latest=((status.get('trainingHealth') or {}).get('latestRun') or training)
+          evidence={
+            'experimentId': status.get('experimentId') or training.get('experimentId'),
+            'acceptedRowCount': latest.get('acceptedRowCount', training.get('acceptedRowCount')),
+            'partitionCounts': latest.get('partitionCounts', training.get('partitionCounts')),
+            'processedThroughSlateDate': (latest.get('canonicalSlateContinuity') or {}).get('processedThroughSlateDate'),
+            'modelTrained': latest.get('modelTrained', training.get('modelTrained')),
+            'liveInferenceAuthority': latest.get('liveInferenceAuthority', training.get('liveInferenceAuthority')),
+            'championChanged': latest.get('championChanged', training.get('championChanged')),
+          }
+          assert evidence['experimentId']=='mlb-v2-2026-08-03-future-prospective-r7', evidence
+          assert evidence['liveInferenceAuthority'] is not True, evidence
+          print(json.dumps(evidence, indent=2, sort_keys=True))
+          PY
+
+      - name: Restore original MLB lock timeout
+        if: always()
+        run: |
+          set -euo pipefail
+          LOCK_FN='${{ steps.mlb.outputs.lock_fn }}'
+          ORIGINAL='${{ steps.mlb.outputs.original_timeout }}'
+          if [ -n "$LOCK_FN" ] && [ -n "$ORIGINAL" ]; then
+            aws lambda update-function-configuration \
+              --function-name "$LOCK_FN" \
+              --timeout "$ORIGINAL" \
+              --region "$AWS_REGION" >/tmp/mlb-r7-timeout-restore.json
+            aws lambda wait function-updated-v2 \
+              --function-name "$LOCK_FN" \
+              --region "$AWS_REGION"
+            RESTORED=$(aws lambda get-function-configuration \
+              --function-name "$LOCK_FN" --region "$AWS_REGION" \
+              --query Timeout --output text)
+            test "$RESTORED" = "$ORIGINAL"
+          fi
