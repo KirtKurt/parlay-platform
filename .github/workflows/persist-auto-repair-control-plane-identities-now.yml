@@ -1,0 +1,239 @@
+name: Persist safe Tennis and Soccer auto-repair identities
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/persist-auto-repair-control-plane-identities-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: persist-auto-repair-control-plane-identities-now
+  cancel-in-progress: false
+
+jobs:
+  test-and-persist:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Patch only repair-controller source and deployment identity
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          handler = Path('aws_auto_repair/handler.py')
+          text = handler.read_text(encoding='utf-8')
+
+          marker = '''DATA_MARKERS = ("bbd_kickoff_missing", "nfl_team_unrecognized", "authoritative kickoff", "missing authoritative", "source contract", "three_source_game_coverage_incomplete", "authoritative_card_deadline_missed", "no_future_pre_cutoff_slate")
+'''
+          optional = marker + '''OPTIONAL_LOGICAL_IDS = frozenset({"SoccerDlqRecoveryFunction"})
+'''
+          if 'OPTIONAL_LOGICAL_IDS = frozenset({' not in text:
+              assert text.count(marker) == 1, 'data marker anchor changed'
+              text = text.replace(marker, optional, 1)
+
+          conditional_anchor = '''def conditional(exc: ClientError) -> bool:
+    return str((exc.response.get("Error") or {}).get("Code") or "") == "ConditionalCheckFailedException"
+'''
+          helper = conditional_anchor + '''
+
+def optional_logical_resource_absent(logical_id: str, exc: Exception) -> bool:
+    """Recognize only an explicitly optional logical resource absent from its stack."""
+
+    if logical_id not in OPTIONAL_LOGICAL_IDS or not isinstance(exc, ClientError):
+        return False
+    error = exc.response.get("Error") or {}
+    code = str(error.get("Code") or "")
+    message = str(error.get("Message") or "")
+    lowered = message.lower()
+    return bool(
+        code == "ValidationError"
+        and logical_id.lower() in lowered
+        and any(marker in lowered for marker in ("does not exist", "doesn't exist", "not found"))
+    )
+'''
+          if 'def optional_logical_resource_absent(' not in text:
+              assert text.count(conditional_anchor) == 1, 'conditional helper anchor changed'
+              text = text.replace(conditional_anchor, helper, 1)
+
+          old_except = '''    except Exception as exc:
+        classification, seconds, evidence = classify(error=exc)
+        next_at = observed + timedelta(seconds=seconds)
+        put_component(name, classification, next_at, evidence)
+        detail["error"] = str(exc)[:1500]
+        detail["repair"] = {"status": classification, "next_attempt_at": iso(next_at)}
+        counts["failures"] += 1
+        okay = advisory
+    return detail, okay, counts
+'''
+          new_except = '''    except Exception as exc:
+        if optional_logical_resource_absent(str(logical_id), exc):
+            evidence = f"OPTIONAL_LOGICAL_RESOURCE_NOT_DEPLOYED:{logical_id}"
+            next_at = observed + timedelta(seconds=DATA_COOLDOWN)
+            put_component(
+                name,
+                "NOT_DEPLOYED_OPTIONAL",
+                next_at,
+                evidence,
+            )
+            detail["optional_not_deployed"] = True
+            detail["repair"] = {
+                "status": "NOT_DEPLOYED_OPTIONAL",
+                "next_attempt_at": iso(next_at),
+            }
+            return detail, True, counts
+        classification, seconds, evidence = classify(error=exc)
+        next_at = observed + timedelta(seconds=seconds)
+        put_component(name, classification, next_at, evidence)
+        detail["error"] = str(exc)[:1500]
+        detail["repair"] = {"status": classification, "next_attempt_at": iso(next_at)}
+        counts["failures"] += 1
+        okay = advisory
+    return detail, okay, counts
+'''
+          if '"status": "NOT_DEPLOYED_OPTIONAL"' not in text:
+              assert text.count(old_except) == 1, 'attempt exception anchor changed'
+              text = text.replace(old_except, new_except, 1)
+          handler.write_text(text, encoding='utf-8')
+
+          tests = Path('tests/unit/test_aws_native_auto_repair.py')
+          value = tests.read_text(encoding='utf-8')
+          test_block = '''
+
+def test_absent_optional_soccer_dlq_component_is_not_a_repair_failure(monkeypatch):
+    module = load_module(monkeypatch, "soccer")
+    component = next(
+        row
+        for row in module.SPORT_CONFIGS["soccer"]
+        if row[1] == "SoccerDlqRecoveryFunction"
+    )
+
+    class MissingOptionalResource:
+        @staticmethod
+        def describe_stack_resource(**kwargs):
+            logical_id = kwargs["LogicalResourceId"]
+            raise module.ClientError(
+                {
+                    "Error": {
+                        "Code": "ValidationError",
+                        "Message": (
+                            f"Logical Resource ID '{logical_id}' doesn't exist"
+                        ),
+                    }
+                },
+                "DescribeStackResource",
+            )
+
+    writes = []
+    monkeypatch.setattr(module, "CFN", MissingOptionalResource())
+    monkeypatch.setattr(
+        module,
+        "put_component",
+        lambda *args, **kwargs: writes.append((args, kwargs)),
+    )
+
+    detail, okay, counts = module.attempt(
+        component,
+        module.now(),
+        dry_run=True,
+    )
+
+    assert okay is True
+    assert detail["optional_not_deployed"] is True
+    assert detail["repair"]["status"] == "NOT_DEPLOYED_OPTIONAL"
+    assert counts["failures"] == 0
+    assert counts["attempts"] == 0
+    assert writes and writes[0][0][1] == "NOT_DEPLOYED_OPTIONAL"
+'''
+          if 'test_absent_optional_soccer_dlq_component_is_not_a_repair_failure' not in value:
+              value = value.rstrip() + test_block + '\n'
+          tests.write_text(value, encoding='utf-8')
+
+          replacements = {
+              '.github/workflows/deploy-aws-native-auto-repair.yml': (
+                  ('function_prefix: parlay-platform-tennis-learning-', 'function_prefix: parlay-platform-tennis-le-'),
+                  ('rule_prefix: parlay-platform-tennis-learning-', 'rule_prefix: parlay-platform-tennis-le-'),
+                  ('function_prefix: parlay-platform-soccer-auto-', 'function_prefix: parlay-platform-soccer-'),
+                  ('rule_prefix: parlay-platform-soccer-auto-', 'rule_prefix: parlay-platform-soccer-'),
+              ),
+              '.github/workflows/deploy-aws-native-auto-repair-v2.yml': (
+                  ('function_prefix: parlay-platform-tennis-learning-', 'function_prefix: parlay-platform-tennis-le-'),
+                  ('rule_prefix: parlay-platform-tennis-learning-', 'rule_prefix: parlay-platform-tennis-le-'),
+                  ('function_prefix: parlay-platform-soccer-auto-', 'function_prefix: parlay-platform-soccer-'),
+                  ('rule_prefix: parlay-platform-soccer-auto-', 'rule_prefix: parlay-platform-soccer-'),
+              ),
+              '.github/workflows/deploy-aws-native-auto-repair-v3.yml': (
+                  (
+                      "'tennis|parlay-platform-auto-repair-tennis|parlay-platform-tennis-learning|parlay-platform-tennis-learning-|parlay-platform-tennis-learning-'",
+                      "'tennis|parlay-platform-auto-repair-tennis|parlay-platform-tennis-learning|parlay-platform-tennis-le-|parlay-platform-tennis-le-'",
+                  ),
+                  (
+                      "'soccer|parlay-platform-auto-repair-soccer|parlay-platform-soccer-auto|parlay-platform-soccer-auto-|parlay-platform-soccer-auto-'",
+                      "'soccer|parlay-platform-auto-repair-soccer|parlay-platform-soccer-auto|parlay-platform-soccer-|parlay-platform-soccer-'",
+                  ),
+              ),
+          }
+          for filename, pairs in replacements.items():
+              path = Path(filename)
+              source = path.read_text(encoding='utf-8')
+              for old, new in pairs:
+                  if new in source:
+                      continue
+                  assert source.count(old) == 1, f'{filename}: expected identity anchor once: {old}'
+                  source = source.replace(old, new, 1)
+              path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Test fail-closed contracts
+        env:
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
+          python -m py_compile aws_auto_repair/*.py
+          python -m pytest -q tests/unit/test_aws_native_auto_repair.py
+          git diff --check
+          grep -q 'OPTIONAL_LOGICAL_IDS = frozenset({"SoccerDlqRecoveryFunction"})' aws_auto_repair/handler.py
+          grep -q 'NOT_DEPLOYED_OPTIONAL' aws_auto_repair/handler.py
+          grep -q 'function_prefix: parlay-platform-tennis-le-' .github/workflows/deploy-aws-native-auto-repair.yml
+          grep -q 'function_prefix: parlay-platform-soccer-' .github/workflows/deploy-aws-native-auto-repair.yml
+          ! grep -R -E 'force_publish|clear_lease|bypass_lease|PutItem.*(Prediction|Lock|Settlement|Model)|UpdateItem.*(Prediction|Lock|Settlement|Model)' aws_auto_repair aws-auto-repair-template.yaml
+
+      - name: Commit tested source without triggering multi-sport deployment
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            aws_auto_repair/handler.py \
+            tests/unit/test_aws_native_auto_repair.py \
+            .github/workflows/deploy-aws-native-auto-repair.yml \
+            .github/workflows/deploy-aws-native-auto-repair-v2.yml \
+            .github/workflows/deploy-aws-native-auto-repair-v3.yml
+          git diff --cached --quiet || \
+            git commit -m 'Persist Tennis and Soccer repair identities [skip ci]'
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              break
+            fi
+            test "$attempt" != 5
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 3))
+          done
