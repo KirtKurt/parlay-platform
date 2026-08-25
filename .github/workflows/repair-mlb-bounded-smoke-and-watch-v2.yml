@@ -29,11 +29,11 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Apply deterministic MLB-only repair
+      - name: Apply exact MLB-only repair
         run: |
           set -euo pipefail
-          python -m py_compile scripts/repair_mlb_bounded_smoke_and_watch.py
-          python scripts/repair_mlb_bounded_smoke_and_watch.py
+          python -m py_compile scripts/apply_mlb_bounded_smoke_v3.py
+          python scripts/apply_mlb_bounded_smoke_v3.py
 
       - name: Run focused regression suite
         run: |
@@ -62,10 +62,9 @@ jobs:
             tests/unit/test_mlb_auto_production_model_gateway.py \
             tests/unit/test_mlb_auto_bedrock_smoke.py \
             tests/unit/test_mlb_auto_ml_authority_smoke.py \
-            .github/workflows/deploy-mlb-auto-llm.yml \
-            .github/workflows/mlb-three-source-runtime-watch-v3.yml
+            .github/workflows/deploy-mlb-auto-llm.yml
           git diff --cached --quiet && exit 0
-          git commit -m 'Bound MLB deployment smoke and repair controller discovery'
+          git commit -m 'Bound MLB deployment smoke before ML authority fallback'
           for attempt in 1 2 3 4 5; do
             git pull --rebase origin main
             git push origin HEAD:main && exit 0
