@@ -12,18 +12,8 @@ LAMBDA_TASK_ROOT = Path(
     os.environ.get("INQSI_MLB_LAMBDA_TASK_ROOT") or ROOT / "hello_world"
 ).resolve()
 
-EXPECTED_MODEL = "INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble"
-EXPECTED_RUNTIME = (
-    "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-"
-    "prelock-persistence-verified-stage-promotion-authority-"
-    "verified-active-model-authority"
-)
 EXPECTED_API = "MLB-V3-READ-API-v7-exact-persisted-prelock-public-read"
-EXPECTED_PERSISTED_PRELOCK_READ = (
-    "MLB-PERSISTED-PRELOCK-PUBLIC-READ-v2-raw-identity-decimal-safe"
-)
-EXPECTED_SELECTOR = "INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble"
-EXPECTED_POLICY = "2026-07-24-mlb-ranked-winner-primary-v1"
+EXPECTED_AUTHORITY_CONTRACT = "MLB-AUTO-R7-QUALIFIED-CHAMPION-ONLY-v1"
 
 
 def main() -> int:
@@ -69,68 +59,70 @@ import mlb_v3_read_api
 
 assert callable(frontend_app.lambda_handler)
 assert callable(inqsi_pull_history.handle_pull_history_route)
+
 response = mlb_v3_read_api.lambda_handler({{
     "path": "/v1/mlb/model/version",
     "rawPath": "/v1/mlb/model/version",
     "httpMethod": "GET",
     "queryStringParameters": None,
 }}, None)
-assert response.get("statusCode") == 200, response
+status = int(response.get("statusCode") or 0)
 body = json.loads(response.get("body") or "{{}}")
-assert body.get("ok") is True, body
-assert body.get("engine_import_ok") is True, body
-assert body.get("model_version") == {EXPECTED_MODEL!r}, body
-assert body.get("apiRuntimeVersion") == {EXPECTED_API!r}, body
-assert body.get("persistedPrelockPublicReadVersion") == {EXPECTED_PERSISTED_PRELOCK_READ!r}, body
-assert body.get("primaryAlgorithm") == {EXPECTED_SELECTOR!r}, body
-assert body.get("primaryAlgorithmActive") is True, body
-assert body.get("rankedWinnerPolicyVersion") == {EXPECTED_POLICY!r}, body
-assert body.get("productionAuthoritySource") == "mlb_ranked_winner_v15_10_active_ensemble", body
-assert body.get("allowedProductionOutput") == ["PICK"], body
-assert body.get("productionSelectionAllowed") is True, body
-assert body.get("automaticWagerAllowed") is False, body
-assert body.get("legacyRecommendationAuthority") is False, body
-assert body.get("legacyFallbackAllowed") is False, body
-assert body.get("precisionHitRateEvidencePassed") is False, body
-assert body.get("automaticPromotionPolicy") == "winner model fixed for release; precision/trade promotion remains disabled", body
-assert body.get("firstPromotionRequiresManualReview") is True, body
-assert body.get("manualReviewCreatesShadowApprovalOnly") is True, body
-assert body.get("runtimeAuthorityActivationAvailable") is False, body
-assert body.get("requiredWinnerPickPolicy") == "one active-model ranked winner PICK for every valid MLB game", body
-assert body.get("readOnly") is True, body
+text = json.dumps(body, sort_keys=True).lower()
 
-runtime = body.get("ml_runtime_install") or {{}}
-assert runtime.get("ok") is True, runtime
-assert runtime.get("version") == {EXPECTED_RUNTIME!r}, runtime
-assert runtime.get("rankedWinnerAllowedOutput") == ["PICK"], runtime
-assert runtime.get("winnerPickRequiredForEveryValidEvent") is True, runtime
-assert runtime.get("precisionQualificationSeparateFromPick") is True, runtime
-assert runtime.get("legacyRecommendationAuthority") is False, runtime
-assert runtime.get("automaticWagerAllowed") is False, runtime
-required = {{
-    "accuracyTargetsSeparated",
-    "legacyReliabilityOverlaySafety",
-    "sourceHonestFundamentals",
-    "sourceHonestFundamentalsV2",
-    "legacyV1ChampionRuntimeInstalledForShadowDiagnostics",
-    "legacyV1AuthorityDisabled",
-    "v2ShadowManualFirst",
-    "officialSemanticsFinalized",
-    "immutableFeatureFreeze",
-    "immutableLockedStorageAuthority",
-    "exactCleanCohortVectorPatch",
-    "officialFreezeBridge",
-    "canonicalLockedStorageFinalizer",
-    "lastPrelockPromotionAuthority",
-    "canonicalProbabilityAndPersistedPrelockAuthority",
-    "providerNeutralCalibrationAndActionability",
-    "signalPolicyV13Installed",
-    "legacyFinalGateDisabled",
-    "rankedWinnerV15_10DirectionInstalled",
-    "rankedWinnerV15_10SelectionInstalled",
-}}
-missing = sorted(name for name in required if (runtime.get("steps") or {{}}).get(name) is not True)
-assert not missing, {{"missingRuntimeSteps": missing, "runtime": runtime}}
+# The deployment validator accepts exactly two production-safe authority states:
+# a genuinely qualified R7 champion, or explicit fail-closed no-champion.
+# It must never require or restore retired MLB authority.
+assert body.get("apiRuntimeVersion") == {EXPECTED_API!r}, body
+assert body.get("authorityContractVersion") == {EXPECTED_AUTHORITY_CONTRACT!r}, body
+assert body.get("readOnly") is True, body
+assert body.get("legacyFallbackAllowed") is False, body
+assert body.get("legacyRecommendationAuthority") is False, body
+assert body.get("retiredAuthoritySuppressed") is True, body
+assert body.get("retiredV15_10Eligible") is not True, body
+assert "v15.10" not in text, body
+assert "ranked-winner-v15" not in text, body
+
+if status == 503:
+    assert body.get("ok") is False, body
+    assert body.get("status") == "NO_QUALIFIED_CHAMPION", body
+    assert body.get("error") == "NO_QUALIFIED_CHAMPION", body
+    assert body.get("publicationClosed") is True, body
+    assert body.get("productionSelectionAllowed") is False, body
+    assert body.get("requestedAuthority") == "AWS_ML_PROSPECTIVE_R7", body
+    assert body.get("qualifiedChampionRequired") is True, body
+    assert body.get("qualifiedChampionPresent") is False, body
+    assert body.get("r7ChampionQualified") is False, body
+    assert body.get("r7DeploymentIdentity") is None, body
+    assert body.get("model_version") is None, body
+    assert body.get("primaryAlgorithm") is None, body
+    assert body.get("primaryAlgorithmActive") is False, body
+    authority_state = "NO_QUALIFIED_CHAMPION"
+elif status == 200:
+    assert body.get("ok") is True, body
+    assert body.get("publicationClosed") is False, body
+    assert body.get("productionSelectionAllowed") is True, body
+    assert body.get("requestedAuthority") == "AWS_ML_PROSPECTIVE_R7", body
+    assert body.get("qualifiedChampionRequired") is True, body
+    assert body.get("qualifiedChampionPresent") is True, body
+    assert body.get("r7ChampionQualified") is True, body
+    deployment_identity = body.get("r7DeploymentIdentity")
+    model_version = body.get("model_version")
+    primary = body.get("primaryAlgorithm")
+    assert deployment_identity, body
+    assert model_version, body
+    assert primary, body
+    safe_identity_text = json.dumps({{
+        "r7DeploymentIdentity": deployment_identity,
+        "model_version": model_version,
+        "primaryAlgorithm": primary,
+    }}, sort_keys=True).lower()
+    assert "r7" in safe_identity_text, body
+    assert "v15.10" not in safe_identity_text, body
+    assert "ranked-winner-v15" not in safe_identity_text, body
+    authority_state = "QUALIFIED_R7_CHAMPION"
+else:
+    raise AssertionError({{"unexpectedModelVersionStatus": status, "body": body}})
 
 read_calls = []
 original_reader = mlb_v3_read_api.ENGINE.read_persisted_predictions
@@ -143,40 +135,38 @@ try:
         "path": "/v1/mlb/predictions",
         "rawPath": "/v1/mlb/predictions",
         "httpMethod": "GET",
-        "queryStringParameters": {{"date": "2026-07-24", "store": "true", "limit": "7"}},
+        "queryStringParameters": {{"date": "2026-08-25", "store": "true", "limit": "7"}},
     }}, None)
 finally:
     mlb_v3_read_api.ENGINE.read_persisted_predictions = original_reader
-assert read_response.get("statusCode") == 200, read_response
-assert read_calls == [{{"date": "2026-07-24", "store": False, "limit": 7}}], read_calls
-read_body = json.loads(read_response.get("body") or "{{}}")
-assert read_body.get("readOnly") is True, read_body
-assert read_body.get("primaryAlgorithm") == {EXPECTED_SELECTOR!r}, read_body
-assert read_body.get("persistedPrelockPublicReadVersion") == {EXPECTED_PERSISTED_PRELOCK_READ!r}, read_body
-assert (read_body.get("persistedPrelockPublicRead") or {{}}).get("productionAuthorityChanged") is False, read_body
 
-original_runtime = mlb_v3_read_api.ENGINE.MLB_ML_RUNTIME_INSTALL_V3
-fail_calls = []
-try:
-    mlb_v3_read_api.ENGINE.MLB_ML_RUNTIME_INSTALL_V3 = {{**original_runtime, "ok": False}}
-    mlb_v3_read_api.ENGINE.read_persisted_predictions = lambda *a, **k: fail_calls.append((a, k))
-    failed = mlb_v3_read_api.lambda_handler({{
-        "path": "/v1/mlb/predictions",
-        "rawPath": "/v1/mlb/predictions",
-        "httpMethod": "GET",
-        "queryStringParameters": {{"date": "2026-07-24"}},
-    }}, None)
-finally:
-    mlb_v3_read_api.ENGINE.MLB_ML_RUNTIME_INSTALL_V3 = original_runtime
-    mlb_v3_read_api.ENGINE.read_persisted_predictions = original_reader
-assert failed.get("statusCode") == 503, failed
-assert fail_calls == [], fail_calls
+read_status = int(read_response.get("statusCode") or 0)
+read_body = json.loads(read_response.get("body") or "{{}}")
+read_text = json.dumps(read_body, sort_keys=True).lower()
+assert read_body.get("readOnly") is True, read_body
+assert "v15.10" not in read_text, read_body
+assert "ranked-winner-v15" not in read_text, read_body
+
+if authority_state == "NO_QUALIFIED_CHAMPION":
+    # Publication is closed before persisted predictions are read or projected.
+    assert read_status == 503, read_response
+    assert read_calls == [], read_calls
+    assert read_body.get("status") == "NO_QUALIFIED_CHAMPION", read_body
+    assert read_body.get("publicationClosed") is True, read_body
+    assert read_body.get("productionSelectionAllowed") is False, read_body
+else:
+    assert read_status == 200, read_response
+    assert read_calls == [{{"date": "2026-08-25", "store": False, "limit": 7}}], read_calls
+    assert read_body.get("productionSelectionAllowed") is True, read_body
+    assert read_body.get("qualifiedChampionPresent") is True, read_body
+
 print(json.dumps({{
     "ok": True,
-    "modelVersion": body.get("model_version"),
-    "runtimeVersion": runtime.get("version"),
+    "authorityState": authority_state,
+    "modelVersionStatusCode": status,
     "apiRuntimeVersion": body.get("apiRuntimeVersion"),
-    "persistedPrelockPublicReadVersion": body.get("persistedPrelockPublicReadVersion"),
+    "authorityContractVersion": body.get("authorityContractVersion"),
+    "retiredAuthoritySuppressed": body.get("retiredAuthoritySuppressed"),
 }}, indent=2))
 '''
     result = subprocess.run(
@@ -192,7 +182,10 @@ print(json.dumps({{
         sys.stderr.write(result.stderr)
         return result.returncode
     print(result.stdout.strip())
-    print("MLB V15.10 Lambda cold import, exact persisted prelock read, one-pick authority, read-only, and fail-closed contracts verified")
+    print(
+        "MLB V3 Lambda cold import and qualified-R7-only read authority contract "
+        "verified; retired MLB authority remains suppressed"
+    )
     return 0
 
 
