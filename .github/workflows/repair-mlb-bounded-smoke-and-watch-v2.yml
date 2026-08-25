@@ -1,0 +1,74 @@
+name: Repair MLB bounded smoke and runtime watch V2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-mlb-bounded-smoke-and-watch-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-mlb-bounded-smoke-and-watch-v2
+  cancel-in-progress: false
+
+jobs:
+  repair-test-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Apply deterministic MLB-only repair
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/repair_mlb_bounded_smoke_and_watch.py
+          python scripts/repair_mlb_bounded_smoke_and_watch.py
+
+      - name: Run focused regression suite
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2' 'PyYAML>=6,<7'
+          python -m py_compile \
+            mlb_auto_llm/production_model_gateway.py \
+            mlb_auto_llm/bedrock_smoke.py \
+            mlb_auto_llm/ml_authority_smoke.py
+          PYTHONPATH=.:mlb_auto_llm python -m pytest -q \
+            tests/unit/test_mlb_auto_model_gateway.py \
+            tests/unit/test_mlb_auto_production_model_gateway.py \
+            tests/unit/test_mlb_auto_bedrock_smoke.py \
+            tests/unit/test_mlb_auto_ml_authority_smoke.py \
+            tests/unit/test_mlb_auto_ml_authority.py
+          git diff --check
+
+      - name: Publish tested repair to main
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            mlb_auto_llm/production_model_gateway.py \
+            mlb_auto_llm/bedrock_smoke.py \
+            tests/unit/test_mlb_auto_production_model_gateway.py \
+            tests/unit/test_mlb_auto_bedrock_smoke.py \
+            tests/unit/test_mlb_auto_ml_authority_smoke.py \
+            .github/workflows/deploy-mlb-auto-llm.yml \
+            .github/workflows/mlb-three-source-runtime-watch-v3.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'Bound MLB deployment smoke and repair controller discovery'
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
