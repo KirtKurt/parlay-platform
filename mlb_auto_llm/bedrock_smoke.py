@@ -23,27 +23,47 @@ except ModuleNotFoundError:  # pragma: no cover - package import in unit tests
     from mlb_auto_llm.model_gateway import configured_regions
 
 
+DEFAULT_SMOKE_ROUTE_LIMIT = 16
+MAX_SMOKE_ROUTE_LIMIT = 32
+
+
+def _route_limit() -> int:
+    try:
+        configured = int(
+            os.getenv(
+                "MLB_AUTO_BEDROCK_SMOKE_ROUTE_LIMIT",
+                str(DEFAULT_SMOKE_ROUTE_LIMIT),
+            )
+        )
+    except (TypeError, ValueError):
+        configured = DEFAULT_SMOKE_ROUTE_LIMIT
+    return min(MAX_SMOKE_ROUTE_LIMIT, max(1, configured))
+
+
 def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
     # Refresh endpoint-native catalogs, but retain warm-container failure
-    # cooldowns so a deployment probe cannot repeatedly hammer routes already
+    # cooldowns so a deployment probe does not repeatedly hammer routes already
     # proven unavailable, EOL, account-denied, or daily-token exhausted.
     reset_model_state(clear_discovery=True, clear_failures=False)
     mantle = mantle_models()
     runtime = runtime_models()
-    route_limit = max(1, int(os.getenv("MLB_AUTO_BEDROCK_SMOKE_ROUTE_LIMIT", "1")))
-    models = list(runtime[:route_limit])
+    catalog = configured_models()
+    route_limit = _route_limit()
+    models = list(catalog[:route_limit])
     result = invoke_chain_text(
         "Return only the word OK.",
         models,
         max_tokens=8,
         temperature=0.0,
         top_p=0.9,
-        max_attempts=1,
+        max_attempts=route_limit,
     )
     common = {
         "service": "mlb-auto-llm-bedrock-smoke",
         "configuredRegions": configured_regions(),
         "configuredModelCount": len(models),
+        "configuredRouteCatalogCount": len(catalog),
+        "smokeRouteLimit": route_limit,
         "mantleModelCount": len(mantle),
         "runtimeModelCount": len(runtime),
         "mantleModelIds": mantle,
