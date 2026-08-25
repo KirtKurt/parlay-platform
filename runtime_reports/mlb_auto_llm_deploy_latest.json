@@ -2,13 +2,13 @@
   "autonomousRules": [],
   "bedrockSmoke": {
     "attemptedModelIds": [],
-    "bedrockAvailable": false,
-    "decisionAuthority": "AWS_ML_RANKED_ENSEMBLE",
-    "endpointFamily": "aws-ml-readonly-api",
+    "bedrockAvailable": null,
+    "decisionAuthority": null,
+    "endpointFamily": null,
     "errors": [],
     "errorsBeforeSuccess": [],
-    "modelId": "INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble",
-    "ok": true
+    "modelId": null,
+    "ok": null
   },
   "conclusion": "FAIL",
   "jobStatus": "failure",
@@ -22,38 +22,11 @@
     "mlDecisionCount": 0,
     "modelAuthorityComplete": null,
     "modelDecisionCount": 0,
-    "ok": true,
+    "ok": null,
     "pickCount": 0,
-    "sourceStatus": {
-      "bigBallsDataPro": {
-        "events": 19,
-        "matchedGames": 10,
-        "missingGamePks": [],
-        "ok": true,
-        "scheduledGames": 10
-      },
-      "mlbStatsApi": {
-        "games": 10,
-        "matchedGames": 10,
-        "missingGamePks": [],
-        "ok": true,
-        "scheduledGames": 10
-      },
-      "theOddsApi": {
-        "events": 22,
-        "matchedGames": 10,
-        "missingGamePks": [],
-        "ok": true,
-        "quota": {
-          "last": "15",
-          "remaining": "24751220",
-          "used": "248780"
-        },
-        "scheduledGames": 10
-      }
-    },
-    "status": "COLLECTING",
-    "threeSourceCoverageComplete": true
+    "sourceStatus": {},
+    "status": null,
+    "threeSourceCoverageComplete": null
   },
   "publicStatus": {
     "cardLeadMinutesBeforeSecondGame": null,
@@ -62,11 +35,11 @@
     "targetDailyAccuracy": null,
     "threeSourcePolicy": null
   },
-  "publishedAtUtc": "2026-08-24T23:10:37.579810+00:00",
+  "publishedAtUtc": "2026-08-25T00:10:21.170144+00:00",
   "runAttempt": "1",
-  "runId": "32787963421",
+  "runId": "32792400969",
   "secretExposed": false,
   "service": "mlb-auto-llm",
-  "sourceSha": "bd35268049239a9579a5e10e3de44c7336dd1743",
+  "sourceSha": "d8c878223a80a7ea3957180417cf6643c1ab4a8b",
   "workflow": "Deploy MLB Auto LLM"
 }
