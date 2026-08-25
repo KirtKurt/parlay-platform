@@ -9,6 +9,10 @@ Adds five capabilities using only T-minus-45-clipped snapshots:
 
 The same deterministic formulas are installed in compiled historical search and
 live champion scoring. No post-lock or outcome data is read here.
+
+Recovery note (2026-08-25): this source-touch intentionally triggers the isolated
+MLB historical V7 deployment so AWS refreshes the historical Lambda with the
+current provider secret before learning resumes. It does not change feature math.
 """
 from __future__ import annotations
 
