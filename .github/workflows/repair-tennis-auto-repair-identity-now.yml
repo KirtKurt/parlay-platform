@@ -1,0 +1,279 @@
+name: Repair Tennis auto-repair identity in isolation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-tennis-auto-repair-identity-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repair-tennis-auto-repair-identity-now
+  cancel-in-progress: false
+
+jobs:
+  repair-tennis-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      SPORT: tennis
+      REPAIR_STACK: parlay-platform-auto-repair-tennis
+      TARGET_STACK: parlay-platform-tennis-learning
+      TARGET_LOGICAL_ID: TennisAutonomousControllerFunction
+      FUNCTION_PREFIX: parlay-platform-tennis-le-
+      RULE_PREFIX: parlay-platform-tennis-le-
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verify exact Tennis target identity and schedule
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7' 'cfn-lint>=1,<2'
+          python -m py_compile aws_auto_repair/*.py
+          python -m pytest -q tests/unit/test_aws_native_auto_repair.py
+          sam validate --template-file aws-auto-repair-template.yaml --lint
+
+          target_status=$(aws cloudformation describe-stacks \
+            --stack-name "$TARGET_STACK" --region "$REGION" \
+            --query 'Stacks[0].StackStatus' --output text)
+          case "$target_status" in
+            CREATE_COMPLETE|UPDATE_COMPLETE) ;;
+            *) echo "::error::Tennis target stack is not stable: $target_status"; exit 1 ;;
+          esac
+
+          target_function=$(aws cloudformation describe-stack-resource \
+            --stack-name "$TARGET_STACK" --logical-resource-id "$TARGET_LOGICAL_ID" \
+            --region "$REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          case "$target_function" in "$FUNCTION_PREFIX"*) ;; *) echo "::error::Unexpected Tennis function identity: $target_function"; exit 1 ;; esac
+          target_arn=$(aws lambda get-function-configuration --function-name "$target_function" \
+            --region "$REGION" --query FunctionArn --output text)
+          rules=$(aws events list-rule-names-by-target --target-arn "$target_arn" \
+            --limit 100 --region "$REGION" --query RuleNames --output json)
+
+          TARGET_ARN="$target_arn" RULES="$rules" python - <<'PY'
+          import json, os, subprocess
+          target_arn = os.environ['TARGET_ARN']
+          prefix = os.environ['RULE_PREFIX']
+          rules = json.loads(os.environ['RULES'])
+          assert rules, 'No EventBridge schedule targets the Tennis controller'
+          accepted = []
+          for name in rules:
+              rule = json.loads(subprocess.check_output([
+                  'aws','events','describe-rule','--name',name,
+                  '--region',os.environ['REGION'],'--output','json'
+              ]))
+              targets = json.loads(subprocess.check_output([
+                  'aws','events','list-targets-by-rule','--rule',name,
+                  '--region',os.environ['REGION'],'--output','json'
+              ])).get('Targets') or []
+              if (
+                  name.startswith(prefix)
+                  and rule.get('State') == 'ENABLED'
+                  and any(row.get('Arn') == target_arn for row in targets)
+              ):
+                  accepted.append({
+                      'name': name,
+                      'schedule': rule.get('ScheduleExpression'),
+                      'targets': targets,
+                  })
+          assert accepted, {
+              'reason': 'Corrected Tennis prefix matched no enabled canonical target schedule',
+              'rulePrefix': prefix,
+              'observedRules': rules,
+          }
+          print(json.dumps({'canonicalTennisRules': accepted, 'rulePrefix': prefix}, indent=2))
+          PY
+
+      - name: Build and deploy only the Tennis repair stack
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          rm -rf .aws-sam
+          sam build --no-cached --template-file aws-auto-repair-template.yaml
+
+          for attempt in $(seq 1 80); do
+            status=$(aws cloudformation describe-stacks --stack-name "$REPAIR_STACK" \
+              --region "$REGION" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_MISSING)
+            case "$status" in
+              STACK_MISSING|CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE) break ;;
+              *_IN_PROGRESS) sleep 10 ;;
+              *) echo "::error::Tennis repair stack is not updateable: $status"; exit 1 ;;
+            esac
+            test "$attempt" != 80
+          done
+
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "$REPAIR_STACK" \
+            --region "$REGION" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              SportName="$SPORT" \
+              TargetStackName="$TARGET_STACK" \
+              FunctionNamePrefix="$FUNCTION_PREFIX" \
+              RuleNamePrefix="$RULE_PREFIX" \
+              RepairLeaseSeconds='960' \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+
+      - name: Require healthy Tennis repair cycle and cleared alarm
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          out=/tmp/tennis-auto-repair-acceptance
+          mkdir -p "$out" runtime_reports
+
+          repair_function=$(aws cloudformation describe-stacks --stack-name "$REPAIR_STACK" \
+            --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='AutoRepairFunctionName'].OutputValue | [0]" --output text)
+          alarm_name=$(aws cloudformation describe-stack-resource --stack-name "$REPAIR_STACK" \
+            --logical-resource-id AutoRepairUnresolvedFailureAlarm --region "$REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          configured_function_prefix=$(aws lambda get-function-configuration --function-name "$repair_function" \
+            --region "$REGION" --query 'Environment.Variables.FUNCTION_NAME_PREFIX' --output text)
+          configured_rule_prefix=$(aws lambda get-function-configuration --function-name "$repair_function" \
+            --region "$REGION" --query 'Environment.Variables.RULE_NAME_PREFIX' --output text)
+          test "$configured_function_prefix" = "$FUNCTION_PREFIX"
+          test "$configured_rule_prefix" = "$RULE_PREFIX"
+
+          aws lambda invoke --function-name "$repair_function" --invocation-type RequestResponse \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"audit","source":"tennis_identity_acceptance"}' \
+            --region "$REGION" "$out/audit.json" > "$out/audit-meta.json"
+          aws lambda invoke --function-name "$repair_function" --invocation-type RequestResponse \
+            --cli-binary-format raw-in-base64-out --cli-read-timeout 900 \
+            --payload '{"action":"cycle","source":"tennis_identity_acceptance"}' \
+            --region "$REGION" "$out/cycle.json" > "$out/cycle-meta.json"
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          out=Path('/tmp/tennis-auto-repair-acceptance')
+          for name in ('audit','cycle'):
+              meta=json.load(open(out/f'{name}-meta.json'))
+              result=json.load(open(out/f'{name}.json'))
+              assert not meta.get('FunctionError'), (name,meta,result)
+              assert result.get('sport')=='tennis', result
+              assert result.get('target_stack')=='parlay-platform-tennis-learning', result
+              assert result.get('ok') is True, result
+              assert result.get('status')=='HEALTHY_OR_REPAIRED', result
+              assert float((result.get('metrics') or {}).get('RepairFailures') or 0)==0, result
+              components=result.get('components') or []
+              assert len(components)==1, result
+              component=components[0]
+              assert not component.get('error'), result
+              canonical=((component.get('schedules') or {}).get('canonical_rules') or [])
+              assert canonical and all(v.startswith('parlay-platform-tennis-le-') for v in canonical), result
+              assert (component.get('repair') or {}).get('status') in {'NOT_REQUIRED','DRY_RUN','SUCCEEDED'}, result
+              for key in ('production_authority_changed','direct_sport_table_writes',
+                          'post_start_prediction_creation_allowed','immutable_prediction_rewrite_allowed',
+                          'execution_lease_bypass_allowed','gate_relaxation_allowed'):
+                  assert result.get(key) is False, (key,result)
+          PY
+
+          final_state=''
+          for attempt in $(seq 1 45); do
+            final_state=$(aws cloudwatch describe-alarms --alarm-names "$alarm_name" \
+              --region "$REGION" --query 'MetricAlarms[0].StateValue' --output text)
+            echo "Tennis unresolved-repair alarm state: $final_state (attempt $attempt)"
+            [ "$final_state" != ALARM ] && break
+            sleep 20
+          done
+          test "$final_state" = OK
+
+          aws cloudwatch describe-alarms --alarm-names "$alarm_name" --region "$REGION" > "$out/alarm-final.json"
+          aws cloudwatch describe-alarm-history --alarm-name "$alarm_name" --history-item-type StateUpdate \
+            --max-records 20 --region "$REGION" > "$out/alarm-history.json"
+
+          REPAIR_FUNCTION="$repair_function" ALARM_NAME="$alarm_name" FINAL_STATE="$final_state" \
+          CONFIGURED_FUNCTION_PREFIX="$configured_function_prefix" CONFIGURED_RULE_PREFIX="$configured_rule_prefix" \
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          out=Path('/tmp/tennis-auto-repair-acceptance')
+          load=lambda name: json.load(open(out/name))
+          report={
+              'proofType':'TENNIS_AUTO_REPAIR_IDENTITY_ACCEPTANCE_V1',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ.get('GITHUB_SHA'),
+              'scope':'tennis-repair-control-plane-only',
+              'repairStack':os.environ['REPAIR_STACK'],
+              'targetStack':os.environ['TARGET_STACK'],
+              'repairFunction':os.environ['REPAIR_FUNCTION'],
+              'alarmName':os.environ['ALARM_NAME'],
+              'configuredFunctionPrefix':os.environ['CONFIGURED_FUNCTION_PREFIX'],
+              'configuredRulePrefix':os.environ['CONFIGURED_RULE_PREFIX'],
+              'alarmFinalState':os.environ['FINAL_STATE'],
+              'rootCause':'TARGET_FUNCTION_ISOLATION_VIOLATION caused by SAM-truncated Tennis function and rule names',
+              'audit':load('audit.json'),
+              'cycle':load('cycle.json'),
+              'alarm':load('alarm-final.json'),
+              'alarmHistory':load('alarm-history.json'),
+              'repairFailuresAfterFix':0,
+              'otherSportsDeployed':False,
+              'tennisTargetStackDeployed':False,
+              'predictionLogicChanged':False,
+              'rankingLogicChanged':False,
+              'lockingLogicChanged':False,
+              'promotionLogicChanged':False,
+              'immutableHistoryChanged':False,
+              'directSportTableWrite':False,
+              'productionAuthorityChanged':False,
+              'postStartPredictionCreationAllowed':False,
+              'immutablePredictionRewriteAllowed':False,
+              'gateRelaxationAllowed':False,
+              'secretExposed':False,
+          }
+          report['targetFunctionInvokedByAcceptance']=any(
+              ((c.get('repair') or {}).get('status')=='SUCCEEDED')
+              for c in (report['cycle'].get('components') or [])
+          )
+          report['ok']=bool(
+              report['alarmFinalState']=='OK'
+              and report['audit'].get('ok') is True
+              and report['cycle'].get('ok') is True
+              and float((report['cycle'].get('metrics') or {}).get('RepairFailures') or 0)==0
+          )
+          report['conclusion']='PASS' if report['ok'] else 'FAIL'
+          Path('runtime_reports/tennis_auto_repair_identity_acceptance_latest.json').write_text(
+              json.dumps(report,indent=2,sort_keys=True,default=str)+'\n'
+          )
+          print(json.dumps({k:report[k] for k in ('ok','conclusion','alarmFinalState','configuredFunctionPrefix','configuredRulePrefix','targetFunctionInvokedByAcceptance','otherSportsDeployed')},indent=2,sort_keys=True))
+          assert report['ok'] is True, report
+          PY
+
+      - name: Upload Tennis-only acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tennis-auto-repair-identity-${{ github.run_id }}
+          path: runtime_reports/tennis_auto_repair_identity_acceptance_latest.json
+          if-no-files-found: error
+          retention-days: 90
