@@ -17,15 +17,15 @@ MANIFEST = {
     ),
     "tests/test_tennis_live_coverage_contract.py": (
         "scripts/tennis_all_regions_payloads/test_tennis_live_coverage_contract.py.gz.b64",
-        "60024b0105445f0dc9bac62b4b4fb2c0b5741dc07ed4913509cae415385f6a3f",
+        "2a0137dee83c4a8d18a9a249aaf2095b78a9e166a5f803f61d5c0c85d996f802",
     ),
     ".github/workflows/deploy-tennis-learning.yml": (
         "scripts/tennis_all_regions_payloads/deploy-tennis-learning.yml.gz.b64",
-        "dc7efa4faf6a5c0c0acdd015f8501baaccaa4934ad0e49aaa7c72bc63b100010",
+        "27c7c68bc70eb63745f593142323493d09950440d411fdb3c6c0750d7d7e13cd",
     ),
     ".github/workflows/publish-tennis-daily-card.yml": (
         "scripts/tennis_all_regions_payloads/publish-tennis-daily-card.yml.gz.b64",
-        "ec4de6a4882ad559b08ff81de9cf4e4e4b760a56c120df5f70407d94e7a7d328",
+        "29051157a6b878f408371b2896e09bbf175b6682ddcaf0affa94347411c2c919",
     ),
 }
 
