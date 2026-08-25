@@ -1,0 +1,149 @@
+{
+  "backfillPhase": "BBD_PLAYS",
+  "championsRemainNull": true,
+  "historicalGameCount": 1611,
+  "humanWinnerSelection": false,
+  "immutablePredictionHistoryRewritten": false,
+  "observedAtUtc": "2026-08-25T09:49:37.796452+00:00",
+  "ok": true,
+  "otherSportChanged": false,
+  "postStartPredictionCreated": false,
+  "productionAuthorityChanged": false,
+  "proofType": "NFL_HISTORICAL_GAME_METADATA_RECOVERY_LIVE_VERIFICATION",
+  "repair": {
+    "afterState": {
+      "PK": "NFL_AUTO_BACKFILL",
+      "SK": "CURRENT",
+      "completed": false,
+      "game_type_index": 0,
+      "materialize_index": 0,
+      "metadata_recovery_completed_at": "2026-08-25T09:49:17Z",
+      "metadata_recovery_game_count": 1611,
+      "metadata_recovery_rejected": 4,
+      "metadata_recovery_version": "NFL-HISTORICAL-GAME-METADATA-RECOVERY-v1",
+      "offset": 0,
+      "phase": "BBD_PLAYS",
+      "season_index": 0,
+      "started_at": "2026-08-25T00:35:41Z",
+      "updated_at": "2026-08-25T09:49:17Z"
+    },
+    "at": "2026-08-25T09:49:17Z",
+    "beforeState": {
+      "PK": "NFL_AUTO_BACKFILL",
+      "SK": "CURRENT",
+      "completed": true,
+      "completed_at": "2026-08-25T00:55:12Z",
+      "game_type_index": 0,
+      "last_batch_accepted": 0,
+      "last_batch_rejected": 0,
+      "last_provider": "BBD",
+      "last_transport": {
+        "endpoint": "/v1/nfl/games",
+        "provider": "BBD",
+        "rate_limit": "600",
+        "rate_remaining": "598",
+        "rate_reset": "1787619193",
+        "requests_last": null,
+        "requests_remaining": null,
+        "requests_used": null,
+        "status": 200
+      },
+      "materialize_index": 0,
+      "offset": 0,
+      "phase": "READY",
+      "season_index": 0,
+      "started_at": "2026-08-25T00:35:41Z",
+      "updated_at": "2026-08-25T00:55:12Z"
+    },
+    "directOtherSportWrite": false,
+    "humanWinnerSelection": false,
+    "idempotentGameCount": 0,
+    "immutablePredictionHistoryRewritten": false,
+    "ok": true,
+    "persistedGameCount": 1611,
+    "postStartPredictionCreated": false,
+    "preparedGameCount": 1611,
+    "productionAuthorityChanged": false,
+    "proofType": "NFL_HISTORICAL_GAME_METADATA_RECOVERY",
+    "rejectedCount": 4,
+    "rejectionFraction": 0.002476780185758514,
+    "rejectionReasons": {
+      "ODDS_API_HISTORICAL_SCHEDULE_EVENT_AMBIGUOUS": 4
+    },
+    "scheduleDateCount": 332,
+    "seasonEligibleCounts": {
+      "2020": 256,
+      "2021": 272,
+      "2022": 271,
+      "2023": 272,
+      "2024": 272,
+      "2025": 272
+    },
+    "stack": "parlay-platform-nfl-auto",
+    "version": "NFL-HISTORICAL-GAME-METADATA-RECOVERY-v1",
+    "writtenGameCount": 1611
+  },
+  "sourceSha": "20b0973ebbee01afa851a32b3845c73ecd78e9ff",
+  "status": {
+    "at": "2026-08-25T09:49:37Z",
+    "backfill": {
+      "PK": "NFL_AUTO_BACKFILL",
+      "SK": "CURRENT",
+      "completed": false,
+      "game_type_index": 0,
+      "last_game_id": "2020_01_NYJ_BUF",
+      "last_play_count": 186,
+      "last_provider": "BBD",
+      "last_transport": {
+        "endpoint": "/v1/nfl/games/2020_01_NYJ_BUF/plays",
+        "provider": "BBD",
+        "rate_limit": "600",
+        "rate_remaining": "592",
+        "rate_reset": "1787651434",
+        "requests_last": null,
+        "requests_remaining": null,
+        "requests_used": null,
+        "status": 200
+      },
+      "materialize_index": 0,
+      "metadata_recovery_completed_at": "2026-08-25T09:49:17Z",
+      "metadata_recovery_game_count": 1611,
+      "metadata_recovery_rejected": 4,
+      "metadata_recovery_version": "NFL-HISTORICAL-GAME-METADATA-RECOVERY-v1",
+      "offset": 0,
+      "phase": "BBD_PLAYS",
+      "season_index": 0,
+      "started_at": "2026-08-25T00:35:41Z",
+      "updated_at": "2026-08-25T09:49:33Z"
+    },
+    "champions": {
+      "moneyline_home_win": null,
+      "spread_home_cover": null,
+      "total_over": null
+    },
+    "decision_horizon_minutes": 10,
+    "feature_counts": {
+      "moneyline_home_win": 0,
+      "spread_home_cover": 0,
+      "total_over": 0
+    },
+    "historical_game_count": 1611,
+    "live_collection_start_utc": "2026-09-09T04:00:00Z",
+    "live_schedule_game_count": 0,
+    "mode": "HISTORICAL_ONLY",
+    "ok": true,
+    "preseason_collection_enabled": false,
+    "preseason_predictions_enabled": false,
+    "providers": {
+      "dual_provenance_required": true,
+      "odds": "THE_ODDS_API",
+      "statistics": "BBD"
+    },
+    "sport": "NFL",
+    "targets": [
+      "moneyline_home_win",
+      "spread_home_cover",
+      "total_over"
+    ]
+  }
+}
