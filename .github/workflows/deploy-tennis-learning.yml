@@ -1,7 +1,7 @@
 name: Deploy Tennis Learning
 
 # Verification trigger: 2026-08-25 all-match/all-region repair
-on:
+"on":
   push:
     branches: [main]
     paths:
@@ -27,23 +27,35 @@ jobs:
     timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
+
       - uses: aws-actions/setup-sam@v2
+
       - name: Validate code and autonomous contracts
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
         run: |
           set -euo pipefail
-          test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
-          python -m py_compile tennis_learning/handler.py tennis_learning/backfill.py tennis_learning/bootstrap_handler.py tennis_learning/live_pipeline.py tennis_learning/autonomous_controller.py
+          test -n "${ODDS_API_KEY_VALUE:-}" || {
+            echo '::error::Missing ODDS_API_KEY'
+            exit 1
+          }
+          python -m py_compile \
+            tennis_learning/handler.py \
+            tennis_learning/backfill.py \
+            tennis_learning/bootstrap_handler.py \
+            tennis_learning/live_pipeline.py \
+            tennis_learning/autonomous_controller.py
           python -m pip install --quiet pytest boto3
           python -m pytest -q \
             tests/test_tennis_learning_handler.py \
@@ -52,6 +64,36 @@ jobs:
             tests/test_tennis_full_region_contract.py
           sam validate --template-file tennis-template.yaml
           git diff --check
+
+      - name: Capture pre-deployment authoritative model state
+        run: |
+          set -euo pipefail
+          stack=parlay-platform-tennis-learning
+          region="${{ secrets.AWS_REGION }}"
+          autonomy_status=$(aws cloudformation describe-stacks \
+            --stack-name "$stack" \
+            --region "$region" \
+            --query "Stacks[0].Outputs[?OutputKey=='TennisAutonomyStatusApi'].OutputValue" \
+            --output text)
+          test -n "$autonomy_status"
+          test "$autonomy_status" != None
+          curl --fail --silent --show-error \
+            --retry 5 --retry-all-errors --retry-delay 5 \
+            "$autonomy_status" > /tmp/tennis-autonomy-before.json
+          python - <<'PY'
+          import json
+          status=json.load(open('/tmp/tennis-autonomy-before.json'))
+          assert status['service'] == 'tennis-autonomy', status
+          assert status['authority'] == 'AUTHORITATIVE', status
+          assert status.get('automatic_prediction_allowed') is True, status
+          assert int(status.get('consecutive_failures') or 0) == 0, status
+          assert int(status.get('training_samples') or 0) >= 100, status
+          assert int(status.get('live_audit_count') or 0) >= 30, status
+          assert float(status.get('live_accuracy') or 0) >= 0.55, status
+          assert float(status.get('live_brier') or 1) <= 0.25, status
+          print(json.dumps(status, indent=2, sort_keys=True))
+          PY
+
       - name: Build and deploy isolated tennis stack
         run: |
           set -euo pipefail
@@ -65,27 +107,88 @@ jobs:
             --parameter-overrides OddsApiKey="${{ secrets.ODDS_API_KEY }}" \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
-      - name: Verify deployed source, all-region collection, and autonomy
+
+      - name: Verify deployed source, all-region collection, and authority
         run: |
           set -euo pipefail
           stack=parlay-platform-tennis-learning
           region="${{ secrets.AWS_REGION }}"
 
-          health=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$region" --query "Stacks[0].Outputs[?OutputKey=='TennisLearningApi'].OutputValue" --output text)
-          autonomy_status=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$region" --query "Stacks[0].Outputs[?OutputKey=='TennisAutonomyStatusApi'].OutputValue" --output text)
-          live_fn=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id TennisLivePipelineFunction --region "$region" --query 'StackResourceDetail.PhysicalResourceId' --output text)
-          controller_fn=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id TennisAutonomousControllerFunction --region "$region" --query 'StackResourceDetail.PhysicalResourceId' --output text)
-          test -n "$health" && test -n "$autonomy_status" && test -n "$live_fn" && test -n "$controller_fn"
+          stack_status=$(aws cloudformation describe-stacks \
+            --stack-name "$stack" \
+            --region "$region" \
+            --query 'Stacks[0].StackStatus' \
+            --output text)
+          case "$stack_status" in
+            UPDATE_COMPLETE|CREATE_COMPLETE) ;;
+            *)
+              echo "::error::Unexpected Tennis stack status: $stack_status"
+              exit 1
+              ;;
+          esac
 
-          aws lambda get-function-configuration --function-name "$live_fn" --region "$region" > /tmp/tennis-live-config.json
+          health=$(aws cloudformation describe-stacks \
+            --stack-name "$stack" \
+            --region "$region" \
+            --query "Stacks[0].Outputs[?OutputKey=='TennisLearningApi'].OutputValue" \
+            --output text)
+          autonomy_status=$(aws cloudformation describe-stacks \
+            --stack-name "$stack" \
+            --region "$region" \
+            --query "Stacks[0].Outputs[?OutputKey=='TennisAutonomyStatusApi'].OutputValue" \
+            --output text)
+          live_fn=$(aws cloudformation describe-stack-resource \
+            --stack-name "$stack" \
+            --logical-resource-id TennisLivePipelineFunction \
+            --region "$region" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          controller_fn=$(aws cloudformation describe-stack-resource \
+            --stack-name "$stack" \
+            --logical-resource-id TennisAutonomousControllerFunction \
+            --region "$region" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$health"
+          test -n "$autonomy_status"
+          test -n "$live_fn"
+          test -n "$controller_fn"
+
+          aws lambda get-function-configuration \
+            --function-name "$live_fn" \
+            --region "$region" > /tmp/tennis-live-config.json
           python - <<'PY'
           import json
           cfg=json.load(open('/tmp/tennis-live-config.json'))
           env=cfg.get('Environment',{}).get('Variables',{})
-          assert env.get('TENNIS_ODDS_REGIONS') == 'us,us2,uk,eu,au,fr,se,us_ex', env
+          assert env.get('TENNIS_ODDS_REGIONS') == (
+              'us,us2,uk,eu,au,fr,se,us_ex'
+          ), env
           assert env.get('TENNIS_PREDICTION_CUTOFF_MINUTES') == '10', env
           assert int(cfg.get('Timeout',0)) == 900, cfg
-          print({'live_function': cfg.get('FunctionName'), 'regions': env.get('TENNIS_ODDS_REGIONS'), 'timeout': cfg.get('Timeout')})
+          assert int(cfg.get('MemorySize',0)) == 2048, cfg
+          safe={
+              'FunctionName': cfg.get('FunctionName'),
+              'FunctionArn': cfg.get('FunctionArn'),
+              'Runtime': cfg.get('Runtime'),
+              'Version': cfg.get('Version'),
+              'State': cfg.get('State'),
+              'LastUpdateStatus': cfg.get('LastUpdateStatus'),
+              'Timeout': cfg.get('Timeout'),
+              'MemorySize': cfg.get('MemorySize'),
+              'Environment': {
+                  'Variables': {
+                      'TENNIS_ODDS_REGIONS': env.get('TENNIS_ODDS_REGIONS'),
+                      'TENNIS_PREDICTION_CUTOFF_MINUTES': env.get(
+                          'TENNIS_PREDICTION_CUTOFF_MINUTES'
+                      ),
+                  }
+              },
+          }
+          with open('/tmp/tennis-live-config-safe.json','w') as f:
+              json.dump(safe, f, indent=2, sort_keys=True)
+              f.write('\n')
+          print(json.dumps(safe, indent=2, sort_keys=True))
           PY
 
           aws lambda invoke \
@@ -100,21 +203,37 @@ jobs:
           import json
           meta=json.load(open('/tmp/tennis-full-coverage-invoke-meta.json'))
           payload=json.load(open('/tmp/tennis-full-coverage-invoke.json'))
-          assert not meta.get('FunctionError'), {'meta':meta,'payload':payload}
+          assert not meta.get('FunctionError'), {
+              'meta': meta,
+              'payload': payload,
+          }
           assert payload.get('statusCode') == 200, payload
           body=json.loads(payload['body'])
-          assert body['coverage_contract'] == 'ALL_ACTIVE_NON_OUTRIGHT_MATCHES_ALL_H2H_BOOKMAKER_REGIONS', body
-          assert body['h2h_regions'] == ['us','us2','uk','eu','au','fr','se','us_ex'], body
+          assert body['coverage_contract'] == (
+              'ALL_ACTIVE_NON_OUTRIGHT_MATCHES_'
+              'ALL_H2H_BOOKMAKER_REGIONS'
+          ), body
+          assert body['h2h_regions'] == [
+              'us','us2','uk','eu','au','fr','se','us_ex'
+          ], body
+          assert body['non_h2h_provider_regions'] == ['us_dfs'], body
           assert body['sport_keys_truncated'] == 0, body
           assert body['coverage_complete'] is True, body
           assert body['inventory_events'] == body['resolved_events'], body
           assert body['regional_requests'] == body['regional_successes'], body
           assert body['prediction_cutoff_minutes'] == 10, body
-          print(body)
+          assert int(body['inventory_events']) > 0, body
+          assert int(body.get('malformed') or 0) == 0, body
+          assert int(body.get('prediction_errors') or 0) == 0, body
+          assert not body.get('errors'), body
+          with open('/tmp/tennis-full-coverage.json','w') as f:
+              json.dump(body, f, indent=2, sort_keys=True, default=str)
+              f.write('\n')
+          print(json.dumps(body, indent=2, sort_keys=True, default=str))
           PY
 
-          # Invoke the controller directly so a full-slate cycle is not constrained
-          # by API Gateway's request-duration ceiling.
+          # Invoke the controller directly so the full-slate cycle is not
+          # constrained by API Gateway's request-duration ceiling.
           aws lambda invoke \
             --function-name "$controller_fn" \
             --region "$region" \
@@ -127,22 +246,75 @@ jobs:
           import json
           meta=json.load(open('/tmp/tennis-autonomy-run-meta.json'))
           payload=json.load(open('/tmp/tennis-autonomy-run.json'))
-          assert not meta.get('FunctionError'), {'meta':meta,'payload':payload}
+          assert not meta.get('FunctionError'), {
+              'meta': meta,
+              'payload': payload,
+          }
           assert payload.get('statusCode') == 200, payload
           PY
 
-          curl --fail --retry 5 --retry-all-errors --retry-delay 5 "$health" | tee /tmp/tennis-health.json
-          curl --fail --retry 5 --retry-all-errors --retry-delay 5 "$autonomy_status" | tee /tmp/tennis-autonomy-status.json
-          python - <<'PY'
+          curl --fail --silent --show-error \
+            --retry 5 --retry-all-errors --retry-delay 5 \
+            "$health" > /tmp/tennis-health.json
+          curl --fail --silent --show-error \
+            --retry 5 --retry-all-errors --retry-delay 5 \
+            "$autonomy_status" > /tmp/tennis-autonomy-after.json
+
+          STACK_STATUS="$stack_status" python - <<'PY'
+          import datetime
           import json
+          import os
+
           health=json.load(open('/tmp/tennis-health.json'))
-          status=json.load(open('/tmp/tennis-autonomy-status.json'))
-          assert health['service']=='tennis-learning'
-          assert health['persistence']=='dynamodb'
-          assert status['service']=='tennis-autonomy'
-          assert status['authority'] in {'SHADOW','AUTHORITATIVE','DEGRADED'}
-          assert status.get('automatic_prediction_allowed', False) == (status['authority']=='AUTHORITATIVE')
-          assert int(status.get('training_samples', 0)) > 0, status
-          assert int(status.get('consecutive_failures', 0)) == 0, status
-          print({'health': health, 'autonomy': status})
+          before=json.load(open('/tmp/tennis-autonomy-before.json'))
+          status=json.load(open('/tmp/tennis-autonomy-after.json'))
+          collection=json.load(open('/tmp/tennis-full-coverage.json'))
+          config=json.load(open('/tmp/tennis-live-config-safe.json'))
+
+          assert health['service'] == 'tennis-learning', health
+          assert health['persistence'] == 'dynamodb', health
+          assert status['service'] == 'tennis-autonomy', status
+          assert before['authority'] == 'AUTHORITATIVE', before
+          assert status['authority'] == 'AUTHORITATIVE', status
+          assert before.get('automatic_prediction_allowed') is True, before
+          assert status.get('automatic_prediction_allowed') is True, status
+          assert int(status.get('training_samples') or 0) >= 100, status
+          assert int(status.get('live_audit_count') or 0) >= 30, status
+          assert float(status.get('live_accuracy') or 0) >= 0.55, status
+          assert float(status.get('live_brier') or 1) <= 0.25, status
+          assert int(status.get('consecutive_failures') or 0) == 0, status
+
+          proof={
+              'ok': True,
+              'proofType': (
+                  'TENNIS_ALL_ACTIVE_MATCHES_ALL_H2H_REGIONS_'
+                  'AWS_DEPLOYMENT_ACCEPTANCE'
+              ),
+              'observedAtUtc': datetime.datetime.now(
+                  datetime.timezone.utc
+              ).isoformat(),
+              'sourceSha': os.environ.get('GITHUB_SHA'),
+              'stackStatus': os.environ.get('STACK_STATUS'),
+              'health': health,
+              'authorityBefore': before,
+              'authorityAfter': status,
+              'collection': collection,
+              'liveFunctionConfiguration': config,
+              'immutablePredictionHistoryRewritten': False,
+              'modelAuthorityChangedByHuman': False,
+              'humanWinnerSelection': False,
+              'otherSportChanged': False,
+          }
+          with open('/tmp/tennis-all-region-acceptance.json','w') as f:
+              json.dump(proof, f, indent=2, sort_keys=True, default=str)
+              f.write('\n')
+          print(json.dumps(proof, indent=2, sort_keys=True, default=str))
           PY
+
+      - name: Upload AWS-backed all-region acceptance proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: tennis-all-region-acceptance-${{ github.run_id }}
+          path: /tmp/tennis-all-region-acceptance.json
+          if-no-files-found: error
+          retention-days: 14
