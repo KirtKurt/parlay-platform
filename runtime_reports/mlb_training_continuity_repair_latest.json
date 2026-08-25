@@ -2,7 +2,7 @@
   "backlog": {
     "automaticWagerAllowed": false,
     "directTableWrite": false,
-    "error": "ReconciliationError:lambda_application_status_not_success:{\"applicationStatusCode\":409,\"authoritativeSettlement\":true,\"canonicalLockCount\":0,\"eventKind\":\"prospective_backlog_settlement_v4\",\"identityRejectionCount\":0,\"immutablePregameRowsMutated\":false,\"labelConflictCount\":0,\"labelCreatedCount\":0,\"labelIdempotentCount\":0,\"labelPolicyDriftIdempotentCount\":0,\"labelWouldCreateCount\":0,\"labelWriteCount\":0,\"lockTerminalConflictCount\":0,\"missingCanonicalLockCount\":15,\"missingCanonicalLocksObservedCount\":15,\"missingCanonicalLocksSample\":[{\"officialGamePk\":\"822865\",\"reason\":\"MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME\"},{\"officialGamePk\":\"823108\",\"reason\":\"MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME\"},{\"officialGamePk\":\"823432\",\"reason\":\"MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME\"},{\"officialGamePk\":\"823517\",\"reason\":\"MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME\"},{\"officialGamePk\":\"823756\",\"reason\":\"MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME\"},{\"officialGamePk\":\"824084\",\"reason\":\"MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME\"},{\"officialGamePk\":\"824161\",\"reason\":\"MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME\"},{\"officialGamePk\":\"824321\",\"reason\":\"MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME\"}],\"officialFinalCount\":15,\"officialGameCount\":15,\"overall_status\":\"FAILED_CLOSED\",\"rejectedCanonicalLockCount\":0,\"skippedNotFinalCount\":0,\"slateDateEt\":\"2026-08-04\",\"slate_date_et\":\"2026-08-04\",\"status\":\"FAILED_CLOSED\",\"terminalNoPredictionCount\":0,\"terminalNoPredictionExcludedCount\":0}",
+    "error": "ReconciliationError:settlement_terminal_replay_failed_to_close_gap:2026-08-04",
     "immutablePredictionRewriteAllowed": false,
     "mutatingFailureDiagnosticsWhitelisted": true,
     "mutatingNonSuccessStatusesStillFailClosed": true,
@@ -11,33 +11,34 @@
     "productionAuthorityChanged": false,
     "promotionAuthorityChanged": false,
     "readOnlyNonSuccessStatusBodiesPreserved": true,
+    "settlement409TreatedAsSuccess": false,
     "stackName": "parlay-platform-dev",
-    "version": "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5-readable-incomplete-status"
+    "version": "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5.1-settlement-triggered-terminal-replay"
   },
   "conclusion": "FAIL",
-  "createdAtUtc": "2026-08-25T06:57:07.058440+00:00",
+  "createdAtUtc": "2026-08-25T13:43:38.010251+00:00",
   "directTableWrite": false,
   "identity": {
     "MLBDailyPickLockFunction": {
-      "deployRunId": "continuity-32818568399-1",
+      "deployRunId": "continuity-32854334699-1",
       "functionName": "parlay-platform-dev-MLBDailyPickLockFunction-BQIhMFw1k5YP",
-      "gitSha": "dbdc44b33265be060b2cc5e2961e989746b4faeb",
+      "gitSha": "f565ea80f6818e170e9953622aa052d369f77761",
       "lastUpdateStatus": "Successful",
       "state": "Active",
       "templateSha256": "9e5519d55d5f7898e819cb68dca35edd2f07c87f1203427b3bd8b77789e8e5cb"
     },
     "MLBMLTrainingFunction": {
-      "deployRunId": "continuity-32818568399-1",
+      "deployRunId": "continuity-32854334699-1",
       "functionName": "parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
-      "gitSha": "dbdc44b33265be060b2cc5e2961e989746b4faeb",
+      "gitSha": "f565ea80f6818e170e9953622aa052d369f77761",
       "lastUpdateStatus": "Successful",
       "state": "Active",
       "templateSha256": "9e5519d55d5f7898e819cb68dca35edd2f07c87f1203427b3bd8b77789e8e5cb"
     },
     "MLBV3ReadFunction": {
-      "deployRunId": "continuity-32818568399-1",
+      "deployRunId": "continuity-32854334699-1",
       "functionName": "parlay-platform-dev-MLBV3ReadFunction-QnN5BEYDgbli",
-      "gitSha": "dbdc44b33265be060b2cc5e2961e989746b4faeb",
+      "gitSha": "f565ea80f6818e170e9953622aa052d369f77761",
       "lastUpdateStatus": "Successful",
       "state": "Active",
       "templateSha256": "9e5519d55d5f7898e819cb68dca35edd2f07c87f1203427b3bd8b77789e8e5cb"
@@ -49,7 +50,7 @@
   "productionAuthorityChanged": false,
   "proofType": "MLB_CANONICAL_TRAINING_CONTINUITY_REPAIR_V6_DEPLOYED",
   "secretExposed": false,
-  "sourceSha": "dbdc44b33265be060b2cc5e2961e989746b4faeb",
+  "sourceSha": "f565ea80f6818e170e9953622aa052d369f77761",
   "trainer": {
     "error": "trainer-evidence.json_missing",
     "ok": false
