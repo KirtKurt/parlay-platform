@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 
 MISSED_LOCK_TERMINAL_RECONCILIATION_VERSION = (
-    "MLB-MISSED-LOCK-TERMINAL-RECONCILIATION-v1-proven-no-prelock-candidate"
+    "MLB-MISSED-LOCK-TERMINAL-RECONCILIATION-v2-durable-cached-replay"
 )
 PROMOTED_LOCK_TRAINING_ELIGIBILITY_VERSION = (
     "MLB-PROMOTED-LOCK-TRAINING-ELIGIBILITY-v1-expired-prelock-state-cleared"
@@ -379,11 +379,6 @@ def install_prospective_row_repair(module: Any, patch: Any) -> Any:
             scheduled=scheduled,
         )
         if not isinstance(result, dict):
-            return result
-        if (
-            str(result.get("reason") or "")
-            in _CACHED_TERMINAL_RECONCILIATION_REASONS
-        ):
             return result
         if _missed_count_from_result(result) <= 0:
             return result

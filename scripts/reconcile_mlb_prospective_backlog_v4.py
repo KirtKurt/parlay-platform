@@ -29,7 +29,7 @@ import reconcile_mlb_prospective_backlog as base
 import reconcile_mlb_prospective_backlog_v3 as v3
 
 
-VERSION = "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v4-status-first-backpressure"
+VERSION = "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v4.1-durable-terminal-replay"
 MAX_INVOKE_ATTEMPTS = 12
 RETRY_DELAYS_SECONDS = (5, 10, 20, 30, 45, 60, 60, 60, 60, 60, 60)
 RETRYABLE_CLIENT_CODES = frozenset(
@@ -54,6 +54,7 @@ MUTABLE_INCOMPLETE_STATUS_ERRORS = frozenset(
         "official_status_terminal_counts_inconsistent",
         "official_status_terminal_coverage_incomplete",
         "official_status_not_complete",
+        "official_status_terminal_durability_incomplete",
     }
 )
 
@@ -157,6 +158,29 @@ def _incomplete_status_error(exc: base.ReconciliationError) -> bool:
     return str(exc) in MUTABLE_INCOMPLETE_STATUS_ERRORS
 
 
+def _status_requires_terminal_durability_replay(
+    status: Mapping[str, Any],
+) -> bool:
+    """Require a protected replay for missed lifecycle rows lacking durable outcomes.
+
+    Read-only status projection may count MISSED_NOT_BACKFILLED rows as terminal
+    lifecycle coverage. Canonical settlement intentionally requires a durable
+    no-prediction outcome for those rows. A nonzero missed count therefore must
+    invoke the existing protected repair before settlement, even when aggregate
+    status counts are otherwise complete.
+    """
+
+    values: List[int] = []
+    for key in ("missedGameCount", "missedLockCount"):
+        try:
+            values.append(int(status.get(key) or 0))
+        except (TypeError, ValueError):
+            raise base.ReconciliationError(
+                "official_status_terminal_durability_count_invalid"
+            )
+    return max(values or [0]) > 0
+
+
 def reconcile(
     cloudformation: Any,
     lambda_client: Any,
@@ -181,6 +205,10 @@ def reconcile(
         mutation_executed = False
         try:
             lock_evidence = _official_evidence(official_status, slate_date)
+            if _status_requires_terminal_durability_replay(official_status):
+                raise base.ReconciliationError(
+                    "official_status_terminal_durability_incomplete"
+                )
         except base.ReconciliationError as exc:
             if not _incomplete_status_error(exc):
                 raise
