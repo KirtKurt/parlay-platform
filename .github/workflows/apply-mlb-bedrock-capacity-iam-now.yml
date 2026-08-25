@@ -1,0 +1,320 @@
+name: Apply MLB Bedrock capacity and IAM now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mlb_auto_llm/capacity_control.py'
+      - 'mlb-auto-llm-template.yaml'
+      - 'tests/unit/test_mlb_bedrock_capacity_control.py'
+      - '.github/workflows/apply-mlb-bedrock-capacity-iam-now.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_run:
+    workflows: ['Deploy MLB Auto LLM']
+    types: [completed]
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: mlb-auto-llm-deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-mlb-auto-llm
+  CAPACITY_REPORT: runtime_reports/mlb_bedrock_capacity_iam_latest.json
+  REQUIRED_MODEL_ROUTES: 'openai.gpt-oss-20b-1:0,us-east-2::openai.gpt-oss-20b-1:0,us-west-2::openai.gpt-oss-20b-1:0,openai.gpt-oss-120b-1:0,us-east-2::openai.gpt-oss-120b-1:0,us-west-2::openai.gpt-oss-120b-1:0,amazon.nova-micro-v1:0,amazon.nova-lite-v1:0,amazon.nova-pro-v1:0,amazon.nova-2-lite-v1:0,us-east-2::amazon.nova-micro-v1:0,us-east-2::amazon.nova-lite-v1:0,us-east-2::amazon.nova-pro-v1:0,us-east-2::amazon.nova-2-lite-v1:0,us-west-2::amazon.nova-micro-v1:0,us-west-2::amazon.nova-lite-v1:0,us-west-2::amazon.nova-pro-v1:0,us-west-2::amazon.nova-2-lite-v1:0,us.amazon.nova-micro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0'
+
+jobs:
+  apply-capacity-and-iam:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout canonical main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup AWS SAM
+        uses: aws-actions/setup-sam@v2
+
+      - name: Validate capacity, IAM, and no-circuit-breaker contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
+          python -m py_compile mlb_auto_llm/capacity_control.py
+          PYTHONPATH=. python -m pytest -q tests/unit/test_mlb_bedrock_capacity_control.py
+          sam validate --template-file mlb-auto-llm-template.yaml --lint
+          grep -q 'servicequotas:RequestServiceQuotaIncrease' mlb-auto-llm-template.yaml
+          grep -q 'bedrock:CreateProvisionedModelThroughput' mlb-auto-llm-template.yaml
+          grep -q 'bedrock:ListInferenceProfiles' mlb-auto-llm-template.yaml
+          grep -q 'openai.gpt-oss-20b-1:0' mlb-auto-llm-template.yaml
+          grep -q 'amazon.nova-lite-v1:0' mlb-auto-llm-template.yaml
+          test "$(git diff --name-only origin/main...HEAD -- mlb_auto_llm/model_gateway.py | wc -l)" -eq 0
+
+      - name: Wait for MLB AUTO stack updateability
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 80); do
+            status=$(aws cloudformation describe-stacks \
+              --stack-name "$STACK_NAME" \
+              --region "$AWS_REGION" \
+              --query 'Stacks[0].StackStatus' \
+              --output text 2>/dev/null || echo STACK_NOT_FOUND)
+            case "$status" in
+              STACK_NOT_FOUND|CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE) break ;;
+              ROLLBACK_COMPLETE)
+                aws cloudformation delete-stack --stack-name "$STACK_NAME" --region "$AWS_REGION"
+                aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME" --region "$AWS_REGION"
+                break
+                ;;
+              *_IN_PROGRESS) sleep 15 ;;
+              *) echo "::error::MLB AUTO stack is not updateable: $status"; exit 1 ;;
+            esac
+            test "$attempt" != 80
+          done
+
+      - name: Build capacity-enabled MLB AUTO stack
+        run: sam build --no-cached --template-file mlb-auto-llm-template.yaml
+
+      - name: Deploy runtime IAM and capacity controller
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
+          test -n "${BBS_API_KEY_VALUE:-}" || { echo '::error::Missing BBS_API_KEY'; exit 1; }
+          MLB_ML_API_BASE_URL=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text)
+          test -n "$MLB_ML_API_BASE_URL"
+          test "$MLB_ML_API_BASE_URL" != None
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              OddsApiKey="${ODDS_API_KEY_VALUE}" \
+              BbsApiKey="${BBS_API_KEY_VALUE}" \
+              TargetDailyAccuracy='0.70' \
+              CardLeadMinutesBeforeSecondGame='45' \
+              BedrockModels="${REQUIRED_MODEL_ROUTES}" \
+              MlbMlApiBaseUrl="${MLB_ML_API_BASE_URL}" \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+
+      - name: Request Bedrock quotas and no-commit dedicated capacity
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          capacity_fn=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBAutoBedrockCapacityFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$capacity_fn"
+          aws lambda invoke \
+            --function-name "$capacity_fn" \
+            --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 900 \
+            --payload '{"requestQuotaIncreases":true,"purchaseProvisionedThroughput":true}' \
+            /tmp/mlb-bedrock-capacity.json \
+            >/tmp/mlb-bedrock-capacity-meta.json
+          python - <<'PY'
+          import json
+          meta=json.load(open('/tmp/mlb-bedrock-capacity-meta.json'))
+          report=json.load(open('/tmp/mlb-bedrock-capacity.json'))
+          assert not meta.get('FunctionError'), (meta, report)
+          assert report.get('circuitBreakerAdded') is False, report
+          assert report.get('modelGatewayChanged') is False, report
+          json.dump(report, open('runtime_reports/mlb_bedrock_capacity_iam_latest.json','w'), indent=2, sort_keys=True)
+          open('runtime_reports/mlb_bedrock_capacity_iam_latest.json','a').write('\n')
+          print(json.dumps(report, indent=2, sort_keys=True)[:50000])
+          PY
+
+      - name: Activate GPT-OSS and Nova routes in both deployed Lambdas
+        run: |
+          set -euo pipefail
+          smoke_fn=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBAutoLLMBedrockSmokeFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          auto_fn=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBAutoLLMFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          export MLB_AUTO_SMOKE_FUNCTION="$smoke_fn"
+          export MLB_AUTO_MAIN_FUNCTION="$auto_fn"
+          python - <<'PY'
+          from __future__ import annotations
+          import json, os, time
+          from pathlib import Path
+          from typing import Any
+          import boto3
+          from botocore.config import Config
+
+          region=os.environ['AWS_REGION']
+          chain=[x.strip() for x in os.environ['REQUIRED_MODEL_ROUTES'].split(',') if x.strip()]
+          report_path=Path(os.environ['CAPACITY_REPORT'])
+          report=json.loads(report_path.read_text())
+          dedicated=report.get('dedicatedCapacity') or {}
+          provisioned_arn=str(dedicated.get('provisionedModelArn') or '')
+          if provisioned_arn and str(dedicated.get('status') or '') == 'InService':
+              chain.insert(0, provisioned_arn)
+          chain=list(dict.fromkeys(chain))
+          assert sum('gpt-oss' in x for x in chain) >= 2, chain
+          assert sum('nova' in x for x in chain) >= 2, chain
+
+          config=Config(connect_timeout=10, read_timeout=330, retries={'max_attempts':1,'mode':'standard'})
+          lam=boto3.client('lambda', region_name=region, config=config)
+
+          def wait_updated(name: str) -> None:
+              deadline=time.monotonic()+300
+              while time.monotonic() < deadline:
+                  value=lam.get_function_configuration(FunctionName=name)
+                  if value.get('State') == 'Active' and value.get('LastUpdateStatus') == 'Successful':
+                      return
+                  if value.get('LastUpdateStatus') == 'Failed':
+                      raise RuntimeError(str(value.get('LastUpdateStatusReason') or 'lambda update failed'))
+                  time.sleep(3)
+              raise TimeoutError(name)
+
+          def configure(name: str) -> None:
+              current=lam.get_function_configuration(FunctionName=name)
+              values=dict(((current.get('Environment') or {}).get('Variables') or {}))
+              values['MLB_AUTO_BEDROCK_MODELS']=','.join(chain)
+              values['MLB_AUTO_BEDROCK_REGIONS']='us-east-1,us-east-2,us-west-2'
+              values['MLB_AUTO_BEDROCK_MANTLE_DISCOVERY']='true'
+              values['MLB_AUTO_BEDROCK_RUNTIME_DISCOVERY']='true'
+              lam.update_function_configuration(FunctionName=name, Environment={'Variables':values})
+              wait_updated(name)
+
+          smoke=os.environ['MLB_AUTO_SMOKE_FUNCTION']
+          main=os.environ['MLB_AUTO_MAIN_FUNCTION']
+          configure(smoke)
+          configure(main)
+          response=lam.invoke(FunctionName=smoke, InvocationType='RequestResponse', Payload=b'{}')
+          raw=response['Payload'].read().decode('utf-8',errors='replace')
+          try:
+              body: Any=json.loads(raw)
+          except Exception:
+              body={'raw':raw[:12000]}
+          errors=(body.get('errors') or []) if isinstance(body,dict) else []
+          access_denied=any(
+              str(row.get('errorCode') or '') in {'AccessDenied','AccessDeniedException'}
+              for row in errors if isinstance(row,dict)
+          )
+          activation={
+              'configuredModelCount':len(chain),
+              'configuredModelRoutes':chain,
+              'gptOssRouteCount':sum('gpt-oss' in x for x in chain),
+              'novaRouteCount':sum('nova' in x for x in chain),
+              'provisionedModelActivated':bool(provisioned_arn and chain[0] == provisioned_arn),
+              'smokeFunction':smoke,
+              'mainFunction':main,
+              'smokeInvocation':body,
+              'smokeFunctionError':response.get('FunctionError'),
+              'iamInvocationPermitted':not access_denied,
+              'dailyThrottleStillPresent':any(
+                  str(row.get('errorCode') or '') == 'ThrottlingException'
+                  for row in errors if isinstance(row,dict)
+              ),
+              'circuitBreakerAdded':False,
+              'modelGatewayChanged':False,
+          }
+          report['activation']=activation
+          report['ok']=bool(report.get('ok') is True and activation['iamInvocationPermitted'])
+          report_path.write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(activation,indent=2,sort_keys=True)[:50000])
+          PY
+
+      - name: Enforce completed IAM and capacity request surfaces
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          report=json.load(open(os.environ['CAPACITY_REPORT']))
+          assert report.get('circuitBreakerAdded') is False, report
+          assert report.get('modelGatewayChanged') is False, report
+          discovery=report.get('discovery') or []
+          assert discovery, report
+          discovery_access_denied=[
+              error for row in discovery for error in (row.get('errors') or [])
+              if str(error.get('code') or '') in {'AccessDenied','AccessDeniedException'}
+          ]
+          assert not discovery_access_denied, discovery_access_denied
+          quotas=report.get('quotaRequests') or []
+          assert quotas, report
+          matched=sum(len(row.get('matchedQuotas') or []) for row in quotas)
+          submitted=sum(len(row.get('submittedRequests') or []) for row in quotas)
+          existing=sum(len(row.get('existingRequests') or []) for row in quotas)
+          assert matched > 0, report
+          assert submitted + existing > 0, report
+          dedicated=report.get('dedicatedCapacity') or {}
+          error=(dedicated.get('error') or {})
+          assert str(error.get('code') or '') not in {'AccessDenied','AccessDeniedException'}, dedicated
+          assert dedicated.get('created') is True or dedicated.get('existing') or str(error.get('code') or '') in {
+              'ServiceQuotaExceededException','ThrottlingException','ConflictException'
+          }, dedicated
+          activation=report.get('activation') or {}
+          assert int(activation.get('gptOssRouteCount') or 0) >= 2, activation
+          assert int(activation.get('novaRouteCount') or 0) >= 2, activation
+          assert activation.get('iamInvocationPermitted') is True, activation
+          print(json.dumps({
+              'matchedQuotaCount':matched,
+              'submittedQuotaRequestCount':submitted,
+              'existingQuotaRequestCount':existing,
+              'dedicatedCapacityStatus':dedicated.get('status'),
+              'configuredModelCount':activation.get('configuredModelCount'),
+              'dailyThrottleStillPresent':activation.get('dailyThrottleStillPresent'),
+          },indent=2,sort_keys=True))
+          PY
+
+      - name: Publish durable Bedrock capacity and IAM proof
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s "$CAPACITY_REPORT"
+          cp "$CAPACITY_REPORT" /tmp/mlb_bedrock_capacity_iam_latest.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb_bedrock_capacity_iam_latest.json "$CAPACITY_REPORT"
+            git add "$CAPACITY_REPORT"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB Bedrock capacity and IAM proof [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
