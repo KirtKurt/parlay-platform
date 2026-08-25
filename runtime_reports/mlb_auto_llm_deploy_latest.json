@@ -1,48 +1,119 @@
 {
-  "acceptanceMode": null,
-  "autonomousRules": [],
-  "conclusion": "FAIL",
+  "acceptanceMode": "late_read_only_provider_acceptance",
+  "autonomousRules": [
+    {
+      "name": "parlay-platform-mlb-auto--MLBAutoLLMFunctionAutonom-2Fnhw1x0m9iq",
+      "state": "ENABLED"
+    }
+  ],
+  "conclusion": "PASS",
   "immutableCardRewriteAllowed": false,
-  "jobStatus": "failure",
+  "jobStatus": "success",
   "modelAuthorityProof": {
     "attemptedModelIds": [],
-    "bedrockAvailable": null,
-    "decisionAuthority": null,
+    "bedrockAvailable": false,
+    "decisionAuthority": "AWS_ML_RANKED_ENSEMBLE",
     "errors": [],
     "errorsBeforeSuccess": [],
-    "modelId": null,
-    "ok": null,
-    "predictionCount": null,
-    "responseNonEmpty": null
+    "modelId": "INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble",
+    "ok": true,
+    "predictionCount": 10,
+    "responseNonEmpty": true
   },
-  "ok": false,
+  "ok": true,
   "postStartOddsFabricationAllowed": false,
   "postStartPredictionCreationAllowed": false,
   "providerCycle": {
     "decisionAuthority": null,
     "gamePks": [],
-    "latePublicationPrevented": null,
+    "latePublicationPrevented": true,
     "modelAuthorityComplete": null,
     "modelDecisionCount": 0,
-    "ok": null,
+    "ok": true,
     "pickCount": 0,
-    "postStartOddsFabricationAllowed": null,
-    "postStartPredictionCreationAllowed": null,
-    "providerProbeUsedFutureSlate": null,
-    "providerProbeUsedPersistedPregameEvidence": null,
-    "sourceStatus": {},
-    "status": null,
-    "threeSourceCoverageComplete": null
+    "postStartOddsFabricationAllowed": false,
+    "postStartPredictionCreationAllowed": false,
+    "providerProbeUsedFutureSlate": false,
+    "providerProbeUsedPersistedPregameEvidence": true,
+    "sourceStatus": {
+      "bigBallsDataPro": {
+        "events": 19,
+        "matchedGames": 10,
+        "missingGamePks": [],
+        "ok": true,
+        "scheduledGames": 10
+      },
+      "mlbStatsApi": {
+        "games": 10,
+        "matchedGames": 10,
+        "missingGamePks": [],
+        "ok": true,
+        "scheduledGames": 10
+      },
+      "theOddsApi": {
+        "events": 20,
+        "matchedGames": 10,
+        "missingGamePks": [],
+        "ok": true,
+        "persistedPregameEvidenceByGamePk": {
+          "822695": {
+            "capturedAtUtc": "2026-08-24T21:32:47.996706+00:00",
+            "capturedBeforeGameStart": true,
+            "eventId": "e3da176886eb60e63e5b0017a5f213bc",
+            "replayedAfterLiveEndpointRemoval": true,
+            "source": "The Odds API",
+            "version": "MLB-AUTO-PREGAME-ODDS-REPLAY-v1-immutable-evidence-only"
+          },
+          "823828": {
+            "capturedAtUtc": "2026-08-24T21:32:47.996706+00:00",
+            "capturedBeforeGameStart": true,
+            "eventId": "4849fd0ae15d275efe31050173d07d4e",
+            "replayedAfterLiveEndpointRemoval": true,
+            "source": "The Odds API",
+            "version": "MLB-AUTO-PREGAME-ODDS-REPLAY-v1-immutable-evidence-only"
+          },
+          "824235": {
+            "capturedAtUtc": "2026-08-24T21:32:47.996706+00:00",
+            "capturedBeforeGameStart": true,
+            "eventId": "b5df91df571dbd961d2781f345abe770",
+            "replayedAfterLiveEndpointRemoval": true,
+            "source": "The Odds API",
+            "version": "MLB-AUTO-PREGAME-ODDS-REPLAY-v1-immutable-evidence-only"
+          }
+        },
+        "persistedPregameRecoveredGamePks": [
+          "822695",
+          "823828",
+          "824235"
+        ],
+        "persistedPregameRecoveryCount": 3,
+        "postStartOddsFabricationAllowed": false,
+        "pregameReplayVersion": "MLB-AUTO-PREGAME-ODDS-REPLAY-v1-immutable-evidence-only",
+        "quota": {
+          "last": "15",
+          "remaining": "24685930",
+          "used": "314070"
+        },
+        "replayPolicy": "Only an actual stored The Odds API event with real core-market prices, matching teams/start time, and a packet timestamp strictly before first pitch may be replayed.",
+        "scheduledGames": 10
+      }
+    },
+    "status": "COLLECTING",
+    "threeSourceCoverageComplete": true
   },
   "publicStatus": {
-    "cardLeadMinutesBeforeSecondGame": null,
-    "fullyAutonomous": null,
-    "service": null,
-    "targetDailyAccuracy": null,
-    "threeSourcePolicy": null
+    "cardLeadMinutesBeforeSecondGame": 45,
+    "fullyAutonomous": true,
+    "service": "mlb-auto-llm",
+    "targetDailyAccuracy": 0.7,
+    "threeSourcePolicy": [
+      "MLB Stats API",
+      "The Odds API",
+      "Big Balls Sports Data Pro"
+    ]
   },
-  "publishedAtUtc": "2026-08-25T02:29:08.126056+00:00",
-  "runAttempt": "1",
+  "publishedAtUtc": "2026-08-25T02:43:22.460452+00:00",
+  "runAttempt": "2",
   "runId": "32801512344",
   "secretExposed": false,
   "service": "mlb-auto-llm",
