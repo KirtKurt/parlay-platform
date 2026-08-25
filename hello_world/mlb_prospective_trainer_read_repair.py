@@ -5,11 +5,11 @@ import functools
 from typing import Any, Dict, List, Optional, Tuple
 
 
-VERSION = "MLB-PROSPECTIVE-TRAINER-READ-REPAIR-v3-stale-label-boolean"
-_INSTALL_FLAG = "_INQSI_MLB_PROSPECTIVE_TRAINER_READ_REPAIR_V3"
-_AUTHORITY_FLAG = "_INQSI_MLB_PROSPECTIVE_AUTHORITY_READ_REPAIR_V3"
-_VERDICT_FLAG = "_INQSI_MLB_PROSPECTIVE_VERDICT_READ_REPAIR_V3"
-_JOIN_FLAG = "_INQSI_MLB_PROSPECTIVE_JOIN_READ_REPAIR_V3"
+VERSION = "MLB-PROSPECTIVE-TRAINER-READ-REPAIR-v4-canonical-exact-vector-authority"
+_INSTALL_FLAG = "_INQSI_MLB_PROSPECTIVE_TRAINER_READ_REPAIR_V4"
+_AUTHORITY_FLAG = "_INQSI_MLB_PROSPECTIVE_AUTHORITY_READ_REPAIR_V4"
+_VERDICT_FLAG = "_INQSI_MLB_PROSPECTIVE_VERDICT_READ_REPAIR_V4"
+_JOIN_FLAG = "_INQSI_MLB_PROSPECTIVE_JOIN_READ_REPAIR_V4"
 EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS = frozenset(
     {
         "immutable_tminus45_prediction_not_available",
@@ -32,6 +32,27 @@ def _strings(values: Any) -> set[str]:
     return {str(value) for value in (values or []) if str(value)}
 
 
+def _canonical_authority_exact_vector_proven(
+    authority: Dict[str, Any],
+) -> bool:
+    """Accept the canonical reader's independently re-derived exact-vector proof.
+
+    Older immutable lock payloads can omit the legacy ``exactVectorVerified``
+    boolean even though the canonical authority has revalidated the vector and
+    its selection/training status from the consistently read write-once row.
+    Both authority booleans and both error lists must agree before this proof is
+    accepted. Any missing flag or error remains fail closed.
+    """
+
+    if not isinstance(authority, dict) or not authority:
+        return False
+    if not all(authority.get(flag) is True for flag in _AUTHORITY_INTEGRITY_FLAGS):
+        return False
+    return not _strings(authority.get("exactLockVectorValidationErrors")) and not _strings(
+        authority.get("selectionLockVectorStatusValidationErrors")
+    )
+
+
 def _copy_with_stale_prelock_exclusions_cleared(
     row: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -50,6 +71,11 @@ def _copy_with_stale_prelock_exclusions_cleared(
         if isinstance(out.get("mlFeatureFreeze"), dict)
         else {}
     )
+    authority = (
+        copy.deepcopy(out.get("canonicalLockAuthority") or {})
+        if isinstance(out.get("canonicalLockAuthority"), dict)
+        else {}
+    )
     exact_errors = _strings(
         out.get("exactVectorValidationErrors")
         or freeze.get("exactVectorValidationErrors")
@@ -58,11 +84,22 @@ def _copy_with_stale_prelock_exclusions_cleared(
         out.get("immutablePerGameStage") is True
         or out.get("immutableLockedStorage") is True
     )
+    legacy_exact_vector_proven = bool(
+        out.get("exactVectorVerified") is True
+        and freeze.get("exactVectorVerified", True) is not False
+        and not exact_errors
+    )
+    canonical_exact_vector_proven = _canonical_authority_exact_vector_proven(
+        authority
+    )
+    exact_vector_proven = bool(
+        legacy_exact_vector_proven or canonical_exact_vector_proven
+    )
     vector = out.get("frozenFeatureVector")
     verified_lock = bool(
         out.get("lockedPrediction") is True
         and immutable_lock
-        and out.get("exactVectorVerified") is True
+        and exact_vector_proven
         and not exact_errors
         and isinstance(vector, dict)
         and bool(vector.get("fingerprint"))
@@ -76,7 +113,7 @@ def _copy_with_stale_prelock_exclusions_cleared(
     cleared = sorted(all_reasons & EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS)
     remaining = sorted(all_reasons - EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS)
 
-    # Do not infer eligibility through any surviving exclusion.  The only
+    # Do not infer eligibility through any surviving exclusion. The only
     # no-reason correction allowed here is the legacy false boolean on a fully
     # verified immutable lock; the immutable payload itself is never written.
     eligible = not remaining
@@ -90,11 +127,17 @@ def _copy_with_stale_prelock_exclusions_cleared(
     if not cleared and not stale_false_boolean:
         return out
 
+    exact_proof_source = (
+        "canonical_lock_authority"
+        if canonical_exact_vector_proven
+        else "legacy_locked_payload"
+    )
     metadata = {
         "trainingEligible": eligible,
         "trainingExclusionReasons": remaining,
         "expiredPrelockTrainingExclusionsClearedAtRead": cleared,
         "staleTrainingEligibleBooleanClearedAtRead": stale_false_boolean,
+        "exactVectorProofSourceAtRead": exact_proof_source,
         "prospectiveTrainerReadRepairVersion": VERSION,
     }
     freeze.update(metadata)
@@ -108,9 +151,7 @@ def _copy_with_stale_prelock_exclusions_cleared(
         }
     )
 
-    authority = out.get("canonicalLockAuthority")
-    if isinstance(authority, dict) and authority:
-        authority = copy.deepcopy(authority)
+    if authority:
         authority_reasons = _strings(authority.get("trainingExclusionReasons"))
         authority_cleared = sorted(
             authority_reasons & EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS
@@ -139,6 +180,7 @@ def _copy_with_stale_prelock_exclusions_cleared(
                 "learningEligible": bool(
                     eligible and authority_integrity and not authority_remaining
                 ),
+                "exactVectorProofSourceAtRead": exact_proof_source,
                 "prospectiveTrainerReadRepairVersion": VERSION,
             }
         )
