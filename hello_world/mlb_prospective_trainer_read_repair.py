@@ -5,11 +5,14 @@ import functools
 from typing import Any, Dict, List, Optional, Tuple
 
 
-VERSION = "MLB-PROSPECTIVE-TRAINER-READ-REPAIR-v3-stale-label-boolean"
-_INSTALL_FLAG = "_INQSI_MLB_PROSPECTIVE_TRAINER_READ_REPAIR_V3"
-_AUTHORITY_FLAG = "_INQSI_MLB_PROSPECTIVE_AUTHORITY_READ_REPAIR_V3"
-_VERDICT_FLAG = "_INQSI_MLB_PROSPECTIVE_VERDICT_READ_REPAIR_V3"
-_JOIN_FLAG = "_INQSI_MLB_PROSPECTIVE_JOIN_READ_REPAIR_V3"
+VERSION = (
+    "MLB-PROSPECTIVE-TRAINER-READ-REPAIR-v4-"
+    "verified-authority-stale-boolean"
+)
+_INSTALL_FLAG = "_INQSI_MLB_PROSPECTIVE_TRAINER_READ_REPAIR_V4"
+_AUTHORITY_FLAG = "_INQSI_MLB_PROSPECTIVE_AUTHORITY_READ_REPAIR_V4"
+_VERDICT_FLAG = "_INQSI_MLB_PROSPECTIVE_VERDICT_READ_REPAIR_V4"
+_JOIN_FLAG = "_INQSI_MLB_PROSPECTIVE_JOIN_READ_REPAIR_V4"
 EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS = frozenset(
     {
         "immutable_tminus45_prediction_not_available",
@@ -32,6 +35,42 @@ def _strings(values: Any) -> set[str]:
     return {str(value) for value in (values or []) if str(value)}
 
 
+def _authority_integrity(authority: Any) -> bool:
+    return bool(
+        isinstance(authority, dict)
+        and all(authority.get(flag) is True for flag in _AUTHORITY_INTEGRITY_FLAGS)
+    )
+
+
+def _copy_authority_with_stale_prelock_state_cleared(
+    authority: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Correct only a stale authority verdict already proven by all gates."""
+
+    out = copy.deepcopy(authority or {})
+    reasons = _strings(out.get("trainingExclusionReasons"))
+    cleared = sorted(reasons & EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS)
+    remaining = sorted(reasons - EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS)
+    integrity = _authority_integrity(out)
+    stale_false_boolean = bool(
+        integrity
+        and not remaining
+        and out.get("learningEligible") is not True
+    )
+    if not integrity or (not cleared and not stale_false_boolean):
+        return out
+    out.update(
+        {
+            "trainingExclusionReasons": remaining,
+            "expiredPrelockTrainingExclusionsClearedAtRead": cleared,
+            "staleLearningEligibleBooleanClearedAtRead": stale_false_boolean,
+            "learningEligible": not remaining,
+            "prospectiveTrainerReadRepairVersion": VERSION,
+        }
+    )
+    return out
+
+
 def _copy_with_stale_prelock_exclusions_cleared(
     row: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -39,9 +78,12 @@ def _copy_with_stale_prelock_exclusions_cleared(
 
     The stale exclusions are valid while a prediction is merely pre-lock. They
     become false only after the same selection has a verified immutable T-45
-    lock and exact vector. A legacy false eligibility boolean with no remaining
-    exclusion is also stale once every immutable-vector proof is present.
-    Every substantive exclusion remains authoritative.
+    lock and exact vector. Verification may be carried directly on the lock or
+    by the independently derived canonical lock authority. A legacy false
+    eligibility boolean with no remaining exclusion is also stale once every
+    immutable-vector proof is present. Every substantive exclusion remains
+    authoritative and no persisted lock, label, vector, or authority is
+    mutated.
     """
 
     out = copy.deepcopy(row or {})
@@ -54,29 +96,46 @@ def _copy_with_stale_prelock_exclusions_cleared(
         out.get("exactVectorValidationErrors")
         or freeze.get("exactVectorValidationErrors")
     )
+    vector = out.get("frozenFeatureVector")
+    vector_present = bool(
+        isinstance(vector, dict) and bool(vector.get("fingerprint"))
+    )
     immutable_lock = bool(
         out.get("immutablePerGameStage") is True
         or out.get("immutableLockedStorage") is True
     )
-    vector = out.get("frozenFeatureVector")
-    verified_lock = bool(
+    raw_verified_lock = bool(
         out.get("lockedPrediction") is True
         and immutable_lock
         and out.get("exactVectorVerified") is True
         and not exact_errors
-        and isinstance(vector, dict)
-        and bool(vector.get("fingerprint"))
+        and vector_present
     )
-    if not verified_lock:
+
+    authority = (
+        _copy_authority_with_stale_prelock_state_cleared(
+            out.get("canonicalLockAuthority") or {}
+        )
+        if isinstance(out.get("canonicalLockAuthority"), dict)
+        else {}
+    )
+    authority_verified_lock = bool(
+        out.get("lockedPrediction") is True
+        and vector_present
+        and _authority_integrity(authority)
+        and authority.get("learningEligible") is True
+    )
+    if not (raw_verified_lock or authority_verified_lock):
         return out
 
     row_reasons = _strings(out.get("trainingExclusionReasons"))
     freeze_reasons = _strings(freeze.get("trainingExclusionReasons"))
-    all_reasons = row_reasons | freeze_reasons
+    authority_reasons = _strings(authority.get("trainingExclusionReasons"))
+    all_reasons = row_reasons | freeze_reasons | authority_reasons
     cleared = sorted(all_reasons & EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS)
     remaining = sorted(all_reasons - EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS)
 
-    # Do not infer eligibility through any surviving exclusion.  The only
+    # Do not infer eligibility through any surviving exclusion. The only
     # no-reason correction allowed here is the legacy false boolean on a fully
     # verified immutable lock; the immutable payload itself is never written.
     eligible = not remaining
@@ -87,7 +146,11 @@ def _copy_with_stale_prelock_exclusions_cleared(
             or freeze.get("trainingEligible") is not True
         )
     )
-    if not cleared and not stale_false_boolean:
+    authority_changed = bool(
+        isinstance(out.get("canonicalLockAuthority"), dict)
+        and authority != out.get("canonicalLockAuthority")
+    )
+    if not cleared and not stale_false_boolean and not authority_changed:
         return out
 
     metadata = {
@@ -108,36 +171,19 @@ def _copy_with_stale_prelock_exclusions_cleared(
         }
     )
 
-    authority = out.get("canonicalLockAuthority")
-    if isinstance(authority, dict) and authority:
+    if authority:
         authority = copy.deepcopy(authority)
-        authority_reasons = _strings(authority.get("trainingExclusionReasons"))
-        authority_cleared = sorted(
-            authority_reasons & EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS
-        )
         authority_remaining = sorted(
-            authority_reasons - EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS
-        )
-        authority_integrity = all(
-            authority.get(flag) is True for flag in _AUTHORITY_INTEGRITY_FLAGS
-        )
-        authority_stale_false = bool(
-            eligible
-            and authority_integrity
-            and not authority_remaining
-            and authority.get("learningEligible") is not True
+            _strings(authority.get("trainingExclusionReasons"))
+            - EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS
         )
         authority.update(
             {
                 "trainingExclusionReasons": authority_remaining,
-                "expiredPrelockTrainingExclusionsClearedAtRead": (
-                    authority_cleared
-                ),
-                "staleLearningEligibleBooleanClearedAtRead": (
-                    authority_stale_false
-                ),
                 "learningEligible": bool(
-                    eligible and authority_integrity and not authority_remaining
+                    eligible
+                    and _authority_integrity(authority)
+                    and not authority_remaining
                 ),
                 "prospectiveTrainerReadRepairVersion": VERSION,
             }
@@ -217,7 +263,9 @@ def install(labels: Optional[Any] = None) -> Any:
                 )
             authority = original_authority(copied, slate_date)
             if isinstance(authority, dict):
-                authority = copy.deepcopy(authority)
+                authority = _copy_authority_with_stale_prelock_state_cleared(
+                    authority
+                )
                 authority["prospectiveTrainerReadRepairVersion"] = VERSION
                 authority["immutableLockPayloadMutated"] = False
             return authority

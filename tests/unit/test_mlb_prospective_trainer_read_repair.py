@@ -40,6 +40,21 @@ def _locked(*reasons, exact=True):
     }
 
 
+def _verified_authority(*reasons):
+    return {
+        "verified": True,
+        "consistentRead": True,
+        "immutableLocked": True,
+        "stageAuthorityVerified": True,
+        "persistedStageAuthorityValidated": True,
+        "officialAuditEligible": True,
+        "exactLockVectorValidated": True,
+        "selectionLockVectorStatusValidated": True,
+        "trainingExclusionReasons": list(reasons),
+        "learningEligible": False,
+    }
+
+
 def _labels_module():
     def authority(item, slate_date):
         del slate_date
@@ -265,6 +280,84 @@ def test_invalid_vector_is_never_repaired():
     assert authority["learningEligible"] is False
     assert authority["exactLockVectorValidated"] is False
     assert authority["trainingExclusionReasons"] == [STALE]
+
+
+def test_independently_verified_authority_repairs_stale_boolean_read_only():
+    module = _labels_module()
+    module.rolling_audit._canonical_lock_authority = (
+        lambda item, slate_date: _verified_authority(STALE)
+    )
+    module = repair.install(module)
+    source_lock = {
+        "lockedPrediction": True,
+        "frozenFeatureVector": {"fingerprint": "vector-fingerprint"},
+        "trainingEligible": False,
+        "trainingEligibilityStatus": "INELIGIBLE",
+        "trainingExclusionReasons": [STALE],
+        "mlFeatureFreeze": {
+            "trainingEligible": False,
+            "trainingExclusionReasons": [STALE],
+        },
+    }
+    source_label = {
+        "training_eligible": False,
+        "training_exclusion_reasons": [STALE],
+    }
+
+    authority = _authority(module, source_lock)
+    locked = copy.deepcopy(source_lock)
+    locked["canonicalLockAuthority"] = authority
+    result = module._joined_training_row(
+        "2026-08-05",
+        source_label,
+        locked,
+        slate_finalized=True,
+    )
+
+    assert authority["learningEligible"] is True
+    assert authority["trainingExclusionReasons"] == []
+    assert result["trainingEligible"] is True
+    assert result["trainingExclusionReasons"] == []
+    assert result["prospectiveTrainerReadRepairVersion"] == repair.VERSION
+    assert source_lock["trainingEligible"] is False
+    assert source_label["training_eligible"] is False
+
+
+def test_verified_authority_with_substantive_reason_remains_ineligible():
+    module = _labels_module()
+    module.rolling_audit._canonical_lock_authority = (
+        lambda item, slate_date: _verified_authority(REAL)
+    )
+    module = repair.install(module)
+    source_lock = {
+        "lockedPrediction": True,
+        "frozenFeatureVector": {"fingerprint": "vector-fingerprint"},
+        "trainingEligible": False,
+        "trainingExclusionReasons": [],
+        "mlFeatureFreeze": {
+            "trainingEligible": False,
+            "trainingExclusionReasons": [],
+        },
+    }
+    source_label = {
+        "training_eligible": False,
+        "training_exclusion_reasons": [],
+    }
+
+    authority = _authority(module, source_lock)
+    locked = copy.deepcopy(source_lock)
+    locked["canonicalLockAuthority"] = authority
+    result = module._joined_training_row(
+        "2026-08-05",
+        source_label,
+        locked,
+        slate_finalized=True,
+    )
+
+    assert authority["learningEligible"] is False
+    assert authority["trainingExclusionReasons"] == [REAL]
+    assert result["trainingEligible"] is False
+    assert result["trainingExclusionReasons"] == [REAL]
 
 
 def test_trainer_compat_installs_read_repair_before_invocation():
