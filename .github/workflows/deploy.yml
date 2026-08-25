@@ -373,9 +373,11 @@ jobs:
               --connect-timeout 2 --max-time 8 \
               "${base_url}/v1/health" >/tmp/mlb-capacity-health.json \
               && health_ok=true
-            curl --fail --silent --show-error \
-              --connect-timeout 2 --max-time 8 \
-              "${base_url}/v1/mlb/model/version" >/tmp/mlb-capacity-model.json \
+            python scripts/verify_mlb_authority_response.py \
+              --url "${base_url}/v1/mlb/model/version" \
+              --output /tmp/mlb-capacity-model-contract.json \
+              --request-timeout-seconds 8 \
+              --quiet \
               && model_ok=true
             if [ "$health_ok" = true ] && [ "$model_ok" = true ]; then
               success_streak=$((success_streak + 1))
@@ -456,91 +458,10 @@ jobs:
             --output /tmp/health.json \
             --max-wait-seconds 180 \
             --request-timeout-seconds 8
-          python scripts/mlb_deploy_http_probe.py \
-            "${base_url}/v1/mlb/model/version" \
-            --output /tmp/mlb-model-version.json \
-            --max-wait-seconds 180 \
+          python scripts/verify_mlb_authority_response.py \
+            --url "${base_url}/v1/mlb/model/version" \
+            --output /tmp/mlb-model-authority-contract.json \
             --request-timeout-seconds 20
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          payload = json.loads(
-              Path('/tmp/mlb-model-version.json').read_text(encoding='utf-8')
-          )
-          print(json.dumps(payload, indent=2, default=str))
-          if payload.get('ok') is not True or payload.get('engine_import_ok') is not True:
-              raise SystemExit('Live MLB v3 engine did not import')
-          expected = {
-              'model_version': 'INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble',
-              'primaryAlgorithm': 'INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble',
-              'primaryAlgorithmActive': True,
-              'rankedWinnerPolicyVersion': '2026-07-24-mlb-ranked-winner-primary-v1',
-              'productionAuthoritySource': 'mlb_ranked_winner_v15_10_active_ensemble',
-              'automaticPromotionPolicy': 'winner model fixed for release; precision/trade promotion remains disabled',
-              'legacyV1AuthorityEnabled': False,
-              'awsNativeTrainingInstalled': True,
-              'awsNativeTrainingAuthority': False,
-              'awsNativeTrainingHealthSource': 'separate_mode_specific_status_contract',
-              'firstPromotionRequiresManualReview': True,
-              'manualReviewCreatesShadowApprovalOnly': True,
-              'v2InferenceConsumerInstalled': False,
-              'runtimeAuthorityActivationAvailable': False,
-              'allowedProductionOutput': ['PICK'],
-              'productionSelectionAllowed': True,
-              'automaticWagerAllowed': False,
-              'legacyRecommendationAuthority': False,
-              'legacyFallbackAllowed': False,
-              'precisionHitRateEvidencePassed': False,
-          }
-          mismatches = {
-              key: {'expected': value, 'actual': payload.get(key)}
-              for key, value in expected.items()
-              if payload.get(key) != value
-          }
-          if mismatches:
-              raise SystemExit(
-                  'Live MLB V15.10 authority contract is stale: '
-                  + json.dumps(mismatches, sort_keys=True)
-              )
-          runtime = payload.get('ml_runtime_install') or {}
-          if runtime.get('ok') is not True:
-              raise SystemExit('Live MLB runtime installation is not healthy')
-          if runtime.get('version') != 'MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-stage-promotion-authority-verified-active-model-authority':
-              raise SystemExit('Live MLB V15.10 runtime contract is stale')
-          steps = runtime.get('steps') or {}
-          for name in (
-              'legacyV1ChampionRuntimeInstalledForShadowDiagnostics',
-              'legacyV1AuthorityDisabled',
-              'v2ShadowManualFirst',
-              'canonicalProbabilityAndPersistedPrelockAuthority',
-              'providerNeutralCalibrationAndActionability',
-              'sourceHonestFundamentalsV2',
-              'lastPrelockPromotionAuthority',
-              'rankedWinnerV15_10DirectionInstalled',
-              'rankedWinnerV15_10SelectionInstalled',
-              'canonicalLockedStorageFinalizer',
-          ):
-              if steps.get(name) is not True:
-                  raise SystemExit(f'Live MLB runtime step is missing: {name}')
-          policy = runtime.get('accuracyTargetPolicy') or {}
-          for name in (
-              'rolling24hAllGamesAuditTargetPct',
-              'minimumRolling24hSlateAccuracyPct',
-              'minimumOutcomeUntouchedAccuracyPct',
-              'recommendationReliabilityThresholdPct',
-              'selectedUntouchedTestPlayabilityAccuracyTargetPct',
-              'minimumExactOddsCoveragePct',
-          ):
-              if policy.get(name) != 90.0:
-                  raise SystemExit(f'Live MLB dashboard metric is stale: {name}={policy.get(name)}')
-          if policy.get('rolling24hAccuracyAffectsPromotion') is not False:
-              raise SystemExit('Rolling 90% still affects promotion')
-          if policy.get('automaticPromotionAfterApplicableGates') is not False:
-              raise SystemExit('Automatic first promotion is still enabled')
-          if policy.get('everyGameRetainsOfficialPick') is not True:
-              raise SystemExit('Every-game winner contract is not active')
-          PY
 
       - name: Smoke test read-only MLB lock status
         env:
