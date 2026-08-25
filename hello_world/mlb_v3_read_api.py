@@ -67,20 +67,36 @@ def _today_et() -> str:
 
 def _model_body() -> Dict[str, Any]:
     # MLB_AUTO_R7_FAIL_CLOSED_AUTHORITY_V1
+    # No historical or retired model may be projected as current MLB
+    # winner authority. Publication stays closed until a trained,
+    # promotion-qualified R7 artifact is atomically activated.
     return {
-        "ok": False, "sport": "mlb",
-        "status": "NO_QUALIFIED_CHAMPION", "error": "NO_QUALIFIED_CHAMPION",
-        "publicationClosed": True, "productionSelectionAllowed": False,
-        "model_version": None, "primaryAlgorithm": None, "primaryAlgorithmActive": False,
-        "soleProductionAlgorithm": None, "game_winner_model": None,
+        "ok": False,
+        "sport": "mlb",
+        "status": "NO_QUALIFIED_CHAMPION",
+        "error": "NO_QUALIFIED_CHAMPION",
+        "publicationClosed": True,
+        "productionSelectionAllowed": False,
+        "model_version": None,
+        "primaryAlgorithm": None,
+        "primaryAlgorithmActive": False,
+        "soleProductionAlgorithm": None,
+        "game_winner_model": None,
         "requestedAuthority": "AWS_ML_PROSPECTIVE_R7",
-        "qualifiedChampionRequired": True, "qualifiedChampionPresent": False,
-        "r7ChampionQualified": False, "r7DeploymentIdentity": None,
-        "legacyFallbackAllowed": False, "automaticLegacyRestoreAllowed": False,
-        "legacyRecommendationAuthority": False, "retiredAuthoritySuppressed": True,
-        "retiredV15_10Eligible": False, "automaticWagerAllowed": False,
-        "rowLevelAutomaticWagerAllowed": False, "parlaysEnabled": False,
-        "readOnly": True, "apiRuntimeVersion": VERSION,
+        "qualifiedChampionRequired": True,
+        "qualifiedChampionPresent": False,
+        "r7ChampionQualified": False,
+        "r7DeploymentIdentity": None,
+        "legacyFallbackAllowed": False,
+        "automaticLegacyRestoreAllowed": False,
+        "legacyRecommendationAuthority": False,
+        "retiredAuthoritySuppressed": True,
+        "retiredV15_10Eligible": False,
+        "automaticWagerAllowed": False,
+        "rowLevelAutomaticWagerAllowed": False,
+        "parlaysEnabled": False,
+        "readOnly": True,
+        "apiRuntimeVersion": VERSION,
         "authorityContractVersion": "MLB-AUTO-R7-QUALIFIED-CHAMPION-ONLY-v1",
     }
 
