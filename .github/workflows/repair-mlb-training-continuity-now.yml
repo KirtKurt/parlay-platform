@@ -51,24 +51,30 @@ jobs:
           python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
           python -m py_compile \
             hello_world/mlb_prospective_row_repair.py \
+            hello_world/mlb_terminal_identity_resolution_patch.py \
             scripts/reconcile_mlb_prospective_backlog.py \
             scripts/reconcile_mlb_prospective_backlog_v4.py \
             scripts/reconcile_mlb_prospective_backlog_v5.py \
             scripts/invoke_mlb_trainer_with_retry.py
           # Gate this repair on the exact prospective lifecycle, reconciliation,
-          # labeling, and terminal-durability contracts it can change. The full
-          # per-game lock suite remains in canonical CI; its current failure is
-          # an append-only diagnostics-count assertion after all safety checks pass.
+          # labeling, protected force-replay, identity-crosswalk, and terminal-
+          # durability contracts it can change. The full per-game lock suite
+          # remains in canonical CI; this workflow never relaxes immutable lock,
+          # post-start prediction, official-game-set, or promotion requirements.
           PYTHONPATH="hello_world:scripts:${PYTHONPATH:-}" python -m pytest -q \
             tests/unit/test_mlb_terminal_durability_replay.py \
+            tests/unit/test_mlb_protected_terminal_force_replay.py \
             tests/unit/test_mlb_prospective_status_lifecycle_repair.py \
             tests/unit/test_reconcile_mlb_prospective_backlog.py \
             tests/unit/test_reconcile_mlb_prospective_backlog_v4.py \
             tests/unit/test_reconcile_mlb_prospective_backlog_v5.py \
             tests/unit/test_mlb_canonical_final_labels_v1.py
-          grep -q 'v2-durable-cached-replay' hello_world/mlb_prospective_row_repair.py
+          grep -q 'v3-protected-force-replay' hello_world/mlb_prospective_row_repair.py
+          grep -q 'unique-official-provider-crosswalk' \
+            hello_world/mlb_terminal_identity_resolution_patch.py
           grep -q 'official_status_terminal_durability_incomplete' \
             scripts/reconcile_mlb_prospective_backlog_v4.py
+          grep -q '"force": True' scripts/reconcile_mlb_prospective_backlog_v5.py
           sam validate --template-file template.yaml --lint
           git diff --check
 
