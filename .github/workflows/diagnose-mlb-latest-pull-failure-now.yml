@@ -1,0 +1,105 @@
+name: Diagnose Latest MLB Scheduled Pull Failure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-mlb-latest-pull-failure-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet 'boto3>=1.34,<2'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Parse latest CloudWatch failure read-only
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import boto3,json,os,time,re
+          from pathlib import Path
+          from datetime import datetime,timezone,timedelta
+          region=os.environ['AWS_REGION']
+          cfn=boto3.client('cloudformation',region_name=region)
+          res=cfn.describe_stack_resource(StackName='parlay-platform-dev',LogicalResourceId='MLBAuditedPullFunction')['StackResourceDetail']
+          fn=res['PhysicalResourceId']
+          logs=boto3.client('logs',region_name=region)
+          start=int((datetime.now(timezone.utc)-timedelta(hours=2)).timestamp()*1000)
+          rows=[]; token=None
+          while True:
+              kw={'logGroupName':f'/aws/lambda/{fn}','startTime':start,'interleaved':True,'limit':10000}
+              if token: kw['nextToken']=token
+              r=logs.filter_log_events(**kw); rows.extend(r.get('events') or [])
+              nt=r.get('nextToken')
+              if not nt or nt==token: break
+              token=nt
+          candidates=[]
+          marker='MLB_SCHEDULED_PULL_FAILED:'
+          for row in rows:
+              msg=str(row.get('message') or '')
+              if marker not in msg: continue
+              tail=msg.split(marker,1)[1].strip()
+              # Runtime traceback messages can append quoting/newlines; decode the first JSON object safely.
+              decoder=json.JSONDecoder()
+              try: obj,end=decoder.raw_decode(tail)
+              except Exception: continue
+              if isinstance(obj,dict): candidates.append((int(row.get('timestamp') or 0),obj))
+          if not candidates: raise SystemExit('no parseable MLB_SCHEDULED_PULL_FAILED payload found')
+          ts,payload=max(candidates,key=lambda x:x[0])
+          keep=[]
+          fields=('game_date_et','ok','operationalDefect','gameCount','allGamesPredicted','displayStatusCoverageComplete','lifecycleCoverageComplete','preLockStorageLifecycleAware','preLockStorageCandidateCount','preLockStoredCount','preLockStorageComplete','preLockStorageErrors','preLockStorageDispositionCount','preLockStorageRowCount','preLockStorageDispositionComplete','preLockStorageLifecycleSkippedCount','preLockStorageLifecycleSkippedStatuses','canonicalLockedStorageCandidateCount','canonicalLockedStoredCount','canonicalLockedStorageComplete','canonicalLockedStorageErrors','canonicalLockedStorageSuppressedUnauthorizedCount')
+          for w in payload.get('game_winner_predictions') or []:
+              if isinstance(w,dict): keep.append({k:w.get(k) for k in fields if k in w})
+          report={
+              'proofType':'MLB_LATEST_SCHEDULED_PULL_FAILURE_DIAGNOSTIC',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat().replace('+00:00','Z'),
+              'failureAtUtc':datetime.fromtimestamp(ts/1000,tz=timezone.utc).isoformat().replace('+00:00','Z'),
+              'readOnly':True,
+              'productionWritesPerformed':False,
+              'candidatePersistenceFailures':payload.get('candidatePersistenceFailures') or [],
+              'providerScheduleManifestComplete':payload.get('providerScheduleManifestComplete'),
+              'officialScheduleAuthorityBound':payload.get('officialScheduleAuthorityBound'),
+              'providerManifestBound':payload.get('providerManifestBound'),
+              'canonicalPullHistory':payload.get('canonical_pull_history') or [],
+              'winnerResults':keep,
+              'secretExposed':False,
+          }
+          Path('/tmp/mlb_latest_failure.json').write_text(json.dumps(report,indent=2,sort_keys=True,default=str)+'\n')
+          print(json.dumps(report,indent=2,default=str))
+          PY
+      - name: Publish diagnostic evidence
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-latest-pull-failure-proof origin/main
+            git reset --hard origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb_latest_failure.json runtime_reports/mlb_latest_scheduled_pull_failure_diagnostic.json
+            git add runtime_reports/mlb_latest_scheduled_pull_failure_diagnostic.json
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish latest MLB scheduled pull failure diagnostic [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt*3))
+          done
+          exit 1
