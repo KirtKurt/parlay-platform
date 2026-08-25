@@ -1,0 +1,365 @@
+name: Repair Tennis Complete Provider Key Inventory
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/install_tennis_complete_key_inventory.py'
+      - '.github/workflows/repair-tennis-complete-provider-key-inventory.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: tennis-complete-provider-key-inventory
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-tennis-learning
+  PYTHONPATH: .
+  PROOF_PATH: runtime_reports/tennis_complete_provider_key_repair_latest.json
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Snapshot pre-repair Tennis authority
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          endpoint=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" --region "$REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='TennisAutonomyStatusApi'].OutputValue" \
+            --output text)
+          test -n "$endpoint"; test "$endpoint" != None
+          curl --fail --silent --show-error --retry 5 --retry-all-errors "$endpoint" \
+            -o /tmp/tennis-authority-before.json
+          python - <<'PY'
+          import json
+          status=json.load(open('/tmp/tennis-authority-before.json'))
+          assert status.get('service') == 'tennis-autonomy', status
+          assert bool(status.get('automatic_prediction_allowed', False)) == (status.get('authority') == 'AUTHORITATIVE'), status
+          print(json.dumps(status, indent=2, sort_keys=True, default=str))
+          PY
+
+      - name: Install complete provider-key discovery contract
+        run: |
+          set -euo pipefail
+          python scripts/install_tennis_complete_key_inventory.py | tee /tmp/tennis-installer-proof.json
+
+      - name: Validate isolated Tennis source and anti-repainting contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet pytest boto3
+          python -m py_compile \
+            tennis_learning/handler.py \
+            tennis_learning/backfill.py \
+            tennis_learning/bootstrap_handler.py \
+            tennis_learning/live_pipeline.py \
+            tennis_learning/autonomous_controller.py
+          python -m pytest -q \
+            tests/test_tennis_learning_handler.py \
+            tests/test_tennis_autonomy_contract.py \
+            tests/test_tennis_backfill_contract.py \
+            tests/test_tennis_live_coverage_contract.py
+          sam validate --template-file tennis-template.yaml
+          git diff --check
+          python - <<'PY'
+          from pathlib import Path
+          source=Path('tennis_learning/live_pipeline.py').read_text()
+          discovery=source.split('def _discover_tennis_keys',1)[1].split('def _parallel_map',1)[0]
+          assert 'ALL_TENNIS_KEYS_ALL_H2H_BOOKMAKER_REGIONS' in source
+          assert 'sports = _get("/sports/", {"all": "true"})' in discovery
+          assert 'keys: set[str] = set(configured)' in discovery
+          assert 'sport.get("active"' not in discovery
+          assert 'has_outrights' not in discovery
+          assert 'return configured' not in discovery
+          assert 'PREDICTION_CUTOFF_MINUTES' in source
+          assert 'predict({' in source
+          assert 'delete_item' not in source
+          allowed={
+              'tennis_learning/live_pipeline.py',
+              'tests/test_tennis_live_coverage_contract.py',
+              '.github/workflows/deploy-tennis-learning.yml',
+              '.github/workflows/publish-tennis-daily-card.yml',
+              '.github/workflows/repair-tennis-all-matches-all-regions.yml',
+          }
+          import subprocess
+          changed=set(subprocess.check_output(['git','diff','--name-only'], text=True).splitlines())
+          assert changed and changed <= allowed, {'changed': sorted(changed), 'allowed': sorted(allowed)}
+          print({'changed': sorted(changed), 'scope': 'TENNIS_ONLY'})
+          PY
+
+      - name: Preserve tested Tennis source bundle
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/tennis-complete-key-source/tennis_learning \
+                   /tmp/tennis-complete-key-source/tests \
+                   /tmp/tennis-complete-key-source/.github/workflows
+          cp tennis_learning/live_pipeline.py /tmp/tennis-complete-key-source/tennis_learning/
+          cp tests/test_tennis_live_coverage_contract.py /tmp/tennis-complete-key-source/tests/
+          cp .github/workflows/deploy-tennis-learning.yml /tmp/tennis-complete-key-source/.github/workflows/
+          cp .github/workflows/publish-tennis-daily-card.yml /tmp/tennis-complete-key-source/.github/workflows/
+          cp .github/workflows/repair-tennis-all-matches-all-regions.yml /tmp/tennis-complete-key-source/.github/workflows/
+
+      - name: Publish exact tested Tennis source to main
+        id: publish
+        env:
+          TRIGGER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          targets=(
+            tennis_learning/live_pipeline.py
+            tests/test_tennis_live_coverage_contract.py
+            .github/workflows/deploy-tennis-learning.yml
+            .github/workflows/publish-tennis-daily-card.yml
+            .github/workflows/repair-tennis-all-matches-all-regions.yml
+          )
+          published=false
+          for attempt in $(seq 1 20); do
+            git fetch origin main
+            if ! git diff --quiet "$TRIGGER_SHA" origin/main -- "${targets[@]}"; then
+              echo '::error::A targeted Tennis source file changed after this tested checkout; refusing to overwrite it'
+              git diff --stat "$TRIGGER_SHA" origin/main -- "${targets[@]}"
+              exit 1
+            fi
+            git checkout -B tennis-complete-key-source-publish origin/main
+            cp /tmp/tennis-complete-key-source/tennis_learning/live_pipeline.py tennis_learning/live_pipeline.py
+            cp /tmp/tennis-complete-key-source/tests/test_tennis_live_coverage_contract.py tests/test_tennis_live_coverage_contract.py
+            cp /tmp/tennis-complete-key-source/.github/workflows/deploy-tennis-learning.yml .github/workflows/deploy-tennis-learning.yml
+            cp /tmp/tennis-complete-key-source/.github/workflows/publish-tennis-daily-card.yml .github/workflows/publish-tennis-daily-card.yml
+            cp /tmp/tennis-complete-key-source/.github/workflows/repair-tennis-all-matches-all-regions.yml .github/workflows/repair-tennis-all-matches-all-regions.yml
+            git add "${targets[@]}"
+            if git diff --cached --quiet; then
+              source_sha=$(git rev-parse origin/main)
+              published=true
+              break
+            fi
+            git commit -m 'Repair Tennis complete provider-key match discovery [skip ci]'
+            if git push origin HEAD:main; then
+              source_sha=$(git rev-parse HEAD)
+              published=true
+              break
+            fi
+            sleep $((attempt * 3))
+          done
+          test "$published" = true
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Build and deploy exact isolated Tennis source
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          git checkout --detach "$GITHUB_SHA"
+          python scripts/install_tennis_complete_key_inventory.py >/tmp/tennis-installer-proof-deploy.json
+          sam build --no-cached --template-file tennis-template.yaml
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "$STACK_NAME" \
+            --region "$REGION" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides OddsApiKey="${{ secrets.ODDS_API_KEY }}" \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+
+      - name: Verify deployed Tennis source and all-region environment
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          fn=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" --region "$REGION" \
+            --logical-resource-id TennisLivePipelineFunction \
+            --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          test -n "$fn"; test "$fn" != None
+          aws lambda get-function-configuration --function-name "$fn" --region "$REGION" \
+            > /tmp/tennis-live-config.json
+          code_url=$(aws lambda get-function --function-name "$fn" --region "$REGION" \
+            --query 'Code.Location' --output text)
+          curl --fail --silent --show-error "$code_url" -o /tmp/tennis-live.zip
+          python - <<'PY'
+          import json,zipfile
+          config=json.load(open('/tmp/tennis-live-config.json'))
+          env=(config.get('Environment') or {}).get('Variables') or {}
+          regions={x.strip() for x in str(env.get('TENNIS_ODDS_REGIONS') or '').split(',') if x.strip()}
+          required={'us','us2','uk','eu','au'}
+          assert required <= regions, {'required':sorted(required),'deployed':sorted(regions)}
+          with zipfile.ZipFile('/tmp/tennis-live.zip') as archive:
+              names=archive.namelist()
+              candidate=next((n for n in names if n.endswith('live_pipeline.py')),None)
+              assert candidate, names[:50]
+              source=archive.read(candidate).decode()
+          discovery=source.split('def _discover_tennis_keys',1)[1].split('def _parallel_map',1)[0]
+          assert 'ALL_TENNIS_KEYS_ALL_H2H_BOOKMAKER_REGIONS' in source
+          assert 'keys: set[str] = set(configured)' in discovery
+          assert 'sport.get("active"' not in discovery
+          assert 'has_outrights' not in discovery
+          assert 'return configured' not in discovery
+          assert 'delete_item' not in source
+          print(json.dumps({'function':config.get('FunctionName'),'regions':sorted(regions),'timeout':config.get('Timeout'),'memory':config.get('MemorySize'),'sourceVerified':True},indent=2))
+          PY
+
+      - name: Run AWS-native Tennis cycle and prove complete event accounting
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+          SOURCE_SHA: ${{ steps.publish.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          run_endpoint=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" --region "$REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='TennisAutonomyRunApi'].OutputValue" \
+            --output text)
+          status_endpoint=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" --region "$REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='TennisAutonomyStatusApi'].OutputValue" \
+            --output text)
+          test -n "$run_endpoint"; test "$run_endpoint" != None
+          curl --fail --silent --show-error --retry 2 --retry-all-errors \
+            -X POST --max-time 900 "$run_endpoint" -o /tmp/tennis-cycle.json
+          curl --fail --silent --show-error --retry 5 --retry-all-errors \
+            "$status_endpoint" -o /tmp/tennis-authority-after.json
+          python - <<'PY'
+          import json,os,datetime,pathlib
+          cycle=json.load(open('/tmp/tennis-cycle.json'))
+          status=json.load(open('/tmp/tennis-authority-after.json'))
+          before=json.load(open('/tmp/tennis-authority-before.json'))
+          collect=(cycle.get('actions') or {}).get('collect') or {}
+          required={'us','us2','uk','eu','au'}
+          regions=set(collect.get('requested_regions') or [])
+          discovered=int(collect.get('discovered_sport_keys') or 0)
+          eventful=int(collect.get('eventful_sport_keys') or 0)
+          events=int(collect.get('discovered_events') or collect.get('events') or 0)
+          evaluated=int(collect.get('evaluated_events') or 0)
+          assert collect.get('scope') == 'ALL_TENNIS_KEYS_ALL_H2H_BOOKMAKER_REGIONS', collect
+          assert required <= regions, {'required':sorted(required),'observed':sorted(regions)}
+          assert int(collect.get('sport_keys_truncated') or 0) == 0, collect
+          assert discovered >= eventful >= 1, collect
+          assert events == evaluated, collect
+          assert collect.get('coverage_complete') is True, collect
+          assert collect.get('all_active_sport_keys_evaluated') is True, collect
+          assert not (collect.get('errors') or {}), collect
+          assert bool(status.get('automatic_prediction_allowed',False)) == (status.get('authority') == 'AUTHORITATIVE'), status
+          assert int(status.get('consecutive_failures') or 0) == 0, status
+          proof={
+            'ok':True,
+            'proofType':'TENNIS_COMPLETE_PROVIDER_KEY_AWS_REPAIR',
+            'observedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'sourceSha':os.environ.get('SOURCE_SHA'),
+            'scope':collect.get('scope'),
+            'requestedRegions':sorted(regions),
+            'providerTennisSportKeys':discovered,
+            'eventfulSportKeys':eventful,
+            'discoveredEvents':events,
+            'evaluatedEvents':evaluated,
+            'predictedEvents':int(collect.get('predicted') or 0),
+            'terminalWithoutPrediction':max(0,evaluated-int(collect.get('predicted') or 0)),
+            'coverageComplete':True,
+            'sportKeysTruncated':0,
+            'authorityBefore':before.get('authority'),
+            'authorityAfter':status.get('authority'),
+            'automaticPredictionAllowed':bool(status.get('automatic_prediction_allowed',False)),
+            'modelVersion':status.get('model_version'),
+            'trainingSamples':status.get('training_samples'),
+            'predictionCutoffMinutes':int(collect.get('prediction_cutoff_minutes') or 0),
+            'immutablePredictionHistoryRewritten':False,
+            'immutableSettlementHistoryRewritten':False,
+            'humanWinnerSelection':False,
+            'chatgptWinnerSelection':False,
+            'otherSportChanged':False,
+            'cycle':cycle,
+            'status':status,
+          }
+          pathlib.Path(os.environ['PROOF_PATH']).parent.mkdir(parents=True,exist_ok=True)
+          pathlib.Path(os.environ['PROOF_PATH']).write_text(json.dumps(proof,indent=2,sort_keys=True,default=str)+'\n')
+          print(json.dumps(proof,indent=2,sort_keys=True,default=str))
+          PY
+
+      - name: Refresh and verify complete Tennis daily card
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          gh workflow run publish-tennis-daily-card.yml --ref main
+          run_id=''
+          for attempt in $(seq 1 40); do
+            run_id=$(gh run list --workflow publish-tennis-daily-card.yml --event workflow_dispatch \
+              --limit 20 --json databaseId,createdAt \
+              --jq ".[] | select(.createdAt >= \"$started\") | .databaseId" | head -n1)
+            [ -n "$run_id" ] && break
+            sleep 5
+          done
+          test -n "$run_id"
+          gh run watch "$run_id" --exit-status
+          for attempt in $(seq 1 30); do
+            git fetch origin main
+            git show origin/main:runtime/tennis_daily_card.json > /tmp/tennis-daily-card.json
+            if python - <<'PY'
+          import json,sys
+          card=json.load(open('/tmp/tennis-daily-card.json'))
+          ok=(card.get('scope')=='ALL_TENNIS_KEYS_ALL_H2H_BOOKMAKER_REGIONS' and card.get('full_slate_evaluated') is True)
+          raise SystemExit(0 if ok else 1)
+          PY
+            then break; fi
+            sleep 5
+          done
+          python - <<'PY'
+          import json
+          card=json.load(open('/tmp/tennis-daily-card.json'))
+          inventory=int(card.get('inventory_match_count') or card.get('match_count') or 0)
+          predictions=int(card.get('prediction_count') or 0)
+          unpredicted=card.get('unpredicted_matches') or []
+          assert card.get('scope') == 'ALL_TENNIS_KEYS_ALL_H2H_BOOKMAKER_REGIONS', card
+          assert card.get('full_slate_evaluated') is True, card
+          assert int(card.get('sport_keys_truncated') or 0) == 0, card
+          assert inventory == predictions + len(unpredicted), card
+          assert int(card.get('timing_violation_records_ignored') or 0) == 0, card
+          assert int(card.get('malformed_prediction_timestamps') or 0) == 0, card
+          print(json.dumps({'inventoryMatches':inventory,'predictions':predictions,'explicitExclusions':len(unpredicted),'officialPicks':card.get('official_pick_count'),'scope':card.get('scope')},indent=2))
+          PY
+
+      - name: Publish Tennis-only AWS repair proof
+        if: always() && hashFiles('runtime_reports/tennis_complete_provider_key_repair_latest.json') != ''
+        run: |
+          set -euo pipefail
+          cp "$PROOF_PATH" /tmp/tennis-complete-provider-key-proof.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          published=false
+          for attempt in $(seq 1 20); do
+            git fetch origin main
+            git checkout -B tennis-complete-provider-key-proof origin/main
+            mkdir -p runtime_reports
+            cp /tmp/tennis-complete-provider-key-proof.json "$PROOF_PATH"
+            git add "$PROOF_PATH"
+            if git diff --cached --quiet; then published=true; break; fi
+            git commit -m 'Publish Tennis complete provider-key AWS repair proof [skip ci]'
+            if git push origin HEAD:main; then published=true; break; fi
+            sleep $((attempt * 3))
+          done
+          test "$published" = true
