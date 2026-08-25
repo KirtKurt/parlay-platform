@@ -131,4 +131,4 @@ def test_root_lifecycle_missed_lock_diagnostic_is_write_once_and_terminal():
     assert repeated["perGameLockAttemptDiagnostics"]["attemptedGameCount"] == 0
 
 
-# Exact-source deployment retrigger after dedicated MLB lifecycle queue repair.
+# Exact-source deployment retrigger after preserving diagnostic history limit.
