@@ -1,0 +1,47 @@
+name: Test MLB Bedrock capacity and IAM
+
+on:
+  pull_request:
+    paths:
+      - 'mlb_auto_llm/capacity_control.py'
+      - 'mlb-auto-llm-template.yaml'
+      - 'tests/unit/test_mlb_bedrock_capacity_control.py'
+      - '.github/workflows/apply-mlb-bedrock-capacity-iam-now.yml'
+      - '.github/workflows/test-mlb-bedrock-capacity-iam.yml'
+  push:
+    branches:
+      - 'repair/mlb-bedrock-capacity-iam-20260825'
+    paths:
+      - 'mlb_auto_llm/capacity_control.py'
+      - 'mlb-auto-llm-template.yaml'
+      - 'tests/unit/test_mlb_bedrock_capacity_control.py'
+      - '.github/workflows/apply-mlb-bedrock-capacity-iam-now.yml'
+      - '.github/workflows/test-mlb-bedrock-capacity-iam.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - name: Validate source, tests, template, and prohibited-change boundary
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
+          python -m py_compile mlb_auto_llm/capacity_control.py
+          PYTHONPATH=. python -m pytest -q tests/unit/test_mlb_bedrock_capacity_control.py
+          sam validate --template-file mlb-auto-llm-template.yaml --lint
+          git fetch origin main
+          test "$(git diff --name-only origin/main...HEAD -- mlb_auto_llm/model_gateway.py | wc -l)" -eq 0
+          grep -q 'circuitBreakerAdded.*False' mlb_auto_llm/capacity_control.py
+          grep -q 'bedrock:ListFoundationModels' mlb-auto-llm-template.yaml
+          grep -q 'bedrock:ListInferenceProfiles' mlb-auto-llm-template.yaml
+          grep -q 'bedrock:InvokeModel' mlb-auto-llm-template.yaml
+          grep -q 'servicequotas:RequestServiceQuotaIncrease' mlb-auto-llm-template.yaml
+          grep -q 'bedrock:CreateProvisionedModelThroughput' mlb-auto-llm-template.yaml
