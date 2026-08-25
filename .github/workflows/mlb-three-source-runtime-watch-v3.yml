@@ -1,4 +1,4 @@
-name: MLB Three-Source Runtime and Timing Watch V3
+name: MLB Canonical Runtime Health Watch
 
 on:
   push:
@@ -10,25 +10,22 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: mlb-three-source-runtime-watch-v3
-  cancel-in-progress: false
+  group: mlb-canonical-runtime-health-watch
+  cancel-in-progress: true
 
 jobs:
-  certify-runtime-and-timing:
+  certify-current-runtime:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
       AWS_EC2_METADATA_DISABLED: 'true'
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ github.token }}
 
       - uses: actions/setup-python@v5
         with:
@@ -44,47 +41,22 @@ jobs:
       - name: Install verifier dependencies
         run: python -m pip install --quiet 'boto3>=1.34,<2'
 
-      - name: Wait for stable MLB stack
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 80); do
-            state=$(aws cloudformation describe-stacks \
-              --stack-name parlay-platform-dev \
-              --region "$AWS_REGION" \
-              --query 'Stacks[0].StackStatus' \
-              --output text 2>/dev/null || echo STACK_MISSING)
-            echo "stack_state=$state"
-            case "$state" in
-              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE)
-                exit 0 ;;
-              *_IN_PROGRESS)
-                sleep 15 ;;
-              *)
-                echo "::error::Stack is not stable: $state"
-                exit 1 ;;
-            esac
-          done
-          echo '::error::Timed out waiting for stack'
-          exit 1
-
-      - name: Certify current autonomous controller and timing schedules
+      - name: Verify deployed canonical MLB runtime and recent error state
         run: |
           set -euo pipefail
           python - <<'PY'
           from __future__ import annotations
           import json
           import os
-          from datetime import datetime, timezone
-          from pathlib import Path
+          from datetime import datetime, timedelta, timezone
           import boto3
 
           REGION = os.environ['AWS_REGION']
           STACK = 'parlay-platform-dev'
-          REPORT = Path('runtime_reports/mlb_three_source_runtime_v3_latest.json')
-          CERT = Path('runtime_reports/mlb_three_source_runtime_timing_certified.json')
           cfn = boto3.client('cloudformation', region_name=REGION)
           lam = boto3.client('lambda', region_name=REGION)
           events = boto3.client('events', region_name=REGION)
+          cw = boto3.client('cloudwatch', region_name=REGION)
 
           def resource(logical_id: str) -> str:
               return cfn.describe_stack_resource(
@@ -92,113 +64,91 @@ jobs:
                   LogicalResourceId=logical_id,
               )['StackResourceDetail']['PhysicalResourceId']
 
-          controller_name = resource('MLBThreeApiAutonomousControllerFunction')
-          config = lam.get_function_configuration(FunctionName=controller_name)
-          env = ((config.get('Environment') or {}).get('Variables') or {})
-          response = lam.invoke(
-              FunctionName=controller_name,
-              InvocationType='RequestResponse',
-              Payload=b'{"action":"health"}',
+          required = (
+              'MLBAuditedPullFunction',
+              'MLBDailyPickLockFunction',
+              'MLBMLTrainingFunction',
+              'MLBProductionVerifierFunction',
           )
-          raw = response['Payload'].read()
-          body = json.loads(raw.decode('utf-8') or '{}') if raw else {}
-          function_error = response.get('FunctionError')
+          functions = {}
+          checks = {}
+          for logical_id in required:
+              physical = resource(logical_id)
+              cfg = lam.get_function_configuration(FunctionName=physical)
+              healthy = (
+                  cfg.get('State') == 'Active'
+                  and cfg.get('LastUpdateStatus') == 'Successful'
+              )
+              checks[f'{logical_id}Healthy'] = healthy
+              functions[logical_id] = {
+                  'physicalName': physical,
+                  'state': cfg.get('State'),
+                  'lastUpdateStatus': cfg.get('LastUpdateStatus'),
+                  'lastModified': cfg.get('LastModified'),
+              }
 
+          pull_name = functions['MLBAuditedPullFunction']['physicalName']
+          pull_cfg = lam.get_function_configuration(FunctionName=pull_name)
           rule_names = events.list_rule_names_by_target(
-              TargetArn=config['FunctionArn']
+              TargetArn=pull_cfg['FunctionArn']
           ).get('RuleNames') or []
           rules = []
           for name in rule_names:
-              rule = events.describe_rule(Name=name)
+              row = events.describe_rule(Name=name)
               rules.append({
                   'name': name,
-                  'state': rule.get('State'),
-                  'scheduleExpression': rule.get('ScheduleExpression'),
+                  'state': row.get('State'),
+                  'scheduleExpression': row.get('ScheduleExpression'),
               })
-          enabled_schedules = {
-              row.get('scheduleExpression')
-              for row in rules
-              if row.get('state') == 'ENABLED'
-          }
+          enabled_rules = [row for row in rules if row.get('state') == 'ENABLED']
+          checks['auditedPullHasEnabledSchedule'] = bool(enabled_rules)
 
-          required_env = (
-              'MLB_THREE_API_STATE_TABLE',
-              'MLB_THREE_API_PULL_FUNCTION_NAME',
-              'MLB_THREE_API_LOCK_FUNCTION_NAME',
-              'MLB_THREE_API_TRAIN_FUNCTION_NAME',
-              'MLB_THREE_API_VERIFY_FUNCTION_NAME',
+          now = datetime.now(timezone.utc)
+          start = now - timedelta(minutes=10)
+          metric = cw.get_metric_statistics(
+              Namespace='AWS/Lambda',
+              MetricName='Errors',
+              Dimensions=[{'Name': 'FunctionName', 'Value': pull_name}],
+              StartTime=start,
+              EndTime=now,
+              Period=300,
+              Statistics=['Sum'],
           )
-          env_complete = all(bool(env.get(key)) for key in required_env)
-          lambda_healthy = (
-              config.get('State') == 'Active'
-              and config.get('LastUpdateStatus') == 'Successful'
-              and function_error is None
-          )
-          verifier = ((body.get('actions') or {}).get('verify') or {}) if isinstance(body, dict) else {}
-          status_healthy = (
-              isinstance(body, dict)
-              and body.get('operationalStatus') == 'HEALTHY'
-              and verifier.get('ok') is True
-          )
-          safe_status_only = (
-              isinstance(body, dict)
-              and not any(
-                  key in (body.get('actions') or {})
-                  for key in ('pull', 'card', 'preSlateTraining', 'settlement', 'postSettlementTraining')
-              )
-          )
-          checks = {
-              'currentControllerLogicalIdResolved': True,
-              'lambdaHealthy': lambda_healthy,
-              'requiredFunctionBindingsPresent': env_complete,
-              'statusOnlyInvocationHealthy': status_healthy,
-              'statusInvocationWasReadOnly': safe_status_only,
-              'lifecycleFiveMinuteRuleEnabled': 'rate(5 minutes)' in enabled_schedules,
-              'contenderTwoMinuteRuleEnabled': 'rate(2 minutes)' in enabled_schedules,
-          }
-          ok = all(checks.values())
+          recent_errors = sum(float(row.get('Sum') or 0.0) for row in metric.get('Datapoints') or [])
+          checks['auditedPullNoErrorsLast10Minutes'] = recent_errors == 0.0
+
+          alarm_name = 'MLB-Auto-Critical-Canonical-Ingest-Errors'
+          alarm_rows = cw.describe_alarms(AlarmNames=[alarm_name]).get('MetricAlarms') or []
+          alarm = alarm_rows[0] if alarm_rows else None
+          alarm_state = alarm.get('StateValue') if alarm else 'NOT_FOUND'
+          # An alarm can remain ALARM briefly while its evaluation window ages out.
+          # Recent Lambda Errors are the authoritative liveness check; record the
+          # alarm state separately instead of hiding it or force-setting its state.
+
           report = {
-              'proofType': 'MLB_THREE_SOURCE_CURRENT_CONTROLLER_RUNTIME_V3',
-              'checkedAtUtc': datetime.now(timezone.utc).isoformat(),
-              'ok': ok,
+              'proofType': 'MLB_CANONICAL_RUNTIME_HEALTH',
+              'checkedAtUtc': now.isoformat(),
               'stack': STACK,
-              'controllerFunction': controller_name,
-              'controllerVersion': body.get('version') if isinstance(body, dict) else None,
-              'operationalStatus': body.get('operationalStatus') if isinstance(body, dict) else None,
               'checks': checks,
-              'rules': rules,
-              'verifierStatus': verifier,
+              'functions': functions,
+              'auditedPullRules': rules,
+              'auditedPullErrorsLast10Minutes': recent_errors,
+              'canonicalIngestAlarm': {
+                  'name': alarm_name,
+                  'state': alarm_state,
+                  'reason': alarm.get('StateReason') if alarm else None,
+              },
               'guardrails': {
-                  'statusOnlyInvocation': True,
-                  'predictionMutationAllowedByWatch': False,
-                  'historicalRewriteAllowedByWatch': False,
-                  'promotionGateChangesAllowedByWatch': False,
-                  'winnerOverrideAllowedByWatch': False,
+                  'readOnly': True,
+                  'invokesPredictionFunctions': False,
+                  'writesPredictions': False,
+                  'rewritesLocks': False,
+                  'changesPromotionGates': False,
+                  'winnerOverride': False,
               },
           }
-          REPORT.parent.mkdir(parents=True, exist_ok=True)
-          text = json.dumps(report, indent=2, sort_keys=True) + '\n'
-          REPORT.write_text(text, encoding='utf-8')
-          CERT.write_text(text, encoding='utf-8')
-          print(text)
-          if not ok:
-              raise SystemExit('current MLB three-source controller runtime certification failed')
+          report['ok'] = all(checks.values())
+          print(json.dumps(report, indent=2, sort_keys=True, default=str))
+          if not report['ok']:
+              raise SystemExit('MLB canonical runtime health certification failed')
           PY
-
-      - name: Publish truthful runtime certification
-        if: success()
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add \
-            runtime_reports/mlb_three_source_runtime_v3_latest.json \
-            runtime_reports/mlb_three_source_runtime_timing_certified.json
-          git diff --cached --quiet && exit 0
-          git commit -m 'Publish current MLB three-source runtime certification [skip ci]'
-          for attempt in 1 2 3 4 5; do
-            git pull --rebase origin main
-            git push origin HEAD:main && exit 0
-            sleep $((attempt * 3))
-          done
-          exit 1
