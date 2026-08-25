@@ -4,7 +4,7 @@
 The legacy/root MLB stack remains provider-neutral and must not acquire a BBD/BBS
 credential or endpoint. The isolated ``mlb-auto-llm`` stack is intentionally the
 opposite: it must include MLB Stats API, The Odds API, Big Balls Sports Data Pro,
-Bedrock decision authority, per-game source coverage, and an immutable T-10 card.
+model decision authority, per-game source coverage, and an immutable T-10 card.
 
 The historical filename is retained because the canonical root deployment and
 migration checks call it. Its contract is no longer a repository-wide ban on BBD.
@@ -77,9 +77,17 @@ ISOLATED_THREE_SOURCE_REQUIREMENTS = {
         "secrets.BBS_API_KEY",
         "api.bigballsdata.com/v1/user/me",
         'BbsApiKey="${BBS_API_KEY_VALUE}"',
-        "Prove Bedrock through deployed MLB Lambda role",
     ),
 }
+
+# The isolated deployment originally proved Bedrock directly. It now proves the
+# deployed model-authority contract, which remains Bedrock-first but permits the
+# trained AWS ranked ensemble when Bedrock is unavailable. Accept the historical
+# title for old fixtures while requiring one of these explicit authority checks.
+ISOLATED_MODEL_AUTHORITY_MARKERS = (
+    "Prove deployed model authority",
+    "Prove Bedrock through deployed MLB Lambda role",
+)
 
 # Step titles may be clarified over time. The stable runtime invocation marker is
 # authoritative; the historical titles remain accepted for compatibility.
@@ -131,6 +139,13 @@ def _verify_isolated_three_source() -> list[str]:
     except RuntimeError:
         workflow = ""
     if workflow and not any(
+        marker in workflow for marker in ISOLATED_MODEL_AUTHORITY_MARKERS
+    ):
+        errors.append(
+            "isolated_three_source_marker_missing:"
+            f"{workflow_path}:model_authority_runtime_invocation"
+        )
+    if workflow and not any(
         marker in workflow for marker in ISOLATED_PROVIDER_CYCLE_MARKERS
     ):
         errors.append(
@@ -173,8 +188,8 @@ def main() -> int:
     print(
         "MLB provider boundary is valid: the legacy root stack is provider-neutral; "
         "the isolated MLB AUTO stack positively requires MLB Stats API, The Odds API, "
-        "Big Balls Sports Data Pro, Bedrock, complete per-game coverage, and an "
-        "immutable T-10 card."
+        "Big Balls Sports Data Pro, model authority, complete per-game coverage, and "
+        "an immutable T-10 card."
     )
     return 0
 
