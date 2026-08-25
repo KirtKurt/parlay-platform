@@ -5,11 +5,11 @@ import functools
 from typing import Any, Dict, List, Optional, Tuple
 
 
-VERSION = "MLB-PROSPECTIVE-TRAINER-READ-REPAIR-v2-verified-empty-exclusions"
-_INSTALL_FLAG = "_INQSI_MLB_PROSPECTIVE_TRAINER_READ_REPAIR_V2"
-_AUTHORITY_FLAG = "_INQSI_MLB_PROSPECTIVE_AUTHORITY_READ_REPAIR_V2"
-_VERDICT_FLAG = "_INQSI_MLB_PROSPECTIVE_VERDICT_READ_REPAIR_V2"
-_JOIN_FLAG = "_INQSI_MLB_PROSPECTIVE_JOIN_READ_REPAIR_V2"
+VERSION = "MLB-PROSPECTIVE-TRAINER-READ-REPAIR-v3-stale-label-boolean"
+_INSTALL_FLAG = "_INQSI_MLB_PROSPECTIVE_TRAINER_READ_REPAIR_V3"
+_AUTHORITY_FLAG = "_INQSI_MLB_PROSPECTIVE_AUTHORITY_READ_REPAIR_V3"
+_VERDICT_FLAG = "_INQSI_MLB_PROSPECTIVE_VERDICT_READ_REPAIR_V3"
+_JOIN_FLAG = "_INQSI_MLB_PROSPECTIVE_JOIN_READ_REPAIR_V3"
 EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS = frozenset(
     {
         "immutable_tminus45_prediction_not_available",
@@ -152,14 +152,26 @@ def _label_with_stale_prelock_state_cleared(
     current_lock_eligible: bool,
     current_lock_exclusions: List[str],
 ) -> Dict[str, Any]:
-    """Correct only named stale pre-lock label exclusions in memory."""
+    """Correct only proven-stale pre-lock label state in memory.
+
+    A historical false label boolean may be cleared only when the current
+    immutable lock is independently eligible, has no current exclusions, and
+    the persisted label has no substantive exclusion remaining. Stored label
+    evidence is never mutated.
+    """
 
     out = copy.deepcopy(label or {})
     label_reasons = _strings(out.get("training_exclusion_reasons"))
     cleared = sorted(label_reasons & EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS)
-    if not cleared:
-        return out
     remaining = sorted(label_reasons - EXPIRED_PRELOCK_ONLY_TRAINING_EXCLUSIONS)
+    stale_false_boolean = bool(
+        out.get("training_eligible") is not True
+        and current_lock_eligible
+        and not current_lock_exclusions
+        and not remaining
+    )
+    if not cleared and not stale_false_boolean:
+        return out
     eligible = bool(
         current_lock_eligible
         and not current_lock_exclusions
@@ -170,6 +182,7 @@ def _label_with_stale_prelock_state_cleared(
             "training_eligible": eligible,
             "training_exclusion_reasons": remaining,
             "expired_prelock_training_exclusions_cleared_at_read": cleared,
+            "stale_training_eligible_boolean_cleared_at_read": stale_false_boolean,
             "prospective_trainer_read_repair_version": VERSION,
         }
     )
