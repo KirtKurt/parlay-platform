@@ -14,7 +14,7 @@
         "routeId": "openai.gpt-oss-20b-1:0"
       }
     ],
-    "checkedAtUtc": "2026-08-25T06:03:34.672300+00:00",
+    "checkedAtUtc": "2026-08-25T06:09:24.186327+00:00",
     "decisionAuthority": "AWS_ML_PROSPECTIVE_R7",
     "endpointFamily": "aws-ml-readonly-api",
     "mlFallbackAttempted": true,
@@ -24,11 +24,11 @@
     "primaryAlgorithm": "INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble",
     "responseNonEmpty": true
   },
-  "createdAtUtc": "2026-08-25T06:04:37.665902+00:00",
+  "createdAtUtc": "2026-08-25T06:10:35.515769+00:00",
   "cycle": {
-    "errorMessage": "invoke_chain_text() got an unexpected keyword argument 'max_output_tokens'",
-    "errorType": "TypeError",
-    "requestId": "9c1cbc11-1676-496f-8462-356da915fd4e",
+    "errorMessage": "MLB_ML_RETIRED_AUTHORITY_REJECTED:INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble:INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble",
+    "errorType": "RuntimeError",
+    "requestId": "16a036e1-bb24-4584-b5e8-ad5240dfea81",
     "stackTrace": [
       "  File \"/var/task/orchestrator_v3.py\", line 310, in lambda_handler\n    return strict_bedrock.lambda_handler(event, context)\n",
       "  File \"/var/task/orchestrator_v2.py\", line 381, in lambda_handler\n    return production.lambda_handler(event, context)\n",
@@ -36,15 +36,13 @@
       "  File \"/var/task/handler.py\", line 929, in lambda_handler\n    return _run(event)\n",
       "  File \"/var/task/handler.py\", line 870, in _run\n    card = _build_card(packet)\n",
       "  File \"/var/task/orchestrator_v3.py\", line 225, in _build_card_three_source_model\n    card = _model_card(packet)\n",
-      "  File \"/var/task/orchestrator_v3.py\", line 209, in _model_card\n    return _STRICT_BEDROCK_CARD(packet)\n",
-      "  File \"/var/task/orchestrator_v2.py\", line 179, in _build_strict_bedrock_card\n    decision = _strict_bedrock_decision(game, state)\n",
-      "  File \"/var/task/orchestrator_v2.py\", line 138, in _strict_bedrock_decision\n    response = invoke_chain_text(\n",
-      "  File \"/var/task/orchestrator_v3.py\", line 23, in _invoke_endpoint_native_chain\n    result = dict(production_gateway.invoke_chain_text(*args, **kwargs))\n"
+      "  File \"/var/task/orchestrator_v3.py\", line 213, in _model_card\n    return build_ml_card(packet, bedrock_failure=str(exc))\n",
+      "  File \"/var/task/ml_authority.py\", line 374, in build_card\n    raise RuntimeError(\n"
     ]
   },
   "jobStatus": "failure",
   "ok": false,
   "proofType": "MLB_AUTO_LLM_DEPLOYMENT",
-  "runId": "32815192178",
-  "sourceSha": "6ffc63d13a806bed95c175ad5096a6f39bbafefc"
+  "runId": "32815605228",
+  "sourceSha": "2939600f608ff44cfe27dabe3d2702337a8033e3"
 }
