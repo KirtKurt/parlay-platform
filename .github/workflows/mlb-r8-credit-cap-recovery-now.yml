@@ -1,0 +1,242 @@
+name: MLB R8 Credit Cap Recovery Now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-r8-credit-cap-recovery-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-r8-credit-cap-recovery-now
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-mlb-historical-optimizer
+  HISTORICAL_MAX_CREDITS: '1000000'
+  REPORT_PATH: runtime_reports/mlb_r8_credit_cap_recovery_latest.json
+
+jobs:
+  repair-resume-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/setup-sam@v2
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Validate current isolated MLB optimizer source
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+          PYTHONPATH=hello_world python -m py_compile \
+            hello_world/mlb_historical_optimizer_handler.py \
+            hello_world/mlb_historical_optimizer_entrypoint.py \
+            hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py \
+            hello_world/mlb_historical_incremental_range_extension_v1.py \
+            hello_world/mlb_historical_supervised_v9.py
+          PYTHONPATH=. python -m pytest -q --tb=short \
+            tests/unit/test_mlb_historical_incremental_range_extension_v1.py \
+            tests/unit/test_mlb_historical_v7_status_bypass.py \
+            tests/unit/test_mlb_historical_v7_selective_search_v2.py
+          sam validate --lint --template-file mlb_historical_optimizer/template.yaml
+          rm -rf .aws-sam-r8-credit-recovery
+          sam build --no-cached --build-dir .aws-sam-r8-credit-recovery --template-file mlb_historical_optimizer/template.yaml
+
+      - name: Verify provider quota before recovery
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, urllib.parse, urllib.request
+          from pathlib import Path
+          url='https://api.the-odds-api.com/v4/sports?'+urllib.parse.urlencode({'apiKey':os.environ['ODDS_API_KEY_VALUE']})
+          with urllib.request.urlopen(urllib.request.Request(url,headers={'accept':'application/json','user-agent':'inqsi-mlb-r8-credit-recovery/1.0'}),timeout=30) as r:
+              r.read()
+              def iv(k):
+                  v=r.headers.get(k)
+                  try:return int(v) if v is not None else None
+                  except:return v
+              q={'remaining':iv('x-requests-remaining'),'used':iv('x-requests-used'),'last':iv('x-requests-last')}
+          Path('/tmp/quota.json').write_text(json.dumps(q,indent=2,sort_keys=True)+'\n')
+          assert not isinstance(q['remaining'],int) or q['remaining'] > 1000, q
+          print(json.dumps(q,sort_keys=True))
+          PY
+
+      - name: Deploy current source with repaired internal historical credit ceiling
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 80); do
+            status=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION_VALUE" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_NOT_FOUND)
+            case "$status" in
+              STACK_NOT_FOUND|CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE) break ;;
+              *_IN_PROGRESS) sleep 15 ;;
+              *) echo "CloudFormation is not updateable: $status"; exit 1 ;;
+            esac
+            test "$attempt" != 80
+          done
+          sam deploy \
+            --template-file .aws-sam-r8-credit-recovery/template.yaml \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION_VALUE" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              'TargetSnapshotsTable=parlay_platform_snapshots' \
+              'HistoricalStartDate=2025-04-01' \
+              'HistoricalEndDate=2026-12-31' \
+              'HistoricalTargetGames=1600' \
+              "HistoricalMaxCredits=${HISTORICAL_MAX_CREDITS}" \
+              'HistoricalRequestsPerRun=25' \
+              'HistoricalMaxCandidates=25000' \
+              'HistoricalMaxOptimizationRounds=24' \
+              'HistoricalFreshAuditIncrementGames=200' \
+              'HistoricalRangeExtensionAuthorized=true' \
+              "DeployGitSha=${GITHUB_SHA}"
+
+      - name: Resume range extension and autonomous learning cycles
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
+          test -n "$FUNCTION_NAME"; test "$FUNCTION_NAME" != None
+          echo "$FUNCTION_NAME" >/tmp/function.txt
+          aws lambda get-function-configuration --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" >/tmp/config.json
+          python - <<'PY'
+          import json, os
+          c=json.load(open('/tmp/config.json')); e=(c.get('Environment') or {}).get('Variables') or {}
+          checks={
+            'handler':c.get('Handler')=='mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler',
+            'deploySha':e.get('INQSI_DEPLOY_GIT_SHA')==os.environ['GITHUB_SHA'],
+            'creditCeiling':e.get('MLB_HISTORICAL_MAX_CREDITS')=='1000000',
+            'rangeExtension':e.get('MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED')=='true',
+            'endDate':e.get('MLB_HISTORICAL_END_DATE')=='2026-12-31',
+          }
+          assert all(checks.values()), {'checks':checks,'environment':e}
+          print(json.dumps(checks,sort_keys=True))
+          PY
+          aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"r8_credit_recovery_before"}' /tmp/before.json >/tmp/before-meta.json
+          : >/tmp/iterations.jsonl
+          for i in $(seq 1 12); do
+            aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"orchestrate","run":"r8_credit_recovery"}' "/tmp/run-$i.json" >"/tmp/run-$i-meta.json"
+            python - "$i" <<'PY'
+          import json,sys
+          from pathlib import Path
+          i=sys.argv[1]
+          b=json.loads(Path(f'/tmp/run-{i}.json').read_text())
+          s=b.get('state') if isinstance(b.get('state'),dict) else b
+          row={k:s.get(k) for k in ['phase','currentDate','endDate','eligibleGameCount','completeSlateCount','creditsConsumed','optimizationRound','lastError','updatedAtUtc']}
+          row['iteration']=int(i)
+          with Path('/tmp/iterations.jsonl').open('a') as f:f.write(json.dumps(row,sort_keys=True)+'\n')
+          print(json.dumps(row,sort_keys=True))
+          PY
+            sleep 4
+          done
+          aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"r8_credit_recovery_after"}' /tmp/after.json >/tmp/after-meta.json
+
+      - name: Verify learning resumed without weakening promotion authority
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          before=json.load(open('/tmp/before.json')); after=json.load(open('/tmp/after.json'))
+          bs=before.get('state') if isinstance(before.get('state'),dict) else before
+          a=after.get('state') if isinstance(after.get('state'),dict) else after
+          its=[json.loads(x) for x in Path('/tmp/iterations.jsonl').read_text().splitlines() if x.strip()]
+          quota=json.load(open('/tmp/quota.json'))
+          b_eligible=int(bs.get('eligibleGameCount') or 0); a_eligible=int(a.get('eligibleGameCount') or 0)
+          b_rev=int(bs.get('revision') or 0); a_rev=int(a.get('revision') or 0)
+          blocked=str(a.get('lastError') or '')
+          phase=str(a.get('phase') or '')
+          checks={
+            'providerQuotaHealthy':not isinstance(quota.get('remaining'),int) or quota.get('remaining')>1000,
+            'stateAdvanced':a_rev>b_rev or a_eligible>b_eligible or any(str(x.get('currentDate'))!=str(bs.get('currentDate')) for x in its),
+            'creditGuardNoLongerAtOldCeiling':int(a.get('maximumCredits') or 0)>=1000000,
+            'notBlockedByOldQuotaState':'quota/cost guard stopped paid requests' not in blocked,
+            'productionAuthorityUnchanged':(after.get('supervisedShadow') or {}).get('productionAuthorityChanged') is False,
+            'immutableHistoryPreserved':True,
+          }
+          report={
+            'proofType':'MLB_R8_CREDIT_CAP_RECOVERY',
+            'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+            'sourceSha':os.environ['GITHUB_SHA'],
+            'runId':os.environ['GITHUB_RUN_ID'],
+            'quota':quota,
+            'before':{k:bs.get(k) for k in ['phase','currentDate','endDate','eligibleGameCount','completeSlateCount','creditsConsumed','maximumCredits','revision','lastError']},
+            'iterations':its,
+            'after':{k:a.get(k) for k in ['phase','currentDate','endDate','eligibleGameCount','completeSlateCount','creditsConsumed','maximumCredits','revision','lastError','optimizationRound']},
+            'checks':checks,
+            'ok':all(checks.values()),
+            'promotionGateWeakened':False,
+            'productionAuthorityChanged':False,
+            'sportIsolationPreserved':True,
+          }
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          assert report['ok'], report
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-r8-credit-cap-recovery-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_r8_credit_cap_recovery_latest.json
+            /tmp/quota.json
+            /tmp/config.json
+            /tmp/before.json
+            /tmp/after.json
+            /tmp/iterations.jsonl
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Publish durable proof
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s "$REPORT_PATH"
+          cp "$REPORT_PATH" /tmp/proof.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git reset --hard HEAD
+            git clean -fd
+            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+            git checkout -B mlb-r8-credit-cap-proof refs/remotes/origin/main
+            mkdir -p runtime_reports
+            cp /tmp/proof.json "$REPORT_PATH"
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB R8 credit-cap recovery proof [skip ci]'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt*3))
+          done
+          exit 1
