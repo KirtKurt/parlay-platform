@@ -19,7 +19,7 @@ Parameters:
     Default: 45
   BedrockModels:
     Type: String
-    Default: 'amazon.nova-micro-v1:0,amazon.nova-lite-v1:0,amazon.nova-pro-v1:0,amazon.nova-2-lite-v1:0,global.anthropic.claude-sonnet-4-20250514-v1:0,us.anthropic.claude-sonnet-4-20250514-v1:0,us.meta.llama3-3-70b-instruct-v1:0,meta.llama3-3-70b-instruct-v1:0,mistral.mistral-large-3-675b-instruct,mistral.ministral-3-3b-instruct,openai.gpt-5.6-sol,anthropic.claude-opus-4-8,anthropic.claude-opus-4-7,anthropic.claude-opus-4-6-v1,anthropic.claude-sonnet-4-6,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-micro-v1:0'
+    Default: 'openai.gpt-oss-20b-1:0,us-east-2::openai.gpt-oss-20b-1:0,us-west-2::openai.gpt-oss-20b-1:0,openai.gpt-oss-120b-1:0,us-east-2::openai.gpt-oss-120b-1:0,us-west-2::openai.gpt-oss-120b-1:0,amazon.nova-micro-v1:0,amazon.nova-lite-v1:0,amazon.nova-pro-v1:0,amazon.nova-2-lite-v1:0,us-east-2::amazon.nova-micro-v1:0,us-east-2::amazon.nova-lite-v1:0,us-east-2::amazon.nova-pro-v1:0,us-east-2::amazon.nova-2-lite-v1:0,us-west-2::amazon.nova-micro-v1:0,us-west-2::amazon.nova-lite-v1:0,us-west-2::amazon.nova-pro-v1:0,us-west-2::amazon.nova-2-lite-v1:0,us.amazon.nova-micro-v1:0,us.amazon.nova-lite-v1:0,us.amazon.nova-pro-v1:0,us.amazon.nova-2-lite-v1:0,global.amazon.nova-2-lite-v1:0'
 
 Resources:
   MLBAutoLLMTable:
@@ -92,8 +92,11 @@ Resources:
                 - bedrock-mantle:CallWithBearerToken
                 - bedrock-mantle:CreateInference
                 - bedrock:ListFoundationModels
+                - bedrock:GetFoundationModel
                 - bedrock:ListInferenceProfiles
                 - bedrock:GetInferenceProfile
+                - bedrock:ListProvisionedModelThroughputs
+                - bedrock:GetProvisionedModelThroughput
               Resource: '*'
             - Effect: Allow
               Action:
@@ -163,8 +166,11 @@ Resources:
                 - bedrock-mantle:CallWithBearerToken
                 - bedrock-mantle:CreateInference
                 - bedrock:ListFoundationModels
+                - bedrock:GetFoundationModel
                 - bedrock:ListInferenceProfiles
                 - bedrock:GetInferenceProfile
+                - bedrock:ListProvisionedModelThroughputs
+                - bedrock:GetProvisionedModelThroughput
               Resource: '*'
             - Effect: Allow
               Action:
@@ -179,6 +185,48 @@ Resources:
                 - aws-marketplace:ViewSubscriptions
               Resource: '*'
 
+  MLBAutoBedrockCapacityFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: mlb_auto_llm/
+      Handler: capacity_control.lambda_handler
+      Runtime: python3.11
+      Timeout: 900
+      MemorySize: 512
+      Environment:
+        Variables:
+          MLB_AUTO_BEDROCK_CAPACITY_REGIONS: 'us-east-1,us-east-2,us-west-2'
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:ListFoundationModels
+                - bedrock:GetFoundationModel
+                - bedrock:ListInferenceProfiles
+                - bedrock:GetInferenceProfile
+                - bedrock:ListProvisionedModelThroughputs
+                - bedrock:GetProvisionedModelThroughput
+                - bedrock:CreateProvisionedModelThroughput
+                - bedrock:TagResource
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - servicequotas:ListServices
+                - servicequotas:ListServiceQuotas
+                - servicequotas:GetServiceQuota
+                - servicequotas:GetAWSDefaultServiceQuota
+                - servicequotas:ListRequestedServiceQuotaChangeHistory
+                - servicequotas:ListRequestedServiceQuotaChangeHistoryByQuota
+                - servicequotas:RequestServiceQuotaIncrease
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - iam:CreateServiceLinkedRole
+              Resource: '*'
+              Condition:
+                StringEquals:
+                  iam:AWSServiceName: servicequotas.amazonaws.com
+
 Outputs:
   MLBAutoLLMStatusUrl:
     Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/mlb-auto-llm/status'
@@ -188,3 +236,5 @@ Outputs:
     Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/mlb-auto-llm/run'
   MLBAutoLLMTableName:
     Value: !Ref MLBAutoLLMTable
+  MLBAutoBedrockCapacityFunctionName:
+    Value: !Ref MLBAutoBedrockCapacityFunction
