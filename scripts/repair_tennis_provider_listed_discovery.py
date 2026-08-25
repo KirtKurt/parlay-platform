@@ -40,52 +40,115 @@ REPLACEMENTS = {
     ),
 }
 
+DISCOVERY_TEST = '''
+
+
+def test_every_provider_listed_non_outright_tennis_key_is_inventoried():
+    assert 'sports = _get("/sports/", {"all": "true"})' in PIPELINE
+    assert 'and bool(sport.get("active", False))' not in PIPELINE
+    assert (
+        'ALL_PROVIDER_LISTED_NON_OUTRIGHT_MATCHES_'
+        'ALL_H2H_BOOKMAKER_REGIONS'
+    ) in PIPELINE
+    assert 'f"/sports/{sport_key}/events"' in PIPELINE
+'''
+
+
+def _replace_exact(text: str, *, old: str, new: str, relative: str) -> str:
+    old_count = text.count(old)
+    new_count = text.count(new) if new else 0
+    if old_count == 1:
+        return text.replace(old, new, 1)
+    if old_count == 0 and (not new or new_count >= 1):
+        return text
+    raise RuntimeError(
+        f"unexpected Tennis discovery contract in {relative}: "
+        f"old_count={old_count} new_count={new_count} old={old!r}"
+    )
+
 
 def apply(*, check_only: bool = False) -> dict[str, object]:
+    materialized: dict[str, str] = {}
     changed: list[str] = []
     already_repaired: list[str] = []
+
     for relative, replacements in REPLACEMENTS.items():
         path = ROOT / relative
         original = path.read_text(encoding="utf-8")
         updated = original
-        path_already_repaired = True
         for old, new in replacements:
-            old_count = updated.count(old)
-            new_count = updated.count(new) if new else 0
-            if old_count == 1:
-                updated = updated.replace(old, new, 1)
-                path_already_repaired = False
-                continue
-            if old_count == 0 and (not new or new_count >= 1):
-                continue
-            raise RuntimeError(
-                f"unexpected Tennis discovery contract in {relative}: "
-                f"old_count={old_count} new_count={new_count} old={old!r}"
+            updated = _replace_exact(
+                updated,
+                old=old,
+                new=new,
+                relative=relative,
             )
-
+        materialized[relative] = updated
         if updated != original:
             changed.append(relative)
             if not check_only:
                 path.write_text(updated, encoding="utf-8")
-        elif path_already_repaired:
+        else:
             already_repaired.append(relative)
 
-    pipeline = (
-        ROOT / "tennis_learning/live_pipeline.py"
-    ).read_text(encoding="utf-8") if check_only else (
-        ROOT / "tennis_learning/live_pipeline.py"
-    ).read_text(encoding="utf-8")
-    if not check_only and changed:
-        pipeline = (ROOT / "tennis_learning/live_pipeline.py").read_text(
-            encoding="utf-8"
-        )
+    test_relative = "tests/test_tennis_full_region_contract.py"
+    test_path = ROOT / test_relative
+    test_original = test_path.read_text(encoding="utf-8")
+    if "test_every_provider_listed_non_outright_tennis_key_is_inventoried" in test_original:
+        test_updated = test_original
+        already_repaired.append(test_relative)
+    else:
+        test_updated = test_original.rstrip() + DISCOVERY_TEST + "\n"
+        changed.append(test_relative)
+        if not check_only:
+            test_path.write_text(test_updated, encoding="utf-8")
+    materialized[test_relative] = test_updated
 
-    required = {
-        'sports = _get("/sports/", {"all": "true"})',
-        'ALL_PROVIDER_LISTED_NON_OUTRIGHT_MATCHES_ALL_H2H_BOOKMAKER_REGIONS',
-        '"sport_keys_truncated": 0',
+    pipeline = materialized["tennis_learning/live_pipeline.py"]
+    deploy = materialized[".github/workflows/deploy-tennis-learning.yml"]
+    card = materialized[".github/workflows/publish-tennis-daily-card.yml"]
+    tests = materialized[test_relative]
+
+    required_by_file = {
+        "pipeline": (
+            pipeline,
+            {
+                'sports = _get("/sports/", {"all": "true"})',
+                'ALL_PROVIDER_LISTED_NON_OUTRIGHT_MATCHES_'
+                'ALL_H2H_BOOKMAKER_REGIONS',
+                '"sport_keys_truncated": 0',
+                'f"/sports/{sport_key}/events"',
+            },
+        ),
+        "deploy": (
+            deploy,
+            {
+                'ALL_PROVIDER_LISTED_NON_OUTRIGHT_MATCHES_',
+                "status['authority'] == 'AUTHORITATIVE'",
+            },
+        ),
+        "card": (
+            card,
+            {
+                'ALL_PROVIDER_LISTED_NON_OUTRIGHT_MATCHES_',
+                "scan_prefix('COVERAGE#')",
+                "'full_slate_evaluated': full_slate_evaluated",
+            },
+        ),
+        "tests": (
+            tests,
+            {
+                "test_every_provider_listed_non_outright_tennis_key_is_inventoried",
+                'sports = _get("/sports/", {"all": "true"})',
+            },
+        ),
     }
-    missing = sorted(marker for marker in required if marker not in pipeline)
+    missing: dict[str, list[str]] = {}
+    for label, (text, markers) in required_by_file.items():
+        absent = sorted(marker for marker in markers if marker not in text)
+        if absent:
+            missing[label] = absent
+
     forbidden = {
         'sports = _get("/sports/", {"all": "false"})',
         'and bool(sport.get("active", False))',
@@ -107,8 +170,8 @@ def apply(*, check_only: bool = False) -> dict[str, object]:
         "sports_discovery_all_parameter": True,
         "active_metadata_filter_removed": True,
         "event_inventory_authority": "THE_ODDS_API_EVENTS_ENDPOINT",
-        "changed": changed,
-        "already_repaired": already_repaired,
+        "changed": sorted(set(changed)),
+        "already_repaired": sorted(set(already_repaired)),
         "immutable_prediction_history_rewritten": False,
         "model_authority_changed": False,
         "human_winner_selection": False,
