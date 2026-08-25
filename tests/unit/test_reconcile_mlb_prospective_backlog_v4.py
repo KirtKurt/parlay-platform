@@ -249,7 +249,7 @@ def test_control_plane_and_lambda_retry_configs_are_isolated():
 
     lambda_config = subject.durable_lambda_config()
     assert lambda_config.connect_timeout == 10
-    assert lambda_config.read_timeout == 420
+    assert lambda_config.read_timeout == 930
     assert lambda_config.retries["total_max_attempts"] == 1
     assert "max_attempts" not in lambda_config.retries
 
