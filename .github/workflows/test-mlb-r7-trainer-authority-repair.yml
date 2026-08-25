@@ -1,0 +1,57 @@
+name: Test MLB R7 trainer authority repair
+
+on:
+  push:
+    branches:
+      - main
+      - agent/mlb-r7-training-eligibility-authority-repair
+    paths:
+      - hello_world/mlb_prospective_trainer_read_repair.py
+      - hello_world/mlb_ml_aws_training_v1_compat.py
+      - tests/unit/test_mlb_prospective_trainer_read_repair.py
+      - .github/workflows/test-mlb-r7-trainer-authority-repair.yml
+  pull_request:
+    paths:
+      - hello_world/mlb_prospective_trainer_read_repair.py
+      - hello_world/mlb_ml_aws_training_v1_compat.py
+      - tests/unit/test_mlb_prospective_trainer_read_repair.py
+      - .github/workflows/test-mlb-r7-trainer-authority-repair.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prove immutable checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - name: Compile repaired trainer sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            hello_world/mlb_prospective_trainer_read_repair.py \
+            hello_world/mlb_ml_aws_training_v1_compat.py
+      - name: Run fail-closed trainer authority regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet pytest
+          python -m pytest -q \
+            tests/unit/test_mlb_prospective_trainer_read_repair.py \
+            tests/unit/test_mlb_protected_terminal_force_replay.py
