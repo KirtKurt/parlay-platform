@@ -1,0 +1,75 @@
+name: Verify MLB R7 source-honest AWS proof
+
+on:
+  push:
+    branches:
+      - repair/mlb-r7-source-honest-admission-20260825
+    paths:
+      - 'hello_world/mlb_r7_source_honest_training_repair.py'
+      - 'hello_world/mlb_ml_aws_training_v1_compat.py'
+      - 'scripts/verify_mlb_r7_source_honest_aws.py'
+      - '.github/workflows/verify-mlb-r7-source-honest-aws.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-mlb-r7-source-honest-aws-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: parlay-platform-dev
+
+jobs:
+  read-only-aws-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: repair/mlb-r7-source-honest-admission-20260825
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: python -m pip install boto3 requests
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Prove all current R7 rows under repair without AWS writes
+        run: |
+          set -euo pipefail
+          PYTHONPATH="hello_world:${PYTHONPATH:-}" \
+            python scripts/verify_mlb_r7_source_honest_aws.py
+
+      - name: Publish proof in job summary
+        if: always()
+        run: |
+          if [ -f runtime_reports/mlb_r7_source_honest_aws_proof_latest.json ]; then
+            {
+              echo '## MLB R7 source-honest AWS read-only proof'
+              echo '```json'
+              cat runtime_reports/mlb_r7_source_honest_aws_proof_latest.json
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload proof artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-r7-source-honest-aws-proof
+          path: runtime_reports/mlb_r7_source_honest_aws_proof_latest.json
+          if-no-files-found: error
