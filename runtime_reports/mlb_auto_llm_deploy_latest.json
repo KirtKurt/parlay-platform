@@ -51,7 +51,7 @@
         "scheduledGames": 10
       },
       "theOddsApi": {
-        "events": 20,
+        "events": 21,
         "matchedGames": 10,
         "missingGamePks": [],
         "ok": true,
@@ -79,20 +79,29 @@
             "replayedAfterLiveEndpointRemoval": true,
             "source": "The Odds API",
             "version": "MLB-AUTO-PREGAME-ODDS-REPLAY-v1-immutable-evidence-only"
+          },
+          "824557": {
+            "capturedAtUtc": "2026-08-24T21:32:47.996706+00:00",
+            "capturedBeforeGameStart": true,
+            "eventId": "e22d48c563e1729e04698e0cdbe8c548",
+            "replayedAfterLiveEndpointRemoval": true,
+            "source": "The Odds API",
+            "version": "MLB-AUTO-PREGAME-ODDS-REPLAY-v1-immutable-evidence-only"
           }
         },
         "persistedPregameRecoveredGamePks": [
           "822695",
           "823828",
-          "824235"
+          "824235",
+          "824557"
         ],
-        "persistedPregameRecoveryCount": 3,
+        "persistedPregameRecoveryCount": 4,
         "postStartOddsFabricationAllowed": false,
         "pregameReplayVersion": "MLB-AUTO-PREGAME-ODDS-REPLAY-v1-immutable-evidence-only",
         "quota": {
           "last": "15",
-          "remaining": "24685930",
-          "used": "314070"
+          "remaining": "24659367",
+          "used": "340633"
         },
         "replayPolicy": "Only an actual stored The Odds API event with real core-market prices, matching teams/start time, and a packet timestamp strictly before first pitch may be replayed.",
         "scheduledGames": 10
@@ -112,11 +121,11 @@
       "Big Balls Sports Data Pro"
     ]
   },
-  "publishedAtUtc": "2026-08-25T02:43:22.460452+00:00",
-  "runAttempt": "2",
-  "runId": "32801512344",
+  "publishedAtUtc": "2026-08-25T03:45:51.311058+00:00",
+  "runAttempt": "1",
+  "runId": "32806254276",
   "secretExposed": false,
   "service": "mlb-auto-llm",
-  "sourceSha": "e3371a3bf580d20cd97fac993a444ab83cad2560",
+  "sourceSha": "aac1a0ed878db9ad29108d45d4e7027bf0745ac8",
   "workflow": "Deploy MLB Auto LLM"
 }
