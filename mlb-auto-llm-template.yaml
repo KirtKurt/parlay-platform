@@ -56,7 +56,9 @@ Resources:
       Handler: orchestrator_v3.lambda_handler
       Runtime: python3.11
       Timeout: 900
-      MemorySize: 3008
+      MemorySize: 10240
+      EphemeralStorage:
+        Size: 2048
       Environment:
         Variables:
           MLB_AUTO_TABLE: !Ref MLBAutoLLMTable
@@ -140,7 +142,7 @@ Resources:
       Handler: ml_authority_smoke.lambda_handler
       Runtime: python3.11
       Timeout: 300
-      MemorySize: 512
+      MemorySize: 2048
       Environment:
         Variables:
           MLB_AUTO_BEDROCK_MODELS: !Ref BedrockModels
@@ -153,6 +155,7 @@ Resources:
           MLB_AUTO_BEDROCK_ROUTE_CATALOG_LIMIT: '64'
           MLB_AUTO_BEDROCK_REGIONS: 'us-east-1,us-west-2,us-east-2'
           MLB_AUTO_BEDROCK_MAX_MODEL_ATTEMPTS: '80'
+          MLB_AUTO_BEDROCK_SMOKE_ROUTE_LIMIT: '16'
       Policies:
         - Statement:
             - Effect: Allow
