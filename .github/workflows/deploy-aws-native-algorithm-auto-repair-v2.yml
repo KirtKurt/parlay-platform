@@ -17,7 +17,7 @@ permissions:
 
 concurrency:
   group: aws-native-algorithm-auto-repair-v2-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   validate:
