@@ -1,0 +1,628 @@
+{
+  "alarm": {
+    "ActionsEnabled": true,
+    "AlarmActions": [],
+    "AlarmArn": "arn:aws:cloudwatch:us-east-1:735707987003:alarm:MLB-Auto-Critical-Canonical-Ingest-Errors",
+    "AlarmConfigurationUpdatedTimestamp": "2026-08-14T21:14:54.527000+00:00",
+    "AlarmDescription": "Critical: canonical MLB Auto ingest Lambda emitted one or more errors in a 5-minute period.",
+    "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "DatapointsToAlarm": 1,
+    "Dimensions": [
+      {
+        "Name": "FunctionName",
+        "Value": "parlay-platform-dev-MLBAuditedPullFunction-xYdYJJKZMe4M"
+      }
+    ],
+    "EvaluationPeriods": 1,
+    "InsufficientDataActions": [],
+    "MetricName": "Errors",
+    "Namespace": "AWS/Lambda",
+    "OKActions": [],
+    "Period": 300,
+    "StateReason": "Threshold Crossed: 1 out of the last 1 datapoints [1.0 (26/08/26 16:28:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).",
+    "StateReasonData": "{\"version\":\"1.0\",\"queryDate\":\"2026-08-26T16:33:00.411+0000\",\"startDate\":\"2026-08-26T16:28:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-26T16:28:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}",
+    "StateTransitionedTimestamp": "2026-08-26T16:33:00.413000+00:00",
+    "StateUpdatedTimestamp": "2026-08-26T16:33:00.413000+00:00",
+    "StateValue": "ALARM",
+    "Statistic": "Sum",
+    "Threshold": 0.0,
+    "TreatMissingData": "notBreaching"
+  },
+  "alarmCurrentlyInAlarm": true,
+  "alarmHistory": [
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (26/08/26 03:58:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-26T04:03:00.410+0000\",\"startDate\":\"2026-08-26T03:58:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-26T03:58:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}},\"newState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (26/08/26 16:28:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-26T16:33:00.411+0000\",\"startDate\":\"2026-08-26T16:28:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-26T16:28:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from OK to ALARM",
+      "Timestamp": "2026-08-26T16:33:00.413000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (25/08/26 21:58:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-25T22:03:00.410+0000\",\"startDate\":\"2026-08-25T21:58:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-25T21:58:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}},\"newState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (26/08/26 03:58:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-26T04:03:00.410+0000\",\"startDate\":\"2026-08-26T03:58:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-26T03:58:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from ALARM to OK",
+      "Timestamp": "2026-08-26T04:03:00.411000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (25/08/26 03:57:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-25T04:02:00.409+0000\",\"startDate\":\"2026-08-25T03:57:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-25T03:57:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}},\"newState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (25/08/26 21:58:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-25T22:03:00.410+0000\",\"startDate\":\"2026-08-25T21:58:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-25T21:58:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from OK to ALARM",
+      "Timestamp": "2026-08-25T22:03:00.413000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (24/08/26 22:43:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-24T22:48:00.409+0000\",\"startDate\":\"2026-08-24T22:43:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-24T22:43:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}},\"newState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (25/08/26 03:57:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-25T04:02:00.409+0000\",\"startDate\":\"2026-08-25T03:57:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-25T03:57:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from ALARM to OK",
+      "Timestamp": "2026-08-25T04:02:00.411000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: no datapoints were received for 1 period and 1 missing datapoint was treated as [NonBreaching].\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-24T22:47:00.411+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-24T22:42:00.000+0000\"}]}},\"newState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (24/08/26 22:43:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-24T22:48:00.409+0000\",\"startDate\":\"2026-08-24T22:43:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-24T22:43:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from OK to ALARM",
+      "Timestamp": "2026-08-24T22:48:00.412000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (24/08/26 21:58:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-24T22:03:00.410+0000\",\"startDate\":\"2026-08-24T21:58:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-24T21:58:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}},\"newState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: no datapoints were received for 1 period and 1 missing datapoint was treated as [NonBreaching].\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-24T22:47:00.411+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-24T22:42:00.000+0000\"}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from ALARM to OK",
+      "Timestamp": "2026-08-24T22:47:00.412000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (24/08/26 15:31:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-24T15:36:58.725+0000\",\"startDate\":\"2026-08-24T15:31:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-24T15:31:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}},\"newState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (24/08/26 21:58:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-24T22:03:00.410+0000\",\"startDate\":\"2026-08-24T21:58:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-24T21:58:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from OK to ALARM",
+      "Timestamp": "2026-08-24T22:03:00.411000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (24/08/26 04:56:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-24T05:01:58.725+0000\",\"startDate\":\"2026-08-24T04:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-24T04:56:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}},\"newState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (24/08/26 15:31:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-24T15:36:58.725+0000\",\"startDate\":\"2026-08-24T15:31:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-24T15:31:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from ALARM to OK",
+      "Timestamp": "2026-08-24T15:36:58.726000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (24/08/26 03:56:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-24T04:01:58.727+0000\",\"startDate\":\"2026-08-24T03:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-24T03:56:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}},\"newState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (24/08/26 04:56:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-24T05:01:58.725+0000\",\"startDate\":\"2026-08-24T04:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-24T04:56:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from OK to ALARM",
+      "Timestamp": "2026-08-24T05:01:58.726000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (23/08/26 04:56:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-23T05:01:58.725+0000\",\"startDate\":\"2026-08-23T04:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-23T04:56:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}},\"newState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (24/08/26 03:56:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-24T04:01:58.727+0000\",\"startDate\":\"2026-08-24T03:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-24T03:56:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from ALARM to OK",
+      "Timestamp": "2026-08-24T04:01:58.729000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (23/08/26 03:56:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-23T04:01:58.726+0000\",\"startDate\":\"2026-08-23T03:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-23T03:56:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}},\"newState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (23/08/26 04:56:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-23T05:01:58.725+0000\",\"startDate\":\"2026-08-23T04:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-23T04:56:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from OK to ALARM",
+      "Timestamp": "2026-08-23T05:01:58.726000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (22/08/26 04:56:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-22T05:01:43.540+0000\",\"startDate\":\"2026-08-22T04:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-22T04:56:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}},\"newState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (23/08/26 03:56:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-23T04:01:58.726+0000\",\"startDate\":\"2026-08-23T03:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-23T03:56:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from ALARM to OK",
+      "Timestamp": "2026-08-23T04:01:58.728000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (22/08/26 03:56:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-22T04:01:43.535+0000\",\"startDate\":\"2026-08-22T03:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-22T03:56:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}},\"newState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (22/08/26 04:56:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-22T05:01:43.540+0000\",\"startDate\":\"2026-08-22T04:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-22T04:56:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from OK to ALARM",
+      "Timestamp": "2026-08-22T05:01:43.542000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (21/08/26 04:56:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-21T05:01:43.536+0000\",\"startDate\":\"2026-08-21T04:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-21T04:56:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}},\"newState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (22/08/26 03:56:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-22T04:01:43.535+0000\",\"startDate\":\"2026-08-22T03:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-22T03:56:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from ALARM to OK",
+      "Timestamp": "2026-08-22T04:01:43.537000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (21/08/26 03:56:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-21T04:01:43.537+0000\",\"startDate\":\"2026-08-21T03:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-21T03:56:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}},\"newState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (21/08/26 04:56:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-21T05:01:43.536+0000\",\"startDate\":\"2026-08-21T04:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-21T04:56:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from OK to ALARM",
+      "Timestamp": "2026-08-21T05:01:43.537000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (20/08/26 04:56:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-20T05:01:17.873+0000\",\"startDate\":\"2026-08-20T04:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-20T04:56:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}},\"newState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (21/08/26 03:56:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-21T04:01:43.537+0000\",\"startDate\":\"2026-08-21T03:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-21T03:56:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from ALARM to OK",
+      "Timestamp": "2026-08-21T04:01:43.538000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (20/08/26 03:56:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-20T04:01:17.876+0000\",\"startDate\":\"2026-08-20T03:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-20T03:56:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}},\"newState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (20/08/26 04:56:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-20T05:01:17.873+0000\",\"startDate\":\"2026-08-20T04:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-20T04:56:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from OK to ALARM",
+      "Timestamp": "2026-08-20T05:01:17.874000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (19/08/26 04:56:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-19T05:01:48.455+0000\",\"startDate\":\"2026-08-19T04:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-19T04:56:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}},\"newState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (20/08/26 03:56:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-20T04:01:17.876+0000\",\"startDate\":\"2026-08-20T03:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-20T03:56:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from ALARM to OK",
+      "Timestamp": "2026-08-20T04:01:17.882000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (19/08/26 03:56:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-19T04:01:48.455+0000\",\"startDate\":\"2026-08-19T03:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-19T03:56:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}},\"newState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (19/08/26 04:56:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-19T05:01:48.455+0000\",\"startDate\":\"2026-08-19T04:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-19T04:56:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from OK to ALARM",
+      "Timestamp": "2026-08-19T05:01:48.456000+00:00"
+    },
+    {
+      "AlarmName": "MLB-Auto-Critical-Canonical-Ingest-Errors",
+      "AlarmType": "MetricAlarm",
+      "HistoryData": "{\"version\":\"1.0\",\"oldState\":{\"stateValue\":\"ALARM\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [1.0 (18/08/26 04:56:00)] was greater than the threshold (0.0) (minimum 1 datapoint for OK -> ALARM transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-18T05:01:48.458+0000\",\"startDate\":\"2026-08-18T04:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[1.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-18T04:56:00.000+0000\",\"sampleCount\":1.0,\"value\":1.0}]}},\"newState\":{\"stateValue\":\"OK\",\"stateReason\":\"Threshold Crossed: 1 out of the last 1 datapoints [0.0 (19/08/26 03:56:00)] was not greater than the threshold (0.0) (minimum 1 datapoint for ALARM -> OK transition).\",\"stateReasonData\":{\"version\":\"1.0\",\"queryDate\":\"2026-08-19T04:01:48.455+0000\",\"startDate\":\"2026-08-19T03:56:00.000+0000\",\"statistic\":\"Sum\",\"period\":300,\"recentDatapoints\":[0.0],\"threshold\":0.0,\"evaluatedDatapoints\":[{\"timestamp\":\"2026-08-19T03:56:00.000+0000\",\"sampleCount\":1.0,\"value\":0.0}]}}}",
+      "HistoryItemType": "StateUpdate",
+      "HistorySummary": "Alarm updated from ALARM to OK",
+      "Timestamp": "2026-08-19T04:01:48.456000+00:00"
+    }
+  ],
+  "awsResourcesChanged": false,
+  "candidatePersistenceFailures": [],
+  "createdAtUtc": "2026-08-26T17:19:53.697884+00:00",
+  "exceptionSummaries": [],
+  "function": {
+    "CodeSha256": "ymHyP4cEdHmLqBDFKSn2HYGI21BFOLcxKE+XcfeD2hI=",
+    "FunctionArn": "arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBAuditedPullFunction-xYdYJJKZMe4M",
+    "FunctionName": "parlay-platform-dev-MLBAuditedPullFunction-xYdYJJKZMe4M",
+    "Handler": "mlb_manual_pull_protected.lambda_handler",
+    "LastModified": "2026-08-26T17:17:18.000+0000",
+    "LastUpdateStatus": "Successful",
+    "MemorySize": 2048,
+    "Runtime": "python3.11",
+    "State": "Active",
+    "Timeout": 600
+  },
+  "immutablePredictionsRewritten": false,
+  "interestingLogEvents": [],
+  "lambdaInvoked": false,
+  "metrics": {
+    "Duration": [
+      {
+        "Average": 76937.05,
+        "Maximum": 76937.05,
+        "Sum": 76937.05,
+        "Timestamp": "2026-08-26T16:00:00+00:00",
+        "Unit": "Milliseconds"
+      },
+      {
+        "Average": 79714.31,
+        "Maximum": 79714.31,
+        "Sum": 79714.31,
+        "Timestamp": "2026-08-26T16:15:00+00:00",
+        "Unit": "Milliseconds"
+      },
+      {
+        "Average": 85237.98,
+        "Maximum": 85237.98,
+        "Sum": 85237.98,
+        "Timestamp": "2026-08-26T16:30:00+00:00",
+        "Unit": "Milliseconds"
+      },
+      {
+        "Average": 85832.15,
+        "Maximum": 86421.7,
+        "Sum": 171664.3,
+        "Timestamp": "2026-08-26T16:32:00+00:00",
+        "Unit": "Milliseconds"
+      },
+      {
+        "Average": 100758.68,
+        "Maximum": 100758.68,
+        "Sum": 100758.68,
+        "Timestamp": "2026-08-26T16:45:00+00:00",
+        "Unit": "Milliseconds"
+      },
+      {
+        "Average": 100276.16,
+        "Maximum": 100276.16,
+        "Sum": 100276.16,
+        "Timestamp": "2026-08-26T16:47:00+00:00",
+        "Unit": "Milliseconds"
+      },
+      {
+        "Average": 88733.3,
+        "Maximum": 88733.3,
+        "Sum": 88733.3,
+        "Timestamp": "2026-08-26T16:48:00+00:00",
+        "Unit": "Milliseconds"
+      },
+      {
+        "Average": 92662.56,
+        "Maximum": 92662.56,
+        "Sum": 92662.56,
+        "Timestamp": "2026-08-26T17:00:00+00:00",
+        "Unit": "Milliseconds"
+      },
+      {
+        "Average": 92964.54,
+        "Maximum": 92964.54,
+        "Sum": 92964.54,
+        "Timestamp": "2026-08-26T17:02:00+00:00",
+        "Unit": "Milliseconds"
+      },
+      {
+        "Average": 93774.1,
+        "Maximum": 93774.1,
+        "Sum": 93774.1,
+        "Timestamp": "2026-08-26T17:07:00+00:00",
+        "Unit": "Milliseconds"
+      },
+      {
+        "Average": 81313.5,
+        "Maximum": 81313.5,
+        "Sum": 81313.5,
+        "Timestamp": "2026-08-26T17:15:00+00:00",
+        "Unit": "Milliseconds"
+      }
+    ],
+    "Errors": [
+      {
+        "Average": 0.0,
+        "Maximum": 0.0,
+        "Sum": 0.0,
+        "Timestamp": "2026-08-26T16:00:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 0.0,
+        "Maximum": 0.0,
+        "Sum": 0.0,
+        "Timestamp": "2026-08-26T16:15:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T16:30:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 2.0,
+        "Timestamp": "2026-08-26T16:32:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T16:45:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T16:47:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T16:48:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T17:00:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T17:02:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T17:07:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T17:15:00+00:00",
+        "Unit": "Count"
+      }
+    ],
+    "Invocations": [
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T16:00:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T16:15:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T16:30:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 2.0,
+        "Timestamp": "2026-08-26T16:32:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T16:45:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T16:47:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T16:48:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T17:00:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T17:02:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T17:07:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 1.0,
+        "Maximum": 1.0,
+        "Sum": 1.0,
+        "Timestamp": "2026-08-26T17:15:00+00:00",
+        "Unit": "Count"
+      }
+    ],
+    "Throttles": [
+      {
+        "Average": 0.0,
+        "Maximum": 0.0,
+        "Sum": 0.0,
+        "Timestamp": "2026-08-26T16:00:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 0.0,
+        "Maximum": 0.0,
+        "Sum": 0.0,
+        "Timestamp": "2026-08-26T16:15:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 0.0,
+        "Maximum": 0.0,
+        "Sum": 0.0,
+        "Timestamp": "2026-08-26T16:30:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 0.0,
+        "Maximum": 0.0,
+        "Sum": 0.0,
+        "Timestamp": "2026-08-26T16:32:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 0.0,
+        "Maximum": 0.0,
+        "Sum": 0.0,
+        "Timestamp": "2026-08-26T16:45:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 0.0,
+        "Maximum": 0.0,
+        "Sum": 0.0,
+        "Timestamp": "2026-08-26T16:47:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 0.0,
+        "Maximum": 0.0,
+        "Sum": 0.0,
+        "Timestamp": "2026-08-26T16:48:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 0.0,
+        "Maximum": 0.0,
+        "Sum": 0.0,
+        "Timestamp": "2026-08-26T17:00:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 0.0,
+        "Maximum": 0.0,
+        "Sum": 0.0,
+        "Timestamp": "2026-08-26T17:02:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 0.0,
+        "Maximum": 0.0,
+        "Sum": 0.0,
+        "Timestamp": "2026-08-26T17:07:00+00:00",
+        "Unit": "Count"
+      },
+      {
+        "Average": 0.0,
+        "Maximum": 0.0,
+        "Sum": 0.0,
+        "Timestamp": "2026-08-26T17:15:00+00:00",
+        "Unit": "Count"
+      }
+    ]
+  },
+  "otherSportsInspected": false,
+  "predictionsWritten": false,
+  "promotionAuthorityChanged": false,
+  "proofType": "MLB_CANONICAL_INGEST_ERROR_DIAGNOSTIC_V1",
+  "rawEventCountInspected": 8,
+  "readOnlyDiagnostic": true,
+  "recentErrorDatapoints": [
+    {
+      "Average": 0.0,
+      "Maximum": 0.0,
+      "Sum": 0.0,
+      "Timestamp": "2026-08-26T16:00:00+00:00",
+      "Unit": "Count"
+    },
+    {
+      "Average": 0.0,
+      "Maximum": 0.0,
+      "Sum": 0.0,
+      "Timestamp": "2026-08-26T16:15:00+00:00",
+      "Unit": "Count"
+    },
+    {
+      "Average": 1.0,
+      "Maximum": 1.0,
+      "Sum": 1.0,
+      "Timestamp": "2026-08-26T16:30:00+00:00",
+      "Unit": "Count"
+    },
+    {
+      "Average": 1.0,
+      "Maximum": 1.0,
+      "Sum": 2.0,
+      "Timestamp": "2026-08-26T16:32:00+00:00",
+      "Unit": "Count"
+    },
+    {
+      "Average": 1.0,
+      "Maximum": 1.0,
+      "Sum": 1.0,
+      "Timestamp": "2026-08-26T16:45:00+00:00",
+      "Unit": "Count"
+    },
+    {
+      "Average": 1.0,
+      "Maximum": 1.0,
+      "Sum": 1.0,
+      "Timestamp": "2026-08-26T16:47:00+00:00",
+      "Unit": "Count"
+    },
+    {
+      "Average": 1.0,
+      "Maximum": 1.0,
+      "Sum": 1.0,
+      "Timestamp": "2026-08-26T16:48:00+00:00",
+      "Unit": "Count"
+    },
+    {
+      "Average": 1.0,
+      "Maximum": 1.0,
+      "Sum": 1.0,
+      "Timestamp": "2026-08-26T17:00:00+00:00",
+      "Unit": "Count"
+    },
+    {
+      "Average": 1.0,
+      "Maximum": 1.0,
+      "Sum": 1.0,
+      "Timestamp": "2026-08-26T17:02:00+00:00",
+      "Unit": "Count"
+    },
+    {
+      "Average": 1.0,
+      "Maximum": 1.0,
+      "Sum": 1.0,
+      "Timestamp": "2026-08-26T17:07:00+00:00",
+      "Unit": "Count"
+    },
+    {
+      "Average": 1.0,
+      "Maximum": 1.0,
+      "Sum": 1.0,
+      "Timestamp": "2026-08-26T17:15:00+00:00",
+      "Unit": "Count"
+    }
+  ],
+  "rules": [
+    {
+      "description": null,
+      "name": "parlay-platform-dev-MLBAuditedPullFunctionMLBHotEve-jDGlPvrpoiBN",
+      "scheduleExpression": "cron(0/15 * * * ? *)",
+      "state": "ENABLED"
+    }
+  ],
+  "scope": "mlb-canonical-ingest-only",
+  "secretExposed": "[REDACTED]",
+  "sourceSha": "a40a233ede8de1b55be41252efc69b1d4c8a7bee"
+}
