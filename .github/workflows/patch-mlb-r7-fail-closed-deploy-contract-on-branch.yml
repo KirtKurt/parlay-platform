@@ -1,21 +1,18 @@
-name: Patch MLB R7 fail-closed deploy contract on main
+name: Persist MLB R7 trainer memory ceiling
 
 "on":
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - '.github/workflows/patch-mlb-r7-fail-closed-deploy-contract-on-branch.yml'
-      - 'scripts/patch_mlb_r7_deploy_contract.py'
-      - 'scripts/verify_mlb_authority_response.py'
-      - 'tests/unit/test_verify_mlb_authority_response.py'
+      - 'scripts/patch_mlb_r7_trainer_memory_ceiling.py'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: patch-mlb-r7-fail-closed-deploy-contract-on-main
+  group: persist-mlb-r7-trainer-memory-ceiling
   cancel-in-progress: true
 
 jobs:
@@ -23,39 +20,47 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout exact main branch
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
-
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Patch retired authority assertions
-        run: python scripts/patch_mlb_r7_deploy_contract.py
-
-      - name: Verify helper tests and workflow YAML
-        env:
-          PYTHONPATH: scripts
+      - name: Patch only the MLB R7 trainer resource
+        run: python scripts/patch_mlb_r7_trainer_memory_ceiling.py
+      - name: Verify exact source isolation and contracts
         run: |
           set -euo pipefail
-          python -m pip install --quiet pytest pyyaml
-          python -m py_compile scripts/verify_mlb_authority_response.py
-          python -m py_compile scripts/patch_mlb_r7_deploy_contract.py
-          pytest -q tests/unit/test_verify_mlb_authority_response.py
-          python -c "from pathlib import Path; import yaml; data=yaml.safe_load(Path('.github/workflows/deploy.yml').read_text()); assert isinstance(data, dict) and 'jobs' in data"
-
-      - name: Commit repaired deploy contract
-        run: |
-          set -euo pipefail
-          rm .github/workflows/patch-mlb-r7-fail-closed-deploy-contract-on-branch.yml
+          python -m pip install --quiet 'PyYAML>=6,<7'
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          text=Path('template.yaml').read_text(encoding='utf-8')
+          data=yaml.safe_load(text)
+          trainer=data['Resources']['MLBMLTrainingFunction']['Properties']
+          assert trainer['Handler']=='mlb_ml_aws_training_v1_compat.lambda_handler'
+          assert int(trainer['Timeout'])==900
+          assert int(trainer['MemorySize'])==3008
+          assert trainer['Environment']['Variables']['INQSI_MLB_ML_AUTO_PROMOTE']=='false'
+          assert trainer['Environment']['Variables']['MLB_ML_EXECUTION_LEASE_SECONDS']=='960'
+          PY
+          python scripts/verify_mlb_schedule_invariants.py
           git diff --check
+          changed=$(git diff --name-only)
+          test "$changed" = 'template.yaml'
+          git diff -- template.yaml | grep -F -- '-      MemorySize: 2048'
+          git diff -- template.yaml | grep -F -- '+      MemorySize: 3008'
+      - name: Commit durable MLB trainer capacity only
+        run: |
+          set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/workflows/deploy.yml .github/workflows/patch-mlb-r7-fail-closed-deploy-contract-on-branch.yml
-          git commit -m 'Repair MLB deploy contract for fail-closed R7 authority'
+          git add template.yaml
+          if git diff --cached --quiet; then
+            echo 'R7 trainer memory already durable.'
+            exit 0
+          fi
+          git commit -m 'Persist AWS-supported MLB R7 trainer memory ceiling'
           git pull --rebase origin main
           git push origin HEAD:main
