@@ -1,29 +1,37 @@
 name: Bootstrap canonical unified MLB R7 recovery now
 
 "on":
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/bootstrap-unified-mlb-r7-recovery-now.yml'
+  workflow_run:
+    workflows: ["MLB Scoring Guard"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
   actions: write
   contents: read
 
+# This is an idempotent one-time dispatcher, not a trainer implementation.
+# The canonical recovery still owns GitHub execution serialization, and the
+# deployed trainer still owns the DynamoDB execution lease.
 concurrency:
   group: unified-mlb-recovery-bootstrap
   cancel-in-progress: false
 
+env:
+  REQUEST_ID: bootstrap-mlb-r7-20260826-v3
+
 jobs:
-  dispatch-after-deploy:
+  dispatch-once:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 10
     steps:
-      - name: Wait for exact-source deployment and dispatch canonical recovery
+      - name: Dispatch canonical recovery exactly once
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ github.sha }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -34,7 +42,7 @@ jobs:
           import urllib.request
 
           repository = os.environ['REPOSITORY']
-          source_sha = os.environ['SOURCE_SHA']
+          request_id = os.environ['REQUEST_ID']
           token = os.environ['GH_TOKEN']
           headers = {
               'Accept': 'application/vnd.github+json',
@@ -44,43 +52,30 @@ jobs:
           }
           runs_url = (
               f'https://api.github.com/repos/{repository}/actions/workflows/'
-              f'deploy.yml/runs?head_sha={source_sha}&event=push&per_page=20'
+              'unified-mlb-learning-recovery-once.yml/runs'
+              '?event=workflow_dispatch&per_page=100'
           )
-          deadline = time.monotonic() + 3300
-          last_state = None
-          while time.monotonic() < deadline:
+
+          def matching_runs():
               request = urllib.request.Request(runs_url, headers=headers)
               with urllib.request.urlopen(request, timeout=30) as response:
                   payload = json.load(response)
-              runs = [
+              return [
                   run for run in payload.get('workflow_runs', [])
-                  if run.get('head_sha') == source_sha
+                  if request_id in str(run.get('display_title') or '')
               ]
-              if not runs:
-                  state = 'waiting_for_deploy_run'
-              else:
-                  run = max(runs, key=lambda value: int(value.get('run_number') or 0))
-                  status = str(run.get('status') or '')
-                  conclusion = str(run.get('conclusion') or '')
-                  state = f'{status}:{conclusion or "pending"}'
-                  if status == 'completed':
-                      if conclusion != 'success':
-                          raise SystemExit(
-                              'Exact-source deployment failed: '
-                              + json.dumps({
-                                  'runId': run.get('id'),
-                                  'status': status,
-                                  'conclusion': conclusion,
-                                  'htmlUrl': run.get('html_url'),
-                              }, sort_keys=True)
-                          )
-                      break
-              if state != last_state:
-                  print(state, flush=True)
-                  last_state = state
-              time.sleep(15)
-          else:
-              raise SystemExit('Timed out waiting for exact-source deployment')
+
+          existing = matching_runs()
+          if existing:
+              print(json.dumps({
+                  'ok': True,
+                  'alreadyDispatched': True,
+                  'requestId': request_id,
+                  'runId': existing[0].get('id'),
+                  'productionAuthorityChanged': False,
+                  'otherSportChanged': False,
+              }, sort_keys=True))
+              raise SystemExit(0)
 
           dispatch_url = (
               f'https://api.github.com/repos/{repository}/actions/workflows/'
@@ -88,9 +83,7 @@ jobs:
           )
           body = json.dumps({
               'ref': 'main',
-              'inputs': {
-                  'request_id': f'bootstrap-{source_sha[:12]}',
-              },
+              'inputs': {'request_id': request_id},
           }).encode('utf-8')
           request = urllib.request.Request(
               dispatch_url,
@@ -99,15 +92,25 @@ jobs:
               method='POST',
           )
           with urllib.request.urlopen(request, timeout=30) as response:
-              if response.status not in (204,):
+              if response.status != 204:
                   raise SystemExit(f'Unexpected dispatch status: {response.status}')
+
+          deadline = time.monotonic() + 120
+          created = []
+          while time.monotonic() < deadline:
+              created = matching_runs()
+              if created:
+                  break
+              time.sleep(5)
+          if not created:
+              raise SystemExit('Canonical recovery dispatch was not observable')
+
           print(json.dumps({
               'ok': True,
-              'sourceSha': source_sha,
-              'canonicalWorkflowDispatched': True,
+              'alreadyDispatched': False,
+              'requestId': request_id,
+              'runId': created[0].get('id'),
               'productionAuthorityChanged': False,
               'otherSportChanged': False,
           }, sort_keys=True))
           PY
-
-# exact-source retrigger: 2026-08-26T17:12Z
