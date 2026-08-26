@@ -1,0 +1,81 @@
+name: Inspect MLB R7 trainer lease read-only
+
+on:
+  push:
+    branches:
+      - repair/mlb-r7-lease-inspection-20260826
+    paths:
+      - .github/workflows/inspect-mlb-r7-trainer-lease-branch.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Read exact MLB trainer lease records only
+        run: |
+          set -euo pipefail
+          TABLE=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id SnapshotsTable \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$TABLE" && test "$TABLE" != "None"
+          PK='MLB_ML_EXPERIMENT#V2#mlb-v2-2026-07-21-future-prospective-r2'
+          for SK in 'EXECUTION_LEASE#STATE_MUTATION' 'EXECUTION_LEASE#SELECTION_CAPTURE' 'EXECUTION_LEASE'; do
+            SAFE=$(printf '%s' "$SK" | tr '#_' '--' | tr '[:upper:]' '[:lower:]')
+            aws dynamodb get-item \
+              --table-name "$TABLE" \
+              --consistent-read \
+              --key "{\"PK\":{\"S\":\"$PK\"},\"SK\":{\"S\":\"$SK\"}}" \
+              --projection-expression 'PK,SK,record_type,#v,lease_domain,experiment_id,lease_owner,execution_mode,acquired_at,lease_expires_at,lease_expires_at_epoch' \
+              --expression-attribute-names '{"#v":"version"}' \
+              --region "${{ secrets.AWS_REGION }}" \
+              --output json > "/tmp/$SAFE.json"
+          done
+          python - <<'PY'
+          import hashlib, json, time
+          from pathlib import Path
+          now = int(time.time())
+          out = {'readOnly': True, 'nowEpoch': now, 'leases': []}
+          for path in sorted(Path('/tmp').glob('execution-lease*.json')):
+              raw = json.loads(path.read_text())
+              item = raw.get('Item') or {}
+              def value(name):
+                  node = item.get(name) or {}
+                  return node.get('S', node.get('N'))
+              owner = str(value('lease_owner') or '')
+              expiry = int(value('lease_expires_at_epoch') or 0)
+              out['leases'].append({
+                  'sk': value('SK'),
+                  'recordType': value('record_type'),
+                  'version': value('version'),
+                  'leaseDomain': value('lease_domain'),
+                  'executionMode': value('execution_mode'),
+                  'acquiredAt': value('acquired_at'),
+                  'expiresAt': value('lease_expires_at'),
+                  'expiresAtEpoch': expiry,
+                  'active': expiry > now,
+                  'secondsRemaining': max(0, expiry - now),
+                  'ownerFingerprint': hashlib.sha256(owner.encode()).hexdigest()[:16] if owner else None,
+              })
+          Path('/tmp/mlb-r7-lease-readonly.json').write_text(json.dumps(out, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(out, indent=2, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlb-r7-lease-readonly-${{ github.run_id }}
+          path: /tmp/mlb-r7-lease-readonly.json
+          retention-days: 7
