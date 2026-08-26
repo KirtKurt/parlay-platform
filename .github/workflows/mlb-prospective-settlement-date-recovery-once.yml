@@ -2,6 +2,10 @@ name: Verify MLB prospective settlement date recovery once
 
 "on":
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-prospective-settlement-date-recovery-once.yml'
 
 permissions:
   contents: read
