@@ -1,0 +1,64 @@
+name: Stage unified MLB recovery deploy isolation
+
+"on":
+  push:
+    branches:
+      - repair/unified-mlb-learning-single-owner-20260826
+    paths:
+      - '.github/workflows/fix-unified-mlb-learning-ownership-on-branch-v2.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stage-unified-mlb-recovery-deploy-isolation
+  cancel-in-progress: false
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Add recovery workflow to shared-deploy exclusions
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/deploy.yml')
+          text = path.read_text(encoding='utf-8')
+          target = '      - ".github/workflows/mlb-r7-overnight-advance.yml"\n'
+          if target not in text:
+              anchor = '      - "runtime_reports/**"\n'
+              if text.count(anchor) != 1:
+                  raise SystemExit('deploy runtime-report exclusion anchor is not unique')
+              text = text.replace(
+                  anchor,
+                  anchor
+                  + '      # Unified MLB recovery is a deploy-free, lease-safe runtime action.\n'
+                  + '      # Editing or self-triggering it must never redeploy the shared stack.\n'
+                  + target,
+                  1,
+              )
+              path.write_text(text, encoding='utf-8')
+          PY
+          grep -q '"runtime_reports/\*\*"' .github/workflows/deploy.yml
+          grep -q '".github/workflows/mlb-r7-overnight-advance.yml"' .github/workflows/deploy.yml
+          git diff --check
+
+      - name: Create immutable staging commit object
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/deploy.yml
+          git diff --cached --check
+          git commit -m 'Exclude unified MLB recovery from shared deploy [skip ci]'
+          echo "STAGED_COMMIT_SHA=$(git rev-parse HEAD)"
+          git push origin HEAD:refs/heads/repair/unified-mlb-deploy-ignore-staging || true
+          echo "STAGED_COMMIT_SHA=$(git rev-parse HEAD)"
