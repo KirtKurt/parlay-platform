@@ -159,16 +159,18 @@ def verify(root: Path = Path(".")) -> dict[str, object]:
         recovery_trigger = _trigger_block(recovery)
         if "for outer in" in recovery:
             errors.append("ambiguous_outer_transport_retry_still_present")
+        if "BASELINE_ACCEPTED_ROWS: '18'" not in recovery:
+            errors.append("recovery_baseline_row_gate_missing")
         if "MIN_ACCEPTED_ROWS: '33'" not in recovery:
             errors.append("recovery_minimum_row_gate_missing")
-        if "TARGET_SLATE_DATE: '2026-08-25'" not in recovery:
-            errors.append("recovery_exact_target_slate_missing")
         for required in (
             "finalizedGameSlateDates",
             "processedSlateDates",
+            "processedThroughSlateDate",
             "blockedSlateDate",
             "production-before.json",
             "production-after.json",
+            "accepted > baseline",
             "accepted >= minimum",
             "automaticPromotionEnabled",
             "productionAuthorityChanged",
