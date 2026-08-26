@@ -4,6 +4,11 @@ name: MLB R7 Overnight Advance
   schedule:
     - cron: '40 * * * *'
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mlb-r7-overnight-advance.yml'
 
 permissions:
   contents: read
