@@ -395,57 +395,12 @@ jobs:
             sleep 4
           done
 
-      - name: Run AWS-native MLB trainer and verify fresh split health
-        env:
-          EXPECTED_TEMPLATE_SHA256: ${{ steps.identity.outputs.template_sha256 }}
-          AWS_MAX_ATTEMPTS: "1"
+      - name: Preserve unified MLB learning ownership
         run: |
           set -euo pipefail
-          TRAINER_ARN=$(aws cloudformation describe-stacks \
-            --stack-name parlay-platform-dev \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query "Stacks[0].Outputs[?OutputKey=='MLBMLTrainingFunctionArn'].OutputValue" \
-            --output text)
-          test -n "$TRAINER_ARN"
-          test "$TRAINER_ARN" != "None"
-          RUN_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          python scripts/invoke_mlb_trainer_with_retry.py \
-            --function-name "$TRAINER_ARN" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --payload '{"sport":"mlb","mode":"scheduled","run":"aws_native_fixed_prospective_shadow_training"}' \
-            --response /tmp/mlb-ml-v2-training.json \
-            --invocation /tmp/mlb-ml-v2-training-invoke.json \
-            --retry-execution-lease \
-            --deadline-seconds 1200 \
-            --retry-delay-seconds 20
-          python scripts/invoke_mlb_trainer_with_retry.py \
-            --function-name "$TRAINER_ARN" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --payload '{"sport":"mlb","mode":"selection_capture","run":"aws_native_prospective_selection_capture"}' \
-            --response /tmp/mlb-ml-v2-selection-capture.json \
-            --invocation /tmp/mlb-ml-v2-selection-capture-invoke.json \
-            --retry-execution-lease \
-            --deadline-seconds 1200 \
-            --retry-delay-seconds 20
-          python scripts/invoke_mlb_trainer_with_retry.py \
-            --function-name "$TRAINER_ARN" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --status-training-result /tmp/mlb-ml-v2-training.json \
-            --status-selection-capture-result /tmp/mlb-ml-v2-selection-capture.json \
-            --response /tmp/mlb-ml-v2-status-after.json \
-            --invocation /tmp/mlb-ml-v2-status-after-invoke.json
-          # Fail closed unless trainingHealth and selectionCaptureHealth both
-          # attest deploymentIdentityMatches for the exact runs above.
-          python scripts/verify_mlb_trainer_deploy_response.py \
-            --training /tmp/mlb-ml-v2-training.json \
-            --selection-capture /tmp/mlb-ml-v2-selection-capture.json \
-            --status-after /tmp/mlb-ml-v2-status-after.json \
-            --training-invocation /tmp/mlb-ml-v2-training-invoke.json \
-            --selection-capture-invocation /tmp/mlb-ml-v2-selection-capture-invoke.json \
-            --status-after-invocation /tmp/mlb-ml-v2-status-after-invoke.json \
-            --run-started-at "$RUN_STARTED_AT" \
-            --expected-git-sha "$GITHUB_SHA" \
-            --expected-template-sha256 "$EXPECTED_TEMPLATE_SHA256"
+          echo "UNIFIED_MLB_LEARNING_OWNER=eventbridge_schedule"
+          python scripts/verify_unified_mlb_learning_ownership.py
+          python -m pytest -q tests/unit/test_unified_mlb_learning_ownership.py
 
       - name: Smoke test health and MLB read runtime
         env:

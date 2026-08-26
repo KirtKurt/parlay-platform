@@ -4,18 +4,14 @@
 # semantics are changed.
 name: Repair MLB training continuity now
 
-on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/repair-mlb-training-continuity-now.yml'
+"on":
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: repair-mlb-training-continuity-now
+  group: unified-mlb-learning
   cancel-in-progress: false
 
 env:

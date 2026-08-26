@@ -1,10 +1,6 @@
 name: Repair MLB production now
 
-on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/repair-mlb-production-now.yml'
+"on":
   workflow_dispatch:
 
 permissions:
@@ -12,7 +8,7 @@ permissions:
   actions: write
 
 concurrency:
-  group: repair-mlb-production-now
+  group: unified-mlb-learning
   cancel-in-progress: false
 
 env:

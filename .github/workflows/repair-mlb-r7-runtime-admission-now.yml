@@ -1,18 +1,13 @@
 name: Repair MLB R7 runtime admission now
 
 "on":
-  push:
-    branches:
-      - repair/run-mlb-r7-runtime-admission-20260825
-    paths:
-      - '.github/r7-runtime-admission-trigger'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: repair-mlb-r7-runtime-admission-now
+  group: unified-mlb-learning
   cancel-in-progress: false
 
 env:

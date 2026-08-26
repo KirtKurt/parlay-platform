@@ -1,17 +1,13 @@
 name: Repair MLB prospective continuity v5 now
 
-on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/repair-mlb-prospective-v5-now.yml'
+"on":
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: repair-mlb-prospective-v5-now
+  group: unified-mlb-learning
   cancel-in-progress: false
 
 env:

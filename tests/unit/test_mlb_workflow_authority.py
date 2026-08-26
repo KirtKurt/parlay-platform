@@ -282,21 +282,24 @@ def test_rejects_missing_trainer_invoke_retry_helper(tmp_path: Path) -> None:
     )
 
 
-def test_rejects_deploy_that_bypasses_one_trainer_retry_helper_call(
+
+def test_rejects_deploy_with_wrong_unified_learning_owner(
     tmp_path: Path,
 ) -> None:
     root = _copy_contract(tmp_path)
     deploy = root / ".github/workflows/deploy.yml"
-    text = deploy.read_text(encoding="utf-8")
     deploy.write_text(
-        text.replace("python scripts/invoke_mlb_trainer_with_retry.py", "python", 1),
+        deploy.read_text(encoding="utf-8").replace(
+            "UNIFIED_MLB_LEARNING_OWNER=eventbridge_schedule",
+            "UNIFIED_MLB_LEARNING_OWNER=github_deploy",
+            1,
+        ),
         encoding="utf-8",
     )
 
-    errors = authority.verify_repository(root)
     assert (
-        "canonical_deploy_must_use_bounded_invoke_retry_exactly_three_times"
-        in errors
+        "canonical_deploy_unified_mlb_learning_owner_marker_missing"
+        in authority.verify_repository(root)
     )
 
 
@@ -513,73 +516,73 @@ def test_requires_alternate_writer_source_contract_filters(tmp_path: Path) -> No
     )
 
 
-def test_requires_selection_capture_before_status_check(tmp_path: Path) -> None:
+def test_deploy_requires_unified_learning_owner_marker(tmp_path: Path) -> None:
     root = _copy_contract(tmp_path)
     deploy = root / ".github/workflows/deploy.yml"
-    text = deploy.read_text(encoding="utf-8")
-    token = (
-        "'{\"sport\":\"mlb\",\"mode\":\"selection_capture\","
-        "\"run\":\"aws_native_prospective_selection_capture\"}'"
-    )
-    deploy.write_text(text.replace(token, "--payload '{}'", 1), encoding="utf-8")
-
-    errors = authority.verify_repository(root)
-    assert "canonical_deploy_must_invoke_selection_capture_exactly_once" in errors
-    assert "canonical_deploy_split_run_status_order_is_invalid" in errors
-
-
-def test_requires_bounded_retry_for_all_three_deploy_invocations(tmp_path: Path) -> None:
-    root = _copy_contract(tmp_path)
-    deploy = root / ".github/workflows/deploy.yml"
-    text = deploy.read_text(encoding="utf-8")
     deploy.write_text(
-        text.replace("python scripts/invoke_mlb_trainer_with_retry.py", "python", 1),
-        encoding="utf-8",
-    )
-
-    errors = authority.verify_repository(root)
-    assert (
-        "canonical_deploy_must_use_bounded_invoke_retry_exactly_three_times"
-        in errors
-    )
-
-
-def test_requires_dynamic_status_to_bind_both_exact_run_artifacts(
-    tmp_path: Path,
-) -> None:
-    root = _copy_contract(tmp_path)
-    deploy = root / ".github/workflows/deploy.yml"
-    text = deploy.read_text(encoding="utf-8")
-    deploy.write_text(
-        text.replace(
-            "--status-selection-capture-result "
-            "/tmp/mlb-ml-v2-selection-capture.json",
-            "--status-selection-capture-result "
-            "/tmp/mlb-ml-v2-training.json",
+        deploy.read_text(encoding="utf-8").replace(
+            "UNIFIED_MLB_LEARNING_OWNER=eventbridge_schedule",
+            "UNIFIED_MLB_LEARNING_OWNER=missing",
             1,
         ),
         encoding="utf-8",
     )
 
     assert (
-        "canonical_deploy_must_query_post_run_status_exactly_once"
+        "canonical_deploy_unified_mlb_learning_owner_marker_missing"
         in authority.verify_repository(root)
     )
 
 
-def test_requires_lease_retry_on_both_mutating_deploy_probes(
-    tmp_path: Path,
-) -> None:
+def test_deploy_requires_single_owner_verifier(tmp_path: Path) -> None:
     root = _copy_contract(tmp_path)
     deploy = root / ".github/workflows/deploy.yml"
-    text = deploy.read_text(encoding="utf-8")
     deploy.write_text(
-        text.replace("--retry-execution-lease", "", 1),
+        deploy.read_text(encoding="utf-8").replace(
+            "python scripts/verify_unified_mlb_learning_ownership.py",
+            "python -c 'print(\"ownership verifier removed\")'",
+            1,
+        ),
         encoding="utf-8",
     )
 
     assert (
-        "canonical_deploy_lease_retry_scope_is_invalid"
+        "canonical_deploy_does_not_verify_single_learning_owner"
+        in authority.verify_repository(root)
+    )
+
+
+def test_deploy_requires_single_owner_regression_gate(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    deploy.write_text(
+        deploy.read_text(encoding="utf-8").replace(
+            "tests/unit/test_unified_mlb_learning_ownership.py",
+            "tests/unit/test_mlb_workflow_authority.py",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        "canonical_deploy_does_not_test_single_learning_owner"
+        in authority.verify_repository(root)
+    )
+
+
+def test_deploy_rejects_active_trainer_invocation(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    deploy.write_text(
+        deploy.read_text(encoding="utf-8")
+        + "\n      - name: Forbidden duplicate trainer owner\n"
+        + "        run: |\n"
+        + "          python scripts/invoke_mlb_trainer_with_retry.py\n",
+        encoding="utf-8",
+    )
+
+    assert (
+        "canonical_deploy_must_not_invoke_unified_mlb_training"
         in authority.verify_repository(root)
     )
 

@@ -1152,39 +1152,25 @@ def test_rejects_trainer_schedule_with_swapped_invocation_modes(aws) -> None:
     assert "TRAINER_EVENTBRIDGE_INVOCATION_INPUT_MISMATCH" in result["blockers"]
 
 
-def test_deploy_initializes_both_trainer_modes_before_status_acceptance() -> None:
+def test_deploy_verifies_single_learning_owner_without_invoking_trainer() -> None:
     root = Path(__file__).resolve().parents[2]
     workflow = (root / ".github" / "workflows" / "deploy.yml").read_text(
         encoding="utf-8"
     )
-    invoke_helper = (
-        root / "scripts" / "invoke_mlb_trainer_with_retry.py"
-    ).read_text(encoding="utf-8")
-    training_payload = (
-        "'{\"sport\":\"mlb\",\"mode\":\"scheduled\","
-        "\"run\":\"aws_native_fixed_prospective_shadow_training\"}'"
-    )
-    capture_payload = (
-        "'{\"sport\":\"mlb\",\"mode\":\"selection_capture\","
-        "\"run\":\"aws_native_prospective_selection_capture\"}'"
-    )
-    status_training = "--status-training-result /tmp/mlb-ml-v2-training.json"
-    status_selection = (
-        "--status-selection-capture-result "
-        "/tmp/mlb-ml-v2-selection-capture.json"
-    )
+    active_trainer_invokes = [
+        line.strip()
+        for line in workflow.splitlines()
+        if line.strip().startswith(
+            "python scripts/invoke_mlb_trainer_with_retry.py"
+        )
+    ]
 
-    assert workflow.index(training_payload) < workflow.index(capture_payload)
-    assert workflow.index(capture_payload) < workflow.index(status_training)
-    assert workflow.index(status_training) < workflow.index(status_selection)
-    assert 'AWS_MAX_ATTEMPTS: "1"' in workflow
-    assert workflow.count("python scripts/invoke_mlb_trainer_with_retry.py") == 3
-    assert workflow.count("--retry-execution-lease") == 2
-    assert workflow.count("--deadline-seconds 1200") == 2
-    assert workflow.count("--retry-delay-seconds 20") == 2
-    assert "connect_timeout=10" in invoke_helper
-    assert "read_timeout=1000" in invoke_helper
-    assert 'retries={"total_max_attempts": 1, "mode": "standard"}' in invoke_helper
+    assert "UNIFIED_MLB_LEARNING_OWNER=eventbridge_schedule" in workflow
+    assert "Preserve unified MLB learning ownership" in workflow
+    assert "python scripts/verify_unified_mlb_learning_ownership.py" in workflow
+    assert "tests/unit/test_unified_mlb_learning_ownership.py" in workflow
+    assert active_trainer_invokes == []
+    assert "Run AWS-native MLB trainer and verify fresh split health" not in workflow
     assert "invoke_with_capacity_retry" not in workflow
     assert "aws lambda invoke" not in workflow
     assert "Prove shared Lambda capacity recovered before trainer initialization" in workflow
@@ -1204,9 +1190,6 @@ def test_deploy_initializes_both_trainer_modes_before_status_acceptance() -> Non
         in workflow
     )
     assert "UPDATE_ROLLBACK_COMPLETE|ROLLBACK_COMPLETE" not in workflow
-    assert "trainingHealth" in workflow
-    assert "selectionCaptureHealth" in workflow
-    assert "deploymentIdentityMatches" in workflow
 
 
 def test_lambda_artifact_download_retries_transient_transport_failures(

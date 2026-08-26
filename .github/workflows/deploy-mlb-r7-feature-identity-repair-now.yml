@@ -1,18 +1,13 @@
 name: Deploy MLB R7 stable feature identity repair now
 
 "on":
-  push:
-    branches:
-      - repair/run-mlb-r7-feature-identity-deploy-20260826
-    paths:
-      - '.github/mlb-r7-feature-identity-deploy-trigger'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: deploy-mlb-r7-feature-identity-repair-now
+  group: unified-mlb-learning
   cancel-in-progress: false
 
 env:
