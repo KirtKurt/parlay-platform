@@ -1,4 +1,4 @@
-name: Inspect August 25 unified MLB labels and locks read-only
+name: Verify deployed unified MLB table wiring read-only
 
 "on":
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: diagnose-unified-mlb-aug25-materialization-read-only
+  group: diagnose-unified-mlb-table-wiring-read-only
   cancel-in-progress: true
 
 jobs:
@@ -25,63 +25,90 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Count canonical labels and immutable locks without mutation
+      - name: Compare trainer environment with canonical table resources
         run: |
           set -euo pipefail
-          SNAPSHOTS="$(aws cloudformation describe-stack-resource \
+          TRAINER="$(aws cloudformation describe-stack-resource \
             --stack-name parlay-platform-dev \
-            --logical-resource-id SnapshotsTable \
+            --logical-resource-id MLBMLTrainingFunction \
             --region us-east-1 \
             --query 'StackResourceDetail.PhysicalResourceId' \
             --output text)"
-          OUTCOMES="$(aws cloudformation describe-stack-resource \
-            --stack-name parlay-platform-dev \
-            --logical-resource-id OutcomesTable \
+          aws lambda get-function-configuration \
+            --function-name "$TRAINER" \
             --region us-east-1 \
-            --query 'StackResourceDetail.PhysicalResourceId' \
-            --output text)"
-          test -n "$SNAPSHOTS" && test "$SNAPSHOTS" != None
-          test -n "$OUTCOMES" && test "$OUTCOMES" != None
-          aws dynamodb query \
-            --table-name "$SNAPSHOTS" \
-            --consistent-read \
-            --region us-east-1 \
-            --key-condition-expression 'PK = :pk AND begins_with(SK, :sk)' \
-            --expression-attribute-values '{":pk":{"S":"GAME_WINNERS#mlb#2026-08-25"},":sk":{"S":"LOCKED#GAME#"}}' \
-            --projection-expression 'PK,SK' \
-            --output json > /tmp/locks.json
-          aws dynamodb query \
-            --table-name "$OUTCOMES" \
-            --consistent-read \
-            --region us-east-1 \
-            --key-condition-expression 'PK = :pk AND begins_with(SK, :sk)' \
-            --expression-attribute-values '{":pk":{"S":"MLB_CANONICAL_FINAL_LABEL#2026-08-25"},":sk":{"S":"GAME_PK#"}}' \
-            --projection-expression 'PK,SK,record_type' \
-            --output json > /tmp/labels.json
+            --query 'Environment.Variables.{SNAPSHOTS_TABLE:SNAPSHOTS_TABLE,OUTCOMES_TABLE:OUTCOMES_TABLE,PREDICTIONS_TABLE:PREDICTIONS_TABLE}' \
+            --output json > /tmp/trainer-tables.json
+          for logical in SnapshotsTable OutcomesTable PredictionsTable; do
+            aws cloudformation describe-stack-resource \
+              --stack-name parlay-platform-dev \
+              --logical-resource-id "$logical" \
+              --region us-east-1 \
+              --query 'StackResourceDetail.PhysicalResourceId' \
+              --output text > "/tmp/${logical}.txt"
+          done
           python - <<'PY'
           import json
+          import subprocess
           from pathlib import Path
 
-          locks = json.loads(Path('/tmp/locks.json').read_text())
-          labels = json.loads(Path('/tmp/labels.json').read_text())
-          lock_keys = sorted(
-              (item.get('SK') or {}).get('S')
-              for item in locks.get('Items') or []
-          )
-          label_keys = sorted(
-              (item.get('SK') or {}).get('S')
-              for item in labels.get('Items') or []
-          )
+          trainer = json.loads(Path('/tmp/trainer-tables.json').read_text())
+          physical = {
+              'SNAPSHOTS_TABLE': Path('/tmp/SnapshotsTable.txt').read_text().strip(),
+              'OUTCOMES_TABLE': Path('/tmp/OutcomesTable.txt').read_text().strip(),
+              'PREDICTIONS_TABLE': Path('/tmp/PredictionsTable.txt').read_text().strip(),
+          }
+
+          def query_count(table, pk, sk_prefix):
+              command = [
+                  'aws', 'dynamodb', 'query',
+                  '--table-name', table,
+                  '--consistent-read',
+                  '--region', 'us-east-1',
+                  '--key-condition-expression', 'PK = :pk AND begins_with(SK, :sk)',
+                  '--expression-attribute-values', json.dumps({
+                      ':pk': {'S': pk},
+                      ':sk': {'S': sk_prefix},
+                  }),
+                  '--select', 'COUNT',
+                  '--output', 'json',
+              ]
+              value = json.loads(subprocess.check_output(command, text=True))
+              return int(value.get('Count') or 0)
+
+          dates = ['2026-08-03', '2026-08-24', '2026-08-25']
+          lock_counts = {
+              date: query_count(
+                  trainer['SNAPSHOTS_TABLE'],
+                  f'GAME_WINNERS#mlb#{date}',
+                  'LOCKED#GAME#',
+              )
+              for date in dates
+          }
+          label_counts = {
+              date: query_count(
+                  trainer['OUTCOMES_TABLE'],
+                  f'MLB_CANONICAL_FINAL_LABEL#{date}',
+                  'GAME_PK#',
+              )
+              for date in dates
+          }
           proof = {
-              'proofType': 'UNIFIED_MLB_AUG25_MATERIALIZATION_READ_ONLY',
-              'slateDateEt': '2026-08-25',
-              'canonicalImmutableLockCount': int(locks.get('Count') or 0),
-              'canonicalFinalLabelCount': int(labels.get('Count') or 0),
-              'lockKeys': lock_keys,
-              'labelKeys': label_keys,
-              'readyForWholeSlateFinalization': (
-                  int(locks.get('Count') or 0) == 15
-                  and int(labels.get('Count') or 0) == 15
+              'proofType': 'UNIFIED_MLB_DEPLOYED_TABLE_WIRING_READ_ONLY',
+              'trainerTables': trainer,
+              'cloudFormationTables': physical,
+              'tableWiringMatches': trainer == physical,
+              'canonicalLockCounts': lock_counts,
+              'canonicalFinalLabelCounts': label_counts,
+              'knownAdmittedReferenceCountsMatch': (
+                  lock_counts['2026-08-03'] == 8
+                  and label_counts['2026-08-03'] == 8
+                  and lock_counts['2026-08-24'] == 10
+                  and label_counts['2026-08-24'] == 10
+              ),
+              'august25Ready': (
+                  lock_counts['2026-08-25'] == 15
+                  and label_counts['2026-08-25'] == 15
               ),
               'directTableWrite': False,
               'immutablePredictionRewriteAllowed': False,
