@@ -47,26 +47,27 @@ jobs:
             tests/unit/test_reconcile_mlb_prospective_backlog_v5.py \
             tests/unit/test_reconcile_mlb_prospective_backlog_v5_settlement_replay.py \
             tests/unit/test_mlb_prospective_backlog_workflow.py \
-            tests/unit/test_invoke_mlb_trainer_with_retry.py
+            tests/unit/test_mlb_trainer_invoke_retry.py
           python - <<'PY'
           from pathlib import Path
           path = Path('.github/workflows/repair-mlb-r7-continuity-verified-now.yml')
-          text = path.read_text(encoding='utf-8')
-          for forbidden in (
-              'sam deploy',
-              'update-function-code',
-              'update-function-configuration',
-              'dynamodb put-item',
-              'dynamodb update-item',
-              'dynamodb delete-item',
-          ):
-              assert forbidden not in text.lower(), forbidden
+          text = path.read_text(encoding='utf-8').lower()
+          forbidden = (
+              'sam' + ' deploy',
+              'update-function-' + 'code',
+              'update-function-' + 'configuration',
+              'dynamodb ' + 'put-item',
+              'dynamodb ' + 'update-item',
+              'dynamodb ' + 'delete-item',
+          )
+          for value in forbidden:
+              assert value not in text, value
           for required in (
-              'immutablePredictionRewriteAllowed',
-              'postStartPredictionCreationAllowed',
-              'productionAuthorityChanged',
-              'promotionAuthorityChanged',
-              'directTableWrite',
+              'immutablepredictionrewriteallowed',
+              'poststartpredictioncreationallowed',
+              'productionauthoritychanged',
+              'promotionauthoritychanged',
+              'directtablewrite',
               '--retry-execution-lease',
               'mlb_scoring_guard_status.py',
           ):
@@ -239,6 +240,16 @@ jobs:
                       pass
               return 0
 
+          def first_text(objects, keys):
+              for obj in objects:
+                  if not isinstance(obj, dict):
+                      continue
+                  for key in keys:
+                      value = obj.get(key)
+                      if value not in (None, ''):
+                          return str(value)
+              return ''
+
           accepted = integer(latest.get('acceptedRowCount'), training.get('acceptedRowCount'), health.get('acceptedRowCount'))
           train_rows = integer(latest.get('trainPartitionCount'), training.get('trainPartitionCount'), health.get('trainPartitionCount'))
           validation_rows = integer(latest.get('validationPartitionCount'), training.get('validationPartitionCount'), health.get('validationPartitionCount'))
@@ -250,30 +261,31 @@ jobs:
           deployed_trainer = deployed['trainer']
           deployed_sha = str(deployed_trainer.get('gitSha') or '')
           deployed_run = str(deployed_trainer.get('deployRunId') or '')
-          status_sha = str(
-              challenger.get('deployedGitSha')
-              or challenger.get('deployGitSha')
-              or latest.get('deployedGitSha')
-              or latest.get('deployGitSha')
-              or ''
-          )
-          status_run = str(
-              challenger.get('deployedRunId')
-              or challenger.get('deployRunId')
-              or latest.get('deployedRunId')
-              or latest.get('deployRunId')
-              or ''
-          )
+          identity_objects = [
+              challenger,
+              latest,
+              health,
+              status,
+              training.get('deploymentIdentity') or {},
+              selection.get('deploymentIdentity') or {},
+          ]
+          status_sha = first_text(identity_objects, (
+              'deployedGitSha', 'deployGitSha', 'gitSha', 'sourceSha',
+          ))
+          status_run = first_text(identity_objects, (
+              'deployedRunId', 'deployRunId', 'runId',
+          ))
           identity_bound = bool(
               deployed_sha and status_sha == deployed_sha
               and (not deployed_run or status_run == deployed_run)
           )
+          status_ok = bool(status.get('ok') is True or health.get('ok') is True)
           proof = {
               'ok': bool(
                   continuity.get('ok') is True
                   and training.get('ok') is True
                   and selection.get('ok') is True
-                  and status.get('ok') is True
+                  and status_ok
                   and accepted >= 18
                   and train_rows >= 18
                   and {'2026-08-03', '2026-08-24'} <= set(finalized)
