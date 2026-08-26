@@ -26,9 +26,10 @@ class FakeLambda:
     def __init__(self, response):
         self.response = response
 
-    def invoke(self, *, FunctionName, InvocationType, Payload):
+    def invoke(self, *, FunctionName, InvocationType, Payload, LogType="None"):
         del FunctionName, Payload
         assert InvocationType == "RequestResponse"
+        assert LogType in {"None", "Tail"}
         return {
             "StatusCode": 200,
             "Payload": ResponseStream(json.dumps(self.response).encode("utf-8")),
@@ -67,6 +68,23 @@ def settlement_gap(slate_date="2026-08-04", games=15):
             }
             for index in range(games)
         ],
+    }
+
+
+def official_terminal_status(slate_date="2026-08-04", games=15):
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "slateDateEt": slate_date,
+        "officialScheduleBacked": True,
+        "officialScheduleAuthorityVersion": base.OFFICIAL_SCHEDULE_AUTHORITY_VERSION,
+        "officialScheduleAuthoritativeStartTimes": True,
+        "gameCount": games,
+        "officialScheduleGameCount": games,
+        "lockedPredictionCount": 0,
+        "noPredictionDataCount": games,
+        "lockedStatusCount": games,
+        "lockStatusComplete": True,
     }
 
 
@@ -143,6 +161,8 @@ def test_reconcile_replays_then_retries_full_backlog(monkeypatch):
     def fake_invoke(client, function, event):
         del client
         invocations.append((function, event))
+        if event.get("httpMethod") == "GET":
+            return official_terminal_status()
         return {"ok": True, "sport": "mlb", "slateDateEt": "2026-08-04"}
 
     monkeypatch.setattr(v4, "invoke_json_with_backpressure", fake_invoke)
