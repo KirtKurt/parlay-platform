@@ -1,0 +1,203 @@
+name: Audit MLB Auto today read only
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/audit-mlb-auto-today-read-only.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-mlb-auto-today-read-only
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: us-east-1
+  MLB_AUTO_STACK: parlay-platform-mlb-auto-llm
+  TODAY_ET: '2026-08-26'
+  PRIOR_ET: '2026-08-25'
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Resolve isolated MLB Auto Lambda
+        id: function
+        run: |
+          set -euo pipefail
+          fn=$(aws cloudformation describe-stack-resource \
+            --stack-name "$MLB_AUTO_STACK" \
+            --logical-resource-id MLBAutoLLMFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$fn" && test "$fn" != None
+          echo "name=$fn" >> "$GITHUB_OUTPUT"
+          mkdir -p /tmp/mlb-auto-audit
+          aws lambda get-function-configuration --function-name "$fn" --region "$AWS_REGION" \
+            > /tmp/mlb-auto-audit/function.json
+      - name: Invoke read-only current and prior card endpoints
+        env:
+          FUNCTION_NAME: ${{ steps.function.outputs.name }}
+        run: |
+          set -euo pipefail
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"rawPath":"/v1/mlb-auto/today","requestContext":{"http":{"method":"GET"}}}' \
+            /tmp/mlb-auto-audit/today-raw.json \
+            > /tmp/mlb-auto-audit/today-invocation.json
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"rawPath":"/v1/mlb-auto/status","requestContext":{"http":{"method":"GET"}},"queryStringParameters":{"date":"2026-08-25"}}' \
+            /tmp/mlb-auto-audit/prior-raw.json \
+            > /tmp/mlb-auto-audit/prior-invocation.json
+      - name: Build and enforce read-only card audit
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+
+          root=Path('/tmp/mlb-auto-audit')
+          cfg=json.loads((root/'function.json').read_text())
+          today_meta=json.loads((root/'today-invocation.json').read_text())
+          prior_meta=json.loads((root/'prior-invocation.json').read_text())
+
+          def decode(name):
+              outer=json.loads((root/f'{name}-raw.json').read_text())
+              assert int(outer.get('statusCode') or 0)==200, outer
+              body=outer.get('body')
+              if isinstance(body,str): body=json.loads(body)
+              assert isinstance(body,dict) and body.get('ok') is True, body
+              return body
+
+          def audit_card(card, scheduled):
+              picks=list((card or {}).get('picks') or [])
+              errors=[]
+              seen=set()
+              authorities=Counter()
+              rows=[]
+              for pick in picks:
+                  pk=str(pick.get('gamePk') or '')
+                  home=str(pick.get('homeTeam') or '')
+                  away=str(pick.get('awayTeam') or '')
+                  winner=str(pick.get('predictedWinner') or '')
+                  loser=str(pick.get('predictedLoser') or '')
+                  authority=str(pick.get('decisionAuthority') or '')
+                  probability=pick.get('probability')
+                  presence=pick.get('sourcePresence') or {}
+                  if not pk or pk in seen: errors.append(f'duplicate_or_missing_gamePk:{pk}')
+                  seen.add(pk)
+                  if winner not in {home,away}: errors.append(f'winner_not_in_matchup:{pk}')
+                  if loser not in {home,away} or loser==winner: errors.append(f'loser_invalid:{pk}')
+                  try:
+                      p=float(probability)
+                      if not 0.0 <= p <= 1.0: errors.append(f'probability_out_of_range:{pk}')
+                  except Exception:
+                      errors.append(f'probability_invalid:{pk}')
+                  if authority not in {'BEDROCK_LLM','AWS_ML_PROSPECTIVE_R7'}:
+                      errors.append(f'authority_invalid:{pk}:{authority}')
+                  if authority in {'HUMAN','CHATGPT'}: errors.append(f'human_authority:{pk}')
+                  for source in ('mlbStatsApi','theOddsApi','bigBallsDataPro'):
+                      if presence.get(source) is not True: errors.append(f'source_missing:{pk}:{source}')
+                  authorities[authority]+=1
+                  rows.append({
+                    'gamePk':pk,'awayTeam':away,'homeTeam':home,
+                    'predictedWinner':winner,'predictedLoser':loser,
+                    'probability':probability,'decisionAuthority':authority,
+                    'sourcePresence':presence,'gameDate':pick.get('gameDate'),
+                    'confidence':pick.get('confidence'),
+                  })
+              if card and scheduled and len(picks)!=scheduled:
+                  errors.append(f'card_not_whole_slate:{len(picks)}/{scheduled}')
+              return rows,dict(authorities),errors
+
+          assert not today_meta.get('FunctionError'), today_meta
+          assert not prior_meta.get('FunctionError'), prior_meta
+          assert cfg.get('State')=='Active' and cfg.get('LastUpdateStatus')=='Successful',cfg
+
+          today_body=decode('today')
+          today_status=today_body.get('status') or {}
+          today_card=today_body.get('card')
+          today_scheduled=int(today_status.get('scheduledGames') or 0)
+          today_rows,today_authorities,today_errors=audit_card(today_card,today_scheduled)
+
+          prior_status=decode('prior')
+          prior_card=prior_status.get('card')
+          prior_scheduled=int(prior_status.get('scheduledGames') or 0)
+          prior_rows,prior_authorities,prior_errors=audit_card(prior_card,prior_scheduled)
+          prior_audit=prior_status.get('audit') or {}
+
+          proof={
+            'ok': bool(
+              today_scheduled==15
+              and not today_errors
+              and not prior_errors
+              and (today_card is None or len(today_rows)==today_scheduled)
+              and (prior_card is None or len(prior_rows)==prior_scheduled)
+            ),
+            'proofType':'MLB_AUTO_READ_ONLY_CURRENT_CARD_AUDIT',
+            'readOnly':True,
+            'functionName':cfg.get('FunctionName'),
+            'functionHandler':cfg.get('Handler'),
+            'functionState':cfg.get('State'),
+            'functionLastUpdateStatus':cfg.get('LastUpdateStatus'),
+            'today':{
+              'slateDateEt':'2026-08-26',
+              'scheduledGames':today_scheduled,
+              'deadline':today_status.get('deadline'),
+              'cardPublished':today_card is not None,
+              'pickCount':len(today_rows),
+              'authorityCounts':today_authorities,
+              'picks':today_rows,
+              'errors':today_errors,
+              'capabilityState':'CARD_PUBLISHED' if today_card else 'NO_CARD_YET',
+            },
+            'prior':{
+              'slateDateEt':'2026-08-25',
+              'scheduledGames':prior_scheduled,
+              'cardPublished':prior_card is not None,
+              'pickCount':len(prior_rows),
+              'authorityCounts':prior_authorities,
+              'picks':prior_rows,
+              'settlementAudit':prior_audit,
+              'errors':prior_errors,
+            },
+            'humanWinnerSelection':False,
+            'chatgptWinnerSelection':False,
+            'immutablePredictionHistoryRewritten':False,
+            'postStartPredictionCreated':False,
+            'otherSportChanged':False,
+          }
+          (root/'audit.json').write_text(json.dumps(proof,indent=2,sort_keys=True,default=str)+'\n')
+          print(json.dumps(proof,indent=2,sort_keys=True,default=str))
+          assert proof['ok'], proof
+          PY
+      - name: Upload current-card audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-auto-today-read-only-audit-${{ github.run_id }}
+          path: /tmp/mlb-auto-audit
+          if-no-files-found: error
+          retention-days: 90
