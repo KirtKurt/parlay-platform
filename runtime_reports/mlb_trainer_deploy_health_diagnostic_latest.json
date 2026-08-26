@@ -1,6 +1,6 @@
 {
   "classification": "TRAINER_LAMBDA_FUNCTION_ERROR",
-  "createdAtUtc": "2026-08-26T07:09:33.690509+00:00",
+  "createdAtUtc": "2026-08-26T07:31:01.779657+00:00",
   "diagnosticOnly": true,
   "lambdaConfiguration": {
     "Architectures": [
@@ -15,11 +15,11 @@
     "FunctionArn": "arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
     "FunctionName": "parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
     "Handler": "mlb_ml_aws_training_v1_compat.lambda_handler",
-    "LastModified": "2026-08-26T06:48:42.000+0000",
+    "LastModified": "2026-08-26T07:12:07.000+0000",
     "LastUpdateStatus": "Successful",
     "MemorySize": 2048,
     "PackageType": "Zip",
-    "RevisionId": "ce9db688-2e01-4042-9f79-25c4b0355b3a",
+    "RevisionId": "48cd264d-35f6-43d1-ac80-a925be6c72c7",
     "Runtime": "python3.11",
     "State": "Active",
     "Timeout": 900,
@@ -60,7 +60,7 @@
   "productionAuthorityChanged": false,
   "proofType": "MLB_TRAINER_DEPLOY_HEALTH_DIAGNOSTIC",
   "secretExposed": false,
-  "sourceSha": "649cc5d511985f617426c0f79979573b2d9ee660",
+  "sourceSha": "821adf147016792b883e21a16748a98919dd37a9",
   "statusAfter": {
     "automaticPromotionEnabled": false,
     "experimentId": "mlb-v2-2026-08-03-future-prospective-r7",
@@ -82,16 +82,16 @@
       "latestRun": {
         "automaticPromotionEnabled": false,
         "championChanged": false,
-        "createdAtUtc": "2026-08-26T07:04:03.414995+00:00",
+        "createdAtUtc": "2026-08-26T07:27:24.348183+00:00",
         "deploymentIdentity": {
-          "gitSha": "649cc5d511985f617426c0f79979573b2d9ee660",
+          "gitSha": "821adf147016792b883e21a16748a98919dd37a9",
           "templateSha256": "daabcdeafb579e690f47015de4d9c383fd07710b0545738e5099f5d02854cac1"
         },
         "executionMode": "selection_capture",
         "liveInferenceAuthority": false,
         "modelTrained": false,
         "ok": true,
-        "runId": "6c0d3ec5539233068c6ce4b8",
+        "runId": "be62351c4c15cf9823533b81",
         "status": "WAITING_FOR_PERSISTED_CHALLENGER"
       },
       "ok": true
@@ -213,9 +213,9 @@
           "version": "MLB-ML-CANONICAL-SLATE-CONTINUITY-v2-exact-official-game-set"
         },
         "championChanged": false,
-        "createdAtUtc": "2026-08-26T07:04:13.873270+00:00",
+        "createdAtUtc": "2026-08-26T07:30:11.958615+00:00",
         "deploymentIdentity": {
-          "gitSha": "649cc5d511985f617426c0f79979573b2d9ee660",
+          "gitSha": "821adf147016792b883e21a16748a98919dd37a9",
           "templateSha256": "daabcdeafb579e690f47015de4d9c383fd07710b0545738e5099f5d02854cac1"
         },
         "executionMode": "training",
@@ -323,7 +323,7 @@
         },
         "rejectedRowCount": 0,
         "rejectionReasonCounts": {},
-        "runId": "1632555b67d8a46b31a8d1b9",
+        "runId": "34879f878745398b435cf097",
         "status": "ACCUMULATING_TRAIN"
       },
       "ok": true
@@ -335,7 +335,7 @@
     "ExecutedVersion": "$LATEST",
     "StatusCode": 200,
     "parseError": null,
-    "redactedLogTail": "START RequestId: bb46168e-7ede-4f7a-864f-323af356a0f3 Version: $LATEST\nEND RequestId: bb46168e-7ede-4f7a-864f-323af356a0f3\nREPORT RequestId: bb46168e-7ede-4f7a-864f-323af356a0f3\tDuration: 72.92 ms\tBilled Duration: 73 ms\tMemory Size: 2048 MB\tMax Memory Used: 118 MB\t"
+    "redactedLogTail": "START RequestId: 4938ee23-8b98-4842-8a9d-be9b49f52ac1 Version: $LATEST\nEND RequestId: 4938ee23-8b98-4842-8a9d-be9b49f52ac1\nREPORT RequestId: 4938ee23-8b98-4842-8a9d-be9b49f52ac1\tDuration: 121.54 ms\tBilled Duration: 122 ms\tMemory Size: 2048 MB\tMax Memory Used: 119 MB\t"
   },
   "statusResponseParseError": null,
   "trainingInvocation": {
@@ -343,7 +343,7 @@
     "FunctionError": "Unhandled",
     "StatusCode": 200,
     "parseError": null,
-    "redactedLogTail": "START RequestId: c364a7e6-2927-468f-98ef-c5adb0a3f1a1 Version: $LATEST\n[ERROR] ExecutionLeaseUnavailable: another MLB ML trainer invocation holds the execution lease\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1_compat.py\", line 168, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0return canonical.lambda_handler(event, context)\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1.py\", line 2911, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0lease = service.store.acquire_execution_lease(\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1.py\", line 653, in acquire_execution_lease\n\u00a0\u00a0\u00a0\u00a0raise ExecutionLeaseUnavailable(\nEND RequestId: c364a7e6-2927-468f-98ef-c5adb0a3f1a1\nREPORT RequestId: c364a7e6-2927-468f-98ef-c5adb0a3f1a1\tDuration: 90.06 ms\tBilled Duration: 91 ms\tMemory Size: 2048 MB\tMax Memory Used: 118 MB\t"
+    "redactedLogTail": "START RequestId: 886cb917-d870-4b20-8e89-9f46c708c2b3 Version: $LATEST\n[ERROR] ExecutionLeaseUnavailable: another MLB ML trainer invocation holds the execution lease\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1_compat.py\", line 168, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0return canonical.lambda_handler(event, context)\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1.py\", line 2911, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0lease = service.store.acquire_execution_lease(\n\u00a0\u00a0File \"/var/task/mlb_ml_aws_training_v1.py\", line 653, in acquire_execution_lease\n\u00a0\u00a0\u00a0\u00a0raise ExecutionLeaseUnavailable(\nEND RequestId: 886cb917-d870-4b20-8e89-9f46c708c2b3\nREPORT RequestId: 886cb917-d870-4b20-8e89-9f46c708c2b3\tDuration: 85.84 ms\tBilled Duration: 86 ms\tMemory Size: 2048 MB\tMax Memory Used: 119 MB\t"
   },
   "trainingResponse": {
     "errorMessage": "another MLB ML trainer invocation holds the execution lease",
@@ -356,5 +356,5 @@
   },
   "trainingResponseParseError": null,
   "version": "MLB-TRAINER-DEPLOY-DIAGNOSTIC-v1-redacted-fail-closed",
-  "workflowRunId": "32941360767"
+  "workflowRunId": "32943096389"
 }
