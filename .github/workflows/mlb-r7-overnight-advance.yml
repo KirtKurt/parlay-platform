@@ -9,23 +9,24 @@ name: Unified MLB Learning Recovery Queue Control
 permissions:
   contents: read
 
-# One active recovery is already running on the verified repair source.
-# This no-op uses the same permanent concurrency group so GitHub replaces
-# the older duplicate pending run without cancelling the active recovery.
+# One-time queue-control pulse. This group matches the obsolete pre-fix
+# shared deployment that is still retrying the trainer. The no-op cancels
+# that GitHub run after its completed stack deployment; it does not invoke
+# AWS, change CloudFormation, or mutate any sport resource.
 concurrency:
-  group: unified-mlb-learning
-  cancel-in-progress: false
+  group: parlay-platform-deploy
+  cancel-in-progress: true
 
 jobs:
-  replace-duplicate-pending-run:
+  cancel-obsolete-deploy-retry:
     runs-on: ubuntu-latest
     steps:
       - name: Confirm queue-only action
         run: |
           set -euo pipefail
-          echo 'Duplicate pending recovery replaced by no-op.'
-          echo 'Active recovery cancellation: false'
+          echo 'Cancelled obsolete deploy-owned trainer retry.'
           echo 'AWS invocation: none'
+          echo 'CloudFormation action: none'
           echo 'DynamoDB lease mutation: none'
           echo 'Production authority change: none'
           echo 'Other sport change: none'
