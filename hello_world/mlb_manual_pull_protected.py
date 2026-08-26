@@ -89,11 +89,29 @@ mlb_manual_pull = None
 if ML_RUNTIME_INSTALL_STATUS.get("ok") is True:
     try:
         import mlb_manual_pull as _mlb_manual_pull
+        import mlb_canonical_manifest_retry_binding_patch
 
+        manifest_retry_patch = (
+            mlb_canonical_manifest_retry_binding_patch.install(_mlb_manual_pull)
+        )
+        if manifest_retry_patch.get("ok") is not True:
+            raise RuntimeError(
+                "canonical manifest retry binding patch failed: "
+                + json.dumps(manifest_retry_patch, default=str, sort_keys=True)
+            )
         mlb_manual_pull = _mlb_manual_pull
+        ML_RUNTIME_INSTALL_STATUS["steps"][
+            "canonicalManifestRetryBinding"
+        ] = True
+        ML_RUNTIME_INSTALL_STATUS[
+            "canonicalManifestRetryBindingPatch"
+        ] = manifest_retry_patch
         ML_RUNTIME_INSTALL_STATUS["candidateWriterImported"] = True
     except Exception as exc:
         ML_RUNTIME_INSTALL_STATUS["ok"] = False
+        ML_RUNTIME_INSTALL_STATUS["steps"][
+            "canonicalManifestRetryBinding"
+        ] = False
         ML_RUNTIME_INSTALL_STATUS["candidateWriterImported"] = False
         ML_RUNTIME_INSTALL_STATUS["errors"].append(
             f"mlb_manual_pull import failed after runtime installation: {exc}"
