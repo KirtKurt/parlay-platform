@@ -720,21 +720,78 @@ def _store_canonical_pull_history(*, game_date: str, asof: str, run: str, compac
             )
         )
         expected_authority = compact.get("official_schedule_authority") or {}
+        persisted_manifest = (
+            stored_pull.get("provider_schedule_manifest")
+            if isinstance(stored_pull, dict)
+            else {}
+        ) or {}
+        persisted_schedule_authority = (
+            persisted_manifest.get("scheduleAuthority")
+            if isinstance(persisted_manifest, dict)
+            else {}
+        ) or {}
+        official_authority_required = bool(
+            expected_authority
+            or persisted_schedule_authority
+            or manifest.get("official_schedule_backed") is True
+        )
+        manifest_validation_errors = []
+        if official_authority_required:
+            validator = getattr(
+                pull_history,
+                "validate_provider_schedule_manifest",
+                None,
+            )
+            if not stored_pull:
+                manifest_validation_errors.append("canonical_pull_readback_missing")
+            elif not callable(validator):
+                manifest_validation_errors.append(
+                    "provider_manifest_validator_unavailable"
+                )
+            else:
+                validation_result = validator(
+                    stored_pull,
+                    game_date,
+                    verify_immutable_storage=True,
+                )
+                if isinstance(validation_result, list):
+                    manifest_validation_errors.extend(
+                        str(error) for error in validation_result
+                    )
+                elif validation_result:
+                    manifest_validation_errors.append(str(validation_result))
+        canonical_game_count = (
+            len(stored_pull.get("games") or [])
+            if isinstance(stored_pull, dict)
+            else 0
+        )
+        # A same-quarter-hour retry must bind to the first immutable canonical
+        # observation. The retry's freshly fetched schedule proof has a new
+        # observedAtUtc/fingerprint and is not the authority for that slot.
+        # Validate the persisted pull and its strongly consistent manifest
+        # readback, then compare summary fields to that persisted proof only.
         official_authority_bound = bool(
-            not expected_authority
+            not official_authority_required
             or (
-                manifest.get("official_schedule_backed") is True
-                and manifest.get("official_schedule_authority_version") == expected_authority.get("version")
-                and manifest.get("official_schedule_authority_fingerprint") == expected_authority.get("fingerprint")
-                and int(manifest.get("official_schedule_game_count") or -1) == len(games)
+                not manifest_validation_errors
+                and manifest.get("official_schedule_backed") is True
+                and bool(persisted_schedule_authority)
+                and manifest.get("official_schedule_authority_version")
+                == persisted_schedule_authority.get("version")
+                and manifest.get("official_schedule_authority_fingerprint")
+                == persisted_schedule_authority.get("fingerprint")
+                and int(manifest.get("official_schedule_game_count") or -1)
+                == canonical_game_count
             )
         )
         manifest_bound = bool(
             stored.get("ok") is True
             and canonical_binding_complete
+            and canonical_game_count > 0
+            and not manifest_validation_errors
             and manifest.get("immutable") is True
             and manifest.get("full_provider_schedule") is True
-            and int(manifest.get("game_count") or -1) == len(games)
+            and int(manifest.get("game_count") or -1) == canonical_game_count
             and manifest.get("fingerprint")
             and manifest.get("pk")
             and manifest.get("sk")
@@ -767,6 +824,19 @@ def _store_canonical_pull_history(*, game_date: str, asof: str, run: str, compac
             "providerManifestImmutable": manifest.get("immutable") is True,
             "providerManifestFullSchedule": manifest.get("full_provider_schedule") is True,
             "providerManifestBound": manifest_bound,
+            "providerManifestValidationErrors": sorted(
+                set(manifest_validation_errors)
+            ),
+            "canonicalManifestValidatedAgainstPersistedPull": bool(
+                stored_pull and not manifest_validation_errors
+            ),
+            "sameSlotRetryAuthorityRebound": bool(
+                canonical_slot.get("retryReturnedExistingCanonicalPull") is True
+                and expected_authority
+                and persisted_schedule_authority
+                and expected_authority.get("fingerprint")
+                != persisted_schedule_authority.get("fingerprint")
+            ),
             "officialScheduleBacked": manifest.get("official_schedule_backed") is True,
             "officialScheduleAuthorityVersion": manifest.get("official_schedule_authority_version"),
             "officialScheduleAuthorityFingerprint": manifest.get("official_schedule_authority_fingerprint"),
