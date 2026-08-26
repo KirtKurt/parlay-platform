@@ -27,6 +27,7 @@ REQUIRED_RUNTIME_STEPS = {
     "immutableFeatureFreeze",
     "immutableLockedStorageAuthority",
     "canonicalLockedStorageFinalizer",
+    "canonicalManifestRetryBinding",
     "lastPrelockPromotionAuthority",
     "canonicalProbabilityAndPersistedPrelockAuthority",
     "providerNeutralCalibrationAndActionability",
