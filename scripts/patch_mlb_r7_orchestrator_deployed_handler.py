@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bind the MLB repair orchestrator to the deployed audited-pull wrapper."""
+"""Bind the MLB repair to the deployed wrapper and account memory ceiling."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -45,6 +45,9 @@ def patch(source: str) -> str:
         if out.count(OLD_AFTER) != 1:
             raise RuntimeError("pull-after handler anchor drifted")
         out = out.replace(OLD_AFTER, NEW_AFTER, 1)
+    # Account 735707987003 currently enforces the legacy 3008 MB Lambda ceiling.
+    # Use the maximum accepted allocation rather than repeatedly requesting 4096.
+    out = out.replace("4096", "3008")
     return out
 
 
@@ -52,6 +55,8 @@ def main() -> int:
     source = TARGET.read_text(encoding="utf-8")
     patched = patch(source)
     TARGET.write_text(patched, encoding="utf-8")
+    if "MemorySize=3008" not in patched or "trainer_memory_not_3008" not in patched:
+        raise RuntimeError("trainer memory ceiling patch did not bind")
     print(f"patched={patched != source}; target={TARGET.relative_to(ROOT)}")
     return 0
 
