@@ -1,6 +1,13 @@
-name: Unified MLB Learning Recovery Queue Control
+name: MLB R7 one-time advancement recovery
 
 "on":
+  workflow_dispatch:
+    inputs:
+      run_training:
+        description: Run the lease-safe canonical trainer after static verification
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main]
     paths:
@@ -9,24 +16,264 @@ name: Unified MLB Learning Recovery Queue Control
 permissions:
   contents: read
 
-# One-time queue-control pulse. This group matches the obsolete pre-fix
-# shared deployment that is still retrying the trainer. The no-op cancels
-# that GitHub run after its completed stack deployment; it does not invoke
-# AWS, change CloudFormation, or mutate any sport resource.
+# AWS EventBridge remains the only automatic training owner. This workflow is
+# a one-time/manual recovery and shares the exact same GitHub concurrency and
+# DynamoDB execution-lease boundary as every other authorized recovery.
 concurrency:
-  group: parlay-platform-deploy
-  cancel-in-progress: true
+  group: unified-mlb-learning
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  MLB_ROOT_STACK: parlay-platform-dev
+  BASELINE_ACCEPTED_ROWS: '18'
+  MIN_ACCEPTED_ROWS: '33'
 
 jobs:
-  cancel-obsolete-deploy-retry:
+  verify-contract:
     runs-on: ubuntu-latest
     steps:
-      - name: Confirm queue-only action
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify one automatic MLB learning owner
         run: |
           set -euo pipefail
-          echo 'Cancelled obsolete deploy-owned trainer retry.'
-          echo 'AWS invocation: none'
-          echo 'CloudFormation action: none'
-          echo 'DynamoDB lease mutation: none'
-          echo 'Production authority change: none'
-          echo 'Other sport change: none'
+          python scripts/verify_unified_mlb_learning_ownership.py
+          python -m pytest -q tests/unit/test_unified_mlb_learning_ownership.py
+          git diff --check
+
+  recover-and-verify:
+    if: github.event_name == 'push' || inputs.run_training == true
+    needs: verify-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install bounded runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          python -m py_compile \
+            scripts/invoke_mlb_trainer_with_retry.py \
+            scripts/mlb_scoring_guard_status.py
+          mkdir -p /tmp/mlb-r7-advance
+
+      - name: Resolve active deployed canonical MLB trainer
+        run: |
+          set -euo pipefail
+          TRAINER_FN="$(aws cloudformation describe-stack-resource \
+            --stack-name "$MLB_ROOT_STACK" \
+            --logical-resource-id MLBMLTrainingFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)"
+          case "$TRAINER_FN" in
+            *MLBMLTrainingFunction*) ;;
+            *) echo 'Resolved resource is not the canonical MLB trainer' >&2; exit 1 ;;
+          esac
+          echo "TRAINER_FN=$TRAINER_FN" >> "$GITHUB_ENV"
+          aws lambda get-function-configuration \
+            --function-name "$TRAINER_FN" \
+            --region "$AWS_REGION" \
+            --query '{FunctionName:FunctionName,State:State,LastUpdateStatus:LastUpdateStatus,Handler:Handler,MemorySize:MemorySize,Timeout:Timeout}' \
+            --output json | tee /tmp/mlb-r7-advance/trainer-config.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          value = json.loads(Path('/tmp/mlb-r7-advance/trainer-config.json').read_text())
+          assert value.get('State') == 'Active', value
+          assert value.get('LastUpdateStatus') == 'Successful', value
+          assert value.get('Handler') == 'mlb_ml_aws_training_v1_compat.lambda_handler', value
+          assert int(value.get('Timeout') or 0) == 900, value
+          PY
+
+      - name: Prove current MLB production is healthy before training
+        env:
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+          CURRENT_SLATE_DATE="$(TZ=America/New_York date +%F)"
+          echo "CURRENT_SLATE_DATE=$CURRENT_SLATE_DATE" >> "$GITHUB_ENV"
+          python scripts/mlb_scoring_guard_status.py \
+            --slate-date "$CURRENT_SLATE_DATE" \
+            --region "$AWS_REGION" \
+            --output /tmp/mlb-r7-advance/production-before.json \
+            --enforce
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          value = json.loads(Path('/tmp/mlb-r7-advance/production-before.json').read_text())
+          summary = value.get('summary') or {}
+          assert value.get('guardPassed') is True, value
+          assert value.get('readOnly') is True, value
+          assert not value.get('blockers'), value
+          assert int(summary.get('missingMovementCount') or 0) == 0, summary
+          assert int(summary.get('missingPredictionCount') or 0) == 0, summary
+          assert int(summary.get('invalidPredictionTeamCount') or 0) == 0, summary
+          assert int(summary.get('invalidMovementTeamCount') or 0) == 0, summary
+          PY
+
+      - name: Run one canonical lease-safe training invocation
+        env:
+          PYTHONPATH: .
+          AWS_MAX_ATTEMPTS: '1'
+        run: |
+          set -euo pipefail
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_FN" \
+            --region "$AWS_REGION" \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"mlb_r7_one_time_advancement"}' \
+            --response /tmp/mlb-r7-advance/training.json \
+            --invocation /tmp/mlb-r7-advance/training-invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 2400 \
+            --retry-delay-seconds 20
+
+      - name: Capture selection without activating authority
+        env:
+          PYTHONPATH: .
+          AWS_MAX_ATTEMPTS: '1'
+        run: |
+          set -euo pipefail
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_FN" \
+            --region "$AWS_REGION" \
+            --payload '{"sport":"mlb","mode":"selection_capture","run":"mlb_r7_one_time_advancement_selection"}' \
+            --response /tmp/mlb-r7-advance/selection.json \
+            --invocation /tmp/mlb-r7-advance/selection-invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 1200 \
+            --retry-delay-seconds 20
+
+      - name: Bind exact run status and require real numeric advancement
+        env:
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_FN" \
+            --region "$AWS_REGION" \
+            --status-training-result /tmp/mlb-r7-advance/training.json \
+            --status-selection-capture-result /tmp/mlb-r7-advance/selection.json \
+            --response /tmp/mlb-r7-advance/status.json \
+            --invocation /tmp/mlb-r7-advance/status-invocation.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          training = json.loads(Path('/tmp/mlb-r7-advance/training.json').read_text())
+          selection = json.loads(Path('/tmp/mlb-r7-advance/selection.json').read_text())
+          status = json.loads(Path('/tmp/mlb-r7-advance/status.json').read_text())
+          health = status.get('trainingHealth') or {}
+          selection_health = status.get('selectionCaptureHealth') or {}
+          latest = health.get('latestRun') or training
+          continuity = latest.get('canonicalSlateContinuity') or {}
+          finalized = list(continuity.get('finalizedGameSlateDates') or [])
+          processed = list(continuity.get('processedSlateDates') or [])
+          baseline = int(os.environ['BASELINE_ACCEPTED_ROWS'])
+          minimum = int(os.environ['MIN_ACCEPTED_ROWS'])
+          accepted = int(latest.get('acceptedRowCount') or 0)
+          counts = latest.get('partitionCounts') or ((latest.get('milestones') or {}).get('counts') or {})
+          train_count = int(counts.get('train') or 0)
+          proof = {
+              'ok': training.get('ok') is True and selection.get('ok') is True and status.get('ok') is True,
+              'baselineAcceptedRows': baseline,
+              'minimumAcceptedRows': minimum,
+              'acceptedRowCount': accepted,
+              'acceptedRowDelta': accepted - baseline,
+              'partitionCounts': counts,
+              'finalizedGameSlateDates': finalized,
+              'processedSlateDates': processed,
+              'processedThroughSlateDate': continuity.get('processedThroughSlateDate'),
+              'blockedSlateDate': continuity.get('blockedSlateDate'),
+              'continuityBlocker': continuity.get('blocker'),
+              'trainingDeploymentIdentityMatches': health.get('deploymentIdentityMatches'),
+              'selectionDeploymentIdentityMatches': selection_health.get('deploymentIdentityMatches'),
+              'automaticPromotionEnabled': latest.get('automaticPromotionEnabled'),
+              'championChanged': latest.get('championChanged'),
+              'liveInferenceAuthority': latest.get('liveInferenceAuthority'),
+              'productionAuthorityChanged': latest.get('productionAuthorityChanged'),
+              'immutablePredictionRewriteAllowed': False,
+              'postStartPredictionCreationAllowed': False,
+              'otherSportChanged': False,
+          }
+          Path('/tmp/mlb-r7-advance/acceptance.json').write_text(
+              json.dumps(proof, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(proof, indent=2, sort_keys=True))
+          assert proof['ok'] is True, proof
+          assert finalized, proof
+          assert processed, proof
+          assert continuity.get('processedThroughSlateDate'), proof
+          assert continuity.get('blockedSlateDate') in (None, ''), proof
+          assert continuity.get('blocker') in (None, ''), proof
+          assert health.get('deploymentIdentityMatches') is True, proof
+          assert selection_health.get('deploymentIdentityMatches') is True, proof
+          assert accepted > baseline, proof
+          assert accepted >= minimum, proof
+          assert train_count >= minimum, proof
+          assert latest.get('automaticPromotionEnabled') is not True, proof
+          assert latest.get('championChanged') is not True, proof
+          assert latest.get('liveInferenceAuthority') is not True, proof
+          assert latest.get('productionAuthorityChanged') is not True, proof
+          PY
+
+      - name: Prove MLB production remained healthy
+        env:
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+          python scripts/mlb_scoring_guard_status.py \
+            --slate-date "$CURRENT_SLATE_DATE" \
+            --region "$AWS_REGION" \
+            --output /tmp/mlb-r7-advance/production-after.json \
+            --enforce
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          before = json.loads(Path('/tmp/mlb-r7-advance/production-before.json').read_text())
+          after = json.loads(Path('/tmp/mlb-r7-advance/production-after.json').read_text())
+          b = before.get('summary') or {}
+          a = after.get('summary') or {}
+          assert before.get('guardPassed') is True, before
+          assert after.get('guardPassed') is True, after
+          assert not before.get('blockers'), before
+          assert not after.get('blockers'), after
+          assert int(a.get('officialGameCount') or 0) == int(b.get('officialGameCount') or 0), (b, a)
+          assert int(a.get('persistedPredictionGameCount') or 0) >= int(b.get('persistedPredictionGameCount') or 0), (b, a)
+          assert int(a.get('invalidPredictionTeamCount') or 0) == 0, a
+          assert int(a.get('invalidMovementTeamCount') or 0) == 0, a
+          PY
+
+      - name: Upload complete advancement evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-r7-one-time-advance-${{ github.run_id }}
+          path: /tmp/mlb-r7-advance
+          if-no-files-found: warn
+          retention-days: 90
