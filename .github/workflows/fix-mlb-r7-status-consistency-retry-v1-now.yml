@@ -1,0 +1,143 @@
+name: Fix MLB R7 status consistency retry v1 now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-mlb-r7-status-consistency-retry-v1-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: fix-mlb-r7-status-consistency-retry-v1
+  cancel-in-progress: false
+
+jobs:
+  repair-test-publish-dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout latest main source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Apply deterministic read-only consistency repair
+        run: |
+          set -euo pipefail
+          python scripts/repair_mlb_r7_status_consistency_retry_v1.py
+
+      - name: Prove reconciliation, exact-slate, and immutable-history contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
+          python -m py_compile \
+            scripts/repair_mlb_r7_status_consistency_retry_v1.py \
+            scripts/reconcile_mlb_prospective_backlog.py \
+            scripts/reconcile_mlb_prospective_backlog_v3.py \
+            scripts/reconcile_mlb_prospective_backlog_v4.py \
+            scripts/reconcile_mlb_prospective_backlog_v5.py
+          PYTHONPATH="hello_world:scripts:${PYTHONPATH:-}" python -m pytest -q \
+            tests/unit/test_reconcile_mlb_prospective_backlog.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v3.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v4.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v5.py \
+            tests/unit/test_mlb_prospective_backlog_workflow.py
+          git diff --check
+
+      - name: Enforce MLB-only fail-closed patch boundary
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" -eq 4
+          for path in "${changed[@]}"; do
+            case "$path" in
+              scripts/reconcile_mlb_prospective_backlog_v4.py|scripts/reconcile_mlb_prospective_backlog_v5.py|tests/unit/test_reconcile_mlb_prospective_backlog_v4.py|tests/unit/test_reconcile_mlb_prospective_backlog_v5.py) ;;
+              *) echo "unexpected changed path: $path" >&2; exit 1 ;;
+            esac
+          done
+          python - <<'PY'
+          from pathlib import Path
+
+          v4 = Path('scripts/reconcile_mlb_prospective_backlog_v4.py').read_text(encoding='utf-8')
+          v5 = Path('scripts/reconcile_mlb_prospective_backlog_v5.py').read_text(encoding='utf-8')
+          assert 'STATUS_CONSISTENCY_MAX_ATTEMPTS = 5' in v4
+          assert 'read_official_status_with_consistency_retry' in v4
+          assert 'retryable_errors=POST_MUTATION_STATUS_ERRORS' in v4
+          assert 'read_official_status_with_consistency_retry' in v5
+          assert 'semanticStatusConsistencyRetryInstalled' in v4
+          assert 'semanticStatusConsistencyRetryInstalled' in v5
+          for source in (v4, v5):
+              for forbidden in (
+                  'put_item(', 'update_item(', 'delete_item(',
+                  'productionAuthorityChanged = True',
+                  'liveInferenceAuthority = True',
+                  'postStartPredictionCreationAllowed = True',
+              ):
+                  assert forbidden not in source, forbidden
+          PY
+
+      - name: Commit tested MLB-only correction to main
+        id: publish
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            scripts/reconcile_mlb_prospective_backlog_v4.py \
+            scripts/reconcile_mlb_prospective_backlog_v5.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v4.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v5.py
+          git diff --cached --quiet || \
+            git commit -m 'Fix MLB R7 read-only status consistency race'
+          pushed=false
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            if git rebase origin/main && git push origin HEAD:main; then
+              pushed=true
+              break
+            fi
+            git rebase --abort || true
+            test "$attempt" != 5
+            sleep $((attempt * 3))
+          done
+          test "$pushed" = true
+          SOURCE_SHA=$(git rev-parse HEAD)
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "Published tested MLB R7 status consistency repair at $SOURCE_SHA"
+
+      - name: Dispatch protected continuity deployment and training
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          python - <<'PY'
+          import subprocess
+
+          def show(path: str) -> str:
+              return subprocess.check_output(
+                  ['git', 'show', f'origin/main:{path}'],
+                  text=True,
+              )
+
+          v4 = show('scripts/reconcile_mlb_prospective_backlog_v4.py')
+          v5 = show('scripts/reconcile_mlb_prospective_backlog_v5.py')
+          assert 'STATUS_CONSISTENCY_MAX_ATTEMPTS = 5' in v4
+          assert 'semanticStatusConsistencyRetryInstalled' in v4
+          assert 'read_official_status_with_consistency_retry' in v5
+          PY
+          gh workflow run repair-mlb-training-continuity-now.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+          echo "Dispatched protected MLB continuity from ${{ steps.publish.outputs.source_sha }}."
