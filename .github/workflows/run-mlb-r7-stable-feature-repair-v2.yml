@@ -1,0 +1,68 @@
+name: Run MLB R7 stable feature repair v2
+
+"on":
+  push:
+    branches:
+      - repair/run-mlb-r7-orchestrator-v2-20260826
+    paths:
+      - '.github/mlb-r7-orchestrator-v2-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: run-mlb-r7-stable-feature-repair-v2
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  MLB_ROOT_STACK: parlay-platform-dev
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Validate isolated MLB repair source
+        env:
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+          python -m py_compile scripts/run_mlb_r7_stable_feature_repair.py
+          python -m pytest -q \
+            tests/unit/test_mlb_movement_feature_identity_v2.py \
+            tests/unit/test_mlb_trainer_invoke_retry.py \
+            tests/unit/test_mlb_scoring_guard_status.py \
+            tests/unit/test_mlb_scoring_runtime_capacity.py
+          python scripts/verify_mlb_schedule_invariants.py
+          git diff --check
+      - name: Execute isolated MLB repair and acceptance
+        run: |
+          set -euo pipefail
+          python scripts/run_mlb_r7_stable_feature_repair.py \
+            --region "$AWS_REGION" \
+            --stack-name "$MLB_ROOT_STACK" \
+            --slate-date 2026-08-25 \
+            --evidence-dir /tmp/mlb-r7-repair/evidence
+      - name: Upload immutable repair evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-r7-stable-feature-repair-v2-${{ github.run_id }}
+          path: /tmp/mlb-r7-repair/evidence
+          if-no-files-found: warn
+          retention-days: 90
