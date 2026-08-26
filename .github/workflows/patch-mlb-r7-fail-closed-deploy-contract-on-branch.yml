@@ -1,61 +1,70 @@
-name: Patch MLB R7 fail-closed deploy contract on main
+name: Patch MLB R7 deploy isolation self-check on repair branch
 
 "on":
   push:
     branches:
-      - main
+      - repair/run-mlb-r7-feature-identity-deploy-20260826
     paths:
       - '.github/workflows/patch-mlb-r7-fail-closed-deploy-contract-on-branch.yml'
-      - 'scripts/patch_mlb_r7_deploy_contract.py'
-      - 'scripts/verify_mlb_authority_response.py'
-      - 'tests/unit/test_verify_mlb_authority_response.py'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: patch-mlb-r7-fail-closed-deploy-contract-on-main
+  group: patch-mlb-r7-deploy-isolation-self-check-repair-branch
   cancel-in-progress: true
 
 jobs:
   patch:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
-      - name: Checkout exact main branch
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: repair/run-mlb-r7-feature-identity-deploy-20260826
           fetch-depth: 0
-
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Patch retired authority assertions
-        run: python scripts/patch_mlb_r7_deploy_contract.py
-
-      - name: Verify helper tests and workflow YAML
-        env:
-          PYTHONPATH: scripts
+      - name: Remove validator self-match without weakening isolation
         run: |
           set -euo pipefail
-          python -m pip install --quiet pytest pyyaml
-          python -m py_compile scripts/verify_mlb_authority_response.py
-          python -m py_compile scripts/patch_mlb_r7_deploy_contract.py
-          pytest -q tests/unit/test_verify_mlb_authority_response.py
-          python -c "from pathlib import Path; import yaml; data=yaml.safe_load(Path('.github/workflows/deploy.yml').read_text()); assert isinstance(data, dict) and 'jobs' in data"
-
-      - name: Commit repaired deploy contract
-        run: |
-          set -euo pipefail
-          rm .github/workflows/patch-mlb-r7-fail-closed-deploy-contract-on-branch.yml
+          python - <<'PY'
+          from pathlib import Path
+          path=Path('.github/workflows/deploy-mlb-r7-feature-identity-repair-now.yml')
+          text=path.read_text(encoding='utf-8')
+          old="forbidden = ('sam deploy', 'template.yaml', 'soccer', 'tennis', 'nfl')"
+          new="forbidden = ('sam' + ' deploy', 'template' + '.yaml', 'soc' + 'cer', 'ten' + 'nis', 'n' + 'fl')"
+          if old in text:
+              text=text.replace(old,new,1)
+          elif new not in text:
+              raise SystemExit('isolation validator anchor drifted')
+          path.write_text(text,encoding='utf-8')
+          assert old not in text
+          assert new in text
+          PY
+          python - <<'PY'
+          from pathlib import Path
+          source=Path('.github/workflows/deploy-mlb-r7-feature-identity-repair-now.yml').read_text().lower()
+          for token in ('sam deploy','template.yaml','soccer','tennis','nfl'):
+              assert token not in source, token
+          PY
           git diff --check
+      - name: Commit validated deploy workflow correction only
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git checkout origin/main -- \
+            .github/workflows/patch-mlb-r7-fail-closed-deploy-contract-on-branch.yml \
+            .github/workflows/retrigger-sam-obsolete-retry-20260802.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/workflows/deploy.yml .github/workflows/patch-mlb-r7-fail-closed-deploy-contract-on-branch.yml
-          git commit -m 'Repair MLB deploy contract for fail-closed R7 authority'
-          git pull --rebase origin main
-          git push origin HEAD:main
+          git add \
+            .github/workflows/deploy-mlb-r7-feature-identity-repair-now.yml \
+            .github/workflows/patch-mlb-r7-fail-closed-deploy-contract-on-branch.yml \
+            .github/workflows/retrigger-sam-obsolete-retry-20260802.yml
+          git diff --cached --check
+          git commit -m 'Repair MLB R7 deploy isolation self-check'
+          git pull --rebase origin repair/run-mlb-r7-feature-identity-deploy-20260826
+          git push origin HEAD:repair/run-mlb-r7-feature-identity-deploy-20260826
