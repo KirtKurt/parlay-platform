@@ -1,0 +1,62 @@
+name: Dispatch MLB R7 continuity after timeout repair once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/dispatch-mlb-r7-continuity-after-timeout-fix-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: dispatch-mlb-r7-continuity-after-timeout-fix-once
+  cancel-in-progress: false
+
+jobs:
+  verify-and-dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact main source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Verify repaired MLB-only lock contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          template = Path('template.yaml').read_text(encoding='utf-8')
+          lock_block = template.split('\n  MLBDailyPickLockFunction:\n', 1)[1].split(
+              '\n  MLBProductionVerifierFunction:\n', 1
+          )[0]
+          protected = Path('hello_world/mlb_daily_pick_lock_protected.py').read_text(encoding='utf-8')
+          per_game = Path('hello_world/mlb_daily_per_game_lock_patch.py').read_text(encoding='utf-8')
+          verifier = Path('scripts/verify_mlb_schedule_invariants.py').read_text(encoding='utf-8')
+
+          assert 'Timeout: 900' in lock_block
+          assert "MLB_LOCK_EXECUTION_LEASE_SECONDS: '960'" in lock_block
+          assert 'Timeout: 300' not in lock_block
+          assert "MLB_LOCK_EXECUTION_LEASE_SECONDS: '360'" not in lock_block
+          assert 'LOCK_EXECUTION_LEASE_REQUIRED_SECONDS = 960' in protected
+          assert 'LOCK_EXECUTION_LEASE_SECONDS = 960' in per_game
+          assert "if '\\n      Timeout: 900\\n' not in lock_resource:" in verifier
+          assert 'legacyV1AuthorityEnabled' not in lock_block
+          print('Verified MLB protected lock timeout=900 and execution lease=960 on main')
+          PY
+
+      - name: Dispatch protected deploy, reconciliation, and R7 training
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run repair-mlb-training-continuity-now.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+          echo 'Protected MLB R7 continuity workflow dispatched.'
