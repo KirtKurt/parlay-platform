@@ -82,7 +82,7 @@ jobs:
           before=json.loads(Path('/tmp/mlb-r7-repair/evidence/pull-before.json').read_text())
           after=json.loads(Path('/tmp/mlb-r7-repair/evidence/pull-after.json').read_text())
           assert after['FunctionName']==before['FunctionName']
-          assert after['Handler']=='mlb_manual_pull.lambda_handler'
+          assert after['Handler']=='mlb_manual_pull_protected.lambda_handler'
           assert after['State']=='Active' and after['LastUpdateStatus']=='Successful'
           assert after['CodeSha256']!=before['CodeSha256']
           PY
