@@ -2,13 +2,8 @@ name: MLB R7 Overnight Advance
 
 "on":
   schedule:
-    - cron: '17 * * * *'
+    - cron: '40 * * * *'
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/mlb-r7-overnight-advance.yml'
 
 permissions:
   contents: read
@@ -29,31 +24,27 @@ jobs:
     timeout-minutes: 58
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Install bounded trainer dependencies
+      - name: Install bounded dependencies
         run: |
           set -euo pipefail
           python -m pip install --quiet 'boto3>=1.34,<2'
           python -m py_compile scripts/invoke_mlb_trainer_with_retry.py
+          mkdir -p /tmp/mlb-r7-overnight
 
-      - name: Require complete immutable movement coverage
+      - name: Require repaired 15 of 15 movement coverage
         env:
           PYTHONPATH: .
         run: |
           set -euo pipefail
-          mkdir -p /tmp/mlb-r7-overnight
           python scripts/mlb_scoring_guard_status.py \
             --slate-date "$TARGET_SLATE_DATE" \
             --output /tmp/mlb-r7-overnight/scoring-guard.json \
@@ -69,13 +60,7 @@ jobs:
           assert int(s.get('movementFeatureGameCount') or 0) == 15
           assert int(s.get('missingMovementCount') or 0) == 0
           assert int(s.get('persistedPredictionGameCount') or 0) == 15
-          print(json.dumps({
-              'guardPassed': True,
-              'officialGameCount': s.get('officialGameCount'),
-              'movementFeatureGameCount': s.get('movementFeatureGameCount'),
-              'missingMovementCount': s.get('missingMovementCount'),
-              'persistedPredictionGameCount': s.get('persistedPredictionGameCount'),
-          }, sort_keys=True))
+          print('MLB R7 movement admission prerequisite is 15/15 and read-only.')
           PY
 
       - name: Resolve deployed MLB trainer only
@@ -86,10 +71,9 @@ jobs:
             --logical-resource-id MLBMLTrainingFunction \
             --query 'StackResourceDetail.PhysicalResourceId' \
             --output text)"
-          test -n "$TRAINER_FN"
           case "$TRAINER_FN" in
             *MLBMLTrainingFunction*) ;;
-            *) echo 'Resolved function is not the MLB trainer' >&2; exit 1 ;;
+            *) echo 'Resolved resource is not the MLB trainer' >&2; exit 1 ;;
           esac
           echo "TRAINER_FN=$TRAINER_FN" >> "$GITHUB_ENV"
           aws lambda get-function-configuration \
@@ -97,37 +81,57 @@ jobs:
             --query '{FunctionName:FunctionName,State:State,LastUpdateStatus:LastUpdateStatus,Handler:Handler,MemorySize:MemorySize,Timeout:Timeout}' \
             --output json | tee /tmp/mlb-r7-overnight/trainer-config.json
 
-      - name: Invoke R7 training with execution-lease-safe retry
+      - name: Invoke R7 training through lease and transport contention
         env:
           PYTHONPATH: .
         run: |
           set -euo pipefail
-          python scripts/invoke_mlb_trainer_with_retry.py \
-            --function-name "$TRAINER_FN" \
-            --region "$AWS_REGION" \
-            --payload '{"sport":"mlb","mode":"scheduled","run":"overnight_r7_advance"}' \
-            --response /tmp/mlb-r7-overnight/training.json \
-            --invocation /tmp/mlb-r7-overnight/training-invocation.json \
-            --retry-execution-lease \
-            --deadline-seconds 3300 \
-            --retry-delay-seconds 30
+          success=0
+          for outer in 1 2 3; do
+            rm -f /tmp/mlb-r7-overnight/training.json /tmp/mlb-r7-overnight/training-invocation.json
+            if python scripts/invoke_mlb_trainer_with_retry.py \
+              --function-name "$TRAINER_FN" \
+              --region "$AWS_REGION" \
+              --payload '{"sport":"mlb","mode":"scheduled","run":"overnight_r7_advance"}' \
+              --response /tmp/mlb-r7-overnight/training.json \
+              --invocation /tmp/mlb-r7-overnight/training-invocation.json \
+              --retry-execution-lease \
+              --deadline-seconds 1200 \
+              --retry-delay-seconds 30; then
+              success=1
+              break
+            fi
+            echo "Bounded trainer transport attempt $outer did not return canonical success; exact execution lease remains authoritative." >&2
+            sleep 15
+          done
+          test "$success" -eq 1
 
-      - name: Capture selection state without activating authority
+      - name: Capture selection state through lease and transport contention
         env:
           PYTHONPATH: .
         run: |
           set -euo pipefail
-          python scripts/invoke_mlb_trainer_with_retry.py \
-            --function-name "$TRAINER_FN" \
-            --region "$AWS_REGION" \
-            --payload '{"sport":"mlb","mode":"selection_capture","run":"overnight_r7_advance_selection"}' \
-            --response /tmp/mlb-r7-overnight/selection.json \
-            --invocation /tmp/mlb-r7-overnight/selection-invocation.json \
-            --retry-execution-lease \
-            --deadline-seconds 3300 \
-            --retry-delay-seconds 30
+          success=0
+          for outer in 1 2 3; do
+            rm -f /tmp/mlb-r7-overnight/selection.json /tmp/mlb-r7-overnight/selection-invocation.json
+            if python scripts/invoke_mlb_trainer_with_retry.py \
+              --function-name "$TRAINER_FN" \
+              --region "$AWS_REGION" \
+              --payload '{"sport":"mlb","mode":"selection_capture","run":"overnight_r7_advance_selection"}' \
+              --response /tmp/mlb-r7-overnight/selection.json \
+              --invocation /tmp/mlb-r7-overnight/selection-invocation.json \
+              --retry-execution-lease \
+              --deadline-seconds 1200 \
+              --retry-delay-seconds 30; then
+              success=1
+              break
+            fi
+            echo "Bounded selection transport attempt $outer did not return canonical success; retry remains lease-safe." >&2
+            sleep 15
+          done
+          test "$success" -eq 1
 
-      - name: Bind fresh trainer status
+      - name: Bind fresh status and require numeric advancement
         env:
           PYTHONPATH: .
         run: |
@@ -139,10 +143,6 @@ jobs:
             --status-selection-capture-result /tmp/mlb-r7-overnight/selection.json \
             --response /tmp/mlb-r7-overnight/status.json \
             --invocation /tmp/mlb-r7-overnight/status-invocation.json
-
-      - name: Require measurable R7 advancement without weakening gates
-        run: |
-          set -euo pipefail
           python - <<'PY'
           import json, os
           from pathlib import Path
@@ -156,31 +156,22 @@ jobs:
           accepted=int(latest.get('acceptedRowCount') or 0)
           rejected=int(latest.get('rejectedRowCount') or 0)
           baseline=int(os.environ['BASELINE_ACCEPTED_ROWS'])
-          processed=str(continuity.get('processedThroughSlateDate') or '')
           result={
-              'ok': training.get('ok') is True and selection.get('ok') is True and status.get('ok') is True,
-              'acceptedRowCount': accepted,
-              'rejectedRowCount': rejected,
-              'partitionCounts': latest.get('partitionCounts'),
-              'processedThroughSlateDate': processed,
-              'trainingDeploymentIdentityMatches': health.get('deploymentIdentityMatches'),
-              'selectionDeploymentIdentityMatches': selection_health.get('deploymentIdentityMatches'),
-              'automaticPromotionEnabled': latest.get('automaticPromotionEnabled'),
-              'championChanged': latest.get('championChanged'),
-              'liveInferenceAuthority': latest.get('liveInferenceAuthority'),
-              'productionAuthorityChanged': latest.get('productionAuthorityChanged'),
-              'advancedBeyondBaseline': accepted > baseline,
+            'ok': training.get('ok') is True and selection.get('ok') is True and status.get('ok') is True,
+            'acceptedRowCount': accepted,
+            'rejectedRowCount': rejected,
+            'partitionCounts': latest.get('partitionCounts'),
+            'processedThroughSlateDate': continuity.get('processedThroughSlateDate'),
+            'trainingDeploymentIdentityMatches': health.get('deploymentIdentityMatches'),
+            'selectionDeploymentIdentityMatches': selection_health.get('deploymentIdentityMatches'),
+            'advancedBeyondBaseline': accepted > baseline,
+            'automaticPromotionEnabled': latest.get('automaticPromotionEnabled'),
+            'championChanged': latest.get('championChanged'),
+            'liveInferenceAuthority': latest.get('liveInferenceAuthority'),
+            'productionAuthorityChanged': latest.get('productionAuthorityChanged'),
           }
-          Path('/tmp/mlb-r7-overnight/acceptance.json').write_text(json.dumps(result, indent=2, sort_keys=True)+'\n')
-          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as f:
-              f.write('## MLB R7 overnight advancement\n\n')
-              f.write(f"- Accepted rows: **{accepted}** (baseline {baseline})\n")
-              f.write(f"- Rejected rows: **{rejected}**\n")
-              f.write(f"- Processed through: **{processed or 'not reported'}**\n")
-              f.write(f"- Training deployment identity matches: **{health.get('deploymentIdentityMatches')}**\n")
-              f.write(f"- Selection deployment identity matches: **{selection_health.get('deploymentIdentityMatches')}**\n")
-              f.write(f"- Automatic promotion enabled: **{latest.get('automaticPromotionEnabled')}**\n")
-              f.write(f"- Live R7 authority: **{latest.get('liveInferenceAuthority')}**\n")
+          Path('/tmp/mlb-r7-overnight/acceptance.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(result,indent=2,sort_keys=True))
           assert result['ok']
           assert rejected == 0
           assert health.get('deploymentIdentityMatches') is True
@@ -190,8 +181,7 @@ jobs:
           assert latest.get('liveInferenceAuthority') is not True
           assert latest.get('productionAuthorityChanged') is not True
           if accepted <= baseline:
-              raise SystemExit(f'R7 has not advanced beyond {baseline} accepted rows yet; next hourly run will retry safely')
-          print(json.dumps(result, indent=2, sort_keys=True))
+            raise SystemExit(f'Accepted rows remain {accepted}; hourly run will retry after the next finalized evidence becomes admissible')
           PY
 
       - name: Upload immutable overnight evidence
@@ -202,5 +192,3 @@ jobs:
           path: /tmp/mlb-r7-overnight
           if-no-files-found: warn
           retention-days: 30
-
-# manual-kick: 2026-08-26T06:33Z
