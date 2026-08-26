@@ -35,6 +35,45 @@ jobs:
           python -m py_compile scripts/apply_unified_mlb_learning_single_owner_patch.py
           python scripts/apply_unified_mlb_learning_single_owner_patch.py
 
+      - name: Repair generated ownership regression test
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('tests/unit/test_mlb_workflow_authority.py')
+          text = path.read_text(encoding='utf-8')
+          start = 'def test_rejects_deploy_that_reintroduces_training_owner(\n'
+          end = 'def test_rejects_reintroduced_inline_aws_trainer_invoke'
+          if text.count(start) != 1 or text.count(end) != 1:
+              raise SystemExit('generated ownership test patch markers are not unique')
+          replacement = '''def test_rejects_deploy_with_wrong_unified_learning_owner(
+              tmp_path: Path,
+          ) -> None:
+              root = _copy_contract(tmp_path)
+              deploy = root / ".github/workflows/deploy.yml"
+              deploy.write_text(
+                  deploy.read_text(encoding="utf-8").replace(
+                      "UNIFIED_MLB_LEARNING_OWNER=eventbridge_schedule",
+                      "UNIFIED_MLB_LEARNING_OWNER=github_deploy",
+                      1,
+                  ),
+                  encoding="utf-8",
+              )
+
+              assert (
+                  "canonical_deploy_unified_mlb_learning_owner_marker_missing"
+                  in authority.verify_repository(root)
+              )
+
+
+          '''
+          prefix, remainder = text.split(start, 1)
+          _old, suffix = remainder.split(end, 1)
+          path.write_text(prefix + replacement + end + suffix, encoding='utf-8')
+          PY
+          python -m py_compile tests/unit/test_mlb_workflow_authority.py
+
       - name: Verify unified MLB ownership and existing safeguards
         run: |
           set -euo pipefail
@@ -63,6 +102,7 @@ jobs:
           rm -f \
             .github/workflows/fix-unified-mlb-learning-ownership-on-branch.yml \
             .github/workflows/fix-unified-mlb-learning-ownership-on-branch-v2.yml \
+            .github/workflows/fix-unified-mlb-learning-ownership-on-branch-v3.yml \
             scripts/apply_unified_mlb_learning_single_owner_patch.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
