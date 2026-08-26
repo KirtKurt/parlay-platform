@@ -10,10 +10,16 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: diagnose-mlb-latest-pull-failure-now
+  cancel-in-progress: false
+
 jobs:
   diagnose:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      AWS_EC2_METADATA_DISABLED: 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,23 +40,58 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import boto3,json,os,time,re
+          import boto3,json,os,re
           from pathlib import Path
           from datetime import datetime,timezone,timedelta
+
           region=os.environ['AWS_REGION']
           cfn=boto3.client('cloudformation',region_name=region)
-          res=cfn.describe_stack_resource(StackName='parlay-platform-dev',LogicalResourceId='MLBAuditedPullFunction')['StackResourceDetail']
+          res=cfn.describe_stack_resource(
+              StackName='parlay-platform-dev',
+              LogicalResourceId='MLBAuditedPullFunction',
+          )['StackResourceDetail']
           fn=res['PhysicalResourceId']
           logs=boto3.client('logs',region_name=region)
-          start=int((datetime.now(timezone.utc)-timedelta(hours=2)).timestamp()*1000)
+          start=int((datetime.now(timezone.utc)-timedelta(hours=4)).timestamp()*1000)
           rows=[]; token=None
           while True:
-              kw={'logGroupName':f'/aws/lambda/{fn}','startTime':start,'interleaved':True,'limit':10000}
+              kw={
+                  'logGroupName':f'/aws/lambda/{fn}',
+                  'startTime':start,
+                  'interleaved':True,
+                  'limit':10000,
+              }
               if token: kw['nextToken']=token
-              r=logs.filter_log_events(**kw); rows.extend(r.get('events') or [])
+              r=logs.filter_log_events(**kw)
+              rows.extend(r.get('events') or [])
               nt=r.get('nextToken')
               if not nt or nt==token: break
               token=nt
+
+          def redact(value):
+              text=str(value or '')
+              text=re.sub(
+                  r'(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+',
+                  'Bearer [REDACTED]',
+                  text,
+              )
+              text=re.sub(
+                  r'\b(?:AKIA|ASIA)[0-9A-Z]{16}\b',
+                  '[REDACTED_AWS_ACCESS_KEY]',
+                  text,
+              )
+              text=re.sub(
+                  r'(?i)(apiKey|api_key|authorization|token|secret|password|credential)(["\'\s:=]+)([^,}\s&]+)',
+                  lambda m:m.group(1)+m.group(2)+'[REDACTED]',
+                  text,
+              )
+              text=re.sub(
+                  r'(?i)(apiKey|api_key|authorization|token|secret|password|credential)=([^&\s]+)',
+                  lambda m:m.group(1)+'=[REDACTED]',
+                  text,
+              )
+              return text[:24000]
+
           candidates=[]
           marker='MLB_SCHEDULED_PULL_FAILED:'
           for row in rows:
@@ -62,35 +103,101 @@ jobs:
               try: obj,end=decoder.raw_decode(tail)
               except Exception: continue
               if isinstance(obj,dict): candidates.append((int(row.get('timestamp') or 0),obj))
-          if not candidates: raise SystemExit('no parseable MLB_SCHEDULED_PULL_FAILED payload found')
-          ts,payload=max(candidates,key=lambda x:x[0])
+
           keep=[]
-          fields=('game_date_et','ok','operationalDefect','gameCount','allGamesPredicted','displayStatusCoverageComplete','lifecycleCoverageComplete','preLockStorageLifecycleAware','preLockStorageCandidateCount','preLockStoredCount','preLockStorageComplete','preLockStorageErrors','preLockStorageDispositionCount','preLockStorageRowCount','preLockStorageDispositionComplete','preLockStorageLifecycleSkippedCount','preLockStorageLifecycleSkippedStatuses','canonicalLockedStorageCandidateCount','canonicalLockedStoredCount','canonicalLockedStorageComplete','canonicalLockedStorageErrors','canonicalLockedStorageSuppressedUnauthorizedCount')
-          for w in payload.get('game_winner_predictions') or []:
-              if isinstance(w,dict): keep.append({k:w.get(k) for k in fields if k in w})
+          fields=(
+              'game_date_et','ok','operationalDefect','gameCount','allGamesPredicted',
+              'displayStatusCoverageComplete','lifecycleCoverageComplete',
+              'preLockStorageLifecycleAware','preLockStorageCandidateCount',
+              'preLockStoredCount','preLockStorageComplete','preLockStorageErrors',
+              'preLockStorageDispositionCount','preLockStorageRowCount',
+              'preLockStorageDispositionComplete','preLockStorageLifecycleSkippedCount',
+              'preLockStorageLifecycleSkippedStatuses','canonicalLockedStorageCandidateCount',
+              'canonicalLockedStoredCount','canonicalLockedStorageComplete',
+              'canonicalLockedStorageErrors','canonicalLockedStorageSuppressedUnauthorizedCount',
+          )
+          payload={}; ts=None
+          if candidates:
+              ts,payload=max(candidates,key=lambda x:x[0])
+              for w in payload.get('game_winner_predictions') or []:
+                  if isinstance(w,dict): keep.append({k:w.get(k) for k in fields if k in w})
+
+          recent=[]
+          for row in sorted(rows,key=lambda item:int(item.get('timestamp') or 0))[-300:]:
+              timestamp_ms=int(row.get('timestamp') or 0)
+              recent.append({
+                  'timestampUtc':(
+                      datetime.fromtimestamp(timestamp_ms/1000,tz=timezone.utc)
+                      .isoformat().replace('+00:00','Z') if timestamp_ms else None
+                  ),
+                  'logStreamName':row.get('logStreamName'),
+                  'message':redact(row.get('message')),
+              })
+
+          streams=[]
+          try:
+              stream_resp=logs.describe_log_streams(
+                  logGroupName=f'/aws/lambda/{fn}',
+                  orderBy='LastEventTime',
+                  descending=True,
+                  limit=50,
+              )
+              for row in stream_resp.get('logStreams') or []:
+                  streams.append({
+                      'logStreamName':row.get('logStreamName'),
+                      'firstEventTimestamp':row.get('firstEventTimestamp'),
+                      'lastEventTimestamp':row.get('lastEventTimestamp'),
+                      'lastIngestionTime':row.get('lastIngestionTime'),
+                  })
+          except Exception as exc:
+              streams=[{'describeLogStreamsError':redact(exc)}]
+
           report={
-              'proofType':'MLB_LATEST_SCHEDULED_PULL_FAILURE_DIAGNOSTIC',
+              'proofType':'MLB_LATEST_SCHEDULED_PULL_FAILURE_DIAGNOSTIC_V2',
               'createdAtUtc':datetime.now(timezone.utc).isoformat().replace('+00:00','Z'),
-              'failureAtUtc':datetime.fromtimestamp(ts/1000,tz=timezone.utc).isoformat().replace('+00:00','Z'),
+              'functionName':fn,
+              'failureAtUtc':(
+                  datetime.fromtimestamp(ts/1000,tz=timezone.utc)
+                  .isoformat().replace('+00:00','Z') if ts else None
+              ),
+              'parseableFailureFound':bool(candidates),
+              'parseableFailureCount':len(candidates),
+              'rawLogEventCount':len(rows),
               'readOnly':True,
+              'lambdaInvoked':False,
+              'awsResourcesChanged':False,
               'productionWritesPerformed':False,
+              'immutablePredictionsRewritten':False,
+              'promotionAuthorityChanged':False,
+              'otherSportsInspected':False,
               'candidatePersistenceFailures':payload.get('candidatePersistenceFailures') or [],
               'providerScheduleManifestComplete':payload.get('providerScheduleManifestComplete'),
               'officialScheduleAuthorityBound':payload.get('officialScheduleAuthorityBound'),
               'providerManifestBound':payload.get('providerManifestBound'),
               'canonicalPullHistory':payload.get('canonical_pull_history') or [],
               'winnerResults':keep,
+              'recentLogEvents':recent,
+              'recentLogStreams':streams,
               'secretExposed':False,
           }
-          Path('/tmp/mlb_latest_failure.json').write_text(json.dumps(report,indent=2,sort_keys=True,default=str)+'\n')
-          print(json.dumps(report,indent=2,default=str))
+          Path('/tmp/mlb_latest_failure.json').write_text(
+              json.dumps(report,indent=2,sort_keys=True,default=str)+'\n'
+          )
+          print(json.dumps({
+              'parseableFailureFound':report['parseableFailureFound'],
+              'parseableFailureCount':report['parseableFailureCount'],
+              'rawLogEventCount':report['rawLogEventCount'],
+              'failureAtUtc':report['failureAtUtc'],
+              'candidatePersistenceFailures':report['candidatePersistenceFailures'],
+              'readOnly':True,
+          },indent=2,default=str))
           PY
       - name: Publish diagnostic evidence
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          for attempt in 1 2 3 4 5; do
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
             git fetch origin main
             git checkout -B mlb-latest-pull-failure-proof origin/main
             git reset --hard origin/main
