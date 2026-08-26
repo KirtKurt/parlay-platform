@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: feat/mlb-async-r7-r8-control-plane-20260826
-          fetch-depth: 0
+          fetch-depth: 1
 
       - uses: actions/setup-python@v5
         with:
@@ -45,8 +45,8 @@ jobs:
 
           status = contracts.validate_runtime_contracts()
           assert status['ok'], status
-          assert status['contracts']['R7_MARKET_MOVEMENT']['runtimeFeatureSchemaFingerprint'] == 'c9d4f53443c204d5244c67eef87437a5c121135c33f354ab5342d2af7f995f64'
-          assert status['contracts']['R8_OFFICIAL_FUNDAMENTALS']['runtimeFeatureSchemaFingerprint'] == 'a00aee0e2e263b2732536496b652212943a6b715c501b5c0f8b6ed4ab671dfa9'
+          assert status['r7Contract']['runtimeFeatureSchemaFingerprint'] == 'c9d4f53443c204d5244c67eef87437a5c121135c33f354ab5342d2af7f995f64'
+          assert status['r8Contract']['runtimeFeatureSchemaFingerprint'] == 'a00aee0e2e263b2732536496b652212943a6b715c501b5c0f8b6ed4ab671dfa9'
           template = Path('template.yaml').read_text()
           required = [
               'Handler: mlb_ml_async_training_v1.lambda_handler',
