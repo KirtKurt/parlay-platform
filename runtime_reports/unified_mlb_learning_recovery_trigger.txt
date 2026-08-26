@@ -1,6 +1,6 @@
 unified MLB learning recovery trigger
-requestedAtUtc: 2026-08-26T11:58:30Z
-reason: run canonical MLB recovery after fixing selection_capture lease retry deadline contract; preserve single-owner lease, immutable history, fail-closed promotion, and sport isolation
+requestedAtUtc: 2026-08-26T13:08:00Z
+reason: retry current-main canonical MLB-only recovery after run 32966006683 attempt 2 failed with persistent exact execution-lease contention followed by lambda_transport_retry_exhausted; use latest single-owner orchestration and selection-capture lease retry fixes
 observedAcceptedRowsBeforeRetry: 18
 observedTrainRowsBeforeRetry: 18
 targetSlateDateEt: 2026-08-25
@@ -9,6 +9,11 @@ minimumTrainRows: 33
 productionMustRemainHealthy: true
 immutablePredictionRewriteAllowed: false
 postStartPredictionCreationAllowed: false
+r7FutureOnlyProspectivePolicy: true
 automaticPromotionEnabled: false
+firstPromotionRequiresManualReview: true
+liveInferenceAuthorityActivationAllowed: false
 productionAuthorityChanged: false
 otherSportChanged: false
+protectedSports: Tennis,Soccer,NFL
+retiredMlbAuthorityChanged: false
