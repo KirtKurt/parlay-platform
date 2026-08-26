@@ -34,6 +34,14 @@ DIRECT_REPLACEMENTS = (
     ('LOCK_EXECUTION_LEASE_SECONDS = "360"', 'LOCK_EXECUTION_LEASE_SECONDS = "960"'),
     ("LOCK_EXECUTION_LEASE_SECONDS = '360'", "LOCK_EXECUTION_LEASE_SECONDS = '960'"),
     ("LOCK_TIMEOUT_SECONDS = 300", "LOCK_TIMEOUT_SECONDS = 900"),
+    (
+        "if '\\n      Timeout: 300\\n' not in lock_resource:",
+        "if '\\n      Timeout: 900\\n' not in lock_resource:",
+    ),
+    (
+        "daily lock must use one exact 360-second outer execution lease",
+        "daily lock must use one exact 960-second outer execution lease",
+    ),
     ("lease_seconds=360", "lease_seconds=960"),
     ("lease_seconds = 360", "lease_seconds = 960"),
     ("lease_seconds=359", "lease_seconds=959"),
@@ -173,6 +181,13 @@ def _verify() -> None:
     )
     assert "LOCK_EXECUTION_LEASE_SECONDS = 960" in per_game
     assert '"leaseSeconds": 360' not in per_game
+
+    schedule_verify = (ROOT / "scripts/verify_mlb_schedule_invariants.py").read_text(
+        encoding="utf-8"
+    )
+    assert "if '\\n      Timeout: 900\\n' not in lock_resource:" in schedule_verify
+    assert "if '\\n      Timeout: 300\\n' not in lock_resource:" not in schedule_verify
+    assert "daily lock must use one exact 960-second outer execution lease" in schedule_verify
 
     runtime_test = (ROOT / "tests/unit/test_mlb_daily_pick_lock_runtime.py").read_text(
         encoding="utf-8"
