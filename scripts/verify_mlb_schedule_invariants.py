@@ -241,7 +241,7 @@ required_template_strings = {
     'MLBProductionVerifierFunction': 'AWS production verifier function missing',
     'MLBProductionVerifierEvery5Min': '5-minute AWS production verifier schedule missing',
     'MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME': 'lock T-minus env missing',
-    "MLB_LOCK_EXECUTION_LEASE_SECONDS: '360'": 'global all-mutating MLB lock lease is missing',
+    "MLB_LOCK_EXECUTION_LEASE_SECONDS: '960'": 'global all-mutating MLB lock lease is missing',
     '/v1/mlb/locks/run': 'manual lock route missing',
     '/v1/mlb/locks/status': 'lock status route missing',
     '/v1/mlb/locks/today': 'lock today route missing',
@@ -349,15 +349,15 @@ if lock_resource_start >= 0:
         else len(text)
     )
     lock_resource = text[lock_resource_start:lock_resource_end]
-    if '\n      Timeout: 300\n' not in lock_resource:
+    if '\n      Timeout: 900\n' not in lock_resource:
         violations.append('daily lock function timeout must allow full immutable-manifest verification')
     if lock_resource.count('MaximumEventAgeInSeconds: 60') != 2:
         violations.append('daily lock retry age must expire before the next one-minute tick')
     if lock_resource.count('MaximumRetryAttempts: 0') != 2:
         violations.append('daily lock Lambda and EventBridge retries must be disabled')
-    if lock_resource.count("MLB_LOCK_EXECUTION_LEASE_SECONDS: '360'") != 1:
+    if lock_resource.count("MLB_LOCK_EXECUTION_LEASE_SECONDS: '960'") != 1:
         violations.append(
-            'daily lock must use one exact 360-second outer execution lease'
+            'daily lock must use one exact 960-second outer execution lease'
         )
 if not ('MLB_MIN_PULLS_FOR_LOCK' in text or 'MLB_MIN_PULLS_PER_GAME_FOR_LOCK' in text):
     violations.append('minimum pull-depth lock guardrail missing')

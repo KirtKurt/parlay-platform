@@ -89,11 +89,11 @@ LOCK_EXECUTION_LEASE_VERSION = "MLB-LOCK-EXECUTION-LEASE-v1"
 LOCK_EXECUTION_LEASE_PK = "MLB_LOCK_EXECUTION#V1"
 LOCK_EXECUTION_LEASE_SK = "LEASE"
 LOCK_EXECUTION_LEASE_RECORD_TYPE = "mlb_lock_execution_lease_v1"
-LOCK_EXECUTION_LEASE_REQUIRED_SECONDS = 360
+LOCK_EXECUTION_LEASE_REQUIRED_SECONDS = 960
 LOCK_EXECUTION_TIMEOUT_SAFETY_MARGIN_SECONDS = 60
 try:
     LOCK_EXECUTION_LEASE_SECONDS = int(
-        os.environ.get("MLB_LOCK_EXECUTION_LEASE_SECONDS", "360")
+        os.environ.get("MLB_LOCK_EXECUTION_LEASE_SECONDS", "960")
     )
 except (TypeError, ValueError):
     LOCK_EXECUTION_LEASE_SECONDS = -1
@@ -172,7 +172,7 @@ _lock_execution_lease_scope = getattr(
 _lock_execution_lease_ready = bool(
     _expected_lock_execution_lease_version
     and _lock_execution_lease_version == _expected_lock_execution_lease_version
-    and _lock_execution_lease_seconds == 360
+    and _lock_execution_lease_seconds == 960
     and _lock_execution_lease_scope == "global_all_mutating_lock_invocations"
     and getattr(
         mlb_daily_pick_lock,
@@ -255,7 +255,7 @@ PER_GAME_LOCK_STATUS = {
         "sharedLeaseKey": True,
         "leaseSeconds": LOCK_EXECUTION_LEASE_SECONDS,
         "requiredLeaseSeconds": LOCK_EXECUTION_LEASE_REQUIRED_SECONDS,
-        "lambdaTimeoutSeconds": 300,
+        "lambdaTimeoutSeconds": 900,
         "timeoutSafetyMarginSeconds": (
             LOCK_EXECUTION_TIMEOUT_SAFETY_MARGIN_SECONDS
         ),
@@ -484,7 +484,7 @@ def _acquire_execution_lease(
         "lease_acquired_at_utc": acquired_at.isoformat(),
         "lease_expires_at_utc": expires_at.isoformat(),
         # Round upward. Flooring a fractional timestamp can shorten a
-        # 360-second lease below the Lambda timeout plus its 60-second margin.
+        # 960-second lease below the Lambda timeout plus its 60-second margin.
         "lease_expires_at_epoch": math.ceil(expires_at.timestamp()),
     }
     try:

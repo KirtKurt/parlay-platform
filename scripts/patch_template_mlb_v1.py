@@ -168,7 +168,7 @@ def patch_daily_lock_execution_lease(s: str) -> str:
         else len(s)
     )
     resource = s[start:end]
-    lease_environment = "          MLB_LOCK_EXECUTION_LEASE_SECONDS: '360'\n"
+    lease_environment = "          MLB_LOCK_EXECUTION_LEASE_SECONDS: '960'\n"
     if re.search(
         r"(?m)^          MLB_LOCK_EXECUTION_LEASE_SECONDS:.*$",
         resource,
@@ -225,14 +225,14 @@ text = insert_once(text, "  MLBResultsSchedulerFunction:\n", """
       # A full-slate lock invocation performs fail-closed, strongly consistent
       # readback of immutable pull manifests before any write. A large MLB
       # pull history can legitimately exceed the 60-second global default.
-      Timeout: 300
+      Timeout: 900
       MemorySize: 1024
       EventInvokeConfig:
         MaximumEventAgeInSeconds: 60
         MaximumRetryAttempts: 0
       Environment:
         Variables:
-          MLB_LOCK_EXECUTION_LEASE_SECONDS: '360'
+          MLB_LOCK_EXECUTION_LEASE_SECONDS: '960'
           MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME: '45'
           MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'
           MLB_MIN_PULLS_PER_GAME_FOR_LOCK: '4'
@@ -289,7 +289,7 @@ for required, message in [
     ("MLBDailyPickLockFunction:", "daily lock function missing"),
     ("Path: /v1/mlb/locks/status", "lock status route missing"),
     ("DynamoDBReadPolicy:\n            TableName: !Ref OutcomesTable", "daily lock outcomes read policy missing"),
-    ("MLB_LOCK_EXECUTION_LEASE_SECONDS: '360'", "daily lock execution lease is missing"),
+    ("MLB_LOCK_EXECUTION_LEASE_SECONDS: '960'", "daily lock execution lease is missing"),
 ]:
     if required not in text:
         violations.append(message)

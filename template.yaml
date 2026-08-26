@@ -693,7 +693,7 @@ Resources:
       # A full-slate lock invocation performs fail-closed, strongly consistent
       # readback of immutable pull manifests before any write.  A large MLB
       # pull history can legitimately exceed the 60-second global default.
-      Timeout: 300
+      Timeout: 900
       MemorySize: 1024
       # The next one-minute tick is the retry. Lambda/EventBridge retries would
       # overlap a slow full-slate verification and exhaust the shared account.
@@ -703,7 +703,7 @@ Resources:
       Environment:
         Variables:
           INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken
-          MLB_LOCK_EXECUTION_LEASE_SECONDS: '360'
+          MLB_LOCK_EXECUTION_LEASE_SECONDS: '960'
           MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME: '45'
           MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'
           MLB_MIN_PULLS_PER_GAME_FOR_LOCK: '4'

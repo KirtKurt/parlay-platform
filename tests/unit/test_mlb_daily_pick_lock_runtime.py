@@ -178,7 +178,7 @@ def _load_handler(
     delegate_payload=None,
     delegate_error=None,
     lease_table=None,
-    lease_seconds=360,
+    lease_seconds=960,
     installed_diagnostics_version="test-diagnostics-version",
     writer_payload_fingerprint_version="test-ddb-canonical-fingerprint-version",
 ):
@@ -288,7 +288,7 @@ def _load_handler(
         module.MLB_LOCK_EXECUTION_LEASE_VERSION = (
             per_game.LOCK_EXECUTION_LEASE_VERSION
         )
-        module.MLB_LOCK_EXECUTION_LEASE_SECONDS = 360
+        module.MLB_LOCK_EXECUTION_LEASE_SECONDS = 960
         module.MLB_LOCK_EXECUTION_LEASE_SCOPE = (
             "global_all_mutating_lock_invocations"
         )
@@ -395,9 +395,9 @@ def test_installs_exact_runtime_before_lock_patches_and_delegates():
             "strategy": "dynamodb_conditional_lease",
             "scope": "global_mlb_lock_execution",
             "sharedLeaseKey": True,
-            "leaseSeconds": 360,
-            "requiredLeaseSeconds": 360,
-            "lambdaTimeoutSeconds": 300,
+            "leaseSeconds": 960,
+            "requiredLeaseSeconds": 960,
+            "lambdaTimeoutSeconds": 900,
             "timeoutSafetyMarginSeconds": 60,
             "expiredLeaseReclaim": True,
             "ownerConditionalRelease": True,
@@ -605,7 +605,7 @@ def test_only_current_owner_can_release_or_delete_reclaimed_lease():
             handler._release_execution_lease("wrong-owner")
         assert table.item["lease_owner"] == "old-owner"
 
-        clock["now"] += timedelta(seconds=361)
+        clock["now"] += timedelta(seconds=961)
         handler._acquire_execution_lease(
             mode="manual",
             slate_date_et="2026-07-21",
@@ -928,7 +928,7 @@ def test_runtime_requires_exact_360_second_lease_and_timeout_margin():
     table = FakeLeaseTable()
     with _load_handler(
         lease_table=table,
-        lease_seconds=359,
+        lease_seconds=959,
     ) as (handler, _, delegate_calls):
         _assert_runtime_error(
             lambda: handler.lambda_handler(
@@ -947,7 +947,7 @@ def test_runtime_requires_exact_360_second_lease_and_timeout_margin():
             match="MLB_LOCK_EXECUTION_LEASE_TIMEOUT_BOUND_FAILED",
         ):
             handler._validate_lease_duration(
-                FakeContext(remaining_millis=300_001)
+                FakeContext(remaining_millis=900_001)
             )
 
 
@@ -972,7 +972,7 @@ def test_fractional_acquisition_rounds_expiry_up_without_shortening_lease():
             slate_date_et="2026-07-21",
             owner="fractional-owner",
         )
-        expires_at = clock["now"] + timedelta(seconds=360)
+        expires_at = clock["now"] + timedelta(seconds=960)
         expires_epoch = item["lease_expires_at_epoch"]
 
         assert expires_epoch == math.ceil(expires_at.timestamp())

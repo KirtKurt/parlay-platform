@@ -385,14 +385,14 @@ def test_verifies_trainer_identity_configuration_schedule_and_bucket(aws) -> Non
     assert result["functions"]["MLBMLTrainingFunction"]["configurationMatches"] is True
     assert result["lockConfiguration"]["matches"] is True
     assert result["lockConfiguration"]["handler"] == deploy_identity.LOCK_HANDLER
-    assert result["lockConfiguration"]["timeoutSeconds"] == 300
+    assert result["lockConfiguration"]["timeoutSeconds"] == 900
     assert result["lockConfiguration"]["executionConcurrencyStrategy"] == (
         "dynamodb_conditional_lease"
     )
     assert result["lockConfiguration"]["executionLeaseScope"] == (
         "global_mlb_lock_execution"
     )
-    assert result["lockConfiguration"]["executionLeaseSeconds"] == 360
+    assert result["lockConfiguration"]["executionLeaseSeconds"] == 960
     assert result["lockConfiguration"]["executionLeaseDurationMatches"] is True
     assert result["lockConfiguration"][
         "executionLeaseCoversTimeoutSafetyBound"
@@ -1071,13 +1071,13 @@ def test_rejects_lock_execution_lease_below_timeout_safety_bound(aws) -> None:
     environment = aws["lambda"].configurations["physical-lock"]["Environment"][
         "Variables"
     ]
-    environment["MLB_LOCK_EXECUTION_LEASE_SECONDS"] = "359"
+    environment["MLB_LOCK_EXECUTION_LEASE_SECONDS"] = "959"
 
     result = _verify()
 
     assert result["ok"] is False
     assert result["lockConfiguration"]["matches"] is False
-    assert result["lockConfiguration"]["executionLeaseSeconds"] == 359
+    assert result["lockConfiguration"]["executionLeaseSeconds"] == 959
     assert result["lockConfiguration"]["executionLeaseDurationMatches"] is False
     assert result["lockConfiguration"][
         "executionLeaseCoversTimeoutSafetyBound"
@@ -1122,7 +1122,7 @@ def test_template_preserves_retries_without_requiring_sqs_create() -> None:
     assert "ReservedConcurrentExecutions:" not in template
     assert "MLB_ML_EXECUTION_LEASE_SECONDS: '960'" in template
     lock_resource = _resource_block(template, "MLBDailyPickLockFunction")
-    assert "MLB_LOCK_EXECUTION_LEASE_SECONDS: '360'" in lock_resource
+    assert "MLB_LOCK_EXECUTION_LEASE_SECONDS: '960'" in lock_resource
     assert lock_resource.count("MaximumEventAgeInSeconds: 60") == 2
     assert lock_resource.count("MaximumRetryAttempts: 0") == 2
     assert "Schedule: rate(1 minute)" in lock_resource
