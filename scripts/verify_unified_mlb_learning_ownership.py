@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-RECOVERY_WORKFLOW = Path(".github/workflows/mlb-r7-overnight-advance.yml")
+RECOVERY_WORKFLOW = Path(".github/workflows/unified-mlb-learning-recovery-once.yml")
 DEPLOY_WORKFLOW = Path(".github/workflows/deploy.yml")
 WORKFLOW_ROOT = Path(".github/workflows")
 TEMPLATE = Path("template.yaml")
