@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths-ignore:
       - "runtime_reports/**"
+      # Unified MLB recovery is a deploy-free, lease-safe runtime action.
+      # Editing or self-triggering it must never redeploy the shared stack.
+      - ".github/workflows/mlb-r7-overnight-advance.yml"
       # After its initial [skip ci] merge, soccer_auto is a separate stack.
       # Soccer-only changes must never redeploy or re-attest the existing
       # MLB/legacy application stack. Do not ignore this workflow's own path:
