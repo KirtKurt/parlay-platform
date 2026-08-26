@@ -1,4 +1,4 @@
-name: Inspect unified MLB trainer execution lease read-only
+name: Inspect August 25 unified MLB labels and locks read-only
 
 "on":
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: diagnose-unified-mlb-execution-lease-read-only
+  group: diagnose-unified-mlb-aug25-materialization-read-only
   cancel-in-progress: true
 
 jobs:
@@ -25,68 +25,64 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Read execution lease without mutation
+      - name: Count canonical labels and immutable locks without mutation
         run: |
           set -euo pipefail
-          TABLE="$(aws cloudformation describe-stack-resource \
+          SNAPSHOTS="$(aws cloudformation describe-stack-resource \
             --stack-name parlay-platform-dev \
             --logical-resource-id SnapshotsTable \
             --region us-east-1 \
             --query 'StackResourceDetail.PhysicalResourceId' \
             --output text)"
-          test -n "$TABLE" && test "$TABLE" != None
-          aws dynamodb get-item \
-            --table-name "$TABLE" \
+          OUTCOMES="$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id OutcomesTable \
+            --region us-east-1 \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)"
+          test -n "$SNAPSHOTS" && test "$SNAPSHOTS" != None
+          test -n "$OUTCOMES" && test "$OUTCOMES" != None
+          aws dynamodb query \
+            --table-name "$SNAPSHOTS" \
             --consistent-read \
             --region us-east-1 \
-            --key '{"PK":{"S":"MLB_ML_EXPERIMENT#V2#mlb-v2-2026-07-21-future-prospective-r2"},"SK":{"S":"EXECUTION_LEASE#STATE_MUTATION"}}' \
-            --output json > /tmp/state-mutation-lease.json
-          aws dynamodb get-item \
-            --table-name "$TABLE" \
+            --key-condition-expression 'PK = :pk AND begins_with(SK, :sk)' \
+            --expression-attribute-values '{":pk":{"S":"GAME_WINNERS#mlb#2026-08-25"},":sk":{"S":"LOCKED#GAME#"}}' \
+            --projection-expression 'PK,SK' \
+            --output json > /tmp/locks.json
+          aws dynamodb query \
+            --table-name "$OUTCOMES" \
             --consistent-read \
             --region us-east-1 \
-            --key '{"PK":{"S":"MLB_ML_EXPERIMENT#V2#mlb-v2-2026-07-21-future-prospective-r2"},"SK":{"S":"EXECUTION_LEASE"}}' \
-            --output json > /tmp/legacy-sentinel.json
+            --key-condition-expression 'PK = :pk AND begins_with(SK, :sk)' \
+            --expression-attribute-values '{":pk":{"S":"MLB_CANONICAL_FINAL_LABEL#2026-08-25"},":sk":{"S":"GAME_PK#"}}' \
+            --projection-expression 'PK,SK,record_type' \
+            --output json > /tmp/labels.json
           python - <<'PY'
           import json
-          import time
           from pathlib import Path
 
-          def plain(value):
-              if not isinstance(value, dict):
-                  return value
-              for key in ('S', 'N', 'BOOL', 'NULL'):
-                  if key in value:
-                      raw = value[key]
-                      if key == 'N':
-                          return int(raw)
-                      return raw
-              if 'M' in value:
-                  return {key: plain(item) for key, item in value['M'].items()}
-              if 'L' in value:
-                  return [plain(item) for item in value['L']]
-              return value
-
-          now = int(time.time())
-          state_raw = json.loads(Path('/tmp/state-mutation-lease.json').read_text())
-          legacy_raw = json.loads(Path('/tmp/legacy-sentinel.json').read_text())
-          state = {key: plain(value) for key, value in (state_raw.get('Item') or {}).items()}
-          legacy = {key: plain(value) for key, value in (legacy_raw.get('Item') or {}).items()}
-          expiry = int(state.get('lease_expires_at_epoch') or 0)
+          locks = json.loads(Path('/tmp/locks.json').read_text())
+          labels = json.loads(Path('/tmp/labels.json').read_text())
+          lock_keys = sorted(
+              (item.get('SK') or {}).get('S')
+              for item in locks.get('Items') or []
+          )
+          label_keys = sorted(
+              (item.get('SK') or {}).get('S')
+              for item in labels.get('Items') or []
+          )
           proof = {
-              'proofType': 'UNIFIED_MLB_EXECUTION_LEASE_READ_ONLY',
-              'checkedAtEpoch': now,
-              'stateMutationLeasePresent': bool(state),
-              'stateMutationLeaseOwner': state.get('lease_owner'),
-              'stateMutationExecutionMode': state.get('execution_mode'),
-              'stateMutationAcquiredAt': state.get('acquired_at'),
-              'stateMutationExpiresAt': state.get('lease_expires_at'),
-              'stateMutationExpiresAtEpoch': expiry,
-              'stateMutationSecondsRemaining': max(0, expiry - now),
-              'stateMutationActive': expiry > now,
-              'legacySentinelPresent': bool(legacy),
-              'legacySentinelOwner': legacy.get('lease_owner'),
-              'legacySentinelExpiresAtEpoch': int(legacy.get('lease_expires_at_epoch') or 0),
+              'proofType': 'UNIFIED_MLB_AUG25_MATERIALIZATION_READ_ONLY',
+              'slateDateEt': '2026-08-25',
+              'canonicalImmutableLockCount': int(locks.get('Count') or 0),
+              'canonicalFinalLabelCount': int(labels.get('Count') or 0),
+              'lockKeys': lock_keys,
+              'labelKeys': label_keys,
+              'readyForWholeSlateFinalization': (
+                  int(locks.get('Count') or 0) == 15
+                  and int(labels.get('Count') or 0) == 15
+              ),
               'directTableWrite': False,
               'immutablePredictionRewriteAllowed': False,
               'postStartPredictionCreationAllowed': False,
