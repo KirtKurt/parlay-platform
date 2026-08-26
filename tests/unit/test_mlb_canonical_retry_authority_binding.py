@@ -13,6 +13,10 @@ if str(HELLO_WORLD) not in sys.path:
 import mlb_manual_pull
 
 
+# This regression is intentionally committed after the repaired source so the
+# canonical SAM deploy is triggered from a user-authored commit that contains
+# the persisted-manifest authority fix, rather than from the workflow bot's
+# non-recursive source commit.
 GAME_DATE = "2026-08-26"
 CANONICAL_AT = "2026-08-26T17:15:27.196414+00:00"
 RETRY_AT = "2026-08-26T17:17:43.767563+00:00"
