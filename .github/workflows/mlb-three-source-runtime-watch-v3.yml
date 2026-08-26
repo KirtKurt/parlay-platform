@@ -48,6 +48,7 @@ jobs:
           from __future__ import annotations
           import json
           import os
+          import re
           from datetime import datetime, timedelta, timezone
           import boto3
 
@@ -57,12 +58,32 @@ jobs:
           lam = boto3.client('lambda', region_name=REGION)
           events = boto3.client('events', region_name=REGION)
           cw = boto3.client('cloudwatch', region_name=REGION)
+          logs = boto3.client('logs', region_name=REGION)
 
           def resource(logical_id: str) -> str:
               return cfn.describe_stack_resource(
                   StackName=STACK,
                   LogicalResourceId=logical_id,
               )['StackResourceDetail']['PhysicalResourceId']
+
+          def redact(value: object) -> str:
+              text = str(value or '')
+              text = re.sub(
+                  r'(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+',
+                  'Bearer [REDACTED]',
+                  text,
+              )
+              text = re.sub(
+                  r'\b(?:AKIA|ASIA)[0-9A-Z]{16}\b',
+                  '[REDACTED_AWS_ACCESS_KEY]',
+                  text,
+              )
+              text = re.sub(
+                  r'(?i)(apiKey|api_key|token|secret|authorization)=([^&\s]+)',
+                  lambda match: match.group(1) + '=[REDACTED]',
+                  text,
+              )
+              return text[:24000]
 
           required = (
               'MLBAuditedPullFunction',
@@ -85,6 +106,9 @@ jobs:
                   'state': cfg.get('State'),
                   'lastUpdateStatus': cfg.get('LastUpdateStatus'),
                   'lastModified': cfg.get('LastModified'),
+                  'codeSha256': cfg.get('CodeSha256'),
+                  'timeout': cfg.get('Timeout'),
+                  'memorySize': cfg.get('MemorySize'),
               }
 
           pull_name = functions['MLBAuditedPullFunction']['physicalName']
@@ -114,29 +138,109 @@ jobs:
               Period=300,
               Statistics=['Sum'],
           )
-          recent_errors = sum(float(row.get('Sum') or 0.0) for row in metric.get('Datapoints') or [])
+          error_datapoints = sorted(
+              metric.get('Datapoints') or [],
+              key=lambda row: str(row.get('Timestamp') or ''),
+          )
+          recent_errors = sum(float(row.get('Sum') or 0.0) for row in error_datapoints)
           checks['auditedPullNoErrorsLast10Minutes'] = recent_errors == 0.0
+
+          recent_log_events = []
+          candidate_failures = []
+          exception_summaries = []
+          log_query_error = None
+          if recent_errors > 0.0:
+              try:
+                  response = logs.filter_log_events(
+                      logGroupName=f'/aws/lambda/{pull_name}',
+                      startTime=int((now - timedelta(minutes=35)).timestamp() * 1000),
+                      endTime=int(now.timestamp() * 1000),
+                      limit=1000,
+                  )
+                  raw_events = sorted(
+                      response.get('events') or [],
+                      key=lambda row: int(row.get('timestamp') or 0),
+                  )
+                  pattern = re.compile(
+                      r'(?i)(ERROR|Exception|Traceback|Task timed out|Runtime\.|'
+                      r'MLB_SCHEDULED_PULL_FAILED|candidatePersistenceFailures|'
+                      r'winner_prediction_|provider_schedule_manifest|prelock_|'
+                      r'operationalDefect|out of memory|Process exited)'
+                  )
+                  hit_indexes = {
+                      index
+                      for index, row in enumerate(raw_events)
+                      if pattern.search(str(row.get('message') or ''))
+                  }
+                  keep_indexes = set()
+                  for index in hit_indexes:
+                      stream = raw_events[index].get('logStreamName')
+                      for nearby in range(max(0, index - 8), min(len(raw_events), index + 9)):
+                          if raw_events[nearby].get('logStreamName') == stream:
+                              keep_indexes.add(nearby)
+                  for index in sorted(keep_indexes)[-160:]:
+                      row = raw_events[index]
+                      timestamp_ms = int(row.get('timestamp') or 0)
+                      message = redact(row.get('message'))
+                      recent_log_events.append({
+                          'timestampUtc': (
+                              datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc).isoformat()
+                              if timestamp_ms else None
+                          ),
+                          'logStreamName': row.get('logStreamName'),
+                          'message': message,
+                      })
+                      marker = 'MLB_SCHEDULED_PULL_FAILED:'
+                      if marker in message:
+                          tail = message.split(marker, 1)[1].strip()
+                          try:
+                              payload = json.loads(tail)
+                          except Exception:
+                              payload = None
+                          if isinstance(payload, dict):
+                              candidate_failures.extend(
+                                  str(value)
+                                  for value in payload.get('candidatePersistenceFailures') or []
+                              )
+                      if re.search(
+                          r'(?i)(Traceback|Exception|Task timed out|Runtime\.|out of memory|Process exited)',
+                          message,
+                      ):
+                          exception_summaries.append(message)
+              except Exception as exc:
+                  log_query_error = redact(exc)
 
           alarm_name = 'MLB-Auto-Critical-Canonical-Ingest-Errors'
           alarm_rows = cw.describe_alarms(AlarmNames=[alarm_name]).get('MetricAlarms') or []
           alarm = alarm_rows[0] if alarm_rows else None
           alarm_state = alarm.get('StateValue') if alarm else 'NOT_FOUND'
-          # An alarm can remain ALARM briefly while its evaluation window ages out.
-          # Recent Lambda Errors are the authoritative liveness check; record the
-          # alarm state separately instead of hiding it or force-setting its state.
+          # Never force-clear a critical alarm. Recent Lambda Errors are the
+          # authoritative liveness check; detailed, redacted logs are emitted on
+          # failure so the repair can target the real cause without weakening it.
 
           report = {
-              'proofType': 'MLB_CANONICAL_RUNTIME_HEALTH',
+              'proofType': 'MLB_CANONICAL_RUNTIME_HEALTH_V2',
               'checkedAtUtc': now.isoformat(),
               'stack': STACK,
               'checks': checks,
               'functions': functions,
               'auditedPullRules': rules,
               'auditedPullErrorsLast10Minutes': recent_errors,
+              'auditedPullErrorDatapoints': error_datapoints,
+              'candidatePersistenceFailures': sorted(set(candidate_failures)),
+              'exceptionSummaries': sorted(set(exception_summaries))[:50],
+              'recentErrorLogEvents': recent_log_events,
+              'logQueryError': log_query_error,
               'canonicalIngestAlarm': {
                   'name': alarm_name,
                   'state': alarm_state,
                   'reason': alarm.get('StateReason') if alarm else None,
+                  'stateUpdatedTimestamp': alarm.get('StateUpdatedTimestamp') if alarm else None,
+                  'stateTransitionedTimestamp': alarm.get('StateTransitionedTimestamp') if alarm else None,
+                  'period': alarm.get('Period') if alarm else None,
+                  'evaluationPeriods': alarm.get('EvaluationPeriods') if alarm else None,
+                  'datapointsToAlarm': alarm.get('DatapointsToAlarm') if alarm else None,
+                  'treatMissingData': alarm.get('TreatMissingData') if alarm else None,
               },
               'guardrails': {
                   'readOnly': True,
@@ -145,6 +249,8 @@ jobs:
                   'rewritesLocks': False,
                   'changesPromotionGates': False,
                   'winnerOverride': False,
+                  'otherSportsInspected': False,
+                  'secretExposed': False,
               },
           }
           report['ok'] = all(checks.values())
