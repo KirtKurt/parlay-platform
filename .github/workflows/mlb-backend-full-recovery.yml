@@ -2,33 +2,12 @@ name: MLB Backend Full Recovery
 
 "on":
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'hello_world/**'
-      - 'tests/unit/test_mlb_**'
-      - 'scripts/verify_mlb_**'
-      - 'scripts/invoke_mlb_trainer_with_retry.py'
-      - 'scripts/create_mlb_lambda_build_manifest.py'
-      - 'scripts/mlb_lambda_artifact_identity.py'
-      - 'template.yaml'
-      - '.github/workflows/mlb-backend-full-recovery.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'hello_world/**'
-      - 'tests/unit/test_mlb_**'
-      - 'scripts/verify_mlb_**'
-      - 'scripts/invoke_mlb_trainer_with_retry.py'
-      - 'scripts/create_mlb_lambda_build_manifest.py'
-      - 'scripts/mlb_lambda_artifact_identity.py'
-      - 'template.yaml'
-      - '.github/workflows/mlb-backend-full-recovery.yml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: mlb-backend-full-recovery
+  group: unified-mlb-learning
   cancel-in-progress: false
 
 env:

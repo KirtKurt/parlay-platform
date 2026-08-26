@@ -1,19 +1,13 @@
 name: Reconcile MLB prospective backlog v3 once
 
-on:
-  push:
-    branches: [main]
-    paths:
-      - "scripts/reconcile_mlb_prospective_backlog_v3.py"
-      - "tests/unit/test_reconcile_mlb_prospective_backlog_v3.py"
-      - ".github/workflows/mlb-prospective-backlog-reconcile-v3-once.yml"
+"on":
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: parlay-platform-mlb-prospective-backlog-reconcile-v3
+  group: unified-mlb-learning
   cancel-in-progress: false
 
 jobs:

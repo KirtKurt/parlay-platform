@@ -1,17 +1,13 @@
 name: Repair MLB continuity after settlement deploy
 
-on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/repair-mlb-continuity-after-settlement-deploy.yml'
+"on":
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: repair-mlb-continuity-after-settlement-deploy
+  group: unified-mlb-learning
   cancel-in-progress: false
 
 env:

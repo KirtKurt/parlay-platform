@@ -1,24 +1,13 @@
 name: Deploy MLB root lifecycle continuity once
 
-on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/deploy-mlb-root-lifecycle-continuity-once.yml'
-      - 'hello_world/mlb_prospective_row_repair.py'
-      - 'hello_world/mlb_prospective_trainer_read_repair.py'
-      - 'scripts/reconcile_mlb_prospective_backlog_v5.py'
-      - 'tests/unit/test_mlb_root_lifecycle_deploy_gate.py'
-      - 'tests/unit/test_mlb_stale_eligibility_boolean_repair.py'
-      - 'tests/unit/test_mlb_protected_terminal_force_replay.py'
-      - 'tests/unit/test_reconcile_mlb_prospective_backlog_v5.py'
+"on":
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: mlb-root-lifecycle-continuity-deploy
+  group: unified-mlb-learning
   cancel-in-progress: false
 
 env:

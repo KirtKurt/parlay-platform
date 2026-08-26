@@ -1,17 +1,13 @@
 name: Repair MLB R7 terminal replay timeout now
 
-on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/repair-mlb-r7-terminal-replay-timeout-now.yml'
+"on":
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: mlb-r7-terminal-replay-timeout-repair
+  group: unified-mlb-learning
   cancel-in-progress: false
 
 env:

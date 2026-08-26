@@ -284,118 +284,40 @@ def verify_repository(root: Path = ROOT) -> List[str]:
     if not deploy:
         errors.append("canonical_deploy_workflow_missing")
     else:
-        status_training_token = (
-            "--status-training-result /tmp/mlb-ml-v2-training.json"
-        )
-        status_selection_token = (
-            "--status-selection-capture-result "
-            "/tmp/mlb-ml-v2-selection-capture.json"
-        )
-        training_token = (
-            "--payload '{\"sport\":\"mlb\",\"mode\":\"scheduled\","
-            "\"run\":\"aws_native_fixed_prospective_shadow_training\"}'"
-        )
-        selection_token = (
-            "--payload '{\"sport\":\"mlb\",\"mode\":\"selection_capture\","
-            "\"run\":\"aws_native_prospective_selection_capture\"}'"
-        )
-        training = deploy.find(training_token)
-        selection = deploy.find(selection_token)
-        post_status = deploy.find(status_training_token)
-        verifier = deploy.find("python scripts/verify_mlb_trainer_deploy_response.py")
-        invoke_helper = "python scripts/invoke_mlb_trainer_with_retry.py"
-        helper_positions = [
-            match.start() for match in re.finditer(re.escape(invoke_helper), deploy)
+
+        active_trainer_invokes = [
+            line.strip()
+            for line in deploy.splitlines()
+            if line.strip().startswith(
+                "python scripts/invoke_mlb_trainer_with_retry.py"
+            )
         ]
-        if len(helper_positions) != 3:
-            errors.append("canonical_deploy_must_use_exactly_three_bounded_trainer_invokes")
+        if "UNIFIED_MLB_LEARNING_OWNER=eventbridge_schedule" not in deploy:
+            errors.append(
+                "canonical_deploy_unified_mlb_learning_owner_marker_missing"
+            )
+        if "Preserve unified MLB learning ownership" not in deploy:
+            errors.append(
+                "canonical_deploy_unified_mlb_learning_owner_step_missing"
+            )
+        if active_trainer_invokes:
+            errors.append(
+                "canonical_deploy_must_not_invoke_unified_mlb_training"
+            )
+        if "Run AWS-native MLB trainer and verify fresh split health" in deploy:
+            errors.append("canonical_deploy_retains_training_owner_step")
+        if "python scripts/verify_unified_mlb_learning_ownership.py" not in deploy:
+            errors.append(
+                "canonical_deploy_does_not_verify_single_learning_owner"
+            )
+        if "tests/unit/test_unified_mlb_learning_ownership.py" not in deploy:
+            errors.append(
+                "canonical_deploy_does_not_test_single_learning_owner"
+            )
         if "invoke_mlb_trainer_deploy_probe.py" in deploy:
             errors.append("canonical_deploy_retains_duplicate_trainer_invoke_helper")
         if "aws lambda invoke" in deploy:
-            errors.append("canonical_deploy_retains_unbounded_lambda_invoke")
-        if (
-            len(helper_positions) == 3
-            and verifier >= 0
-            and helper_positions[-1] < verifier
-        ):
-            call_ends = [helper_positions[1], helper_positions[2], verifier]
-            calls = [
-                deploy[start:end]
-                for start, end in zip(helper_positions, call_ends)
-            ]
-            call_contracts = (
-                (
-                    calls[0],
-                    (
-                        training_token,
-                        "--response /tmp/mlb-ml-v2-training.json",
-                        "--invocation /tmp/mlb-ml-v2-training-invoke.json",
-                    ),
-                    (selection_token, status_training_token, status_selection_token),
-                ),
-                (
-                    calls[1],
-                    (
-                        selection_token,
-                        "--response /tmp/mlb-ml-v2-selection-capture.json",
-                        "--invocation /tmp/mlb-ml-v2-selection-capture-invoke.json",
-                    ),
-                    (training_token, status_training_token, status_selection_token),
-                ),
-                (
-                    calls[2],
-                    (
-                        status_training_token,
-                        status_selection_token,
-                        "--response /tmp/mlb-ml-v2-status-after.json",
-                        "--invocation /tmp/mlb-ml-v2-status-after-invoke.json",
-                    ),
-                    (training_token, selection_token, "--payload"),
-                ),
-            )
-            for call, required, forbidden in call_contracts:
-                if any(call.count(token) != 1 for token in required) or any(
-                    token in call for token in forbidden
-                ):
-                    errors.append(
-                        "canonical_deploy_trainer_invoke_evidence_pairing_is_invalid"
-                    )
-            mutating_calls = calls[:2]
-            status_call = calls[2]
-            if any(
-                call.count("--retry-execution-lease") != 1
-                for call in mutating_calls
-            ) or "--retry-execution-lease" in status_call:
-                errors.append("canonical_deploy_lease_retry_scope_is_invalid")
-            if any(
-                call.count("--deadline-seconds 1200") != 1
-                for call in mutating_calls
-            ) or "--deadline-seconds" in status_call:
-                errors.append("canonical_deploy_lease_retry_deadline_is_invalid")
-            if any(
-                call.count("--retry-delay-seconds 20") != 1
-                for call in mutating_calls
-            ) or "--retry-delay-seconds" in status_call:
-                errors.append("canonical_deploy_lease_retry_delay_is_invalid")
-        if (
-            deploy.count(status_training_token) != 1
-            or deploy.count(status_selection_token) != 1
-        ):
-            errors.append("canonical_deploy_must_query_post_run_status_exactly_once")
-        if deploy.count(training_token) != 1:
-            errors.append("canonical_deploy_must_invoke_training_exactly_once")
-        if deploy.count(selection_token) != 1:
-            errors.append("canonical_deploy_must_invoke_selection_capture_exactly_once")
-        if deploy.count("--retry-execution-lease") != 2:
-            errors.append("canonical_deploy_lease_retry_scope_is_invalid")
-        if deploy.count("--deadline-seconds 1200") != 2:
-            errors.append("canonical_deploy_lease_retry_deadline_is_invalid")
-        if deploy.count("--retry-delay-seconds 20") != 2:
-            errors.append("canonical_deploy_lease_retry_delay_is_invalid")
-        if not (0 <= training < selection < post_status < verifier):
-            errors.append("canonical_deploy_split_run_status_order_is_invalid")
-        if verifier < 0 or verifier < post_status:
-            errors.append("canonical_deploy_does_not_verify_post_run_trainer_status")
+            errors.append("canonical_deploy_retains_unsafe_inline_trainer_invoke")
         gate_call = (
             "python " + RELEASE_ACTIVATION_PREDEPLOY_SCRIPT
         )
@@ -459,8 +381,6 @@ def verify_repository(root: Path = ROOT) -> List[str]:
         for required_capacity_token in (
             "Prove shared Lambda capacity recovered before trainer initialization",
             "capacity_deadline=$((SECONDS + 360))",
-            "AWS_MAX_ATTEMPTS: \"1\"",
-            "python scripts/invoke_mlb_trainer_with_retry.py",
             "scripts/mlb_deploy_http_probe.py",
             "from scripts.mlb_deploy_http_probe import fetch_json_object",
             "deadline=deadline",
@@ -566,9 +486,16 @@ def verify_repository(root: Path = ROOT) -> List[str]:
                 != 1
             ):
                 errors.append(error)
-        if deploy.count("python scripts/invoke_mlb_trainer_with_retry.py") != 3:
+        active_trainer_invokes = [
+            line.strip()
+            for line in deploy.splitlines()
+            if line.strip().startswith(
+                "python scripts/invoke_mlb_trainer_with_retry.py"
+            )
+        ]
+        if active_trainer_invokes:
             errors.append(
-                "canonical_deploy_must_use_bounded_invoke_retry_exactly_three_times"
+                "canonical_deploy_must_not_invoke_unified_mlb_training"
             )
         if "invoke_with_capacity_retry" in deploy or "aws lambda invoke" in deploy:
             errors.append("canonical_deploy_retains_unsafe_inline_trainer_invoke")

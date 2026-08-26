@@ -1,16 +1,13 @@
 name: Advance MLB AUTO R7 now v2
 
-on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/advance-mlb-auto-r7-now-v2.yml']
+"on":
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: advance-mlb-auto-r7-now-v2
+  group: unified-mlb-learning
   cancel-in-progress: false
 
 env:

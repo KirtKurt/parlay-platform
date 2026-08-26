@@ -2,17 +2,13 @@
 name: Verify deployed MLB R7 admission now
 
 "on":
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/mlb-trainer-health-diagnose-once.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: verify-deployed-mlb-r7-admission-now-main
+  group: unified-mlb-learning
   cancel-in-progress: false
 
 env:

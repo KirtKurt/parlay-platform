@@ -2,18 +2,14 @@
 # One-shot trigger after registration; MLB-only, fail-closed, lease-compatible timeout preserved.
 name: Repair MLB R7 backlog timeout now
 
-on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/repair-mlb-r7-backlog-timeout-now.yml'
+"on":
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: repair-mlb-r7-backlog-timeout-now
+  group: unified-mlb-learning
   cancel-in-progress: false
 
 env:

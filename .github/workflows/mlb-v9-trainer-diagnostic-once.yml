@@ -3,16 +3,12 @@ name: MLB V9 Trainer Verification Diagnostic Once
 # Retrigger current r7 training, selection capture, and persisted-status verification.
 "on":
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/mlb-v9-trainer-diagnostic-once.yml'
 
 permissions:
   contents: write
 
 concurrency:
-  group: mlb-v9-trainer-diagnostic-once
+  group: unified-mlb-learning
   cancel-in-progress: false
 
 env:
