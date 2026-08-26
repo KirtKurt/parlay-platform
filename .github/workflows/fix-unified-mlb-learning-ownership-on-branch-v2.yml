@@ -1,4 +1,4 @@
-name: Diagnose August 25 official MLB finality read-only
+name: Inspect unified MLB trainer execution lease read-only
 
 "on":
   push:
@@ -11,70 +11,82 @@ permissions:
   contents: read
 
 concurrency:
-  group: diagnose-unified-mlb-aug25-finality-read-only
+  group: diagnose-unified-mlb-execution-lease-read-only
   cancel-in-progress: true
 
 jobs:
   diagnose:
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch exact official schedule and identify non-final rows
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Read execution lease without mutation
         run: |
           set -euo pipefail
+          TABLE="$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id SnapshotsTable \
+            --region us-east-1 \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)"
+          test -n "$TABLE" && test "$TABLE" != None
+          aws dynamodb get-item \
+            --table-name "$TABLE" \
+            --consistent-read \
+            --region us-east-1 \
+            --key '{"PK":{"S":"MLB_ML_EXPERIMENT#V2#mlb-v2-2026-07-21-future-prospective-r2"},"SK":{"S":"EXECUTION_LEASE#STATE_MUTATION"}}' \
+            --output json > /tmp/state-mutation-lease.json
+          aws dynamodb get-item \
+            --table-name "$TABLE" \
+            --consistent-read \
+            --region us-east-1 \
+            --key '{"PK":{"S":"MLB_ML_EXPERIMENT#V2#mlb-v2-2026-07-21-future-prospective-r2"},"SK":{"S":"EXECUTION_LEASE"}}' \
+            --output json > /tmp/legacy-sentinel.json
           python - <<'PY'
           import json
-          import urllib.parse
-          import urllib.request
+          import time
+          from pathlib import Path
 
-          slate = '2026-08-25'
-          url = 'https://statsapi.mlb.com/api/v1/schedule?' + urllib.parse.urlencode({
-              'sportId': '1',
-              'startDate': slate,
-              'endDate': slate,
-              'hydrate': 'linescore',
-          })
-          request = urllib.request.Request(
-              url,
-              headers={
-                  'accept': 'application/json',
-                  'user-agent': 'inqsi-unified-mlb-finality-diagnostic/1.0',
-              },
-          )
-          with urllib.request.urlopen(request, timeout=30) as response:
-              payload = json.loads(response.read().decode('utf-8'))
-          games = [
-              game
-              for date_row in payload.get('dates') or []
-              for game in date_row.get('games') or []
-          ]
-          rows = []
-          for game in games:
-              status = game.get('status') or {}
-              teams = game.get('teams') or {}
-              rows.append({
-                  'gamePk': game.get('gamePk'),
-                  'away': (((teams.get('away') or {}).get('team') or {}).get('name')),
-                  'home': (((teams.get('home') or {}).get('team') or {}).get('name')),
-                  'abstractGameState': status.get('abstractGameState'),
-                  'codedGameState': status.get('codedGameState'),
-                  'statusCode': status.get('statusCode'),
-                  'detailedState': status.get('detailedState'),
-                  'reason': status.get('reason'),
-                  'awayScore': (teams.get('away') or {}).get('score'),
-                  'homeScore': (teams.get('home') or {}).get('score'),
-              })
+          def plain(value):
+              if not isinstance(value, dict):
+                  return value
+              for key in ('S', 'N', 'BOOL', 'NULL'):
+                  if key in value:
+                      raw = value[key]
+                      if key == 'N':
+                          return int(raw)
+                      return raw
+              if 'M' in value:
+                  return {key: plain(item) for key, item in value['M'].items()}
+              if 'L' in value:
+                  return [plain(item) for item in value['L']]
+              return value
+
+          now = int(time.time())
+          state_raw = json.loads(Path('/tmp/state-mutation-lease.json').read_text())
+          legacy_raw = json.loads(Path('/tmp/legacy-sentinel.json').read_text())
+          state = {key: plain(value) for key, value in (state_raw.get('Item') or {}).items()}
+          legacy = {key: plain(value) for key, value in (legacy_raw.get('Item') or {}).items()}
+          expiry = int(state.get('lease_expires_at_epoch') or 0)
           proof = {
-              'proofType': 'UNIFIED_MLB_AUG25_OFFICIAL_FINALITY_READ_ONLY',
-              'slateDateEt': slate,
-              'sourceUrl': url,
-              'totalGamesField': payload.get('totalGames'),
-              'gameCount': len(rows),
-              'finalCount': sum(str(row.get('abstractGameState') or '').upper() == 'FINAL' for row in rows),
-              'nonFinalGames': [
-                  row for row in rows
-                  if str(row.get('abstractGameState') or '').upper() != 'FINAL'
-              ],
-              'allGames': rows,
+              'proofType': 'UNIFIED_MLB_EXECUTION_LEASE_READ_ONLY',
+              'checkedAtEpoch': now,
+              'stateMutationLeasePresent': bool(state),
+              'stateMutationLeaseOwner': state.get('lease_owner'),
+              'stateMutationExecutionMode': state.get('execution_mode'),
+              'stateMutationAcquiredAt': state.get('acquired_at'),
+              'stateMutationExpiresAt': state.get('lease_expires_at'),
+              'stateMutationExpiresAtEpoch': expiry,
+              'stateMutationSecondsRemaining': max(0, expiry - now),
+              'stateMutationActive': expiry > now,
+              'legacySentinelPresent': bool(legacy),
+              'legacySentinelOwner': legacy.get('lease_owner'),
+              'legacySentinelExpiresAtEpoch': int(legacy.get('lease_expires_at_epoch') or 0),
               'directTableWrite': False,
               'immutablePredictionRewriteAllowed': False,
               'postStartPredictionCreationAllowed': False,
