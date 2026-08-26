@@ -43,86 +43,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Wait for the same-commit deployment to finish
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json
-          import os
-          import time
-          import urllib.request
-
-          repository = os.environ['GITHUB_REPOSITORY']
-          source_sha = os.environ['GITHUB_SHA']
-          token = os.environ['GH_TOKEN']
-          url = (
-              f'https://api.github.com/repos/{repository}/actions/workflows/'
-              f'deploy.yml/runs?head_sha={source_sha}&event=push&per_page=20'
-          )
-          deadline = time.monotonic() + 2700
-          last_state = None
-          while time.monotonic() < deadline:
-              request = urllib.request.Request(
-                  url,
-                  headers={
-                      'Accept': 'application/vnd.github+json',
-                      'Authorization': f'Bearer {token}',
-                      'User-Agent': 'unified-mlb-learning-recovery',
-                      'X-GitHub-Api-Version': '2022-11-28',
-                  },
-              )
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  payload = json.load(response)
-              runs = [
-                  run for run in payload.get('workflow_runs', [])
-                  if run.get('head_sha') == source_sha
-              ]
-              if not runs:
-                  state = 'waiting_for_deploy_run'
-              else:
-                  run = max(runs, key=lambda value: int(value.get('run_number') or 0))
-                  status = str(run.get('status') or '')
-                  conclusion = str(run.get('conclusion') or '')
-                  state = f'{status}:{conclusion or "pending"}'
-                  if status == 'completed':
-                      if conclusion != 'success':
-                          raise SystemExit(
-                              'Same-commit deployment did not pass: '
-                              + json.dumps(
-                                  {
-                                      'runId': run.get('id'),
-                                      'status': status,
-                                      'conclusion': conclusion,
-                                      'htmlUrl': run.get('html_url'),
-                                  },
-                                  sort_keys=True,
-                              )
-                          )
-                      print(json.dumps({
-                          'ok': True,
-                          'deployRunId': run.get('id'),
-                          'deployConclusion': conclusion,
-                          'sourceSha': source_sha,
-                      }, sort_keys=True))
-                      break
-              if state != last_state:
-                  print(state, flush=True)
-                  last_state = state
-              time.sleep(15)
-          else:
-              raise SystemExit('Timed out waiting for same-commit deployment')
-          PY
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
       - name: Install bounded runtime and prove one recovery owner
         run: |
           set -euo pipefail
@@ -146,20 +66,212 @@ jobs:
           ! grep -q 'Run AWS-native MLB trainer and verify fresh split health' .github/workflows/deploy.yml
           mkdir -p /tmp/unified-mlb-recovery
 
-      - name: Resolve active deployed unified MLB trainer
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Wait for a quiet deploy queue and stable AWS runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TRAINER_FN="$(aws cloudformation describe-stack-resource \
-            --stack-name "$MLB_ROOT_STACK" \
-            --logical-resource-id MLBMLTrainingFunction \
-            --region "$AWS_REGION" \
-            --query 'StackResourceDetail.PhysicalResourceId' \
-            --output text)"
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import time
+          import urllib.request
+          from pathlib import Path
+
+          repository = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          region = os.environ['AWS_REGION']
+          stack_name = os.environ['MLB_ROOT_STACK']
+          runs_url = (
+              f'https://api.github.com/repos/{repository}/actions/workflows/'
+              'deploy.yml/runs?branch=main&per_page=50'
+          )
+          stable_stack_states = {
+              'CREATE_COMPLETE',
+              'UPDATE_COMPLETE',
+              'UPDATE_ROLLBACK_COMPLETE',
+          }
+          required_stable_probes = 8
+          stable_probes = 0
+          deadline = time.monotonic() + 5400
+          last_state = None
+
+          def github_json(url):
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      'Accept': 'application/vnd.github+json',
+                      'Authorization': f'Bearer {token}',
+                      'User-Agent': 'unified-mlb-learning-recovery',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          def aws_json(*args):
+              command = ['aws', *args, '--region', region, '--output', 'json']
+              completed = subprocess.run(
+                  command,
+                  check=True,
+                  capture_output=True,
+                  text=True,
+                  timeout=120,
+              )
+              return json.loads(completed.stdout)
+
+          while time.monotonic() < deadline:
+              state = {
+                  'activeDeployRunCount': None,
+                  'stackStatus': None,
+                  'trainerState': None,
+                  'trainerLastUpdateStatus': None,
+                  'stableProbe': stable_probes,
+              }
+              try:
+                  run_payload = github_json(runs_url)
+                  active_runs = [
+                      {
+                          'id': run.get('id'),
+                          'headSha': run.get('head_sha'),
+                          'status': run.get('status'),
+                          'htmlUrl': run.get('html_url'),
+                      }
+                      for run in run_payload.get('workflow_runs', [])
+                      if str(run.get('status') or '') != 'completed'
+                  ]
+                  state['activeDeployRunCount'] = len(active_runs)
+                  if active_runs:
+                      state['activeDeployRuns'] = active_runs[:5]
+
+                  stacks = aws_json(
+                      'cloudformation',
+                      'describe-stacks',
+                      '--stack-name',
+                      stack_name,
+                  )
+                  stack = (stacks.get('Stacks') or [{}])[0]
+                  stack_status = str(stack.get('StackStatus') or '')
+                  state['stackStatus'] = stack_status
+                  if (
+                      stack_status not in stable_stack_states
+                      and (
+                          'FAILED' in stack_status
+                          or stack_status.startswith('DELETE_')
+                          or stack_status == 'ROLLBACK_COMPLETE'
+                      )
+                  ):
+                      raise SystemExit(
+                          'MLB root stack is in a terminal unsafe state: '
+                          + stack_status
+                      )
+
+                  trainer_detail = aws_json(
+                      'cloudformation',
+                      'describe-stack-resource',
+                      '--stack-name',
+                      stack_name,
+                      '--logical-resource-id',
+                      'MLBMLTrainingFunction',
+                  )
+                  trainer_fn = str(
+                      ((trainer_detail.get('StackResourceDetail') or {}).get(
+                          'PhysicalResourceId'
+                      ))
+                      or ''
+                  )
+                  state['trainerFunctionName'] = trainer_fn
+                  trainer = aws_json(
+                      'lambda',
+                      'get-function-configuration',
+                      '--function-name',
+                      trainer_fn,
+                  )
+                  state['trainerState'] = trainer.get('State')
+                  state['trainerLastUpdateStatus'] = trainer.get('LastUpdateStatus')
+                  state['trainerHandler'] = trainer.get('Handler')
+                  state['trainerTimeout'] = trainer.get('Timeout')
+
+                  runtime_ready = (
+                      not active_runs
+                      and stack_status in stable_stack_states
+                      and trainer.get('State') == 'Active'
+                      and trainer.get('LastUpdateStatus') == 'Successful'
+                      and trainer.get('Handler')
+                      == 'mlb_ml_aws_training_v1_compat.lambda_handler'
+                      and int(trainer.get('Timeout') or 0) == 900
+                  )
+                  if runtime_ready:
+                      stable_probes += 1
+                  else:
+                      stable_probes = 0
+                  state['stableProbe'] = stable_probes
+
+                  if state != last_state:
+                      print(json.dumps(state, sort_keys=True), flush=True)
+                      last_state = state
+
+                  if stable_probes >= required_stable_probes:
+                      proof = {
+                          'ok': True,
+                          'proofType': 'UNIFIED_MLB_DEPLOY_QUEUE_AND_AWS_RUNTIME_READY',
+                          'activeDeployRunCount': 0,
+                          'requiredStableProbes': required_stable_probes,
+                          'observedStableProbes': stable_probes,
+                          'stackStatus': stack_status,
+                          'trainerFunctionName': trainer_fn,
+                          'trainerState': trainer.get('State'),
+                          'trainerLastUpdateStatus': trainer.get(
+                              'LastUpdateStatus'
+                          ),
+                          'trainerHandler': trainer.get('Handler'),
+                          'trainerTimeout': trainer.get('Timeout'),
+                          'sameCommitDeploySuccessRequired': False,
+                          'cancelledOrSupersededDeploysAreNonBlocking': True,
+                      }
+                      Path(
+                          '/tmp/unified-mlb-recovery/aws-readiness.json'
+                      ).write_text(
+                          json.dumps(proof, indent=2, sort_keys=True) + '\n',
+                          encoding='utf-8',
+                      )
+                      with Path(os.environ['GITHUB_ENV']).open(
+                          'a', encoding='utf-8'
+                      ) as stream:
+                          stream.write(f'TRAINER_FN={trainer_fn}\n')
+                      print(json.dumps(proof, indent=2, sort_keys=True))
+                      break
+              except SystemExit:
+                  raise
+              except Exception as exc:
+                  stable_probes = 0
+                  state['stableProbe'] = 0
+                  state['probeError'] = f'{type(exc).__name__}:{exc}'
+                  if state != last_state:
+                      print(json.dumps(state, sort_keys=True), flush=True)
+                      last_state = state
+              time.sleep(15)
+          else:
+              raise SystemExit(
+                  'Timed out waiting for a quiet deploy queue and stable AWS runtime'
+              )
+          PY
+
+      - name: Capture active deployed unified MLB trainer
+        run: |
+          set -euo pipefail
           case "$TRAINER_FN" in
             *MLBMLTrainingFunction*) ;;
             *) echo 'Resolved resource is not the unified MLB trainer' >&2; exit 1 ;;
           esac
-          echo "TRAINER_FN=$TRAINER_FN" >> "$GITHUB_ENV"
           aws lambda get-function-configuration \
             --function-name "$TRAINER_FN" \
             --region "$AWS_REGION" \
