@@ -1,0 +1,137 @@
+name: Apply MLB competitive control plane once
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/mlb-async-r7-r8-control-plane-20260826
+    paths:
+      - scripts/bootstrap_mlb_control_plane_payload.py
+      - .github/workflows/apply-mlb-competitive-control-plane-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-mlb-competitive-control-plane-20260826
+  cancel-in-progress: false
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/mlb-async-r7-r8-control-plane-20260826
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install reviewed MLB-only payload and patch existing bindings
+        run: python scripts/bootstrap_mlb_control_plane_payload.py --root .
+
+      - name: Verify fixed schemas and exact production bindings
+        env:
+          PYTHONPATH: hello_world
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import mlb_model_schema_contract_v1 as contracts
+
+          status = contracts.validate_runtime_contracts()
+          assert status['ok'], status
+          assert status['contracts']['R7_MARKET_MOVEMENT']['runtimeFeatureSchemaFingerprint'] == 'c9d4f53443c204d5244c67eef87437a5c121135c33f354ab5342d2af7f995f64'
+          assert status['contracts']['R8_OFFICIAL_FUNDAMENTALS']['runtimeFeatureSchemaFingerprint'] == 'a00aee0e2e263b2732536496b652212943a6b715c501b5c0f8b6ed4ab671dfa9'
+          template = Path('template.yaml').read_text()
+          required = [
+              'Handler: mlb_ml_async_training_v1.lambda_handler',
+              'Handler: mlb_pregame_integrity_v1.lambda_handler',
+              'Handler: mlb_r8_fundamentals_v1.lambda_handler',
+              'Handler: mlb_qualified_champion_inference_v1.lambda_handler',
+              'Handler: mlb_v3_read_api_hardened.lambda_handler',
+              "MLB_ML_RUNTIME_ACTIVATION_ENABLED: 'true'",
+              'MLBMLAsyncJobReconcileEvery5Minutes:',
+              'MLBPregameIntegrityEveryMinute:',
+              'MLBR8CaptureEveryMinute:',
+              'MLBQualifiedChampionInferenceEveryMinute:',
+          ]
+          missing = [value for value in required if value not in template]
+          assert not missing, missing
+          labels = Path('hello_world/mlb_canonical_final_labels_v1.py').read_text()
+          assert 'pregame_integrity.row_timing_verdict(row)' in labels
+          print(status)
+          PY
+
+      - name: Compile new and patched MLB runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            hello_world/mlb_ml_async_training_v1.py \
+            hello_world/mlb_model_competition_v1.py \
+            hello_world/mlb_champion_authority_v1.py \
+            hello_world/mlb_model_schema_contract_v1.py \
+            hello_world/mlb_pregame_integrity_v1.py \
+            hello_world/mlb_r8_fundamentals_v1.py \
+            hello_world/mlb_qualified_champion_inference_v1.py \
+            hello_world/mlb_v3_read_api_hardened.py \
+            hello_world/mlb_canonical_final_labels_v1.py \
+            scripts/apply_mlb_competitive_control_plane.py \
+            scripts/run_mlb_async_training_job.py
+
+      - name: Run focused MLB control-plane tests
+        env:
+          PYTHONPATH: hello_world
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/test_mlb_model_competition_v1.py
+          python tests/test_mlb_model_schema_contract_v1.py
+          python tests/test_mlb_pregame_integrity_v1.py
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Validate SAM template
+        run: sam validate --template-file template.yaml
+
+      - name: Verify sport isolation and expected repository scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git status --porcelain | cut -c4- | sort -u)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" -ge 18
+          for path in "${changed[@]}"; do
+            case "$path" in
+              template.yaml|hello_world/mlb_*.py|hello_world/mlb_model_contracts/*.json|scripts/apply_mlb_competitive_control_plane.py|scripts/run_mlb_async_training_job.py|scripts/bootstrap_mlb_control_plane_payload.py|scripts/mlb_control_plane_payload/*|tests/test_mlb_*.py|docs/mlb-competitive-control-plane.md|.github/workflows/mlb-r7-advancement-watch.yml|.github/workflows/unified-mlb-learning-recovery-once.yml|.github/workflows/apply-mlb-competitive-control-plane-once.yml)
+                ;;
+              *)
+                echo "Unexpected non-MLB path: $path" >&2
+                exit 1
+                ;;
+            esac
+          done
+          printf '%s\n' "${changed[@]}" | grep -F 'template.yaml'
+          printf '%s\n' "${changed[@]}" | grep -F 'hello_world/mlb_canonical_final_labels_v1.py'
+          printf '%s\n' "${changed[@]}" | grep -F 'hello_world/mlb_ml_async_training_v1.py'
+          printf '%s\n' "${changed[@]}" | grep -F 'hello_world/mlb_r8_fundamentals_v1.py'
+          printf '%s\n' "${changed[@]}" | grep -F 'hello_world/mlb_v3_read_api_hardened.py'
+
+      - name: Remove bootstrap transport and commit verified implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf scripts/mlb_control_plane_payload
+          rm -f scripts/bootstrap_mlb_control_plane_payload.py
+          rm -f .github/workflows/apply-mlb-competitive-control-plane-once.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'feat(mlb): add durable R7 R8 competitive control plane'
+          git push origin HEAD:feat/mlb-async-r7-r8-control-plane-20260826
