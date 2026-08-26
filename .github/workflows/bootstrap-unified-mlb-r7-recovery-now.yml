@@ -1,0 +1,111 @@
+name: Bootstrap canonical unified MLB R7 recovery now
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/bootstrap-unified-mlb-r7-recovery-now.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: unified-mlb-recovery-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  dispatch-after-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Wait for exact-source deployment and dispatch canonical recovery
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.request
+
+          repository = os.environ['REPOSITORY']
+          source_sha = os.environ['SOURCE_SHA']
+          token = os.environ['GH_TOKEN']
+          headers = {
+              'Accept': 'application/vnd.github+json',
+              'Authorization': f'Bearer {token}',
+              'User-Agent': 'unified-mlb-r7-recovery-bootstrap',
+              'X-GitHub-Api-Version': '2022-11-28',
+          }
+          runs_url = (
+              f'https://api.github.com/repos/{repository}/actions/workflows/'
+              f'deploy.yml/runs?head_sha={source_sha}&event=push&per_page=20'
+          )
+          deadline = time.monotonic() + 3300
+          last_state = None
+          while time.monotonic() < deadline:
+              request = urllib.request.Request(runs_url, headers=headers)
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  payload = json.load(response)
+              runs = [
+                  run for run in payload.get('workflow_runs', [])
+                  if run.get('head_sha') == source_sha
+              ]
+              if not runs:
+                  state = 'waiting_for_deploy_run'
+              else:
+                  run = max(runs, key=lambda value: int(value.get('run_number') or 0))
+                  status = str(run.get('status') or '')
+                  conclusion = str(run.get('conclusion') or '')
+                  state = f'{status}:{conclusion or "pending"}'
+                  if status == 'completed':
+                      if conclusion != 'success':
+                          raise SystemExit(
+                              'Exact-source deployment failed: '
+                              + json.dumps({
+                                  'runId': run.get('id'),
+                                  'status': status,
+                                  'conclusion': conclusion,
+                                  'htmlUrl': run.get('html_url'),
+                              }, sort_keys=True)
+                          )
+                      break
+              if state != last_state:
+                  print(state, flush=True)
+                  last_state = state
+              time.sleep(15)
+          else:
+              raise SystemExit('Timed out waiting for exact-source deployment')
+
+          dispatch_url = (
+              f'https://api.github.com/repos/{repository}/actions/workflows/'
+              'unified-mlb-learning-recovery-once.yml/dispatches'
+          )
+          body = json.dumps({
+              'ref': 'main',
+              'inputs': {
+                  'request_id': f'bootstrap-{source_sha[:12]}',
+              },
+          }).encode('utf-8')
+          request = urllib.request.Request(
+              dispatch_url,
+              data=body,
+              headers={**headers, 'Content-Type': 'application/json'},
+              method='POST',
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              if response.status not in (204,):
+                  raise SystemExit(f'Unexpected dispatch status: {response.status}')
+          print(json.dumps({
+              'ok': True,
+              'sourceSha': source_sha,
+              'canonicalWorkflowDispatched': True,
+              'productionAuthorityChanged': False,
+              'otherSportChanged': False,
+          }, sort_keys=True))
+          PY
