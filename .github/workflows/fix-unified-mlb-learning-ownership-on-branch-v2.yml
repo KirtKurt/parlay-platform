@@ -35,19 +35,20 @@ jobs:
           python -m py_compile scripts/apply_unified_mlb_learning_single_owner_patch.py
           python scripts/apply_unified_mlb_learning_single_owner_patch.py
 
-      - name: Repair generated ownership regression test
+      - name: Replace obsolete deploy-owned trainer tests
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
 
-          path = Path('tests/unit/test_mlb_workflow_authority.py')
-          text = path.read_text(encoding='utf-8')
-          start = 'def test_rejects_deploy_that_reintroduces_training_owner(\n'
-          end = 'def test_rejects_reintroduced_inline_aws_trainer_invoke'
-          if text.count(start) != 1 or text.count(end) != 1:
+          authority_tests = Path('tests/unit/test_mlb_workflow_authority.py')
+          text = authority_tests.read_text(encoding='utf-8')
+
+          generated_start = 'def test_rejects_deploy_that_reintroduces_training_owner(\n'
+          generated_end = 'def test_rejects_reintroduced_inline_aws_trainer_invoke'
+          if text.count(generated_start) != 1 or text.count(generated_end) != 1:
               raise SystemExit('generated ownership test patch markers are not unique')
-          replacement = '''def test_rejects_deploy_with_wrong_unified_learning_owner(
+          generated_replacement = '''def test_rejects_deploy_with_wrong_unified_learning_owner(
               tmp_path: Path,
           ) -> None:
               root = _copy_contract(tmp_path)
@@ -68,11 +69,150 @@ jobs:
 
 
           '''
-          prefix, remainder = text.split(start, 1)
-          _old, suffix = remainder.split(end, 1)
-          path.write_text(prefix + replacement + end + suffix, encoding='utf-8')
+          prefix, remainder = text.split(generated_start, 1)
+          _old, suffix = remainder.split(generated_end, 1)
+          text = prefix + generated_replacement + generated_end + suffix
+
+          old_start = 'def test_requires_selection_capture_before_status_check(tmp_path: Path) -> None:\n'
+          old_end = 'def test_requires_capacity_probe_horizon_to_outlast_old_lock_backlog(\n'
+          if text.count(old_start) != 1 or text.count(old_end) != 1:
+              raise SystemExit('obsolete deploy-owned trainer test markers are not unique')
+          ownership_tests = '''def test_deploy_requires_unified_learning_owner_marker(tmp_path: Path) -> None:
+              root = _copy_contract(tmp_path)
+              deploy = root / ".github/workflows/deploy.yml"
+              deploy.write_text(
+                  deploy.read_text(encoding="utf-8").replace(
+                      "UNIFIED_MLB_LEARNING_OWNER=eventbridge_schedule",
+                      "UNIFIED_MLB_LEARNING_OWNER=missing",
+                      1,
+                  ),
+                  encoding="utf-8",
+              )
+
+              assert (
+                  "canonical_deploy_unified_mlb_learning_owner_marker_missing"
+                  in authority.verify_repository(root)
+              )
+
+
+          def test_deploy_requires_single_owner_verifier(tmp_path: Path) -> None:
+              root = _copy_contract(tmp_path)
+              deploy = root / ".github/workflows/deploy.yml"
+              deploy.write_text(
+                  deploy.read_text(encoding="utf-8").replace(
+                      "python scripts/verify_unified_mlb_learning_ownership.py",
+                      "python -c 'print(\\\"ownership verifier removed\\\")'",
+                      1,
+                  ),
+                  encoding="utf-8",
+              )
+
+              assert (
+                  "canonical_deploy_does_not_verify_single_learning_owner"
+                  in authority.verify_repository(root)
+              )
+
+
+          def test_deploy_requires_single_owner_regression_gate(tmp_path: Path) -> None:
+              root = _copy_contract(tmp_path)
+              deploy = root / ".github/workflows/deploy.yml"
+              deploy.write_text(
+                  deploy.read_text(encoding="utf-8").replace(
+                      "tests/unit/test_unified_mlb_learning_ownership.py",
+                      "tests/unit/test_mlb_workflow_authority.py",
+                      1,
+                  ),
+                  encoding="utf-8",
+              )
+
+              assert (
+                  "canonical_deploy_does_not_test_single_learning_owner"
+                  in authority.verify_repository(root)
+              )
+
+
+          def test_deploy_rejects_active_trainer_invocation(tmp_path: Path) -> None:
+              root = _copy_contract(tmp_path)
+              deploy = root / ".github/workflows/deploy.yml"
+              deploy.write_text(
+                  deploy.read_text(encoding="utf-8")
+                  + "\\n      - name: Forbidden duplicate trainer owner\\n"
+                  + "        run: |\\n"
+                  + "          python scripts/invoke_mlb_trainer_with_retry.py\\n",
+                  encoding="utf-8",
+              )
+
+              assert (
+                  "canonical_deploy_must_not_invoke_unified_mlb_training"
+                  in authority.verify_repository(root)
+              )
+
+
+          '''
+          prefix, remainder = text.split(old_start, 1)
+          _old, suffix = remainder.split(old_end, 1)
+          authority_tests.write_text(
+              prefix + ownership_tests + old_end + suffix,
+              encoding='utf-8',
+          )
+
+          identity_tests = Path('tests/unit/test_mlb_deploy_identity.py')
+          text = identity_tests.read_text(encoding='utf-8')
+          identity_start = 'def test_deploy_initializes_both_trainer_modes_before_status_acceptance() -> None:\n'
+          identity_end = 'def test_lambda_artifact_download_retries_transient_transport_failures(\n'
+          if text.count(identity_start) != 1 or text.count(identity_end) != 1:
+              raise SystemExit('obsolete deploy identity trainer test markers are not unique')
+          identity_replacement = '''def test_deploy_verifies_single_learning_owner_without_invoking_trainer() -> None:
+              root = Path(__file__).resolve().parents[2]
+              workflow = (root / ".github" / "workflows" / "deploy.yml").read_text(
+                  encoding="utf-8"
+              )
+              active_trainer_invokes = [
+                  line.strip()
+                  for line in workflow.splitlines()
+                  if line.strip().startswith(
+                      "python scripts/invoke_mlb_trainer_with_retry.py"
+                  )
+              ]
+
+              assert "UNIFIED_MLB_LEARNING_OWNER=eventbridge_schedule" in workflow
+              assert "Preserve unified MLB learning ownership" in workflow
+              assert "python scripts/verify_unified_mlb_learning_ownership.py" in workflow
+              assert "tests/unit/test_unified_mlb_learning_ownership.py" in workflow
+              assert active_trainer_invokes == []
+              assert "Run AWS-native MLB trainer and verify fresh split health" not in workflow
+              assert "invoke_with_capacity_retry" not in workflow
+              assert "aws lambda invoke" not in workflow
+              assert "Prove shared Lambda capacity recovered before trainer initialization" in workflow
+              assert "--expected-deploy-run-id" in workflow
+              assert "steps.deploy.outputs.run_id" in workflow
+              assert "--expected-code-manifest" in workflow
+              assert "--template-file .aws-sam/build/template.yaml" in workflow
+              assert "PYTHONDONTWRITEBYTECODE" in workflow
+              assert workflow.index("Verify built MLB Lambda cold start") < workflow.index(
+                  "Bind the verified clean SAM build to the deployment identity"
+              ) < workflow.index("Deploy exact canonical source")
+              assert "Preflight Lambda artifact attestation access" in workflow
+              assert "aws lambda get-function" in workflow
+              assert "for attempt in range(1, 4):" in workflow
+              assert (
+                  "CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE|STACK_MISSING)"
+                  in workflow
+              )
+              assert "UPDATE_ROLLBACK_COMPLETE|ROLLBACK_COMPLETE" not in workflow
+
+
+          '''
+          prefix, remainder = text.split(identity_start, 1)
+          _old, suffix = remainder.split(identity_end, 1)
+          identity_tests.write_text(
+              prefix + identity_replacement + identity_end + suffix,
+              encoding='utf-8',
+          )
           PY
-          python -m py_compile tests/unit/test_mlb_workflow_authority.py
+          python -m py_compile \
+            tests/unit/test_mlb_workflow_authority.py \
+            tests/unit/test_mlb_deploy_identity.py
 
       - name: Verify unified MLB ownership and existing safeguards
         run: |
@@ -83,7 +223,8 @@ jobs:
             scripts/verify_mlb_workflow_authority.py \
             scripts/verify_unified_mlb_learning_ownership.py \
             tests/unit/test_mlb_workflow_authority.py \
-            tests/unit/test_unified_mlb_learning_ownership.py
+            tests/unit/test_unified_mlb_learning_ownership.py \
+            tests/unit/test_mlb_deploy_identity.py
           python scripts/stabilize_mlb_deploy_source.py
           python scripts/verify_mlb_workflow_authority.py
           python scripts/verify_unified_mlb_learning_ownership.py
