@@ -13,7 +13,12 @@ from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
 import boto3
 from botocore.config import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import (
+    ClientError,
+    ConnectionClosedError,
+    EndpointConnectionError,
+    ReadTimeoutError,
+)
 
 
 RETRY_CONTROL_VERSION = "MLB-TRAINER-DEPLOY-INVOKE-RETRY-v1"
@@ -296,6 +301,7 @@ def invoke_with_retry(
     invocation_attempts = 0
     pre_admission_failures = 0
     lease_contention_failures = 0
+    transport_failures = 0
     lease_deadline: Optional[float] = None
 
     while True:
@@ -306,6 +312,25 @@ def invoke_with_retry(
                 InvocationType="RequestResponse",
                 Payload=encoded_payload,
             )
+        except (ConnectionClosedError, EndpointConnectionError, ReadTimeoutError) as exc:
+            # The exact trainer execution lease prevents overlap if AWS admitted
+            # the request before the response channel closed. Repeating the same
+            # immutable-evidence run is idempotent and cannot promote authority.
+            if not (retry_execution_lease or mode == STATUS_MODE):
+                raise
+            transport_failures += 1
+            if transport_failures >= 3:
+                raise DeployInvokeError(
+                    "lambda_transport_retry_exhausted"
+                ) from exc
+            delay = _backoff_seconds(transport_failures)
+            print(
+                "AWS MLB trainer response transport closed; retrying through "
+                f"the exact execution lease {transport_failures}/3 in {delay}s",
+                file=sys.stderr,
+            )
+            sleep(delay)
+            continue
         except ClientError as exc:
             capacity_kind = _pre_admission_capacity_kind(exc)
             if not capacity_retry_enabled or capacity_kind is None:
@@ -499,6 +524,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             config=Config(
                 connect_timeout=10,
                 read_timeout=1000,
+                tcp_keepalive=True,
                 retries={"total_max_attempts": 1, "mode": "standard"},
             ),
         )

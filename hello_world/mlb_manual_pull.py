@@ -25,6 +25,11 @@ except Exception:
     _game_index = None
 
 try:
+    import mlb_movement_feature_identity_v2 as movement_identity_v2
+except Exception:
+    movement_identity_v2 = None
+
+try:
     import inqsi_pull_history as pull_history
 except Exception:
     pull_history = None
@@ -813,12 +818,36 @@ def _capture_bbs_shadow_safe(
         }
 
 
-def _latest_two_hot_snapshots_for_game_date(game_date: str, limit: int = 12) -> List[Dict[str, Any]]:
+def _all_hot_snapshots_for_game_date(game_date: str) -> List[Dict[str, Any]]:
     if snapshots_tbl is None:
         return []
     pk = f"SPORT#mlb#DATE#{game_date}"
-    resp = snapshots_tbl.query(KeyConditionExpression=Key("PK").eq(pk) & Key("SK").begins_with(f"HOT#GAME_DATE#{game_date}"), ScanIndexForward=False, Limit=limit)
-    rows = sorted(resp.get("Items", []), key=lambda x: x.get("asof") or "")
+    expression = Key("PK").eq(pk) & Key("SK").begins_with(
+        f"HOT#GAME_DATE#{game_date}"
+    )
+    rows: List[Dict[str, Any]] = []
+    start_key = None
+    while True:
+        kwargs: Dict[str, Any] = {
+            "KeyConditionExpression": expression,
+            "ScanIndexForward": True,
+        }
+        if start_key:
+            kwargs["ExclusiveStartKey"] = start_key
+        response = snapshots_tbl.query(**kwargs)
+        rows.extend(response.get("Items") or [])
+        start_key = response.get("LastEvaluatedKey")
+        if not start_key:
+            break
+    return sorted(rows, key=lambda row: str(row.get("asof") or ""))
+
+
+def _latest_two_hot_snapshots_for_game_date(
+    game_date: str, limit: int = 12
+) -> List[Dict[str, Any]]:
+    # Backward-compatible helper retained for diagnostics. Production movement
+    # reconstruction uses the complete immutable pregame history below.
+    rows = _all_hot_snapshots_for_game_date(game_date)
     return rows[-2:]
 
 
@@ -836,67 +865,76 @@ def _movement_strength(delta: float, agreeing_books: int, disagreeing_books: int
 def _store_hot_movement_features(*, game_date: str, asof: str, run: str) -> Dict[str, Any]:
     if signal_ledger_tbl is None:
         return {"ok": False, "stored": 0, "error": "SIGNAL_LEDGER_TABLE not configured"}
-    if _game_index is None or _delta_for_game is None:
-        return {"ok": False, "stored": 0, "error": "mlb_signal_api_helpers_unavailable"}
-    snaps = _latest_two_hot_snapshots_for_game_date(game_date)
-    if len(snaps) < 2:
-        return {"ok": True, "stored": 0, "reason": "Need at least two HOT snapshots for this game date."}
-    prev_snap, latest_snap = snaps[-2], snaps[-1]
-    prev_games = _game_index(prev_snap)
-    latest_games = _game_index(latest_snap)
+    if _delta_for_game is None or movement_identity_v2 is None:
+        return {
+            "ok": False,
+            "stored": 0,
+            "error": "identity_stable_movement_helpers_unavailable",
+        }
+
+    snapshots = _all_hot_snapshots_for_game_date(game_date)
+    derived = movement_identity_v2.derive_latest_features(
+        snapshots,
+        delta_for_game=_delta_for_game,
+        movement_strength=_movement_strength,
+    )
     stored = 0
     errors: List[str] = []
-    feature_rows: List[Dict[str, Any]] = []
-    for game_key, latest_game in latest_games.items():
-        prev_game = prev_games.get(game_key)
-        if not prev_game:
+    samples: List[Dict[str, Any]] = []
+    for row in derived:
+        identity = str(row.get("stable_identity") or "")
+        latest_asof = str(row.get("latest_asof") or "")
+        if not identity or not latest_asof:
+            errors.append("derived_feature_missing_stable_identity_or_asof")
             continue
-        row = _delta_for_game({**prev_game, "_snapshot_asof": prev_snap.get("asof")}, {**latest_game, "_snapshot_asof": latest_snap.get("asof")})
-        if not row.get("ok"):
-            continue
-        agreement = row.get("book_agreement") or {}
-        hot_delta = float(row.get("hot_delta") or 0)
-        favorite = row.get("favorite") or {}
-        signal_tags = list(row.get("reason_codes") or [])
-        strength = _movement_strength(hot_delta, int(agreement.get("agreeing_books") or 0), int(agreement.get("disagreeing_books") or 0))
-        if strength != "FLAT":
-            signal_tags.append(f"hot_move_{strength.lower()}")
+        safe_identity = identity.replace("#", "_")
         feature = {
             "PK": f"ML_FEATURE#mlb#{game_date}",
-            "SK": f"HOT_DELTA#{latest_snap.get('asof')}#GAME#{game_key}",
+            "SK": f"HOT_DELTA#{latest_asof}#IDENTITY#{safe_identity}",
             "entity_type": "HOT_PULL_MOVEMENT_FEATURE",
             "sport": "mlb",
             "platform_version": PLATFORM_VERSION,
             "game_date_et": game_date,
-            "game_key": game_key,
-            "feature_version": ML_FEATURE_VERSION,
+            "feature_version": movement_identity_v2.VERSION,
             "created_at": _now_iso(),
             "run": run,
             "date_isolated": True,
             "hot_only": True,
-            "previous_asof": prev_snap.get("asof"),
-            "latest_asof": latest_snap.get("asof"),
-            "hot_team": row.get("hot_team"),
-            "hot_delta": hot_delta,
-            "movement_strength": strength,
-            "favorite_side": favorite.get("side"),
-            "favorite_team": favorite.get("team"),
-            "dog_side": favorite.get("dog_side"),
-            "dog_team": favorite.get("dog_team"),
-            "book_agreement": agreement,
-            "latest_consensus": row.get("latest_consensus"),
-            "previous_consensus": row.get("previous_consensus"),
-            "prediction_status_at_feature_time": row.get("prediction_status"),
-            "signal_tags": sorted(set(signal_tags)),
             "label_status": "PENDING_RESULT",
+            **row,
         }
         try:
             signal_ledger_tbl.put_item(Item=_ddb_safe(feature))
             stored += 1
-            feature_rows.append({"game_key": game_key, "hot_team": row.get("hot_team"), "hot_delta": round(hot_delta, 6), "movement_strength": strength})
+            samples.append(
+                {
+                    "stable_identity": identity,
+                    "official_game_pk": row.get("official_game_pk"),
+                    "hot_team": row.get("hot_team"),
+                    "hot_delta": round(float(row.get("hot_delta") or 0.0), 6),
+                    "movement_strength": row.get("movement_strength"),
+                    "previous_asof": row.get("previous_asof"),
+                    "latest_asof": row.get("latest_asof"),
+                }
+            )
         except Exception as exc:
-            errors.append(f"{game_key}: {exc}")
-    return {"ok": len(errors) == 0, "stored": stored, "previous_asof": prev_snap.get("asof"), "latest_asof": latest_snap.get("asof"), "feature_version": ML_FEATURE_VERSION, "errors": errors, "sample": feature_rows[:10]}
+            errors.append(f"{identity}: {type(exc).__name__}")
+
+    return {
+        "ok": len(errors) == 0,
+        "stored": stored,
+        "derived": len(derived),
+        "snapshotCount": len(snapshots),
+        "feature_version": movement_identity_v2.VERSION,
+        "immutablePregameOnly": True,
+        "outcomeDataUsed": False,
+        "postStartObservationUsed": False,
+        "predictionsWritten": 0,
+        "locksWritten": 0,
+        "labelsWritten": 0,
+        "errors": errors,
+        "sample": samples[:20],
+    }
 
 
 def _record_snapshot_audit_safe(*, game_date: str, asof: str, t: str, run: str, date_compact: Dict[str, Any], raw_games: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -974,6 +1012,39 @@ def lambda_handler(event, context):
         return _resp(200, {"ok": True})
     try:
         payload = _event_payload(event)
+        if str(payload.get("mode") or "") == "movement_identity_rebuild":
+            game_date = str(
+                payload.get("game_date_et")
+                or payload.get("slate_date_et")
+                or ""
+            )
+            try:
+                datetime.strptime(game_date, "%Y-%m-%d")
+            except Exception:
+                return _resp(400, {
+                    "ok": False,
+                    "sport": "mlb",
+                    "mode": "movement_identity_rebuild",
+                    "error": "valid_game_date_et_required",
+                })
+            rebuilt = _store_hot_movement_features(
+                game_date=game_date,
+                asof=_now_iso(),
+                run=str(payload.get("run") or "movement_identity_rebuild"),
+            )
+            return _resp(200 if rebuilt.get("ok") else 503, {
+                "sport": "mlb",
+                "mode": "movement_identity_rebuild",
+                "game_date_et": game_date,
+                "sharedRootStackDeployed": False,
+                "otherSportChanged": False,
+                "immutablePredictionHistoryRewritten": False,
+                "postStartPredictionCreated": False,
+                "directPredictionWrite": False,
+                "directLockWrite": False,
+                "directLabelWrite": False,
+                **rebuilt,
+            })
         gate = _scheduled_start_gate(event, payload)
         if gate is not None:
             return _resp(200, gate)
