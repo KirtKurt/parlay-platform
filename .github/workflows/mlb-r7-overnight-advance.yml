@@ -1,32 +1,74 @@
 name: Unified MLB Learning Recovery Queue Control
+run-name: Release patched MLB deploy lane and dispatch canonical recovery
 
 "on":
   push:
     branches: [main]
     paths:
       - '.github/workflows/mlb-r7-overnight-advance.yml'
+  workflow_dispatch:
 
 permissions:
+  actions: write
   contents: read
 
-# One-time queue-control pulse. This group matches the obsolete pre-fix
-# shared deployment that is still retrying the trainer. The no-op cancels
-# that GitHub run after its completed stack deployment; it does not invoke
-# AWS, change CloudFormation, or mutate any sport resource.
+# This workflow intentionally shares the deployment concurrency group. Its
+# update supersedes only the stale pre-fix deploy that has already completed
+# CloudFormation and is waiting in a read-only smoke loop. It performs no AWS
+# call, then delegates exact-current-main deployment and R7 recovery to the
+# canonical bootstrap workflow.
 concurrency:
   group: parlay-platform-deploy
   cancel-in-progress: true
 
 jobs:
-  cancel-obsolete-deploy-retry:
+  release-and-dispatch:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Confirm queue-only action
+      - name: Dispatch exact-main bootstrap after releasing stale deploy lane
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          echo 'Cancelled obsolete deploy-owned trainer retry.'
-          echo 'AWS invocation: none'
-          echo 'CloudFormation action: none'
-          echo 'DynamoDB lease mutation: none'
-          echo 'Production authority change: none'
-          echo 'Other sport change: none'
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          repository = os.environ['REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          url = (
+              f'https://api.github.com/repos/{repository}/actions/workflows/'
+              'bootstrap-unified-mlb-r7-recovery-now.yml/dispatches'
+          )
+          body = json.dumps({'ref': 'main'}).encode('utf-8')
+          request = urllib.request.Request(
+              url,
+              data=body,
+              headers={
+                  'Accept': 'application/vnd.github+json',
+                  'Authorization': f'Bearer {token}',
+                  'Content-Type': 'application/json',
+                  'User-Agent': 'unified-mlb-learning-queue-control',
+                  'X-GitHub-Api-Version': '2022-11-28',
+              },
+              method='POST',
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              if response.status != 204:
+                  raise SystemExit(
+                      f'Unexpected canonical bootstrap dispatch status: {response.status}'
+                  )
+          print(json.dumps({
+              'ok': True,
+              'awsInvocation': False,
+              'cloudFormationAction': False,
+              'dynamoDbLeaseMutation': False,
+              'canonicalBootstrapDispatched': True,
+              'immutablePredictionOrLockMutated': False,
+              'productionAuthorityChanged': False,
+              'otherSportChanged': False,
+          }, sort_keys=True))
+          PY
