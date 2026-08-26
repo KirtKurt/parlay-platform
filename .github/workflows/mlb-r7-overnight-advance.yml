@@ -9,20 +9,22 @@ name: Unified MLB Learning Recovery Queue Control
 permissions:
   contents: read
 
-# One-time queue-control pulse. This group matches the obsolete pre-fix
-# workflow and cancels its retry loop. It does not invoke AWS.
+# One active recovery is already running on the verified repair source.
+# This no-op uses the same permanent concurrency group so GitHub replaces
+# the older duplicate pending run without cancelling the active recovery.
 concurrency:
-  group: mlb-r7-overnight-advance
-  cancel-in-progress: true
+  group: unified-mlb-learning
+  cancel-in-progress: false
 
 jobs:
-  cancel-obsolete-retry:
+  replace-duplicate-pending-run:
     runs-on: ubuntu-latest
     steps:
       - name: Confirm queue-only action
         run: |
           set -euo pipefail
-          echo 'Cancelled obsolete pre-fix GitHub retry loop.'
+          echo 'Duplicate pending recovery replaced by no-op.'
+          echo 'Active recovery cancellation: false'
           echo 'AWS invocation: none'
           echo 'DynamoDB lease mutation: none'
           echo 'Production authority change: none'
