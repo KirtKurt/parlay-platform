@@ -17,7 +17,7 @@ concurrency:
 jobs:
   repair:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,158 +28,258 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Patch scheduled failure semantics and manifest recovery
+      - name: Bind same-slot retries to the persisted canonical authority
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
 
-          path = Path('hello_world/mlb_manual_pull_protected.py')
+          path = Path('hello_world/mlb_manual_pull.py')
           text = path.read_text(encoding='utf-8')
 
-          old = '''                if result.get("ok") is not True:\n                    candidate_failures.append(\n                        f"winner_prediction_failed:{game_date or 'unknown'}"\n                    )\n\n                lifecycle_aware = result.get("preLockStorageLifecycleAware") is True\n'''
-          new = '''                lifecycle_aware = result.get("preLockStorageLifecycleAware") is True\n                lifecycle_complete_for_result = (\n                    result.get("displayStatusCoverageComplete") is True\n                    and result.get("lifecycleCoverageComplete") is True\n                    and result.get("preLockStorageComplete") is True\n                    and result.get("preLockStorageDispositionComplete") is True\n                )\n                # A recommendation can be intentionally non-actionable (for example\n                # NEGATIVE_EV_GUARD) without being an operational persistence failure.\n                # Only fail the scheduled ingest when the result is explicitly an\n                # operational defect or its lifecycle/storage contract is incomplete.\n                hard_winner_failure = bool(\n                    result.get("operationalDefect") is True\n                    or (result.get("ok") is not True and not lifecycle_complete_for_result)\n                )\n                if hard_winner_failure:\n                    candidate_failures.append(\n                        f"winner_prediction_failed:{game_date or 'unknown'}"\n                    )\n\n'''
-          if old not in text and new not in text:
-              raise RuntimeError('winner failure semantics anchor missing')
-          text = text.replace(old, new, 1)
+          old = '''        expected_authority = compact.get("official_schedule_authority") or {}\n        official_authority_bound = bool(\n            not expected_authority\n            or (\n                manifest.get("official_schedule_backed") is True\n                and manifest.get("official_schedule_authority_version") == expected_authority.get("version")\n                and manifest.get("official_schedule_authority_fingerprint") == expected_authority.get("fingerprint")\n                and int(manifest.get("official_schedule_game_count") or -1) == len(games)\n            )\n        )\n        manifest_bound = bool(\n            stored.get("ok") is True\n            and canonical_binding_complete\n            and manifest.get("immutable") is True\n            and manifest.get("full_provider_schedule") is True\n            and int(manifest.get("game_count") or -1) == len(games)\n            and manifest.get("fingerprint")\n            and manifest.get("pk")\n            and manifest.get("sk")\n            and official_authority_bound\n        )\n'''
+          new = '''        expected_authority = compact.get("official_schedule_authority") or {}\n        persisted_manifest = (\n            stored_pull.get("provider_schedule_manifest")\n            if isinstance(stored_pull, dict)\n            else {}\n        ) or {}\n        persisted_schedule_authority = (\n            persisted_manifest.get("scheduleAuthority")\n            if isinstance(persisted_manifest, dict)\n            else {}\n        ) or {}\n        official_authority_required = bool(\n            expected_authority\n            or persisted_schedule_authority\n            or manifest.get("official_schedule_backed") is True\n        )\n        manifest_validation_errors = []\n        if official_authority_required:\n            validator = getattr(\n                pull_history,\n                "validate_provider_schedule_manifest",\n                None,\n            )\n            if not stored_pull:\n                manifest_validation_errors.append("canonical_pull_readback_missing")\n            elif not callable(validator):\n                manifest_validation_errors.append(\n                    "provider_manifest_validator_unavailable"\n                )\n            else:\n                validation_result = validator(\n                    stored_pull,\n                    game_date,\n                    verify_immutable_storage=True,\n                )\n                if isinstance(validation_result, list):\n                    manifest_validation_errors.extend(\n                        str(error) for error in validation_result\n                    )\n                elif validation_result:\n                    manifest_validation_errors.append(str(validation_result))\n        canonical_game_count = (\n            len(stored_pull.get("games") or [])\n            if isinstance(stored_pull, dict)\n            else 0\n        )\n        # A same-quarter-hour retry must bind to the first immutable canonical\n        # observation. The retry's freshly fetched schedule proof has a new\n        # observedAtUtc/fingerprint and is not the authority for that slot.\n        # Validate the persisted pull and its strongly consistent manifest\n        # readback, then compare summary fields to that persisted proof only.\n        official_authority_bound = bool(\n            not official_authority_required\n            or (\n                not manifest_validation_errors\n                and manifest.get("official_schedule_backed") is True\n                and bool(persisted_schedule_authority)\n                and manifest.get("official_schedule_authority_version")\n                == persisted_schedule_authority.get("version")\n                and manifest.get("official_schedule_authority_fingerprint")\n                == persisted_schedule_authority.get("fingerprint")\n                and int(manifest.get("official_schedule_game_count") or -1)\n                == canonical_game_count\n            )\n        )\n        manifest_bound = bool(\n            stored.get("ok") is True\n            and canonical_binding_complete\n            and canonical_game_count > 0\n            and not manifest_validation_errors\n            and manifest.get("immutable") is True\n            and manifest.get("full_provider_schedule") is True\n            and int(manifest.get("game_count") or -1) == canonical_game_count\n            and manifest.get("fingerprint")\n            and manifest.get("pk")\n            and manifest.get("sk")\n            and official_authority_bound\n        )\n'''
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise RuntimeError('canonical retry authority binding anchor missing')
 
-          old_tail = '''    response = _attach_runtime_status(mlb_manual_pull.lambda_handler(event, context))\n    _raise_scheduled_delegate_failure(event, response)\n    return response\n'''
-          new_tail = '''    response = _attach_runtime_status(mlb_manual_pull.lambda_handler(event, context))\n    try:\n        _raise_scheduled_delegate_failure(event, response)\n    except RuntimeError as exc:\n        message = str(exc)\n        prefix = "MLB_SCHEDULED_PULL_FAILED:"\n        failure_payload = {}\n        if message.startswith(prefix):\n            try:\n                parsed = json.loads(message[len(prefix):])\n                failure_payload = parsed if isinstance(parsed, dict) else {}\n            except Exception:\n                failure_payload = {}\n        raw_failures = failure_payload.get("candidatePersistenceFailures")\n        failures = (\n            [str(failure) for failure in raw_failures]\n            if isinstance(raw_failures, list)\n            else []\n        )\n        manifest_only_failure = bool(failures) and all(\n            failure == "provider_schedule_manifest_incomplete"\n            or failure == "provider_schedule_manifest_missing"\n            or failure.startswith("provider_schedule_manifest_authority_invalid:")\n            for failure in failures\n        )\n        if not _is_scheduled(event) or not manifest_only_failure:\n            raise\n        # The canonical writer is intrinsically idempotent by 15-minute slot.\n        # Re-running the same scheduled event once allows a transient authority-\n        # binding race to converge without creating a second canonical observation.\n        # Mixed failures are never retried here; they remain fail-closed.\n        retry_event = dict(event)\n        retry_event["force"] = True\n        retry_event["manifest_binding_retry"] = True\n        response = _attach_runtime_status(\n            mlb_manual_pull.lambda_handler(retry_event, context)\n        )\n        _raise_scheduled_delegate_failure(retry_event, response)\n    return response\n'''
-          if old_tail not in text and new_tail not in text:
-              raise RuntimeError('lambda handler recovery anchor missing')
-          text = text.replace(old_tail, new_tail, 1)
+          old_return = '''            "providerManifestBound": manifest_bound,\n            "officialScheduleBacked": manifest.get("official_schedule_backed") is True,\n'''
+          new_return = '''            "providerManifestBound": manifest_bound,\n            "providerManifestValidationErrors": sorted(\n                set(manifest_validation_errors)\n            ),\n            "canonicalManifestValidatedAgainstPersistedPull": bool(\n                stored_pull and not manifest_validation_errors\n            ),\n            "sameSlotRetryAuthorityRebound": bool(\n                canonical_slot.get("retryReturnedExistingCanonicalPull") is True\n                and expected_authority\n                and persisted_schedule_authority\n                and expected_authority.get("fingerprint")\n                != persisted_schedule_authority.get("fingerprint")\n            ),\n            "officialScheduleBacked": manifest.get("official_schedule_backed") is True,\n'''
+          if old_return in text:
+              text = text.replace(old_return, new_return, 1)
+          elif new_return not in text:
+              raise RuntimeError('canonical retry diagnostic return anchor missing')
+
           path.write_text(text, encoding='utf-8')
           PY
 
-      - name: Add focused regression tests
+      - name: Add focused same-slot authority regressions
         run: |
-          cat > tests/unit/test_mlb_ingest_alarm_repair.py <<'PY'
+          cat > tests/unit/test_mlb_canonical_retry_authority_binding.py <<'PY'
           from __future__ import annotations
-          import importlib.util
-          import json
+
+          import copy
           import sys
-          import uuid
-          from contextlib import contextmanager
           from pathlib import Path
-          from types import ModuleType
+
 
           ROOT = Path(__file__).resolve().parents[2]
-          HELLO = ROOT / 'hello_world'
-          HANDLER = HELLO / 'mlb_manual_pull_protected.py'
-          if str(HELLO) not in sys.path:
-              sys.path.insert(0, str(HELLO))
+          HELLO_WORLD = ROOT / "hello_world"
+          if str(HELLO_WORLD) not in sys.path:
+              sys.path.insert(0, str(HELLO_WORLD))
 
-          REQUIRED = {
-              'accuracyTargetsSeparated','legacyReliabilityOverlaySafety','sourceHonestFundamentals',
-              'sourceHonestFundamentalsV2','legacyV1ChampionRuntimeInstalledForShadowDiagnostics',
-              'legacyV1AuthorityDisabled','v2ShadowManualFirst','officialSemanticsFinalized',
-              'exactCleanCohortVectorPatch','officialFreezeBridge','immutableFeatureFreeze',
-              'immutableLockedStorageAuthority','canonicalLockedStorageFinalizer',
-              'lastPrelockPromotionAuthority','canonicalProbabilityAndPersistedPrelockAuthority',
-              'providerNeutralCalibrationAndActionability','legacyFinalGateDisabled',
-          }
+          import mlb_manual_pull
 
-          def manifest(bound=True):
+
+          GAME_DATE = "2026-08-26"
+          CANONICAL_AT = "2026-08-26T17:15:27.196414+00:00"
+          RETRY_AT = "2026-08-26T17:17:43.767563+00:00"
+          SLOT_AT = "2026-08-26T17:15:00+00:00"
+
+
+          def _game():
               return {
-                  'game_date_et':'2026-08-24','gameCount':1,'version':'v','fingerprint':'a'*64,
-                  'pk':'p','sk':'s','immutable':True,'fullProviderSchedule':True,
-                  'boundToCanonicalPull':bound,'ok':bound,
+                  "game_id": "provider-game-1",
+                  "id": "provider-game-1",
+                  "game_key": "mlb|2026-08-26|away club|home club",
+                  "home_team": "Home Club",
+                  "away_team": "Away Club",
+                  "commence_time": "2026-08-26T23:05:00+00:00",
+                  "provider_sport_key": "baseball_mlb",
+                  "books": {"fanduel": {"ml": {"home": -120, "away": 110}}},
               }
 
-          def winner(ok=False, operational=False):
+
+          def _persisted_pull():
+              authority = {
+                  "version": "MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date",
+                  "source": "MLB Stats API exact-date schedule",
+                  "slateDate": GAME_DATE,
+                  "observedAtUtc": CANONICAL_AT,
+                  "officialGameCount": 1,
+                  "authoritativeRoster": True,
+                  "authoritativeStartTimes": True,
+                  "verified": True,
+                  "fingerprint": "persisted-authority-fingerprint",
+              }
               return {
-                  'game_date_et':'2026-08-24','ok':ok,'operationalDefect':operational,
-                  'gameCount':1,'allGamesPredicted':True,'displayStatusCoverageComplete':True,
-                  'lifecycleCoverageComplete':True,'preLockStorageLifecycleAware':True,
-                  'preLockStorageCandidateCount':1,'preLockStoredCount':1,
-                  'preLockStorageComplete':True,'preLockStorageDispositionCount':1,
-                  'preLockStorageDispositionComplete':True,
+                  "pull_id": "first-slot-pull",
+                  "sport": "mlb",
+                  "slate_date": GAME_DATE,
+                  "pulled_at": CANONICAL_AT,
+                  "source": "the_odds_api",
+                  "games": [_game()],
+                  "provider_schedule_manifest": {
+                      "scheduleAuthority": authority,
+                  },
               }
 
-          def payload(*, bound=True, winner_row=None):
+
+          def _stored_result(persisted_pull):
+              authority = persisted_pull["provider_schedule_manifest"][
+                  "scheduleAuthority"
+              ]
               return {
-                  'ok':True,'count':1,'providerScheduleManifestComplete':bound,
-                  'provider_schedule_manifests':[manifest(bound)],
-                  'game_winner_predictions':[winner_row or winner()],
+                  "ok": True,
+                  "stored": {
+                      "pk": f"PULLS#mlb#{GAME_DATE}",
+                      "sk": f"PULL#SLOT#{SLOT_AT}",
+                      "pull_id": "first-slot-pull",
+                      "provider_manifest": {
+                          "version": "INQSI-PROVIDER-SCHEDULE-MANIFEST-v1",
+                          "fingerprint": "persisted-manifest-fingerprint",
+                          "game_count": 1,
+                          "pk": f"PROVIDER_MANIFEST#mlb#{GAME_DATE}",
+                          "sk": (
+                              f"OBSERVED#{CANONICAL_AT}#PULL#first-slot-pull"
+                          ),
+                          "immutable": True,
+                          "full_provider_schedule": True,
+                          "official_schedule_backed": True,
+                          "official_schedule_authority_version": authority[
+                              "version"
+                          ],
+                          "official_schedule_authority_fingerprint": authority[
+                              "fingerprint"
+                          ],
+                          "official_schedule_game_count": 1,
+                      },
+                  },
+                  "pull": copy.deepcopy(persisted_pull),
+                  "deduped": True,
+                  "canonicalSlot": {
+                      "slotStartUtc": SLOT_AT,
+                      "canonicalPullId": "first-slot-pull",
+                      "canonicalPulledAtUtc": CANONICAL_AT,
+                      "retryReturnedExistingCanonicalPull": True,
+                  },
               }
 
-          @contextmanager
-          def loaded(responses):
-              responses = list(responses)
-              manual = ModuleType('mlb_manual_pull')
-              calls=[]
-              def call(event, context):
-                  calls.append(dict(event))
-                  value = responses.pop(0)
-                  return {'statusCode':200,'body':json.dumps(value)}
-              manual.lambda_handler=call
-              runtime=ModuleType('mlb_ml_runtime_install_v3')
-              runtime.VERSION='test-v'
-              def install():
-                  sys.modules['mlb_manual_pull']=manual
-                  return {'applied':True,'ok':True,'version':'test-v','steps':{k:True for k in REQUIRED},'errors':[]}
-              runtime.install=install
-              old_r=sys.modules.get('mlb_ml_runtime_install_v3'); old_m=sys.modules.get('mlb_manual_pull')
-              name='_alarm_repair_'+uuid.uuid4().hex
-              try:
-                  sys.modules['mlb_ml_runtime_install_v3']=runtime
-                  sys.modules.pop('mlb_manual_pull',None)
-                  spec=importlib.util.spec_from_file_location(name,HANDLER)
-                  mod=importlib.util.module_from_spec(spec); sys.modules[name]=mod; spec.loader.exec_module(mod)
-                  yield mod,calls
-              finally:
-                  sys.modules.pop(name,None)
-                  if old_r is None: sys.modules.pop('mlb_ml_runtime_install_v3',None)
-                  else: sys.modules['mlb_ml_runtime_install_v3']=old_r
-                  if old_m is None: sys.modules.pop('mlb_manual_pull',None)
-                  else: sys.modules['mlb_manual_pull']=old_m
 
-          def test_negative_ev_nonactionable_result_does_not_raise_when_storage_complete():
-              with loaded([payload(winner_row=winner(ok=False, operational=False))]) as (handler,calls):
-                  response=handler.lambda_handler({'sport':'mlb'},None)
-              assert response['statusCode']==200
-              assert len(calls)==1
+          def _retry_compact():
+              return {
+                  "games": [_game()],
+                  "official_schedule_authority": {
+                      "version": (
+                          "MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date"
+                      ),
+                      "slateDate": GAME_DATE,
+                      "observedAtUtc": RETRY_AT,
+                      "officialGameCount": 1,
+                      "authoritativeRoster": True,
+                      "authoritativeStartTimes": True,
+                      "verified": True,
+                      # A fresh observation legitimately has a different proof
+                      # fingerprint; it must not replace the slot authority.
+                      "fingerprint": "retry-observation-fingerprint",
+                  },
+              }
 
-          def test_operational_winner_failure_still_raises():
-              with loaded([payload(winner_row=winner(ok=False, operational=True))]) as (handler,calls):
-                  try: handler.lambda_handler({'sport':'mlb'},None)
-                  except RuntimeError as exc: message=str(exc)
-                  else: raise AssertionError('expected operational failure')
-              assert 'winner_prediction_failed:2026-08-24' in message
-              assert len(calls)==1
 
-          def test_manifest_binding_failure_retries_once_and_requires_valid_retry():
-              with loaded([payload(bound=False),payload(bound=True,winner_row=winner(ok=True))]) as (handler,calls):
-                  response=handler.lambda_handler({'sport':'mlb'},None)
-              assert response['statusCode']==200
-              assert len(calls)==2
-              assert calls[1].get('manifest_binding_retry') is True
-              assert calls[1].get('force') is True
+          def test_same_slot_retry_binds_to_persisted_manifest_not_fresh_fingerprint(
+              monkeypatch,
+          ):
+              persisted_pull = _persisted_pull()
+              calls = []
+
+              monkeypatch.setattr(
+                  mlb_manual_pull.pull_history,
+                  "store_pull",
+                  lambda _body: _stored_result(persisted_pull),
+              )
+
+              def validate(pull, slate, verify_immutable_storage=False):
+                  calls.append((pull, slate, verify_immutable_storage))
+                  return []
+
+              monkeypatch.setattr(
+                  mlb_manual_pull.pull_history,
+                  "validate_provider_schedule_manifest",
+                  validate,
+              )
+
+              result = mlb_manual_pull._store_canonical_pull_history(
+                  game_date=GAME_DATE,
+                  asof=RETRY_AT,
+                  run="same_slot_retry",
+                  compact=_retry_compact(),
+              )
+
+              assert result["ok"] is True
+              assert result["providerManifestBound"] is True
+              assert result["officialScheduleAuthorityBound"] is True
+              assert result["sameSlotRetryAuthorityRebound"] is True
+              assert result["providerManifestValidationErrors"] == []
+              assert result["canonicalPullId"] == "first-slot-pull"
+              assert calls == [(persisted_pull, GAME_DATE, True)]
+
+
+          def test_same_slot_retry_fails_closed_on_immutable_manifest_readback_error(
+              monkeypatch,
+          ):
+              persisted_pull = _persisted_pull()
+              monkeypatch.setattr(
+                  mlb_manual_pull.pull_history,
+                  "store_pull",
+                  lambda _body: _stored_result(persisted_pull),
+              )
+              monkeypatch.setattr(
+                  mlb_manual_pull.pull_history,
+                  "validate_provider_schedule_manifest",
+                  lambda *_args, **_kwargs: [
+                      "immutable_provider_manifest_readback_mismatch"
+                  ],
+              )
+
+              result = mlb_manual_pull._store_canonical_pull_history(
+                  game_date=GAME_DATE,
+                  asof=RETRY_AT,
+                  run="same_slot_retry",
+                  compact=_retry_compact(),
+              )
+
+              assert result["ok"] is False
+              assert result["providerManifestBound"] is False
+              assert result["officialScheduleAuthorityBound"] is False
+              assert result["providerManifestValidationErrors"] == [
+                  "immutable_provider_manifest_readback_mismatch"
+              ]
           PY
 
-      - name: Run MLB-only regression suite
+      - name: Run MLB-only canonical ingest regressions
         run: |
           set -euo pipefail
           python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
+          python -m py_compile hello_world/mlb_manual_pull.py
           python -m py_compile hello_world/mlb_manual_pull_protected.py
           pytest -q \
+            tests/unit/test_mlb_canonical_retry_authority_binding.py \
+            tests/unit/test_mlb_manual_pull_manifest.py \
             tests/unit/test_mlb_ingest_alarm_repair.py \
             tests/unit/test_mlb_postcutoff_storage_contract.py \
             tests/unit/test_mlb_manual_pull_protected_runtime.py \
             tests/unit/test_mlb_scoring_runtime_capacity.py
           python scripts/verify_mlb_schedule_invariants.py
 
-      - name: Commit repaired MLB source
+      - name: Commit repaired MLB source and regression proof
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add hello_world/mlb_manual_pull_protected.py tests/unit/test_mlb_ingest_alarm_repair.py
-          git diff --cached --quiet && exit 0
-          git commit -m 'Fix MLB ingest alarm persistence and manifest binding semantics'
-          for attempt in 1 2 3 4 5; do
+          git add \
+            hello_world/mlb_manual_pull.py \
+            tests/unit/test_mlb_canonical_retry_authority_binding.py
+          if git diff --cached --quiet; then
+            echo 'Canonical retry authority fix is already present.'
+            exit 0
+          fi
+          git commit -m 'Fix MLB same-slot canonical authority binding'
+          for attempt in $(seq 1 12); do
             git pull --rebase origin main
-            git push origin HEAD:main && exit 0
+            if git push origin HEAD:main; then
+              exit 0
+            fi
             sleep $((attempt * 3))
           done
           exit 1
