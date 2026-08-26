@@ -1,0 +1,341 @@
+name: Repair and verify MLB R7 continuity now
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/repair-mlb-r7-continuity-verified-now.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-r7-canonical-mutation
+  cancel-in-progress: false
+
+jobs:
+  repair-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout exact repair source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install verification runtime
+        run: python -m pip install --quiet "boto3>=1.34,<2" "pytest>=8,<9"
+
+      - name: Prove isolated fail-closed repair contract
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            scripts/reconcile_mlb_prospective_backlog.py \
+            scripts/reconcile_mlb_prospective_backlog_v3.py \
+            scripts/reconcile_mlb_prospective_backlog_v4.py \
+            scripts/reconcile_mlb_prospective_backlog_v5.py \
+            scripts/invoke_mlb_trainer_with_retry.py \
+            scripts/mlb_scoring_guard_status.py
+          python -m pytest -q \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v4.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v5.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v5_settlement_replay.py \
+            tests/unit/test_mlb_prospective_backlog_workflow.py \
+            tests/unit/test_invoke_mlb_trainer_with_retry.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/repair-mlb-r7-continuity-verified-now.yml')
+          text = path.read_text(encoding='utf-8')
+          for forbidden in (
+              'sam deploy',
+              'update-function-code',
+              'update-function-configuration',
+              'dynamodb put-item',
+              'dynamodb update-item',
+              'dynamodb delete-item',
+          ):
+              assert forbidden not in text.lower(), forbidden
+          for required in (
+              'immutablePredictionRewriteAllowed',
+              'postStartPredictionCreationAllowed',
+              'productionAuthorityChanged',
+              'promotionAuthorityChanged',
+              'directTableWrite',
+              '--retry-execution-lease',
+              'mlb_scoring_guard_status.py',
+          ):
+              assert required in text, required
+          PY
+          git diff --check
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Resolve and prove deployed MLB-only runtime contracts
+        run: |
+          set -euo pipefail
+          resolve() {
+            aws cloudformation describe-stack-resource \
+              --stack-name parlay-platform-dev \
+              --logical-resource-id "$1" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --query 'StackResourceDetail.PhysicalResourceId' \
+              --output text
+          }
+          LOCK_FN=$(resolve MLBDailyPickLockFunction)
+          TRAINER_FN=$(resolve MLBMLTrainingFunction)
+          READ_FN=$(resolve MLBV3ReadFunction)
+          test -n "$LOCK_FN" && test "$LOCK_FN" != "None"
+          test -n "$TRAINER_FN" && test "$TRAINER_FN" != "None"
+          test -n "$READ_FN" && test "$READ_FN" != "None"
+          printf '%s' "$LOCK_FN" >/tmp/mlb-r7-lock-function.txt
+          printf '%s' "$TRAINER_FN" >/tmp/mlb-r7-trainer-function.txt
+          printf '%s' "$READ_FN" >/tmp/mlb-r7-read-function.txt
+          aws lambda get-function-configuration \
+            --function-name "$LOCK_FN" \
+            --region "${{ secrets.AWS_REGION }}" >/tmp/mlb-r7-lock-config.json
+          aws lambda get-function-configuration \
+            --function-name "$TRAINER_FN" \
+            --region "${{ secrets.AWS_REGION }}" >/tmp/mlb-r7-trainer-config.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          lock = json.loads(Path('/tmp/mlb-r7-lock-config.json').read_text())
+          trainer = json.loads(Path('/tmp/mlb-r7-trainer-config.json').read_text())
+          lock_env = ((lock.get('Environment') or {}).get('Variables') or {})
+          trainer_env = ((trainer.get('Environment') or {}).get('Variables') or {})
+          assert lock.get('State') == 'Active', lock.get('State')
+          assert lock.get('LastUpdateStatus') == 'Successful', lock.get('LastUpdateStatus')
+          assert int(lock.get('Timeout') or 0) == 900, lock.get('Timeout')
+          assert lock_env.get('MLB_LOCK_EXECUTION_LEASE_SECONDS') == '960', lock_env.get('MLB_LOCK_EXECUTION_LEASE_SECONDS')
+          assert trainer.get('State') == 'Active', trainer.get('State')
+          assert trainer.get('LastUpdateStatus') == 'Successful', trainer.get('LastUpdateStatus')
+          assert int(trainer.get('Timeout') or 0) == 900, trainer.get('Timeout')
+          assert trainer_env.get('MLB_ML_EXECUTION_LEASE_SECONDS') == '960', trainer_env.get('MLB_ML_EXECUTION_LEASE_SECONDS')
+          assert trainer_env.get('MLB_ML_EXPERIMENT_ID') == 'mlb-v2-2026-08-03-future-prospective-r7'
+          assert trainer_env.get('INQSI_MLB_ML_AUTO_PROMOTE', 'false').lower() == 'false'
+          assert trainer_env.get('INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED', 'false').lower() == 'false'
+          safe = {
+              'lock': {
+                  'functionArn': lock.get('FunctionArn'),
+                  'state': lock.get('State'),
+                  'lastUpdateStatus': lock.get('LastUpdateStatus'),
+                  'timeoutSeconds': lock.get('Timeout'),
+                  'executionLeaseSeconds': lock_env.get('MLB_LOCK_EXECUTION_LEASE_SECONDS'),
+                  'gitSha': lock_env.get('INQSI_DEPLOY_GIT_SHA'),
+                  'deployRunId': lock_env.get('INQSI_DEPLOY_RUN_ID'),
+              },
+              'trainer': {
+                  'functionArn': trainer.get('FunctionArn'),
+                  'state': trainer.get('State'),
+                  'lastUpdateStatus': trainer.get('LastUpdateStatus'),
+                  'timeoutSeconds': trainer.get('Timeout'),
+                  'executionLeaseSeconds': trainer_env.get('MLB_ML_EXECUTION_LEASE_SECONDS'),
+                  'experimentId': trainer_env.get('MLB_ML_EXPERIMENT_ID'),
+                  'autoPromotionEnabled': trainer_env.get('INQSI_MLB_ML_AUTO_PROMOTE'),
+                  'legacyAuthorityEnabled': trainer_env.get('INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED'),
+                  'gitSha': trainer_env.get('INQSI_DEPLOY_GIT_SHA'),
+                  'deployRunId': trainer_env.get('INQSI_DEPLOY_RUN_ID'),
+              },
+              'directTableWrite': False,
+              'immutablePredictionRewriteAllowed': False,
+              'postStartPredictionCreationAllowed': False,
+              'productionAuthorityChanged': False,
+              'promotionAuthorityChanged': False,
+              'otherSportChanged': False,
+          }
+          Path('/tmp/mlb-r7-deployed-contract.json').write_text(json.dumps(safe, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(safe, indent=2, sort_keys=True))
+          PY
+
+      - name: Prove production scoring healthy before repair
+        run: |
+          set -euo pipefail
+          SLATE=$(TZ=America/New_York date +%F)
+          python scripts/mlb_scoring_guard_status.py \
+            --slate-date "$SLATE" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --output /tmp/mlb-r7-production-before.json \
+            --enforce
+
+      - name: Reconcile exact-date terminal continuity without weakening safeguards
+        env:
+          AWS_MAX_ATTEMPTS: "10"
+          AWS_RETRY_MODE: "standard"
+        run: |
+          set -euo pipefail
+          python scripts/reconcile_mlb_prospective_backlog_v5.py \
+            --stack-name parlay-platform-dev \
+            --region "${{ secrets.AWS_REGION }}" \
+            --max-slate-days 30 \
+            --output /tmp/mlb-r7-continuity.json
+
+      - name: Invoke canonical R7 trainer, selection capture, and bound status safely
+        env:
+          AWS_MAX_ATTEMPTS: "10"
+          AWS_RETRY_MODE: "standard"
+        run: |
+          set -euo pipefail
+          TRAINER_FN=$(cat /tmp/mlb-r7-trainer-function.txt)
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_FN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"verified_r7_continuity_training"}' \
+            --response /tmp/mlb-r7-training.json \
+            --invocation /tmp/mlb-r7-training-invoke.json \
+            --retry-execution-lease \
+            --deadline-seconds 3600 \
+            --retry-delay-seconds 30
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_FN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --payload '{"sport":"mlb","mode":"selection_capture","run":"verified_r7_continuity_selection"}' \
+            --response /tmp/mlb-r7-selection.json \
+            --invocation /tmp/mlb-r7-selection-invoke.json \
+            --retry-execution-lease \
+            --deadline-seconds 3600 \
+            --retry-delay-seconds 30
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_FN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --status-training-result /tmp/mlb-r7-training.json \
+            --status-selection-capture-result /tmp/mlb-r7-selection.json \
+            --response /tmp/mlb-r7-status.json \
+            --invocation /tmp/mlb-r7-status-invoke.json
+
+      - name: Prove persisted R7 advancement contract and exact deployed binding
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          deployed = json.loads(Path('/tmp/mlb-r7-deployed-contract.json').read_text())
+          continuity = json.loads(Path('/tmp/mlb-r7-continuity.json').read_text())
+          training = json.loads(Path('/tmp/mlb-r7-training.json').read_text())
+          selection = json.loads(Path('/tmp/mlb-r7-selection.json').read_text())
+          status = json.loads(Path('/tmp/mlb-r7-status.json').read_text())
+          health = status.get('trainingHealth') or status
+          latest = health.get('latestRun') or {}
+          challenger = health.get('challengerStatus') or status.get('challengerStatus') or {}
+          continuity_state = latest.get('canonicalSlateContinuity') or training.get('canonicalSlateContinuity') or {}
+
+          def integer(*values):
+              for value in values:
+                  try:
+                      return int(value)
+                  except (TypeError, ValueError):
+                      pass
+              return 0
+
+          accepted = integer(latest.get('acceptedRowCount'), training.get('acceptedRowCount'), health.get('acceptedRowCount'))
+          train_rows = integer(latest.get('trainPartitionCount'), training.get('trainPartitionCount'), health.get('trainPartitionCount'))
+          validation_rows = integer(latest.get('validationPartitionCount'), training.get('validationPartitionCount'), health.get('validationPartitionCount'))
+          test_rows = integer(latest.get('testPartitionCount'), training.get('testPartitionCount'), health.get('testPartitionCount'))
+          finalized = continuity_state.get('completedFinalizedSlateDates') or latest.get('completedFinalizedSlateDates') or training.get('completedFinalizedSlateDates') or []
+          finalized = sorted({str(value) for value in finalized if value})
+          blocked = str(continuity_state.get('blockedSlateDate') or '')
+          processed = str(continuity_state.get('processedThroughSlateDate') or '')
+          deployed_trainer = deployed['trainer']
+          deployed_sha = str(deployed_trainer.get('gitSha') or '')
+          deployed_run = str(deployed_trainer.get('deployRunId') or '')
+          status_sha = str(
+              challenger.get('deployedGitSha')
+              or challenger.get('deployGitSha')
+              or latest.get('deployedGitSha')
+              or latest.get('deployGitSha')
+              or ''
+          )
+          status_run = str(
+              challenger.get('deployedRunId')
+              or challenger.get('deployRunId')
+              or latest.get('deployedRunId')
+              or latest.get('deployRunId')
+              or ''
+          )
+          identity_bound = bool(
+              deployed_sha and status_sha == deployed_sha
+              and (not deployed_run or status_run == deployed_run)
+          )
+          proof = {
+              'ok': bool(
+                  continuity.get('ok') is True
+                  and training.get('ok') is True
+                  and selection.get('ok') is True
+                  and status.get('ok') is True
+                  and accepted >= 18
+                  and train_rows >= 18
+                  and {'2026-08-03', '2026-08-24'} <= set(finalized)
+                  and not blocked
+                  and identity_bound
+              ),
+              'proofType': 'MLB_R7_CONTINUITY_AND_PERSISTENCE_VERIFIED',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'acceptedRowCount': accepted,
+              'trainPartitionCount': train_rows,
+              'validationPartitionCount': validation_rows,
+              'testPartitionCount': test_rows,
+              'completedFinalizedSlateDates': finalized,
+              'processedThroughSlateDate': processed,
+              'blockedSlateDate': blocked or None,
+              'deployedTrainerGitSha': deployed_sha,
+              'persistedTrainerGitSha': status_sha,
+              'deployedTrainerRunId': deployed_run,
+              'persistedTrainerRunId': status_run,
+              'currentDeployedTrainingPersistenceVerified': identity_bound,
+              'currentDeployedSelectionCapturePersistenceVerified': bool(selection.get('ok') is True and identity_bound),
+              'directTableWrite': False,
+              'immutablePredictionRewriteAllowed': False,
+              'postStartPredictionCreationAllowed': False,
+              'productionAuthorityChanged': False,
+              'promotionAuthorityChanged': False,
+              'automaticPromotionEnabled': False,
+              'retiredAuthorityChanged': False,
+              'otherSportChanged': False,
+          }
+          Path('/tmp/mlb-r7-verified-proof.json').write_text(json.dumps(proof, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(proof, indent=2, sort_keys=True))
+          if not proof['ok']:
+              raise SystemExit('MLB R7 persisted verification failed closed')
+          PY
+
+      - name: Prove production scoring remained healthy after repair
+        run: |
+          set -euo pipefail
+          SLATE=$(TZ=America/New_York date +%F)
+          python scripts/mlb_scoring_guard_status.py \
+            --slate-date "$SLATE" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --output /tmp/mlb-r7-production-after.json \
+            --enforce
+
+      - name: Upload complete MLB-only verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-r7-continuity-verified-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 90
+          path: |
+            /tmp/mlb-r7-deployed-contract.json
+            /tmp/mlb-r7-production-before.json
+            /tmp/mlb-r7-continuity.json
+            /tmp/mlb-r7-training.json
+            /tmp/mlb-r7-training-invoke.json
+            /tmp/mlb-r7-selection.json
+            /tmp/mlb-r7-selection-invoke.json
+            /tmp/mlb-r7-status.json
+            /tmp/mlb-r7-status-invoke.json
+            /tmp/mlb-r7-verified-proof.json
+            /tmp/mlb-r7-production-after.json
