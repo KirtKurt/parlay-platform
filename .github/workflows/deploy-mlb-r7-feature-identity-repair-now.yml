@@ -92,7 +92,7 @@ jobs:
           TRAINER_FN: ${{ steps.functions.outputs.trainer_fn }}
         run: |
           set -euo pipefail
-          aws lambda update-function-configuration --function-name "$TRAINER_FN" --memory-size 4096 --region "$AWS_REGION" > /tmp/mlb-r7-repair/evidence/trainer-update.json
+          aws lambda update-function-configuration --function-name "$TRAINER_FN" --memory-size 3008 --region "$AWS_REGION" > /tmp/mlb-r7-repair/evidence/trainer-update.json
           aws lambda wait function-updated-v2 --function-name "$TRAINER_FN" --region "$AWS_REGION"
           aws lambda get-function-configuration --function-name "$TRAINER_FN" --region "$AWS_REGION" > /tmp/mlb-r7-repair/evidence/trainer-after.json
           python - <<'PY'
@@ -102,7 +102,7 @@ jobs:
           after=json.loads(Path('/tmp/mlb-r7-repair/evidence/trainer-after.json').read_text())
           assert after['FunctionName']==before['FunctionName']
           assert after['Handler']=='mlb_ml_aws_training_v1_compat.lambda_handler'
-          assert after['MemorySize']==4096
+          assert after['MemorySize']==3008
           assert after['State']=='Active' and after['LastUpdateStatus']=='Successful'
           PY
 
