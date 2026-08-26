@@ -3,6 +3,11 @@ run-name: Reconcile MLB prospective backlog v5 ${{ github.event.inputs.request_i
 
 "on":
   workflow_dispatch:
+    inputs:
+      request_id:
+        description: Unique bounded reconciliation request identifier
+        required: true
+        type: string
 
 permissions:
   contents: read
