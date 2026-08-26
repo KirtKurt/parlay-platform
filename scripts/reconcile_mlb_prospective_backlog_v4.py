@@ -29,9 +29,21 @@ import reconcile_mlb_prospective_backlog as base
 import reconcile_mlb_prospective_backlog_v3 as v3
 
 
-VERSION = "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v4.1-durable-terminal-replay"
+VERSION = "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v4.2-status-consistency-retry"
 MAX_INVOKE_ATTEMPTS = 12
 RETRY_DELAYS_SECONDS = (5, 10, 20, 30, 45, 60, 60, 60, 60, 60, 60)
+STATUS_CONSISTENCY_MAX_ATTEMPTS = 5
+STATUS_CONSISTENCY_RETRY_DELAYS_SECONDS = (2, 5, 10, 20)
+TRANSIENT_STATUS_ERRORS = frozenset({"official_status_unhealthy"})
+POST_MUTATION_STATUS_ERRORS = frozenset(
+    {
+        *TRANSIENT_STATUS_ERRORS,
+        "official_schedule_game_count_mismatch",
+        "official_status_terminal_counts_inconsistent",
+        "official_status_terminal_coverage_incomplete",
+        "official_status_not_complete",
+    }
+)
 RETRYABLE_CLIENT_CODES = frozenset(
     {
         "TooManyRequestsException",
@@ -154,6 +166,49 @@ def _status_event(slate_date: str) -> Dict[str, Any]:
     }
 
 
+def _status_consistency_delay_seconds(attempt: int) -> int:
+    return STATUS_CONSISTENCY_RETRY_DELAYS_SECONDS[
+        min(max(attempt - 1, 0), len(STATUS_CONSISTENCY_RETRY_DELAYS_SECONDS) - 1)
+    ]
+
+
+def read_official_status_with_consistency_retry(
+    lambda_client: Any,
+    function_name: str,
+    slate_date: str,
+    *,
+    invoke: Any = invoke_json_with_backpressure,
+    retryable_errors: frozenset[str] = TRANSIENT_STATUS_ERRORS,
+    sleep: Any = time.sleep,
+    max_attempts: int = STATUS_CONSISTENCY_MAX_ATTEMPTS,
+) -> Dict[str, Any]:
+    """Read and validate one exact MLB slate with bounded semantic retries.
+
+    Every attempt is read-only. Exact sport, date, official authority, start
+    times, manifest cardinality, terminal arithmetic, and complete coverage are
+    revalidated on every response. No invalid response is admitted.
+    """
+
+    if max_attempts < 1:
+        raise base.ReconciliationError("official_status_max_attempts_invalid")
+    event = _status_event(slate_date)
+    for attempt in range(1, max_attempts + 1):
+        status = invoke(lambda_client, function_name, event)
+        try:
+            base._validate_official_status(status, slate_date)
+        except base.ReconciliationError as exc:
+            if str(exc) not in retryable_errors:
+                raise
+            if attempt >= max_attempts:
+                raise base.ReconciliationError(
+                    f"official_status_consistency_retry_exhausted:{exc}"
+                ) from exc
+            sleep(_status_consistency_delay_seconds(attempt))
+            continue
+        return status
+    raise base.ReconciliationError("official_status_retry_state_invalid")
+
+
 def _incomplete_status_error(exc: base.ReconciliationError) -> bool:
     return str(exc) in MUTABLE_INCOMPLETE_STATUS_ERRORS
 
@@ -189,6 +244,7 @@ def reconcile(
     now_utc: Optional[datetime] = None,
     max_slate_days: int = base.DEFAULT_MAX_SLATE_DAYS,
     invoke: Any = invoke_json_with_backpressure,
+    status_sleep: Any = time.sleep,
 ) -> Dict[str, Any]:
     functions = base.resolve_stack_functions(cloudformation, stack_name)
     cutoff = base.release_cutoff(lambda_client, functions.trainer)
@@ -199,11 +255,17 @@ def reconcile(
     )
     rows: List[Dict[str, Any]] = []
     for slate_date in slate_dates:
-        status_event = _status_event(slate_date)
-        official_status = invoke(lambda_client, functions.lock, status_event)
         mutation_payload: Optional[Dict[str, Any]] = None
         mutation_executed = False
         try:
+            official_status = read_official_status_with_consistency_retry(
+                lambda_client,
+                functions.lock,
+                slate_date,
+                invoke=invoke,
+                retryable_errors=TRANSIENT_STATUS_ERRORS,
+                sleep=status_sleep,
+            )
             lock_evidence = _official_evidence(official_status, slate_date)
             if _status_requires_terminal_durability_replay(official_status):
                 raise base.ReconciliationError(
@@ -223,7 +285,14 @@ def reconcile(
                     "force": True,
                 },
             )
-            official_status = invoke(lambda_client, functions.lock, status_event)
+            official_status = read_official_status_with_consistency_retry(
+                lambda_client,
+                functions.lock,
+                slate_date,
+                invoke=invoke,
+                retryable_errors=POST_MUTATION_STATUS_ERRORS,
+                sleep=status_sleep,
+            )
             lock_evidence = v3.validate_lock_result(
                 mutation_payload,
                 official_status,
@@ -254,6 +323,7 @@ def reconcile(
                 ),
                 "readOnlyOfficialStatusProof": True,
                 "backpressureRetryInstalled": True,
+                "semanticStatusConsistencyRetryInstalled": True,
                 "directTableWrite": False,
                 "postStartPredictionCreationAllowed": False,
             }
@@ -272,6 +342,7 @@ def reconcile(
         "statusFirst": True,
         "readOnlyOfficialStatusProof": True,
         "backpressureRetryInstalled": True,
+        "semanticStatusConsistencyRetryInstalled": True,
         "directTableWrite": False,
         "postStartPredictionCreationAllowed": False,
         "immutablePredictionRewriteAllowed": False,

@@ -24,8 +24,8 @@ import reconcile_mlb_prospective_backlog_v3 as v3
 import reconcile_mlb_prospective_backlog_v4 as v4
 
 VERSION = (
-    "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5.3-"
-    "full-bearer-redacted-function-error-evidence"
+    "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5.4-"
+    "status-consistency-retry-and-redacted-function-error-evidence"
 )
 STATUS_PATH = "/v1/mlb/locks/status"
 SETTLEMENT_RUN = "prospective_backlog_settlement_v4"
@@ -407,14 +407,12 @@ def _execute_protected_terminal_replay(
                 "force": True,
             },
         )
-        status = v4.invoke_json_with_backpressure(
+        status = v4.read_official_status_with_consistency_retry(
             lambda_client,
             functions.lock,
-            {
-                "httpMethod": "GET",
-                "path": STATUS_PATH,
-                "queryStringParameters": {"date": request.slate_date},
-            },
+            request.slate_date,
+            invoke=v4.invoke_json_with_backpressure,
+            retryable_errors=v4.POST_MUTATION_STATUS_ERRORS,
         )
     evidence = v3.validate_lock_result(replay, status, request.slate_date)
     return {
@@ -459,6 +457,7 @@ def reconcile(*args: Any, **kwargs: Any) -> Dict[str, Any]:
     value = dict(value)
     value["version"] = VERSION
     value["readOnlyNonSuccessStatusBodiesPreserved"] = True
+    value["semanticStatusConsistencyRetryInstalled"] = True
     value["mutatingNonSuccessStatusesStillFailClosed"] = True
     value["mutatingFailureDiagnosticsWhitelisted"] = True
     value["lambdaFunctionErrorsRedacted"] = True

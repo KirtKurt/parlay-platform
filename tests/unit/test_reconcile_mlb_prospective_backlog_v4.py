@@ -218,6 +218,77 @@ def test_incomplete_status_uses_one_protected_mutation_then_readback():
     assert [event.get("force") for event in calls].count(True) == 1
 
 
+def test_transient_unhealthy_status_is_retried_read_only_without_mutation():
+    calls = []
+    sleeps = []
+    statuses = [
+        {"ok": False, "sport": "mlb", "slateDateEt": "2026-08-03"},
+        official_status("2026-08-03"),
+    ]
+
+    def invoke(client, function, event):
+        del client, function
+        calls.append(event)
+        if event.get("httpMethod") == "GET":
+            return statuses.pop(0)
+        if event.get("run") == "prospective_backlog_settlement_v4":
+            return settlement("2026-08-03")
+        raise AssertionError(event)
+
+    result = subject.reconcile(
+        FakeCloudFormation(),
+        FakeLambda(),
+        stack_name="stack",
+        now_utc=datetime(2026, 8, 4, 20, 0, tzinfo=timezone.utc),
+        invoke=invoke,
+        status_sleep=sleeps.append,
+    )
+
+    assert result["reconciledSlateCount"] == 1
+    assert result["semanticStatusConsistencyRetryInstalled"] is True
+    assert [event.get("httpMethod") for event in calls].count("GET") == 2
+    assert not any(event.get("force") is True for event in calls)
+    assert sleeps == [2]
+
+
+def test_post_mutation_status_readback_retries_until_exact_counts_converge():
+    calls = []
+    sleeps = []
+    statuses = [
+        official_status("2026-08-03", games=12, canonical=8, terminal=3),
+        {"ok": False, "sport": "mlb", "slateDateEt": "2026-08-03"},
+        official_status("2026-08-03", games=12, canonical=8, terminal=4),
+    ]
+
+    def invoke(client, function, event):
+        del client, function
+        calls.append(event)
+        if event.get("httpMethod") == "GET":
+            return statuses.pop(0)
+        if event.get("force") is True:
+            return mutation("2026-08-03")
+        if event.get("run") == "prospective_backlog_settlement_v4":
+            return settlement("2026-08-03")
+        raise AssertionError(event)
+
+    result = subject.reconcile(
+        FakeCloudFormation(),
+        FakeLambda(),
+        stack_name="stack",
+        now_utc=datetime(2026, 8, 4, 20, 0, tzinfo=timezone.utc),
+        invoke=invoke,
+        status_sleep=sleeps.append,
+    )
+
+    row = result["slates"][0]
+    assert row["protectedLockReplay"] is True
+    assert row["manifestGameCount"] == 12
+    assert row["semanticStatusConsistencyRetryInstalled"] is True
+    assert [event.get("httpMethod") for event in calls].count("GET") == 3
+    assert [event.get("force") for event in calls].count(True) == 1
+    assert sleeps == [2]
+
+
 def test_schedule_authority_failure_does_not_trigger_mutation():
     calls = []
     status = official_status("2026-08-03")
@@ -273,3 +344,5 @@ def test_source_has_no_storage_prediction_or_authority_writer():
     assert "statusFirst" in source
     assert "TooManyRequestsException" in source
     assert "postStartPredictionCreationAllowed" in source
+    assert "semanticStatusConsistencyRetryInstalled" in source
+    assert "official_status_consistency_retry_exhausted" in source

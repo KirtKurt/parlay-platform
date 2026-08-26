@@ -331,6 +331,7 @@ def test_failure_collection_is_bounded():
 
 def test_unhealthy_status_body_does_not_trigger_protected_mutation(monkeypatch):
     calls = []
+    sleeps = []
 
     def fake_invoke(client, function, event):
         del client, function
@@ -338,16 +339,22 @@ def test_unhealthy_status_body_does_not_trigger_protected_mutation(monkeypatch):
         return {"ok": False, "sport": "mlb", "slateDateEt": "2026-08-03"}
 
     monkeypatch.setattr(base, "invoke_json", fake_invoke)
-    with pytest.raises(base.ReconciliationError, match="official_status_unhealthy"):
+    with pytest.raises(
+        base.ReconciliationError,
+        match="official_status_consistency_retry_exhausted:official_status_unhealthy",
+    ):
         v4.reconcile(
             FakeCloudFormation(),
             FakeLambda(),
             stack_name="stack",
             now_utc=datetime(2026, 8, 4, 20, 0, tzinfo=timezone.utc),
             invoke=fake_invoke,
+            status_sleep=sleeps.append,
         )
-    assert len(calls) == 1
-    assert calls[0]["httpMethod"] == "GET"
+    assert len(calls) == v4.STATUS_CONSISTENCY_MAX_ATTEMPTS
+    assert all(call["httpMethod"] == "GET" for call in calls)
+    assert not any(call.get("force") is True for call in calls)
+    assert sleeps == list(v4.STATUS_CONSISTENCY_RETRY_DELAYS_SECONDS)
 
 
 def test_protected_replay_uses_same_function_error_adapter(monkeypatch):
@@ -405,6 +412,7 @@ def test_v5_preserves_v4_safety_flags(monkeypatch):
     assert result["ok"] is True
     assert result["version"] == subject.VERSION
     assert result["readOnlyNonSuccessStatusBodiesPreserved"] is True
+    assert result["semanticStatusConsistencyRetryInstalled"] is True
     assert result["mutatingNonSuccessStatusesStillFailClosed"] is True
     assert result["mutatingFailureDiagnosticsWhitelisted"] is True
     assert result["lambdaFunctionErrorsRedacted"] is True
@@ -435,6 +443,8 @@ def test_source_has_no_storage_prediction_or_authority_writer():
     assert "LogType=\"Tail\"" in source
     assert "requestPayloadIncluded" in source
     assert "lambdaFunctionErrorsRedacted" in source
+    assert "read_official_status_with_consistency_retry" in source
+    assert "semanticStatusConsistencyRetryInstalled" in source
 
 
 def test_recovery_workflow_uses_unique_bounded_dispatch():
