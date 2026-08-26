@@ -13,6 +13,7 @@ from pathlib import Path
 
 PAYLOAD_SHA256 = "68d80e40281c7a2f5fd50e8e58e65988d9234ab9a823fc3e77e2dfd17573d7da"
 PARTS_DIR = Path("scripts/mlb_control_plane_payload")
+# Trigger token: corrected-schema-validation-v2
 
 
 def main() -> int:
