@@ -100,8 +100,8 @@
     }
   },
   "circuitBreakerAdded": false,
-  "completedAtUtc": "2026-08-26T11:50:56.274554+00:00",
-  "createdAtUtc": "2026-08-26T11:50:00.636147+00:00",
+  "completedAtUtc": "2026-08-26T13:28:14.194359+00:00",
+  "createdAtUtc": "2026-08-26T13:27:16.647861+00:00",
   "dedicatedCapacity": {
     "commitmentDuration": null,
     "created": false,
@@ -2147,7 +2147,7 @@
           ],
           "quotaCode": "L-D5F39C2F",
           "quotaName": "Global cross-region model inference requests per minute for Amazon Nova 2 Lite",
-          "requestId": "4b17ef1622b843058df8e39ba77f7e03IjlPn9NW",
+          "requestId": "bdd8a05be06449d69a49e9309dc58bebq8JTB1de",
           "status": "PENDING",
           "unit": "None"
         },
@@ -2161,7 +2161,7 @@
           ],
           "quotaCode": "L-DC7FF66C",
           "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Micro",
-          "requestId": "2778693d0d6b4670b621ad2b242ec98b6kgYB5wi",
+          "requestId": "d4aa86c18823435da538ca78a83ee01f4llaU6RY",
           "status": "PENDING",
           "unit": "None"
         },
@@ -2175,7 +2175,7 @@
           ],
           "quotaCode": "L-71C69B70",
           "quotaName": "Global cross-region model inference tokens per minute for Amazon Nova 2 Lite",
-          "requestId": "c7d94a9b9ca54439ac3aa30d96c9c629EyUbDqG6",
+          "requestId": "9c410b4002f4428b90b50ebb9106f8f0c8pmFrhG",
           "status": "PENDING",
           "unit": "None"
         },
@@ -2189,7 +2189,7 @@
           ],
           "quotaCode": "L-C6F5908D",
           "quotaName": "Cross-region model inference tokens per minute for Amazon Nova 2 Lite",
-          "requestId": "05264a2b7bd547048af2b6a94e4552c968AO1Iuj",
+          "requestId": "d52af4436a7b4a4f9716a737ec67cacdVj4iW5ff",
           "status": "PENDING",
           "unit": "None"
         },
@@ -2203,7 +2203,7 @@
           ],
           "quotaCode": "L-7C42E72A",
           "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Lite",
-          "requestId": "2d508962bbd740348ee30e83ae540ae7OIBonhh5",
+          "requestId": "02640ecc1427432eaf1836e50d926e7coLvpnDZc",
           "status": "PENDING",
           "unit": "None"
         }
@@ -2750,7 +2750,7 @@
           ],
           "quotaCode": "L-D5F39C2F",
           "quotaName": "Global cross-region model inference requests per minute for Amazon Nova 2 Lite",
-          "requestId": "66e00f9f8b99404890537146de30b8fden4mwkF1",
+          "requestId": "799660f4c5ad49aab2d560111c39222fJHcDOStH",
           "status": "PENDING",
           "unit": "None"
         },
@@ -2764,7 +2764,7 @@
           ],
           "quotaCode": "L-DC7FF66C",
           "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Micro",
-          "requestId": "8f043abeac1043c1a6a60e2f1d56827fXUHQmvdO",
+          "requestId": "1a7fd910fcfd40c7bac440956de44b471fgou2zu",
           "status": "PENDING",
           "unit": "None"
         },
@@ -2778,7 +2778,7 @@
           ],
           "quotaCode": "L-71C69B70",
           "quotaName": "Global cross-region model inference tokens per minute for Amazon Nova 2 Lite",
-          "requestId": "7e316b1418be4a4782e453c2b8f3198cCJGVEJ05",
+          "requestId": "6422f7c64a3b4f1a9bd39c15f288c85dK7IZEBvl",
           "status": "PENDING",
           "unit": "None"
         },
@@ -2792,7 +2792,7 @@
           ],
           "quotaCode": "L-C0326783",
           "quotaName": "Cross-region model inference tokens per minute for Amazon Nova Pro",
-          "requestId": "342b11506e4444a3b304fc7124cdf701iWYso25B",
+          "requestId": "07dfaf02e8544c609fc247cb58678c13lSw9wcSw",
           "status": "PENDING",
           "unit": "None"
         },
@@ -2806,7 +2806,7 @@
           ],
           "quotaCode": "L-C6F5908D",
           "quotaName": "Cross-region model inference tokens per minute for Amazon Nova 2 Lite",
-          "requestId": "de70a4335f414bfc8549e8269af48296G0kxzSp2",
+          "requestId": "ddc7348908b843a294aa8fb4729801c4cTe01C4F",
           "status": "PENDING",
           "unit": "None"
         }
@@ -2814,20 +2814,6 @@
     },
     {
       "errors": [
-        {
-          "adjustable": true,
-          "code": "QuotaExceededException",
-          "currentValue": 20.0,
-          "desiredValue": 2000.0,
-          "message": "This account has reached the maximum number of open service quota increase (SQI) requests. Before opening another SQI request, wait for an open SQI request to be accepted or rejected.",
-          "modelFamilies": [
-            "amazon_nova_2_lite"
-          ],
-          "quotaCode": "L-D5F39C2F",
-          "quotaName": "Global cross-region model inference requests per minute for Amazon Nova 2 Lite",
-          "type": "QuotaExceededException",
-          "unit": "None"
-        },
         {
           "adjustable": true,
           "code": "QuotaExceededException",
@@ -3438,7 +3424,22 @@
       ],
       "ok": false,
       "region": "us-west-2",
-      "submittedRequests": []
+      "submittedRequests": [
+        {
+          "adjustable": true,
+          "caseId": null,
+          "currentValue": 20.0,
+          "desiredValue": 2000.0,
+          "modelFamilies": [
+            "amazon_nova_2_lite"
+          ],
+          "quotaCode": "L-D5F39C2F",
+          "quotaName": "Global cross-region model inference requests per minute for Amazon Nova 2 Lite",
+          "requestId": "ac55ab216c2a442db6f463ffa878541bjdSanprI",
+          "status": "PENDING",
+          "unit": "None"
+        }
+      ]
     }
   ],
   "regions": [
