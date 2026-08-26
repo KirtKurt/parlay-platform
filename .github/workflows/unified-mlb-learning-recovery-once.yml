@@ -2,7 +2,7 @@ name: Unified MLB learning recovery once
 
 "on":
   push:
-    branches: [main]
+    branches: [main, repair/mlb-unified-selection-deadline-20260826]
     paths:
       - 'runtime_reports/unified_mlb_learning_recovery_trigger.txt'
 
@@ -138,7 +138,7 @@ jobs:
             --response /tmp/unified-mlb-recovery/selection.json \
             --invocation /tmp/unified-mlb-recovery/selection-invocation.json \
             --retry-execution-lease \
-            --deadline-seconds 600 \
+            --deadline-seconds 1200 \
             --retry-delay-seconds 20
 
       - name: Bind fresh status and require numeric advancement
