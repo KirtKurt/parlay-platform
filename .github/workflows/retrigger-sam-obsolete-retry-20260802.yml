@@ -1,96 +1,67 @@
-name: Export tested MLB shadow authority repair
+name: Patch MLB R7 deploy isolation self-check
 
-on:
-  pull_request:
-    branches: [main]
-    types: [opened, reopened, synchronize]
+"on":
+  push:
+    branches:
+      - repair/run-mlb-r7-feature-identity-deploy-20260826
+    paths:
+      - '.github/workflows/retrigger-sam-obsolete-retry-20260802.yml'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: export-mlb-shadow-authority-repair-${{ github.run_id }}
-  cancel-in-progress: false
+  group: patch-mlb-r7-deploy-isolation-self-check
+  cancel-in-progress: true
 
 jobs:
-  repair:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+  patch:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: repair/run-mlb-r7-feature-identity-deploy-20260826
           fetch-depth: 0
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install validators
-        run: python -m pip install --quiet 'PyYAML>=6,<7' 'pytest>=8,<9'
-
-      - name: Align canonical deployment and source verifier with fail-closed authority
+      - name: Remove validator self-match without weakening isolation
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-
-          replacements = {
-              Path('.github/workflows/deploy.yml'): (
-                  "              'runtimeAuthorityActivationAvailable': True,",
-                  "              'runtimeAuthorityActivationAvailable': False,",
-              ),
-              Path('scripts/verify_mlb_workflow_authority.py'): (
-                  "            \"'runtimeAuthorityActivationAvailable': True\": (",
-                  "            \"'runtimeAuthorityActivationAvailable': False\": (",
-              ),
-          }
-          for path, (old, new) in replacements.items():
-              text = path.read_text(encoding='utf-8')
-              if text.count(new) == 1 and text.count(old) == 0:
-                  print(f'{path}: fail-closed shadow authority contract already installed')
-                  continue
-              if text.count(old) != 1 or text.count(new) != 0:
-                  raise SystemExit(
-                      f'{path} drifted: old matches={text.count(old)}, '
-                      f'new matches={text.count(new)}'
-                  )
-              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          path=Path('.github/workflows/deploy-mlb-r7-feature-identity-repair-now.yml')
+          text=path.read_text(encoding='utf-8')
+          old="forbidden = ('sam deploy', 'template.yaml', 'soccer', 'tennis', 'nfl')"
+          new="forbidden = ('sam' + ' deploy', 'template' + '.yaml', 'soc' + 'cer', 'ten' + 'nis', 'n' + 'fl')"
+          if old in text:
+              text=text.replace(old,new,1)
+          elif new not in text:
+              raise SystemExit('isolation validator anchor drifted')
+          path.write_text(text,encoding='utf-8')
+          assert old not in text
+          assert new in text
           PY
-
-      - name: Validate repair without weakening MLB gates
-        run: |
-          set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-          import yaml
-
-          deploy = Path('.github/workflows/deploy.yml').read_text(encoding='utf-8')
-          verifier = Path('scripts/verify_mlb_workflow_authority.py').read_text(encoding='utf-8')
-          yaml.safe_load(deploy)
-          assert deploy.count("'runtimeAuthorityActivationAvailable': False,") == 1
-          assert deploy.count("'runtimeAuthorityActivationAvailable': True,") == 0
-          assert verifier.count("\"'runtimeAuthorityActivationAvailable': False\": (") == 1
-          assert verifier.count("\"'runtimeAuthorityActivationAvailable': True\": (") == 0
-          assert "'firstPromotionRequiresManualReview': True," in deploy
-          assert "'manualReviewCreatesShadowApprovalOnly': True," in deploy
-          assert "'v2InferenceConsumerInstalled': False," in deploy
-          assert "'automaticWagerAllowed': False," in deploy
+          source=Path('.github/workflows/deploy-mlb-r7-feature-identity-repair-now.yml').read_text().lower()
+          for token in ('sam deploy','template.yaml','soccer','tennis','nfl'):
+              assert token not in source, token
           PY
-          python scripts/verify_mlb_workflow_authority.py
-          python -m pytest -q \
-            tests/unit/test_mlb_workflow_authority.py \
-            tests/unit/test_mlb_shadow_authority_deploy_gate.py
           git diff --check
-
-      - name: Upload tested repair files
-        uses: actions/upload-artifact@v4
-        with:
-          name: mlb-shadow-authority-repair-${{ github.run_id }}
-          path: |
-            .github/workflows/deploy.yml
-            scripts/verify_mlb_workflow_authority.py
-          if-no-files-found: error
-          retention-days: 1
+      - name: Commit validated workflow correction only
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git checkout origin/main -- .github/workflows/retrigger-sam-obsolete-retry-20260802.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            .github/workflows/deploy-mlb-r7-feature-identity-repair-now.yml \
+            .github/workflows/retrigger-sam-obsolete-retry-20260802.yml
+          git diff --cached --check
+          git commit -m 'Repair MLB R7 deploy isolation self-check'
+          git pull --rebase origin repair/run-mlb-r7-feature-identity-deploy-20260826
+          git push origin HEAD:repair/run-mlb-r7-feature-identity-deploy-20260826
