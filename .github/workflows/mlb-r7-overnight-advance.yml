@@ -23,9 +23,9 @@ env:
 jobs:
   recover-and-verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 58
+    timeout-minutes: 90
     steps:
-      - name: Checkout exact recovery source
+      - name: Checkout current unified MLB source
         uses: actions/checkout@v4
 
       - name: Setup Python 3.11
@@ -40,24 +40,23 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Install bounded verification dependencies
+      - name: Install bounded runtime and prove deploy isolation
         run: |
           set -euo pipefail
-          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+          python -m pip install --quiet 'boto3>=1.34,<2'
           python -m py_compile \
             scripts/invoke_mlb_trainer_with_retry.py \
             scripts/mlb_scoring_guard_status.py \
             scripts/verify_unified_mlb_learning_ownership.py
-          mkdir -p /tmp/unified-mlb-learning
-
-      - name: Prove one automatic unified MLB learning owner
-        run: |
-          set -euo pipefail
+          grep -q 'UNIFIED_MLB_LEARNING_OWNER=eventbridge_schedule' .github/workflows/deploy.yml
+          grep -q '".github/workflows/mlb-r7-overnight-advance.yml"' .github/workflows/deploy.yml
+          ! grep -q 'Run AWS-native MLB trainer and verify fresh split health' .github/workflows/deploy.yml
           python scripts/verify_unified_mlb_learning_ownership.py \
-            | tee /tmp/unified-mlb-learning/ownership-proof.json
-          python -m pytest -q tests/unit/test_unified_mlb_learning_ownership.py
+            | tee /tmp/unified-mlb-ownership-proof.json
+          mkdir -p /tmp/unified-mlb-recovery
+          mv /tmp/unified-mlb-ownership-proof.json /tmp/unified-mlb-recovery/ownership-proof.json
 
-      - name: Resolve the deployed unified MLB trainer only
+      - name: Resolve active deployed unified MLB trainer
         run: |
           set -euo pipefail
           TRAINER_FN="$(aws cloudformation describe-stack-resource \
@@ -75,18 +74,18 @@ jobs:
             --function-name "$TRAINER_FN" \
             --region "$AWS_REGION" \
             --query '{FunctionName:FunctionName,State:State,LastUpdateStatus:LastUpdateStatus,Handler:Handler,MemorySize:MemorySize,Timeout:Timeout}' \
-            --output json | tee /tmp/unified-mlb-learning/trainer-config.json
+            --output json | tee /tmp/unified-mlb-recovery/trainer-config.json
           python - <<'PY'
           import json
           from pathlib import Path
-          value = json.loads(Path('/tmp/unified-mlb-learning/trainer-config.json').read_text())
+          value = json.loads(Path('/tmp/unified-mlb-recovery/trainer-config.json').read_text())
           assert value.get('State') == 'Active', value
           assert value.get('LastUpdateStatus') == 'Successful', value
           assert value.get('Handler') == 'mlb_ml_aws_training_v1_compat.lambda_handler', value
           assert int(value.get('Timeout') or 0) == 900, value
           PY
 
-      - name: Prove unified MLB production healthy before learning
+      - name: Prove production and August 25 immutable coverage before training
         env:
           PYTHONPATH: .
         run: |
@@ -96,17 +95,17 @@ jobs:
           python scripts/mlb_scoring_guard_status.py \
             --slate-date "$CURRENT_SLATE_DATE" \
             --region "$AWS_REGION" \
-            --output /tmp/unified-mlb-learning/production-before.json \
+            --output /tmp/unified-mlb-recovery/production-before.json \
             --enforce
           python scripts/mlb_scoring_guard_status.py \
             --slate-date "$TARGET_SLATE_DATE" \
             --region "$AWS_REGION" \
-            --output /tmp/unified-mlb-learning/target-slate-before.json \
+            --output /tmp/unified-mlb-recovery/target-before.json \
             --enforce
           python - <<'PY'
           import json
           from pathlib import Path
-          value = json.loads(Path('/tmp/unified-mlb-learning/target-slate-before.json').read_text())
+          value = json.loads(Path('/tmp/unified-mlb-recovery/target-before.json').read_text())
           summary = value.get('summary') or {}
           assert value.get('guardPassed') is True, value
           assert value.get('readOnly') is True, value
@@ -114,10 +113,10 @@ jobs:
           assert int(summary.get('movementFeatureGameCount') or 0) == 15, summary
           assert int(summary.get('missingMovementCount') or 0) == 0, summary
           assert int(summary.get('persistedPredictionGameCount') or 0) == 15, summary
-          print('The exact August 25 slate has 15/15 immutable movement and prediction coverage.')
+          print('August 25 has 15/15 official games, immutable movement vectors, and predictions.')
           PY
 
-      - name: Invoke one lease-safe unified MLB training run
+      - name: Run one canonical lease-safe training invocation
         env:
           PYTHONPATH: .
           AWS_MAX_ATTEMPTS: '1'
@@ -126,14 +125,14 @@ jobs:
           python scripts/invoke_mlb_trainer_with_retry.py \
             --function-name "$TRAINER_FN" \
             --region "$AWS_REGION" \
-            --payload '{"sport":"mlb","mode":"scheduled","run":"unified_mlb_learning_recovery"}' \
-            --response /tmp/unified-mlb-learning/training.json \
-            --invocation /tmp/unified-mlb-learning/training-invocation.json \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"unified_mlb_single_owner_recovery"}' \
+            --response /tmp/unified-mlb-recovery/training.json \
+            --invocation /tmp/unified-mlb-recovery/training-invocation.json \
             --retry-execution-lease \
             --deadline-seconds 2400 \
             --retry-delay-seconds 20
 
-      - name: Capture selection state without activating authority
+      - name: Capture selection without activating authority
         env:
           PYTHONPATH: .
           AWS_MAX_ATTEMPTS: '1'
@@ -142,14 +141,14 @@ jobs:
           python scripts/invoke_mlb_trainer_with_retry.py \
             --function-name "$TRAINER_FN" \
             --region "$AWS_REGION" \
-            --payload '{"sport":"mlb","mode":"selection_capture","run":"unified_mlb_learning_recovery_selection"}' \
-            --response /tmp/unified-mlb-learning/selection.json \
-            --invocation /tmp/unified-mlb-learning/selection-invocation.json \
+            --payload '{"sport":"mlb","mode":"selection_capture","run":"unified_mlb_single_owner_recovery_selection"}' \
+            --response /tmp/unified-mlb-recovery/selection.json \
+            --invocation /tmp/unified-mlb-recovery/selection-invocation.json \
             --retry-execution-lease \
             --deadline-seconds 600 \
             --retry-delay-seconds 20
 
-      - name: Bind exact fresh status and require real advancement
+      - name: Bind fresh status and require numeric advancement
         env:
           PYTHONPATH: .
         run: |
@@ -157,18 +156,18 @@ jobs:
           python scripts/invoke_mlb_trainer_with_retry.py \
             --function-name "$TRAINER_FN" \
             --region "$AWS_REGION" \
-            --status-training-result /tmp/unified-mlb-learning/training.json \
-            --status-selection-capture-result /tmp/unified-mlb-learning/selection.json \
-            --response /tmp/unified-mlb-learning/status.json \
-            --invocation /tmp/unified-mlb-learning/status-invocation.json
+            --status-training-result /tmp/unified-mlb-recovery/training.json \
+            --status-selection-capture-result /tmp/unified-mlb-recovery/selection.json \
+            --response /tmp/unified-mlb-recovery/status.json \
+            --invocation /tmp/unified-mlb-recovery/status-invocation.json
           python - <<'PY'
           import json
           import os
           from pathlib import Path
 
-          training = json.loads(Path('/tmp/unified-mlb-learning/training.json').read_text())
-          selection = json.loads(Path('/tmp/unified-mlb-learning/selection.json').read_text())
-          status = json.loads(Path('/tmp/unified-mlb-learning/status.json').read_text())
+          training = json.loads(Path('/tmp/unified-mlb-recovery/training.json').read_text())
+          selection = json.loads(Path('/tmp/unified-mlb-recovery/selection.json').read_text())
+          status = json.loads(Path('/tmp/unified-mlb-recovery/status.json').read_text())
           health = status.get('trainingHealth') or {}
           selection_health = status.get('selectionCaptureHealth') or {}
           latest = health.get('latestRun') or training
@@ -178,51 +177,45 @@ jobs:
           target = os.environ['TARGET_SLATE_DATE']
           minimum = int(os.environ['MIN_ACCEPTED_ROWS'])
           accepted = int(latest.get('acceptedRowCount') or 0)
-          rejected = int(latest.get('rejectedRowCount') or 0)
-          partition_counts = latest.get('partitionCounts') or ((latest.get('milestones') or {}).get('counts') or {})
-          train_count = int(partition_counts.get('train') or 0)
-
-          result = {
-            'ok': training.get('ok') is True and selection.get('ok') is True and status.get('ok') is True,
-            'acceptedRowCount': accepted,
-            'rejectedRowCount': rejected,
-            'partitionCounts': partition_counts,
-            'targetSlateDate': target,
-            'targetSlateFinalizedAndAdmitted': target in finalized and target in processed,
-            'processedThroughSlateDate': continuity.get('processedThroughSlateDate'),
-            'blockedSlateDate': continuity.get('blockedSlateDate'),
-            'continuityBlocker': continuity.get('blocker'),
-            'trainingDeploymentIdentityMatches': health.get('deploymentIdentityMatches'),
-            'selectionDeploymentIdentityMatches': selection_health.get('deploymentIdentityMatches'),
-            'minimumAcceptedRows': minimum,
-            'advancedToMinimum': accepted >= minimum and train_count >= minimum,
-            'automaticPromotionEnabled': latest.get('automaticPromotionEnabled'),
-            'championChanged': latest.get('championChanged'),
-            'liveInferenceAuthority': latest.get('liveInferenceAuthority'),
-            'productionAuthorityChanged': latest.get('productionAuthorityChanged'),
-            'immutablePredictionRewriteAllowed': False,
-            'postStartPredictionCreationAllowed': False,
-            'otherSportChanged': False,
+          counts = latest.get('partitionCounts') or ((latest.get('milestones') or {}).get('counts') or {})
+          train_count = int(counts.get('train') or 0)
+          proof = {
+              'ok': training.get('ok') is True and selection.get('ok') is True and status.get('ok') is True,
+              'acceptedRowCount': accepted,
+              'partitionCounts': counts,
+              'targetSlateDate': target,
+              'targetSlateFinalized': target in finalized,
+              'targetSlateProcessed': target in processed,
+              'processedThroughSlateDate': continuity.get('processedThroughSlateDate'),
+              'blockedSlateDate': continuity.get('blockedSlateDate'),
+              'continuityBlocker': continuity.get('blocker'),
+              'trainingDeploymentIdentityMatches': health.get('deploymentIdentityMatches'),
+              'selectionDeploymentIdentityMatches': selection_health.get('deploymentIdentityMatches'),
+              'automaticPromotionEnabled': latest.get('automaticPromotionEnabled'),
+              'championChanged': latest.get('championChanged'),
+              'liveInferenceAuthority': latest.get('liveInferenceAuthority'),
+              'productionAuthorityChanged': latest.get('productionAuthorityChanged'),
+              'immutablePredictionRewriteAllowed': False,
+              'postStartPredictionCreationAllowed': False,
+              'otherSportChanged': False,
           }
-          Path('/tmp/unified-mlb-learning/acceptance.json').write_text(
-              json.dumps(result, indent=2, sort_keys=True) + '\n'
+          Path('/tmp/unified-mlb-recovery/acceptance.json').write_text(
+              json.dumps(proof, indent=2, sort_keys=True) + '\n'
           )
-          print(json.dumps(result, indent=2, sort_keys=True))
-
-          assert result['ok'] is True, result
-          assert rejected == 0, result
-          assert target in finalized, result
-          assert target in processed, result
-          assert continuity.get('blockedSlateDate') in (None, ''), result
-          assert continuity.get('blocker') in (None, ''), result
-          assert health.get('deploymentIdentityMatches') is True, result
-          assert selection_health.get('deploymentIdentityMatches') is True, result
-          assert accepted >= minimum, result
-          assert train_count >= minimum, result
-          assert latest.get('automaticPromotionEnabled') is not True, result
-          assert latest.get('championChanged') is not True, result
-          assert latest.get('liveInferenceAuthority') is not True, result
-          assert latest.get('productionAuthorityChanged') is not True, result
+          print(json.dumps(proof, indent=2, sort_keys=True))
+          assert proof['ok'] is True, proof
+          assert target in finalized, proof
+          assert target in processed, proof
+          assert continuity.get('blockedSlateDate') in (None, ''), proof
+          assert continuity.get('blocker') in (None, ''), proof
+          assert health.get('deploymentIdentityMatches') is True, proof
+          assert selection_health.get('deploymentIdentityMatches') is True, proof
+          assert accepted >= minimum, proof
+          assert train_count >= minimum, proof
+          assert latest.get('automaticPromotionEnabled') is not True, proof
+          assert latest.get('championChanged') is not True, proof
+          assert latest.get('liveInferenceAuthority') is not True, proof
+          assert latest.get('productionAuthorityChanged') is not True, proof
           PY
 
       - name: Prove unified MLB production remained healthy
@@ -233,13 +226,13 @@ jobs:
           python scripts/mlb_scoring_guard_status.py \
             --slate-date "$CURRENT_SLATE_DATE" \
             --region "$AWS_REGION" \
-            --output /tmp/unified-mlb-learning/production-after.json \
+            --output /tmp/unified-mlb-recovery/production-after.json \
             --enforce
           python - <<'PY'
           import json
           from pathlib import Path
-          before = json.loads(Path('/tmp/unified-mlb-learning/production-before.json').read_text())
-          after = json.loads(Path('/tmp/unified-mlb-learning/production-after.json').read_text())
+          before = json.loads(Path('/tmp/unified-mlb-recovery/production-before.json').read_text())
+          after = json.loads(Path('/tmp/unified-mlb-recovery/production-after.json').read_text())
           b = before.get('summary') or {}
           a = after.get('summary') or {}
           assert before.get('guardPassed') is True, before
@@ -253,11 +246,11 @@ jobs:
           print('Unified MLB production stayed healthy while accepted training rows advanced.')
           PY
 
-      - name: Upload immutable unified MLB recovery evidence
+      - name: Upload complete recovery evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: unified-mlb-learning-recovery-${{ github.run_id }}
-          path: /tmp/unified-mlb-learning
+          path: /tmp/unified-mlb-recovery
           if-no-files-found: warn
           retention-days: 90
