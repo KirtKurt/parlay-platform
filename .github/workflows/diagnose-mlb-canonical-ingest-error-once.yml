@@ -1,0 +1,270 @@
+name: Diagnose MLB Canonical Ingest Error Once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-mlb-canonical-ingest-error-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: diagnose-mlb-canonical-ingest-error-once
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: 'true'
+      STACK_NAME: parlay-platform-dev
+      ALARM_NAME: MLB-Auto-Critical-Canonical-Ingest-Errors
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Capture read-only canonical-ingest evidence
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-canonical-ingest runtime_reports
+          OUT=/tmp/mlb-canonical-ingest
+
+          PULL_FN=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBAuditedPullFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$PULL_FN" && test "$PULL_FN" != "None"
+          printf '%s' "$PULL_FN" > "$OUT/pull-function-name.txt"
+
+          aws lambda get-function-configuration \
+            --function-name "$PULL_FN" --region "$AWS_REGION" \
+            --query '{FunctionName:FunctionName,FunctionArn:FunctionArn,State:State,LastUpdateStatus:LastUpdateStatus,LastModified:LastModified,CodeSha256:CodeSha256,Timeout:Timeout,MemorySize:MemorySize,Runtime:Runtime,Handler:Handler}' \
+            --output json > "$OUT/function.json"
+
+          aws cloudwatch describe-alarms \
+            --alarm-names "$ALARM_NAME" --region "$AWS_REGION" \
+            --output json > "$OUT/alarm.json"
+          aws cloudwatch describe-alarm-history \
+            --alarm-name "$ALARM_NAME" --history-item-type StateUpdate \
+            --max-records 20 --region "$AWS_REGION" \
+            --output json > "$OUT/alarm-history.json"
+
+          START_ISO=$(date -u -d '90 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          END_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          START_MS=$(( ($(date -u +%s) - 5400) * 1000 ))
+          for METRIC in Errors Invocations Throttles Duration; do
+            aws cloudwatch get-metric-statistics \
+              --namespace AWS/Lambda --metric-name "$METRIC" \
+              --dimensions Name=FunctionName,Value="$PULL_FN" \
+              --start-time "$START_ISO" --end-time "$END_ISO" \
+              --period 60 --statistics Sum Maximum Average \
+              --region "$AWS_REGION" --output json \
+              > "$OUT/metric-$METRIC.json"
+          done
+
+          PULL_ARN=$(aws lambda get-function-configuration \
+            --function-name "$PULL_FN" --region "$AWS_REGION" \
+            --query FunctionArn --output text)
+          aws events list-rule-names-by-target \
+            --target-arn "$PULL_ARN" --region "$AWS_REGION" --limit 100 \
+            --output json > "$OUT/rules.json"
+          python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          out = Path('/tmp/mlb-canonical-ingest')
+          rows = []
+          for name in json.loads((out / 'rules.json').read_text()).get('RuleNames') or []:
+              rule = json.loads(subprocess.check_output([
+                  'aws','events','describe-rule','--name',name,
+                  '--region',os.environ['AWS_REGION'],'--output','json'
+              ]))
+              rows.append({
+                  'name': name,
+                  'state': rule.get('State'),
+                  'scheduleExpression': rule.get('ScheduleExpression'),
+                  'description': rule.get('Description'),
+              })
+          (out / 'rule-details.json').write_text(json.dumps(rows, indent=2, default=str) + '\n')
+          PY
+
+          aws logs filter-log-events \
+            --log-group-name "/aws/lambda/$PULL_FN" \
+            --start-time "$START_MS" --limit 1000 \
+            --region "$AWS_REGION" --output json \
+            > "$OUT/logs.json" 2> "$OUT/logs-error.txt" || true
+
+          python - <<'PY'
+          from __future__ import annotations
+          import json
+          import os
+          import re
+          from collections import defaultdict
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          src = Path('/tmp/mlb-canonical-ingest')
+          dest = Path('runtime_reports/mlb_canonical_ingest_diagnostic_latest.json')
+
+          def load(name, default):
+              path = src / name
+              if not path.exists() or not path.read_text(errors='replace').strip():
+                  return default
+              try:
+                  return json.loads(path.read_text(errors='replace'))
+              except Exception:
+                  return default
+
+          secret_key = re.compile(r'(?i)(authorization|api[_-]?key|secret|password|credential|token)')
+          bearer = re.compile(r'(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+')
+          aws_key = re.compile(r'\b(?:AKIA|ASIA)[0-9A-Z]{16}\b')
+          query_secret = re.compile(r'(?i)(apiKey|api_key|key|token|secret)=([^&\s]+)')
+
+          def redact_text(value):
+              value = str(value or '')
+              value = bearer.sub('Bearer [REDACTED]', value)
+              value = aws_key.sub('[REDACTED_AWS_ACCESS_KEY]', value)
+              value = query_secret.sub(lambda m: m.group(1) + '=[REDACTED]', value)
+              return value[:24000]
+
+          def sanitize(value, depth=0):
+              if depth > 12:
+                  return '[DEPTH_LIMIT]'
+              if isinstance(value, dict):
+                  out = {}
+                  for key, item in value.items():
+                      if secret_key.search(str(key)):
+                          out[str(key)] = '[REDACTED]'
+                      else:
+                          out[str(key)] = sanitize(item, depth + 1)
+                  return out
+              if isinstance(value, list):
+                  return [sanitize(item, depth + 1) for item in value[:1000]]
+              if isinstance(value, str):
+                  return redact_text(value)
+              return value
+
+          logs = load('logs.json', {})
+          events = sorted(logs.get('events') or [], key=lambda row: int(row.get('timestamp') or 0))
+          patterns = re.compile(
+              r'(?i)(ERROR|Exception|Traceback|Task timed out|Runtime\.|MLB_SCHEDULED_PULL_FAILED|'
+              r'candidatePersistenceFailures|winner_prediction_|provider_schedule_manifest|'
+              r'prelock_|operationalDefect|out of memory|Process exited)'
+          )
+          hit_indexes = {i for i, row in enumerate(events) if patterns.search(str(row.get('message') or ''))}
+          keep_indexes = set()
+          for idx in hit_indexes:
+              stream = events[idx].get('logStreamName')
+              for j in range(max(0, idx - 8), min(len(events), idx + 9)):
+                  if events[j].get('logStreamName') == stream:
+                      keep_indexes.add(j)
+
+          interesting = []
+          failures = []
+          exceptions = []
+          for i in sorted(keep_indexes):
+              row = events[i]
+              message = redact_text(row.get('message'))
+              timestamp_ms = int(row.get('timestamp') or 0)
+              timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc).isoformat() if timestamp_ms else None
+              interesting.append({
+                  'timestampUtc': timestamp,
+                  'logStreamName': row.get('logStreamName'),
+                  'message': message,
+              })
+              marker = 'MLB_SCHEDULED_PULL_FAILED:'
+              if marker in message:
+                  tail = message.split(marker, 1)[1].strip()
+                  try:
+                      payload = json.loads(tail)
+                  except Exception:
+                      payload = None
+                  if isinstance(payload, dict):
+                      for failure in payload.get('candidatePersistenceFailures') or []:
+                          failures.append(str(failure))
+              if re.search(r'(?i)(Traceback|Exception|Task timed out|Runtime\.|out of memory|Process exited)', message):
+                  exceptions.append(message)
+
+          metrics = {}
+          for metric in ('Errors','Invocations','Throttles','Duration'):
+              rows = load(f'metric-{metric}.json', {}).get('Datapoints') or []
+              metrics[metric] = sorted(rows, key=lambda row: str(row.get('Timestamp') or ''))
+
+          alarm_rows = load('alarm.json', {}).get('MetricAlarms') or []
+          alarm = alarm_rows[0] if alarm_rows else {}
+          report = {
+              'proofType': 'MLB_CANONICAL_INGEST_ERROR_DIAGNOSTIC_V1',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'sourceSha': os.environ.get('GITHUB_SHA'),
+              'scope': 'mlb-canonical-ingest-only',
+              'function': load('function.json', {}),
+              'alarm': alarm,
+              'alarmHistory': load('alarm-history.json', {}).get('AlarmHistoryItems') or [],
+              'metrics': metrics,
+              'rules': load('rule-details.json', []),
+              'candidatePersistenceFailures': sorted(set(failures)),
+              'exceptionSummaries': sorted(set(exceptions))[:50],
+              'interestingLogEvents': interesting[-250:],
+              'rawEventCountInspected': len(events),
+              'readOnlyDiagnostic': True,
+              'lambdaInvoked': False,
+              'awsResourcesChanged': False,
+              'predictionsWritten': False,
+              'immutablePredictionsRewritten': False,
+              'promotionAuthorityChanged': False,
+              'otherSportsInspected': False,
+              'secretExposed': False,
+          }
+          report['alarmCurrentlyInAlarm'] = alarm.get('StateValue') == 'ALARM'
+          report['recentErrorDatapoints'] = metrics.get('Errors') or []
+          report = sanitize(report)
+          dest.write_text(json.dumps(report, indent=2, sort_keys=True, default=str) + '\n')
+          print(json.dumps({
+              'alarmCurrentlyInAlarm': report.get('alarmCurrentlyInAlarm'),
+              'candidatePersistenceFailures': report.get('candidatePersistenceFailures'),
+              'exceptionCount': len(report.get('exceptionSummaries') or []),
+              'interestingLogEventCount': len(report.get('interestingLogEvents') or []),
+              'rawEventCountInspected': report.get('rawEventCountInspected'),
+              'readOnlyDiagnostic': True,
+          }, indent=2, sort_keys=True))
+          PY
+
+      - name: Publish sanitized MLB-only diagnostic
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          cp runtime_reports/mlb_canonical_ingest_diagnostic_latest.json /tmp/mlb_canonical_ingest_diagnostic_latest.json
+          published=false
+          for attempt in $(seq 1 20); do
+            git fetch origin main
+            git checkout -B mlb-canonical-ingest-diagnostic-publish origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb_canonical_ingest_diagnostic_latest.json runtime_reports/mlb_canonical_ingest_diagnostic_latest.json
+            git add runtime_reports/mlb_canonical_ingest_diagnostic_latest.json
+            if git diff --cached --quiet; then
+              published=true
+              break
+            fi
+            git commit -m 'Publish MLB canonical ingest error diagnostic [skip ci]'
+            if git push origin HEAD:main; then
+              published=true
+              break
+            fi
+            sleep $((attempt * 2))
+          done
+          test "$published" = true
