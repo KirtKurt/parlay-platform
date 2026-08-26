@@ -1,0 +1,157 @@
+name: Probe MLB R7 official status runtime once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/probe-mlb-r7-official-status-runtime-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: probe-mlb-r7-official-status-runtime-once
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Capture read-only exact-date official status evidence
+        run: |
+          set -euo pipefail
+          LOCK_FN=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id MLBDailyPickLockFunction \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$LOCK_FN"
+          test "$LOCK_FN" != "None"
+
+          for date in 2026-08-03 2026-08-04 2026-08-24 2026-08-25; do
+            aws lambda invoke \
+              --function-name "$LOCK_FN" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --cli-binary-format raw-in-base64-out \
+              --cli-read-timeout 150 \
+              --payload "{\"httpMethod\":\"GET\",\"path\":\"/v1/mlb/locks/status\",\"queryStringParameters\":{\"date\":\"${date}\"}}" \
+              "/tmp/mlb-r7-official-status-${date}.json" \
+              >"/tmp/mlb-r7-official-status-${date}-meta.json"
+          done
+
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          from pathlib import Path
+          from typing import Any
+
+          DATES = ('2026-08-03', '2026-08-04', '2026-08-24', '2026-08-25')
+          SENSITIVE = ('secret', 'token', 'password', 'credential', 'authorization', 'api_key', 'apikey')
+          IMPORTANT = (
+              'ok', 'sport', 'status', 'reason', 'error', 'message', 'slateDateEt',
+              'officialScheduleBacked', 'officialScheduleAuthorityVersion',
+              'officialScheduleAuthoritativeStartTimes', 'officialScheduleGameCount',
+              'gameCount', 'manifestGameCount', 'lockedPredictionCount',
+              'noPredictionDataCount', 'lockedStatusCount', 'lockStatusComplete',
+              'missedGameCount', 'dueMissingCount', 'degraded', 'retryable',
+              'source', 'sourceStatus', 'sourceHealth', 'providerStatus',
+              'officialScheduleStatus', 'officialScheduleError',
+          )
+
+          def safe_scalar(value: Any) -> Any:
+              if value is None or isinstance(value, (bool, int, float)):
+                  return value
+              if isinstance(value, str):
+                  return value[:600]
+              return None
+
+          def safe_application(value: Any) -> dict[str, Any]:
+              if not isinstance(value, dict):
+                  return {'parseType': type(value).__name__}
+              result: dict[str, Any] = {
+                  'topLevelKeys': sorted(str(key) for key in value.keys())[:200],
+              }
+              for key in IMPORTANT:
+                  scalar = safe_scalar(value.get(key))
+                  if scalar is not None:
+                      result[key] = scalar
+              for key, nested in value.items():
+                  lowered = str(key).lower()
+                  if any(part in lowered for part in SENSITIVE):
+                      continue
+                  if not isinstance(nested, dict):
+                      continue
+                  if not any(part in lowered for part in ('official', 'schedule', 'status', 'source', 'health', 'diagnostic', 'error')):
+                      continue
+                  nested_safe: dict[str, Any] = {}
+                  for nested_key, nested_value in nested.items():
+                      nested_lowered = str(nested_key).lower()
+                      if any(part in nested_lowered for part in SENSITIVE):
+                          continue
+                      scalar = safe_scalar(nested_value)
+                      if scalar is not None:
+                          nested_safe[str(nested_key)] = scalar
+                  if nested_safe:
+                      result[str(key)] = nested_safe
+              return result
+
+          evidence: list[dict[str, Any]] = []
+          for date in DATES:
+              meta = json.loads(Path(f'/tmp/mlb-r7-official-status-{date}-meta.json').read_text())
+              raw = json.loads(Path(f'/tmp/mlb-r7-official-status-{date}.json').read_text())
+              application_status = raw.get('statusCode') if isinstance(raw, dict) else None
+              body = raw.get('body') if isinstance(raw, dict) else raw
+              if isinstance(body, str):
+                  try:
+                      application = json.loads(body)
+                  except Exception as exc:
+                      application = {'bodyParseError': type(exc).__name__, 'bodyPrefix': body[:600]}
+              else:
+                  application = body
+              evidence.append({
+                  'slateDateEt': date,
+                  'lambdaStatusCode': meta.get('StatusCode'),
+                  'lambdaFunctionError': meta.get('FunctionError'),
+                  'applicationStatusCode': application_status,
+                  'application': safe_application(application),
+                  'readOnly': True,
+                  'directTableWrite': False,
+                  'immutablePredictionRewriteAllowed': False,
+                  'promotionAuthorityChanged': False,
+                  'productionAuthorityChanged': False,
+              })
+
+          report = {
+              'ok': True,
+              'proofType': 'MLB_R7_READ_ONLY_OFFICIAL_STATUS_RUNTIME',
+              'readOnly': True,
+              'directTableWrite': False,
+              'immutablePredictionRewriteAllowed': False,
+              'promotionAuthorityChanged': False,
+              'productionAuthorityChanged': False,
+              'dates': evidence,
+          }
+          Path('/tmp/mlb-r7-official-status-runtime.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload read-only runtime evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-r7-official-status-runtime-${{ github.run_id }}
+          retention-days: 30
+          path: /tmp/mlb-r7-official-status-runtime.json
