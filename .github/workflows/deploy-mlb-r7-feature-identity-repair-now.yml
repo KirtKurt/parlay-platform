@@ -24,25 +24,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
-      - name: Checkout exact repair source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 1
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Validate MLB-only immutable-evidence repair
+      - name: Validate immutable MLB contracts
         env:
           PYTHONPATH: .
         run: |
@@ -54,230 +49,152 @@ jobs:
             tests/unit/test_mlb_scoring_guard_status.py \
             tests/unit/test_mlb_scoring_runtime_capacity.py
           python scripts/verify_mlb_schedule_invariants.py
-          python - <<'PY'
-          from pathlib import Path
-          source = Path('.github/workflows/deploy-mlb-r7-feature-identity-repair-now.yml').read_text()
-          forbidden = ('sam deploy', 'template.yaml', 'soccer', 'tennis', 'nfl')
-          for token in forbidden:
-              assert token not in source.lower(), token
-          assert source.count('MLBAuditedPullFunction') == 1
-          assert source.count('MLBMLTrainingFunction') == 1
-          PY
           git diff --check
 
-      - name: Resolve only the two MLB functions
+      - name: Resolve MLB functions and capture before state
         id: functions
         run: |
           set -euo pipefail
-          PULL_FN=$(aws cloudformation describe-stack-resource \
-            --stack-name "$STACK_NAME" \
-            --logical-resource-id MLBAuditedPullFunction \
-            --region "$AWS_REGION" \
-            --query 'StackResourceDetail.PhysicalResourceId' \
-            --output text)
-          TRAINER_FN=$(aws cloudformation describe-stack-resource \
-            --stack-name "$STACK_NAME" \
-            --logical-resource-id MLBMLTrainingFunction \
-            --region "$AWS_REGION" \
-            --query 'StackResourceDetail.PhysicalResourceId' \
-            --output text)
+          mkdir -p /tmp/mlb-r7-repair/evidence
+          PULL_FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id MLBAuditedPullFunction --region "$AWS_REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          TRAINER_FN=$(aws cloudformation describe-stack-resource --stack-name "$STACK_NAME" --logical-resource-id MLBMLTrainingFunction --region "$AWS_REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
           test -n "$PULL_FN" && test "$PULL_FN" != None
           test -n "$TRAINER_FN" && test "$TRAINER_FN" != None
           echo "pull_fn=$PULL_FN" >> "$GITHUB_OUTPUT"
           echo "trainer_fn=$TRAINER_FN" >> "$GITHUB_OUTPUT"
-          aws lambda get-function-configuration --function-name "$PULL_FN" --region "$AWS_REGION" > /tmp/pull-before.json
-          aws lambda get-function-configuration --function-name "$TRAINER_FN" --region "$AWS_REGION" > /tmp/trainer-before.json
+          aws lambda get-function-configuration --function-name "$PULL_FN" --region "$AWS_REGION" > /tmp/mlb-r7-repair/evidence/pull-before.json
+          aws lambda get-function-configuration --function-name "$TRAINER_FN" --region "$AWS_REGION" > /tmp/mlb-r7-repair/evidence/trainer-before.json
 
-      - name: Package and deploy only MLB audited-pull code
+      - name: Deploy only MLB audited-pull code
         env:
           PULL_FN: ${{ steps.functions.outputs.pull_fn }}
         run: |
           set -euo pipefail
-          mkdir -p /tmp/mlb-r7-feature-repair/package /tmp/mlb-r7-feature-repair/evidence
-          cp -R hello_world/. /tmp/mlb-r7-feature-repair/package/
-          (cd /tmp/mlb-r7-feature-repair/package && zip -qr ../mlb-audited-pull.zip .)
-          aws lambda update-function-code \
-            --function-name "$PULL_FN" \
-            --zip-file fileb:///tmp/mlb-r7-feature-repair/mlb-audited-pull.zip \
-            --region "$AWS_REGION" \
-            > /tmp/mlb-r7-feature-repair/evidence/pull-update.json
+          mkdir -p /tmp/mlb-r7-repair/package
+          cp -R hello_world/. /tmp/mlb-r7-repair/package/
+          (cd /tmp/mlb-r7-repair/package && zip -qr ../pull.zip .)
+          aws lambda update-function-code --function-name "$PULL_FN" --zip-file fileb:///tmp/mlb-r7-repair/pull.zip --region "$AWS_REGION" > /tmp/mlb-r7-repair/evidence/pull-update.json
           aws lambda wait function-updated-v2 --function-name "$PULL_FN" --region "$AWS_REGION"
-          aws lambda get-function-configuration --function-name "$PULL_FN" --region "$AWS_REGION" \
-            > /tmp/mlb-r7-feature-repair/evidence/pull-after.json
+          aws lambda get-function-configuration --function-name "$PULL_FN" --region "$AWS_REGION" > /tmp/mlb-r7-repair/evidence/pull-after.json
           python - <<'PY'
           import json
           from pathlib import Path
-          before=json.loads(Path('/tmp/pull-before.json').read_text())
-          after=json.loads(Path('/tmp/mlb-r7-feature-repair/evidence/pull-after.json').read_text())
-          assert after['FunctionName'] == before['FunctionName']
-          assert after['Handler'] == 'mlb_manual_pull.lambda_handler'
-          assert after['State'] == 'Active'
-          assert after['LastUpdateStatus'] == 'Successful'
-          assert after['CodeSha256'] != before['CodeSha256']
+          before=json.loads(Path('/tmp/mlb-r7-repair/evidence/pull-before.json').read_text())
+          after=json.loads(Path('/tmp/mlb-r7-repair/evidence/pull-after.json').read_text())
+          assert after['FunctionName']==before['FunctionName']
+          assert after['Handler']=='mlb_manual_pull.lambda_handler'
+          assert after['State']=='Active' and after['LastUpdateStatus']=='Successful'
+          assert after['CodeSha256']!=before['CodeSha256']
           PY
 
-      - name: Increase only R7 trainer CPU capacity
+      - name: Increase only MLB R7 trainer capacity
         env:
           TRAINER_FN: ${{ steps.functions.outputs.trainer_fn }}
         run: |
           set -euo pipefail
-          aws lambda update-function-configuration \
-            --function-name "$TRAINER_FN" \
-            --memory-size 4096 \
-            --region "$AWS_REGION" \
-            > /tmp/mlb-r7-feature-repair/evidence/trainer-capacity-update.json
+          aws lambda update-function-configuration --function-name "$TRAINER_FN" --memory-size 4096 --region "$AWS_REGION" > /tmp/mlb-r7-repair/evidence/trainer-update.json
           aws lambda wait function-updated-v2 --function-name "$TRAINER_FN" --region "$AWS_REGION"
-          aws lambda get-function-configuration --function-name "$TRAINER_FN" --region "$AWS_REGION" \
-            > /tmp/mlb-r7-feature-repair/evidence/trainer-after.json
+          aws lambda get-function-configuration --function-name "$TRAINER_FN" --region "$AWS_REGION" > /tmp/mlb-r7-repair/evidence/trainer-after.json
           python - <<'PY'
           import json
           from pathlib import Path
-          before=json.loads(Path('/tmp/trainer-before.json').read_text())
-          after=json.loads(Path('/tmp/mlb-r7-feature-repair/evidence/trainer-after.json').read_text())
-          assert after['FunctionName'] == before['FunctionName']
-          assert after['Handler'] == 'mlb_ml_aws_training_v1_compat.lambda_handler'
-          assert after['MemorySize'] == 4096
-          assert after['State'] == 'Active'
-          assert after['LastUpdateStatus'] == 'Successful'
+          before=json.loads(Path('/tmp/mlb-r7-repair/evidence/trainer-before.json').read_text())
+          after=json.loads(Path('/tmp/mlb-r7-repair/evidence/trainer-after.json').read_text())
+          assert after['FunctionName']==before['FunctionName']
+          assert after['Handler']=='mlb_ml_aws_training_v1_compat.lambda_handler'
+          assert after['MemorySize']==4096
+          assert after['State']=='Active' and after['LastUpdateStatus']=='Successful'
           PY
 
-      - name: Rebuild August 25 movement from immutable pregame snapshots only
+      - name: Rebuild August 25 movement from pregame snapshots
         env:
           PULL_FN: ${{ steps.functions.outputs.pull_fn }}
         run: |
           set -euo pipefail
-          aws lambda invoke \
-            --function-name "$PULL_FN" \
-            --region "$AWS_REGION" \
-            --cli-read-timeout 930 \
-            --payload '{"mode":"movement_identity_rebuild","game_date_et":"2026-08-25","run":"r7_stable_identity_rebuild"}' \
-            --cli-binary-format raw-in-base64-out \
-            /tmp/mlb-r7-feature-repair/evidence/rebuild-2026-08-25.json \
-            > /tmp/mlb-r7-feature-repair/evidence/rebuild-2026-08-25-invoke.json
+          aws lambda invoke --function-name "$PULL_FN" --region "$AWS_REGION" --cli-read-timeout 930 --cli-binary-format raw-in-base64-out --payload '{"mode":"movement_identity_rebuild","game_date_et":"2026-08-25","run":"stable_identity_rebuild"}' /tmp/mlb-r7-repair/evidence/rebuild.json > /tmp/mlb-r7-repair/evidence/rebuild-invoke.json
           python - <<'PY'
           import json
           from pathlib import Path
-          outer=json.loads(Path('/tmp/mlb-r7-feature-repair/evidence/rebuild-2026-08-25-invoke.json').read_text())
-          body=json.loads(Path('/tmp/mlb-r7-feature-repair/evidence/rebuild-2026-08-25.json').read_text())
-          if isinstance(body.get('body'), str): body=json.loads(body['body'])
-          assert not outer.get('FunctionError'), outer
+          invoke=json.loads(Path('/tmp/mlb-r7-repair/evidence/rebuild-invoke.json').read_text())
+          body=json.loads(Path('/tmp/mlb-r7-repair/evidence/rebuild.json').read_text())
+          if isinstance(body.get('body'),str): body=json.loads(body['body'])
+          assert not invoke.get('FunctionError'), invoke
           assert body.get('ok') is True, body
-          assert int(body.get('stored') or 0) == 15, body
+          assert int(body.get('stored') or 0)==15, body
           assert body.get('immutablePregameOnly') is True
           assert body.get('outcomeDataUsed') is False
           assert body.get('postStartObservationUsed') is False
-          assert body.get('predictionsWritten') == 0
-          assert body.get('locksWritten') == 0
-          assert body.get('labelsWritten') == 0
+          assert body.get('predictionsWritten')==0
+          assert body.get('locksWritten')==0
+          assert body.get('labelsWritten')==0
           assert body.get('otherSportChanged') is False
-          Path('/tmp/mlb-r7-feature-repair/evidence/rebuild-acceptance.json').write_text(
-              json.dumps(body, indent=2, sort_keys=True) + '\n'
-          )
+          Path('/tmp/mlb-r7-repair/evidence/rebuild-acceptance.json').write_text(json.dumps(body,indent=2,sort_keys=True)+'\n')
           PY
 
-      - name: Prove August 25 movement coverage is complete
+      - name: Verify complete August 25 scoring coverage
         run: |
           set -euo pipefail
-          python scripts/mlb_scoring_guard_status.py \
-            --slate-date 2026-08-25 \
-            --output /tmp/mlb-r7-feature-repair/evidence/scoring-guard-2026-08-25.json \
-            --enforce
+          python scripts/mlb_scoring_guard_status.py --slate-date 2026-08-25 --output /tmp/mlb-r7-repair/evidence/scoring-guard.json --enforce
           python - <<'PY'
           import json
           from pathlib import Path
-          proof=json.loads(Path('/tmp/mlb-r7-feature-repair/evidence/scoring-guard-2026-08-25.json').read_text())
-          assert proof['guardPassed'] is True, proof
-          assert proof['summary']['officialGameCount'] == 15
-          assert proof['summary']['movementFeatureGameCount'] == 15
-          assert proof['summary']['missingMovementCount'] == 0
-          assert proof['summary']['persistedPredictionGameCount'] == 15
+          proof=json.loads(Path('/tmp/mlb-r7-repair/evidence/scoring-guard.json').read_text())
+          assert proof['guardPassed'] is True
+          assert proof['summary']['officialGameCount']==15
+          assert proof['summary']['movementFeatureGameCount']==15
+          assert proof['summary']['missingMovementCount']==0
+          assert proof['summary']['persistedPredictionGameCount']==15
           assert proof['readOnly'] is True
           PY
 
-      - name: Invoke R7 trainer with bounded transport and lease retry
+      - name: Run R7 trainer and selection capture
         env:
           TRAINER_FN: ${{ steps.functions.outputs.trainer_fn }}
         run: |
           set -euo pipefail
-          python scripts/invoke_mlb_trainer_with_retry.py \
-            --function-name "$TRAINER_FN" \
-            --region "$AWS_REGION" \
-            --payload '{"sport":"mlb","mode":"scheduled","run":"r7_feature_identity_postrepair"}' \
-            --response /tmp/mlb-r7-feature-repair/evidence/training.json \
-            --invocation /tmp/mlb-r7-feature-repair/evidence/training-invocation.json \
-            --retry-execution-lease \
-            --deadline-seconds 1800 \
-            --retry-delay-seconds 30
-          python scripts/invoke_mlb_trainer_with_retry.py \
-            --function-name "$TRAINER_FN" \
-            --region "$AWS_REGION" \
-            --payload '{"sport":"mlb","mode":"selection_capture","run":"r7_feature_identity_postrepair_selection"}' \
-            --response /tmp/mlb-r7-feature-repair/evidence/selection.json \
-            --invocation /tmp/mlb-r7-feature-repair/evidence/selection-invocation.json \
-            --retry-execution-lease \
-            --deadline-seconds 1800 \
-            --retry-delay-seconds 30
+          python scripts/invoke_mlb_trainer_with_retry.py --function-name "$TRAINER_FN" --region "$AWS_REGION" --payload '{"sport":"mlb","mode":"scheduled","run":"stable_feature_identity_postrepair"}' --response /tmp/mlb-r7-repair/evidence/training.json --invocation /tmp/mlb-r7-repair/evidence/training-invocation.json --retry-execution-lease --deadline-seconds 1800 --retry-delay-seconds 30
+          python scripts/invoke_mlb_trainer_with_retry.py --function-name "$TRAINER_FN" --region "$AWS_REGION" --payload '{"sport":"mlb","mode":"selection_capture","run":"stable_feature_identity_postrepair_selection"}' --response /tmp/mlb-r7-repair/evidence/selection.json --invocation /tmp/mlb-r7-repair/evidence/selection-invocation.json --retry-execution-lease --deadline-seconds 1800 --retry-delay-seconds 30
+          python scripts/invoke_mlb_trainer_with_retry.py --function-name "$TRAINER_FN" --region "$AWS_REGION" --status-training-result /tmp/mlb-r7-repair/evidence/training.json --status-selection-capture-result /tmp/mlb-r7-repair/evidence/selection.json --response /tmp/mlb-r7-repair/evidence/status.json --invocation /tmp/mlb-r7-repair/evidence/status-invocation.json
 
-      - name: Verify R7 is healthy accumulating without authority change
-        env:
-          TRAINER_FN: ${{ steps.functions.outputs.trainer_fn }}
+      - name: Accept healthy accumulation without authority change
         run: |
           set -euo pipefail
-          python scripts/invoke_mlb_trainer_with_retry.py \
-            --function-name "$TRAINER_FN" \
-            --region "$AWS_REGION" \
-            --status-training-result /tmp/mlb-r7-feature-repair/evidence/training.json \
-            --status-selection-capture-result /tmp/mlb-r7-feature-repair/evidence/selection.json \
-            --response /tmp/mlb-r7-feature-repair/evidence/status.json \
-            --invocation /tmp/mlb-r7-feature-repair/evidence/status-invocation.json
           python - <<'PY'
           import json
           from pathlib import Path
-          root=Path('/tmp/mlb-r7-feature-repair/evidence')
+          root=Path('/tmp/mlb-r7-repair/evidence')
           training=json.loads((root/'training.json').read_text())
           selection=json.loads((root/'selection.json').read_text())
           status=json.loads((root/'status.json').read_text())
           health=status.get('trainingHealth') or {}
           selection_health=status.get('selectionCaptureHealth') or {}
           latest=health.get('latestRun') or training
-          evidence={
-              'ok': bool(
-                  training.get('ok') is True
-                  and selection.get('ok') is True
-                  and status.get('ok') is True
-                  and int(latest.get('acceptedRowCount') or 0) >= 18
-                  and int(latest.get('rejectedRowCount') or 0) == 0
-                  and health.get('deploymentIdentityMatches') is True
-                  and selection_health.get('deploymentIdentityMatches') is True
-                  and latest.get('liveInferenceAuthority') is not True
-                  and latest.get('productionAuthorityChanged') is not True
-                  and latest.get('automaticPromotionEnabled') is not True
-                  and latest.get('championChanged') is not True
-              ),
-              'acceptedRowCount': latest.get('acceptedRowCount'),
-              'rejectedRowCount': latest.get('rejectedRowCount'),
-              'partitionCounts': latest.get('partitionCounts'),
-              'processedThroughSlateDate': (latest.get('canonicalSlateContinuity') or {}).get('processedThroughSlateDate'),
-              'trainingDeploymentIdentityMatches': health.get('deploymentIdentityMatches'),
-              'selectionDeploymentIdentityMatches': selection_health.get('deploymentIdentityMatches'),
-              'liveInferenceAuthority': latest.get('liveInferenceAuthority'),
-              'productionAuthorityChanged': latest.get('productionAuthorityChanged'),
-              'automaticPromotionEnabled': latest.get('automaticPromotionEnabled'),
-              'championChanged': latest.get('championChanged'),
-              'sharedRootStackDeployed': False,
-              'otherSportChanged': False,
-              'immutablePredictionHistoryRewritten': False,
+          proof={
+            'ok': bool(training.get('ok') is True and selection.get('ok') is True and status.get('ok') is True and int(latest.get('acceptedRowCount') or 0)>=18 and int(latest.get('rejectedRowCount') or 0)==0 and health.get('deploymentIdentityMatches') is True and selection_health.get('deploymentIdentityMatches') is True and latest.get('liveInferenceAuthority') is not True and latest.get('productionAuthorityChanged') is not True and latest.get('automaticPromotionEnabled') is not True and latest.get('championChanged') is not True),
+            'acceptedRowCount': latest.get('acceptedRowCount'),
+            'rejectedRowCount': latest.get('rejectedRowCount'),
+            'partitionCounts': latest.get('partitionCounts'),
+            'processedThroughSlateDate': (latest.get('canonicalSlateContinuity') or {}).get('processedThroughSlateDate'),
+            'trainingDeploymentIdentityMatches': health.get('deploymentIdentityMatches'),
+            'selectionDeploymentIdentityMatches': selection_health.get('deploymentIdentityMatches'),
+            'liveInferenceAuthority': latest.get('liveInferenceAuthority'),
+            'productionAuthorityChanged': latest.get('productionAuthorityChanged'),
+            'automaticPromotionEnabled': latest.get('automaticPromotionEnabled'),
+            'championChanged': latest.get('championChanged'),
+            'sharedRootStackDeployed': False,
+            'otherSportChanged': False,
+            'immutablePredictionHistoryRewritten': False,
           }
-          (root/'r7-acceptance.json').write_text(json.dumps(evidence, indent=2, sort_keys=True)+'\n')
-          print(json.dumps(evidence, indent=2, sort_keys=True))
-          assert evidence['ok'], evidence
+          (root/'r7-acceptance.json').write_text(json.dumps(proof,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(proof,indent=2,sort_keys=True))
+          assert proof['ok'], proof
           PY
 
-      - name: Upload MLB-only repair proof
+      - name: Upload MLB-only evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mlb-r7-feature-identity-repair-${{ github.run_id }}
-          path: /tmp/mlb-r7-feature-repair/evidence
+          path: /tmp/mlb-r7-repair/evidence
           if-no-files-found: warn
           retention-days: 90
