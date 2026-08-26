@@ -29,23 +29,118 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Remove deployment trainer ownership and update contracts
+      - name: Remove duplicate trainer ownership and update contracts
         run: |
           set -euo pipefail
           python - <<'PY'
+          import re
           from pathlib import Path
+
+
+          WORKFLOW_ROOT = Path('.github/workflows')
+          DEPLOY = WORKFLOW_ROOT / 'deploy.yml'
+          RECOVERY = WORKFLOW_ROOT / 'mlb-r7-overnight-advance.yml'
+          INSTALLER = WORKFLOW_ROOT / 'fix-unified-mlb-learning-ownership-on-branch.yml'
+
 
           def replace_region(path: Path, start: str, end: str, replacement: str) -> None:
               text = path.read_text(encoding='utf-8')
               if text.count(start) != 1 or text.count(end) != 1:
-                  raise SystemExit(f'unique patch markers missing in {path}: {start!r} / {end!r}')
+                  raise SystemExit(
+                      f'unique patch markers missing in {path}: {start!r} / {end!r}'
+                  )
               prefix, remainder = text.split(start, 1)
               _removed, suffix = remainder.split(end, 1)
-              path.write_text(prefix + '\n' + replacement.rstrip() + '\n' + end + suffix, encoding='utf-8')
+              path.write_text(
+                  prefix + '\n' + replacement.rstrip() + '\n' + end + suffix,
+                  encoding='utf-8',
+              )
 
-          deploy = Path('.github/workflows/deploy.yml')
+
+          def top_level_range(text: str, predicate) -> tuple[int, int] | None:
+              lines = text.splitlines(keepends=True)
+              start = next(
+                  (index for index, line in enumerate(lines) if predicate(line.rstrip('\r\n'))),
+                  None,
+              )
+              if start is None:
+                  return None
+              end = len(lines)
+              for index in range(start + 1, len(lines)):
+                  line = lines[index]
+                  if line.strip() and not line.startswith((' ', '\t')):
+                      end = index
+                      break
+              return start, end
+
+
+          def replace_top_level(
+              text: str,
+              predicate,
+              replacement: str,
+              *,
+              insert_before: str | None = None,
+          ) -> str:
+              lines = text.splitlines(keepends=True)
+              bounds = top_level_range(text, predicate)
+              block = replacement.rstrip() + '\n\n'
+              if bounds is not None:
+                  start, end = bounds
+                  return ''.join(lines[:start]) + block + ''.join(lines[end:])
+              if insert_before is None:
+                  raise SystemExit('required top-level section is missing')
+              insertion = next(
+                  (
+                      index
+                      for index, line in enumerate(lines)
+                      if line.rstrip('\r\n') == insert_before
+                  ),
+                  None,
+              )
+              if insertion is None:
+                  raise SystemExit(f'top-level insertion anchor is missing: {insert_before}')
+              return ''.join(lines[:insertion]) + block + ''.join(lines[insertion:])
+
+
+          def invokes_training(text: str) -> bool:
+              return (
+                  'invoke_mlb_trainer_with_retry.py' in text
+                  and '--payload' in text
+                  and bool(
+                      re.search(
+                          r'''["']mode["']\s*:\s*["'](?:scheduled|training)["']''',
+                          text,
+                      )
+                  )
+              )
+
+
+          def normalize_manual_training_workflows() -> list[str]:
+              changed: list[str] = []
+              for path in sorted(WORKFLOW_ROOT.glob('*.y*ml')):
+                  if path in {DEPLOY, RECOVERY, INSTALLER}:
+                      continue
+                  text = path.read_text(encoding='utf-8')
+                  if not invokes_training(text):
+                      continue
+                  text = replace_top_level(
+                      text,
+                      lambda line: line in {'on:', '"on":', "'on':"},
+                      '"on":\n  workflow_dispatch:',
+                  )
+                  text = replace_top_level(
+                      text,
+                      lambda line: line == 'concurrency:' or line.startswith('concurrency:'),
+                      'concurrency:\n  group: unified-mlb-learning\n  cancel-in-progress: false',
+                      insert_before='jobs:',
+                  )
+                  path.write_text(text, encoding='utf-8')
+                  changed.append(path.as_posix())
+              return changed
+
+
           replace_region(
-              deploy,
+              DEPLOY,
               '\n      - name: Run AWS-native MLB trainer and verify fresh split health\n',
               '\n      - name: Smoke test health and MLB read runtime\n',
               '''      - name: Preserve unified MLB learning ownership
@@ -55,6 +150,11 @@ jobs:
                   python scripts/verify_unified_mlb_learning_ownership.py
                   python -m pytest -q tests/unit/test_unified_mlb_learning_ownership.py''',
           )
+
+          normalized = normalize_manual_training_workflows()
+          print(f'Normalized {len(normalized)} alternate trainer workflows to manual-only:')
+          for workflow in normalized:
+              print(workflow)
 
           stabilize = Path('scripts/stabilize_mlb_deploy_source.py')
           text = stabilize.read_text(encoding='utf-8')
@@ -170,7 +270,7 @@ jobs:
                       deploy.read_text(encoding="utf-8")
                       + "\\n      - name: Unsafe duplicate trainer owner\\n"
                       + "        run: |\\n"
-                      + "          python scripts/invoke_mlb_trainer_with_retry.py \\\\\\n"
+                      + "          python scripts/invoke_mlb_trainer_with_retry.py \\\\n"
                       + "            --payload '{\\\"sport\\\":\\\"mlb\\\",\\\"mode\\\":\\\"scheduled\\\",\\\"run\\\":\\\"unsafe_duplicate\\\"}'\\n",
                       encoding="utf-8",
                   )
@@ -192,7 +292,9 @@ jobs:
           python -m py_compile \
             scripts/stabilize_mlb_deploy_source.py \
             scripts/verify_mlb_workflow_authority.py \
-            scripts/verify_unified_mlb_learning_ownership.py
+            scripts/verify_unified_mlb_learning_ownership.py \
+            tests/unit/test_mlb_workflow_authority.py \
+            tests/unit/test_unified_mlb_learning_ownership.py
           python scripts/stabilize_mlb_deploy_source.py
           python scripts/verify_mlb_workflow_authority.py
           python scripts/verify_unified_mlb_learning_ownership.py
