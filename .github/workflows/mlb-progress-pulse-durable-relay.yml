@@ -13,6 +13,11 @@ on:
       - Verify MLB Scoring Fix After Deploy
       - MLB Production Source Contract
       - Unified MLB learning recovery once
+      # These completions are the independent events proven to arrive while
+      # MLB pulse/watchdog cron admissions were missing.
+      - Tennis Autonomy Status Backstop
+      - Publish Tennis Autonomy Status
+      - NFL Auto AWS Stack Probe
     types: [completed]
     branches: [main]
   workflow_dispatch:
@@ -26,8 +31,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/mlb-progress-pulse-durable-relay.yml'
-      # Independent event-driven seeds already proven to arrive while MLB cron
-      # admissions were missing. These only refresh the finite relay lease.
+      # GITHUB_TOKEN-authored commits do not trigger push workflows. These
+      # paths are only additional seeds for human or external-token pushes;
+      # the workflow_run producers above are the independent bot-safe signals.
       - 'runtime/tennis_autonomy_status.json'
       - 'runtime_reports/nfl_stack_probe_latest.json'
       - 'runtime_reports/mlb_*.json'
