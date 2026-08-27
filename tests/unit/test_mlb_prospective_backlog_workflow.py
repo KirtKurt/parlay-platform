@@ -84,3 +84,39 @@ def test_unified_recovery_binds_numeric_proof_to_requested_run_evidence():
     assert "selection_run.get('runId') == selection_run_id" in source
     assert "health.get('latestRun')" not in source
     assert "selection_health.get('latestRun')" not in source
+
+
+def test_unified_recovery_does_not_confuse_current_slate_maturity_with_integrity():
+    source = UNIFIED_RECOVERY.read_text(encoding="utf-8")
+    before_step = source.split(
+        "- name: Prove current integrity and August 25 immutable coverage before settlement",
+        1,
+    )[1].split("- name: Reconcile protected prospective settlement backlog", 1)[0]
+    after_step = source.split(
+        "- name: Prove current-slate integrity did not regress", 1
+    )[1].split("- name: Upload complete recovery evidence", 1)[0]
+
+    before_commands = before_step.split(
+        "python scripts/mlb_scoring_guard_status.py", 2
+    )
+    assert len(before_commands) == 3
+    current_before_command = before_commands[1].split(
+        "python scripts/verify_mlb_recovery_current_slate_guard.py", 1
+    )[0]
+    target_command = before_commands[2].split("python - <<'PY'", 1)[0]
+    current_after_command = after_step.split(
+        "python scripts/mlb_scoring_guard_status.py", 1
+    )[1].split("python scripts/verify_mlb_recovery_current_slate_guard.py", 1)[0]
+
+    assert "--enforce" not in current_before_command
+    assert "--enforce" not in current_after_command
+    assert "--enforce" in target_command
+    assert "verify_mlb_recovery_current_slate_guard.py" in before_step
+    assert "verify_mlb_recovery_current_slate_guard.py" in after_step
+    assert "--before /tmp/unified-mlb-recovery/production-before.json" in before_step
+    assert "--after /tmp/unified-mlb-recovery/production-after.json" in after_step
+    assert '--target-slate-date "$REPAIR_SLATE_DATE"' in source
+    assert '--target-slate-date "$TARGET_SLATE_DATE"' in source
+    assert "accepted >= minimum" in source
+    assert "train_count >= minimum" in source
+    assert "productionAuthorityChanged') is not True" in source

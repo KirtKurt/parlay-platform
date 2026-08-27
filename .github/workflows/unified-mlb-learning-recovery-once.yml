@@ -52,11 +52,14 @@ jobs:
             scripts/mlb_scoring_guard_status.py \
             scripts/reconcile_mlb_prospective_backlog_v4.py \
             scripts/reconcile_mlb_prospective_backlog_v5.py \
+            scripts/verify_mlb_recovery_current_slate_guard.py \
             scripts/verify_unified_mlb_learning_ownership.py
           python -m pytest -q \
             tests/unit/test_reconcile_mlb_prospective_backlog_v4.py \
             tests/unit/test_reconcile_mlb_prospective_backlog_v5.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v5_settlement_replay.py \
             tests/unit/test_mlb_prospective_backlog_workflow.py \
+            tests/unit/test_verify_mlb_recovery_current_slate_guard.py \
             tests/unit/test_unified_mlb_learning_ownership.py
           python scripts/verify_unified_mlb_learning_ownership.py
           grep -q 'UNIFIED_MLB_LEARNING_OWNER=eventbridge_schedule' .github/workflows/deploy.yml
@@ -284,7 +287,7 @@ jobs:
           assert int(value.get('Timeout') or 0) == 900, value
           PY
 
-      - name: Prove production and August 25 immutable coverage before settlement
+      - name: Prove current integrity and August 25 immutable coverage before settlement
         env:
           PYTHONPATH: .
         run: |
@@ -294,8 +297,10 @@ jobs:
           python scripts/mlb_scoring_guard_status.py \
             --slate-date "$CURRENT_SLATE_DATE" \
             --region "$AWS_REGION" \
-            --output /tmp/unified-mlb-recovery/production-before.json \
-            --enforce
+            --output /tmp/unified-mlb-recovery/production-before.json
+          python scripts/verify_mlb_recovery_current_slate_guard.py \
+            --before /tmp/unified-mlb-recovery/production-before.json \
+            --output /tmp/unified-mlb-recovery/production-integrity-before.json
           python scripts/mlb_scoring_guard_status.py \
             --slate-date "$TARGET_SLATE_DATE" \
             --region "$AWS_REGION" \
@@ -533,7 +538,7 @@ jobs:
           assert latest.get('productionAuthorityChanged') is not True, proof
           PY
 
-      - name: Prove unified MLB production remained healthy
+      - name: Prove current-slate integrity did not regress
         env:
           PYTHONPATH: .
         run: |
@@ -541,24 +546,11 @@ jobs:
           python scripts/mlb_scoring_guard_status.py \
             --slate-date "$CURRENT_SLATE_DATE" \
             --region "$AWS_REGION" \
-            --output /tmp/unified-mlb-recovery/production-after.json \
-            --enforce
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          before = json.loads(Path('/tmp/unified-mlb-recovery/production-before.json').read_text())
-          after = json.loads(Path('/tmp/unified-mlb-recovery/production-after.json').read_text())
-          b = before.get('summary') or {}
-          a = after.get('summary') or {}
-          assert before.get('guardPassed') is True, before
-          assert after.get('guardPassed') is True, after
-          assert not before.get('blockers'), before
-          assert not after.get('blockers'), after
-          assert int(a.get('officialGameCount') or 0) == int(b.get('officialGameCount') or 0), (b, a)
-          assert int(a.get('persistedPredictionGameCount') or 0) >= int(b.get('persistedPredictionGameCount') or 0), (b, a)
-          assert int(a.get('invalidPredictionTeamCount') or 0) == 0, a
-          assert int(a.get('invalidMovementTeamCount') or 0) == 0, a
-          PY
+            --output /tmp/unified-mlb-recovery/production-after.json
+          python scripts/verify_mlb_recovery_current_slate_guard.py \
+            --before /tmp/unified-mlb-recovery/production-before.json \
+            --after /tmp/unified-mlb-recovery/production-after.json \
+            --output /tmp/unified-mlb-recovery/production-integrity-after.json
 
       - name: Upload complete recovery evidence
         if: always()
