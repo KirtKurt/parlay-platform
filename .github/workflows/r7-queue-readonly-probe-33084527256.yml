@@ -56,6 +56,7 @@ jobs:
             --region "$AWS_REGION" \
             --output json > "$RAW_PATH"
           RAW_PATH="$RAW_PATH" python - <<'PY'
+          import hashlib
           import json
           import os
           from datetime import datetime, timezone
@@ -91,6 +92,22 @@ jobs:
               raw = json.load(stream)
           encoded = raw.get('Item') or {}
           item = {key: decode(value) for key, value in encoded.items()}
+          def safe_nonnegative_integer(value):
+              if isinstance(value, bool):
+                  return None
+              try:
+                  parsed = int(value)
+              except (TypeError, ValueError):
+                  return None
+              return parsed if parsed >= 0 else None
+
+          def sha256_shape(value):
+              text = str(value or '')
+              return (
+                  len(text) == 64
+                  and all(character in '0123456789abcdef' for character in text.lower())
+              )
+
           proof = item.get('current_slate_success_proof')
           proof_present = isinstance(proof, dict)
           safe_proof_fields = (
@@ -121,6 +138,369 @@ jobs:
               'acknowledged_at_utc',
               'acknowledged_at_epoch',
           )
+          progress = item.get('terminal_replay_progress')
+          progress_present = isinstance(progress, dict)
+          progress = progress if progress_present else {}
+          progress_counter_fields = (
+              'manifestGameCount',
+              'nextGameIndex',
+              'processedGameCount',
+              'terminalCount',
+              'canonicalCount',
+              'noPredictionDataCount',
+              'reconciledCount',
+              'verificationIndex',
+              'verifiedGameCount',
+              'attemptCount',
+          )
+          progress_counters = {
+              key: safe_nonnegative_integer(progress.get(key))
+              for key in progress_counter_fields
+          }
+          checkpoint_fingerprint = str(progress.get('checkpointFingerprint') or '')
+          manifest_fingerprint = str(progress.get('manifestFingerprint') or '')
+          checkpoint_material = {
+              str(key): value
+              for key, value in progress.items()
+              if key not in {
+                  'checkpointFingerprint',
+                  'attemptCount',
+                  'lastAttempt',
+                  'updatedAtUtc',
+              }
+          }
+          recomputed_checkpoint_fingerprint = (
+              hashlib.sha256(
+                  json.dumps(
+                      checkpoint_material,
+                      sort_keys=True,
+                      separators=(',', ':'),
+                      default=str,
+                  ).encode('utf-8')
+              ).hexdigest()
+              if progress_present
+              else ''
+          )
+          manifest_authority = progress.get('manifestAuthority')
+          manifest_authority_present = isinstance(manifest_authority, dict)
+          manifest_authority = (
+              manifest_authority if manifest_authority_present else {}
+          )
+          schedule_authority = manifest_authority.get(
+              'scheduleRevisionAuthority'
+          )
+          schedule_authority_present = isinstance(schedule_authority, dict)
+          schedule_authority = (
+              schedule_authority if schedule_authority_present else {}
+          )
+          authority_fingerprint = str(
+              manifest_authority.get('fingerprint') or ''
+          )
+          authority_evidence_fingerprint = str(
+              manifest_authority.get('authorityEvidenceFingerprint') or ''
+          )
+          schedule_fingerprint = str(
+              schedule_authority.get('fingerprint') or ''
+          )
+          processed_games = progress.get('processedGames')
+          processed_games_present = isinstance(processed_games, list)
+          processed_games = processed_games if processed_games_present else []
+          terminal_state_counts = {}
+          game_identities = []
+          durable_evidence_count = 0
+          evidence_manifest_binding_match_count = 0
+          evidence_fingerprint_shape_count = 0
+          for entry in processed_games:
+              if not isinstance(entry, dict):
+                  continue
+              state = str(entry.get('terminalState') or '')
+              if state:
+                  terminal_state_counts[state] = (
+                      terminal_state_counts.get(state, 0) + 1
+                  )
+              identity = str(entry.get('gameIdentity') or '')
+              if identity:
+                  game_identities.append(identity)
+              evidence = entry.get('durableEvidence')
+              if not isinstance(evidence, dict):
+                  continue
+              durable_evidence_count += 1
+              if (
+                  str(
+                      evidence.get(
+                          'manifestAuthorityEvidenceFingerprint'
+                      )
+                      or ''
+                  )
+                  == authority_evidence_fingerprint
+                  and sha256_shape(authority_evidence_fingerprint)
+              ):
+                  evidence_manifest_binding_match_count += 1
+              if sha256_shape(evidence.get('evidenceFingerprint')):
+                  evidence_fingerprint_shape_count += 1
+          last_attempt = progress.get('lastAttempt')
+          last_attempt = last_attempt if isinstance(last_attempt, dict) else {}
+          safe_last_attempt = {
+              key: last_attempt.get(key)
+              for key in (
+                  'status',
+                  'stage',
+                  'atUtc',
+                  'gameIndex',
+                  'phase',
+                  'errorCode',
+              )
+              if last_attempt.get(key) is not None
+          }
+          safe_progress = {
+              'present': progress_present,
+              'rawFieldNames': sorted(progress) if progress_present else [],
+              'version': progress.get('version'),
+              'phase': progress.get('phase'),
+              'slateDateEt': progress.get('slateDateEt'),
+              'updatedAtUtc': progress.get('updatedAtUtc'),
+              'counters': progress_counters,
+              'verificationComplete': progress.get('verificationComplete'),
+              'safety': {
+                  'postStartPredictionCreationAllowed': progress.get(
+                      'postStartPredictionCreationAllowed'
+                  ),
+                  'immutablePredictionRewriteAllowed': progress.get(
+                      'immutablePredictionRewriteAllowed'
+                  ),
+                  'productionAuthorityChanged': progress.get(
+                      'productionAuthorityChanged'
+                  ),
+              },
+              'requestBinding': {
+                  'queueRequestEpochPresent': (
+                      safe_nonnegative_integer(item.get('requested_at_epoch'))
+                      is not None
+                  ),
+                  'progressRequestEpochPresent': (
+                      safe_nonnegative_integer(progress.get('requestEpoch'))
+                      is not None
+                  ),
+                  'progressRequestEpochMatchesQueue': (
+                      safe_nonnegative_integer(progress.get('requestEpoch'))
+                      == safe_nonnegative_integer(
+                          item.get('requested_at_epoch')
+                      )
+                      if progress_present
+                      else False
+                  ),
+                  'queueRequestIdPresent': bool(item.get('request_id')),
+                  'progressRequestIdPresent': bool(progress.get('requestId')),
+                  'progressRequestIdMatchesQueue': (
+                      str(progress.get('requestId') or '')
+                      == str(item.get('request_id') or '')
+                      and bool(item.get('request_id'))
+                      if progress_present
+                      else False
+                  ),
+                  'slateMatchesQueue': (
+                      str(progress.get('slateDateEt') or '')
+                      == str(item.get('slate_date_et') or '')
+                      and bool(item.get('slate_date_et'))
+                      if progress_present
+                      else False
+                  ),
+              },
+              'fingerprints': {
+                  'manifestFingerprint': manifest_fingerprint or None,
+                  'manifestFingerprintShapeValid': sha256_shape(
+                      manifest_fingerprint
+                  ),
+                  'checkpointFingerprint': checkpoint_fingerprint or None,
+                  'checkpointFingerprintShapeValid': sha256_shape(
+                      checkpoint_fingerprint
+                  ),
+                  'checkpointFingerprintRecomputedMatches': (
+                      checkpoint_fingerprint
+                      == recomputed_checkpoint_fingerprint
+                      and sha256_shape(checkpoint_fingerprint)
+                  ),
+              },
+              'manifestAuthorityBinding': {
+                  'present': manifest_authority_present,
+                  'rawFieldNames': (
+                      sorted(manifest_authority)
+                      if manifest_authority_present
+                      else []
+                  ),
+                  'bindingVersion': progress.get(
+                      'manifestBindingVersion'
+                  ),
+                  'version': manifest_authority.get('version'),
+                  'recordType': manifest_authority.get('recordType'),
+                  'gameCount': safe_nonnegative_integer(
+                      manifest_authority.get('gameCount')
+                  ),
+                  'gameCountMatchesProgress': (
+                      safe_nonnegative_integer(
+                          manifest_authority.get('gameCount')
+                      )
+                      == progress_counters.get('manifestGameCount')
+                      if manifest_authority_present
+                      else False
+                  ),
+                  'immutable': manifest_authority.get('immutable'),
+                  'writeOnce': manifest_authority.get('writeOnce'),
+                  'consistentReadVerified': manifest_authority.get(
+                      'consistentReadVerified'
+                  ),
+                  'fingerprint': authority_fingerprint or None,
+                  'fingerprintShapeValid': sha256_shape(
+                      authority_fingerprint
+                  ),
+                  'authorityEvidenceFingerprint': (
+                      authority_evidence_fingerprint or None
+                  ),
+                  'authorityEvidenceFingerprintShapeValid': sha256_shape(
+                      authority_evidence_fingerprint
+                  ),
+                  'scheduleRevisionAuthorityPresent': (
+                      schedule_authority_present
+                  ),
+                  'scheduleRevisionVersion': schedule_authority.get(
+                      'version'
+                  ),
+                  'scheduleRevisionGameCount': safe_nonnegative_integer(
+                      schedule_authority.get('gameCount')
+                  ),
+                  'scheduleRevisionFingerprint': (
+                      schedule_fingerprint or None
+                  ),
+                  'scheduleRevisionFingerprintShapeValid': sha256_shape(
+                      schedule_fingerprint
+                  ),
+              },
+              'processedGamesSummary': {
+                  'present': processed_games_present,
+                  'count': len(processed_games),
+                  'countMatchesProcessedGameCount': (
+                      len(processed_games)
+                      == progress_counters.get('processedGameCount')
+                      if processed_games_present
+                      else False
+                  ),
+                  'allGameIdentitiesPresent': (
+                      len(game_identities) == len(processed_games)
+                      if processed_games_present
+                      else False
+                  ),
+                  'uniqueGameIdentityCount': len(set(game_identities)),
+                  'terminalStateCounts': terminal_state_counts,
+                  'durableEvidenceCount': durable_evidence_count,
+                  'evidenceManifestBindingMatchCount': (
+                      evidence_manifest_binding_match_count
+                  ),
+                  'evidenceFingerprintShapeCount': (
+                      evidence_fingerprint_shape_count
+                  ),
+              },
+              'lastAttempt': safe_last_attempt or None,
+              'identitiesRedacted': True,
+              'rawGamePayloadRedacted': True,
+              'privateProofRedacted': True,
+              'leaseOwnerRedacted': True,
+          }
+          receipt = item.get('replay_receipt')
+          receipt_present = isinstance(receipt, dict)
+          receipt = receipt if receipt_present else {}
+          receipt_progress = receipt.get('perGameLockProgress')
+          receipt_progress = (
+              receipt_progress if isinstance(receipt_progress, dict) else {}
+          )
+          receipt_repair = receipt.get('missedLockTerminalReconciliation')
+          receipt_repair = (
+              receipt_repair if isinstance(receipt_repair, dict) else {}
+          )
+          receipt_counter_fields = (
+              'manifestGameCount',
+              'processedGameCount',
+              'verifiedGameCount',
+              'verificationIndex',
+              'atomicDurableItemCount',
+              'canonicalCount',
+              'noPredictionDataCount',
+              'lockOutcomeCount',
+              'missedCount',
+              'dueMissingCount',
+          )
+          safe_receipt = {
+              'present': receipt_present,
+              'rawFieldNames': sorted(receipt) if receipt_present else [],
+              'ok': receipt.get('ok'),
+              'sport': receipt.get('sport'),
+              'slateDateEt': receipt.get('slateDateEt'),
+              'reason': receipt.get('reason'),
+              'terminalChunkVersion': receipt.get(
+                  'terminalChunkVersion'
+              ),
+              'checkpointFingerprint': receipt.get(
+                  'checkpointFingerprint'
+              ),
+              'manifestFingerprint': receipt.get('manifestFingerprint'),
+              'checkpointMatchesProgress': (
+                  str(receipt.get('checkpointFingerprint') or '')
+                  == checkpoint_fingerprint
+                  and receipt_present
+              ),
+              'manifestMatchesProgress': (
+                  str(receipt.get('manifestFingerprint') or '')
+                  == manifest_fingerprint
+                  and receipt_present
+              ),
+              'verificationPhase': receipt.get('verificationPhase'),
+              'durableTerminalVerificationComplete': receipt.get(
+                  'durableTerminalVerificationComplete'
+              ),
+              'atomicDurableProofRequired': receipt.get(
+                  'atomicDurableProofRequired'
+              ),
+              'completionMutationLeaseRequired': receipt.get(
+                  'completionMutationLeaseRequired'
+              ),
+              'progressCounters': {
+                  key: safe_nonnegative_integer(receipt_progress.get(key))
+                  for key in receipt_counter_fields
+              },
+              'repair': {
+                  key: receipt_repair.get(key)
+                  for key in (
+                      'ok',
+                      'version',
+                      'slateDateEt',
+                      'manifestGameCount',
+                      'processedGameCount',
+                      'verifiedGameCount',
+                      'verificationIndex',
+                      'durableTerminalVerificationComplete',
+                      'atomicDurableProofRequired',
+                      'atomicDurableItemCount',
+                      'completionMutationLeaseRequired',
+                      'reconciledCount',
+                      'remainingMissedCount',
+                      'postStartPredictionCreationAllowed',
+                      'candidateIntegrityFailuresRelabeled',
+                  )
+                  if key in receipt_repair
+              },
+              'safety': {
+                  key: receipt.get(key)
+                  for key in (
+                      'postStartPredictionCreationAllowed',
+                      'immutablePredictionRewriteAllowed',
+                      'directWorkflowTableWrite',
+                      'productionAuthorityChanged',
+                      'cooperativeReceiptRedacted',
+                  )
+                  if key in receipt
+              },
+              'privateProofRedacted': True,
+              'rawGamePayloadRedacted': True,
+          }
           identity_field_names = sorted(
               key for key in item
               if any(token in key.lower() for token in (
@@ -158,28 +538,29 @@ jobs:
               'sport': item.get('sport'),
               'run': item.get('run'),
               'slateDateEt': item.get('slate_date_et'),
-              'requestEpoch': item.get('requested_at_epoch'),
-              'requestId': item.get('request_id'),
               'force': item.get('force'),
               'timeline': {key: item.get(key) for key in timeline_fields if key in item},
+              'lastChunk': {
+                  key: item.get(key)
+                  for key in (
+                      'last_chunk_at_utc',
+                      'last_chunk_at_epoch',
+                      'last_chunk_stage',
+                      'last_chunk_status',
+                  )
+                  if key in item
+              },
               'claimOwnerPresent': 'claim_owner' in item and bool(item.get('claim_owner')),
-              'claimOwner': item.get('claim_owner'),
-              'identifierFieldNames': identity_field_names,
-              'progressFields': {
-                  key: item.get(key) for key in sorted(item)
-                  if 'progress' in key.lower() or 'checkpoint' in key.lower()
-              },
-              'lastFailureFields': {
-                  key: item.get(key) for key in sorted(item)
-                  if key.lower().startswith('last_failure')
-              },
+              'claimOwner': '[REDACTED]' if item.get('claim_owner') else None,
+              'identifierFieldsRedacted': identity_field_names,
+              'terminalReplayProgress': safe_progress,
               'currentSlateSuccessProofPresent': proof_present,
               'currentSlateSuccessProof': safe_proof,
               'unexpectedProofFieldsRedacted': (
                   sorted(set(proof) - set(safe_proof_fields)) if proof_present else []
               ),
-              'replayReceiptPresent': isinstance(item.get('replay_receipt'), dict),
-              'replayReceipt': item.get('replay_receipt'),
+              'replayReceiptPresent': receipt_present,
+              'replayReceipt': safe_receipt,
               'rawAttributeNames': sorted(item),
           }
           if item:
