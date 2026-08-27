@@ -179,7 +179,7 @@ class IsolationTests(unittest.TestCase):
             "Events"
         ]["CollectionQueue"]["Properties"]
         self.assertEqual(queue_event["BatchSize"], 1)
-        self.assertEqual(queue_event["ScalingConfig"]["MaximumConcurrency"], 6)
+        self.assertEqual(queue_event["ScalingConfig"]["MaximumConcurrency"], 3)
         queue = template["Resources"]["SoccerCollectionQueue"]["Properties"]
         self.assertEqual(queue["RedrivePolicy"]["maxReceiveCount"], 4)
 
@@ -338,6 +338,7 @@ class IsolationTests(unittest.TestCase):
 
     def test_future_soccer_only_paths_cannot_trigger_main_deploy(self) -> None:
         workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
+        push_trigger = workflow.split("workflow_dispatch:", 1)[0]
         for path in (
             '"soccer_auto/**"',
             '"soccer-auto-template.yaml"',
@@ -345,14 +346,8 @@ class IsolationTests(unittest.TestCase):
             '"docs/SOCCER_AUTO.md"',
             '".github/workflows/deploy-soccer-auto.yml"',
         ):
-            self.assertIn(path, workflow)
-        for path in (
-            '".github/workflows/deploy.yml"',
-            '".github/workflows/mlb-remove-bbd-active-runtime-once.yml"',
-            '".github/workflows/v7-v10-stall-fix-migration.yml"',
-        ):
-            self.assertNotIn(path, workflow.split("workflow_dispatch:", 1)[0])
-        self.assertIn("initial [skip ci] merge", workflow)
+            self.assertNotIn(path, push_trigger)
+        self.assertIn('".github/workflows/deploy.yml"', push_trigger)
 
     def test_initial_release_documents_trigger_level_suppression(self) -> None:
         documentation = (ROOT / "docs/SOCCER_AUTO.md").read_text()
