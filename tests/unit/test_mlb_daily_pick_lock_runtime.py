@@ -169,11 +169,24 @@ class FakeLeaseTable:
         assert kwargs["Key"].get("SK") == "COOPERATIVE_TERMINAL_REPLAY#V1"
         values = kwargs.get("ExpressionAttributeValues") or {}
         current = self.queue_item
+        request_matches = bool(
+            ":request_id" not in values
+            or (
+                isinstance(current, dict)
+                and (
+                    current.get("request_id") == values.get(":request_id")
+                    or current.get("request_id") is None
+                )
+                and current.get("requested_at_epoch")
+                == values.get(":request_epoch")
+            )
+        )
         valid_identity = bool(
             isinstance(current, dict)
             and current.get("record_type") == values.get(":record_type")
             and current.get("coordination_version") == values.get(":version")
             and current.get("slate_date_et") == values.get(":slate_date")
+            and request_matches
         )
         proof_write = ":proof" in values
         if proof_write:
@@ -201,6 +214,8 @@ class FakeLeaseTable:
                 valid_identity
                 and current.get("state") == values.get(":claimed")
                 and current.get("claim_owner") == values.get(":owner")
+                and current.get("terminal_replay_progress")
+                == values.get(":expected_progress")
             )
             next_state = values[":completed"]
         elif ":expires_epoch" in values:
@@ -217,8 +232,21 @@ class FakeLeaseTable:
             )
             next_state = values[":claimed"]
         else:
+            prior_progress_matches = bool(
+                ":progress" not in values
+                or (
+                    ":prior_progress" in values
+                    and current.get("terminal_replay_progress")
+                    == values.get(":prior_progress")
+                )
+                or (
+                    ":prior_progress" not in values
+                    and current.get("terminal_replay_progress") is None
+                )
+            )
             allowed = bool(
                 valid_identity
+                and prior_progress_matches
                 and current.get("state") == values.get(":claimed")
                 and current.get("claim_owner") == values.get(":owner")
             )
@@ -228,6 +256,8 @@ class FakeLeaseTable:
 
         updated = copy.deepcopy(current)
         updated["state"] = next_state
+        if ":request_id" in values:
+            updated["request_id"] = values[":request_id"]
         if proof_write:
             updated["current_slate_success_proof"] = copy.deepcopy(
                 values[":proof"]
@@ -300,7 +330,10 @@ class FakeLeaseTable:
         self.queue_item = updated
         result = {}
         if kwargs.get("ReturnValues") == "ALL_NEW":
-            result["Attributes"] = copy.deepcopy(updated)
+            # Preserve an object alias only in this fixture so the injected
+            # default chunk adapter can emulate a pre-existing COMPLETE_READY
+            # checkpoint. Production DynamoDB still returns a detached value.
+            result["Attributes"] = self.queue_item
         return result
 
 
@@ -349,12 +382,25 @@ def _cooperative_event(
     return event
 
 
-def _successful_terminal_replay_payload(slate_date: str = "2026-07-20") -> dict:
+def _successful_terminal_replay_payload(
+    slate_date: str = "2026-07-20",
+    game_count: int = 15,
+) -> dict:
+    chunk_version = (
+        "MLB-COOPERATIVE-TERMINAL-CHUNK-v2-"
+        "bounded-process-and-verify"
+    )
     progress = {
-        "manifestGameCount": 15,
+        "manifestGameCount": game_count,
+        "processedGameCount": game_count,
+        "verifiedGameCount": game_count,
+        "verificationIndex": game_count,
+        "verificationComplete": True,
+        "atomicDurableItemCount": game_count,
+        "atomicDurableProofRequired": True,
         "canonicalCount": 0,
-        "noPredictionDataCount": 15,
-        "lockOutcomeCount": 15,
+        "noPredictionDataCount": game_count,
+        "lockOutcomeCount": game_count,
         "missedCount": 0,
         "dueMissingCount": 0,
     }
@@ -363,14 +409,31 @@ def _successful_terminal_replay_payload(slate_date: str = "2026-07-20") -> dict:
         "sport": "mlb",
         "slateDateEt": slate_date,
         "reason": "PROVEN_NO_PREDICTION_TERMINALS_RECONCILED",
+        "terminalChunkVersion": chunk_version,
+        "verificationPhase": "VERIFY",
+        "durableTerminalVerificationComplete": True,
+        "atomicDurableProofRequired": True,
+        "atomicDurableItemCount": game_count,
+        "applicationAppendOnlyAuthorityRequired": True,
+        "lockStatusComplete": True,
         "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "directWorkflowTableWrite": False,
+        "productionAuthorityChanged": False,
         "perGameLockProgress": progress,
         "missedLockTerminalReconciliation": {
             "ok": True,
-            "version": "test-protected-terminal-repair",
+            "version": chunk_version,
             "slateDateEt": slate_date,
-            "manifestGameCount": 15,
-            "reconciledCount": 15,
+            "manifestGameCount": game_count,
+            "processedGameCount": game_count,
+            "verifiedGameCount": game_count,
+            "verificationIndex": game_count,
+            "durableTerminalVerificationComplete": True,
+            "atomicDurableProofRequired": True,
+            "atomicDurableItemCount": game_count,
+            "applicationAppendOnlyAuthorityRequired": True,
+            "reconciledCount": game_count,
             "remainingMissedCount": 0,
             "unresolved": [],
             "progressAfter": progress,
@@ -472,6 +535,92 @@ def _load_handler(
         }
 
     daily_lock.lambda_handler = delegate
+    daily_lock.MLB_COOPERATIVE_TERMINAL_CHUNK_VERSION = (
+        "MLB-COOPERATIVE-TERMINAL-CHUNK-v2-"
+        "bounded-process-and-verify"
+    )
+
+    def default_chunk_runner(
+        *,
+        slate_date,
+        request_epoch,
+        request_id,
+        checkpoint,
+        context,
+    ):
+        replay_event = {
+            "sport": "mlb",
+            "run": "prospective_terminal_backlog_reconciliation_v5",
+            "slateDateEt": slate_date,
+            "force": False,
+            "cooperativeEventBridgeOwner": True,
+        }
+        replay_response = delegate(replay_event, context)
+        replay_payload = json.loads(replay_response["body"])
+        if (
+            int(replay_response.get("statusCode") or 0) >= 400
+            or replay_payload.get("ok") is not True
+        ):
+            raise RuntimeError(
+                "MLB_SCHEDULED_LOCK_FAILED:"
+                + str(replay_payload.get("reason") or "UNKNOWN")
+            )
+        complete_progress = {
+            "version": (
+                daily_lock.MLB_COOPERATIVE_TERMINAL_CHUNK_VERSION
+            ),
+            "slateDateEt": slate_date,
+            "requestEpoch": int(request_epoch),
+            "requestId": str(request_id),
+            "manifestFingerprint": "fixture-manifest",
+            "manifestGameCount": 15,
+            "phase": "VERIFY",
+            "nextGameIndex": 15,
+            "processedGameCount": 15,
+            "terminalCount": 15,
+            "canonicalCount": 0,
+            "noPredictionDataCount": 15,
+            "reconciledCount": 15,
+            "processedGames": [],
+            "verificationIndex": 15,
+            "verifiedGameCount": 15,
+            "verificationComplete": True,
+            "attemptCount": 1,
+            "lastAttempt": {
+                "status": "ATOMIC_DURABLE_PROOF_VERIFIED",
+                "stage": "COMPLETE",
+                "atUtc": "2026-07-21T22:10:00+00:00",
+                "phase": "VERIFY",
+            },
+            "postStartPredictionCreationAllowed": False,
+            "immutablePredictionRewriteAllowed": False,
+            "productionAuthorityChanged": False,
+        }
+        # The fixture's claim update returns its in-memory record by reference,
+        # allowing this injected adapter to emulate an already-checkpointed
+        # final owner without weakening the production completion precondition.
+        if isinstance(daily_lock.TABLE.queue_item, dict):
+            daily_lock.TABLE.queue_item[
+                "terminal_replay_progress"
+            ] = complete_progress
+        return {
+            "ok": True,
+            "complete": True,
+            "deferred": False,
+            "stage": "COMPLETE",
+            "remainingSeconds": 840,
+            "checkpointWriteAllowed": False,
+            "checkpoint": copy.deepcopy(complete_progress),
+            "terminalReplayResponse": replay_payload,
+            "terminalChunkVersion": (
+                daily_lock.MLB_COOPERATIVE_TERMINAL_CHUNK_VERSION
+            ),
+            "postStartPredictionCreationAllowed": False,
+            "immutablePredictionRewriteAllowed": False,
+            "productionAuthorityChanged": False,
+        }
+
+    daily_lock.run_cooperative_terminal_chunk = default_chunk_runner
 
     coverage = ModuleType("mlb_daily_lock_coverage_patch")
 
@@ -1036,6 +1185,7 @@ def test_insufficient_time_persists_current_proof_then_next_owner_replays():
             "currentSlateDateEt": "2026-07-21",
             "requestSlateDateEt": "2026-07-20",
             "requestEpoch": int(now.timestamp()),
+            "requestId": table.queue_item["request_id"],
             "processedAtEpoch": int(now.timestamp()),
             "postStartPredictionCreationAllowed": False,
             "immutablePredictionRewriteAllowed": False,
@@ -1108,6 +1258,7 @@ def test_invalid_carried_proof_never_substitutes_for_current_slate(
             "currentSlateDateEt": "2026-07-21",
             "requestSlateDateEt": "2026-07-20",
             "requestEpoch": request_epoch,
+            "requestId": table.queue_item["request_id"],
             "processedAtEpoch": int(owner_now.timestamp()),
             "postStartPredictionCreationAllowed": False,
             "immutablePredictionRewriteAllowed": False,
@@ -1986,11 +2137,12 @@ def test_fractional_acquisition_rounds_expiry_up_without_shortening_lease():
 
 
 
-def test_eventbridge_owner_checkpoints_chunk_then_completes_without_full_replay():
+def test_eventbridge_owner_checkpoints_process_then_verify_then_completes():
     table = FakeLeaseTable()
     runner_calls = []
     chunk_version = (
-        "MLB-COOPERATIVE-TERMINAL-CHUNK-v1-one-game-per-eventbridge-owner"
+        "MLB-COOPERATIVE-TERMINAL-CHUNK-v2-"
+        "bounded-process-and-verify"
     )
 
     def payload_for(event, context):
@@ -2002,57 +2154,123 @@ def test_eventbridge_owner_checkpoints_chunk_then_completes_without_full_replay(
         lease_table=table,
         delegate_payload=payload_for,
     ) as (handler, _, delegate_calls):
-        def chunk_runner(*, slate_date, checkpoint, context):
+        def progress(
+            *,
+            slate_date,
+            request_epoch,
+            request_id,
+            verification_index,
+        ):
+            complete = verification_index == 1
+            return {
+                "version": chunk_version,
+                "slateDateEt": slate_date,
+                "requestEpoch": int(request_epoch),
+                "requestId": str(request_id),
+                "manifestFingerprint": "manifest-fingerprint",
+                "manifestGameCount": 1,
+                "phase": "VERIFY",
+                "nextGameIndex": 1,
+                "processedGameCount": 1,
+                "terminalCount": 1,
+                "canonicalCount": 0,
+                "noPredictionDataCount": 1,
+                "reconciledCount": 1,
+                "processedGames": [
+                    {
+                        "gameIdentity": "provider:game-1",
+                        "durableIdentity": "official:1",
+                        "terminalState": (
+                            "LOCKED_NO_PREDICTION_DATA"
+                        ),
+                        "reconciled": True,
+                    }
+                ],
+                "verificationIndex": verification_index,
+                "verifiedGameCount": verification_index,
+                "verificationComplete": complete,
+                "attemptCount": 1 + verification_index,
+                "lastAttempt": {
+                    "status": (
+                        "DURABLE_TERMINAL_VERIFIED"
+                        if complete
+                        else "TERMINAL_CHECKPOINT_READY"
+                    ),
+                    "stage": (
+                        "COMPLETE_READY"
+                        if complete
+                        else "PROCESS_CHECKPOINT_READY"
+                    ),
+                    "atUtc": "2026-07-21T22:10:00+00:00",
+                    "phase": "VERIFY",
+                    "gameIndex": 0,
+                    "gameIdentity": "provider:game-1",
+                    "durableIdentity": "official:1",
+                },
+                "postStartPredictionCreationAllowed": False,
+                "immutablePredictionRewriteAllowed": False,
+                "productionAuthorityChanged": False,
+            }
+
+        def chunk_runner(
+            *,
+            slate_date,
+            request_epoch,
+            request_id,
+            checkpoint,
+            context,
+        ):
             runner_calls.append(
-                (slate_date, copy.deepcopy(checkpoint), context.aws_request_id)
+                (
+                    slate_date,
+                    request_epoch,
+                    request_id,
+                    copy.deepcopy(checkpoint),
+                    context.aws_request_id,
+                )
             )
             if checkpoint is None:
+                next_progress = progress(
+                    slate_date=slate_date,
+                    request_epoch=request_epoch,
+                    request_id=request_id,
+                    verification_index=0,
+                )
                 return {
                     "ok": True,
                     "complete": False,
                     "deferred": False,
-                    "stage": "CHECKPOINT_READY",
+                    "stage": "PROCESS_CHECKPOINT_READY",
                     "remainingSeconds": 820,
                     "checkpointWriteAllowed": True,
-                    "checkpoint": {
-                        "version": chunk_version,
-                        "slateDateEt": slate_date,
-                        "manifestFingerprint": "manifest-fingerprint",
-                        "manifestGameCount": 1,
-                        "nextGameIndex": 1,
-                        "processedGameCount": 1,
-                        "terminalCount": 1,
-                        "canonicalCount": 0,
-                        "noPredictionDataCount": 1,
-                        "reconciledCount": 1,
-                        "processedGames": [
-                            {
-                                "gameIdentity": "provider:game-1",
-                                "terminalState": (
-                                    "LOCKED_NO_PREDICTION_DATA"
-                                ),
-                                "reconciled": True,
-                            }
-                        ],
-                        "attemptCount": 1,
-                        "lastAttempt": {
-                            "status": "TERMINAL_CHECKPOINT_READY",
-                            "stage": "CHECKPOINT_READY",
-                            "atUtc": "2026-07-21T22:10:00+00:00",
-                            "gameIndex": 0,
-                            "gameIdentity": "provider:game-1",
-                        },
-                        "postStartPredictionCreationAllowed": False,
-                        "immutablePredictionRewriteAllowed": False,
-                        "productionAuthorityChanged": False,
-                    },
+                    "checkpoint": next_progress,
                     "terminalChunkVersion": chunk_version,
                     "terminalWrittenThisInvocation": True,
                     "postStartPredictionCreationAllowed": False,
                     "immutablePredictionRewriteAllowed": False,
                     "productionAuthorityChanged": False,
                 }
-            assert checkpoint["nextGameIndex"] == 1
+            if checkpoint["verificationComplete"] is not True:
+                next_progress = progress(
+                    slate_date=slate_date,
+                    request_epoch=request_epoch,
+                    request_id=request_id,
+                    verification_index=1,
+                )
+                return {
+                    "ok": True,
+                    "complete": False,
+                    "deferred": False,
+                    "stage": "COMPLETE_READY",
+                    "remainingSeconds": 830,
+                    "checkpointWriteAllowed": True,
+                    "checkpoint": next_progress,
+                    "terminalChunkVersion": chunk_version,
+                    "terminalWrittenThisInvocation": False,
+                    "postStartPredictionCreationAllowed": False,
+                    "immutablePredictionRewriteAllowed": False,
+                    "productionAuthorityChanged": False,
+                }
             return {
                 "ok": True,
                 "complete": True,
@@ -2061,8 +2279,11 @@ def test_eventbridge_owner_checkpoints_chunk_then_completes_without_full_replay(
                 "remainingSeconds": 840,
                 "checkpointWriteAllowed": False,
                 "checkpoint": copy.deepcopy(checkpoint),
-                "terminalReplayResponse": _successful_terminal_replay_payload(
-                    slate_date
+                "terminalReplayResponse": (
+                    _successful_terminal_replay_payload(
+                        slate_date,
+                        game_count=1,
+                    )
                 ),
                 "terminalChunkVersion": chunk_version,
                 "postStartPredictionCreationAllowed": False,
@@ -2079,71 +2300,83 @@ def test_eventbridge_owner_checkpoints_chunk_then_completes_without_full_replay(
             handler.lambda_handler(
                 _scheduled_event(),
                 FakeContext(
-                    request_id="single-game-owner",
+                    request_id="process-owner",
                     remaining_millis=900_000,
                 ),
             )
         )
-        assert [call[0]["run"] for call in delegate_calls] == [
-            "daily_lock_check"
-        ]
         first_status = first["cooperativeTerminalReplayOwnerExecution"]
         assert first_status["state"] == "QUEUED"
-        assert first_status["historicalReplayChunked"] is True
-        assert first_status["singleGamePerEventBridgeOwner"] is True
         assert first_status["historicalReplayCompleted"] is False
         assert first_status["terminalWrittenThisInvocation"] is True
-        assert table.queue_item["state"] == "QUEUED"
         assert table.queue_item["terminal_replay_progress"][
-            "nextGameIndex"
-        ] == 1
-        assert "claim_owner" not in table.queue_item
+            "verificationIndex"
+        ] == 0
 
         second = _body(
             handler.lambda_handler(
                 _scheduled_event(),
                 FakeContext(
-                    request_id="zero-work-completer",
+                    request_id="verify-owner",
                     remaining_millis=900_000,
                 ),
             )
         )
+        second_status = second["cooperativeTerminalReplayOwnerExecution"]
+        assert second_status["state"] == "QUEUED"
+        assert second_status["historicalReplayCompleted"] is False
+        assert second_status["terminalWrittenThisInvocation"] is False
+        assert table.queue_item["terminal_replay_progress"][
+            "verificationComplete"
+        ] is True
+
+        third = _body(
+            handler.lambda_handler(
+                _scheduled_event(),
+                FakeContext(
+                    request_id="atomic-completer",
+                    remaining_millis=900_000,
+                ),
+            )
+        )
+        third_status = third["cooperativeTerminalReplayOwnerExecution"]
+        assert third_status["state"] == "COMPLETED"
+        assert third_status["historicalReplayChunked"] is True
+        assert third_status["historicalReplayCompleted"] is True
+        assert table.queue_item["state"] == "COMPLETED"
+        receipt = table.queue_item["replay_receipt"]
+        assert receipt["durableTerminalVerificationComplete"] is True
+        assert receipt["atomicDurableProofRequired"] is True
+        assert receipt["atomicDurableItemCount"] == 15
+        reconciliation = receipt["missedLockTerminalReconciliation"]
+        assert reconciliation["verifiedGameCount"] == 15
+        assert reconciliation["remainingMissedCount"] == 0
+        assert reconciliation["unresolved"] == []
         assert [call[0]["run"] for call in delegate_calls] == [
             "daily_lock_check",
             "daily_lock_check",
+            "daily_lock_check",
         ]
-        second_status = second["cooperativeTerminalReplayOwnerExecution"]
-        assert second_status["state"] == "COMPLETED"
-        assert second_status["historicalReplayChunked"] is True
-        assert second_status["historicalReplayCompleted"] is True
-        assert table.queue_item["state"] == "COMPLETED"
-        receipt = table.queue_item["replay_receipt"]
-        assert receipt["ok"] is True
-        assert receipt["sport"] == "mlb"
-        assert receipt["slateDateEt"] == "2026-07-20"
-        assert receipt["postStartPredictionCreationAllowed"] is False
-        assert receipt["immutablePredictionRewriteAllowed"] is False
-        assert receipt["productionAuthorityChanged"] is False
-        reconciliation = receipt["missedLockTerminalReconciliation"]
-        assert reconciliation["remainingMissedCount"] == 0
-        assert reconciliation["unresolved"] == []
-        assert reconciliation["progressAfter"]["missedCount"] == 0
-        assert reconciliation["progressAfter"]["dueMissingCount"] == 0
-        assert len(runner_calls) == 2
-        assert runner_calls[0][1] is None
-        assert runner_calls[1][1]["nextGameIndex"] == 1
+        assert len(runner_calls) == 3
+        assert runner_calls[0][3] is None
+        assert runner_calls[1][3]["verificationIndex"] == 0
+        assert runner_calls[2][3]["verificationComplete"] is True
 
 
 def test_failed_chunk_persists_redacted_stage_and_requeues_before_raising(capsys):
     table = FakeLeaseTable()
     chunk_version = (
-        "MLB-COOPERATIVE-TERMINAL-CHUNK-v1-one-game-per-eventbridge-owner"
+        "MLB-COOPERATIVE-TERMINAL-CHUNK-v2-"
+        "bounded-process-and-verify"
     )
     checkpoint = {
         "version": chunk_version,
+        "requestEpoch": None,
+        "requestId": None,
         "slateDateEt": "2026-07-20",
         "manifestFingerprint": "manifest-fingerprint",
         "manifestGameCount": 1,
+        "phase": "PROCESS",
         "nextGameIndex": 0,
         "processedGameCount": 0,
         "terminalCount": 0,
@@ -2151,6 +2384,9 @@ def test_failed_chunk_persists_redacted_stage_and_requeues_before_raising(capsys
         "noPredictionDataCount": 0,
         "reconciledCount": 0,
         "processedGames": [],
+        "verificationIndex": 0,
+        "verifiedGameCount": 0,
+        "verificationComplete": False,
         "attemptCount": 1,
         "lastAttempt": {
             "status": "FAILED_CLOSED",
@@ -2169,8 +2405,14 @@ def test_failed_chunk_persists_redacted_stage_and_requeues_before_raising(capsys
         lease_table=table,
         delegate_payload=_successful_current_slate_payload(),
     ) as (handler, _, delegate_calls):
-        handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk = (
-            lambda **kwargs: {
+        def failed_runner(**kwargs):
+            bound_checkpoint = copy.deepcopy(checkpoint)
+            bound_checkpoint["requestEpoch"] = int(
+                kwargs["request_epoch"]
+            )
+            bound_checkpoint["requestId"] = str(kwargs["request_id"])
+            checkpoint.update(copy.deepcopy(bound_checkpoint))
+            return {
                 "ok": False,
                 "complete": False,
                 "deferred": False,
@@ -2178,12 +2420,15 @@ def test_failed_chunk_persists_redacted_stage_and_requeues_before_raising(capsys
                 "errorCode": "PRELOCK_CANDIDATE_REQUIRES_REVIEW",
                 "remainingSeconds": 700,
                 "checkpointWriteAllowed": True,
-                "checkpoint": copy.deepcopy(checkpoint),
+                "checkpoint": bound_checkpoint,
                 "terminalChunkVersion": chunk_version,
                 "postStartPredictionCreationAllowed": False,
                 "immutablePredictionRewriteAllowed": False,
                 "productionAuthorityChanged": False,
             }
+
+        handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk = (
+            failed_runner
         )
         handler.lambda_handler(_cooperative_event(), FakeContext())
         _assert_runtime_error(
@@ -2208,3 +2453,143 @@ def test_failed_chunk_persists_redacted_stage_and_requeues_before_raising(capsys
         assert "PROVE_PRELOCK_ABSENCE" in logs
         assert "PRELOCK_CANDIDATE_REQUIRES_REVIEW" in logs
         assert "claim_owner" not in logs
+
+
+@pytest.mark.parametrize("runner_mode", ["missing", "noncallable", "wrong_version"])
+def test_chunk_runner_prerequisite_failure_requeues_without_legacy_delegate(
+    runner_mode,
+):
+    table = FakeLeaseTable()
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=_successful_current_slate_payload(),
+    ) as (handler, _, delegate_calls):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        if runner_mode == "missing":
+            delattr(
+                handler.mlb_daily_pick_lock,
+                "run_cooperative_terminal_chunk",
+            )
+        elif runner_mode == "noncallable":
+            handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk = None
+        else:
+            handler.mlb_daily_pick_lock.MLB_COOPERATIVE_TERMINAL_CHUNK_VERSION = (
+                "wrong-chunk-version"
+            )
+
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                _scheduled_event(),
+                FakeContext(
+                    request_id=f"runner-{runner_mode}",
+                    remaining_millis=900_000,
+                ),
+            ),
+            "MLB_COOPERATIVE_TERMINAL_CHUNK_RUNNER_NOT_READY",
+        )
+
+        assert [call[0]["run"] for call in delegate_calls] == [
+            "daily_lock_check"
+        ]
+        assert table.queue_item["state"] == "QUEUED"
+        assert "claim_owner" not in table.queue_item
+        assert table.queue_item.get("terminal_replay_progress") is None
+        assert table.item is None
+
+
+def test_production_source_has_no_whole_slate_chunk_fallback():
+    source = HANDLER.read_text()
+    assert "Compatibility fallback for injected/test adapters" not in source
+    assert "mlb_daily_pick_lock.lambda_handler(\n                        replay_event" not in source
+    assert "MLB_COOPERATIVE_TERMINAL_CHUNK_RUNNER_NOT_READY" in source
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda payload: payload["missedLockTerminalReconciliation"][
+            "progressAfter"
+        ].__setitem__("verifiedGameCount", 14),
+        lambda payload: payload["missedLockTerminalReconciliation"][
+            "progressAfter"
+        ].__setitem__("canonicalCount", 1),
+        lambda payload: payload.__setitem__(
+            "durableTerminalVerificationComplete", False
+        ),
+        lambda payload: payload.__setitem__(
+            "atomicDurableProofRequired", False
+        ),
+    ],
+)
+def test_terminal_receipt_rejects_inconsistent_verification_contract(
+    mutate,
+):
+    with _load_handler() as (handler, _, _):
+        payload = _successful_terminal_replay_payload()
+        mutate(payload)
+        with pytest.raises(
+            RuntimeError,
+            match="MLB_COOPERATIVE_REPLAY_",
+        ):
+            handler._terminal_replay_receipt(
+                {
+                    "statusCode": 200,
+                    "body": json.dumps(payload),
+                },
+                "2026-07-20",
+            )
+
+
+def test_checkpoint_cas_rejects_same_slate_replacement_request():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        claimed, _ = handler._claim_cooperative_replay(
+            owner="checkpoint-owner",
+            context=FakeContext(remaining_millis=900_000),
+            current_slate_response={
+                "statusCode": 200,
+                "body": json.dumps(_successful_current_slate_payload()),
+            },
+            expected_slate_date="2026-07-21",
+        )
+        assert claimed is not None
+        progress = {
+            "version": handler.COOPERATIVE_TERMINAL_CHUNK_VERSION,
+            "slateDateEt": "2026-07-20",
+            "requestEpoch": claimed["requested_at_epoch"],
+            "requestId": claimed["request_id"],
+            "manifestGameCount": 1,
+            "phase": "PROCESS",
+            "nextGameIndex": 0,
+            "processedGameCount": 0,
+            "terminalCount": 0,
+            "canonicalCount": 0,
+            "noPredictionDataCount": 0,
+            "reconciledCount": 0,
+            "verificationIndex": 0,
+            "verifiedGameCount": 0,
+            "verificationComplete": False,
+            "attemptCount": 1,
+            "lastAttempt": {
+                "status": "FAILED_CLOSED",
+                "stage": "TEST",
+                "atUtc": "2026-07-21T22:10:00+00:00",
+            },
+            "postStartPredictionCreationAllowed": False,
+            "immutablePredictionRewriteAllowed": False,
+            "productionAuthorityChanged": False,
+        }
+        table.queue_item["requested_at_epoch"] += 1
+        table.queue_item["request_id"] = "replacement-request"
+
+        with pytest.raises(
+            RuntimeError,
+            match="MLB_COOPERATIVE_TERMINAL_CHECKPOINT_FAILED",
+        ):
+            handler._checkpoint_cooperative_replay(
+                item=claimed,
+                owner="checkpoint-owner",
+                progress=progress,
+                failed=True,
+            )

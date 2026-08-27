@@ -12,6 +12,8 @@ from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from uuid import uuid4
 
+from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
+
 import inqsi_pull_history as history_contract
 import mlb_official_schedule_authority as official_schedule_contract
 from mlb_slate_coverage_patch import (
@@ -80,6 +82,16 @@ _SCOPED_PULLS: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
 _STATUS_READ_CACHE: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
     "inqsi_mlb_lock_status_request_read_cache",
     default=None,
+)
+# Cooperative historical terminal repair may inspect a large pull history, but
+# it must never translate provider-ID churn into unbounded DynamoDB query
+# fanout.  The ContextVar is unset for ordinary lock traffic and set only by
+# the protected one-game chunk runner.
+_COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT: ContextVar[Optional[int]] = (
+    ContextVar(
+        "inqsi_mlb_cooperative_terminal_candidate_alias_limit",
+        default=None,
+    )
 )
 _STATUS_MISSING_ITEM = object()
 _STATUS_BATCH_MAX_KEYS = 100
@@ -4150,8 +4162,23 @@ def _candidate_items(
         for candidate in pull.get("games") or []:
             if _same_game(game, candidate):
                 aliases.add(_raw_game_identity(candidate))
+    bounded_aliases = sorted(alias for alias in aliases if alias)
+    cooperative_limit = _COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.get()
+    if cooperative_limit is not None:
+        if (
+            isinstance(cooperative_limit, bool)
+            or not isinstance(cooperative_limit, int)
+            or cooperative_limit < 1
+        ):
+            raise RuntimeError(
+                "COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT_INVALID"
+            )
+        if len(bounded_aliases) > cooperative_limit:
+            raise RuntimeError(
+                "COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT_EXCEEDED"
+            )
     items: Dict[Tuple[str, str], Dict[str, Any]] = {}
-    for raw_identity in sorted(alias for alias in aliases if alias):
+    for raw_identity in bounded_aliases:
         for item in _query_prediction_items(
             module,
             slate,
@@ -5086,6 +5113,289 @@ def _canonical_readback(module: Any, row: Dict[str, Any]) -> Optional[Dict[str, 
         "trainingEligible": bool(training.get("trainingEligible")),
         "trainingExclusionReasons": list(training.get("trainingExclusionReasons") or []),
         "immutableExisting": True,
+    }
+
+
+def _cooperative_terminal_item_fingerprint(
+    item: Dict[str, Any],
+) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            _plain(item),
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _cooperative_terminal_evidence_fingerprint(
+    evidence: Dict[str, Any],
+) -> str:
+    material = {
+        str(key): value
+        for key, value in evidence.items()
+        if key != "evidenceFingerprint"
+    }
+    return hashlib.sha256(
+        json.dumps(
+            _plain(material),
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _cooperative_terminal_authority_evidence(
+    module: Any,
+    *,
+    durable_identity: str,
+    terminal_state: str,
+    outcome: Optional[Dict[str, Any]],
+    stored_stage: Optional[Dict[str, Any]],
+    canonical: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Capture compact exact-key evidence for a later atomic TransactGet."""
+
+    items: List[Dict[str, Any]] = []
+    evidence: Dict[str, Any] = {
+        "durableIdentity": durable_identity,
+        "terminalState": terminal_state,
+    }
+    if terminal_state == "LOCKED_NO_PREDICTION_DATA":
+        if not isinstance(outcome, dict):
+            raise RuntimeError(
+                "COOPERATIVE_TERMINAL_OUTCOME_EVIDENCE_MISSING"
+            )
+        items.append(
+            {
+                "tableRole": "LOCK_TABLE",
+                "PK": str(outcome.get("PK") or ""),
+                "SK": str(outcome.get("SK") or ""),
+                "itemFingerprint": (
+                    _cooperative_terminal_item_fingerprint(outcome)
+                ),
+            }
+        )
+        evidence.update(
+            {
+                "lockOutcomeFingerprint": str(
+                    outcome.get("lock_outcome_fingerprint") or ""
+                ),
+                "providerManifestFingerprint": str(
+                    outcome.get("provider_manifest_fingerprint")
+                    or (
+                        outcome.get("provider_manifest_authority") or {}
+                    ).get("fingerprint")
+                    or ""
+                ),
+            }
+        )
+    elif terminal_state == "LOCKED_CANONICAL":
+        if not isinstance(stored_stage, dict) or not isinstance(
+            canonical, dict
+        ):
+            raise RuntimeError(
+                "COOPERATIVE_TERMINAL_CANONICAL_EVIDENCE_MISSING"
+            )
+        canonical_key = {
+            "PK": str(canonical.get("pk") or ""),
+            "SK": str(canonical.get("sk") or ""),
+        }
+        canonical_item = module.history.PULLS.get_item(
+            Key=canonical_key,
+            ConsistentRead=True,
+        ).get("Item")
+        if not isinstance(canonical_item, dict):
+            raise RuntimeError(
+                "COOPERATIVE_TERMINAL_CANONICAL_EVIDENCE_READBACK_MISSING"
+            )
+        items.extend(
+            [
+                {
+                    "tableRole": "LOCK_TABLE",
+                    "PK": str(stored_stage.get("PK") or ""),
+                    "SK": str(stored_stage.get("SK") or ""),
+                    "itemFingerprint": (
+                        _cooperative_terminal_item_fingerprint(stored_stage)
+                    ),
+                },
+                {
+                    "tableRole": "PULLS_TABLE",
+                    "PK": canonical_key["PK"],
+                    "SK": canonical_key["SK"],
+                    "itemFingerprint": (
+                        _cooperative_terminal_item_fingerprint(canonical_item)
+                    ),
+                },
+            ]
+        )
+        stage_row = ((stored_stage.get("data") or {}).get("row") or {})
+        candidate_proof = stored_stage.get("candidate_proof") or {}
+        evidence.update(
+            {
+                "stageFingerprint": str(
+                    stored_stage.get("stage_fingerprint") or ""
+                ),
+                "canonicalPayloadFingerprint": hashlib.sha256(
+                    json.dumps(
+                        _plain(canonical_item.get("data") or {}),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        default=str,
+                    ).encode("utf-8")
+                ).hexdigest(),
+                "canonicalPayloadFingerprintVersion": (
+                    PAYLOAD_FINGERPRINT_VERSION
+                ),
+                "candidateSelectionFingerprint": hashlib.sha256(
+                    json.dumps(
+                        _plain(candidate_proof),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        default=str,
+                    ).encode("utf-8")
+                ).hexdigest(),
+                "providerManifestFingerprint": str(
+                    (
+                        stored_stage.get("provider_manifest_authority")
+                        or {}
+                    ).get("fingerprint")
+                    or ""
+                ),
+                "vectorFingerprint": str(
+                    (stage_row.get("frozenFeatureVector") or {}).get(
+                        "fingerprint"
+                    )
+                    or ""
+                ),
+                "promotionPolicyVersion": str(
+                    stored_stage.get("promotion_policy_version") or ""
+                ),
+                "lockPolicy": str(stored_stage.get("lock_policy") or ""),
+                "modelVersion": str(
+                    stored_stage.get("model_version") or ""
+                ),
+            }
+        )
+    else:
+        raise RuntimeError(
+            "COOPERATIVE_TERMINAL_EVIDENCE_STATE_INVALID"
+        )
+
+    if (
+        not items
+        or any(
+            not item.get("PK")
+            or not item.get("SK")
+            or len(str(item.get("itemFingerprint") or "")) != 64
+            for item in items
+        )
+    ):
+        raise RuntimeError(
+            "COOPERATIVE_TERMINAL_EVIDENCE_KEY_INVALID"
+        )
+    evidence["items"] = items
+    evidence["evidenceFingerprint"] = (
+        _cooperative_terminal_evidence_fingerprint(evidence)
+    )
+    return evidence
+
+
+def _cooperative_terminal_atomic_verify(
+    module: Any,
+    processed_games: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Atomically reread every exact terminal dependency before completion."""
+
+    requests: List[Dict[str, Any]] = []
+    for entry in processed_games:
+        evidence = entry.get("durableEvidence")
+        if (
+            not isinstance(evidence, dict)
+            or evidence.get("evidenceFingerprint")
+            != _cooperative_terminal_evidence_fingerprint(evidence)
+        ):
+            raise RuntimeError(
+                "COOPERATIVE_TERMINAL_ATOMIC_EVIDENCE_INVALID"
+            )
+        for item in evidence.get("items") or []:
+            if not isinstance(item, dict):
+                raise RuntimeError(
+                    "COOPERATIVE_TERMINAL_ATOMIC_EVIDENCE_INVALID"
+                )
+            requests.append(item)
+    if not requests or len(requests) > 100:
+        raise RuntimeError(
+            "COOPERATIVE_TERMINAL_ATOMIC_READ_SET_OUT_OF_RANGE"
+        )
+
+    serializer = TypeSerializer()
+    deserializer = TypeDeserializer()
+
+    def table_for(role: str) -> Any:
+        if role == "LOCK_TABLE":
+            return module.TABLE
+        if role == "PULLS_TABLE":
+            return module.history.PULLS
+        raise RuntimeError(
+            "COOPERATIVE_TERMINAL_ATOMIC_TABLE_ROLE_INVALID"
+        )
+
+    transact_items: List[Dict[str, Any]] = []
+    for request in requests:
+        table = table_for(str(request.get("tableRole") or ""))
+        table_name = str(
+            getattr(table, "name", None)
+            or getattr(table, "table_name", None)
+            or ""
+        )
+        if not table_name:
+            raise RuntimeError(
+                "COOPERATIVE_TERMINAL_ATOMIC_TABLE_NAME_MISSING"
+            )
+        key = {
+            "PK": serializer.serialize(str(request["PK"])),
+            "SK": serializer.serialize(str(request["SK"])),
+        }
+        transact_items.append(
+            {"Get": {"TableName": table_name, "Key": key}}
+        )
+
+    client = module.TABLE.meta.client
+    response = client.transact_get_items(
+        TransactItems=transact_items,
+        ReturnConsumedCapacity="NONE",
+    )
+    observed = list(response.get("Responses") or [])
+    if len(observed) != len(requests):
+        raise RuntimeError(
+            "COOPERATIVE_TERMINAL_ATOMIC_RESPONSE_COUNT_MISMATCH"
+        )
+    for expected, raw in zip(requests, observed):
+        raw_item = raw.get("Item") if isinstance(raw, dict) else None
+        if not isinstance(raw_item, dict) or not raw_item:
+            raise RuntimeError(
+                "COOPERATIVE_TERMINAL_ATOMIC_ITEM_MISSING"
+            )
+        item = {
+            str(key): deserializer.deserialize(value)
+            for key, value in raw_item.items()
+        }
+        if (
+            _cooperative_terminal_item_fingerprint(item)
+            != expected.get("itemFingerprint")
+        ):
+            raise RuntimeError(
+                "COOPERATIVE_TERMINAL_ATOMIC_ITEM_MISMATCH"
+            )
+    return {
+        "ok": True,
+        "atomicSnapshot": True,
+        "itemCount": len(requests),
+        "maxItemCount": 100,
+        "postStartPredictionCreationAllowed": False,
     }
 
 

@@ -711,6 +711,14 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
+        # Final cooperative replay completion atomically rereads the bounded
+        # exact-key immutable evidence set (at most 100 items).
+        - Statement:
+            - Sid: MLBTerminalAtomicEvidenceRead
+              Effect: Allow
+              Action:
+                - dynamodb:TransactGetItems
+              Resource: !GetAtt SnapshotsTable.Arn
         - DynamoDBReadPolicy:
             TableName: !Ref OutcomesTable
       Events:

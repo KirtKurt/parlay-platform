@@ -1,27 +1,48 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import sys
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 HELLO_WORLD = ROOT / "hello_world"
 if str(HELLO_WORLD) not in sys.path:
     sys.path.insert(0, str(HELLO_WORLD))
 
+import mlb_daily_per_game_lock_patch as real_patch
 import mlb_prospective_row_repair as repair
 
 
 SLATE = "2026-08-05"
 TODAY = "2026-08-06"
+REQUEST_EPOCH = 1_786_000_000
+REQUEST_ID = "request-terminal-chunk-test"
 
 
-def _game(index: int) -> dict:
+def _fingerprint(value) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _game(index: int, *, official_pk: str | None = None) -> dict:
+    official = official_pk or str(822_865 + index)
     return {
         "game_id": f"provider:game-{index}",
         "id": f"provider:game-{index}",
+        "providerEventId": f"game-{index}",
+        "officialGamePk": official,
         "home_team": f"Home {index}",
         "away_team": f"Away {index}",
         "commence_time": f"2026-08-05T{17 + index:02d}:00:00+00:00",
@@ -44,8 +65,16 @@ class ChunkModule:
     def __init__(self, game_count: int = 2):
         self.games = [_game(index) for index in range(game_count)]
         self.outcomes = {}
+        self.stages = {}
+        self.canonicals = {}
         self.outcome_reads = []
+        self.stage_reads = []
         self.terminal_writes = []
+        self.lease_acquires = []
+        self.lease_releases = []
+        self.atomic_calls = []
+        self.lease_contended = False
+        self.release_mode = "success"
         self.original_calls = 0
 
     def _today_et(self):
@@ -69,6 +98,7 @@ class ChunkModule:
         return copy.deepcopy(self.games)
 
     def run_lock(self, slate_date=None, force=False, *, scheduled=False):
+        del slate_date, force, scheduled
         self.original_calls += 1
         raise AssertionError(
             "the cooperative chunk must not call the whole-slate run_lock"
@@ -76,54 +106,62 @@ class ChunkModule:
 
 
 class ChunkPatch:
-    _STATUS_READ_CACHE = ContextVar(
-        "test_cooperative_terminal_chunk_cache",
-        default=None,
+    LOCK_EXECUTION_LEASE_VERSION = (
+        "MLB-LOCK-EXECUTION-LEASE-v2-global-all-mutating"
     )
 
-    @staticmethod
-    def game_identity(game):
+    def __init__(self):
+        self._STATUS_READ_CACHE = ContextVar(
+            f"test_cooperative_terminal_chunk_cache_{id(self)}",
+            default=None,
+        )
+        self._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT = ContextVar(
+            f"test_cooperative_terminal_alias_limit_{id(self)}",
+            default=None,
+        )
+
+    def game_identity(self, game):
         return game["game_id"]
 
-    @staticmethod
-    def _pull_at(module, pull):
+    def _pull_at(self, module, pull):
         del module
         return datetime.fromisoformat(pull["pulled_at"])
 
-    @staticmethod
-    def _start(module, game):
+    def _start(self, module, game):
         del module
         return datetime.fromisoformat(game["commence_time"])
 
-    @staticmethod
-    def _post_window_manifest_fingerprint(module, manifest):
-        del module
-        return "manifest:" + ",".join(
-            game["game_id"] for game in manifest
-        )
+    def _lock_at(self, module, game):
+        return self._start(module, game) - timedelta(minutes=45)
 
-    @staticmethod
-    def _get_stage(module, slate, game):
-        del module, slate, game
-        return None
-
-    @staticmethod
-    def _get_lock_outcome(module, slate, game):
+    def _get_stage(self, module, slate, game):
         assert slate == SLATE
-        request_cache = ChunkPatch._STATUS_READ_CACHE.get()
+        request_cache = self._STATUS_READ_CACHE.get()
         assert isinstance(request_cache, dict)
         assert set(request_cache) == {"canonicalPulls"}
-        module.outcome_reads.append(game["game_id"])
-        return copy.deepcopy(module.outcomes.get(game["game_id"]))
+        identity = self.game_identity(game)
+        module.stage_reads.append(identity)
+        return copy.deepcopy(module.stages.get(identity))
 
-    @staticmethod
-    def _scoring_pulls(module, pulls, game):
+    def _get_lock_outcome(self, module, slate, game):
+        assert slate == SLATE
+        request_cache = self._STATUS_READ_CACHE.get()
+        assert isinstance(request_cache, dict)
+        assert set(request_cache) == {"canonicalPulls"}
+        identity = self.game_identity(game)
+        module.outcome_reads.append(identity)
+        return copy.deepcopy(module.outcomes.get(identity))
+
+    def _scoring_pulls(self, module, pulls, game):
         del module, pulls, game
         return []
 
-    @staticmethod
-    def _last_prelock_candidate(module, slate, game, scoring):
+    def _last_prelock_candidate(self, module, slate, game, scoring):
         del module, slate, game, scoring
+        assert (
+            self._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.get()
+            == repair.COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_QUERY_LIMIT
+        )
         return (
             None,
             None,
@@ -134,30 +172,67 @@ class ChunkPatch:
             ],
         )
 
-    @staticmethod
-    def _is_no_prediction_candidate_failure(errors):
+    def _is_no_prediction_candidate_failure(self, errors):
         return errors == [
             "no_persisted_user_visible_platform_prelock_prediction_"
             "at_or_before_cutoff"
         ]
 
-    @staticmethod
     def _select_provider_manifest_authority(
-        module, pulls, slate, manifest
+        self, module, pulls, slate, manifest
     ):
         del module
         assert pulls
         assert slate == SLATE
         return {
+            "version": "test-provider-manifest-v1",
+            "recordType": "test-immutable-provider-manifest",
+            "pk": "PULL#manifest",
+            "sk": "FULL#2026-08-05",
             "fingerprint": "verified-manifest",
             "gameCount": len(manifest),
             "canonicalGameIdentities": [
                 game["game_id"] for game in manifest
             ],
+            "immutable": True,
+            "writeOnce": True,
+            "consistentReadVerified": True,
+            "officialScheduleAuthorityVersion": "test-official-v1",
+            "officialScheduleAuthorityFingerprint": "official-fingerprint",
         }
 
-    @staticmethod
+    def _strict_outcome(self, identity, reasons):
+        item = {
+            "PK": f"MLB_LOCK#{SLATE}",
+            "SK": f"OUTCOME#{_fingerprint(identity)[:16]}",
+            "record_type": "mlb_immutable_per_game_lock_outcome",
+            "version": "MLB-LOCK-OUTCOME-v1-explicit-terminal-status",
+            "game_identity": identity,
+            "lock_status": "LOCKED_NO_PREDICTION_DATA",
+            "lock_outcome_recorded": True,
+            "locked_prediction": False,
+            "canonical": False,
+            "official_prediction": False,
+            "playable": False,
+            "blocked": True,
+            "training_eligible": False,
+            "training_exclusion_reasons": [
+                "missing_immutable_prediction"
+            ],
+            "reasons": list(reasons) or ["proven_absence"],
+            "provider_manifest_fingerprint": "verified-manifest",
+            "write_once": True,
+        }
+        material = {
+            key: value
+            for key, value in item.items()
+            if key != "lock_outcome_fingerprint"
+        }
+        item["lock_outcome_fingerprint"] = _fingerprint(material)
+        return item
+
     def _put_no_prediction_outcome(
+        self,
         module,
         slate,
         game,
@@ -168,117 +243,326 @@ class ChunkPatch:
         assert slate == SLATE
         assert now >= datetime.fromisoformat(game["commence_time"])
         assert authority["fingerprint"] == "verified-manifest"
-        identity = game["game_id"]
+        identity = self.game_identity(game)
         if identity not in module.outcomes:
             module.terminal_writes.append(identity)
-            module.outcomes[identity] = {
-                "lock_status": "LOCKED_NO_PREDICTION_DATA",
-                "lock_outcome_recorded": True,
-                "locked_prediction": False,
-                "training_eligible": False,
-                "reasons": list(reasons),
-            }
+            module.outcomes[identity] = self._strict_outcome(
+                identity, reasons
+            )
         return copy.deepcopy(module.outcomes[identity])
 
+    def _validate_stage(
+        self, module, stored_stage, slate, game, manifest, scoring
+    ):
+        del module, stored_stage, slate, game, manifest, scoring
+        return []
 
-def _install(module, patch=ChunkPatch):
-    repair.install_prospective_row_repair(module, patch)
+    def _canonical_readback(self, module, row):
+        identity = str(row.get("gameIdentity") or "")
+        item = module.canonicals.get(identity)
+        if not item:
+            return None
+        return {
+            "ok": True,
+            "pk": item["PK"],
+            "sk": item["SK"],
+            "storageClass": "LOCKED_IMMUTABLE",
+        }
+
+    def _cooperative_terminal_authority_evidence(
+        self,
+        module,
+        *,
+        durable_identity,
+        terminal_state,
+        outcome,
+        stored_stage,
+        canonical,
+    ):
+        del canonical
+        if terminal_state == "LOCKED_NO_PREDICTION_DATA":
+            items = [
+                {
+                    "tableRole": "LOCK_TABLE",
+                    "PK": outcome["PK"],
+                    "SK": outcome["SK"],
+                    "itemFingerprint": _fingerprint(outcome),
+                }
+            ]
+            evidence = {
+                "durableIdentity": durable_identity,
+                "terminalState": terminal_state,
+                "lockOutcomeFingerprint": outcome[
+                    "lock_outcome_fingerprint"
+                ],
+                "providerManifestFingerprint": outcome[
+                    "provider_manifest_fingerprint"
+                ],
+                "items": items,
+            }
+        else:
+            canonical_item = module.canonicals[durable_identity]
+            items = [
+                {
+                    "tableRole": "LOCK_TABLE",
+                    "PK": stored_stage["PK"],
+                    "SK": stored_stage["SK"],
+                    "itemFingerprint": _fingerprint(stored_stage),
+                },
+                {
+                    "tableRole": "PULLS_TABLE",
+                    "PK": canonical_item["PK"],
+                    "SK": canonical_item["SK"],
+                    "itemFingerprint": _fingerprint(canonical_item),
+                },
+            ]
+            evidence = {
+                "durableIdentity": durable_identity,
+                "terminalState": terminal_state,
+                "stageFingerprint": stored_stage["stage_fingerprint"],
+                "canonicalPayloadFingerprint": _fingerprint(
+                    canonical_item["data"]
+                ),
+                "canonicalPayloadFingerprintVersion": "test",
+                "candidateSelectionFingerprint": _fingerprint(
+                    stored_stage.get("candidate_proof") or {}
+                ),
+                "providerManifestFingerprint": "verified-manifest",
+                "vectorFingerprint": "vector-fingerprint",
+                "promotionPolicyVersion": "test-promotion",
+                "lockPolicy": "test-lock-policy",
+                "modelVersion": "test-model",
+                "items": items,
+            }
+        evidence["evidenceFingerprint"] = (
+            repair._cooperative_terminal_evidence_fingerprint(evidence)
+        )
+        return evidence
+
+    def _acquire_lock_execution_lease(self, module, slate, now):
+        assert slate == SLATE
+        module.lease_acquires.append(now)
+        if module.lease_contended:
+            return {
+                "acquired": False,
+                "contentionScope": "legacy_rollout_bridge",
+            }
+        return {
+            "acquired": True,
+            "owner": f"lease-owner-{len(module.lease_acquires)}",
+            "ownedKeys": [
+                {"scope": "global", "key": "MLB_LOCK_EXECUTION#V2"},
+                *[
+                    {
+                        "scope": "legacy_rollout_bridge",
+                        "key": f"MLB_LOCK_RUNTIME#{offset}",
+                    }
+                    for offset in (-1, 0, 1)
+                ],
+            ],
+        }
+
+    def _release_lock_execution_lease(self, module, lease):
+        module.lease_releases.append(copy.deepcopy(lease))
+        if module.release_mode == "raise":
+            raise RuntimeError("simulated release transport error")
+        if module.release_mode == "ambiguous":
+            return False
+        return True
+
+    def _cooperative_terminal_atomic_verify(
+        self, module, processed_games
+    ):
+        module.atomic_calls.append(copy.deepcopy(processed_games))
+        item_count = 0
+        for entry in processed_games:
+            for expected in entry["durableEvidence"]["items"]:
+                item_count += 1
+                observed = None
+                if expected["tableRole"] == "LOCK_TABLE":
+                    values = [
+                        *module.outcomes.values(),
+                        *module.stages.values(),
+                    ]
+                else:
+                    values = list(module.canonicals.values())
+                for candidate in values:
+                    if (
+                        candidate.get("PK") == expected["PK"]
+                        and candidate.get("SK") == expected["SK"]
+                    ):
+                        observed = candidate
+                        break
+                if (
+                    observed is None
+                    or _fingerprint(observed)
+                    != expected["itemFingerprint"]
+                ):
+                    raise RuntimeError(
+                        "COOPERATIVE_TERMINAL_ATOMIC_ITEM_MISMATCH"
+                    )
+        return {
+            "ok": True,
+            "atomicSnapshot": True,
+            "itemCount": item_count,
+            "maxItemCount": 100,
+            "postStartPredictionCreationAllowed": False,
+        }
+
+
+def _canonical_rows(identity: str) -> tuple[dict, dict]:
+    stage = {
+        "PK": f"MLB_LOCK#{SLATE}",
+        "SK": f"STAGE#{_fingerprint(identity)[:16]}",
+        "stage_fingerprint": f"stage-fingerprint-{identity}",
+        "candidate_proof": {"selectionFingerprint": "candidate"},
+        "data": {"row": {"gameIdentity": identity}},
+    }
+    canonical = {
+        "PK": f"GAME_WINNERS#mlb#{SLATE}",
+        "SK": f"LOCKED#GAME#2026-08-05T17:00:00+00:00#{identity}",
+        "data": {
+            "gameIdentity": identity,
+            "frozenFeatureVector": {"fingerprint": "vector-fingerprint"},
+        },
+    }
+    return stage, canonical
+
+
+def _install(module, patch=None):
+    selected = patch or ChunkPatch()
+    repair.install_prospective_row_repair(module, selected)
     assert callable(module.run_cooperative_terminal_chunk)
+    module.patch = selected
     return module
 
 
-def test_chunk_processes_at_most_one_terminal_per_owner_then_zero_work_completes():
+def _invoke(
+    module,
+    checkpoint=None,
+    *,
+    request_epoch=REQUEST_EPOCH,
+    request_id=REQUEST_ID,
+    context=None,
+):
+    return module.run_cooperative_terminal_chunk(
+        slate_date=SLATE,
+        request_epoch=request_epoch,
+        request_id=request_id,
+        checkpoint=checkpoint,
+        context=context or BudgetContext(900_000),
+    )
+
+
+def _process_then_verify_all(module):
+    checkpoint = None
+    results = []
+    game_count = len(module.games)
+    for _ in range(game_count):
+        result = _invoke(module, checkpoint)
+        results.append(result)
+        assert result["ok"] is True
+        assert result["complete"] is False
+        checkpoint = result["checkpoint"]
+    assert checkpoint["phase"] == "VERIFY"
+    assert checkpoint["verificationIndex"] == 0
+    for index in range(game_count):
+        result = _invoke(module, checkpoint)
+        results.append(result)
+        assert result["ok"] is True
+        assert result["complete"] is False
+        checkpoint = result["checkpoint"]
+        assert checkpoint["verificationIndex"] == index + 1
+    assert checkpoint["verificationComplete"] is True
+    return checkpoint, results
+
+
+def test_chunk_processes_and_verifies_one_target_per_owner_then_atomic_completes():
     module = _install(ChunkModule(game_count=2))
 
-    first = module.run_cooperative_terminal_chunk(
-        slate_date=SLATE,
-        checkpoint=None,
-        context=BudgetContext(900_000),
+    checkpoint, results = _process_then_verify_all(module)
+
+    assert len(results) == 4
+    assert module.terminal_writes == ["official:822865", "official:822866"]
+    assert len(module.lease_acquires) == 4
+    assert len(module.lease_releases) == 4
+    assert all(
+        len(lease["ownedKeys"]) == 4
+        for lease in module.lease_releases
     )
-    assert first["ok"] is True
-    assert first["complete"] is False
-    assert first["terminalWrittenThisInvocation"] is True
-    assert first["checkpoint"]["nextGameIndex"] == 1
-    assert first["checkpoint"]["terminalCount"] == 1
-    assert module.terminal_writes == ["provider:game-0"]
-    assert module.outcome_reads == [
-        "provider:game-0",
-        "provider:game-0",
-    ]
-    assert ChunkPatch._STATUS_READ_CACHE.get() is None
     assert module.original_calls == 0
 
-    second = module.run_cooperative_terminal_chunk(
-        slate_date=SLATE,
-        checkpoint=first["checkpoint"],
-        context=BudgetContext(900_000),
-    )
-    assert second["ok"] is True
-    assert second["complete"] is False
-    assert second["checkpoint"]["nextGameIndex"] == 2
-    assert second["checkpoint"]["terminalCount"] == 2
-    assert module.terminal_writes == [
-        "provider:game-0",
-        "provider:game-1",
-    ]
-    # The next owner rereads game 0 as its durable cursor anchor, then
-    # independently reads and strongly verifies game 1 around its write.
-    assert module.outcome_reads == [
-        "provider:game-0",
-        "provider:game-0",
-        "provider:game-0",
-        "provider:game-1",
-        "provider:game-1",
-    ]
-    assert ChunkPatch._STATUS_READ_CACHE.get() is None
-    assert module.original_calls == 0
-
-    final = module.run_cooperative_terminal_chunk(
-        slate_date=SLATE,
-        checkpoint=second["checkpoint"],
-        context=BudgetContext(900_000),
-    )
+    final = _invoke(module, checkpoint)
     assert final["ok"] is True
     assert final["complete"] is True
-    assert module.terminal_writes == [
-        "provider:game-0",
-        "provider:game-1",
-    ]
-    # Completion is a zero-write owner only after a fresh strong read of the
-    # last durable terminal anchor.
-    assert module.outcome_reads == [
-        "provider:game-0",
-        "provider:game-0",
-        "provider:game-0",
-        "provider:game-1",
-        "provider:game-1",
-        "provider:game-1",
-    ]
-    assert ChunkPatch._STATUS_READ_CACHE.get() is None
+    assert final["stage"] == "COMPLETE"
+    assert final["atomicCompletionProof"] == {
+        "atomicSnapshot": True,
+        "itemCount": 2,
+        "maxItemCount": 100,
+        "applicationAppendOnlyAuthorityRequired": True,
+    }
+    assert len(module.atomic_calls) == 1
+    assert len(module.lease_acquires) == 5
+    assert len(module.lease_releases) == 5
     response = final["terminalReplayResponse"]
-    assert response["lockStatusComplete"] is True
+    assert response["durableTerminalVerificationComplete"] is True
+    assert response["atomicDurableProofRequired"] is True
+    assert response["atomicDurableItemCount"] == 2
+    assert response["verificationIndex"] == 2
+    assert response["processedGameCount"] == 2
     assert response["missedGameCount"] == 0
     assert response["postStartPredictionCreationAllowed"] is False
     assert response["immutablePredictionRewriteAllowed"] is False
     assert response["productionAuthorityChanged"] is False
-    reconciliation = response["missedLockTerminalReconciliation"]
-    assert reconciliation["remainingMissedCount"] == 0
-    assert reconciliation["unresolved"] == []
-    assert reconciliation["progressAfter"]["dueMissingCount"] == 0
-    assert reconciliation["progressAfter"]["missedCount"] == 0
-    assert module.original_calls == 0
 
 
-def test_decreasing_context_defers_before_terminal_write_and_keeps_cursor():
+def test_deleted_prefix_after_first_verification_fails_atomic_completion():
+    module = _install(ChunkModule(game_count=2))
+
+    first = _invoke(module)
+    second = _invoke(module, first["checkpoint"])
+    verify_first = _invoke(module, second["checkpoint"])
+    assert verify_first["checkpoint"]["verificationIndex"] == 1
+
+    del module.outcomes["official:822865"]
+
+    verify_second = _invoke(module, verify_first["checkpoint"])
+    assert verify_second["ok"] is True
+    assert verify_second["checkpoint"]["verificationComplete"] is True
+
+    final = _invoke(module, verify_second["checkpoint"])
+    assert final["ok"] is False
+    assert final["complete"] is False
+    assert final["stage"] == "ATOMIC_COMPLETION_PROOF"
+    assert final["checkpoint"]["verificationComplete"] is True
+    assert len(module.atomic_calls) == 1
+
+
+def test_mutated_verified_row_fails_atomic_completion():
+    module = _install(ChunkModule(game_count=1))
+    checkpoint, _ = _process_then_verify_all(module)
+    module.outcomes["official:822865"]["reasons"].append("corruption")
+
+    final = _invoke(module, checkpoint)
+
+    assert final["ok"] is False
+    assert final["stage"] == "ATOMIC_COMPLETION_PROOF"
+    assert final["errorCode"] == (
+        "COOPERATIVE_TERMINAL_ATOMIC_ITEM_MISMATCH"
+    )
+
+
+def test_decreasing_context_defers_before_terminal_write_and_releases_lease():
     module = _install(ChunkModule(game_count=1))
 
-    result = module.run_cooperative_terminal_chunk(
-        slate_date=SLATE,
-        checkpoint=None,
+    result = _invoke(
+        module,
         context=BudgetContext(
             900_000,
-            250_000,
-            250_000,
+            900_000,
+            900_000,
+            900_000,
             119_000,
         ),
     )
@@ -287,21 +571,20 @@ def test_decreasing_context_defers_before_terminal_write_and_keeps_cursor():
     assert result["complete"] is False
     assert result["deferred"] is True
     assert result["stage"] == "WRITE_BUDGET"
-    assert result["remainingSeconds"] == 119
     assert result["checkpoint"]["nextGameIndex"] == 0
-    assert result["checkpoint"]["terminalCount"] == 0
     assert result["checkpoint"]["lastAttempt"]["status"] == (
         "DEFERRED_INSUFFICIENT_REMAINING_TIME"
     )
     assert module.terminal_writes == []
-    assert module.outcomes == {}
-    assert module.original_calls == 0
+    assert len(module.lease_acquires) == 1
+    assert len(module.lease_releases) == 1
 
 
 def test_candidate_integrity_problem_stays_unresolved_and_writes_nothing():
     class CandidatePatch(ChunkPatch):
-        @staticmethod
-        def _last_prelock_candidate(module, slate, game, scoring):
+        def _last_prelock_candidate(
+            self, module, slate, game, scoring
+        ):
             del module, slate, game, scoring
             return (
                 {"predictedWinner": "Home 0"},
@@ -310,89 +593,285 @@ def test_candidate_integrity_problem_stays_unresolved_and_writes_nothing():
                 [],
             )
 
-    module = _install(ChunkModule(game_count=1), CandidatePatch)
+    module = _install(ChunkModule(game_count=1), CandidatePatch())
 
-    result = module.run_cooperative_terminal_chunk(
-        slate_date=SLATE,
-        checkpoint=None,
-        context=BudgetContext(900_000),
-    )
+    result = _invoke(module)
 
     assert result["ok"] is False
-    assert result["complete"] is False
     assert result["stage"] == "PROVE_PRELOCK_ABSENCE"
     assert result["errorCode"] == "PRELOCK_CANDIDATE_REQUIRES_REVIEW"
     assert result["checkpoint"]["nextGameIndex"] == 0
-    assert result["checkpoint"]["terminalCount"] == 0
-    assert result["checkpoint"]["lastAttempt"]["status"] == "FAILED_CLOSED"
     assert module.terminal_writes == []
-    assert module.outcomes == {}
-    assert module.original_calls == 0
+    assert len(module.lease_releases) == 1
 
 
-def test_existing_immutable_canonical_is_counted_without_any_terminal_write():
-    class CanonicalPatch(ChunkPatch):
-        @staticmethod
-        def _get_stage(module, slate, game):
-            del module
-            assert slate == SLATE
-            return {
-                "data": {
-                    "row": {
-                        "gameIdentity": game["game_id"],
-                        "slateDateEt": SLATE,
-                    }
-                }
-            }
-
-        @staticmethod
-        def _validate_stage(
-            module,
-            stage,
-            slate,
-            game,
-            manifest,
-            scoring,
-        ):
-            del module, stage, game, manifest, scoring
-            assert slate == SLATE
-            return []
-
-        @staticmethod
-        def _canonical_readback(module, row):
-            del module
-            assert row["slateDateEt"] == SLATE
-            return {
-                "ok": True,
-                "storageClass": "LOCKED_IMMUTABLE",
-                "writeOnce": True,
-                "selectionLockVerified": True,
-            }
-
-        @staticmethod
-        def _put_no_prediction_outcome(*args, **kwargs):
-            del args, kwargs
-            raise AssertionError("canonical games must never write a terminal")
-
-    module = _install(ChunkModule(game_count=1), CanonicalPatch)
-
-    result = module.run_cooperative_terminal_chunk(
-        slate_date=SLATE,
-        checkpoint=None,
-        context=BudgetContext(900_000),
+def test_existing_official_keyed_outcome_is_used_without_duplicate_write():
+    module = ChunkModule(game_count=1)
+    patch = ChunkPatch()
+    module.outcomes["official:822865"] = patch._strict_outcome(
+        "official:822865", ["existing"]
     )
+    module = _install(module, patch)
+
+    result = _invoke(module)
 
     assert result["ok"] is True
-    assert result["complete"] is False
-    assert result["terminalWrittenThisInvocation"] is False
-    assert result["checkpoint"]["canonicalCount"] == 1
-    assert result["checkpoint"]["noPredictionDataCount"] == 0
-    assert result["checkpoint"]["processedGames"] == [
-        {
-            "gameIdentity": "provider:game-0",
-            "terminalState": "LOCKED_CANONICAL",
-            "reconciled": False,
-        }
-    ]
+    assert result["checkpoint"]["processedGames"][0][
+        "durableIdentity"
+    ] == "official:822865"
+    assert result["checkpoint"]["processedGames"][0][
+        "terminalState"
+    ] == "LOCKED_NO_PREDICTION_DATA"
     assert module.terminal_writes == []
-    assert module.original_calls == 0
+
+
+def test_existing_official_keyed_canonical_is_used_without_terminal_write():
+    module = ChunkModule(game_count=1)
+    stage, canonical = _canonical_rows("official:822865")
+    module.stages["official:822865"] = stage
+    module.canonicals["official:822865"] = canonical
+    module = _install(module)
+
+    result = _invoke(module)
+
+    entry = result["checkpoint"]["processedGames"][0]
+    assert result["ok"] is True
+    assert entry["durableIdentity"] == "official:822865"
+    assert entry["terminalState"] == "LOCKED_CANONICAL"
+    assert len(entry["durableEvidence"]["items"]) == 2
+    assert module.terminal_writes == []
+
+
+def test_duplicate_provider_and_official_durable_authority_fails_closed():
+    module = ChunkModule(game_count=1)
+    patch = ChunkPatch()
+    module.outcomes["provider:game-0"] = patch._strict_outcome(
+        "provider:game-0", ["existing-provider"]
+    )
+    module.outcomes["official:822865"] = patch._strict_outcome(
+        "official:822865", ["existing-official"]
+    )
+    module = _install(module, patch)
+
+    result = _invoke(module)
+
+    assert result["ok"] is False
+    assert result["errorCode"] == (
+        "AMBIGUOUS_DURABLE_TERMINAL_IDENTITY"
+    )
+    assert module.terminal_writes == []
+
+
+def test_dual_stage_and_outcome_authority_fails_closed():
+    module = ChunkModule(game_count=1)
+    patch = ChunkPatch()
+    identity = "official:822865"
+    module.outcomes[identity] = patch._strict_outcome(
+        identity, ["existing"]
+    )
+    stage, canonical = _canonical_rows(identity)
+    module.stages[identity] = stage
+    module.canonicals[identity] = canonical
+    module = _install(module, patch)
+
+    result = _invoke(module)
+
+    assert result["ok"] is False
+    assert result["errorCode"] == "AMBIGUOUS_DUAL_TERMINAL_AUTHORITY"
+    assert module.terminal_writes == []
+
+
+def test_ambiguous_manifest_official_crosswalk_fails_before_lease_or_write():
+    module = ChunkModule(game_count=2)
+    module.games = [
+        _game(0, official_pk="822865"),
+        _game(1, official_pk="822865"),
+    ]
+    module = _install(module)
+
+    result = _invoke(module)
+
+    assert result["ok"] is False
+    assert result["stage"] == "RESOLVE_MANIFEST"
+    assert result["errorCode"] == (
+        "COOPERATIVE_TERMINAL_CHUNK_AMBIGUOUS_MANIFEST_IDENTITY"
+    )
+    assert module.lease_acquires == []
+    assert module.terminal_writes == []
+
+
+def test_writer_lease_contention_defers_without_terminal_reads_or_writes():
+    module = _install(ChunkModule(game_count=1))
+    module.lease_contended = True
+
+    result = _invoke(module)
+
+    assert result["ok"] is True
+    assert result["deferred"] is True
+    assert result["stage"] == "MUTATION_LEASE_CONTENDED"
+    assert result["errorCode"] == "WRITER_LEASE_CONTENDED"
+    assert module.outcome_reads == []
+    assert module.stage_reads == []
+    assert module.terminal_writes == []
+    assert module.lease_releases == []
+
+
+@pytest.mark.parametrize("release_mode", ["raise", "ambiguous"])
+def test_writer_lease_release_ambiguity_fails_closed_after_durable_write(
+    release_mode,
+):
+    module = _install(ChunkModule(game_count=1))
+    module.release_mode = release_mode
+
+    result = _invoke(module)
+
+    assert result["ok"] is False
+    assert result["stage"] == "RELEASE_MUTATION_LEASE"
+    assert result["checkpoint"]["nextGameIndex"] == 0
+    assert module.terminal_writes == ["official:822865"]
+    assert "official:822865" in module.outcomes
+
+    module.release_mode = "success"
+    retry = _invoke(module, result["checkpoint"])
+    assert retry["ok"] is True
+    assert retry["checkpoint"]["nextGameIndex"] == 1
+    assert module.terminal_writes == ["official:822865"]
+
+
+def test_checkpoint_is_bound_to_request_and_full_manifest_authority():
+    module = _install(ChunkModule(game_count=1))
+    first = _invoke(module)
+
+    wrong_request = _invoke(
+        module,
+        first["checkpoint"],
+        request_epoch=REQUEST_EPOCH + 1,
+    )
+    assert wrong_request["ok"] is False
+    assert wrong_request["checkpointWriteAllowed"] is False
+
+    module.games[0]["officialGamePk"] = "999999"
+    changed_manifest = _invoke(module, first["checkpoint"])
+    assert changed_manifest["ok"] is False
+    assert changed_manifest["checkpointWriteAllowed"] is False
+
+
+def test_forged_counts_fail_even_with_recomputed_checkpoint_fingerprint():
+    module = _install(ChunkModule(game_count=1))
+    first = _invoke(module)
+    forged = copy.deepcopy(first["checkpoint"])
+    forged["terminalCount"] = 99
+    forged["checkpointFingerprint"] = (
+        repair._cooperative_terminal_checkpoint_fingerprint(forged)
+    )
+
+    result = _invoke(module, forged)
+
+    assert result["ok"] is False
+    assert result["checkpointWriteAllowed"] is False
+    assert result["stage"] == "BIND_MANIFEST_AUTHORITY"
+
+
+def test_candidate_alias_queries_are_capped_before_any_query(monkeypatch):
+    calls = []
+
+    def query(module, slate, prefix):
+        del module, slate
+        calls.append(prefix)
+        return []
+
+    monkeypatch.setattr(real_patch, "_query_prediction_items", query)
+    game = {
+        "game_id": "root",
+        "officialGamePk": "822865",
+        "commence_time": "2026-08-05T17:00:00+00:00",
+    }
+    scoring = [
+        {
+            "games": [
+                {
+                    "game_id": f"alias-{index}",
+                    "officialGamePk": "822865",
+                    "commence_time": (
+                        "2026-08-05T17:00:00+00:00"
+                    ),
+                }
+            ]
+        }
+        for index in range(5)
+    ]
+
+    token = real_patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.set(4)
+    try:
+        with pytest.raises(
+            RuntimeError,
+            match="COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT_EXCEEDED",
+        ):
+            real_patch._candidate_items(object(), SLATE, game, scoring)
+    finally:
+        real_patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.reset(
+            token
+        )
+    assert calls == []
+
+    token = real_patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.set(4)
+    try:
+        real_patch._candidate_items(object(), SLATE, game, scoring[:3])
+    finally:
+        real_patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.reset(
+            token
+        )
+    assert len(calls) == 4
+
+
+def test_alias_and_canonical_only_contexts_are_always_reset():
+    module = _install(ChunkModule(game_count=1))
+    result = _invoke(module)
+
+    assert result["ok"] is True
+    assert module.patch._STATUS_READ_CACHE.get() is None
+    assert (
+        module.patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.get()
+        is None
+    )
+
+
+@pytest.mark.parametrize("candidate_failure", [False, True])
+def test_outer_context_values_are_restored_on_success_and_failure(
+    candidate_failure,
+):
+    class MaybeFailPatch(ChunkPatch):
+        def _last_prelock_candidate(
+            self, module, slate, game, scoring
+        ):
+            if candidate_failure:
+                return (
+                    {"predictedWinner": "Home 0"},
+                    {"persisted": True},
+                    [],
+                    [],
+                )
+            return super()._last_prelock_candidate(
+                module, slate, game, scoring
+            )
+
+    patch = MaybeFailPatch()
+    module = _install(ChunkModule(game_count=1), patch)
+    outer_cache = {"canonicalPulls": {"outer": ["sentinel"]}}
+    cache_token = patch._STATUS_READ_CACHE.set(outer_cache)
+    alias_token = (
+        patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.set(3)
+    )
+    try:
+        result = _invoke(module)
+        assert result["ok"] is (not candidate_failure)
+        assert patch._STATUS_READ_CACHE.get() is outer_cache
+        assert (
+            patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.get()
+            == 3
+        )
+    finally:
+        patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.reset(
+            alias_token
+        )
+        patch._STATUS_READ_CACHE.reset(cache_token)

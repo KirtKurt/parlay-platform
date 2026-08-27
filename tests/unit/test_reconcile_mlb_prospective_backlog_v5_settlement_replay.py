@@ -576,3 +576,12 @@ def test_source_has_no_direct_storage_prediction_or_authority_writer():
     assert subject.SETTLEMENT_RUN in source
     assert subject.TERMINAL_REPLAY_RUN in source
     assert "settlement409TreatedAsSuccess" in source
+
+
+def test_default_protected_replay_horizon_covers_bounded_two_phase_handoff():
+    assert subject.MAX_PROTECTED_REPLAY_ATTEMPTS == 70
+    assert len(subject.PROTECTED_REPLAY_RETRY_DELAYS_SECONDS) == 69
+    assert 60 * 60 <= subject.PROTECTED_REPLAY_RETRY_HORIZON_SECONDS <= 75 * 60
+    assert subject.PROTECTED_REPLAY_RETRY_HORIZON_SECONDS == sum(
+        subject.PROTECTED_REPLAY_RETRY_DELAYS_SECONDS
+    )

@@ -93,19 +93,19 @@ PROTECTED_REPLAY_SCHEDULE_PERIOD_SECONDS = 60
 PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS = (
     PROTECTED_REPLAY_SCHEDULE_PERIOD_SECONDS
 )
-MAX_PROTECTED_REPLAY_ATTEMPTS = 35
+MAX_PROTECTED_REPLAY_ATTEMPTS = 70
 PROTECTED_REPLAY_EXECUTION_BUDGET_SECONDS = 600
 PROTECTED_REPLAY_COOPERATIVE_BOUND_SECONDS = (
     PROTECTED_REPLAY_LEASE_SECONDS
     + PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS
     + PROTECTED_REPLAY_EXECUTION_BUDGET_SECONDS
 )
-# The first owner-handoff poll is quick.  Subsequent 61-second polls cannot
-# phase-lock to the one-minute schedule and reach beyond one full active lease,
-# the next EventBridge pickup, and the conservative historical execution
-# budget.  Polls only inspect the handoff record; they never acquire or alter
-# the active execution lease.
-PROTECTED_REPLAY_RETRY_DELAYS_SECONDS = (20,) + (61,) * 33
+# The first owner-handoff poll is quick. Subsequent 61-second polls cannot
+# phase-lock to the one-minute schedule. Seventy attempts provide about
+# 69 minutes for a 15-game PROCESS + VERIFY handoff (plus contention) without
+# granting the poller ownership or any write/retry authority. The timeout
+# remains finite and fail closed.
+PROTECTED_REPLAY_RETRY_DELAYS_SECONDS = (20,) + (61,) * 68
 PROTECTED_REPLAY_RETRY_HORIZON_SECONDS = sum(
     PROTECTED_REPLAY_RETRY_DELAYS_SECONDS
 )
