@@ -10,6 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/mlb-progress-pulse-bounded-runner-relay.yml"
 SCRIPT = ROOT / "scripts/run_mlb_progress_pulse_bounded_relay.py"
+REPOSITORY = "KirtKurt/parlay-platform"
 SPEC = importlib.util.spec_from_file_location(
     "run_mlb_progress_pulse_bounded_relay",
     SCRIPT,
@@ -150,6 +151,7 @@ def test_successor_filter_is_chain_bound_created_after_and_exact_decrement() -> 
             "event": "workflow_dispatch",
             "status": "in_progress",
             "head_branch": "main",
+            "head_repository": {"full_name": REPOSITORY},
             "display_title": "MLB pulse relay segment 9",
             "created_at": "2026-08-27T20:00:00Z",
         },
@@ -158,6 +160,7 @@ def test_successor_filter_is_chain_bound_created_after_and_exact_decrement() -> 
             "event": "workflow_dispatch",
             "status": "completed",
             "head_branch": "main",
+            "head_repository": {"full_name": REPOSITORY},
             "display_title": "MLB pulse relay segment 9",
             "created_at": "2026-08-27T20:01:00Z",
         },
@@ -166,6 +169,7 @@ def test_successor_filter_is_chain_bound_created_after_and_exact_decrement() -> 
             "event": "push",
             "status": "pending",
             "head_branch": "main",
+            "head_repository": {"full_name": REPOSITORY},
             "display_title": "MLB pulse relay segment 9",
             "created_at": "2026-08-27T20:02:00Z",
         },
@@ -174,6 +178,7 @@ def test_successor_filter_is_chain_bound_created_after_and_exact_decrement() -> 
             "event": "workflow_dispatch",
             "status": "pending",
             "head_branch": "feature",
+            "head_repository": {"full_name": REPOSITORY},
             "display_title": "MLB pulse relay segment 10",
             "created_at": "2026-08-27T20:03:00Z",
         },
@@ -182,6 +187,7 @@ def test_successor_filter_is_chain_bound_created_after_and_exact_decrement() -> 
             "event": "workflow_dispatch",
             "status": "pending",
             "head_branch": "main",
+            "head_repository": {"full_name": REPOSITORY},
             "display_title": "MLB pulse relay segment 9",
             "created_at": "2026-08-27T19:59:00Z",
         },
@@ -190,8 +196,18 @@ def test_successor_filter_is_chain_bound_created_after_and_exact_decrement() -> 
             "event": "workflow_dispatch",
             "status": "pending",
             "head_branch": "main",
+            "head_repository": {"full_name": REPOSITORY},
             "display_title": "MLB pulse relay segment 9",
             "created_at": "2026-08-27T20:04:00Z",
+        },
+        {
+            "id": 16,
+            "event": "workflow_dispatch",
+            "status": "pending",
+            "head_branch": "main",
+            "head_repository": {"full_name": "attacker/parlay-platform"},
+            "display_title": "MLB pulse relay segment 10",
+            "created_at": "2026-08-27T20:05:00Z",
         },
     ]
 
@@ -200,6 +216,7 @@ def test_successor_filter_is_chain_bound_created_after_and_exact_decrement() -> 
         current_run_id=10,
         current_created_at="2026-08-27T20:00:00Z",
         expected_remaining_segments=9,
+        expected_repository=REPOSITORY,
     ) == [15]
 
 
@@ -213,6 +230,7 @@ def test_newer_trusted_segment_ten_renews_instead_of_being_overwritten(
             "event": event,
             "status": "pending",
             "head_branch": "main",
+            "head_repository": {"full_name": REPOSITORY},
             "display_title": "MLB pulse relay segment 10",
             "created_at": "2026-08-27T20:04:00Z",
         }
@@ -223,7 +241,29 @@ def test_newer_trusted_segment_ten_renews_instead_of_being_overwritten(
         current_run_id=10,
         current_created_at="2026-08-27T20:00:00Z",
         expected_remaining_segments=8,
+        expected_repository=REPOSITORY,
     ) == [20]
+
+
+def test_client_queries_all_main_events_so_reviewed_push_renewal_is_visible(
+    monkeypatch,
+) -> None:
+    client = relay.CommandRelayClient(repository=REPOSITORY, current_run_id="100")
+    client._current_created_at = "2026-08-27T20:00:00Z"
+    paths: list[str] = []
+
+    def fake_gh_json(path: str):
+        paths.append(path)
+        return {"workflow_runs": []}
+
+    monkeypatch.setattr(client, "_gh_json", fake_gh_json)
+
+    assert client.list_successor_run_ids(8) == []
+    assert paths == [
+        f"repos/{REPOSITORY}/actions/workflows/{relay.RELAY_WORKFLOW}/runs"
+        "?branch=main&per_page=100"
+    ]
+    assert "event=" not in paths[0]
 
 
 def test_verified_explicit_renewal_is_not_overwritten_by_decrement() -> None:
