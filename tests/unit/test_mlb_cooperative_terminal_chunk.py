@@ -136,12 +136,20 @@ class ChunkModule:
         self.lease_contended = False
         self.release_mode = "success"
         self.original_calls = 0
+        self.now = datetime(
+            2026,
+            8,
+            6,
+            12,
+            0,
+            tzinfo=timezone.utc,
+        )
 
     def _today_et(self):
         return TODAY
 
     def _now_utc(self):
-        return datetime(2026, 8, 6, 12, 0, tzinfo=timezone.utc)
+        return self.now
 
     def _pulls_for_date(self, slate):
         assert slate == SLATE
@@ -497,18 +505,30 @@ class ChunkPatch:
                 for bridge_slate in self._legacy_rollout_bridge_slates(slate)
             ],
         ]
-        if any(
-            (
-                spec["key"]["PK"],
-                spec["key"]["SK"],
+        now_epoch = int(now.timestamp())
+        existing = [
+            module.TABLE.items.get(
+                (spec["key"]["PK"], spec["key"]["SK"])
             )
-            in module.TABLE.items
             for spec in specs
+        ]
+        if any(
+            item is not None
+            and int(item.get("lease_expires_at_epoch") or 0) > now_epoch
+            for item in existing
         ):
             return {
                 "acquired": False,
                 "contentionScope": "global",
             }
+        # Model production's owner-fenced stale-lease takeover: after the TTL,
+        # every exact V2/bridge key may be replaced by the next owner.
+        for spec, item in zip(specs, existing):
+            if item is not None:
+                module.TABLE.items.pop(
+                    (spec["key"]["PK"], spec["key"]["SK"]),
+                    None,
+                )
         for spec in specs:
             module.TABLE.items[
                 (spec["key"]["PK"], spec["key"]["SK"])
@@ -937,12 +957,13 @@ def test_new_outcome_uses_manifest_primary_and_passes_real_manifest_validator():
     )
 
     assert result["ok"] is True
+    expected_identity = real_patch.game_identity(game)
     assert result["checkpoint"]["processedGames"][0][
         "durableIdentity"
-    ] == "provider-real-validator"
+    ] == expected_identity
     outcomes = real_lock_fixtures.lock_outcome_items(module)
     assert len(outcomes) == 1
-    assert outcomes[0]["game_identity"] == "provider-real-validator"
+    assert outcomes[0]["game_identity"] == expected_identity
 
     pulls = module._pulls_for_date(real_lock_fixtures.SLATE)
     manifest_game = module._latest_games_for_date(
@@ -1171,7 +1192,18 @@ def test_writer_lease_release_ambiguity_fails_closed_after_durable_write(
     module.release_mode = "success"
     retry = _invoke(module, result["checkpoint"])
     assert retry["ok"] is True
-    assert retry["checkpoint"]["nextGameIndex"] == 1
+    assert retry["complete"] is False
+    assert retry["deferred"] is True
+    assert retry["stage"] == "MUTATION_LEASE_CONTENDED"
+    assert retry["errorCode"] == "WRITER_LEASE_CONTENDED"
+    assert retry["checkpoint"]["nextGameIndex"] == 0
+    assert module.terminal_writes == ["provider:game-0"]
+
+    module.now += timedelta(seconds=961)
+    resumed = _invoke(module, retry["checkpoint"])
+    assert resumed["ok"] is True
+    assert resumed["deferred"] is False
+    assert resumed["checkpoint"]["nextGameIndex"] == 1
     assert module.terminal_writes == ["provider:game-0"]
 
 
