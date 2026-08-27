@@ -101,7 +101,8 @@ jobs:
           set -euo pipefail
           gh workflow run mlb-30m-progress-pulse.yml \
             --repo "$GITHUB_REPOSITORY" \
-            --ref main
+            --ref main \
+            -f clock_gate=true
           echo 'Dispatched mlb-30m-progress-pulse.yml on main.' >> "$GITHUB_STEP_SUMMARY"
 
   renew-clock:

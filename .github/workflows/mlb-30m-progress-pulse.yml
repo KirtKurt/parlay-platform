@@ -19,6 +19,12 @@ on:
       - Unified MLB learning recovery once
     types: [completed]
   workflow_dispatch:
+    inputs:
+      clock_gate:
+        description: Recheck the fixed self-clock due gate before reporting
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main]
     paths:
@@ -46,6 +52,7 @@ env:
   MLB_PROGRESS_TARGET_CADENCE_MINUTES: '30'
   MLB_PROGRESS_CADENCE_GRACE_MINUTES: '5'
   MLB_PROGRESS_STALE_AFTER_MINUTES: '35'
+  MLB_PROGRESS_SELF_CLOCK_MINIMUM_AGE_MINUTES: '25'
   MLB_R7_EXPERIMENT_ID: mlb-v2-2026-08-03-future-prospective-r7
 
 jobs:
@@ -76,6 +83,7 @@ jobs:
         id: decision
         env:
           EVENT_NAME: ${{ github.event_name }}
+          CLOCK_GATE: ${{ inputs.clock_gate }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -84,6 +92,12 @@ jobs:
           if [ "$EVENT_NAME" = "workflow_run" ] || [ "$EVENT_NAME" = "push" ]; then
             python scripts/check_mlb_progress_pulse_staleness.py \
               --stale-after-minutes "$MLB_PROGRESS_STALE_AFTER_MINUTES" \
+              --retry-cooldown-minutes 10 \
+              --current-run-id "$GITHUB_RUN_ID" \
+              --github-output "$GITHUB_OUTPUT"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$CLOCK_GATE" = "true" ]; then
+            python scripts/check_mlb_progress_pulse_staleness.py \
+              --stale-after-minutes "$MLB_PROGRESS_SELF_CLOCK_MINIMUM_AGE_MINUTES" \
               --retry-cooldown-minutes 10 \
               --current-run-id "$GITHUB_RUN_ID" \
               --github-output "$GITHUB_OUTPUT"

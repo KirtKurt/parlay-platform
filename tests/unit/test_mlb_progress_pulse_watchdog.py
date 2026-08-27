@@ -212,6 +212,7 @@ def test_self_renewing_clock_uses_fixed_due_gate_targets_and_refs() -> None:
         == 1
     )
     assert clock.count('--ref main') == 2
+    assert "-f clock_gate=true" in clock
     assert clock.count("actions: write") == 2
     assert "scripts/check_mlb_progress_pulse_staleness.py" in clock
 
@@ -238,8 +239,19 @@ def test_self_clock_due_gate_preserves_25_minute_minimum_spacing() -> None:
     assert just_due["dispatchRequired"] is True
 
 
-def test_primary_reporter_accepts_fixed_watchdog_dispatch() -> None:
+def test_primary_reporter_rechecks_fixed_self_clock_dispatch() -> None:
     pulse = (ROOT / ".github/workflows/mlb-30m-progress-pulse.yml").read_text()
 
     assert "workflow_dispatch:" in pulse
+    assert "clock_gate:" in pulse
+    assert "CLOCK_GATE: ${{ inputs.clock_gate }}" in pulse
+    assert "MLB_PROGRESS_SELF_CLOCK_MINIMUM_AGE_MINUTES: '25'" in pulse
+    assert (
+        '[ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$CLOCK_GATE" = "true" ]'
+        in pulse
+    )
+    assert (
+        '--stale-after-minutes "$MLB_PROGRESS_SELF_CLOCK_MINIMUM_AGE_MINUTES"'
+        in pulse
+    )
     assert "github.event_name != 'workflow_run'" in pulse
