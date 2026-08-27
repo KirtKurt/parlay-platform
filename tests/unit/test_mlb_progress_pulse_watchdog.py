@@ -16,12 +16,24 @@ SPEC.loader.exec_module(watchdog)
 NOW = datetime(2026, 8, 26, 22, 0, tzinfo=timezone.utc)
 
 
-def _comment(created_at: str) -> dict:
+def _comment(
+    created_at: str,
+    *,
+    url: str = "https://github.example/pulse",
+    login: str = "github-actions[bot]",
+    author_id: int = 41898282,
+    author_type: str = "Bot",
+) -> dict:
     return {
         "id": 1,
         "created_at": created_at,
-        "html_url": "https://github.example/pulse",
+        "html_url": url,
         "body": f"<!-- {watchdog.STATE_MARKER}:fixture -->",
+        "user": {
+            "login": login,
+            "id": author_id,
+            "type": author_type,
+        },
     }
 
 
@@ -67,6 +79,96 @@ def test_age_immediately_above_35_minutes_requires_fallback() -> None:
     assert result["staleAfterMinutes"] == 35
     assert result["stale"] is True
     assert result["dispatchRequired"] is True
+
+
+def test_public_commenter_cannot_spoof_a_fresh_pulse_marker() -> None:
+    result = _evaluate(
+        [
+            _comment(
+                "2026-08-26T21:59:00Z",
+                url="https://github.example/spoof",
+                login="public-commenter",
+                author_id=991,
+                author_type="User",
+            ),
+            _comment("2026-08-26T20:41:21Z", url="https://github.example/real"),
+        ]
+    )
+
+    assert result["stale"] is True
+    assert result["dispatchRequired"] is True
+    assert result["visiblePulseUrl"] == "https://github.example/real"
+    assert result["ignoredUntrustedMarkerCount"] == 1
+
+
+def test_marker_without_exact_immutable_bot_identity_is_not_visible() -> None:
+    result = _evaluate(
+        [
+            _comment(
+                "2026-08-26T21:59:00Z",
+                login="github-actions[bot]",
+                author_id=99999999,
+                author_type="Bot",
+            )
+        ]
+    )
+
+    assert result["stale"] is True
+    assert result["dispatchRequired"] is True
+    assert result["reason"] == "NO_VISIBLE_PULSE"
+    assert result["visiblePulseAtUtc"] is None
+    assert result["trustedPulseAuthorLogin"] == "github-actions[bot]"
+
+
+def test_comment_fetch_is_one_bounded_newest_first_repository_request(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_gh_json(path: str):
+        calls.append(path)
+        newest = _comment("2026-08-26T21:59:00Z")
+        newest.update(
+            {
+                "id": 3,
+                "issue_url": "https://api.github.com/repos/KirtKurt/parlay-platform/issues/567",
+            }
+        )
+        unrelated = _comment("2026-08-26T21:58:00Z")
+        unrelated.update(
+            {
+                "id": 2,
+                "issue_url": "https://api.github.com/repos/KirtKurt/parlay-platform/issues/568",
+            }
+        )
+        older = _comment("2026-08-26T21:57:00Z")
+        older.update(
+            {
+                "id": 1,
+                "issue_url": "https://api.github.com/repos/KirtKurt/parlay-platform/issues/567",
+            }
+        )
+        return [newest, unrelated, older]
+
+    monkeypatch.setattr(watchdog, "_gh_json", fake_gh_json)
+
+    comments = watchdog._issue_comments("KirtKurt/parlay-platform", 567)
+
+    assert [comment["id"] for comment in comments] == [3, 1]
+    assert calls == [
+        "repos/KirtKurt/parlay-platform/issues/comments?"
+        "sort=created&direction=desc&per_page=100&page=1"
+    ]
+
+
+def test_checker_source_pins_trusted_bot_and_has_no_history_walk() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'PULSE_AUTHOR_LOGIN = "github-actions[bot]"' in source
+    assert "PULSE_AUTHOR_ID = 41898282" in source
+    assert 'PULSE_AUTHOR_TYPE = "Bot"' in source
+    assert "COMMENT_WINDOW = 100" in source
+    assert "sort=created&direction=desc" in source
+    assert "for page in range" not in source
+    assert "issue_comment_pagination_limit_exceeded" not in source
 
 
 def test_active_pulse_run_suppresses_duplicate_recovery_dispatch() -> None:
@@ -181,7 +283,7 @@ def test_independent_cadence_watchdog_is_stale_gated_and_read_only() -> None:
     assert "MLB_PROGRESS_STALE_AFTER_MINUTES: '35'" in watchdog_workflow
     assert "needs.decide.outputs.dispatch_required == 'true'" in watchdog_workflow
     assert "gh workflow run mlb-30m-progress-pulse.yml" in watchdog_workflow
-    assert '--ref main' in watchdog_workflow
+    assert "--ref main" in watchdog_workflow
     assert "actions: write" in watchdog_workflow
     assert "issues: write" not in watchdog_workflow
     assert "aws-actions/configure-aws-credentials" not in watchdog_workflow

@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
 STATE_MARKER = "MLB_PROGRESS_STATE_BASE64"
+PULSE_AUTHOR_LOGIN = "github-actions[bot]"
+PULSE_AUTHOR_ID = 41898282
+PULSE_AUTHOR_TYPE = "Bot"
+COMMENT_WINDOW = 100
 ACTIVE_RUN_STATUSES = {"queued", "in_progress", "waiting", "pending", "requested"}
 
 
@@ -34,17 +38,23 @@ def _gh_json(path: str) -> Any:
 
 
 def _issue_comments(repo: str, issue: int) -> list[dict[str, Any]]:
-    comments: list[dict[str, Any]] = []
-    for page in range(1, 101):
-        rows = _gh_json(
-            f"repos/{repo}/issues/{issue}/comments?per_page=100&page={page}"
-        )
-        if not isinstance(rows, list):
-            raise RuntimeError("issue_comments_response_not_a_list")
-        comments.extend(row for row in rows if isinstance(row, dict))
-        if len(rows) < 100:
-            return comments
-    raise RuntimeError("issue_comment_pagination_limit_exceeded")
+    # The issue-specific endpoint is oldest-first and offers no sort direction.
+    # The repository endpoint supports a descending created-time sort, so a
+    # single bounded page gives the newest evidence without walking all history.
+    rows = _gh_json(
+        f"repos/{repo}/issues/comments?"
+        f"sort=created&direction=desc&per_page={COMMENT_WINDOW}&page=1"
+    )
+    if not isinstance(rows, list):
+        raise RuntimeError("issue_comments_response_not_a_list")
+
+    expected_suffix = f"/repos/{repo}/issues/{issue}".lower()
+    return [
+        dict(row)
+        for row in rows
+        if isinstance(row, Mapping)
+        and str(row.get("issue_url") or "").lower().endswith(expected_suffix)
+    ]
 
 
 def _workflow_runs(repo: str, workflow_file: str) -> list[dict[str, Any]]:
@@ -71,6 +81,21 @@ def _timestamp(value: Any) -> Optional[datetime]:
     return parsed.astimezone(timezone.utc)
 
 
+def _is_authoritative_pulse_comment(comment: Mapping[str, Any]) -> bool:
+    user = comment.get("user")
+    if not isinstance(user, Mapping):
+        return False
+    try:
+        author_id = int(user.get("id"))
+    except (TypeError, ValueError):
+        return False
+    return (
+        str(user.get("login") or "") == PULSE_AUTHOR_LOGIN
+        and author_id == PULSE_AUTHOR_ID
+        and str(user.get("type") or "") == PULSE_AUTHOR_TYPE
+    )
+
+
 def evaluate_staleness(
     comments: Iterable[Mapping[str, Any]],
     runs: Iterable[Mapping[str, Any]],
@@ -85,8 +110,12 @@ def evaluate_staleness(
     now = now.astimezone(timezone.utc)
 
     visible: list[tuple[datetime, Mapping[str, Any]]] = []
+    ignored_untrusted_markers = 0
     for comment in comments:
         if STATE_MARKER not in str(comment.get("body") or ""):
+            continue
+        if not _is_authoritative_pulse_comment(comment):
+            ignored_untrusted_markers += 1
             continue
         created = _timestamp(comment.get("created_at"))
         if created is not None:
@@ -162,6 +191,8 @@ def evaluate_staleness(
         "visiblePulseAtUtc": latest_at.isoformat() if latest_at else None,
         "visiblePulseAgeMinutes": age_minutes,
         "visiblePulseUrl": latest_visible[1].get("html_url") if latest_visible else None,
+        "trustedPulseAuthorLogin": PULSE_AUTHOR_LOGIN,
+        "ignoredUntrustedMarkerCount": ignored_untrusted_markers,
         "activeRunId": active_run.get("id") if active_run else None,
         "latestAttemptRunId": latest_attempt[1].get("id") if latest_attempt else None,
         "latestAttemptAgeMinutes": latest_attempt_age,
