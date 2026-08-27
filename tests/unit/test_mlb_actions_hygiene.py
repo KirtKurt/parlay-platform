@@ -12,14 +12,7 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 
 MANUAL_ONLY = {
     "bootstrap-unified-mlb-r7-recovery-now.yml",
-    "dispatch-mlb-r7-continuity-after-timeout-fix-once.yml",
-    "dispatch-mlb-r7-continuity-chatgpt-20260825-01.yml",
     "finalize-mlb-root-settlement-training-now.yml",
-    "fix-mlb-r7-continuity-timeout-now.yml",
-    "fix-mlb-r7-lock-timeout-lease-contract-now.yml",
-    "fix-mlb-r7-lock-timeout-lease-contract-v2-now.yml",
-    "fix-mlb-r7-lock-timeout-lease-contract-v3-now.yml",
-    "fix-mlb-r7-status-consistency-retry-v1-now.yml",
     "hotfix-mlb-prospective-trainer-skip-aug4.yml",
     "launch-mlb-v5-30-day-repair-now.yml",
     "launch-mlb-v5-after-repaired-root-now.yml",
@@ -39,7 +32,6 @@ MANUAL_ONLY = {
     "probe-mlb-r7-official-fundamentals-bootstrap.yml",
     "repair-mlb-canonical-label-policy-drift-now.yml",
     "repair-mlb-official-status-normalization-now.yml",
-    "repair-mlb-r7-read-admission-now.yml",
     "repair-mlb-r7-runtime-admission-now.yml",
     "repair-mlb-root-lifecycle-concurrency-once.yml",
     "trigger-mlb-prospective-v5-now.yml",
@@ -60,11 +52,18 @@ RETIRED_WORKFLOWS = {
     "diagnose-deploy-workflow.yml",
     "diagnose-mlb-r7-aug4-after-lease.yml",
     "diagnose-mlb-r7-aug4-terminal-repair.yml",
+    "dispatch-mlb-r7-continuity-after-timeout-fix-once.yml",
+    "dispatch-mlb-r7-continuity-chatgpt-20260825-01.yml",
     "dispatch-mlb-bedrock-repair-deploy-20260824.yml",
     "dispatch-mlb-production-repair-deployments.yml",
     "finalize-mlb-auto-production-deploy-now.yml",
     "finalize-mlb-auto-production-once.yml",
     "fix-mlb-continuity-exact-sha-checkout-once.yml",
+    "fix-mlb-r7-continuity-timeout-now.yml",
+    "fix-mlb-r7-lock-timeout-lease-contract-now.yml",
+    "fix-mlb-r7-lock-timeout-lease-contract-v2-now.yml",
+    "fix-mlb-r7-lock-timeout-lease-contract-v3-now.yml",
+    "fix-mlb-r7-status-consistency-retry-v1-now.yml",
     "fix-mlb-r7-terminal-identity-now.yml",
     "install-mlb-titan-native-recovery-v2.yml",
     "install-mlb-titan-native-recovery-v3.yml",
@@ -85,6 +84,8 @@ RETIRED_WORKFLOWS = {
     "repair-mlb-bounded-smoke-v3.yml",
     "repair-mlb-production-now.yml",
     "repair-mlb-production-chain-20260824.yml",
+    "repair-mlb-r7-read-admission-now.yml",
+    "repair-mlb-training-continuity-now.yml",
     "repair-mlb-terminal-durability-once.yml",
     "snapshot-mlb-completion-controller-now.yml",
     "snapshot-mlb-auto-deploy-2205.yml",
@@ -119,6 +120,10 @@ RETIRED_PATCH_SCRIPTS = {
     "set_mlb_auto_bedrock_model_chain.py",
 }
 
+RETIRED_WORKFLOW_REFERENCES = RETIRED_WORKFLOWS | {
+    "Repair MLB training continuity now",
+}
+
 
 def _load(path: Path) -> dict[str, Any]:
     document = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
@@ -149,7 +154,9 @@ def test_remaining_workflows_do_not_reference_retired_mlb_workflows() -> None:
     for workflow in WORKFLOWS.glob("*.yml"):
         source = workflow.read_text(encoding="utf-8")
         references = sorted(
-            filename for filename in RETIRED_WORKFLOWS if filename in source
+            reference
+            for reference in RETIRED_WORKFLOW_REFERENCES
+            if reference in source
         )
         assert references == [], f"{workflow.name}: {references}"
 
@@ -254,7 +261,6 @@ def test_pulse_keeps_independent_staleness_gated_fallback_producers() -> None:
         "MLB Scoring Guard",
         "Deploy SAM to AWS",
         "MLB Production Source Contract",
-        "Repair MLB training continuity now",
         "Unified MLB learning recovery once",
     ]
     assert workflow_run["types"] == ["completed"]

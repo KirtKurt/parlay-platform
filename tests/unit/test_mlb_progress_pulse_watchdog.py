@@ -120,7 +120,6 @@ def test_workflow_uses_offset_schedule_and_staleness_gated_event_fallbacks() -> 
         "MLB Scoring Guard",
         "Deploy SAM to AWS",
         "MLB Production Source Contract",
-        "Repair MLB training continuity now",
         "Unified MLB learning recovery once",
     ):
         assert producer in pulse
