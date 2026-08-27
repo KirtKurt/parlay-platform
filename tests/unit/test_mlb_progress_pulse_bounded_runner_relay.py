@@ -19,10 +19,12 @@ def test_runner_relay_is_finite_main_only_and_self_protecting() -> None:
 
     assert "name: MLB progress pulse bounded runner relay" in relay
     assert "github.event.workflow_run.head_branch == 'main'" in relay
-    assert "if [ \"$GITHUB_REF\" != 'refs/heads/main' ]" in relay
+    assert "[ \"$GITHUB_EVENT_NAME\" != 'workflow_run' ]" in relay
+    assert "[ \"$GITHUB_REF\" != 'refs/heads/main' ]" in relay
     assert "remaining_segments must be an integer from 1 through" in relay
     assert "^ [1-9]" not in relay
     assert "^[1-9][0-9]*$" in relay
+    assert '[ "${#remaining_segments}" -gt 2 ]' in relay
     assert "next_segments=$((10#$remaining_segments - 1))" in relay
     assert "timeout-minutes: 325" in relay
     assert "group: mlb-progress-pulse-bounded-runner-relay" in relay
@@ -49,7 +51,7 @@ def test_runner_relay_preserves_the_existing_read_only_staleness_gate() -> None:
     assert "scripts/check_mlb_progress_pulse_staleness.py" in relay
     assert "--stale-after-minutes \"$MLB_PROGRESS_STALE_AFTER_MINUTES\"" in relay
     assert "--retry-cooldown-minutes 10" in relay
-    assert "gh workflow run mlb-30m-progress-pulse.yml" in relay
+    assert "timeout 60s gh workflow run mlb-30m-progress-pulse.yml" in relay
     assert "--field force=false" in relay
     assert "gh issue comment" not in relay
     assert "sleep \"$RELAY_POLL_INTERVAL_SECONDS\"" in relay
@@ -58,7 +60,7 @@ def test_runner_relay_preserves_the_existing_read_only_staleness_gate() -> None:
 def test_runner_relay_queues_one_bounded_successor_before_waiting() -> None:
     relay = RELAY.read_text(encoding="utf-8")
 
-    assert "gh workflow run mlb-progress-pulse-bounded-runner-relay.yml" in relay
+    assert "timeout 60s gh workflow run mlb-progress-pulse-bounded-runner-relay.yml" in relay
     assert '--field remaining_segments="$NEXT_SEGMENTS"' in relay
     assert "queue_successor || true" in relay
     assert relay.index("queue_successor || true") < relay.index(
