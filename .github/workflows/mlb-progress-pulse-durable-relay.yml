@@ -2,7 +2,7 @@ name: MLB progress pulse durable relay
 
 on:
   # This schedule only refreshes a finite relay lease. Once admitted, the relay
-  # no longer depends on subsequent cron admissions for up to ~49 hours.
+  # no longer depends on subsequent cron admissions for up to 48 hours.
   schedule:
     - cron: '23 3 * * *'
   workflow_run:
@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       remaining_hops:
-        description: Finite 31-minute relay hops, from 1 through 96
+        description: Finite 30-minute relay hops, from 1 through 96
         required: false
         default: 96
         type: number
@@ -44,19 +44,19 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RELAY_ENVIRONMENT: mlb-pulse-31m-delay
-  REQUIRED_WAIT_MINUTES: '31'
+  RELAY_ENVIRONMENT: mlb-pulse-30m-delay
+  REQUIRED_WAIT_MINUTES: '30'
   MAX_RELAY_HOPS: '96'
 
 jobs:
   relay:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.head_branch == 'main'
     # Repository administrators must configure this public-repository
-    # environment with exactly one 31-minute wait timer and no reviewer/custom
+    # environment with exactly one 30-minute wait timer and no reviewer/custom
     # gates before enabling the relay. The timer is applied before a runner is
     # allocated and does not count toward billable runner time.
     environment:
-      name: mlb-pulse-31m-delay
+      name: mlb-pulse-30m-delay
       deployment: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
