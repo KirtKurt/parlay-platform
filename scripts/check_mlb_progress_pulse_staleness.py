@@ -109,15 +109,9 @@ def _annotate_reporter_job_evidence(
         status = str(row.get("status") or "")
         event = str(row.get("event") or "")
 
-        # Every workflow_dispatch source in this repository is an explicit
-        # forced pulse or a stale-gated dispatch. Automatic schedule,
-        # workflow_run, and push decisions need job-level proof.
-        if event == "workflow_dispatch":
-            row[REPORTER_ATTEMPT_PROOF_KEY] = True
-            row[REPORTER_ACTIVE_PROOF_KEY] = status in ACTIVE_RUN_STATUSES
-            annotated.append(row)
-            continue
-
+        # Event type alone is insufficient: every trigger, including an
+        # explicit force=false dispatch, can complete as a decision-only no-op.
+        # Suppression therefore requires the reporter job itself to exist.
         created = _timestamp(row.get("created_at"))
         age_minutes = (
             max(0.0, (now - created).total_seconds() / 60.0)
@@ -212,10 +206,7 @@ def evaluate_staleness(
         row
         for row in run_rows
         if str(row.get("status") or "") in ACTIVE_RUN_STATUSES
-        and (
-            str(row.get("event") or "") == "workflow_dispatch"
-            or bool(row.get(REPORTER_ACTIVE_PROOF_KEY))
-        )
+        and bool(row.get(REPORTER_ACTIVE_PROOF_KEY))
     ]
     active_run = max(
         active_runs,
@@ -226,10 +217,7 @@ def evaluate_staleness(
     attempted_runs = [
         (_timestamp(row.get("created_at")), row)
         for row in run_rows
-        if (
-            str(row.get("event") or "") == "workflow_dispatch"
-            or bool(row.get(REPORTER_ATTEMPT_PROOF_KEY))
-        )
+        if bool(row.get(REPORTER_ATTEMPT_PROOF_KEY))
         and _timestamp(row.get("created_at")) is not None
     ]
     latest_attempt = (
