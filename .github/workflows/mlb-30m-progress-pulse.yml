@@ -5,10 +5,10 @@ on:
     # GitHub documents elevated delay/drop risk at the start of the hour.
     # Keep the 30-minute cadence while moving away from :00/:30 contention.
     - cron: '11,41 * * * *'
-  # Event-driven fallbacks recover a dropped GitHub schedule after the visible
-  # pulse crosses the stale limit. Keep multiple independent MLB runtime,
-  # deploy, and bounded-recovery producers so one dropped cron cannot silence
-  # reporting; the decision job suppresses fresh/noise-only completions.
+  # Event-driven fallbacks and the direct schedule share the same pre-deadline
+  # staleness gate. This prevents a fallback pulse from being followed by a
+  # near-immediate scheduled duplicate. Manual workflow_dispatch defaults to a
+  # forced diagnostic pulse; watchdog dispatches opt into one final fresh check.
   workflow_run:
     workflows:
       - MLB Canonical Runtime Health Watch
@@ -18,7 +18,14 @@ on:
       - MLB Production Source Contract
       - Unified MLB learning recovery once
     types: [completed]
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      force:
+        description: Force a pulse even when the latest visible pulse is fresh
+        required: false
+        default: true
+        type: boolean
   push:
     branches: [main]
     paths:
@@ -34,6 +41,8 @@ permissions:
   contents: read
   issues: write
 
+# Serialize the issue writer. Filtering workflow_run to main above prevents
+# irrelevant PR completions from displacing a valid pending pulse.
 concurrency:
   group: mlb-30m-production-progress-pulse
   cancel-in-progress: false
@@ -45,7 +54,9 @@ env:
   MLB_PROGRESS_ISSUE_NUMBER: '567'
   MLB_PROGRESS_TARGET_CADENCE_MINUTES: '30'
   MLB_PROGRESS_CADENCE_GRACE_MINUTES: '5'
-  MLB_PROGRESS_STALE_AFTER_MINUTES: '35'
+  # A strict >28m gate plus a punctual five-minute watchdog observes staleness
+  # by 33m; the observed sub-minute reporter leaves margin inside 35m.
+  MLB_PROGRESS_STALE_AFTER_MINUTES: '28'
   MLB_R7_EXPERIMENT_ID: mlb-v2-2026-08-03-future-prospective-r7
 
 jobs:
@@ -76,22 +87,23 @@ jobs:
         id: decision
         env:
           EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_FORCE: ${{ inputs.force }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           python -m py_compile scripts/check_mlb_progress_pulse_staleness.py
           ! grep -Ei 'boto3|aws[[:space:]]+(dynamodb|lambda)|put_item|update_item|delete_item' scripts/check_mlb_progress_pulse_staleness.py
-          if [ "$EVENT_NAME" = "workflow_run" ] || [ "$EVENT_NAME" = "push" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$WORKFLOW_DISPATCH_FORCE" = "true" ]; then
+            echo 'stale=false' >> "$GITHUB_OUTPUT"
+            echo 'dispatch_required=true' >> "$GITHUB_OUTPUT"
+            echo 'reason=EXPLICIT_WORKFLOW_DISPATCH' >> "$GITHUB_OUTPUT"
+            echo 'visible_pulse_age_minutes=n/a' >> "$GITHUB_OUTPUT"
+          else
             python scripts/check_mlb_progress_pulse_staleness.py \
               --stale-after-minutes "$MLB_PROGRESS_STALE_AFTER_MINUTES" \
               --retry-cooldown-minutes 10 \
               --current-run-id "$GITHUB_RUN_ID" \
               --github-output "$GITHUB_OUTPUT"
-          else
-            echo 'stale=false' >> "$GITHUB_OUTPUT"
-            echo 'dispatch_required=true' >> "$GITHUB_OUTPUT"
-            echo 'reason=DIRECT_PULSE_TRIGGER' >> "$GITHUB_OUTPUT"
-            echo 'visible_pulse_age_minutes=n/a' >> "$GITHUB_OUTPUT"
           fi
 
       - name: Record pulse decision

@@ -2,9 +2,11 @@ name: MLB progress pulse cadence watchdog
 
 on:
   schedule:
-    # Six off-boundary recovery opportunities per hour. The 35-minute stale
-    # gate prevents fresh/noise-only dispatches.
-    - cron: '7,17,27,37,47,57 * * * *'
+    # Best effort only: GitHub can delay or drop schedule events and provides no
+    # delivery SLA. With punctual delivery, a strict >28m gate checked every
+    # five minutes is observed by 33m; the reporter has completed in under
+    # one minute, preserving margin inside the 35-minute visible-gap objective.
+    - cron: '4/5 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -17,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  MLB_PROGRESS_STALE_AFTER_MINUTES: '35'
+  MLB_PROGRESS_STALE_AFTER_MINUTES: '28'
 
 jobs:
   decide:
@@ -82,5 +84,6 @@ jobs:
           set -euo pipefail
           gh workflow run mlb-30m-progress-pulse.yml \
             --repo "$GITHUB_REPOSITORY" \
-            --ref main
-          echo 'Dispatched mlb-30m-progress-pulse.yml on main.' >> "$GITHUB_STEP_SUMMARY"
+            --ref main \
+            --field force=false
+          echo 'Dispatched stale-gated mlb-30m-progress-pulse.yml on main.' >> "$GITHUB_STEP_SUMMARY"

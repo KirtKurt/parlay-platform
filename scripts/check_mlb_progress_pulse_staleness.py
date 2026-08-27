@@ -225,7 +225,7 @@ def main() -> int:
     parser.add_argument(
         "--stale-after-minutes",
         type=int,
-        default=int(os.environ.get("MLB_PROGRESS_STALE_AFTER_MINUTES", "35")),
+        default=int(os.environ.get("MLB_PROGRESS_STALE_AFTER_MINUTES", "28")),
     )
     parser.add_argument("--retry-cooldown-minutes", type=int, default=10)
     parser.add_argument("--current-run-id", default=os.environ.get("GITHUB_RUN_ID"))
