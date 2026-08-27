@@ -19,8 +19,8 @@ REPORTER_WORKFLOW = "mlb-30m-progress-pulse.yml"
 STALENESS_SCRIPT = "scripts/check_mlb_progress_pulse_staleness.py"
 ACTIVE_RUN_STATUSES = {"queued", "in_progress", "waiting", "pending", "requested"}
 MAX_SEGMENTS = 10
-DEFAULT_POLLS = 76
-DEFAULT_POLL_SECONDS = 240
+DEFAULT_POLLS = 151
+DEFAULT_POLL_SECONDS = 120
 DEFAULT_FAILURE_THRESHOLD = 3
 SUCCESSOR_VERIFY_ATTEMPTS = 3
 SUCCESSOR_VERIFY_DELAY_SECONDS = 2
@@ -102,15 +102,22 @@ def filter_successor_run_ids(
     if current_created is None:
         raise ValueError("current_run_created_at_invalid")
     expected_title = successor_run_title(expected_remaining_segments)
+    renewal_title = successor_run_title(MAX_SEGMENTS)
     found: list[int] = []
     for run in runs:
         if str(run.get("id")) == current:
             continue
-        if str(run.get("event") or "") != "workflow_dispatch":
+        event = str(run.get("event") or "")
+        title = str(run.get("display_title") or "")
+        is_exact_decrement = event == "workflow_dispatch" and title == expected_title
+        # A newer explicit manual dispatch or reviewed merge push is a trusted,
+        # finite lease renewal. Preserve it instead of replacing it with n-1.
+        is_explicit_renewal = (
+            event in {"workflow_dispatch", "push"} and title == renewal_title
+        )
+        if not (is_exact_decrement or is_explicit_renewal):
             continue
         if str(run.get("head_branch") or "") != "main":
-            continue
-        if str(run.get("display_title") or "") != expected_title:
             continue
         if str(run.get("status") or "") not in ACTIVE_RUN_STATUSES:
             continue
@@ -161,7 +168,7 @@ class CommandRelayClient:
     def list_successor_run_ids(self, expected_remaining_segments: int) -> list[int]:
         payload = self._gh_json(
             f"repos/{self.repository}/actions/workflows/{RELAY_WORKFLOW}/runs"
-            "?event=workflow_dispatch&per_page=100"
+            "?branch=main&per_page=100"
         )
         if not isinstance(payload, Mapping):
             raise RuntimeError("relay_runs_response_not_an_object")
@@ -255,6 +262,7 @@ class RelayStateMachine:
         failure_threshold: int = DEFAULT_FAILURE_THRESHOLD,
         poll_sleep: Callable[[float], None] = time.sleep,
         verify_sleep: Callable[[float], None] = time.sleep,
+        monotonic: Callable[[], float] = time.monotonic,
         verify_attempts: int = SUCCESSOR_VERIFY_ATTEMPTS,
         verify_delay_seconds: int = SUCCESSOR_VERIFY_DELAY_SECONDS,
     ) -> None:
@@ -272,6 +280,7 @@ class RelayStateMachine:
         self.failure_threshold = failure_threshold
         self.poll_sleep = poll_sleep
         self.verify_sleep = verify_sleep
+        self.monotonic = monotonic
         self.verify_attempts = verify_attempts
         self.verify_delay_seconds = verify_delay_seconds
         self.consecutive_successor_failures = 0
@@ -387,10 +396,16 @@ class RelayStateMachine:
                 raise RelayFailure(f"final_successor_liveness_failure: {exc}") from exc
 
     def run(self) -> dict[str, Any]:
+        # Anchor starts to monotonic deadlines. API/checker time therefore uses
+        # the interval budget instead of accumulating after every poll.
+        started_at = self.monotonic()
         for poll_index in range(1, self.poll_count + 1):
+            if poll_index > 1:
+                deadline = started_at + (poll_index - 1) * self.poll_interval_seconds
+                delay = max(0.0, deadline - self.monotonic())
+                if delay > 0:
+                    self.poll_sleep(delay)
             self._poll(final=poll_index == self.poll_count)
-            if poll_index < self.poll_count:
-                self.poll_sleep(self.poll_interval_seconds)
         self.assert_final_liveness()
         return {
             "remainingSegments": self.remaining_segments,
