@@ -872,6 +872,7 @@ def test_eventbridge_owner_runs_current_first_then_completes_redacted_handoff():
             "prospective_terminal_backlog_reconciliation_v5",
         ]
         assert delegate_calls[1][0]["cooperativeEventBridgeOwner"] is True
+        assert delegate_calls[1][0]["force"] is False
         assert payload["currentSlateProcessed"] is True
         owner = payload["cooperativeTerminalReplayOwnerExecution"]
         assert owner["state"] == "COMPLETED"
@@ -1041,6 +1042,7 @@ def test_insufficient_time_persists_current_proof_then_next_owner_replays():
         assert second_payload["status"] == (
             "CURRENT_SLATE_PROVEN_BY_PRIOR_EVENTBRIDGE_OWNER"
         )
+        assert delegate_calls[1][0]["force"] is False
         assert second_status["state"] == "COMPLETED"
         assert second_status["currentSlateRanFirst"] is True
         assert second_status[
@@ -1369,6 +1371,46 @@ def test_inner_current_slate_overlap_cannot_be_treated_as_current_first():
         assert [call[0]["run"] for call in delegate_calls] == ["daily_lock_check"]
         assert table.queue_item["state"] == "QUEUED"
         assert table.update_calls == []
+        assert table.item is None
+        assert len(table.delete_calls) == 1
+
+
+def test_budget_depletion_after_claim_requeues_before_historical_delegate():
+    table = FakeLeaseTable()
+
+    class DepletingContext(FakeContext):
+        def __init__(self):
+            super().__init__(
+                request_id="budget-depleted-owner",
+                remaining_millis=900_000,
+            )
+            self.remaining_values = iter(
+                (900_000, 900_000, 900_000, 659_000)
+            )
+
+        def get_remaining_time_in_millis(self) -> int:
+            return next(self.remaining_values)
+
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=_successful_current_slate_payload(),
+    ) as (handler, _, delegate_calls):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                _scheduled_event(),
+                DepletingContext(),
+            ),
+            "MLB_COOPERATIVE_REPLAY_BUDGET_DEPLETED_BEFORE_DELEGATE",
+        )
+
+        assert [call[0]["run"] for call in delegate_calls] == [
+            "daily_lock_check"
+        ]
+        assert table.queue_item["state"] == "QUEUED"
+        assert table.queue_item["force"] is True
+        assert table.queue_item.get("last_failure_at_epoch") is not None
+        assert "claim_owner" not in table.queue_item
         assert table.item is None
         assert len(table.delete_calls) == 1
 
