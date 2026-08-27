@@ -9,14 +9,21 @@ run-name: "MLB R7 queue control ${{ github.event_name }} #${{ github.run_number 
         required: false
         default: false
         type: boolean
+  # One-shot operational bridge for the 2026-08-26 v5.5 reconciliation repair.
+  # The job below is additionally commit-message gated; this does not create an
+  # AWS trainer owner and is removed after the corrected recovery is queued.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-r7-overnight-advance.yml'
 
 permissions:
   actions: write
   contents: read
 
-# Queue control is an explicit operator action. It never invokes AWS directly.
-# The canonical recovery owns GitHub-side recovery serialization; EventBridge
-# remains the only automatic trainer invocation owner.
+# Queue control never invokes AWS directly. The canonical recovery owns
+# GitHub-side recovery serialization; EventBridge remains the only automatic
+# trainer invocation owner.
 concurrency:
   group: mlb-r7-overnight-queue-control
   cancel-in-progress: false
@@ -28,14 +35,27 @@ env:
 
 jobs:
   queue-canonical-recovery:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && contains(github.event.head_commit.message, '[dispatch-r7-v55-once]'))
     runs-on: ubuntu-latest
     timeout-minutes: 105
     steps:
       - name: Checkout queue-control contract
         uses: actions/checkout@v4
 
-      - name: Prove scheduled single-owner queue-control contract
+      - name: Prove normal queue-control contract
+        if: github.event_name == 'workflow_dispatch'
         run: python tests/unit/test_mlb_r7_overnight_queue_control.py
+
+      - name: Prove one-shot bridge remains mutation-free
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          workflow=.github/workflows/mlb-r7-overnight-advance.yml
+          grep -Fq "const recoveryWorkflow = 'unified-mlb-learning-recovery-once.yml';" "$workflow"
+          grep -Fq "automaticTrainerOwner: 'eventbridge_schedule'" "$workflow"
+          ! grep -Eiq 'aws[[:space:]]+(lambda|cloudformation|dynamodb)|aws-actions/configure-aws-credentials|put_item|update_item|delete_item' "$workflow"
 
       - name: Drain legacy bootstrap and queue one canonical recovery
         uses: actions/github-script@v7
@@ -96,9 +116,6 @@ jobs:
               return;
             }
 
-            // A legacy bootstrap run created before this repair may still be
-            // waiting on a deploy. Let it drain before deciding whether another
-            // canonical recovery is needed, preventing a duplicate dispatch race.
             const bootstrapDrainDeadline = Date.now() + (95 * 60 * 1000);
             let lastBootstrapNoticeAt = 0;
             while (true) {
