@@ -16,6 +16,7 @@ def _copy_contract(tmp_path: Path) -> Path:
         ".github/workflows/mlb-production-source-contract.yml",
         ".github/workflows/mlb-production-acceptance.yml",
         ".github/workflows/deploy.yml",
+        ".github/workflows/mlb-post-deploy-fix-verification.yml",
         "template.yaml",
         "hello_world/api.py",
         "hello_world/mlb_date_signal_api.py",
@@ -778,3 +779,137 @@ def test_rejects_terminal_rollback_as_updateable(tmp_path: Path) -> None:
         "canonical_deploy_treats_terminal_rollback_as_updateable"
         in authority.verify_repository(root)
     )
+
+def test_rejects_missing_postdeploy_workflow_run_fallback(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    workflow = root / authority.POSTDEPLOY_VERIFICATION_WORKFLOW
+    text = workflow.read_text(encoding="utf-8")
+    workflow.write_text(
+        text.replace(
+            "  workflow_run:\n"
+            '    workflows: ["Deploy SAM to AWS"]\n'
+            "    types: [completed]\n",
+            "",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    assert any(
+        error.startswith("postdeploy_verification_fallback_trigger_missing:")
+        for error in authority.verify_repository(root)
+    )
+
+
+def test_rejects_postdeploy_fallback_that_can_cancel_direct_run(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    workflow = root / authority.POSTDEPLOY_VERIFICATION_WORKFLOW
+    text = workflow.read_text(encoding="utf-8")
+    workflow.write_text(
+        text.replace("cancel-in-progress: false", "cancel-in-progress: true", 1),
+        encoding="utf-8",
+    )
+    assert (
+        "postdeploy_verification_may_cancel_exact_deploy_proof"
+        in authority.verify_repository(root)
+    )
+
+
+def test_rejects_required_manual_fallback_input(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    workflow = root / authority.POSTDEPLOY_VERIFICATION_WORKFLOW
+    text = workflow.read_text(encoding="utf-8")
+    workflow.write_text(
+        text.replace("        required: false\n", "        required: true\n", 1),
+        encoding="utf-8",
+    )
+    assert (
+        "postdeploy_verification_dispatch_input_invalid:target_deploy_sha"
+        in authority.verify_repository(root)
+    )
+
+
+def test_rejects_missing_postdeploy_direct_run_arbitration(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    workflow = root / authority.POSTDEPLOY_VERIFICATION_WORKFLOW
+    text = workflow.read_text(encoding="utf-8")
+    workflow.write_text(
+        text.replace(
+            "event=workflow_dispatch&per_page=100",
+            "event=workflow_run&per_page=100",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    assert any(
+        error.startswith("postdeploy_verification_fallback_arbitration_missing:")
+        for error in authority.verify_repository(root)
+    )
+
+
+def test_rejects_missing_postdeploy_dispatch_from_deploy(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace(
+            "gh workflow run mlb-post-deploy-fix-verification.yml",
+            "echo postdeploy-dispatch-removed",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    errors = authority.verify_repository(root)
+    assert "canonical_deploy_postdeploy_dispatch_count_invalid" in errors
+    assert any(
+        error.startswith("canonical_deploy_postdeploy_dispatch_contract_missing:")
+        for error in errors
+    )
+
+
+def test_rejects_postdeploy_dispatch_without_actions_write(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace("      actions: write\n", "      actions: read\n", 1),
+        encoding="utf-8",
+    )
+    assert "canonical_deploy_actions_write_scope_invalid" in authority.verify_repository(root)
+
+
+def test_rejects_postdeploy_dispatch_without_source_run_id(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace(
+            '-f "source_deploy_run_id=$GITHUB_RUN_ID"',
+            '-f "source_deploy_run_id=manual"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    assert any(
+        error.endswith('-f "source_deploy_run_id=$GITHUB_RUN_ID"')
+        for error in authority.verify_repository(root)
+    )
+
+
+def test_rejects_actions_write_on_aws_deploy_job(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace(
+            "  deploy:\n",
+            "  deploy:\n"
+            "    permissions:\n"
+            "      actions: write\n"
+            "      contents: read\n",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    errors = authority.verify_repository(root)
+    assert "canonical_deploy_job_actions_write_too_broad" in errors
+    assert "canonical_deploy_actions_write_scope_invalid" in errors

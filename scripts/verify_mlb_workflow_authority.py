@@ -29,6 +29,9 @@ FORBIDDEN_ABSENT_PATHS = (
 )
 READ_ONLY_STORAGE_POLICY = "READ_ONLY_CANONICAL_PREDICTION_AUTHORITY_ONLY"
 PRODUCTION_ACCEPTANCE_WORKFLOW = ".github/workflows/mlb-production-acceptance.yml"
+POSTDEPLOY_VERIFICATION_WORKFLOW = (
+    ".github/workflows/mlb-post-deploy-fix-verification.yml"
+)
 RELEASE_ACTIVATION_PREDEPLOY_SCRIPT = (
     "scripts/verify_mlb_release_activation_predeploy.py"
 )
@@ -207,6 +210,101 @@ def verify_repository(root: Path = ROOT) -> List[str]:
         if "--logical-resource-id MLBProductionVerifierFunction" not in acceptance:
             errors.append("production_acceptance_manual_verifier_diagnostic_missing")
 
+    postdeploy_path = root / POSTDEPLOY_VERIFICATION_WORKFLOW
+    postdeploy = (
+        postdeploy_path.read_text(encoding="utf-8")
+        if postdeploy_path.is_file()
+        else ""
+    )
+    if not postdeploy:
+        errors.append("postdeploy_verification_workflow_missing")
+    else:
+        trigger_match = re.search(
+            r"(?ms)^on:\n(?P<body>.*?)(?=^permissions:\n)",
+            postdeploy,
+        )
+        trigger_block = trigger_match.group("body") if trigger_match else ""
+        for token in (
+            "  workflow_run:\n",
+            '    workflows: ["Deploy SAM to AWS"]\n',
+            "    types: [completed]\n",
+            "  workflow_dispatch:\n",
+        ):
+            if token not in trigger_block:
+                errors.append(
+                    "postdeploy_verification_fallback_trigger_missing:" + token
+                )
+        if re.search(
+            r"(?m)^  (?:push|schedule|workflow_call|repository_dispatch):",
+            trigger_block,
+        ):
+            errors.append("postdeploy_verification_unapproved_trigger_present")
+        dispatch_match = re.search(
+            r"(?ms)^  workflow_dispatch:\n(?P<body>.*)\Z",
+            trigger_block,
+        )
+        dispatch_block = dispatch_match.group("body") if dispatch_match else ""
+        for input_name in ("target_deploy_sha", "source_deploy_run_id"):
+            input_match = re.search(
+                r"(?ms)^      "
+                + re.escape(input_name)
+                + r":\n(?P<body>.*?)(?=^      [A-Za-z_][A-Za-z0-9_-]*:|\Z)",
+                dispatch_block,
+            )
+            input_block = input_match.group("body") if input_match else ""
+            if (
+                input_match is None
+                or "        required: false\n" not in input_block
+                or "        type: string\n" not in input_block
+            ):
+                errors.append(
+                    "postdeploy_verification_dispatch_input_invalid:"
+                    + input_name
+                )
+        for token in (
+            "cancel-in-progress: false",
+            "actions: read\n      contents: read",
+            "needs.resolve.outputs.should_verify == 'true'",
+            "TARGET_DEPLOY_SHA: ${{ needs.resolve.outputs.target_deploy_sha }}",
+            "actions/runs/$source/jobs?per_page=100",
+            "event=workflow_dispatch&per_page=100",
+            "select(.display_title == $title)",
+            '"$direct_conclusion" != "success"',
+        ):
+            if token not in postdeploy:
+                errors.append(
+                    "postdeploy_verification_fallback_arbitration_missing:"
+                    + token
+                )
+        if "cancel-in-progress: true" in postdeploy:
+            errors.append("postdeploy_verification_may_cancel_exact_deploy_proof")
+        if (
+            postdeploy.count(
+                "TARGET_DEPLOY_SHA: ${{ needs.resolve.outputs.target_deploy_sha }}"
+            )
+            != 1
+            or "TARGET_DEPLOY_SHA: ${{ github.event.workflow_run" in postdeploy
+        ):
+            errors.append("postdeploy_verification_exact_sha_binding_invalid")
+        if "permissions:\n  contents: read\n" not in postdeploy:
+            errors.append("postdeploy_verification_default_permissions_too_broad")
+        if "actions: write" in postdeploy:
+            errors.append("postdeploy_verification_actions_write_forbidden")
+        if "    permissions:\n      contents: write\n" not in postdeploy:
+            errors.append("postdeploy_verification_publish_permission_missing")
+        for token in (
+            "Checkout trusted verifier source",
+            "          ref: main",
+            '[[ "$TARGET_DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]',
+            'git cat-file -e "${TARGET_DEPLOY_SHA}^{commit}"',
+            'git merge-base --is-ancestor "$TARGET_DEPLOY_SHA" origin/main',
+        ):
+            if token not in postdeploy:
+                errors.append(
+                    "postdeploy_verification_trusted_source_guard_missing:"
+                    + token
+                )
+
     contract_path = root / ".github/workflows/mlb-production-source-contract.yml"
     contract = (
         contract_path.read_text(encoding="utf-8")
@@ -284,6 +382,50 @@ def verify_repository(root: Path = ROOT) -> List[str]:
     if not deploy:
         errors.append("canonical_deploy_workflow_missing")
     else:
+        dispatch_match = re.search(
+            r"(?ms)^  dispatch-postdeploy:\n(?P<body>.*)\Z",
+            deploy,
+        )
+        dispatch_block = dispatch_match.group("body") if dispatch_match else ""
+        deploy_job_source = deploy.split("\n  dispatch-postdeploy:\n", 1)[0]
+        if dispatch_match is None:
+            errors.append("canonical_deploy_postdeploy_dispatch_missing")
+        else:
+            for token in (
+                "    needs: deploy",
+                "    if: ${{ needs.deploy.result == 'success' }}",
+                "    permissions:\n      actions: write\n      contents: read",
+                "          GH_TOKEN: ${{ github.token }}",
+                "gh workflow run mlb-post-deploy-fix-verification.yml",
+                '--repo "$GITHUB_REPOSITORY"',
+                "--ref main",
+                '-f "target_deploy_sha=$GITHUB_SHA"',
+                '-f "source_deploy_run_id=$GITHUB_RUN_ID"',
+            ):
+                if token not in dispatch_block:
+                    errors.append(
+                        "canonical_deploy_postdeploy_dispatch_contract_missing:"
+                        + token
+                    )
+            if "continue-on-error:" in dispatch_block:
+                errors.append(
+                    "canonical_deploy_postdeploy_dispatch_must_be_enforced"
+                )
+            if "actions/checkout" in dispatch_block or "aws " in dispatch_block:
+                errors.append("canonical_deploy_postdeploy_dispatch_not_isolated")
+        if (
+            deploy.count(
+                "gh workflow run mlb-post-deploy-fix-verification.yml"
+            )
+            != 1
+        ):
+            errors.append("canonical_deploy_postdeploy_dispatch_count_invalid")
+        if "actions: write" in deploy_job_source:
+            errors.append("canonical_deploy_job_actions_write_too_broad")
+        if deploy.count("actions: write") != 1:
+            errors.append("canonical_deploy_actions_write_scope_invalid")
+        if "permissions:\n  contents: read\n" not in deploy_job_source:
+            errors.append("canonical_deploy_workflow_contents_read_missing")
 
         active_trainer_invokes = [
             line.strip()
