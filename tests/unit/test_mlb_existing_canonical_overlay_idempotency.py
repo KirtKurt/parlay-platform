@@ -129,7 +129,12 @@ def _assert_live_overlay_markers(row):
     assert immutable_storage._canonical_read_overlay(row) is True
 
 
-def _module_with_existing_canonical_rows(count, *, vector_excluded=False):
+def _module_with_existing_canonical_rows(
+    count,
+    *,
+    vector_excluded=False,
+    provenance_tags=False,
+):
     history = FakeHistory()
     mutable_store_calls = []
 
@@ -165,6 +170,14 @@ def _module_with_existing_canonical_rows(count, *, vector_excluded=False):
             base,
             game_id=f"canonical-{index}",
         )
+        if provenance_tags:
+            row["tags"] = sorted(
+                {
+                    *(row.get("tags") or []),
+                    "PER_GAME_CANONICAL_LOCK_PENDING",
+                    "PRE_LOCK_PREDICTION",
+                }
+            )
         if vector_excluded:
             row["frozenFeatureVector"]["fingerprint"] = (
                 f"invalid-vector-{index}"
@@ -396,6 +409,28 @@ def test_mixed_slate_two_existing_canonical_and_five_future_rows_is_healthy():
     assert "canonical_locked_storage_count_mismatch" in str(
         excinfo.value
     )
+
+
+def test_live_v5_prelock_provenance_tags_remain_idempotent():
+    module, canonical_rows, _ = _module_with_existing_canonical_rows(
+        1,
+        provenance_tags=True,
+    )
+    overlay = _canonical_public_overlay(canonical_rows[0])
+    assert "PRE_LOCK_PREDICTION" in overlay["tags"]
+    assert "PER_GAME_CANONICAL_LOCK_PENDING" in overlay["tags"]
+    _assert_live_overlay_markers(overlay)
+    table = module.history.PULLS
+    before = copy.deepcopy(table.items)
+    write_calls = _arm_zero_write_guard(table)
+
+    verified = module._store_prediction(overlay)
+
+    assert verified["ok"] is True
+    assert verified["immutableExisting"] is True
+    assert verified["canonicalWriteAttempted"] is False
+    assert table.items == before
+    assert write_calls == []
 
 
 def test_existing_training_ineligible_selection_remains_idempotent():
