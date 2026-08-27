@@ -121,10 +121,18 @@ if (
     < PROTECTED_REPLAY_COOPERATIVE_BOUND_SECONDS
 ):
     raise RuntimeError("protected_terminal_replay_retry_horizon_invalid")
-if len(set(PROTECTED_REPLAY_RETRY_PHASES_SECONDS)) != len(
-    PROTECTED_REPLAY_RETRY_PHASES_SECONDS
+if (
+    len(set(PROTECTED_REPLAY_RETRY_PHASES_SECONDS))
+    < PROTECTED_REPLAY_SCHEDULE_PERIOD_SECONDS
+    or max(
+        PROTECTED_REPLAY_RETRY_PHASES_SECONDS.count(phase)
+        for phase in set(PROTECTED_REPLAY_RETRY_PHASES_SECONDS)
+    )
+    > 2
 ):
-    raise RuntimeError("protected_terminal_replay_retry_schedule_phase_locked")
+    raise RuntimeError(
+        "protected_terminal_replay_retry_schedule_phase_locked"
+    )
 _SENSITIVE_ASSIGNMENT_RE = re.compile(
     r"(?i)(api[_-]?key|token|secret|authorization|password|credential)"
     r"(\s*[:=]\s*)"

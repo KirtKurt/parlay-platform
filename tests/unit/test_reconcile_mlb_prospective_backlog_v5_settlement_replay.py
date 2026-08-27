@@ -325,8 +325,9 @@ def test_protected_replay_waits_through_full_lease_then_succeeds(monkeypatch):
         + subject.PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS
     )
     assert result["protectedLockReplayRetryScheduleDephased"] is True
-    assert result["protectedLockReplayRetryDistinctMinutePhaseCount"] == len(
-        subject.PROTECTED_REPLAY_RETRY_DELAYS_SECONDS
+    assert result["protectedLockReplayRetryDistinctMinutePhaseCount"] == min(
+        subject.PROTECTED_REPLAY_SCHEDULE_PERIOD_SECONDS,
+        len(subject.PROTECTED_REPLAY_RETRY_DELAYS_SECONDS),
     )
     assert result["protectedLockReplayRetryHorizonSeconds"] >= (
         subject.PROTECTED_REPLAY_COOPERATIVE_BOUND_SECONDS
@@ -347,7 +348,11 @@ def test_protected_replay_retry_schedule_dephases_every_minute_attempt():
     assert sum(delays) == subject.PROTECTED_REPLAY_RETRY_HORIZON_SECONDS
     assert sum(delays[:-1]) >= subject.PROTECTED_REPLAY_COOPERATIVE_BOUND_SECONDS
     assert tuple(phases) == subject.PROTECTED_REPLAY_RETRY_PHASES_SECONDS
-    assert len(set(phases)) == len(phases)
+    assert len(set(phases)) == min(
+        subject.PROTECTED_REPLAY_SCHEDULE_PERIOD_SECONDS,
+        len(phases),
+    )
+    assert max(phases.count(phase) for phase in set(phases)) <= 2
 
 
 def test_protected_replay_polls_eventbridge_handoff_validates_then_acks(
