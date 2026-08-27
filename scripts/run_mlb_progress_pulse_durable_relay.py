@@ -468,7 +468,15 @@ class DurableRelayController:
                 current_created_at=current.get("created_at"),
             )
 
-        found = newer()
+        def acceptable(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+            return [
+                dict(row)
+                for row in rows
+                if row.get("_hop") == self.next_hops
+                or row.get("_hop") == MAX_RELAY_HOPS
+            ]
+
+        found = acceptable(newer())
         if found:
             return int(found[0]["id"]), int(found[0]["_hop"])
         if self.next_hops == 0:
@@ -478,13 +486,12 @@ class DurableRelayController:
         errors: list[str] = []
         for attempt in range(1, self.verify_attempts + 1):
             try:
-                found = newer()
+                found = acceptable(newer())
             except Exception as exc:
                 errors.append(f"verify_{attempt}={exc}")
             else:
-                exact = [row for row in found if row.get("_hop") == self.next_hops]
-                if exact:
-                    return int(exact[0]["id"]), self.next_hops
+                if found:
+                    return int(found[0]["id"]), int(found[0]["_hop"])
             if attempt < self.verify_attempts:
                 self.verify_sleep(self.verify_delay_seconds)
         detail = ";".join(errors) if errors else "successor_not_visible"
@@ -663,6 +670,13 @@ def main() -> int:
 
     print(json.dumps(result, sort_keys=True))
     _write_summary(result)
+    if result.get("migrationReady") is False:
+        print(
+            "::error::Durable MLB pulse relay stopped: incumbent bounded relay "
+            "still owns the reporting clock; reseed only after it is terminal.",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
