@@ -23,6 +23,7 @@ on:
       - '.github/workflows/mlb-production-source-contract.yml'
       - '.github/workflows/mlb-30m-progress-pulse.yml'
       - '.github/workflows/mlb-progress-pulse-bounded-runner-relay.yml'
+      - '.github/workflows/mlb-progress-pulse-durable-relay.yml'
       - '.github/workflows/mlb-production-acceptance.yml'
       - '.github/workflows/mlb-post-deploy-fix-verification.yml'
       - '.github/workflows/mlb-rolling-24h-audit.yml'
@@ -60,6 +61,7 @@ on:
       - '.github/workflows/mlb-production-source-contract.yml'
       - '.github/workflows/mlb-30m-progress-pulse.yml'
       - '.github/workflows/mlb-progress-pulse-bounded-runner-relay.yml'
+      - '.github/workflows/mlb-progress-pulse-durable-relay.yml'
       - '.github/workflows/mlb-production-acceptance.yml'
       - '.github/workflows/mlb-post-deploy-fix-verification.yml'
       - '.github/workflows/mlb-rolling-24h-audit.yml'
@@ -203,6 +205,7 @@ jobs:
             tests/unit/test_mlb_workflow_authority.py \
             tests/unit/test_mlb_progress_pulse_watchdog.py \
             tests/unit/test_mlb_progress_pulse_bounded_runner_relay.py \
+            tests/unit/test_mlb_progress_pulse_durable_relay.py \
             tests/unit/test_run_mlb_ml_v3_audit_report.py
 
       - name: Compile deployment and acceptance tooling
@@ -218,6 +221,7 @@ jobs:
           python -m py_compile scripts/verify_mlb_trainer_deploy_response.py
           python -m py_compile scripts/verify_mlb_workflow_authority.py
           python -m py_compile scripts/run_mlb_progress_pulse_bounded_relay.py
+          python -m py_compile scripts/run_mlb_progress_pulse_durable_relay.py
           python -m py_compile scripts/enforce_mlb_production_acceptance.py
           python -m py_compile scripts/remove_mlb_bbd_active_runtime.py
           python -m py_compile scripts/verify_mlb_no_bbd_runtime.py
