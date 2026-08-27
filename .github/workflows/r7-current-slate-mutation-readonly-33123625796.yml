@@ -1,0 +1,273 @@
+name: Read-only R7 current-slate mutation proof 33123625796
+run-name: Read-only current-slate mutation proof ${{ github.run_id }}
+
+"on":
+  push:
+    branches:
+      - codex/r7-queue-readonly-probe-33084527256-a1
+    paths:
+      - .github/workflows/r7-current-slate-mutation-readonly-33123625796.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r7-current-slate-mutation-readonly-33123625796
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  SNAPSHOTS_TABLE: parlay_platform_snapshots
+  CURRENT_SLATE_PK: LOCKED_PICKS#mlb#2026-08-27
+
+jobs:
+  proof:
+    if: github.repository == 'KirtKurt/parlay-platform' && github.ref == 'refs/heads/codex/r7-queue-readonly-probe-33084527256-a1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Guard branch-only read
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/codex/r7-queue-readonly-probe-33084527256-a1
+          test "$GITHUB_REPOSITORY" = KirtKurt/parlay-platform
+
+      - name: Configure read credential
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Strong-read current-slate immutable partition and summarize gap-window writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          export AWS_PAGER=""
+          aws dynamodb query \
+            --table-name "$SNAPSHOTS_TABLE" \
+            --key-condition-expression 'PK = :pk' \
+            --expression-attribute-values '{":pk":{"S":"LOCKED_PICKS#mlb#2026-08-27"}}' \
+            --consistent-read \
+            --return-consumed-capacity NONE \
+            --region "$AWS_REGION" \
+            --output json > /tmp/current-slate-lock-partition.json
+          python - <<'PY'
+          import hashlib
+          import json
+          from collections import Counter
+          from datetime import datetime, timezone
+
+          with open(
+              '/tmp/current-slate-lock-partition.json',
+              encoding='utf-8',
+          ) as stream:
+              raw = json.load(stream)
+
+          def decode(value):
+              if not isinstance(value, dict) or len(value) != 1:
+                  return None
+              kind, entry = next(iter(value.items()))
+              if kind == 'S':
+                  return entry
+              if kind == 'N':
+                  text = str(entry)
+                  try:
+                      return int(text)
+                  except ValueError:
+                      try:
+                          return float(text)
+                      except ValueError:
+                          return text
+              if kind == 'BOOL':
+                  return bool(entry)
+              if kind == 'NULL':
+                  return None
+              if kind == 'L':
+                  return [decode(item) for item in entry]
+              if kind == 'M':
+                  return {key: decode(item) for key, item in entry.items()}
+              return '[REDACTED_BINARY_OR_UNKNOWN]'
+
+          items = [
+              {key: decode(value) for key, value in encoded.items()}
+              for encoded in raw.get('Items') or []
+          ]
+          windows = {
+              'owner226s': (
+                  datetime.fromisoformat(
+                      '2026-08-27T22:21:16.297+00:00'
+                  ),
+                  datetime.fromisoformat(
+                      '2026-08-27T22:25:03.275+00:00'
+                  ),
+              ),
+              'owner301s': (
+                  datetime.fromisoformat(
+                      '2026-08-27T22:25:16.190+00:00'
+                  ),
+                  datetime.fromisoformat(
+                      '2026-08-27T22:30:17.454+00:00'
+                  ),
+              ),
+              'owner322s': (
+                  datetime.fromisoformat(
+                      '2026-08-27T22:32:16.352+00:00'
+                  ),
+                  datetime.fromisoformat(
+                      '2026-08-27T22:37:38.910+00:00'
+                  ),
+              ),
+          }
+          time_fields = (
+              'created_at',
+              'staged_at_utc',
+              'recorded_at_utc',
+              'evaluated_at_utc',
+              'attempted_at_utc',
+              'finished_at_utc',
+              'locked_at',
+              'updated_at_utc',
+          )
+          authority_types = {
+              'mlb_staged_per_game_tminus45_lock',
+              'mlb_immutable_per_game_lock_outcome',
+              'mlb_daily_locked_individual_game_moneyline_picks',
+              'mlb_immutable_playability_assessment',
+              'mlb_per_game_lock_readiness_checkpoint',
+          }
+
+          def parse_timestamp(value):
+              try:
+                  parsed = datetime.fromisoformat(
+                      str(value).replace('Z', '+00:00')
+                  )
+                  if parsed.tzinfo is None:
+                      parsed = parsed.replace(tzinfo=timezone.utc)
+                  return parsed.astimezone(timezone.utc)
+              except Exception:
+                  return None
+
+          def safe_reason(value):
+              text = str(value or '')
+              return (
+                  text
+                  if text
+                  and len(text) <= 160
+                  and all(
+                      character.isalnum()
+                      or character in '_.:-,'
+                      for character in text
+                  )
+                  else None
+              )
+
+          def safe_item(item):
+              sk = str(item.get('SK') or '')
+              timestamps = {
+                  field: item.get(field)
+                  for field in time_fields
+                  if item.get(field) is not None
+              }
+              return {
+                  'skPrefix': '#'.join(sk.split('#')[:2]),
+                  'skHash': hashlib.sha256(
+                      sk.encode('utf-8')
+                  ).hexdigest()[:12],
+                  'recordType': item.get('record_type'),
+                  'version': (
+                      item.get('version')
+                      or item.get('diagnostics_version')
+                      or item.get('model_version')
+                  ),
+                  'timestamps': timestamps,
+                  'diagnosticEvent': item.get('diagnostic_event'),
+                  'outcome': item.get('outcome'),
+                  'reason': safe_reason(item.get('reason')),
+                  'stateAtAttempt': item.get('state_at_attempt'),
+                  'stateAfterAttempt': item.get('state_after_attempt'),
+                  'exceptionType': item.get('exception_type'),
+                  'lockStatus': item.get('lock_status'),
+                  'status': item.get('status'),
+                  'canonical': item.get('canonical'),
+                  'lockedPrediction': item.get('locked_prediction'),
+                  'officialPrediction': item.get('official_prediction'),
+                  'writeOnce': item.get('write_once'),
+                  'identityRedacted': True,
+                  'selectionMaterialRedacted': True,
+              }
+
+          window_items = {name: [] for name in windows}
+          for item in items:
+              observed_times = [
+                  parse_timestamp(item.get(field))
+                  for field in time_fields
+              ]
+              observed_times = [
+                  value for value in observed_times if value is not None
+              ]
+              for name, (start, end) in windows.items():
+                  if any(start <= value <= end for value in observed_times):
+                      window_items[name].append(safe_item(item))
+
+          record_type_counts = Counter(
+              str(item.get('record_type') or 'MISSING')
+              for item in items
+          )
+          window_summary = {}
+          for name, entries in window_items.items():
+              type_counts = Counter(
+                  str(entry.get('recordType') or 'MISSING')
+                  for entry in entries
+              )
+              authority_entries = [
+                  entry
+                  for entry in entries
+                  if entry.get('recordType') in authority_types
+              ]
+              diagnostic_entries = [
+                  entry
+                  for entry in entries
+                  if entry.get('recordType') in {
+                      'mlb_per_game_lock_attempt_diagnostic',
+                      'mlb_per_game_lock_attempt_outcome_diagnostic',
+                  }
+              ]
+              window_summary[name] = {
+                  'durableItemCount': len(entries),
+                  'recordTypeCounts': dict(sorted(type_counts.items())),
+                  'authorityMutationItemCount': len(authority_entries),
+                  'diagnosticMutationItemCount': len(diagnostic_entries),
+                  'authorityItems': authority_entries,
+                  'diagnosticItems': diagnostic_entries,
+                  'otherItems': [
+                      entry
+                      for entry in entries
+                      if entry not in authority_entries
+                      and entry not in diagnostic_entries
+                  ],
+              }
+
+          result = {
+              'ok': True,
+              'proofType': (
+                  'R7_CURRENT_SLATE_GAP_WINDOW_DURABLE_MUTATION_'
+                  'EXACT_STRONG_READ'
+              ),
+              'observedAtUtc': datetime.now(
+                  timezone.utc
+              ).isoformat().replace('+00:00', 'Z'),
+              'partition': 'LOCKED_PICKS#mlb#2026-08-27',
+              'consistentRead': True,
+              'itemCount': len(items),
+              'recordTypeCounts': dict(sorted(record_type_counts.items())),
+              'windows': window_summary,
+              'allItemsSelectionMaterialRedacted': True,
+              'tableWritesAttempted': 0,
+              'lambdaInvocationsAttempted': 0,
+              'leaseMutationsAttempted': 0,
+              'readOnly': True,
+          }
+          print(json.dumps(result, indent=2, sort_keys=True, default=str))
+          PY
