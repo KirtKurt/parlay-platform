@@ -303,6 +303,86 @@ jobs:
                   },
               }
 
+          fragment_marker_containers = {
+              'essential_groups_incomplete': [],
+              'coin_flip_pass_or_hard_weakness_present': [],
+          }
+
+          def marker_paths(value, marker, path=''):
+              paths = []
+              if isinstance(value, dict):
+                  for key, nested in value.items():
+                      nested_path = f'{path}.{key}' if path else str(key)
+                      paths.extend(
+                          marker_paths(nested, marker, nested_path)
+                      )
+              elif isinstance(value, list):
+                  for index, nested in enumerate(value):
+                      paths.extend(
+                          marker_paths(
+                              nested,
+                              marker,
+                              f'{path}[]',
+                          )
+                      )
+              elif str(value) == marker:
+                  paths.append(path)
+              return paths
+
+          marker_variants = []
+          for message in messages:
+              marker_variants.extend([
+                  message,
+                  message.replace('\\"', '"').replace('\\\\', '\\'),
+              ])
+          for marker_name in fragment_marker_containers:
+              containers = []
+              for variant in marker_variants:
+                  for occurrence in re.finditer(
+                      re.escape(marker_name),
+                      variant,
+                  ):
+                      lower = max(0, occurrence.start() - 50000)
+                      starts = [
+                          index
+                          for index in range(lower, occurrence.start())
+                          if variant[index] == '{'
+                      ]
+                      for start in reversed(starts):
+                          material = balanced_fragment(
+                              variant, start, '{', '}'
+                          )
+                          if not material:
+                              continue
+                          try:
+                              parsed = json.loads(material)
+                          except Exception:
+                              continue
+                          paths = marker_paths(parsed, marker_name)
+                          if not paths:
+                              continue
+                          summary = {
+                              'relativePaths': sorted(set(paths)),
+                              'containerKeys': sorted(
+                                  str(key)
+                                  for key in parsed
+                              ) if isinstance(parsed, dict) else [],
+                              'officialGamePk': (
+                                  str(parsed.get('officialGamePk') or '')
+                                  if isinstance(parsed, dict)
+                                  else ''
+                              ),
+                          }
+                          if summary not in containers:
+                              containers.append(summary)
+                          if len(containers) >= 8:
+                              break
+                      if len(containers) >= 8:
+                          break
+                  if len(containers) >= 8:
+                      break
+              fragment_marker_containers[marker_name] = containers
+
           progress = payload.get('perGameLockProgress') or {}
           games = [
               game
@@ -462,6 +542,7 @@ jobs:
               'dueGames': due,
               'official822771': target,
               'markerLocations': marker_locations,
+              'rawMarkerContainers': fragment_marker_containers,
               'allGamesSafeClassification': safe_games,
               'actualAuthorityFailureFields': [
                   'failures[].errors',
