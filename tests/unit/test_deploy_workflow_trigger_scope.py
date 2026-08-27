@@ -4,6 +4,8 @@ import fnmatch
 import re
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
@@ -68,3 +70,17 @@ def test_push_scope_has_no_broad_control_plane_or_proof_patterns() -> None:
     assert "runtime/**" not in patterns
     assert "runtime_reports/**" not in patterns
     assert "docs/**" not in patterns
+
+
+def test_run_blocks_stay_below_github_expression_limit_with_margin() -> None:
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    run_blocks = [
+        step["run"]
+        for step in workflow["jobs"]["deploy"]["steps"]
+        if "run" in step
+    ]
+
+    # GitHub rejects a workflow before creating a job when one scalar exceeds
+    # its 21,000-character expression limit.  Leave margin for its internal
+    # expression serialization instead of testing right at the boundary.
+    assert max(map(len, run_blocks)) < 20_500
