@@ -133,6 +133,8 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             '.head_branch == "main"',
             '.conclusion == "success"',
             "source_deploy_sam_completed_at",
+            "candidate_sam_completed_at",
+            "best_sam_epoch",
             "find_latest_successful_sam_source",
             "explicit_count == 3",
             "source_superseded_by_newer_successful_sam_deployment",
@@ -190,7 +192,7 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             "same_source_success_cannot_regress",
             "deployed_source_regression",
             "newer_deployed_source",
-            "same source order has conflicting immutable identity",
+            "same source has conflicting immutable identity",
         ):
             if token not in publisher:
                 errors.append("postdeploy_contract:publisher_guard_missing:" + token)
