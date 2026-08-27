@@ -21,6 +21,7 @@ on:
       - '.github/workflows/enable-sportsdataio.yml'
       - '.github/workflows/mlb-ml-promote-champion.yml'
       - '.github/workflows/mlb-production-source-contract.yml'
+      - '.github/workflows/mlb-progress-pulse-durable-relay.yml'
       - '.github/workflows/mlb-production-acceptance.yml'
       - '.github/workflows/mlb-post-deploy-fix-verification.yml'
       - '.github/workflows/mlb-rolling-24h-audit.yml'
@@ -56,6 +57,7 @@ on:
       - '.github/workflows/enable-sportsdataio.yml'
       - '.github/workflows/mlb-ml-promote-champion.yml'
       - '.github/workflows/mlb-production-source-contract.yml'
+      - '.github/workflows/mlb-progress-pulse-durable-relay.yml'
       - '.github/workflows/mlb-production-acceptance.yml'
       - '.github/workflows/mlb-post-deploy-fix-verification.yml'
       - '.github/workflows/mlb-rolling-24h-audit.yml'
@@ -197,6 +199,7 @@ jobs:
             tests/unit/test_mlb_trainer_deploy_response.py \
             tests/unit/test_mlb_workflow_authority.py \
             tests/unit/test_mlb_progress_pulse_watchdog.py \
+            tests/unit/test_mlb_progress_pulse_durable_relay.py \
             tests/unit/test_run_mlb_ml_v3_audit_report.py
 
       - name: Compile deployment and acceptance tooling
