@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -11,10 +12,11 @@ def test_v7_deployment_uses_policy_owned_untouched_audit_cadence():
 
     assert "'HistoricalFreshAuditIncrementGames=200'" in source
     assert "'HistoricalFreshAuditIncrementGames=250'" not in source
-    assert (
-        "'freshAuditIncrement':env.get("
-        "'MLB_HISTORICAL_FRESH_AUDIT_INCREMENT_GAMES') == '200'"
-    ) in source
+    assert re.search(
+        r"'freshAuditIncrement'\s*:\s*env\.get\("
+        r"'MLB_HISTORICAL_FRESH_AUDIT_INCREMENT_GAMES'\)\s*==\s*'200'",
+        source,
+    )
     assert (
         "'freshAuditIncrementGames':env.get("
         "'MLB_HISTORICAL_FRESH_AUDIT_INCREMENT_GAMES')"
@@ -61,7 +63,7 @@ def test_v7_publisher_preserves_proof_then_cleans_before_branch_switch():
     )
     assert publish.count("git reset --hard HEAD") == 1
     assert "git push origin HEAD:main && exit 0" in publish
-    assert "sleep $((attempt * 3))" in publish
+    assert re.search(r"sleep\s+\$\(\(\s*attempt\s*\*\s*3\s*\)\)", publish)
 
 
 def test_v7_recovery_workflow_runs_its_own_regression_contract():

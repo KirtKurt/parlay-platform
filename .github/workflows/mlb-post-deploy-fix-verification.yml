@@ -110,16 +110,23 @@ jobs:
           runtime = json.loads(Path('runtime_reports/mlb_pull_lambda_runtime_diagnostic_latest.json').read_text(encoding='utf-8'))
 
           deployed_at_raw = invocation.get('functionLastModified')
-          deployed_at = datetime.fromisoformat(str(deployed_at_raw).replace('Z', '+00:00'))
-          if deployed_at.tzinfo is None:
-              deployed_at = deployed_at.replace(tzinfo=timezone.utc)
+          deployed_at = None
+          if deployed_at_raw:
+              try:
+                  deployed_at = datetime.fromisoformat(
+                      str(deployed_at_raw).replace('Z', '+00:00')
+                  )
+                  if deployed_at.tzinfo is None:
+                      deployed_at = deployed_at.replace(tzinfo=timezone.utc)
+              except (TypeError, ValueError):
+                  deployed_at = None
 
           post_deploy_timeouts = []
           for row in runtime.get('timeouts') or []:
               stamp = datetime.fromisoformat(str(row.get('timestampUtc')).replace('Z', '+00:00'))
               if stamp.tzinfo is None:
                   stamp = stamp.replace(tzinfo=timezone.utc)
-              if stamp >= deployed_at:
+              if deployed_at is None or stamp >= deployed_at:
                   post_deploy_timeouts.append(row)
 
           post_deploy_scheduled_failures = []
@@ -128,7 +135,7 @@ jobs:
               if stamp.tzinfo is None:
                   stamp = stamp.replace(tzinfo=timezone.utc)
               classifications = set(row.get('classifications') or [])
-              if stamp >= deployed_at and classifications & {
+              if (deployed_at is None or stamp >= deployed_at) and classifications & {
                   'SCHEDULED_PULL_FAILED',
                   'PRELOCK_STORAGE_INCOMPLETE',
                   'WINNER_COVERAGE_INCOMPLETE',
@@ -166,6 +173,8 @@ jobs:
 
           deployment_blockers = []
           readiness_blockers = []
+          if invocation.get('ok') is not True:
+              deployment_blockers.append('scheduled_pull_observation_failed')
           if scoring.get('guardPassed') is not True and not historical_slate_cutoff_exception:
               readiness_blockers.append('scoring_guard_not_ready')
           if invocation.get('timeoutSeconds', 0) < 600:
@@ -203,6 +212,7 @@ jobs:
               'promotionReady': promotion_ready,
               'productionAuthorityChanged': False,
               'lambdaConfiguration': invocation,
+              'scheduledPullObservationFailure': invocation.get('failure'),
               'scoringGuardPassed': scoring.get('guardPassed') is True,
               'scoringSummary': scoring.get('summary'),
               'scoringBlockers': scoring.get('blockers') or [],
