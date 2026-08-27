@@ -197,6 +197,7 @@ jobs:
             tests/unit/test_mlb_release_activation_predeploy.py \
             tests/unit/test_mlb_trainer_deploy_response.py \
             tests/unit/test_mlb_workflow_authority.py \
+            tests/unit/test_mlb_postdeploy_proof_publisher.py \
             tests/unit/test_mlb_progress_pulse_watchdog.py \
             tests/unit/test_run_mlb_ml_v3_audit_report.py
 
@@ -212,6 +213,8 @@ jobs:
           python -m py_compile scripts/invoke_mlb_trainer_with_retry.py
           python -m py_compile scripts/verify_mlb_trainer_deploy_response.py
           python -m py_compile scripts/verify_mlb_workflow_authority.py
+          python -m py_compile scripts/verify_mlb_postdeploy_workflow_authority.py
+          python -m py_compile scripts/publish_mlb_postdeploy_proof.py
           python -m py_compile scripts/enforce_mlb_production_acceptance.py
           python -m py_compile scripts/remove_mlb_bbd_active_runtime.py
           python -m py_compile scripts/verify_mlb_no_bbd_runtime.py
