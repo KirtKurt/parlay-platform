@@ -1,0 +1,57 @@
+name: Apply MLB deploy no-champion smoke fix once
+run-name: "Apply MLB deploy no-champion smoke fix #${{ github.run_number }}"
+
+"on":
+  push:
+    branches:
+      - fix/mlb-deploy-smoke-no-qualified-champion-20260826
+    paths:
+      - '.github/workflows/apply-mlb-deploy-no-champion-smoke-fix-once.yml'
+      - 'scripts/apply_mlb_deploy_no_champion_smoke_fix.py'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-mlb-deploy-no-champion-smoke-fix-once
+  cancel-in-progress: false
+
+jobs:
+  apply-and-prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/mlb-deploy-smoke-no-qualified-champion-20260826
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Apply strict fail-closed deploy smoke repair
+        run: python scripts/apply_mlb_deploy_no_champion_smoke_fix.py
+
+      - name: Prove workflow safety contract
+        run: |
+          python -m pip install --disable-pip-version-check --no-cache-dir pytest
+          python -m pytest -q tests/unit/test_mlb_deploy_no_champion_smoke.py
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          value = yaml.safe_load(Path('.github/workflows/deploy.yml').read_text())
+          assert isinstance(value, dict)
+          PY
+
+      - name: Commit production workflow repair and regression proof
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'Accept strict no-qualified-champion state in MLB deploy smoke'
+          git push origin HEAD:fix/mlb-deploy-smoke-no-qualified-champion-20260826
