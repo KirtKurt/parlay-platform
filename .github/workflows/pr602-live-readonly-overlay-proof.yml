@@ -1,0 +1,438 @@
+name: PR602 Live Read-Only Overlay Proof
+
+on:
+  push:
+    branches:
+      - codex/pr602-live-readonly-overlay-proof-33113309078
+    paths:
+      - .github/workflows/pr602-live-readonly-overlay-proof.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr602-live-readonly-overlay-proof
+  cancel-in-progress: true
+
+env:
+  AWS_EC2_METADATA_DISABLED: "true"
+  SNAPSHOTS_TABLE: parlay_platform_snapshots
+  SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
+  PREDICTIONS_TABLE: parlay_platform_predictions
+  OUTCOMES_TABLE: parlay_platform_outcomes
+  PYTHONPATH: ${{ github.workspace }}/hello_world
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/pr602-live-readonly-overlay-proof-33113309078
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Strong-read current public overlays and immutable rows
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import copy
+          import json
+          from datetime import datetime, timezone
+          from decimal import Decimal
+
+          import mlb_ml_runtime_install_v3
+
+          install = mlb_ml_runtime_install_v3.install()
+          assert install.get("ok") is True, install
+
+          import mlb_game_winner_engine as engine
+          import mlb_immutable_locked_storage_patch as storage
+
+          SLATE = "2026-08-27"
+          EXPECTED = (
+              {
+                  "gameId": "484411acaf382c9b99aa08d6e6ccd79f",
+                  "officialGamePk": "822694",
+                  "commenceTime": "2026-08-27T17:05:00+00:00",
+              },
+              {
+                  "gameId": "f9efae328746bce7662ce368bb304f87",
+                  "officialGamePk": "823014",
+                  "commenceTime": "2026-08-27T18:15:00+00:00",
+              },
+          )
+          WRITE_METHODS = (
+              "put_item",
+              "update_item",
+              "delete_item",
+              "batch_writer",
+          )
+
+          table = engine.history.PULLS
+          assert table is not None
+          write_attempts = []
+
+          def blocked_write(*args, **kwargs):
+              write_attempts.append({
+                  "argsCount": len(args),
+                  "kwargNames": sorted(str(key) for key in kwargs),
+              })
+              raise AssertionError("READ_ONLY_PROBE_WRITE_ATTEMPT_BLOCKED")
+
+          for method in WRITE_METHODS:
+              if hasattr(table, method):
+                  setattr(table, method, blocked_write)
+
+          result = engine.read_persisted_predictions(
+              SLATE,
+              store=False,
+              limit=500,
+          )
+          assert isinstance(result, dict), type(result)
+          assert result.get("ok") is True, result
+          public_rows = [
+              row
+              for row in (result.get("predictions") or [])
+              if isinstance(row, dict)
+          ]
+
+          def normalized(value):
+              if isinstance(value, Decimal):
+                  return int(value) if value == value.to_integral_value() else float(value)
+              if isinstance(value, dict):
+                  return {
+                      str(key): normalized(inner)
+                      for key, inner in value.items()
+                  }
+              if isinstance(value, (list, tuple)):
+                  return [normalized(inner) for inner in value]
+              return value
+
+          def proof_summary(proof):
+              proof = proof if isinstance(proof, dict) else {}
+              return {
+                  "version": proof.get("version"),
+                  "verified": proof.get("verified"),
+                  "consistentRead": proof.get("consistentRead"),
+                  "stageFingerprint": proof.get("stageFingerprint"),
+                  "stageRowFingerprint": proof.get("stageRowFingerprint"),
+                  "candidateSelectionFingerprint": proof.get(
+                      "candidateSelectionFingerprint"
+                  ),
+                  "modelOrSignalRecomputedAtLock": proof.get(
+                      "modelOrSignalRecomputedAtLock"
+                  ),
+                  "proofFingerprint": storage._payload_fingerprint(proof),
+              }
+
+          rows = []
+          for expected in EXPECTED:
+              public = next(
+                  (
+                      row
+                      for row in public_rows
+                      if str(row.get("gameId") or "") == expected["gameId"]
+                      or str(row.get("officialGamePk") or "")
+                      == expected["officialGamePk"]
+                  ),
+                  None,
+              )
+              assert isinstance(public, dict), (
+                  expected,
+                  [row.get("gameId") for row in public_rows],
+              )
+              assert storage._canonical_read_overlay(public) is True, {
+                  "gameId": expected["gameId"],
+                  "keys": sorted(public),
+                  "perGameCanonicalLock": public.get("perGameCanonicalLock"),
+                  "slatePredictionLock": public.get("slatePredictionLock"),
+                  "lastPossiblePredictionGate": public.get(
+                      "lastPossiblePredictionGate"
+                  ),
+              }
+
+              key = {
+                  "PK": f"GAME_WINNERS#mlb#{SLATE}",
+                  "SK": (
+                      "LOCKED#GAME#"
+                      f"{expected['commenceTime']}#{expected['gameId']}"
+                  ),
+              }
+              existing = table.get_item(
+                  Key=key,
+                  ConsistentRead=True,
+              ).get("Item")
+              assert isinstance(existing, dict), key
+              existing_row = storage._stored_row(existing)
+              assert existing_row
+
+              envelope_errors = storage._existing_envelope_binding_errors(
+                  engine,
+                  existing,
+                  existing_row,
+              )
+              stage, stage_errors = (
+                  storage._read_existing_canonical_stage_direct(
+                      table,
+                      existing_row,
+                  )
+              )
+              public_projection = storage._canonical_overlay_projection(public)
+              durable_projection = storage._canonical_overlay_projection(
+                  existing_row
+              )
+              public_projection_fp = storage._payload_fingerprint(
+                  public_projection
+              )
+              durable_projection_fp = storage._payload_fingerprint(
+                  durable_projection
+              )
+              existing_vector_errors = storage._require_vector_status(
+                  existing_row,
+                  context="read_only_live_probe_existing",
+              )
+              public_vector_errors = storage._require_vector_status(
+                  public,
+                  context="read_only_live_probe_public",
+              )
+
+              envelope_without_data = {
+                  key_name: copy.deepcopy(value)
+                  for key_name, value in existing.items()
+                  if key_name != "data"
+              }
+              row_result = {
+                  "identity": expected,
+                  "canonicalReadOverlayPredicate": True,
+                  "publicMarkers": {
+                      "slateCoverageVersion": public.get(
+                          "slateCoverageVersion"
+                      ),
+                      "officialPredictionReason": public.get(
+                          "officialPredictionReason"
+                      ),
+                      "immutablePerGameStage": public.get(
+                          "immutablePerGameStage"
+                      ),
+                      "immutableLockedStorage": public.get(
+                          "immutableLockedStorage"
+                      ),
+                      "immutableLockedStorageKeyspace": public.get(
+                          "immutableLockedStorageKeyspace"
+                      ),
+                      "immutableLockedStorageVersion": public.get(
+                          "immutableLockedStorageVersion"
+                      ),
+                      "canonical": public.get("canonical"),
+                      "locked": public.get("locked"),
+                      "lockedPrediction": public.get("lockedPrediction"),
+                      "officialPrediction": public.get(
+                          "officialPrediction"
+                      ),
+                      "officialPick": public.get("officialPick"),
+                      "isOfficialDisplayPick": public.get(
+                          "isOfficialDisplayPick"
+                      ),
+                      "lockStatus": public.get("lockStatus"),
+                      "officialPredictionStatus": public.get(
+                          "officialPredictionStatus"
+                      ),
+                      "selectionFingerprint": public.get(
+                          "selectionFingerprint"
+                      ),
+                      "lastPrelockSelectionFingerprint": public.get(
+                          "lastPrelockSelectionFingerprint"
+                      ),
+                      "lockedAtUtc": public.get("lockedAtUtc"),
+                      "perGameCanonicalLock": public.get(
+                          "perGameCanonicalLock"
+                      ),
+                      "slatePredictionLock": public.get(
+                          "slatePredictionLock"
+                      ),
+                      "lastPossiblePredictionGate": public.get(
+                          "lastPossiblePredictionGate"
+                      ),
+                  },
+                  "outerEnvelope": {
+                      "PK": existing.get("PK"),
+                      "SK": existing.get("SK"),
+                      "record_type": existing.get("record_type"),
+                      "immutable_locked": existing.get("immutable_locked"),
+                      "stage_authority_verified": existing.get(
+                          "stage_authority_verified"
+                      ),
+                      "stage_authority_version": existing.get(
+                          "stage_authority_version"
+                      ),
+                      "stage_fingerprint": existing.get(
+                          "stage_fingerprint"
+                      ),
+                      "immutable_locked_storage_version": existing.get(
+                          "immutable_locked_storage_version"
+                      ),
+                      "selection_lock_verified": existing.get(
+                          "selection_lock_verified"
+                      ),
+                      "exact_vector_verified": existing.get(
+                          "exact_vector_verified"
+                      ),
+                      "training_eligible": existing.get(
+                          "training_eligible"
+                      ),
+                      "envelopeFingerprint": storage._payload_fingerprint(
+                          envelope_without_data
+                      ),
+                      "rebuildErrors": envelope_errors,
+                      "rebuildExact": not envelope_errors,
+                  },
+                  "durableRowMarkers": {
+                      "immutablePerGameStage": existing_row.get(
+                          "immutablePerGameStage"
+                      ),
+                      "immutableLockedStorage": existing_row.get(
+                          "immutableLockedStorage"
+                      ),
+                      "immutableLockedStorageKeyspace": existing_row.get(
+                          "immutableLockedStorageKeyspace"
+                      ),
+                      "immutableLockedStorageVersion": existing_row.get(
+                          "immutableLockedStorageVersion"
+                      ),
+                  },
+                  "directStage": {
+                      "present": isinstance(stage, dict),
+                      "errors": stage_errors,
+                      "exactBindingVerified": (
+                          isinstance(stage, dict) and not stage_errors
+                      ),
+                      "PK": stage.get("PK") if stage else None,
+                      "SK": stage.get("SK") if stage else None,
+                      "stageFingerprint": (
+                          stage.get("stage_fingerprint")
+                          if stage else None
+                      ),
+                  },
+                  "authority": {
+                      "public": proof_summary(
+                          public.get("canonicalPerGameStageAuthority")
+                      ),
+                      "durable": proof_summary(
+                          existing_row.get(
+                              "canonicalPerGameStageAuthority"
+                          )
+                      ),
+                  },
+                  "projection": {
+                      "match": (
+                          public_projection_fp == durable_projection_fp
+                      ),
+                      "publicFingerprint": public_projection_fp,
+                      "durableFingerprint": durable_projection_fp,
+                      "fields": {
+                          key_name: normalized(value)
+                          for key_name, value in public_projection.items()
+                          if key_name
+                          != "canonicalPerGameStageAuthority"
+                      },
+                  },
+                  "vectorStatus": {
+                      "publicErrors": public_vector_errors,
+                      "durableErrors": existing_vector_errors,
+                      "setsMatch": sorted(set(public_vector_errors))
+                      == sorted(set(existing_vector_errors)),
+                  },
+              }
+
+              assert row_result["outerEnvelope"]["rebuildExact"] is True
+              assert row_result["outerEnvelope"][
+                  "immutable_locked_storage_version"
+              ] == storage.VERSION
+              assert row_result["outerEnvelope"][
+                  "selection_lock_verified"
+              ] is True
+              assert row_result["durableRowMarkers"][
+                  "immutableLockedStorageVersion"
+              ] == storage.VERSION
+              assert row_result["directStage"][
+                  "exactBindingVerified"
+              ] is True
+              assert row_result["projection"]["match"] is True
+              assert row_result["vectorStatus"]["setsMatch"] is True
+              rows.append(row_result)
+
+          canonical_rows = [
+              row
+              for row in public_rows
+              if row.get("lockedPrediction") is True
+              and row.get("lockStatus") == "LOCKED_CANONICAL"
+          ]
+          prelock_rows = [
+              row
+              for row in public_rows
+              if row.get("lockedPrediction") is not True
+          ]
+          report = {
+              "ok": True,
+              "proofType": (
+                  "PR602_LIVE_READ_ONLY_CANONICAL_OVERLAY_COMPATIBILITY"
+              ),
+              "observedAtUtc": datetime.now(timezone.utc).isoformat(),
+              "sourceSha": "ee589a75a72597822d4ddd6837c481f460351a7c",
+              "slateDateEt": SLATE,
+              "readOnly": True,
+              "engineStoreRequested": False,
+              "tableWritesAttempted": len(write_attempts),
+              "lambdaInvocationsAttempted": 0,
+              "aggregate": {
+                  "publicRowCount": len(public_rows),
+                  "canonicalLockedCount": len(canonical_rows),
+                  "preLockCount": len(prelock_rows),
+                  "canonicalLockedGameIds": sorted(
+                      str(row.get("gameId") or "")
+                      for row in canonical_rows
+                  ),
+                  "preLockGameIds": sorted(
+                      str(row.get("gameId") or "")
+                      for row in prelock_rows
+                  ),
+                  "resultLockedPredictionCount": result.get(
+                      "lockedPredictionCount"
+                  ),
+                  "resultPreLockPredictionCount": result.get(
+                      "preLockPredictionCount"
+                  ),
+                  "resultManifestGameCount": result.get(
+                      "manifestGameCount"
+                  ),
+                  "resultGameCount": result.get("gameCount"),
+                  "slatePredictionLock": result.get(
+                      "slatePredictionLock"
+                  ),
+              },
+              "rows": rows,
+          }
+          assert report["tableWritesAttempted"] == 0
+          assert report["aggregate"]["publicRowCount"] == 7
+          assert report["aggregate"]["canonicalLockedCount"] == 2
+          assert report["aggregate"]["preLockCount"] == 5
+          print(json.dumps(normalized(report), indent=2, sort_keys=True))
+          PY
