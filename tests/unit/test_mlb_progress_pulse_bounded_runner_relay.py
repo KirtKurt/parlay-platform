@@ -9,7 +9,7 @@ RELAY = ROOT / ".github/workflows/mlb-progress-pulse-bounded-runner-relay.yml"
 
 
 def _integer_constant(relay: str, name: str) -> int:
-    match = re.search(rf"^  {name}: '(\\d+)'$", relay, flags=re.MULTILINE)
+    match = re.search(rf"^  {name}: '(\d+)'$", relay, flags=re.MULTILINE)
     assert match is not None
     return int(match.group(1))
 
