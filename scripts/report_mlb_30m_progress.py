@@ -46,6 +46,21 @@ PULSE_CADENCE_GRACE_MINUTES = int(
 )
 CANONICAL_R7_RECOVERY_WORKFLOW = "unified-mlb-learning-recovery-once.yml"
 LEGACY_R7_REPAIR_WORKFLOW = "repair-mlb-training-continuity-now.yml"
+EXPECTED_REPOSITORY = "KirtKurt/parlay-platform"
+PULSE_AUTHOR_LOGIN = "github-actions[bot]"
+PULSE_AUTHOR_ID = 41898282
+PULSE_AUTHOR_TYPE = "Bot"
+PRIMARY_PROGRESS_WORKFLOW = "mlb-30m-progress-pulse.yml"
+WATCHDOG_PROGRESS_WORKFLOW = "mlb-progress-pulse-cadence-watchdog.yml"
+BOUNDED_PROGRESS_WORKFLOW = "mlb-progress-pulse-bounded-runner-relay.yml"
+DURABLE_PROGRESS_WORKFLOW = "mlb-progress-pulse-durable-relay.yml"
+RELAY_ENVIRONMENT = "mlb-pulse-30m-delay"
+PROGRESS_ACTIVE_RUN_STATUSES = {"queued", "in_progress", "waiting", "pending", "requested"}
+NATIVE_PRIMARY_HEALTH_MINUTES = 40
+NATIVE_WATCHDOG_HEALTH_MINUTES = 15
+BOUNDED_RELAY_INTERVAL_MINUTES = 300
+DURABLE_RELAY_INTERVAL_MINUTES = 30
+RELAY_RENEWAL_WARNING_HOPS = 4
 
 
 class CommandError(RuntimeError):
@@ -280,6 +295,393 @@ def _latest_continuity_run() -> dict[str, Any]:
         "workflowKind": "unavailable",
         "workflowFile": CANONICAL_R7_RECOVERY_WORKFLOW,
         "error": ";".join(errors) if errors else "no_canonical_or_legacy_runs",
+    }
+
+
+def _progress_workflow_runs(
+    workflow_file: str,
+    *,
+    event: Optional[str] = None,
+    per_page: int = 20,
+) -> list[dict[str, Any]]:
+    query = f"branch=main&per_page={per_page}"
+    if event:
+        query += f"&event={event}"
+    result = _run(
+        [
+            "gh",
+            "api",
+            f"repos/{REPO}/actions/workflows/{workflow_file}/runs?{query}",
+        ],
+        timeout=60,
+    )
+    payload = _json_loads(result.stdout or "{}", {}) or {}
+    rows = payload.get("workflow_runs")
+    if not isinstance(rows, list):
+        raise RuntimeError(f"{workflow_file}:workflow_runs_not_a_list")
+    return [dict(row) for row in rows if isinstance(row, Mapping)]
+
+
+def _progress_environment() -> dict[str, Any]:
+    observed_at = datetime.now(timezone.utc)
+    try:
+        result = _run(
+            [
+                "gh",
+                "api",
+                f"repos/{REPO}/environments/{RELAY_ENVIRONMENT}",
+            ],
+            timeout=60,
+        )
+        payload = _json_loads(result.stdout or "{}", {}) or {}
+        if not isinstance(payload, Mapping):
+            raise RuntimeError("environment_response_not_an_object")
+        rules = payload.get("protection_rules")
+        if not isinstance(rules, list):
+            raise RuntimeError("environment_protection_rules_missing")
+        wait_timers = [
+            row
+            for row in rules
+            if isinstance(row, Mapping) and row.get("type") == "wait_timer"
+        ]
+        valid = (
+            payload.get("name") == RELAY_ENVIRONMENT
+            and len(rules) == 1
+            and len(wait_timers) == 1
+            and wait_timers[0].get("wait_timer") == DURABLE_RELAY_INTERVAL_MINUTES
+            and payload.get("deployment_branch_policy") is None
+        )
+        return {
+            "name": payload.get("name"),
+            "valid": valid,
+            "waitTimerMinutes": (
+                wait_timers[0].get("wait_timer") if len(wait_timers) == 1 else None
+            ),
+            "protectionRuleTypes": [
+                row.get("type") if isinstance(row, Mapping) else "invalid"
+                for row in rules
+            ],
+            "branchPolicy": payload.get("deployment_branch_policy"),
+            "validatedAtUtc": observed_at.isoformat(),
+            "error": None,
+        }
+    except Exception as exc:
+        return {
+            "name": RELAY_ENVIRONMENT,
+            "valid": None,
+            "waitTimerMinutes": None,
+            "protectionRuleTypes": [],
+            "branchPolicy": None,
+            "validatedAtUtc": observed_at.isoformat(),
+            "error": _plain_error(exc),
+        }
+
+
+def _progress_timestamp(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _progress_run_path(row: Mapping[str, Any]) -> str:
+    return str(row.get("path") or "").split("@", 1)[0]
+
+
+def _progress_run_repository(row: Mapping[str, Any]) -> Optional[str]:
+    for key in ("head_repository", "repository"):
+        value = row.get(key)
+        if isinstance(value, Mapping) and value.get("full_name"):
+            return str(value.get("full_name"))
+    return None
+
+
+def _progress_run_trusted(
+    row: Mapping[str, Any],
+    *,
+    workflow_file: str,
+) -> bool:
+    return (
+        row.get("head_branch") == "main"
+        and _progress_run_repository(row) == EXPECTED_REPOSITORY
+        and _progress_run_path(row) == f".github/workflows/{workflow_file}"
+        and _progress_timestamp(row.get("created_at")) is not None
+    )
+
+
+def _run_age_minutes(
+    row: Mapping[str, Any],
+    *,
+    now: datetime,
+) -> Optional[float]:
+    created = _progress_timestamp(row.get("created_at"))
+    if created is None:
+        return None
+    return max(0.0, round((now - created).total_seconds() / 60.0, 3))
+
+
+def _latest_admission(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    workflow_file: str,
+    now: datetime,
+) -> Optional[dict[str, Any]]:
+    trusted = [
+        dict(row)
+        for row in rows
+        if row.get("event") == "schedule"
+        and _progress_run_trusted(row, workflow_file=workflow_file)
+    ]
+    trusted.sort(
+        key=lambda row: _progress_timestamp(row.get("created_at"))
+        or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    if not trusted:
+        return None
+    row = trusted[0]
+    return {
+        "runId": row.get("id"),
+        "createdAtUtc": row.get("created_at"),
+        "ageMinutes": _run_age_minutes(row, now=now),
+        "status": row.get("status"),
+        "conclusion": row.get("conclusion"),
+        "url": row.get("html_url"),
+        "headRepository": _progress_run_repository(row),
+    }
+
+
+def _progress_relay_rows(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    kind: str,
+) -> list[dict[str, Any]]:
+    if kind == "bounded":
+        workflow = BOUNDED_PROGRESS_WORKFLOW
+        pattern = re.compile(r"MLB pulse relay segment (10|[1-9])")
+        maximum = 10
+    elif kind == "durable":
+        workflow = DURABLE_PROGRESS_WORKFLOW
+        pattern = re.compile(r"MLB durable pulse relay hop ([1-9][0-9]?)")
+        maximum = 96
+    else:
+        raise ValueError("unknown_progress_relay_kind")
+
+    trusted: list[dict[str, Any]] = []
+    for source in rows:
+        row = dict(source)
+        match = pattern.fullmatch(str(row.get("display_title") or ""))
+        remaining = int(match.group(1)) if match else None
+        if (
+            match is not None
+            and remaining is not None
+            and 1 <= remaining <= maximum
+            and row.get("status") in PROGRESS_ACTIVE_RUN_STATUSES
+            and _progress_run_trusted(row, workflow_file=workflow)
+        ):
+            row["_remaining"] = remaining
+            trusted.append(row)
+    trusted.sort(
+        key=lambda row: _progress_timestamp(row.get("created_at"))
+        or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    return trusted
+
+
+def _relay_projection(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    interval_minutes: int,
+    now: datetime,
+) -> dict[str, Any]:
+    active = [dict(row) for row in rows]
+    newest = active[0] if active else None
+    expiries: list[datetime] = []
+    for row in active:
+        created = _progress_timestamp(row.get("created_at"))
+        remaining = _integer(row.get("_remaining"))
+        if created is not None and remaining is not None:
+            expiries.append(created + timedelta(minutes=remaining * interval_minutes))
+    nominal_end = max(expiries) if expiries else None
+    newest_remaining = _integer(newest.get("_remaining")) if newest else None
+    newest_status = str(newest.get("status") or "") if newest else None
+    return {
+        "active": bool(active),
+        "activeRunIds": [row.get("id") for row in active],
+        "activeRuns": [
+            {
+                "runId": row.get("id"),
+                "status": row.get("status"),
+                "remaining": row.get("_remaining"),
+                "event": row.get("event"),
+                "createdAtUtc": row.get("created_at"),
+                "url": row.get("html_url"),
+                "headRepository": _progress_run_repository(row),
+            }
+            for row in active[:4]
+        ],
+        "newestRunId": newest.get("id") if newest else None,
+        "newestRunUrl": newest.get("html_url") if newest else None,
+        "newestStatus": newest_status,
+        "newestRemaining": newest_remaining,
+        "newestAgeMinutes": _run_age_minutes(newest, now=now) if newest else None,
+        "terminalHop": newest_remaining == 1,
+        "renewalWarning": (
+            newest_remaining is not None
+            and newest_remaining <= RELAY_RENEWAL_WARNING_HOPS
+        ),
+        "nominalLeaseEndUtc": nominal_end.isoformat() if nominal_end else None,
+    }
+
+
+def _progress_control_plane(
+    *,
+    now: Optional[datetime] = None,
+) -> dict[str, Any]:
+    observed = now or datetime.now(timezone.utc)
+    if observed.tzinfo is None:
+        observed = observed.replace(tzinfo=timezone.utc)
+    observed = observed.astimezone(timezone.utc)
+    errors: list[str] = []
+
+    def load(
+        workflow: str,
+        *,
+        event: Optional[str] = None,
+        per_page: int = 20,
+    ) -> list[dict[str, Any]]:
+        try:
+            return _progress_workflow_runs(
+                workflow,
+                event=event,
+                per_page=per_page,
+            )
+        except Exception as exc:
+            errors.append(f"{workflow}:{_plain_error(exc)}")
+            return []
+
+    primary_schedule = _latest_admission(
+        load(PRIMARY_PROGRESS_WORKFLOW, event="schedule", per_page=5),
+        workflow_file=PRIMARY_PROGRESS_WORKFLOW,
+        now=observed,
+    )
+    watchdog_schedule = _latest_admission(
+        load(WATCHDOG_PROGRESS_WORKFLOW, event="schedule", per_page=5),
+        workflow_file=WATCHDOG_PROGRESS_WORKFLOW,
+        now=observed,
+    )
+    primary_runs = load(PRIMARY_PROGRESS_WORKFLOW, per_page=10)
+    bounded = _relay_projection(
+        _progress_relay_rows(
+            load(BOUNDED_PROGRESS_WORKFLOW, per_page=30),
+            kind="bounded",
+        ),
+        interval_minutes=BOUNDED_RELAY_INTERVAL_MINUTES,
+        now=observed,
+    )
+    durable = _relay_projection(
+        _progress_relay_rows(
+            load(DURABLE_PROGRESS_WORKFLOW, per_page=30),
+            kind="durable",
+        ),
+        interval_minutes=DURABLE_RELAY_INTERVAL_MINUTES,
+        now=observed,
+    )
+    environment = _progress_environment()
+    if environment.get("error"):
+        errors.append(f"{RELAY_ENVIRONMENT}:{environment['error']}")
+
+    primary_age = _number((primary_schedule or {}).get("ageMinutes"))
+    watchdog_age = _number((watchdog_schedule or {}).get("ageMinutes"))
+    native_known = primary_schedule is not None or watchdog_schedule is not None
+    native_healthy = (
+        (
+            primary_age is not None
+            and primary_age <= NATIVE_PRIMARY_HEALTH_MINUTES
+        )
+        or (
+            watchdog_age is not None
+            and watchdog_age <= NATIVE_WATCHDOG_HEALTH_MINUTES
+        )
+        if native_known
+        else None
+    )
+
+    bounded_executing = any(
+        row.get("status") == "in_progress" for row in bounded["activeRuns"]
+    )
+    durable_executing = any(
+        row.get("status") == "in_progress" for row in durable["activeRuns"]
+    )
+    mutual_exclusion_healthy = not (bounded_executing and durable_executing)
+    relay_overlap = bool(bounded["active"] and durable["active"])
+    if bounded["active"]:
+        relay_mode = "bounded_runner"
+        driver_workflow = BOUNDED_PROGRESS_WORKFLOW
+        driver = bounded
+    elif durable["active"]:
+        relay_mode = "durable_environment_timer"
+        driver_workflow = DURABLE_PROGRESS_WORKFLOW
+        driver = durable
+    else:
+        relay_mode = "native_or_event_fallback"
+        driver_workflow = PRIMARY_PROGRESS_WORKFLOW
+        driver = {}
+
+    trusted_reporters = [
+        row
+        for row in primary_runs
+        if _progress_run_trusted(row, workflow_file=PRIMARY_PROGRESS_WORKFLOW)
+    ]
+    trusted_reporters.sort(
+        key=lambda row: _progress_timestamp(row.get("created_at"))
+        or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    latest_reporter = trusted_reporters[0] if trusted_reporters else None
+    durable_actual_wait = (
+        durable.get("newestAgeMinutes")
+        if relay_mode == "durable_environment_timer"
+        and durable.get("newestStatus") == "in_progress"
+        else None
+    )
+
+    return {
+        "observedAtUtc": observed.isoformat(),
+        "relayMode": relay_mode,
+        "driverWorkflow": driver_workflow,
+        "nativeSchedulerHealthy": native_healthy,
+        "lastPrimaryScheduleAdmission": primary_schedule,
+        "lastWatchdogScheduleAdmission": watchdog_schedule,
+        "boundedRelay": bounded,
+        "durableRelay": durable,
+        "legacyNoncompletedRunIds": bounded["activeRunIds"],
+        "relayOverlapPresent": relay_overlap,
+        "migrationWaiting": relay_overlap and mutual_exclusion_healthy,
+        "mutualExclusionHealthy": mutual_exclusion_healthy,
+        "terminalHop": bool(driver.get("terminalHop")),
+        "renewalWarning": bool(driver.get("renewalWarning")),
+        "nominalLeaseEndUtc": driver.get("nominalLeaseEndUtc"),
+        "currentRemainingHops": driver.get("newestRemaining"),
+        "environment": environment,
+        "actualWaitMinutes": durable_actual_wait,
+        "currentReporterTrigger": os.environ.get("GITHUB_EVENT_NAME"),
+        "currentReporterRunId": RUN_ID or None,
+        "lastReporterDispatch": {
+            "runId": latest_reporter.get("id") if latest_reporter else None,
+            "event": latest_reporter.get("event") if latest_reporter else None,
+            "status": latest_reporter.get("status") if latest_reporter else None,
+            "conclusion": latest_reporter.get("conclusion") if latest_reporter else None,
+            "createdAtUtc": latest_reporter.get("created_at") if latest_reporter else None,
+            "url": latest_reporter.get("html_url") if latest_reporter else None,
+        },
+        "errors": errors,
     }
 
 
@@ -768,11 +1170,28 @@ def _decode_comment_state(body: str) -> Optional[dict[str, Any]]:
         return None
 
 
+def _is_authoritative_pulse_comment(comment: Mapping[str, Any]) -> bool:
+    user = comment.get("user")
+    if not isinstance(user, Mapping):
+        return False
+    try:
+        author_id = int(user.get("id"))
+    except (TypeError, ValueError):
+        return False
+    return (
+        str(user.get("login") or "") == PULSE_AUTHOR_LOGIN
+        and author_id == PULSE_AUTHOR_ID
+        and str(user.get("type") or "") == PULSE_AUTHOR_TYPE
+    )
+
+
 def _latest_visible_pulse(
     comments: Optional[Iterable[Mapping[str, Any]]] = None,
 ) -> Optional[dict[str, Any]]:
     rows = list(comments) if comments is not None else _issue_comments()
     for comment in reversed(rows):
+        if not _is_authoritative_pulse_comment(comment):
+            continue
         state = _decode_comment_state(str(comment.get("body") or ""))
         if state is None:
             continue
@@ -981,6 +1400,7 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
     mlb = state["mlb"]
     auto = state["mlbAuto"]
     reporting = state.get("reporting") or {}
+    control = reporting.get("controlPlane") or {}
 
     processed_delta = _date_delta(state, previous, "r7.processedThroughSlateDate")
     accepted_delta = _numeric_delta(state, previous, "r7.acceptedRowCount")
@@ -1021,6 +1441,9 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
         f"**Overall:** {overall}  ·  positive movements **{positive}**  ·  regressions **{negative}**",
         "",
         f"**Reporting cadence:** previous visible pulse `{reporting.get('previousVisiblePulseAtUtc') or 'none'}` · gap **{_fmt_num(reporting.get('previousPulseAgeMinutes'), 1)} minutes** · target **{_fmt_int(reporting.get('targetCadenceMinutes'))} minutes** (+{_fmt_int(reporting.get('cadenceGraceMinutes'))} grace) · fallback threshold **{_fmt_int(reporting.get('staleAfterMinutes'))} minutes** · breach **{reporting.get('cadenceBreach')}**.",
+        "",
+        f"**Reporting control plane:** driver \`{control.get('relayMode') or 'unknown'}\` · native scheduler **{control.get('nativeSchedulerHealthy')}** · primary schedule age **{_fmt_num(_nested(control, 'lastPrimaryScheduleAdmission.ageMinutes'), 1)}m** · watchdog schedule age **{_fmt_num(_nested(control, 'lastWatchdogScheduleAdmission.ageMinutes'), 1)}m**.",
+        f"**Relay lease:** remaining **{_fmt_int(control.get('currentRemainingHops'))}** · nominal end \`{control.get('nominalLeaseEndUtc') or 'n/a'}\` · environment valid **{_nested(control, 'environment.valid')}** / wait **{_fmt_int(_nested(control, 'environment.waitTimerMinutes'))}m** · observed wait **{_fmt_num(control.get('actualWaitMinutes'), 1)}m** · mutual exclusion **{control.get('mutualExclusionHealthy')}**.",
         "",
         "### R7 prospective experiment",
         "",
@@ -1066,6 +1489,31 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
         f"| Retired V15.10 suppressed | {authority_icon} {mlb.get('retiredAuthoritySuppressed')} | — |",
         "",
     ]
+
+    if control.get("terminalHop") is True:
+        lines.extend(
+            [
+                "> [!WARNING]",
+                "> The active progress relay is on its terminal hop. Renew or cut over before the nominal lease ends.",
+                "",
+            ]
+        )
+    elif control.get("renewalWarning") is True:
+        lines.extend(
+            [
+                "> [!WARNING]",
+                "> The active progress relay has four or fewer hops remaining; renewal/cutover is due.",
+                "",
+            ]
+        )
+    if control.get("mutualExclusionHealthy") is False:
+        lines.extend(
+            [
+                "> [!CAUTION]",
+                "> Bounded and durable relay implementations are executing at the same time. Stop the cutover and restore one clock owner.",
+                "",
+            ]
+        )
 
     blockers = state.get("blockers") or []
     if blockers:
@@ -1170,12 +1618,29 @@ def main() -> int:
         previous_pulse,
         now=generated_at,
     )
+    control_plane = _progress_control_plane(now=generated_at)
+    state["reporting"]["controlPlane"] = control_plane
+    if control_plane.get("nativeSchedulerHealthy") is False:
+        state["blockers"].append("NATIVE_PROGRESS_SCHEDULER_NOT_ADMITTING")
+    if control_plane.get("mutualExclusionHealthy") is False:
+        state["blockers"].append("PROGRESS_RELAY_MUTUAL_EXCLUSION_VIOLATION")
+    if control_plane.get("terminalHop") is True:
+        state["blockers"].append("PROGRESS_RELAY_TERMINAL_LEASE")
+    elif control_plane.get("renewalWarning") is True:
+        state["blockers"].append("PROGRESS_RELAY_RENEWAL_DUE")
+    if (
+        control_plane.get("relayMode") == "durable_environment_timer"
+        and _nested(control_plane, "environment.valid") is not True
+    ):
+        state["blockers"].append("PROGRESS_RELAY_ENVIRONMENT_INVALID")
+    if control_plane.get("errors"):
+        state["blockers"].append("PROGRESS_CONTROL_PLANE_TELEMETRY_PARTIAL")
     if state["reporting"].get("cadenceBreach") is True:
         age = _integer(state["reporting"].get("previousPulseAgeMinutes"))
         state["blockers"].append(
             f"PROGRESS_PULSE_CADENCE_BREACH:{age if age is not None else 'unknown'}m"
         )
-        state["blockers"] = sorted(set(state["blockers"]))
+    state["blockers"] = sorted(set(state["blockers"]))
     body = _comment(state, previous)
     _post_comment(body)
     print(body)
