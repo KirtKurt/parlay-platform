@@ -283,7 +283,7 @@ def test_protected_replay_waits_through_full_lease_then_succeeds(monkeypatch):
         if event.get("httpMethod") == "GET":
             return official_terminal_status()
         forced_attempts += 1
-        if forced_attempts <= 17:
+        if forced_attempts <= 18:
             return {
                 "ok": True,
                 "sport": "mlb",
@@ -317,9 +317,9 @@ def test_protected_replay_waits_through_full_lease_then_succeeds(monkeypatch):
         sleep=sleeps.append,
     )
 
-    assert forced_attempts == 18
-    assert result["protectedLockReplayAttemptCount"] == 18
-    assert result["protectedLockReplayOverlapRetryCount"] == 17
+    assert forced_attempts == 19
+    assert result["protectedLockReplayAttemptCount"] == 19
+    assert result["protectedLockReplayOverlapRetryCount"] == 18
     assert sum(sleeps) >= (
         subject.PROTECTED_REPLAY_LEASE_SECONDS
         + subject.PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS
@@ -329,8 +329,7 @@ def test_protected_replay_waits_through_full_lease_then_succeeds(monkeypatch):
         subject.PROTECTED_REPLAY_RETRY_DELAYS_SECONDS
     )
     assert result["protectedLockReplayRetryHorizonSeconds"] >= (
-        subject.PROTECTED_REPLAY_LEASE_SECONDS
-        + subject.PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS
+        subject.PROTECTED_REPLAY_COOPERATIVE_BOUND_SECONDS
     )
 
 
@@ -346,12 +345,157 @@ def test_protected_replay_retry_schedule_dephases_every_minute_attempt():
 
     assert len(delays) == subject.MAX_PROTECTED_REPLAY_ATTEMPTS - 1
     assert sum(delays) == subject.PROTECTED_REPLAY_RETRY_HORIZON_SECONDS
-    assert sum(delays[:-1]) >= (
-        subject.PROTECTED_REPLAY_LEASE_SECONDS
-        + subject.PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS
-    )
+    assert sum(delays[:-1]) >= subject.PROTECTED_REPLAY_COOPERATIVE_BOUND_SECONDS
     assert tuple(phases) == subject.PROTECTED_REPLAY_RETRY_PHASES_SECONDS
     assert len(set(phases)) == len(phases)
+
+
+def test_protected_replay_polls_eventbridge_handoff_validates_then_acks(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        base,
+        "resolve_stack_functions",
+        lambda *args: base.StackFunctions("lock", "results", "trainer"),
+    )
+    calls = []
+    polls = 0
+
+    def fake_invoke(client, function, event):
+        nonlocal polls
+        del client, function
+        calls.append(dict(event))
+        if event.get("httpMethod") == "GET":
+            return official_terminal_status()
+        if event.get("acknowledgeCooperativeCompletion") is True:
+            return {
+                "ok": True,
+                "sport": "mlb",
+                "slateDateEt": "2026-08-04",
+                "cooperativeTerminalReplayAcknowledged": True,
+                "cooperativeTerminalReplay": {
+                    "state": "ACKNOWLEDGED",
+                },
+            }
+        polls += 1
+        if polls <= 2:
+            return {
+                "ok": True,
+                "sport": "mlb",
+                "slateDateEt": "2026-08-04",
+                "status": "QUEUED_FOR_EVENTBRIDGE_LOCK_OWNER",
+                "reason": "QUEUED_FOR_EVENTBRIDGE_LOCK_OWNER",
+                "skipped": True,
+                "mutatingRunAttempted": False,
+                "cooperativeTerminalReplayCompleted": False,
+                "cooperativeTerminalReplay": {
+                    "state": "QUEUED" if polls == 1 else "CLAIMED",
+                },
+            }
+        progress = {
+            "manifestGameCount": 15,
+            "canonicalCount": 0,
+            "noPredictionDataCount": 15,
+            "lockOutcomeCount": 15,
+            "missedCount": 0,
+            "dueMissingCount": 0,
+        }
+        return {
+            "ok": True,
+            "sport": "mlb",
+            "slateDateEt": "2026-08-04",
+            "reason": "PROVEN_NO_PREDICTION_TERMINALS_RECONCILED",
+            "postStartPredictionCreationAllowed": False,
+            "perGameLockProgress": progress,
+            "missedLockTerminalReconciliation": {
+                "ok": True,
+                "slateDateEt": "2026-08-04",
+                "reconciledCount": 15,
+                "remainingMissedCount": 0,
+                "unresolved": [],
+                "progressAfter": progress,
+                "postStartPredictionCreationAllowed": False,
+            },
+            # The server auto-acknowledges on the first completed poll so an
+            # older v5.7 checkout can safely advance to its next exact date.
+            "cooperativeTerminalReplayCompleted": True,
+            "cooperativeTerminalReplay": {
+                "state": "ACKNOWLEDGED",
+            },
+        }
+
+    monkeypatch.setattr(v4, "invoke_json_with_backpressure", fake_invoke)
+    sleeps = []
+
+    result = subject._execute_protected_terminal_replay(
+        object(),
+        object(),
+        stack_name="stack",
+        request=replay_required(),
+        sleep=sleeps.append,
+        max_attempts=5,
+    )
+
+    assert sleeps == [20, 61]
+    assert result["protectedLockReplayAttemptCount"] == 3
+    assert result["protectedLockReplayOverlapRetryCount"] == 0
+    assert result["protectedLockReplayCooperativePollCount"] == 2
+    assert result["protectedLockReplayCooperativeHandoffObserved"] is True
+    assert result["protectedLockReplayCooperativeAcknowledged"] is True
+    assert result["protectedLockReplayAutomaticExecutionOwner"] == (
+        "eventbridge_daily_lock_schedule"
+    )
+    assert result["directWorkflowTableWrite"] is False
+    assert result["activeLeaseMutationAllowed"] is False
+    assert result["immutablePredictionRewriteAllowed"] is False
+    assert [call.get("httpMethod") for call in calls].count("GET") == 1
+    assert [
+        call for call in calls if call.get("acknowledgeCooperativeCompletion")
+    ]
+
+
+def test_cooperative_handoff_exhaustion_is_bounded_and_fails_closed(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        base,
+        "resolve_stack_functions",
+        lambda *args: base.StackFunctions("lock", "results", "trainer"),
+    )
+
+    def queued(client, function, event):
+        del client, function, event
+        return {
+            "ok": True,
+            "sport": "mlb",
+            "slateDateEt": "2026-08-04",
+            "status": "QUEUED_FOR_EVENTBRIDGE_LOCK_OWNER",
+            "reason": "QUEUED_FOR_EVENTBRIDGE_LOCK_OWNER",
+            "skipped": True,
+            "mutatingRunAttempted": False,
+            "cooperativeTerminalReplayCompleted": False,
+            "cooperativeTerminalReplay": {"state": "QUEUED"},
+        }
+
+    monkeypatch.setattr(v4, "invoke_json_with_backpressure", queued)
+    sleeps = []
+    with pytest.raises(
+        base.ReconciliationError,
+        match=(
+            "protected_terminal_replay_cooperative_retry_exhausted:"
+            "2026-08-04"
+        ),
+    ):
+        subject._execute_protected_terminal_replay(
+            object(),
+            object(),
+            stack_name="stack",
+            request=replay_required(),
+            sleep=sleeps.append,
+        )
+
+    assert len(sleeps) == subject.MAX_PROTECTED_REPLAY_ATTEMPTS - 1
+    assert sum(sleeps) == subject.PROTECTED_REPLAY_RETRY_HORIZON_SECONDS
 
 
 def test_protected_replay_overlap_exhaustion_remains_bounded_fail_closed(

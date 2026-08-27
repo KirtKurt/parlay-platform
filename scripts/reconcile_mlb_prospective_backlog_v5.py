@@ -25,8 +25,8 @@ import reconcile_mlb_prospective_backlog_v3 as v3
 import reconcile_mlb_prospective_backlog_v4 as v4
 
 VERSION = (
-    "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5.7-"
-    "settlement-authoritative-persistent-missed-boundary"
+    "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5.8-"
+    "eventbridge-owner-cooperative-terminal-replay"
 )
 STATUS_PATH = "/v1/mlb/locks/status"
 SETTLEMENT_RUN = "prospective_backlog_settlement_v4"
@@ -93,11 +93,19 @@ PROTECTED_REPLAY_SCHEDULE_PERIOD_SECONDS = 60
 PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS = (
     PROTECTED_REPLAY_SCHEDULE_PERIOD_SECONDS
 )
-MAX_PROTECTED_REPLAY_ATTEMPTS = 19
-# Never poll a one-minute EventBridge lease contender at a fixed one-minute
-# phase. This deterministic cycle preserves a bounded horizon while walking
-# every retry to a distinct phase of the live schedule.
-PROTECTED_REPLAY_RETRY_DELAYS_SECONDS = (20, 37) + (53, 61, 73, 79) * 4
+MAX_PROTECTED_REPLAY_ATTEMPTS = 35
+PROTECTED_REPLAY_EXECUTION_BUDGET_SECONDS = 600
+PROTECTED_REPLAY_COOPERATIVE_BOUND_SECONDS = (
+    PROTECTED_REPLAY_LEASE_SECONDS
+    + PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS
+    + PROTECTED_REPLAY_EXECUTION_BUDGET_SECONDS
+)
+# The first owner-handoff poll is quick.  Subsequent 61-second polls cannot
+# phase-lock to the one-minute schedule and reach beyond one full active lease,
+# the next EventBridge pickup, and the conservative historical execution
+# budget.  Polls only inspect the handoff record; they never acquire or alter
+# the active execution lease.
+PROTECTED_REPLAY_RETRY_DELAYS_SECONDS = (20,) + (61,) * 33
 PROTECTED_REPLAY_RETRY_HORIZON_SECONDS = sum(
     PROTECTED_REPLAY_RETRY_DELAYS_SECONDS
 )
@@ -110,8 +118,7 @@ if (
     len(PROTECTED_REPLAY_RETRY_DELAYS_SECONDS)
     != MAX_PROTECTED_REPLAY_ATTEMPTS - 1
     or PROTECTED_REPLAY_RETRY_HORIZON_SECONDS
-    < PROTECTED_REPLAY_LEASE_SECONDS
-    + PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS
+    < PROTECTED_REPLAY_COOPERATIVE_BOUND_SECONDS
 ):
     raise RuntimeError("protected_terminal_replay_retry_horizon_invalid")
 if len(set(PROTECTED_REPLAY_RETRY_PHASES_SECONDS)) != len(
@@ -434,6 +441,10 @@ def _execute_protected_terminal_replay(
     if max_attempts < 1:
         raise base.ReconciliationError("protected_terminal_replay_attempts_invalid")
     functions = base.resolve_stack_functions(cloudformation, stack_name)
+    overlap_retry_count = 0
+    cooperative_poll_count = 0
+    cooperative_handoff_observed = False
+    cooperative_acknowledged = False
     with _status_body_adapter():
         for attempt in range(1, max_attempts + 1):
             replay = v4.invoke_json_with_backpressure(
@@ -446,6 +457,38 @@ def _execute_protected_terminal_replay(
                     "force": True,
                 },
             )
+            cooperative = replay.get("cooperativeTerminalReplay") or {}
+            if cooperative and not isinstance(cooperative, Mapping):
+                raise base.ReconciliationError(
+                    "protected_terminal_replay_cooperative_state_invalid"
+                )
+            cooperative_state = (
+                str(cooperative.get("state") or "")
+                if isinstance(cooperative, Mapping)
+                else ""
+            )
+            cooperative_pending = bool(
+                cooperative_state in {"QUEUED", "CLAIMED"}
+                and replay.get("cooperativeTerminalReplayCompleted") is False
+                and replay.get("mutatingRunAttempted") is False
+            )
+            if cooperative_pending:
+                cooperative_handoff_observed = True
+                cooperative_poll_count += 1
+                if attempt >= max_attempts:
+                    raise base.ReconciliationError(
+                        "protected_terminal_replay_cooperative_retry_exhausted:"
+                        + request.slate_date
+                    )
+                sleep(
+                    PROTECTED_REPLAY_RETRY_DELAYS_SECONDS[
+                        min(
+                            attempt - 1,
+                            len(PROTECTED_REPLAY_RETRY_DELAYS_SECONDS) - 1,
+                        )
+                    ]
+                )
+                continue
             concurrency = replay.get("lockExecutionConcurrency") or {}
             overlap = bool(
                 str(replay.get("reason") or replay.get("status") or "")
@@ -462,6 +505,7 @@ def _execute_protected_terminal_replay(
                 )
             )
             if overlap:
+                overlap_retry_count += 1
                 if attempt >= max_attempts:
                     raise base.ReconciliationError(
                         "protected_terminal_replay_overlap_retry_exhausted:"
@@ -488,6 +532,38 @@ def _execute_protected_terminal_replay(
                 status,
                 request.slate_date,
             )
+            if cooperative_state in {"COMPLETED", "ACKNOWLEDGED"}:
+                cooperative_handoff_observed = True
+                acknowledgement = v4.invoke_json_with_backpressure(
+                    lambda_client,
+                    functions.lock,
+                    {
+                        "sport": "mlb",
+                        "run": TERMINAL_REPLAY_RUN,
+                        "slateDateEt": request.slate_date,
+                        "force": True,
+                        "acknowledgeCooperativeCompletion": True,
+                    },
+                )
+                acknowledgement_state = (
+                    acknowledgement.get("cooperativeTerminalReplay") or {}
+                )
+                if (
+                    acknowledgement.get("ok") is not True
+                    or acknowledgement.get(
+                        "cooperativeTerminalReplayAcknowledged"
+                    )
+                    is not True
+                    or not isinstance(acknowledgement_state, Mapping)
+                    or str(acknowledgement_state.get("state") or "")
+                    != "ACKNOWLEDGED"
+                    or str(acknowledgement.get("slateDateEt") or "")
+                    != request.slate_date
+                ):
+                    raise base.ReconciliationError(
+                        "protected_terminal_replay_cooperative_ack_invalid"
+                    )
+                cooperative_acknowledged = True
             break
         else:
             raise base.ReconciliationError(
@@ -499,7 +575,17 @@ def _execute_protected_terminal_replay(
         "lockEvidence": evidence,
         "protectedLockReplay": True,
         "protectedLockReplayAttemptCount": attempt,
-        "protectedLockReplayOverlapRetryCount": attempt - 1,
+        "protectedLockReplayOverlapRetryCount": overlap_retry_count,
+        "protectedLockReplayCooperativePollCount": cooperative_poll_count,
+        "protectedLockReplayCooperativeHandoffObserved": (
+            cooperative_handoff_observed
+        ),
+        "protectedLockReplayCooperativeAcknowledged": cooperative_acknowledged,
+        "protectedLockReplayAutomaticExecutionOwner": (
+            "eventbridge_daily_lock_schedule"
+            if cooperative_handoff_observed
+            else None
+        ),
         "protectedLockReplayLeaseSeconds": PROTECTED_REPLAY_LEASE_SECONDS,
         "protectedLockReplayRetryHorizonSeconds": (
             PROTECTED_REPLAY_RETRY_HORIZON_SECONDS
@@ -510,6 +596,9 @@ def _execute_protected_terminal_replay(
         ),
         "settlement409TreatedAsSuccess": False,
         "directTableWrite": False,
+        "directWorkflowTableWrite": False,
+        "activeLeaseMutationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
         "postStartPredictionCreationAllowed": False,
     }
 

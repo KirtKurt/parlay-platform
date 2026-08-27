@@ -67,15 +67,43 @@ class FakeLeaseTable:
 
     def __init__(self) -> None:
         self.item = None
+        self.queue_item = None
         self.put_calls = []
         self.delete_calls = []
         self.get_calls = []
+        self.update_calls = []
         self.put_error = None
         self.put_commits_then_error = None
         self.delete_error = None
         self.get_error = None
+        self.update_error = None
 
     def put_item(self, **kwargs):
+        if kwargs["Item"].get("SK") == "COOPERATIVE_TERMINAL_REPLAY#V1":
+            self.put_calls.append(copy.deepcopy(kwargs))
+            condition = kwargs["ConditionExpression"]
+            if condition == "attribute_not_exists(PK) AND attribute_not_exists(SK)":
+                may_replace = self.queue_item is None
+            else:
+                values = kwargs.get("ExpressionAttributeValues") or {}
+                may_replace = bool(
+                    isinstance(self.queue_item, dict)
+                    and self.queue_item.get("state") == values.get(":acknowledged")
+                    and self.queue_item.get("slate_date_et")
+                    == values.get(":previous_slate_date")
+                    and self.queue_item.get("record_type")
+                    == values.get(":record_type")
+                    and self.queue_item.get("coordination_version")
+                    == values.get(":version")
+                )
+            if not may_replace:
+                raise _client_error("ConditionalCheckFailedException", "PutItem")
+            if self.put_error is not None:
+                raise self.put_error
+            self.queue_item = copy.deepcopy(kwargs["Item"])
+            if self.put_commits_then_error is not None:
+                raise self.put_commits_then_error
+            return {}
         assert kwargs["ConditionExpression"] == self.CONDITION
         self.put_calls.append(copy.deepcopy(kwargs))
         now_epoch = int(kwargs["ExpressionAttributeValues"][":now"])
@@ -126,7 +154,110 @@ class FakeLeaseTable:
         assert kwargs["ConsistentRead"] is True
         if self.get_error is not None:
             raise self.get_error
+        if kwargs["Key"].get("SK") == "COOPERATIVE_TERMINAL_REPLAY#V1":
+            return (
+                {"Item": copy.deepcopy(self.queue_item)}
+                if self.queue_item
+                else {}
+            )
         return {"Item": copy.deepcopy(self.item)} if self.item else {}
+
+    def update_item(self, **kwargs):
+        self.update_calls.append(copy.deepcopy(kwargs))
+        if self.update_error is not None:
+            raise self.update_error
+        assert kwargs["Key"].get("SK") == "COOPERATIVE_TERMINAL_REPLAY#V1"
+        values = kwargs.get("ExpressionAttributeValues") or {}
+        current = self.queue_item
+        valid_identity = bool(
+            isinstance(current, dict)
+            and current.get("record_type") == values.get(":record_type")
+            and current.get("coordination_version") == values.get(":version")
+            and current.get("slate_date_et") == values.get(":slate_date")
+        )
+        if ":acknowledged" in values:
+            allowed = valid_identity and current.get("state") == values.get(
+                ":completed"
+            )
+            next_state = values[":acknowledged"]
+        elif ":receipt" in values:
+            allowed = bool(
+                valid_identity
+                and current.get("state") == values.get(":claimed")
+                and current.get("claim_owner") == values.get(":owner")
+            )
+            next_state = values[":completed"]
+        elif ":expires_epoch" in values:
+            allowed = bool(
+                valid_identity
+                and (
+                    current.get("state") == values.get(":queued")
+                    or (
+                        current.get("state") == values.get(":claimed")
+                        and int(current.get("claim_expires_at_epoch") or 0)
+                        <= int(values.get(":now_epoch") or 0)
+                    )
+                )
+            )
+            next_state = values[":claimed"]
+        else:
+            allowed = bool(
+                valid_identity
+                and current.get("state") == values.get(":claimed")
+                and current.get("claim_owner") == values.get(":owner")
+            )
+            next_state = values[":queued"]
+        if not allowed:
+            raise _client_error("ConditionalCheckFailedException", "UpdateItem")
+
+        updated = copy.deepcopy(current)
+        updated["state"] = next_state
+        if next_state == values.get(":claimed"):
+            updated.update(
+                {
+                    "claim_owner": values[":owner"],
+                    "claim_acquired_at_utc": values[":now_utc"],
+                    "claim_acquired_at_epoch": values[":now_epoch"],
+                    "claim_expires_at_utc": values[":expires_utc"],
+                    "claim_expires_at_epoch": values[":expires_epoch"],
+                }
+            )
+        elif next_state == values.get(":completed"):
+            updated.update(
+                {
+                    "completed_at_utc": values[":now_utc"],
+                    "completed_at_epoch": values[":now_epoch"],
+                    "replay_receipt": copy.deepcopy(values[":receipt"]),
+                }
+            )
+        elif next_state == values.get(":acknowledged"):
+            updated.update(
+                {
+                    "acknowledged_at_utc": values[":now_utc"],
+                    "acknowledged_at_epoch": values[":now_epoch"],
+                }
+            )
+        else:
+            updated.update(
+                {
+                    "last_failure_at_utc": values[":now_utc"],
+                    "last_failure_at_epoch": values[":now_epoch"],
+                }
+            )
+        if next_state != values.get(":claimed"):
+            for field in (
+                "claim_owner",
+                "claim_acquired_at_utc",
+                "claim_acquired_at_epoch",
+                "claim_expires_at_utc",
+                "claim_expires_at_epoch",
+            ):
+                updated.pop(field, None)
+        self.queue_item = updated
+        result = {}
+        if kwargs.get("ReturnValues") == "ALL_NEW":
+            result["Attributes"] = copy.deepcopy(updated)
+        return result
 
 
 class FakeContext:
@@ -157,6 +288,59 @@ def _manual_event(*, token: str = "test-admin-token") -> dict:
         "requestContext": {"stage": "test"},
         "headers": {"x-inqsi-admin-token": token},
         "body": json.dumps({"date": "2026-07-21"}),
+    }
+
+
+def _cooperative_event(
+    slate_date: str = "2026-07-20", *, acknowledge: bool = False
+) -> dict:
+    event = {
+        "sport": "mlb",
+        "run": "prospective_terminal_backlog_reconciliation_v5",
+        "slateDateEt": slate_date,
+        "force": True,
+    }
+    if acknowledge:
+        event["acknowledgeCooperativeCompletion"] = True
+    return event
+
+
+def _successful_terminal_replay_payload(slate_date: str = "2026-07-20") -> dict:
+    progress = {
+        "manifestGameCount": 15,
+        "canonicalCount": 0,
+        "noPredictionDataCount": 15,
+        "lockOutcomeCount": 15,
+        "missedCount": 0,
+        "dueMissingCount": 0,
+    }
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "slateDateEt": slate_date,
+        "reason": "PROVEN_NO_PREDICTION_TERMINALS_RECONCILED",
+        "postStartPredictionCreationAllowed": False,
+        "perGameLockProgress": progress,
+        "missedLockTerminalReconciliation": {
+            "ok": True,
+            "version": "test-protected-terminal-repair",
+            "slateDateEt": slate_date,
+            "manifestGameCount": 15,
+            "reconciledCount": 15,
+            "remainingMissedCount": 0,
+            "unresolved": [],
+            "progressAfter": progress,
+            "postStartPredictionCreationAllowed": False,
+        },
+    }
+
+
+def _successful_current_slate_payload(slate_date: str = "2026-07-21") -> dict:
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "slateDateEt": slate_date,
+        "currentSlateProcessed": True,
     }
 
 
@@ -230,10 +414,17 @@ def _load_handler(
         delegate_calls.append((event, context))
         if delegate_error is not None:
             raise delegate_error
+        selected_payload = (
+            delegate_payload(event, context)
+            if callable(delegate_payload)
+            else delegate_payload
+        )
         return {
-            "statusCode": 200 if (delegate_payload or {}).get("ok", True) else 500,
+            "statusCode": 200 if (selected_payload or {}).get("ok", True) else 500,
             "headers": {"content-type": "application/json"},
-            "body": json.dumps(delegate_payload or {"ok": True, "delegated": True}),
+            "body": json.dumps(
+                selected_payload or {"ok": True, "delegated": True}
+            ),
         }
 
     daily_lock.lambda_handler = delegate
@@ -560,6 +751,512 @@ def test_active_slow_run_causes_five_fresh_minute_ticks_to_skip_without_owner_le
         assert delegate_calls == []
         assert len(table.put_calls) == 6
         assert len(table.delete_calls) == 0
+
+
+def test_exact_historical_v5_request_queues_idempotently_without_touching_lease():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, delegate_calls):
+        first = handler.lambda_handler(
+            _cooperative_event(),
+            FakeContext(request_id="manual-recovery-1", remaining_millis=900_000),
+        )
+        second = handler.lambda_handler(
+            _cooperative_event(),
+            FakeContext(request_id="manual-recovery-2", remaining_millis=900_000),
+        )
+
+        first_payload = _body(first)
+        second_payload = _body(second)
+        assert first["statusCode"] == 200
+        assert first_payload["status"] == "QUEUED_FOR_EVENTBRIDGE_LOCK_OWNER"
+        assert first_payload["cooperativeTerminalReplay"]["state"] == "QUEUED"
+        assert second_payload["cooperativeTerminalReplay"]["state"] == "QUEUED"
+        assert first_payload["mutatingRunAttempted"] is False
+        assert first_payload["activeLeaseMutationAllowed"] is False
+        assert first_payload["postStartPredictionCreationAllowed"] is False
+        assert first_payload["immutablePredictionRewriteAllowed"] is False
+        assert delegate_calls == []
+        assert table.item is None
+        assert table.delete_calls == []
+        assert len(table.put_calls) == 1
+        assert table.put_calls[0]["Item"]["SK"] == (
+            "COOPERATIVE_TERMINAL_REPLAY#V1"
+        )
+
+
+@pytest.mark.parametrize(
+    "event",
+    (
+        _cooperative_event("2026-07-21"),
+        _cooperative_event("2026-07-22"),
+        _cooperative_event("not-a-date"),
+        {
+            **_cooperative_event("2026-07-20"),
+            "sport": "soccer",
+        },
+        {
+            **_cooperative_event("2026-07-20"),
+            "force": False,
+        },
+    ),
+)
+def test_cooperative_queue_rejects_nonexact_or_nonhistorical_contract(event):
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, delegate_calls):
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(event, FakeContext()),
+            "MLB_SCHEDULED_LOCK_PREREQUISITE_FAILED",
+        )
+        assert delegate_calls == []
+        assert table.item is None
+        assert table.queue_item is None
+        assert table.put_calls == []
+        assert table.delete_calls == []
+
+
+def test_eventbridge_owner_runs_current_first_then_completes_redacted_handoff():
+    table = FakeLeaseTable()
+
+    def payload_for(event, context):
+        del context
+        if event.get("run") == "daily_lock_check":
+            return {
+                "ok": True,
+                "sport": "mlb",
+                "slateDateEt": "2026-07-21",
+                "currentSlateProcessed": True,
+            }
+        payload = _successful_terminal_replay_payload()
+        payload["secretToken"] = "must-not-enter-coordination-record"
+        payload["failures"] = [{"authorization": "Bearer hidden"}]
+        return payload
+
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=payload_for,
+    ) as (handler, _, delegate_calls):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        response = handler.lambda_handler(
+            _scheduled_event(),
+            FakeContext(request_id="eventbridge-owner", remaining_millis=900_000),
+        )
+        payload = _body(response)
+
+        assert [call[0]["run"] for call in delegate_calls] == [
+            "daily_lock_check",
+            "prospective_terminal_backlog_reconciliation_v5",
+        ]
+        assert delegate_calls[1][0]["cooperativeEventBridgeOwner"] is True
+        assert payload["currentSlateProcessed"] is True
+        owner = payload["cooperativeTerminalReplayOwnerExecution"]
+        assert owner["state"] == "COMPLETED"
+        assert owner["currentSlateRanFirst"] is True
+        assert owner["historicalReplayCompleted"] is True
+        assert owner["claimOwnerIsCurrentLeaseOwner"] is True
+        assert table.item is None
+        assert len(table.delete_calls) == 1
+        assert table.queue_item["state"] == "COMPLETED"
+        stored = json.dumps(table.queue_item, sort_keys=True)
+        assert "must-not-enter-coordination-record" not in stored
+        assert "Bearer hidden" not in stored
+        assert table.queue_item["replay_receipt"]["cooperativeReceiptRedacted"] is True
+
+        # This is the backward-compatible contract consumed by an old v5
+        # checkout: the identical retry receives canonical replay evidence and
+        # still never acquires the lease or invokes the delegate itself.
+        delegate_count = len(delegate_calls)
+        poll = handler.lambda_handler(_cooperative_event(), FakeContext())
+        poll_payload = _body(poll)
+        assert poll_payload["cooperativeTerminalReplayCompleted"] is True
+        assert poll_payload["cooperativeTerminalReplay"]["state"] == "ACKNOWLEDGED"
+        assert poll_payload["missedLockTerminalReconciliation"]["ok"] is True
+        assert poll_payload["mutatingRunAttemptedByPollingRequest"] is False
+        assert len(delegate_calls) == delegate_count
+        assert table.item is None
+        assert table.queue_item["state"] == "ACKNOWLEDGED"
+        legacy_v57_overlap = bool(
+            str(poll_payload.get("reason") or poll_payload.get("status") or "")
+            == "SKIPPED_OVERLAPPING_LOCK_EXECUTION"
+            or str(poll_payload.get("error") or "")
+            == "MLB_LOCK_EXECUTION_ALREADY_RUNNING"
+            or (
+                poll_payload.get("skipped") is True
+                and poll_payload.get("mutatingRunAttempted") is False
+            )
+        )
+        assert legacy_v57_overlap is False
+
+        # v5.7 has no explicit ACK call.  The completed poll above performs the
+        # ACK server-side, so the same old workflow can immediately enqueue its
+        # next exact historical slate.
+        next_date = handler.lambda_handler(
+            _cooperative_event("2026-07-19"),
+            FakeContext(),
+        )
+        assert _body(next_date)["cooperativeTerminalReplay"]["state"] == "QUEUED"
+        assert table.queue_item["slate_date_et"] == "2026-07-19"
+
+
+def test_completed_receipt_survives_acknowledgement_replacement_race():
+    table = FakeLeaseTable()
+
+    def payload_for(event, context):
+        del context
+        if event.get("run") == "daily_lock_check":
+            return _successful_current_slate_payload()
+        return _successful_terminal_replay_payload()
+
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=payload_for,
+    ) as (handler, _, _):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        handler.lambda_handler(
+            _scheduled_event(),
+            FakeContext(request_id="completing-owner", remaining_millis=900_000),
+        )
+        assert table.queue_item["state"] == "COMPLETED"
+        completed_receipt = copy.deepcopy(table.queue_item["replay_receipt"])
+
+        original_update = table.update_item
+
+        def acknowledge_then_replace(**kwargs):
+            result = original_update(**kwargs)
+            values = kwargs.get("ExpressionAttributeValues") or {}
+            if ":acknowledged" in values:
+                replacement = copy.deepcopy(table.queue_item)
+                replacement.update(
+                    {
+                        "state": "QUEUED",
+                        "slate_date_et": "2026-07-19",
+                        "requested_at_epoch": 9_999_999_998,
+                    }
+                )
+                replacement.pop("replay_receipt", None)
+                table.queue_item = replacement
+                raise _client_error("InternalServerError", "UpdateItem")
+            return result
+
+        table.update_item = acknowledge_then_replace
+        poll = _body(handler.lambda_handler(_cooperative_event(), FakeContext()))
+
+        assert poll["cooperativeTerminalReplayCompleted"] is True
+        assert poll["cooperativeTerminalReplay"]["state"] == "ACKNOWLEDGED"
+        assert poll["missedLockTerminalReconciliation"] == completed_receipt[
+            "missedLockTerminalReconciliation"
+        ]
+        assert table.queue_item["state"] == "QUEUED"
+        assert table.queue_item["slate_date_et"] == "2026-07-19"
+
+
+def test_insufficient_remaining_time_defers_without_claim_after_current_slate():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, delegate_calls):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        response = handler.lambda_handler(
+            _scheduled_event(),
+            FakeContext(request_id="short-owner", remaining_millis=659_000),
+        )
+        payload = _body(response)
+
+        assert [call[0]["run"] for call in delegate_calls] == ["daily_lock_check"]
+        status = payload["cooperativeTerminalReplayOwnerExecution"]
+        assert status["state"] == "DEFERRED_INSUFFICIENT_REMAINING_TIME"
+        assert status["currentSlateRanFirst"] is True
+        assert status["queueReadAttempted"] is False
+        assert table.queue_item["state"] == "QUEUED"
+        assert table.update_calls == []
+        assert table.item is None
+
+
+def test_live_cooperative_claim_is_not_reported_as_stale_or_reclaimed():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, delegate_calls):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        table.queue_item.update(
+            {
+                "state": "CLAIMED",
+                "claim_owner": "still-live-owner",
+                "claim_expires_at_epoch": 9_999_999_999,
+            }
+        )
+
+        response = handler.lambda_handler(
+            _scheduled_event(),
+            FakeContext(request_id="waiting-owner", remaining_millis=900_000),
+        )
+        payload = _body(response)
+
+        assert [call[0]["run"] for call in delegate_calls] == ["daily_lock_check"]
+        status = payload["cooperativeTerminalReplayOwnerExecution"]
+        assert status["state"] == "CLAIMED"
+        assert status["staleClaimReclaimable"] is False
+        assert table.queue_item["claim_owner"] == "still-live-owner"
+        assert table.update_calls == []
+        assert table.item is None
+
+
+def test_inner_overlap_without_pending_handoff_retains_normal_skip_behavior():
+    table = FakeLeaseTable()
+
+    def overlap_payload(event, context):
+        del event, context
+        return {
+            "ok": True,
+            "sport": "mlb",
+            "slateDateEt": "2026-07-21",
+            "status": "SKIPPED_OVERLAPPING_LOCK_EXECUTION",
+            "skipped": True,
+            "mutatingRunAttempted": False,
+        }
+
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=overlap_payload,
+    ) as (handler, _, delegate_calls):
+        response = handler.lambda_handler(
+            _scheduled_event(),
+            FakeContext(request_id="normal-overlap", remaining_millis=900_000),
+        )
+        payload = _body(response)
+
+        assert payload["status"] == "SKIPPED_OVERLAPPING_LOCK_EXECUTION"
+        assert [call[0]["run"] for call in delegate_calls] == ["daily_lock_check"]
+        assert table.queue_item is None
+        assert table.update_calls == []
+        assert table.item is None
+
+
+@pytest.mark.parametrize(
+    "current_payload",
+    (
+        {"sport": "mlb", "slateDateEt": "2026-07-21"},
+        {"ok": True, "sport": "soccer", "slateDateEt": "2026-07-21"},
+        {"ok": True, "sport": "mlb", "slateDateEt": "2026-07-20"},
+    ),
+)
+def test_pending_handoff_requires_exact_successful_current_slate_proof(
+    current_payload,
+):
+    table = FakeLeaseTable()
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=current_payload,
+    ) as (handler, _, delegate_calls):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                _scheduled_event(),
+                FakeContext(request_id="unproven-current", remaining_millis=900_000),
+            ),
+            "MLB_CURRENT_SLATE_LOCK_NOT_PROCESSED_BEFORE_COOPERATIVE_REPLAY",
+        )
+
+        assert [call[0]["run"] for call in delegate_calls] == ["daily_lock_check"]
+        assert table.queue_item["state"] == "QUEUED"
+        assert table.update_calls == []
+        assert table.item is None
+
+
+def test_noncanonical_methodless_daily_shape_cannot_claim_handoff():
+    table = FakeLeaseTable()
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=_successful_current_slate_payload(),
+    ) as (handler, _, delegate_calls):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        noncanonical = _scheduled_event()
+        noncanonical.pop("auto_ingest")
+        response = handler.lambda_handler(
+            noncanonical,
+            FakeContext(request_id="noncanonical-owner", remaining_millis=900_000),
+        )
+
+        assert _body(response)["ok"] is True
+        assert [call[0]["run"] for call in delegate_calls] == ["daily_lock_check"]
+        assert table.queue_item["state"] == "QUEUED"
+        assert table.update_calls == []
+        assert table.item is None
+
+
+def test_current_slate_failure_prevents_historical_claim_or_replay():
+    table = FakeLeaseTable()
+
+    def payload_for(event, context):
+        del context
+        if event.get("run") == "daily_lock_check":
+            return {"ok": False, "reason": "CURRENT_SLATE_FAILED_CLOSED"}
+        return _successful_terminal_replay_payload()
+
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=payload_for,
+    ) as (handler, _, delegate_calls):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                _scheduled_event(),
+                FakeContext(
+                    request_id="current-failure-owner",
+                    remaining_millis=900_000,
+                ),
+            ),
+            "MLB_SCHEDULED_LOCK_FAILED",
+        )
+        assert [call[0]["run"] for call in delegate_calls] == ["daily_lock_check"]
+        assert table.queue_item["state"] == "QUEUED"
+        assert table.update_calls == []
+        assert table.item is None
+        assert len(table.delete_calls) == 1
+
+
+def test_inner_current_slate_overlap_cannot_be_treated_as_current_first():
+    table = FakeLeaseTable()
+
+    def payload_for(event, context):
+        del context
+        if event.get("run") == "daily_lock_check":
+            return {
+                "ok": True,
+                "sport": "mlb",
+                "status": "SKIPPED_OVERLAPPING_LOCK_EXECUTION",
+                "reason": "SKIPPED_OVERLAPPING_LOCK_EXECUTION",
+                "skipped": True,
+                "mutatingRunAttempted": False,
+            }
+        return _successful_terminal_replay_payload()
+
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=payload_for,
+    ) as (handler, _, delegate_calls):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                _scheduled_event(),
+                FakeContext(request_id="inner-overlap", remaining_millis=900_000),
+            ),
+            "MLB_CURRENT_SLATE_LOCK_NOT_PROCESSED_BEFORE_COOPERATIVE_REPLAY",
+        )
+        assert [call[0]["run"] for call in delegate_calls] == ["daily_lock_check"]
+        assert table.queue_item["state"] == "QUEUED"
+        assert table.update_calls == []
+        assert table.item is None
+        assert len(table.delete_calls) == 1
+
+
+def test_historical_failure_is_requeued_fail_closed_without_lease_bypass():
+    table = FakeLeaseTable()
+
+    def payload_for(event, context):
+        del context
+        if event.get("run") == "daily_lock_check":
+            return _successful_current_slate_payload()
+        return {
+            "ok": False,
+            "sport": "mlb",
+            "slateDateEt": "2026-07-20",
+            "reason": "PROTECTED_REPLAY_FAILED_CLOSED",
+        }
+
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=payload_for,
+    ) as (handler, _, delegate_calls):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                _scheduled_event(),
+                FakeContext(request_id="replay-failure-owner", remaining_millis=900_000),
+            ),
+            "MLB_SCHEDULED_LOCK_FAILED",
+        )
+
+        assert [call[0]["run"] for call in delegate_calls] == [
+            "daily_lock_check",
+            "prospective_terminal_backlog_reconciliation_v5",
+        ]
+        assert table.queue_item["state"] == "QUEUED"
+        assert "claim_owner" not in table.queue_item
+        assert table.item is None
+        assert len(table.delete_calls) == 1
+
+
+def test_stale_claim_is_owner_fenced_reclaimed_and_ack_allows_next_date():
+    table = FakeLeaseTable()
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=lambda event, context: (
+            _successful_current_slate_payload()
+            if event.get("run") == "daily_lock_check"
+            else _successful_terminal_replay_payload()
+        ),
+    ) as (handler, _, _):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        table.queue_item.update(
+            {
+                "state": "CLAIMED",
+                "claim_owner": "expired-owner",
+                "claim_expires_at_epoch": 1,
+            }
+        )
+        response = handler.lambda_handler(
+            _scheduled_event(),
+            FakeContext(request_id="reclaiming-owner", remaining_millis=900_000),
+        )
+        assert _body(response)["cooperativeTerminalReplayOwnerExecution"][
+            "state"
+        ] == "COMPLETED"
+        assert table.queue_item["state"] == "COMPLETED"
+
+        ack = handler.lambda_handler(
+            _cooperative_event(acknowledge=True),
+            FakeContext(),
+        )
+        assert _body(ack)["cooperativeTerminalReplayAcknowledged"] is True
+        assert table.queue_item["state"] == "ACKNOWLEDGED"
+
+        next_request = handler.lambda_handler(
+            _cooperative_event("2026-07-19"),
+            FakeContext(),
+        )
+        assert _body(next_request)["cooperativeTerminalReplay"]["state"] == "QUEUED"
+        assert table.queue_item["slate_date_et"] == "2026-07-19"
+
+
+def test_completion_is_conditioned_on_the_current_claim_owner():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, delegate_calls):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        claimed, _ = handler._claim_cooperative_replay(
+            owner="actual-outer-lease-owner",
+            context=FakeContext(remaining_millis=900_000),
+            current_slate_response={
+                "statusCode": 200,
+                "body": json.dumps(_successful_current_slate_payload()),
+            },
+            expected_slate_date="2026-07-21",
+        )
+        assert claimed is not None
+        replay_response = {
+            "statusCode": 200,
+            "body": json.dumps(_successful_terminal_replay_payload()),
+        }
+        with pytest.raises(
+            RuntimeError,
+            match="MLB_COOPERATIVE_REPLAY_COMPLETE_FAILED",
+        ):
+            handler._complete_cooperative_replay(
+                item=claimed,
+                owner="different-owner",
+                response=replay_response,
+            )
+
+        assert delegate_calls == []
+        assert table.queue_item["state"] == "CLAIMED"
+        assert table.queue_item["claim_owner"] == "actual-outer-lease-owner"
+        assert table.item is None
+        assert table.delete_calls == []
 
 
 def test_expired_execution_lease_is_reclaimed_and_released():
