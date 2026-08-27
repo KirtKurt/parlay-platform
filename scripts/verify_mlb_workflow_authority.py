@@ -284,7 +284,7 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             )
             != 1
             or re.search(
-                r"(?m)^\\s+TARGET_DEPLOY_SHA: \\$\\{\\{ github\\.event\\.workflow_run",
+                r"(?m)^\s+TARGET_DEPLOY_SHA: \$\{\{ github\.event\.workflow_run",
                 postdeploy,
             )
         ):

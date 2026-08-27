@@ -913,3 +913,23 @@ def test_rejects_actions_write_on_aws_deploy_job(tmp_path: Path) -> None:
     errors = authority.verify_repository(root)
     assert "canonical_deploy_job_actions_write_too_broad" in errors
     assert "canonical_deploy_actions_write_scope_invalid" in errors
+
+def test_rejects_exact_sha_rebound_to_legacy_workflow_run_event(
+    tmp_path: Path,
+) -> None:
+    root = _copy_contract(tmp_path)
+    workflow = root / authority.POSTDEPLOY_VERIFICATION_WORKFLOW
+    text = workflow.read_text(encoding="utf-8")
+    workflow.write_text(
+        text.replace(
+            "TARGET_DEPLOY_SHA: ${{ needs.resolve.outputs.target_deploy_sha }}",
+            "TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        "postdeploy_verification_exact_sha_binding_invalid"
+        in authority.verify_repository(root)
+    )
