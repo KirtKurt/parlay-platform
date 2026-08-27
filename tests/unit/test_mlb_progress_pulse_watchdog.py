@@ -326,7 +326,7 @@ def test_job_annotation_distinguishes_noop_and_actual_reporter(monkeypatch) -> N
         retry_cooldown_minutes=10,
     )
 
-    assert calls == [107, 108]
+    assert calls == [108, 107]
     assert rows[0][watchdog.REPORTER_ATTEMPT_PROOF_KEY] is False
     assert rows[1][watchdog.REPORTER_ATTEMPT_PROOF_KEY] is True
 
