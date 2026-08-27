@@ -1,45 +1,59 @@
-name: MLB progress pulse cadence watchdog
+name: MLB progress pulse self-renewing clock
 
 on:
-  schedule:
-    # Six off-boundary recovery opportunities per hour. The 35-minute stale
-    # gate prevents fresh/noise-only dispatches.
-    - cron: '7,17,27,37,47,57 * * * *'
   workflow_dispatch:
+    inputs:
+      renewal:
+        description: Wait one clock interval before checking
+        required: false
+        default: false
+        type: boolean
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-progress-pulse-cadence-watchdog.yml'
+      - 'scripts/check_mlb_progress_pulse_staleness.py'
 
-permissions:
-  actions: read
-  contents: read
-  issues: read
+permissions: {}
 
 concurrency:
-  group: mlb-progress-pulse-cadence-watchdog
+  group: mlb-progress-pulse-self-renewing-clock
   cancel-in-progress: false
 
 env:
-  MLB_PROGRESS_STALE_AFTER_MINUTES: '35'
+  MLB_PROGRESS_SELF_CLOCK_MINIMUM_AGE_MINUTES: '25'
+  MLB_PROGRESS_SELF_CLOCK_WAIT_SECONDS: '600'
 
 jobs:
   decide:
+    permissions:
+      actions: read
+      contents: read
+      issues: read
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     outputs:
       dispatch_required: ${{ steps.decision.outputs.dispatch_required }}
       reason: ${{ steps.decision.outputs.reason }}
       visible_pulse_age_minutes: ${{ steps.decision.outputs.visible_pulse_age_minutes }}
     steps:
+      - name: Wait for the next bounded clock interval
+        if: ${{ inputs.renewal == true }}
+        run: sleep "$MLB_PROGRESS_SELF_CLOCK_WAIT_SECONDS"
+
       - name: Checkout exact main source
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Decide whether the primary pulse is overdue
+      - name: Decide whether the fixed reporter is due
         id: decision
         env:
           GH_TOKEN: ${{ github.token }}
@@ -48,30 +62,30 @@ jobs:
           python -m py_compile scripts/check_mlb_progress_pulse_staleness.py
           ! grep -Ei 'boto3|aws[[:space:]]+(dynamodb|lambda)|put_item|update_item|delete_item' scripts/check_mlb_progress_pulse_staleness.py
           python scripts/check_mlb_progress_pulse_staleness.py \
-            --stale-after-minutes "$MLB_PROGRESS_STALE_AFTER_MINUTES" \
+            --stale-after-minutes "$MLB_PROGRESS_SELF_CLOCK_MINIMUM_AGE_MINUTES" \
             --retry-cooldown-minutes 10 \
             --github-output "$GITHUB_OUTPUT"
 
-      - name: Record watchdog decision
+      - name: Record self-clock decision
         env:
           REQUIRED: ${{ steps.decision.outputs.dispatch_required }}
           REASON: ${{ steps.decision.outputs.reason }}
           VISIBLE_AGE: ${{ steps.decision.outputs.visible_pulse_age_minutes }}
         run: |
           {
-            echo '## MLB pulse cadence watchdog'
+            echo '## MLB pulse self-renewing clock'
             echo
-            echo "- Recovery dispatch required: ${REQUIRED}"
+            echo "- Reporter due: ${REQUIRED}"
             echo "- Decision: ${REASON}"
             echo "- Previous visible pulse age: ${VISIBLE_AGE} minutes"
+            echo "- Next renewal delay: ${MLB_PROGRESS_SELF_CLOCK_WAIT_SECONDS} seconds"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  dispatch:
+  dispatch-reporter:
     needs: decide
     if: needs.decide.outputs.dispatch_required == 'true'
     permissions:
       actions: write
-      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -84,3 +98,31 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --ref main
           echo 'Dispatched mlb-30m-progress-pulse.yml on main.' >> "$GITHUB_STEP_SUMMARY"
+
+  renew-clock:
+    needs: [decide, dispatch-reporter]
+    if: ${{ always() }}
+    permissions:
+      actions: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Keep exactly one fixed self-renewing chain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          other_active="$(
+            gh api \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/mlb-progress-pulse-cadence-watchdog.yml/runs?per_page=100" \
+              --jq "[.workflow_runs[] | select(.id != $GITHUB_RUN_ID and (.status == \"queued\" or .status == \"in_progress\" or .status == \"waiting\" or .status == \"pending\" or .status == \"requested\"))] | length"
+          )"
+          if [ "$other_active" -gt 0 ]; then
+            echo "Existing active clock run found; renewal dispatch suppressed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh workflow run mlb-progress-pulse-cadence-watchdog.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f renewal=true
+          echo 'Queued one fixed self-renewing clock iteration on main.' >> "$GITHUB_STEP_SUMMARY"

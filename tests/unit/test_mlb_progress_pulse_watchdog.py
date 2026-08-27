@@ -171,22 +171,68 @@ def test_cli_reads_35_minute_threshold_from_environment(monkeypatch) -> None:
     assert observed["stale_after_minutes"] == 35
 
 
-def test_independent_cadence_watchdog_is_stale_gated_and_read_only() -> None:
-    watchdog_workflow = (
+def test_self_renewing_clock_is_bounded_deduplicated_and_read_only() -> None:
+    clock = (
         ROOT / ".github/workflows/mlb-progress-pulse-cadence-watchdog.yml"
     ).read_text()
 
-    assert "cron: '7,17,27,37,47,57 * * * *'" in watchdog_workflow
-    assert '--stale-after-minutes "$MLB_PROGRESS_STALE_AFTER_MINUTES"' in watchdog_workflow
-    assert "MLB_PROGRESS_STALE_AFTER_MINUTES: '35'" in watchdog_workflow
-    assert "needs.decide.outputs.dispatch_required == 'true'" in watchdog_workflow
-    assert "gh workflow run mlb-30m-progress-pulse.yml" in watchdog_workflow
-    assert '--ref main' in watchdog_workflow
-    assert "actions: write" in watchdog_workflow
-    assert "issues: write" not in watchdog_workflow
-    assert "aws-actions/configure-aws-credentials" not in watchdog_workflow
-    assert "AWS_ACCESS_KEY_ID" not in watchdog_workflow
-    assert "scripts/check_mlb_progress_pulse_staleness.py" in watchdog_workflow
+    assert "schedule:" not in clock
+    assert "workflow_dispatch:" in clock
+    assert "branches: [main]" in clock
+    assert "inputs.renewal == true" in clock
+    assert 'sleep "$MLB_PROGRESS_SELF_CLOCK_WAIT_SECONDS"' in clock
+    assert "MLB_PROGRESS_SELF_CLOCK_WAIT_SECONDS: '600'" in clock
+    assert "timeout-minutes: 12" in clock
+    assert "cancel-in-progress: false" in clock
+    assert "other_active" in clock
+    assert ".id != $GITHUB_RUN_ID" in clock
+    assert "Existing active clock run found; renewal dispatch suppressed." in clock
+    assert "issues: write" not in clock
+    assert "aws-actions/configure-aws-credentials" not in clock
+    assert "AWS_ACCESS_KEY_ID" not in clock
+
+
+def test_self_renewing_clock_uses_fixed_due_gate_targets_and_refs() -> None:
+    clock = (
+        ROOT / ".github/workflows/mlb-progress-pulse-cadence-watchdog.yml"
+    ).read_text()
+
+    assert "MLB_PROGRESS_SELF_CLOCK_MINIMUM_AGE_MINUTES: '25'" in clock
+    assert (
+        '--stale-after-minutes "$MLB_PROGRESS_SELF_CLOCK_MINIMUM_AGE_MINUTES"'
+        in clock
+    )
+    assert "needs.decide.outputs.dispatch_required == 'true'" in clock
+    assert clock.count("gh workflow run mlb-30m-progress-pulse.yml") == 1
+    assert (
+        clock.count("gh workflow run mlb-progress-pulse-cadence-watchdog.yml")
+        == 1
+    )
+    assert clock.count('--ref main') == 2
+    assert clock.count("actions: write") == 2
+    assert "scripts/check_mlb_progress_pulse_staleness.py" in clock
+
+
+def test_self_clock_due_gate_preserves_25_minute_minimum_spacing() -> None:
+    at_boundary = watchdog.evaluate_staleness(
+        [_comment("2026-08-26T21:35:00Z")],
+        (),
+        now=NOW,
+        stale_after_minutes=25,
+        retry_cooldown_minutes=10,
+    )
+    just_due = watchdog.evaluate_staleness(
+        [_comment("2026-08-26T21:34:59Z")],
+        (),
+        now=NOW,
+        stale_after_minutes=25,
+        retry_cooldown_minutes=10,
+    )
+
+    assert at_boundary["visiblePulseAgeMinutes"] == 25.0
+    assert at_boundary["dispatchRequired"] is False
+    assert just_due["visiblePulseAgeMinutes"] == 25.017
+    assert just_due["dispatchRequired"] is True
 
 
 def test_primary_reporter_accepts_fixed_watchdog_dispatch() -> None:
