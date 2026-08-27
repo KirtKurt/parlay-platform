@@ -325,8 +325,9 @@ def test_protected_replay_waits_through_full_lease_then_succeeds(monkeypatch):
         + subject.PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS
     )
     assert result["protectedLockReplayRetryScheduleDephased"] is True
-    assert result["protectedLockReplayRetryDistinctMinutePhaseCount"] == len(
-        subject.PROTECTED_REPLAY_RETRY_DELAYS_SECONDS
+    assert result["protectedLockReplayRetryDistinctMinutePhaseCount"] == min(
+        subject.PROTECTED_REPLAY_SCHEDULE_PERIOD_SECONDS,
+        len(subject.PROTECTED_REPLAY_RETRY_DELAYS_SECONDS),
     )
     assert result["protectedLockReplayRetryHorizonSeconds"] >= (
         subject.PROTECTED_REPLAY_COOPERATIVE_BOUND_SECONDS
@@ -346,8 +347,28 @@ def test_protected_replay_retry_schedule_dephases_every_minute_attempt():
     assert len(delays) == subject.MAX_PROTECTED_REPLAY_ATTEMPTS - 1
     assert sum(delays) == subject.PROTECTED_REPLAY_RETRY_HORIZON_SECONDS
     assert sum(delays[:-1]) >= subject.PROTECTED_REPLAY_COOPERATIVE_BOUND_SECONDS
+    expected_two_phase_bound = (
+        (
+            subject.PROTECTED_REPLAY_MAX_MANIFEST_GAMES
+            * 2
+            * subject.PROTECTED_REPLAY_MAX_EVENTBRIDGE_TICKS_PER_TARGET
+            + 1
+        )
+        * subject.PROTECTED_REPLAY_SCHEDULE_PERIOD_SECONDS
+        + subject.PROTECTED_REPLAY_LEASE_SECONDS
+        + subject.PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS
+    )
+    assert expected_two_phase_bound == (
+        subject.PROTECTED_REPLAY_WORST_CASE_HANDOFF_SECONDS
+    )
+    assert sum(delays) >= expected_two_phase_bound
+    assert 80 * 60 < sum(delays) < 100 * 60
     assert tuple(phases) == subject.PROTECTED_REPLAY_RETRY_PHASES_SECONDS
-    assert len(set(phases)) == len(phases)
+    assert len(set(phases)) == min(
+        subject.PROTECTED_REPLAY_SCHEDULE_PERIOD_SECONDS,
+        len(phases),
+    )
+    assert max(phases.count(phase) for phase in set(phases)) <= 2
 
 
 def test_protected_replay_polls_eventbridge_handoff_validates_then_acks(
@@ -576,3 +597,17 @@ def test_source_has_no_direct_storage_prediction_or_authority_writer():
     assert subject.SETTLEMENT_RUN in source
     assert subject.TERMINAL_REPLAY_RUN in source
     assert "settlement409TreatedAsSuccess" in source
+
+
+def test_default_protected_replay_horizon_covers_bounded_two_phase_handoff():
+    assert subject.MAX_PROTECTED_REPLAY_ATTEMPTS == 90
+    assert len(subject.PROTECTED_REPLAY_RETRY_DELAYS_SECONDS) == 89
+    assert 80 * 60 <= subject.PROTECTED_REPLAY_RETRY_HORIZON_SECONDS <= 100 * 60
+    assert subject.PROTECTED_REPLAY_MAX_MANIFEST_GAMES == 15
+    assert (
+        subject.PROTECTED_REPLAY_RETRY_HORIZON_SECONDS
+        >= subject.PROTECTED_REPLAY_WORST_CASE_HANDOFF_SECONDS
+    )
+    assert subject.PROTECTED_REPLAY_RETRY_HORIZON_SECONDS == sum(
+        subject.PROTECTED_REPLAY_RETRY_DELAYS_SECONDS
+    )
