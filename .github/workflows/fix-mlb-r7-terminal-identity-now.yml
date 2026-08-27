@@ -1,0 +1,338 @@
+name: Fix MLB R7 terminal manifest identity now
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fix-mlb-r7-terminal-identity-now.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: fix-mlb-r7-terminal-manifest-identity
+  cancel-in-progress: false
+
+jobs:
+  patch-test-dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependencies
+        run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
+
+      - name: Install unique alias-safe terminal manifest resolver
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          repair_path = Path('hello_world/mlb_prospective_row_repair.py')
+          text = repair_path.read_text(encoding='utf-8')
+
+          replacements = {
+              'MLB-MISSED-LOCK-TERMINAL-RECONCILIATION-v3-protected-force-replay':
+                  'MLB-MISSED-LOCK-TERMINAL-RECONCILIATION-v4-unique-manifest-identity-resolution',
+              '_INQSI_MLB_MISSED_LOCK_TERMINAL_RECONCILIATION_V3':
+                  '_INQSI_MLB_MISSED_LOCK_TERMINAL_RECONCILIATION_V4',
+              '_INQSI_MLB_MISSED_LOCK_TERMINAL_APPLY_HOOK_V3':
+                  '_INQSI_MLB_MISSED_LOCK_TERMINAL_APPLY_HOOK_V4',
+          }
+          for old, new in replacements.items():
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one occurrence of {old!r}, found {count}')
+              text = text.replace(old, new)
+
+          old = '''        games = {patch.game_identity(game): game for game in manifest}
+          reconciled: List[Dict[str, Any]] = []
+          unresolved: List[Dict[str, Any]] = []
+          for status in missed:
+              identity = str(status.get("gameIdentity") or "")
+              game = games.get(identity)
+              if game is None:
+                  unresolved.append(
+                      {"gameIdentity": identity, "reason": "GAME_NOT_IN_MANIFEST"}
+                  )
+                  continue
+          '''
+          new = '''        reconciled: List[Dict[str, Any]] = []
+          unresolved: List[Dict[str, Any]] = []
+          for status in missed:
+              identity = str(status.get("gameIdentity") or "").strip()
+              exact_matches = [
+                  candidate
+                  for candidate in manifest
+                  if str(patch.game_identity(candidate) or "").strip() == identity
+              ]
+              if exact_matches:
+                  matches = exact_matches
+                  match_mode = "exact_game_identity"
+              else:
+                  status_ids = _identity_values(status, patch)
+                  matches = [
+                      candidate
+                      for candidate in manifest
+                      if status_ids & _identity_values(candidate, patch)
+                  ]
+                  match_mode = "unique_identity_alias"
+              if len(matches) != 1:
+                  unresolved.append(
+                      {
+                          "gameIdentity": identity,
+                          "reason": (
+                              "GAME_NOT_IN_MANIFEST"
+                              if not matches
+                              else "AMBIGUOUS_GAME_IDENTITY"
+                          ),
+                          "manifestMatchCount": len(matches),
+                          "identityResolutionMode": match_mode,
+                      }
+                  )
+                  continue
+              game = matches[0]
+          '''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'expected one exact terminal mapping block, found {count}')
+          text = text.replace(old, new)
+          repair_path.write_text(text, encoding='utf-8')
+
+          workflow_path = Path('.github/workflows/repair-mlb-training-continuity-now.yml')
+          workflow = workflow_path.read_text(encoding='utf-8')
+          old_gate = "grep -q 'v3-protected-force-replay' hello_world/mlb_prospective_row_repair.py"
+          new_gate = "grep -q 'v4-unique-manifest-identity-resolution' hello_world/mlb_prospective_row_repair.py"
+          count = workflow.count(old_gate)
+          if count != 1:
+              raise SystemExit(f'expected one recovery version gate, found {count}')
+          workflow_path.write_text(workflow.replace(old_gate, new_gate), encoding='utf-8')
+          PY
+
+          cat > tests/unit/test_mlb_terminal_manifest_identity_resolution.py <<'PY'
+          from __future__ import annotations
+
+          import copy
+          from datetime import datetime, timezone
+          from pathlib import Path
+          import sys
+
+          ROOT = Path(__file__).resolve().parents[2]
+          HELLO_WORLD = ROOT / "hello_world"
+          if str(HELLO_WORLD) not in sys.path:
+              sys.path.insert(0, str(HELLO_WORLD))
+
+          import mlb_prospective_row_repair as prospective
+
+          SLATE = "2026-08-04"
+          STATUS_IDENTITY = "official:12345"
+
+
+          class Module:
+              def __init__(self, manifest):
+                  self.manifest = copy.deepcopy(manifest)
+                  self.outcomes = {}
+
+              def _now_utc(self):
+                  return datetime(2026, 8, 5, 2, 0, tzinfo=timezone.utc)
+
+              def _pulls_for_date(self, slate):
+                  assert slate == SLATE
+                  return [{"pulled_at": "2026-08-04T17:00:00+00:00"}]
+
+              def _latest_games_for_date(self, slate, pulls):
+                  assert slate == SLATE and pulls
+                  return copy.deepcopy(self.manifest)
+
+
+          class Patch:
+              @staticmethod
+              def game_identity(game):
+                  return str(game.get("game_id") or game.get("id") or "")
+
+              @staticmethod
+              def _pull_at(module, pull):
+                  del module
+                  return datetime.fromisoformat(pull["pulled_at"])
+
+              @staticmethod
+              def _progress(module, slate, pulls, manifest, now, *, ensure_canonical):
+                  del slate, pulls, manifest, now, ensure_canonical
+                  if module.outcomes:
+                      return {
+                          "games": [
+                              {
+                                  "gameIdentity": STATUS_IDENTITY,
+                                  "state": "LOCKED_NO_PREDICTION_DATA",
+                              }
+                          ],
+                          "missedCount": 0,
+                          "dueMissingCount": 0,
+                          "lockOutcomeCount": 1,
+                          "canonicalCount": 0,
+                          "noPredictionDataCount": 1,
+                      }
+                  return {
+                      "games": [
+                          {
+                              "gameIdentity": STATUS_IDENTITY,
+                              "state": "MISSED_NOT_BACKFILLED",
+                          }
+                      ],
+                      "missedCount": 1,
+                      "dueMissingCount": 0,
+                      "lockOutcomeCount": 0,
+                      "canonicalCount": 0,
+                      "noPredictionDataCount": 0,
+                  }
+
+              @staticmethod
+              def _select_provider_manifest_authority(module, pulls, slate, manifest):
+                  del module, pulls, slate
+                  return {"fingerprint": "manifest", "gameCount": len(manifest)}
+
+              @staticmethod
+              def _start(module, game):
+                  del module
+                  return datetime.fromisoformat(game["commence_time"])
+
+              @staticmethod
+              def _get_stage(module, slate, game):
+                  del module, slate, game
+                  return None
+
+              @staticmethod
+              def _get_lock_outcome(module, slate, game):
+                  del slate
+                  return copy.deepcopy(module.outcomes.get(Patch.game_identity(game)))
+
+              @staticmethod
+              def _scoring_pulls(module, pulls, game):
+                  del module, pulls, game
+                  return []
+
+              @staticmethod
+              def _last_prelock_candidate(module, slate, game, scoring):
+                  del module, slate, game, scoring
+                  return (
+                      None,
+                      None,
+                      [],
+                      [
+                          "no_persisted_user_visible_platform_prelock_prediction_"
+                          "at_or_before_cutoff"
+                      ],
+                  )
+
+              @staticmethod
+              def _is_no_prediction_candidate_failure(errors):
+                  return errors == [
+                      "no_persisted_user_visible_platform_prelock_prediction_"
+                      "at_or_before_cutoff"
+                  ]
+
+              @staticmethod
+              def _put_no_prediction_outcome(
+                  module, slate, game, now, reasons, authority
+              ):
+                  del slate, now, authority
+                  outcome = {
+                      "lock_status": "LOCKED_NO_PREDICTION_DATA",
+                      "reasons": list(reasons),
+                  }
+                  module.outcomes[Patch.game_identity(game)] = outcome
+                  return copy.deepcopy(outcome)
+
+
+          def _game(identity, official_pk="12345"):
+              return {
+                  "game_id": identity,
+                  "providerEventId": identity,
+                  "officialGamePk": official_pk,
+                  "commence_time": "2026-08-04T18:00:00+00:00",
+              }
+
+
+          def test_unique_official_alias_resolves_terminal_status_to_provider_manifest_game():
+              module = Module([_game("provider:event-1")])
+
+              result = prospective._repair_proven_no_prediction_misses(
+                  module, Patch, SLATE
+              )
+
+              assert result["ok"] is True
+              assert result["reconciledCount"] == 1
+              assert result["remainingMissedCount"] == 0
+              assert result["unresolved"] == []
+              assert set(module.outcomes) == {"provider:event-1"}
+
+
+          def test_ambiguous_alias_remains_fail_closed_without_writing_outcome():
+              module = Module(
+                  [_game("provider:event-1"), _game("provider:event-2")]
+              )
+
+              result = prospective._repair_proven_no_prediction_misses(
+                  module, Patch, SLATE
+              )
+
+              assert result["ok"] is False
+              assert result["reconciledCount"] == 0
+              assert result["remainingMissedCount"] == 1
+              assert result["unresolved"] == [
+                  {
+                      "gameIdentity": STATUS_IDENTITY,
+                      "reason": "AMBIGUOUS_GAME_IDENTITY",
+                      "manifestMatchCount": 2,
+                      "identityResolutionMode": "unique_identity_alias",
+                  }
+              ]
+              assert module.outcomes == {}
+          PY
+
+      - name: Verify targeted and complete continuity contracts
+        run: |
+          set -euo pipefail
+          python -m py_compile hello_world/mlb_prospective_row_repair.py
+          PYTHONPATH="hello_world:scripts:${PYTHONPATH:-}" python -m pytest -q \
+            tests/unit/test_mlb_terminal_manifest_identity_resolution.py \
+            tests/unit/test_mlb_terminal_durability_replay.py \
+            tests/unit/test_mlb_protected_terminal_force_replay.py \
+            tests/unit/test_mlb_prospective_status_lifecycle_repair.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v4.py \
+            tests/unit/test_reconcile_mlb_prospective_backlog_v5.py \
+            tests/unit/test_mlb_canonical_final_labels_v1.py \
+            tests/unit/test_mlb_prospective_trainer_read_repair.py
+          grep -q 'v4-unique-manifest-identity-resolution' \
+            hello_world/mlb_prospective_row_repair.py
+          git diff --check
+
+      - name: Commit tested repair and dispatch exact-source production recovery
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            hello_world/mlb_prospective_row_repair.py \
+            tests/unit/test_mlb_terminal_manifest_identity_resolution.py \
+            .github/workflows/repair-mlb-training-continuity-now.yml
+          git commit -m "Resolve MLB R7 terminal games through unique identity aliases"
+          git push origin HEAD:main
+          repair_sha=$(git rev-parse HEAD)
+          echo "Tested terminal identity repair committed as $repair_sha"
+          gh workflow run repair-mlb-training-continuity-now.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
