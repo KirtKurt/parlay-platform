@@ -42,7 +42,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Strong-read exact cooperative queue item and print redacted proof
+      - name: Strong-read exact cooperative queue item and print bounded proof
         shell: bash
         run: |
           set -euo pipefail
@@ -158,17 +158,28 @@ jobs:
               'sport': item.get('sport'),
               'run': item.get('run'),
               'slateDateEt': item.get('slate_date_et'),
+              'requestEpoch': item.get('requested_at_epoch'),
+              'requestId': item.get('request_id'),
               'force': item.get('force'),
               'timeline': {key: item.get(key) for key in timeline_fields if key in item},
               'claimOwnerPresent': 'claim_owner' in item and bool(item.get('claim_owner')),
-              'claimOwner': '[REDACTED]' if item.get('claim_owner') else None,
-              'identifierFieldsRedacted': identity_field_names,
+              'claimOwner': item.get('claim_owner'),
+              'identifierFieldNames': identity_field_names,
+              'progressFields': {
+                  key: item.get(key) for key in sorted(item)
+                  if 'progress' in key.lower() or 'checkpoint' in key.lower()
+              },
+              'lastFailureFields': {
+                  key: item.get(key) for key in sorted(item)
+                  if key.lower().startswith('last_failure')
+              },
               'currentSlateSuccessProofPresent': proof_present,
               'currentSlateSuccessProof': safe_proof,
               'unexpectedProofFieldsRedacted': (
                   sorted(set(proof) - set(safe_proof_fields)) if proof_present else []
               ),
               'replayReceiptPresent': isinstance(item.get('replay_receipt'), dict),
+              'replayReceipt': item.get('replay_receipt'),
               'rawAttributeNames': sorted(item),
           }
           if item:
