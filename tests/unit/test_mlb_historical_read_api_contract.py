@@ -9,9 +9,7 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[2]
 HELLO = ROOT / "hello_world"
 EXPECTED_API_VERSION = "MLB-V3-READ-API-v7-exact-persisted-prelock-public-read"
-EXPECTED_PRELOCK_READ_VERSION = (
-    "MLB-PERSISTED-PRELOCK-PUBLIC-READ-v2-raw-identity-decimal-safe"
-)
+EXPECTED_AUTHORITY_CONTRACT_VERSION = "MLB-AUTO-R7-QUALIFIED-CHAMPION-ONLY-v1"
 
 
 def _load_api(runtime: dict, *, predictions=None):
@@ -59,6 +57,7 @@ def _load_api(runtime: dict, *, predictions=None):
 
 
 def _runtime(*, active: bool, coherent: bool = True) -> dict:
+    """Legacy/historical runtime fixture kept to prove it cannot regain authority."""
     return {
         "ok": coherent,
         "version": "runtime",
@@ -90,64 +89,65 @@ def _runtime(*, active: bool, coherent: bool = True) -> dict:
     }
 
 
-def test_read_api_reports_historical_model_and_no_fallback_after_cutover():
-    api = _load_api(_runtime(active=True), predictions=[{"selectedTeam": "A"}])
-    model = api._model_body()
-    assert model["ok"] is True
-    assert model["model_version"] == api.HISTORICAL_MODEL_VERSION
-    assert model["historicalProductionCutoverActive"] is True
-    assert model["productionAuthoritySource"] == "mlb_historical_daily_champion_only"
-    assert model["incumbentProductionAuthorityDestroyed"] is True
+def _assert_r7_fail_closed(model: dict) -> None:
+    assert model["ok"] is False
+    assert model["status"] == "NO_QUALIFIED_CHAMPION"
+    assert model["error"] == "NO_QUALIFIED_CHAMPION"
+    assert model["publicationClosed"] is True
+    assert model["productionSelectionAllowed"] is False
+    assert model["model_version"] is None
+    assert model["primaryAlgorithm"] is None
+    assert model["primaryAlgorithmActive"] is False
+    assert model["soleProductionAlgorithm"] is None
+    assert model["requestedAuthority"] == "AWS_ML_PROSPECTIVE_R7"
+    assert model["qualifiedChampionRequired"] is True
+    assert model["qualifiedChampionPresent"] is False
+    assert model["r7ChampionQualified"] is False
+    assert model["r7DeploymentIdentity"] is None
     assert model["legacyFallbackAllowed"] is False
     assert model["automaticLegacyRestoreAllowed"] is False
+    assert model["legacyRecommendationAuthority"] is False
+    assert model["retiredAuthoritySuppressed"] is True
+    assert model["retiredV15_10Eligible"] is False
     assert model["automaticWagerAllowed"] is False
-    assert model["predictionOnlyWagerSafetyInstalled"] is True
     assert model["rowLevelAutomaticWagerAllowed"] is False
-    assert model["firstPromotionRequiresManualReview"] is False
-    assert model["manualReviewCreatesShadowApprovalOnly"] is False
-    assert model["runtimeAuthorityActivationAvailable"] is True
+    assert model["parlaysEnabled"] is False
+    assert model["readOnly"] is True
     assert model["apiRuntimeVersion"] == EXPECTED_API_VERSION
-    assert model["persistedPrelockPublicReadVersion"] == EXPECTED_PRELOCK_READ_VERSION
+    assert model["authorityContractVersion"] == EXPECTED_AUTHORITY_CONTRACT_VERSION
+
+
+def test_read_api_never_restores_historical_authority_after_r7_fail_closed_cutover():
+    api = _load_api(_runtime(active=True), predictions=[{"selectedTeam": "A"}])
+    model = api._model_body()
+    _assert_r7_fail_closed(model)
 
     response = api.lambda_handler(
         {"path": "/v1/mlb/predictions", "queryStringParameters": {"date": "2026-07-24"}},
         None,
     )
-    assert response["statusCode"] == 200
+    assert response["statusCode"] == 503
     body = json.loads(response["body"])
-    assert body["model_version"] == api.HISTORICAL_MODEL_VERSION
-    assert body["historicalProductionCutoverActive"] is True
-    assert body["incumbentProductionAuthorityDestroyed"] is True
-    assert body["legacyFallbackAllowed"] is False
-    assert body["automaticWagerAllowed"] is False
-    assert body["predictionOnlyWagerSafetyInstalled"] is True
-    assert body["rowLevelAutomaticWagerAllowed"] is False
-    assert body["apiRuntimeVersion"] == EXPECTED_API_VERSION
-    assert body["persistedPrelockPublicReadVersion"] == EXPECTED_PRELOCK_READ_VERSION
-    assert body["persistedPrelockPublicRead"]["productionAuthorityChanged"] is False
+    _assert_r7_fail_closed(body)
+    assert body["winner_predictions"] == []
+    assert body["predictions"] == []
+    assert body["count"] == 0
 
 
-def test_read_api_keeps_incumbent_only_in_coherent_pre_cutover_state():
+def test_read_api_never_restores_retired_v15_10_in_legacy_pre_cutover_fixture():
     api = _load_api(_runtime(active=False))
     model = api._model_body()
-    assert model["ok"] is True
-    assert model["model_version"] == api.MODEL_VERSION
-    assert model["historicalDailyChampionActive"] is False
-    assert model["historicalProductionCutoverActive"] is False
-    assert model["incumbentRole"] == "active_until_historical_gate"
-    assert model["apiRuntimeVersion"] == EXPECTED_API_VERSION
-    assert model["persistedPrelockPublicReadVersion"] == EXPECTED_PRELOCK_READ_VERSION
-    assert model["productionAuthoritySource"] == "mlb_ranked_winner_v15_10_active_ensemble"
-    assert model["historicalApiExtensionVersion"] == api.HISTORICAL_API_EXTENSION_VERSION
-    assert model["automaticPromotionPolicy"] == "winner model fixed for release; precision/trade promotion remains disabled"
-    assert model["firstPromotionRequiresManualReview"] is True
-    assert model["manualReviewCreatesShadowApprovalOnly"] is True
-    assert model["runtimeAuthorityActivationAvailable"] is False
+    _assert_r7_fail_closed(model)
+
+    response = api.lambda_handler({"path": "/v1/mlb/model/version"}, None)
+    assert response["statusCode"] == 503
+    body = json.loads(response["body"])
+    _assert_r7_fail_closed(body)
 
 
-def test_read_api_fails_closed_when_historical_authority_state_is_incoherent():
+def test_read_api_stays_fail_closed_when_legacy_historical_state_is_incoherent():
     api = _load_api(_runtime(active=False, coherent=False))
     model = api._model_body()
-    assert model["ok"] is False
+    _assert_r7_fail_closed(model)
     response = api.lambda_handler({"path": "/v1/mlb/model/version"}, None)
     assert response["statusCode"] == 503
