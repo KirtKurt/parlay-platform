@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -29,7 +30,7 @@ def _evaluate(comments, runs=()):
         comments,
         runs,
         now=NOW,
-        stale_after_minutes=40,
+        stale_after_minutes=35,
         retry_cooldown_minutes=10,
     )
 
@@ -48,6 +49,24 @@ def test_fresh_visible_pulse_does_not_dispatch() -> None:
     assert result["stale"] is False
     assert result["dispatchRequired"] is False
     assert result["reason"] == "VISIBLE_PULSE_FRESH"
+
+
+def test_exact_35_minute_age_remains_inside_grace_boundary() -> None:
+    result = _evaluate([_comment("2026-08-26T21:25:00Z")])
+
+    assert result["visiblePulseAgeMinutes"] == 35.0
+    assert result["staleAfterMinutes"] == 35
+    assert result["stale"] is False
+    assert result["dispatchRequired"] is False
+
+
+def test_age_immediately_above_35_minutes_requires_fallback() -> None:
+    result = _evaluate([_comment("2026-08-26T21:24:59Z")])
+
+    assert result["visiblePulseAgeMinutes"] == 35.017
+    assert result["staleAfterMinutes"] == 35
+    assert result["stale"] is True
+    assert result["dispatchRequired"] is True
 
 
 def test_active_pulse_run_suppresses_duplicate_recovery_dispatch() -> None:
@@ -76,7 +95,7 @@ def test_current_fallback_run_is_excluded_from_active_run_check() -> None:
         [_comment("2026-08-26T20:41:21Z")],
         [{"id": 101, "status": "in_progress", "created_at": "2026-08-26T21:59:00Z"}],
         now=NOW,
-        stale_after_minutes=40,
+        stale_after_minutes=35,
         retry_cooldown_minutes=10,
         current_run_id="101",
     )
@@ -119,6 +138,7 @@ def test_workflow_uses_offset_schedule_and_staleness_gated_event_fallbacks() -> 
         "MLB Canonical Runtime Health Watch",
         "MLB Scoring Guard",
         "Deploy SAM to AWS",
+        "Verify MLB Scoring Fix After Deploy",
         "MLB Production Source Contract",
         "Unified MLB learning recovery once",
     ):
@@ -126,5 +146,26 @@ def test_workflow_uses_offset_schedule_and_staleness_gated_event_fallbacks() -> 
     assert "runtime_reports/mlb_*.json" in pulse
     assert '[ "$EVENT_NAME" = "workflow_run" ] || [ "$EVENT_NAME" = "push" ]' in pulse
     assert "scripts/check_mlb_progress_pulse_staleness.py" in pulse
+    assert "MLB_PROGRESS_STALE_AFTER_MINUTES: '35'" in pulse
+    assert '--stale-after-minutes "$MLB_PROGRESS_STALE_AFTER_MINUTES"' in pulse
+    assert "--stale-after-minutes 40" not in pulse
     assert "actions: read" in pulse
     assert "needs.pulse_decision.outputs.run_pulse == 'true'" in pulse
+
+
+def test_cli_reads_35_minute_threshold_from_environment(monkeypatch) -> None:
+    observed: dict[str, int] = {}
+
+    def fake_evaluate(comments, runs, **kwargs):
+        observed["stale_after_minutes"] = kwargs["stale_after_minutes"]
+        return {"stale": False, "dispatchRequired": False, "reason": "fixture"}
+
+    monkeypatch.setenv("MLB_PROGRESS_STALE_AFTER_MINUTES", "35")
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    monkeypatch.setattr(sys, "argv", [str(SCRIPT)])
+    monkeypatch.setattr(watchdog, "_issue_comments", lambda *_args: [])
+    monkeypatch.setattr(watchdog, "_workflow_runs", lambda *_args: [])
+    monkeypatch.setattr(watchdog, "evaluate_staleness", fake_evaluate)
+
+    assert watchdog.main() == 0
+    assert observed["stale_after_minutes"] == 35

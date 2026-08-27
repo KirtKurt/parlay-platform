@@ -193,18 +193,29 @@ def test_reporting_continuity_exposes_stale_visible_gap() -> None:
     assert result["cadenceBreach"] is True
     assert result["targetCadenceMinutes"] == 30
     assert result["cadenceGraceMinutes"] == 5
-    assert result["staleAfterMinutes"] == 40
+    assert result["staleAfterMinutes"] == 35
 
 
-def test_reporting_cadence_breaches_before_fallback_threshold() -> None:
+def test_reporting_cadence_allows_exactly_30m_plus_5m_grace() -> None:
     result = reporter._reporting_continuity(
-        {"createdAtUtc": "2026-08-26T21:24:00Z"},
+        {"createdAtUtc": "2026-08-26T21:25:00Z"},
         now=datetime(2026, 8, 26, 22, 0, tzinfo=timezone.utc),
     )
 
-    assert result["previousPulseAgeMinutes"] == 36.0
+    assert result["previousPulseAgeMinutes"] == 35.0
+    assert result["cadenceBreach"] is False
+    assert result["staleAfterMinutes"] == 35
+
+
+def test_reporting_cadence_breaches_immediately_after_35m_boundary() -> None:
+    result = reporter._reporting_continuity(
+        {"createdAtUtc": "2026-08-26T21:24:59Z"},
+        now=datetime(2026, 8, 26, 22, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["previousPulseAgeMinutes"] == 35.017
     assert result["cadenceBreach"] is True
-    assert result["previousPulseAgeMinutes"] < result["staleAfterMinutes"]
+    assert result["previousPulseAgeMinutes"] > result["staleAfterMinutes"]
 
 
 def test_latest_visible_pulse_ignores_non_pulse_comments() -> None:
