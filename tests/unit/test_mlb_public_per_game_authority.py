@@ -7,6 +7,8 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 HELLO_WORLD = ROOT / "hello_world"
