@@ -1,0 +1,185 @@
+name: Read-only R7 cooperative queue probe 33084527256
+run-name: Read-only R7 queue probe ${{ github.run_id }}
+
+"on":
+  push:
+    branches:
+      - codex/r7-queue-readonly-probe-33084527256-a1
+    paths:
+      - .github/workflows/r7-queue-readonly-probe-33084527256.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r7-queue-readonly-probe-33084527256
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  SNAPSHOTS_TABLE: parlay_platform_snapshots
+  EXPECTED_PK: MLB_LOCK_EXECUTION#V1
+  EXPECTED_SK: COOPERATIVE_TERMINAL_REPLAY#V1
+  EXPECTED_RECORD_TYPE: mlb_cooperative_terminal_replay_v1
+  EXPECTED_COORDINATION_VERSION: MLB-COOPERATIVE-TERMINAL-REPLAY-v1-eventbridge-owner-handoff
+
+jobs:
+  probe:
+    if: github.repository == 'KirtKurt/parlay-platform' && github.ref == 'refs/heads/codex/r7-queue-readonly-probe-33084527256-a1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Guard isolated branch-only execution
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/codex/r7-queue-readonly-probe-33084527256-a1'
+          test "$GITHUB_REPOSITORY" = 'KirtKurt/parlay-platform'
+
+      - name: Configure read credential
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Strong-read exact cooperative queue item and print redacted proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          RAW_PATH="/tmp/r7-cooperative-queue-${GITHUB_RUN_ID}.json"
+          aws dynamodb get-item \
+            --table-name "$SNAPSHOTS_TABLE" \
+            --key '{"PK":{"S":"MLB_LOCK_EXECUTION#V1"},"SK":{"S":"COOPERATIVE_TERMINAL_REPLAY#V1"}}' \
+            --consistent-read \
+            --return-consumed-capacity NONE \
+            --region "$AWS_REGION" \
+            --output json > "$RAW_PATH"
+          RAW_PATH="$RAW_PATH" python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+
+          def decode(value):
+              if not isinstance(value, dict) or len(value) != 1:
+                  return None
+              kind, raw = next(iter(value.items()))
+              if kind == 'S':
+                  return raw
+              if kind == 'N':
+                  text = str(raw)
+                  try:
+                      return int(text)
+                  except ValueError:
+                      try:
+                          return float(text)
+                      except ValueError:
+                          return text
+              if kind == 'BOOL':
+                  return bool(raw)
+              if kind == 'NULL':
+                  return None
+              if kind == 'M':
+                  return {key: decode(entry) for key, entry in raw.items()}
+              if kind == 'L':
+                  return [decode(entry) for entry in raw]
+              if kind in {'SS', 'NS'}:
+                  return list(raw)
+              return '[REDACTED_BINARY_OR_UNKNOWN]'
+
+          with open(os.environ['RAW_PATH'], encoding='utf-8') as stream:
+              raw = json.load(stream)
+          encoded = raw.get('Item') or {}
+          item = {key: decode(value) for key, value in encoded.items()}
+          proof = item.get('current_slate_success_proof')
+          proof_present = isinstance(proof, dict)
+          safe_proof_fields = (
+              'version',
+              'currentSlateDateEt',
+              'requestSlateDateEt',
+              'requestEpoch',
+              'processedAtEpoch',
+              'postStartPredictionCreationAllowed',
+              'immutablePredictionRewriteAllowed',
+          )
+          safe_proof = (
+              {key: proof.get(key) for key in safe_proof_fields if key in proof}
+              if proof_present
+              else None
+          )
+          timeline_fields = (
+              'requested_at_utc',
+              'requested_at_epoch',
+              'claim_acquired_at_utc',
+              'claim_acquired_at_epoch',
+              'claim_expires_at_utc',
+              'claim_expires_at_epoch',
+              'last_failure_at_utc',
+              'last_failure_at_epoch',
+              'completed_at_utc',
+              'completed_at_epoch',
+              'acknowledged_at_utc',
+              'acknowledged_at_epoch',
+          )
+          identity_field_names = sorted(
+              key for key in item
+              if any(token in key.lower() for token in (
+                  'owner', 'identifier', 'request_id', 'invocation_id',
+                  'execution_id',
+              ))
+          )
+          result = {
+              'ok': True,
+              'proofType': 'R7_COOPERATIVE_QUEUE_EXACT_STRONG_READ',
+              'observedAtUtc': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+              'sourceRunId': os.environ.get('GITHUB_RUN_ID'),
+              'sourceBranch': os.environ.get('GITHUB_REF_NAME'),
+              'readOnly': True,
+              'awsOperation': 'dynamodb:GetItem',
+              'consistentRead': True,
+              'lambdaInvocationsAttempted': 0,
+              'tableWritesAttempted': 0,
+              'leaseMutationsAttempted': 0,
+              'table': os.environ['SNAPSHOTS_TABLE'],
+              'key': {
+                  'PK': os.environ['EXPECTED_PK'],
+                  'SK': os.environ['EXPECTED_SK'],
+              },
+              'itemPresent': bool(item),
+              'identity': {
+                  'pkMatchesExpected': item.get('PK') == os.environ['EXPECTED_PK'] if item else None,
+                  'skMatchesExpected': item.get('SK') == os.environ['EXPECTED_SK'] if item else None,
+                  'recordType': item.get('record_type'),
+                  'recordTypeMatchesExpected': item.get('record_type') == os.environ['EXPECTED_RECORD_TYPE'] if item else None,
+              },
+              'coordinationVersion': item.get('coordination_version'),
+              'coordinationVersionMatchesExpected': item.get('coordination_version') == os.environ['EXPECTED_COORDINATION_VERSION'] if item else None,
+              'state': item.get('state'),
+              'sport': item.get('sport'),
+              'run': item.get('run'),
+              'slateDateEt': item.get('slate_date_et'),
+              'force': item.get('force'),
+              'timeline': {key: item.get(key) for key in timeline_fields if key in item},
+              'claimOwnerPresent': 'claim_owner' in item and bool(item.get('claim_owner')),
+              'claimOwner': '[REDACTED]' if item.get('claim_owner') else None,
+              'identifierFieldsRedacted': identity_field_names,
+              'currentSlateSuccessProofPresent': proof_present,
+              'currentSlateSuccessProof': safe_proof,
+              'unexpectedProofFieldsRedacted': (
+                  sorted(set(proof) - set(safe_proof_fields)) if proof_present else []
+              ),
+              'replayReceiptPresent': isinstance(item.get('replay_receipt'), dict),
+              'rawAttributeNames': sorted(item),
+          }
+          if item:
+              identity_ok = all((
+                  result['identity']['pkMatchesExpected'],
+                  result['identity']['skMatchesExpected'],
+                  result['identity']['recordTypeMatchesExpected'],
+                  result['coordinationVersionMatchesExpected'],
+              ))
+              result['ok'] = identity_ok
+          print(json.dumps(result, indent=2, sort_keys=True))
+          if not result['ok']:
+              raise SystemExit('Exact queue item failed its deployed identity contract')
+          PY
