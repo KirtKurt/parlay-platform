@@ -117,6 +117,8 @@ COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION = (
     "MLB-COOPERATIVE-TERMINAL-COMPLETION-HANDOFF-v1"
 )
 COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS = 32
+COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES = 15
+COOPERATIVE_TERMINAL_PUBLIC_MAX_ATTEMPTS = 1_000_000
 COOPERATIVE_REPLAY_MIN_REMAINING_SECONDS = (
     COOPERATIVE_REPLAY_EXECUTION_BUDGET_SECONDS
     + LOCK_EXECUTION_TIMEOUT_SAFETY_MARGIN_SECONDS
@@ -580,72 +582,88 @@ def _cooperative_terminal_progress_public(
         "failClosed": True,
     }
 
-    def safe_integer(field: str) -> Optional[int]:
-        value = progress.get(field)
-        if isinstance(value, bool):
+    def strict_integer(value: Any, *, maximum: int) -> Optional[int]:
+        if isinstance(value, bool) or not isinstance(value, (int, Decimal)):
             return None
-        try:
-            parsed = int(value)
-        except (TypeError, ValueError):
-            return None
-        return parsed if parsed >= 0 else None
-
-    def safe_attempt_integer(value: Any) -> Optional[int]:
-        if isinstance(value, bool) or not isinstance(
-            value,
-            (Decimal, int, float, str),
-        ):
-            return None
-        try:
-            numeric = Decimal(str(value))
-        except (InvalidOperation, TypeError, ValueError):
-            return None
+        if isinstance(value, int):
+            return value if 0 <= value <= maximum else None
         if (
-            not numeric.is_finite()
-            or numeric < 0
-            or numeric != numeric.to_integral_value()
+            not value.is_finite()
+            or value < 0
+            or value > maximum
+            or value != value.to_integral_value()
         ):
             return None
-        return int(numeric)
+        return int(value)
 
-    fields = (
-        "manifestGameCount",
-        "nextGameIndex",
-        "processedGameCount",
-        "terminalCount",
-        "canonicalCount",
-        "noPredictionDataCount",
-        "reconciledCount",
-        "verificationIndex",
-        "verifiedGameCount",
-        "attemptCount",
-    )
-    values = {field: safe_integer(field) for field in fields}
+    field_maximums = {
+        "manifestGameCount": COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES,
+        "nextGameIndex": COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES,
+        "processedGameCount": COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES,
+        "terminalCount": COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES,
+        "canonicalCount": COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES,
+        "noPredictionDataCount": (
+            COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES
+        ),
+        "reconciledCount": COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES,
+        "verificationIndex": COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES,
+        "verifiedGameCount": COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES,
+        "attemptCount": COOPERATIVE_TERMINAL_PUBLIC_MAX_ATTEMPTS,
+    }
+    values = {
+        field: strict_integer(progress.get(field), maximum=maximum)
+        for field, maximum in field_maximums.items()
+    }
+    phase = progress.get("phase")
+    verification_complete = progress.get("verificationComplete")
     if (
         progress.get("version") != COOPERATIVE_TERMINAL_CHUNK_VERSION
-        or str(progress.get("slateDateEt") or "")
-        != str(item.get("slate_date_et") or "")
+        or progress.get("slateDateEt") != item.get("slate_date_et")
         or any(value is None for value in values.values())
-        or str(progress.get("phase") or "") not in {"PROCESS", "VERIFY"}
-        or not isinstance(progress.get("verificationComplete"), bool)
+        or phase not in {"PROCESS", "VERIFY"}
+        or not isinstance(verification_complete, bool)
         or progress.get("postStartPredictionCreationAllowed") is not False
         or progress.get("immutablePredictionRewriteAllowed") is not False
         or progress.get("productionAuthorityChanged") is not False
     ):
         return dict(invalid)
+
     manifest_count = int(values["manifestGameCount"] or 0)
     next_index = int(values["nextGameIndex"] or 0)
+    processed_count = int(values["processedGameCount"] or 0)
+    terminal_count = int(values["terminalCount"] or 0)
+    canonical_count = int(values["canonicalCount"] or 0)
+    no_prediction_count = int(values["noPredictionDataCount"] or 0)
+    reconciled_count = int(values["reconciledCount"] or 0)
+    verification_index = int(values["verificationIndex"] or 0)
+    verified_count = int(values["verifiedGameCount"] or 0)
+    attempt_count = int(values["attemptCount"] or 0)
+    expected_verification_complete = (
+        phase == "VERIFY" and verification_index == manifest_count
+    )
+    if (
+        manifest_count < 1
+        or next_index > manifest_count
+        or processed_count != next_index
+        or terminal_count != next_index
+        or canonical_count + no_prediction_count != terminal_count
+        or reconciled_count > terminal_count
+        or verification_index > manifest_count
+        or verified_count != verification_index
+        or (phase == "PROCESS") != (next_index < manifest_count)
+        or (phase == "PROCESS" and verification_index != 0)
+        or verification_complete != expected_verification_complete
+    ):
+        return dict(invalid)
+
     public = {
         "version": COOPERATIVE_TERMINAL_CHUNK_VERSION,
         "valid": True,
         **values,
-        "phase": str(progress.get("phase") or ""),
-        "verificationComplete": progress.get("verificationComplete"),
-        "remainingGameCount": max(manifest_count - next_index, 0),
-        "remainingVerificationCount": max(
-            manifest_count - int(values["verificationIndex"] or 0),
-            0,
-        ),
+        "phase": phase,
+        "verificationComplete": verification_complete,
+        "remainingGameCount": manifest_count - next_index,
+        "remainingVerificationCount": manifest_count - verification_index,
         "oneGamePerEventBridgeOwner": True,
         "postStartPredictionCreationAllowed": False,
         "immutablePredictionRewriteAllowed": False,
@@ -653,39 +671,135 @@ def _cooperative_terminal_progress_public(
     }
 
     last_attempt = progress.get("lastAttempt")
-    if last_attempt is not None:
-        if not isinstance(last_attempt, dict):
-            return dict(invalid)
-        string_fields = (
-            "status",
-            "stage",
-            "atUtc",
-            "gameIdentity",
-            "durableIdentity",
-            "phase",
-            "errorCode",
-        )
-        allowed_fields = {*string_fields, "gameIndex"}
-        if any(
-            not isinstance(key, str) or key not in allowed_fields
+    if (attempt_count == 0) != (last_attempt is None):
+        return dict(invalid)
+    if last_attempt is None:
+        return public
+    if not isinstance(last_attempt, dict):
+        return dict(invalid)
+
+    required_fields = {"status", "stage", "atUtc", "phase"}
+    optional_fields = {
+        "gameIndex",
+        "gameIdentity",
+        "durableIdentity",
+        "errorCode",
+    }
+    if (
+        not required_fields.issubset(last_attempt)
+        or any(
+            not isinstance(key, str)
+            or key not in required_fields | optional_fields
             for key in last_attempt
-        ):
+        )
+    ):
+        return dict(invalid)
+
+    status = last_attempt.get("status")
+    stage = last_attempt.get("stage")
+    at_utc = last_attempt.get("atUtc")
+    attempt_phase = last_attempt.get("phase")
+    if (
+        not isinstance(status, str)
+        or not isinstance(stage, str)
+        or not isinstance(at_utc, str)
+        or not isinstance(attempt_phase, str)
+        or not status
+        or not stage
+        or not at_utc
+        or attempt_phase != phase
+        or len(at_utc) > 32
+    ):
+        return dict(invalid)
+
+    expected_stages = {
+        "TERMINAL_CHECKPOINT_READY": {"PROCESS_CHECKPOINT_READY"},
+        "DURABLE_TERMINAL_VERIFIED": {
+            "VERIFICATION_CHECKPOINT_READY",
+            "COMPLETE_READY",
+        },
+        "DEFERRED_INSUFFICIENT_REMAINING_TIME": {
+            "WRITE_BUDGET",
+            "GAME_BUDGET",
+            "ATOMIC_COMPLETION_PROOF",
+        },
+        "DEFERRED_MUTATION_LEASE_CONTENDED": {
+            "MUTATION_LEASE_CONTENDED",
+        },
+        "FAILED_CLOSED": {
+            "READ_DURABLE_TERMINAL",
+            "VERIFY_DURABLE_TERMINAL",
+            "PROVE_PRELOCK_ABSENCE",
+            "WRITE_NO_PREDICTION_TERMINAL",
+            "READBACK_NO_PREDICTION_TERMINAL",
+            "VERIFY_GAME_STARTED",
+            "ACQUIRE_MUTATION_LEASE",
+            "ATOMIC_COMPLETION_PROOF",
+            "RELEASE_MUTATION_LEASE",
+        },
+    }
+    if status not in expected_stages or stage not in expected_stages[status]:
+        return dict(invalid)
+
+    try:
+        parsed_at = datetime.fromisoformat(at_utc)
+    except (TypeError, ValueError):
+        return dict(invalid)
+    if (
+        parsed_at.tzinfo is None
+        or parsed_at.utcoffset() != timedelta(0)
+        or parsed_at.isoformat() != at_utc
+    ):
+        return dict(invalid)
+
+    public_attempt: Dict[str, Any] = {
+        "status": status,
+        "stage": stage,
+        "atUtc": at_utc,
+        "phase": attempt_phase,
+    }
+    if "gameIndex" in last_attempt:
+        game_index = strict_integer(
+            last_attempt.get("gameIndex"),
+            maximum=manifest_count - 1,
+        )
+        if game_index is None:
             return dict(invalid)
-        public_attempt: Dict[str, Any] = {}
-        for field in string_fields:
-            value = last_attempt.get(field)
-            if value is None:
-                continue
-            if not isinstance(value, str):
-                return dict(invalid)
-            public_attempt[field] = value
-        if "gameIndex" in last_attempt:
-            game_index = safe_attempt_integer(last_attempt.get("gameIndex"))
-            if game_index is None:
-                return dict(invalid)
-            public_attempt["gameIndex"] = game_index
-        public["lastAttempt"] = public_attempt
+        public_attempt["gameIndex"] = game_index
+
+    for field, maximum in (
+        ("gameIdentity", 200),
+        ("durableIdentity", 200),
+        ("errorCode", 160),
+    ):
+        if field not in last_attempt:
+            continue
+        value = last_attempt.get(field)
+        if not isinstance(value, str) or not value or len(value) > maximum:
+            return dict(invalid)
+        public_attempt[field] = value
+
+    error_code = public_attempt.get("errorCode")
+    if (
+        (status == "FAILED_CLOSED" and error_code is None)
+        or (
+            status == "DEFERRED_MUTATION_LEASE_CONTENDED"
+            and error_code != "WRITER_LEASE_CONTENDED"
+        )
+        or (
+            status
+            not in {
+                "FAILED_CLOSED",
+                "DEFERRED_MUTATION_LEASE_CONTENDED",
+            }
+            and error_code is not None
+        )
+    ):
+        return dict(invalid)
+
+    public["lastAttempt"] = public_attempt
     return public
+
 
 def _cooperative_public_state(item: Dict[str, Any]) -> Dict[str, Any]:
     return {
