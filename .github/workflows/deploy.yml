@@ -101,6 +101,8 @@ jobs:
           python -m py_compile scripts/invoke_mlb_trainer_with_retry.py
           python -m py_compile scripts/verify_mlb_release_activation_predeploy.py
           python -m py_compile scripts/verify_mlb_trainer_deploy_response.py
+          python -m py_compile scripts/verify_mlb_postdeploy_workflow_authority.py
+          python -m py_compile scripts/publish_mlb_postdeploy_proof.py
 
       - name: Enforce MLB published prediction and immutable lock regressions
         env:
@@ -137,6 +139,7 @@ jobs:
             tests/unit/test_mlb_release_activation_predeploy.py
             tests/unit/test_mlb_trainer_deploy_response.py
             tests/unit/test_mlb_workflow_authority.py
+            tests/unit/test_publish_mlb_postdeploy_proof.py
             tests/unit/test_run_mlb_ml_v3_audit_report.py
             tests/unit/test_deploy_workflow_trigger_scope.py
             tests/unit/test_mlb_public_prediction_smoke_policy.py
