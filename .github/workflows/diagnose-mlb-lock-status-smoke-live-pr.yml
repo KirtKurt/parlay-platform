@@ -39,6 +39,7 @@ jobs:
       - name: Capture compact read-only lifecycle evidence
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          PYTHONPATH: .
         run: |
           set -euo pipefail
           API_URL=$(aws cloudformation describe-stacks \
