@@ -17,6 +17,10 @@ PULSE_AUTHOR_ID = 41898282
 PULSE_AUTHOR_TYPE = "Bot"
 COMMENT_WINDOW = 100
 ACTIVE_RUN_STATUSES = {"queued", "in_progress", "waiting", "pending", "requested"}
+REPORTER_JOB_NAME = "read-only-progress-pulse"
+REPORTER_ATTEMPT_PROOF_KEY = "_reporterJobAttempted"
+REPORTER_ACTIVE_PROOF_KEY = "_reporterJobActive"
+REPORTER_JOB_PROOF_LIMIT = 4
 
 
 def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -69,6 +73,16 @@ def _workflow_runs(repo: str, workflow_file: str) -> list[dict[str, Any]]:
     return [dict(row) for row in rows if isinstance(row, Mapping)]
 
 
+def _workflow_run_jobs(repo: str, run_id: Any) -> list[dict[str, Any]]:
+    payload = _gh_json(f"repos/{repo}/actions/runs/{run_id}/jobs?per_page=100")
+    if not isinstance(payload, Mapping):
+        raise RuntimeError("workflow_jobs_response_not_an_object")
+    rows = payload.get("jobs") or []
+    if not isinstance(rows, list):
+        raise RuntimeError("workflow_jobs_not_a_list")
+    return [dict(row) for row in rows if isinstance(row, Mapping)]
+
+
 def _timestamp(value: Any) -> Optional[datetime]:
     if not value:
         return None
@@ -79,6 +93,63 @@ def _timestamp(value: Any) -> Optional[datetime]:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _annotate_reporter_job_evidence(
+    repo: str,
+    runs: Iterable[Mapping[str, Any]],
+    *,
+    now: datetime,
+    retry_cooldown_minutes: int,
+) -> list[dict[str, Any]]:
+    """Bind suppression to a bounded set of actual reporter jobs."""
+
+    annotated = [dict(source) for source in runs]
+    candidates: list[int] = []
+    for index, row in enumerate(annotated):
+        status = str(row.get("status") or "")
+        created = _timestamp(row.get("created_at"))
+        age_minutes = (
+            max(0.0, (now - created).total_seconds() / 60.0)
+            if created is not None
+            else None
+        )
+        if status in ACTIVE_RUN_STATUSES or (
+            status == "completed"
+            and age_minutes is not None
+            and age_minutes < retry_cooldown_minutes
+        ):
+            candidates.append(index)
+
+    # Active runs are most important; within each class inspect newest first.
+    # Missing proof never suppresses a recovery, so this hard cap is fail-open
+    # for duplicate prevention and fail-closed for visible reporting cadence.
+    candidates.sort(
+        key=lambda index: (
+            str(annotated[index].get("status") or "") in ACTIVE_RUN_STATUSES,
+            _timestamp(annotated[index].get("created_at"))
+            or datetime.min.replace(tzinfo=timezone.utc),
+        ),
+        reverse=True,
+    )
+    for index in candidates[:REPORTER_JOB_PROOF_LIMIT]:
+        row = annotated[index]
+        try:
+            jobs = _workflow_run_jobs(repo, row.get("id"))
+        except Exception:
+            jobs = []
+        reporter_jobs = [
+            job for job in jobs if str(job.get("name") or "") == REPORTER_JOB_NAME
+        ]
+        row[REPORTER_ATTEMPT_PROOF_KEY] = any(
+            str(job.get("conclusion") or "") != "skipped"
+            for job in reporter_jobs
+        )
+        row[REPORTER_ACTIVE_PROOF_KEY] = any(
+            str(job.get("status") or "") in ACTIVE_RUN_STATUSES
+            for job in reporter_jobs
+        )
+    return annotated
 
 
 def _is_authoritative_pulse_comment(comment: Mapping[str, Any]) -> bool:
@@ -134,20 +205,14 @@ def evaluate_staleness(
         for row in runs
         if current_run_id is None or str(row.get("id")) != str(current_run_id)
     ]
-    # workflow_run and path-scoped push entries may be decision-only fallbacks.
-    # Counting them as pulse attempts can create a self-suppressing loop where
-    # no reporter job ever starts. Scheduled/manual triggers always attempt the
-    # pulse and are safe for active/cooldown suppression; workflow-level
-    # concurrency serializes the event-driven fallback runs themselves.
-    direct_attempt_rows = [
-        row
-        for row in run_rows
-        if str(row.get("event") or "") not in {"workflow_run", "push"}
-    ]
+    # Automatic triggers can finish their decision job without starting the
+    # reporter. Only explicit workflow_dispatch attempts or job-level reporter
+    # evidence may suppress another stale recovery dispatch.
     active_runs = [
         row
-        for row in direct_attempt_rows
+        for row in run_rows
         if str(row.get("status") or "") in ACTIVE_RUN_STATUSES
+        and bool(row.get(REPORTER_ACTIVE_PROOF_KEY))
     ]
     active_run = max(
         active_runs,
@@ -157,8 +222,9 @@ def evaluate_staleness(
     )
     attempted_runs = [
         (_timestamp(row.get("created_at")), row)
-        for row in direct_attempt_rows
-        if _timestamp(row.get("created_at")) is not None
+        for row in run_rows
+        if bool(row.get(REPORTER_ATTEMPT_PROOF_KEY))
+        and _timestamp(row.get("created_at")) is not None
     ]
     latest_attempt = (
         max(attempted_runs, key=lambda item: item[0]) if attempted_runs else None
@@ -232,10 +298,17 @@ def main() -> int:
     parser.add_argument("--github-output", default=os.environ.get("GITHUB_OUTPUT"))
     args = parser.parse_args()
 
+    now = datetime.now(timezone.utc)
+    runs = _annotate_reporter_job_evidence(
+        args.repo,
+        _workflow_runs(args.repo, args.workflow),
+        now=now,
+        retry_cooldown_minutes=args.retry_cooldown_minutes,
+    )
     result = evaluate_staleness(
         _issue_comments(args.repo, args.issue),
-        _workflow_runs(args.repo, args.workflow),
-        now=datetime.now(timezone.utc),
+        runs,
+        now=now,
         stale_after_minutes=args.stale_after_minutes,
         retry_cooldown_minutes=args.retry_cooldown_minutes,
         current_run_id=args.current_run_id,

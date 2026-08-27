@@ -199,6 +199,7 @@ def test_active_forced_dispatch_suppresses_competing_recovery_race() -> None:
                 "event": "workflow_dispatch",
                 "status": "in_progress",
                 "created_at": "2026-08-26T21:58:00Z",
+                watchdog.REPORTER_ACTIVE_PROOF_KEY: True,
             }
         ],
     )
@@ -211,11 +212,150 @@ def test_active_forced_dispatch_suppresses_competing_recovery_race() -> None:
 def test_recent_failed_attempt_observes_retry_cooldown() -> None:
     result = _evaluate(
         [_comment("2026-08-26T20:41:21Z")],
-        [{"id": 100, "status": "completed", "created_at": "2026-08-26T21:55:00Z"}],
+        [
+            {
+                "id": 100,
+                "event": "workflow_dispatch",
+                "status": "completed",
+                "created_at": "2026-08-26T21:55:00Z",
+                watchdog.REPORTER_ATTEMPT_PROOF_KEY: True,
+            }
+        ],
     )
 
     assert result["dispatchRequired"] is False
     assert result["reason"] == "RECENT_PULSE_ATTEMPT_IN_COOLDOWN"
+
+
+
+
+def test_completed_schedule_noop_at_27_9_does_not_block_stale_31_9_dispatch() -> None:
+    pulse_at = "2026-08-26T21:32:06Z"
+    first = watchdog.evaluate_staleness(
+        [_comment(pulse_at)],
+        (),
+        now=NOW,
+        stale_after_minutes=28,
+        retry_cooldown_minutes=10,
+    )
+    assert first["visiblePulseAgeMinutes"] == 27.9
+    assert first["dispatchRequired"] is False
+
+    later = watchdog.evaluate_staleness(
+        [_comment(pulse_at)],
+        [
+            {
+                "id": 105,
+                "event": "schedule",
+                "status": "completed",
+                "created_at": "2026-08-26T22:00:00Z",
+                watchdog.REPORTER_ATTEMPT_PROOF_KEY: False,
+            }
+        ],
+        now=datetime(2026, 8, 26, 22, 4, tzinfo=timezone.utc),
+        stale_after_minutes=28,
+        retry_cooldown_minutes=10,
+    )
+
+    assert later["visiblePulseAgeMinutes"] == 31.9
+    assert later["stale"] is True
+    assert later["dispatchRequired"] is True
+    assert later["reason"] == "VISIBLE_PULSE_STALE"
+
+
+def test_completed_schedule_with_reporter_job_proof_observes_cooldown() -> None:
+    result = watchdog.evaluate_staleness(
+        [_comment("2026-08-26T20:41:21Z")],
+        [
+            {
+                "id": 106,
+                "event": "schedule",
+                "status": "completed",
+                "created_at": "2026-08-26T21:55:00Z",
+                watchdog.REPORTER_ATTEMPT_PROOF_KEY: True,
+            }
+        ],
+        now=NOW,
+        stale_after_minutes=28,
+        retry_cooldown_minutes=10,
+    )
+
+    assert result["dispatchRequired"] is False
+    assert result["reason"] == "RECENT_PULSE_ATTEMPT_IN_COOLDOWN"
+
+
+def test_job_annotation_distinguishes_noop_and_actual_reporter(monkeypatch) -> None:
+    calls: list[int] = []
+
+    def fake_jobs(_repo: str, run_id: int):
+        calls.append(run_id)
+        if run_id == 107:
+            return [
+                {
+                    "name": watchdog.REPORTER_JOB_NAME,
+                    "status": "completed",
+                    "conclusion": "skipped",
+                }
+            ]
+        return [
+            {
+                "name": watchdog.REPORTER_JOB_NAME,
+                "status": "completed",
+                "conclusion": "failure",
+            }
+        ]
+
+    monkeypatch.setattr(watchdog, "_workflow_run_jobs", fake_jobs)
+    rows = watchdog._annotate_reporter_job_evidence(
+        "KirtKurt/parlay-platform",
+        [
+            {
+                "id": 107,
+                "event": "schedule",
+                "status": "completed",
+                "created_at": "2026-08-26T21:55:00Z",
+            },
+            {
+                "id": 108,
+                "event": "workflow_run",
+                "status": "completed",
+                "created_at": "2026-08-26T21:56:00Z",
+            },
+        ],
+        now=NOW,
+        retry_cooldown_minutes=10,
+    )
+
+    assert calls == [108, 107]
+    assert rows[0][watchdog.REPORTER_ATTEMPT_PROOF_KEY] is False
+    assert rows[1][watchdog.REPORTER_ATTEMPT_PROOF_KEY] is True
+
+def test_reporter_job_evidence_queries_are_hard_bounded(monkeypatch) -> None:
+    calls: list[int] = []
+
+    def fake_jobs(_repo: str, run_id: int):
+        calls.append(run_id)
+        return []
+
+    monkeypatch.setattr(watchdog, "_workflow_run_jobs", fake_jobs)
+    rows = [
+        {
+            "id": 200 + index,
+            "event": "schedule",
+            "status": "completed",
+            "created_at": f"2026-08-26T21:5{index}:00Z",
+        }
+        for index in range(6)
+    ]
+    watchdog._annotate_reporter_job_evidence(
+        "KirtKurt/parlay-platform",
+        rows,
+        now=NOW,
+        retry_cooldown_minutes=10,
+    )
+
+    assert len(calls) == watchdog.REPORTER_JOB_PROOF_LIMIT == 4
+    assert calls == [205, 204, 203, 202]
 
 
 def test_current_fallback_run_is_excluded_from_active_run_check() -> None:
@@ -266,6 +406,7 @@ def test_workflow_stale_gates_automatic_triggers_and_forces_explicit_dispatch() 
         "workflow_dispatch:", 1
     )[0]
     assert "branches: [main]" in workflow_run_block
+    assert "github.event.workflow_run.head_repository.full_name == github.repository" in pulse
     for producer in (
         "MLB Canonical Runtime Health Watch",
         "MLB Scoring Guard",
@@ -275,6 +416,7 @@ def test_workflow_stale_gates_automatic_triggers_and_forces_explicit_dispatch() 
         "Unified MLB learning recovery once",
         "MLB Daily Yesterday Audit",
         "Tennis Autonomy Status Backstop",
+        "Publish Tennis Autonomy Status",
         "NFL Auto AWS Stack Probe",
     ):
         assert producer in pulse
@@ -297,6 +439,18 @@ def test_workflow_stale_gates_automatic_triggers_and_forces_explicit_dispatch() 
     assert "--stale-after-minutes 40" not in pulse
     assert "actions: read" in pulse
     assert "needs.pulse_decision.outputs.run_pulse == 'true'" in pulse
+
+
+def test_primary_workflow_rejects_fork_repository_named_main_seed() -> None:
+    pulse = (ROOT / ".github/workflows/mlb-30m-progress-pulse.yml").read_text()
+    condition = (
+        "if: github.event_name != 'workflow_run' || "
+        "(github.event.workflow_run.head_branch == 'main' && "
+        "github.event.workflow_run.head_repository.full_name == github.repository)"
+    )
+
+    assert condition in pulse
+    assert "Publish Tennis Autonomy Status" in pulse
 
 
 def test_cli_reads_28_minute_dispatch_threshold_from_environment(monkeypatch) -> None:

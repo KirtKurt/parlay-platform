@@ -1,0 +1,81 @@
+name: MLB progress pulse bounded runner relay
+
+run-name: MLB pulse relay segment ${{ github.event_name == 'push' && '10' || inputs.remaining_segments }}
+
+on:
+  # The merge push seeds one finite chain. Later renewal requires an explicit
+  # workflow_dispatch or another reviewed edit to this relay file.
+  workflow_dispatch:
+    inputs:
+      remaining_segments:
+        description: Finite five-hour relay segments, from 1 through 10
+        required: false
+        default: 10
+        type: number
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-progress-pulse-bounded-runner-relay.yml'
+
+permissions:
+  actions: write
+  contents: read
+  issues: read
+
+# One active segment and at most one pending workflow_dispatch successor.
+# The active state machine periodically proves that the successor still exists.
+concurrency:
+  group: mlb-progress-pulse-bounded-runner-relay
+  cancel-in-progress: false
+
+env:
+  RELAY_MAX_SEGMENTS: '10'
+  RELAY_POLL_INTERVAL_SECONDS: '120'
+  # 151 fixed-rate probes have 150 two-minute intervals: five hours per segment.
+  RELAY_POLLS_PER_SEGMENT: '151'
+  RELAY_FAILURE_THRESHOLD: '3'
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    # Five hours of polling plus 25 minutes for setup/API jitter remains below
+    # GitHub's six-hour hosted-runner execution ceiling.
+    timeout-minutes: 325
+    steps:
+      - name: Checkout exact main relay policy
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate main-only finite relay source
+        env:
+          INPUT_REMAINING_SEGMENTS: ${{ inputs.remaining_segments }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != 'refs/heads/main' ]; then
+            echo "::error::Bounded relay is restricted to refs/heads/main."
+            exit 78
+          fi
+          if [ "$GITHUB_EVENT_NAME" != 'push' ] &&
+             [ "$GITHUB_EVENT_NAME" != 'workflow_dispatch' ]; then
+            echo "::error::Only the merge push or an explicit dispatch may seed a lease."
+            exit 78
+          fi
+          python -m py_compile scripts/check_mlb_progress_pulse_staleness.py
+          python -m py_compile scripts/run_mlb_progress_pulse_bounded_relay.py
+          ! grep -Ei 'boto3|aws[[:space:]]+(dynamodb|lambda)|put_item|update_item|delete_item' scripts/check_mlb_progress_pulse_staleness.py scripts/run_mlb_progress_pulse_bounded_relay.py
+          ! grep -Ei 'gh[[:space:]]+issue|issues:[[:space:]]+write' scripts/run_mlb_progress_pulse_bounded_relay.py
+
+      - name: Maintain one finite self-healing relay segment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_REMAINING_SEGMENTS: ${{ inputs.remaining_segments }}
+        run: |
+          set -euo pipefail
+          python scripts/run_mlb_progress_pulse_bounded_relay.py --event-name "$GITHUB_EVENT_NAME" --remaining-segments "${INPUT_REMAINING_SEGMENTS:-}" --poll-count "$RELAY_POLLS_PER_SEGMENT" --poll-interval-seconds "$RELAY_POLL_INTERVAL_SECONDS" --failure-threshold "$RELAY_FAILURE_THRESHOLD"
