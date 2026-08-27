@@ -20,6 +20,23 @@ sys.modules[SPEC.name] = relay
 SPEC.loader.exec_module(relay)
 
 
+class FakeClock:
+    def __init__(self) -> None:
+        self.value = 0.0
+        self.sleeps: list[float] = []
+
+    def __call__(self) -> float:
+        return self.value
+
+    def sleep(self, seconds: float) -> None:
+        assert seconds >= 0
+        self.sleeps.append(seconds)
+        self.value += seconds
+
+    def advance(self, seconds: float) -> None:
+        self.value += seconds
+
+
 class FakeClient:
     def __init__(
         self,
@@ -149,14 +166,14 @@ def test_successor_filter_is_chain_bound_created_after_and_exact_decrement() -> 
             "event": "push",
             "status": "pending",
             "head_branch": "main",
-            "display_title": "MLB pulse relay segment 10",
+            "display_title": "MLB pulse relay segment 9",
             "created_at": "2026-08-27T20:02:00Z",
         },
         {
             "id": 13,
             "event": "workflow_dispatch",
             "status": "pending",
-            "head_branch": "main",
+            "head_branch": "feature",
             "display_title": "MLB pulse relay segment 10",
             "created_at": "2026-08-27T20:03:00Z",
         },
@@ -186,11 +203,46 @@ def test_successor_filter_is_chain_bound_created_after_and_exact_decrement() -> 
     ) == [15]
 
 
-def test_pending_loss_or_push_replacement_is_requeued_with_decremented_input() -> None:
+@pytest.mark.parametrize("event", ("workflow_dispatch", "push"))
+def test_newer_trusted_segment_ten_renews_instead_of_being_overwritten(
+    event: str,
+) -> None:
+    rows = [
+        {
+            "id": 20,
+            "event": event,
+            "status": "pending",
+            "head_branch": "main",
+            "display_title": "MLB pulse relay segment 10",
+            "created_at": "2026-08-27T20:04:00Z",
+        }
+    ]
+
+    assert relay.filter_successor_run_ids(
+        rows,
+        current_run_id=10,
+        current_created_at="2026-08-27T20:00:00Z",
+        expected_remaining_segments=8,
+    ) == [20]
+
+
+def test_verified_explicit_renewal_is_not_overwritten_by_decrement() -> None:
     client = FakeClient(
-        # Poll 1: successor exists. Poll 2: it was canceled/replaced by a push
-        # and therefore disappears from the filtered workflow_dispatch view.
-        # The dispatch is then verified as run 202. Final probes retain it.
+        successor_snapshots=[[777]],
+        decisions=[relay.Decision(False, "VISIBLE_PULSE_FRESH")],
+    )
+
+    result = _machine(client, remaining_segments=9).run()
+
+    assert client.successor_dispatches == []
+    assert result["nextSegments"] == 8
+    assert result["successorRequired"] is True
+
+
+def test_pending_loss_is_requeued_with_decremented_input() -> None:
+    client = FakeClient(
+        # Poll 1: successor exists. Poll 2: it was canceled or otherwise lost.
+        # The exact decremented dispatch is then verified as run 202.
         successor_snapshots=[[201], [], [202], [202], [202]],
         decisions=[
             relay.Decision(False, "VISIBLE_PULSE_FRESH"),
@@ -296,23 +348,54 @@ def test_successor_failure_is_bounded_and_never_warns_for_five_hours() -> None:
     assert client.successor_dispatches == [9, 9, 9]
 
 
-def test_configured_76th_poll_is_final_without_a_77th_decision() -> None:
+def test_configured_151st_poll_is_final_without_a_152nd_decision() -> None:
+    clock = FakeClock()
     client = FakeClient(
         successor_snapshots=[],
         decisions=[relay.Decision(False, "VISIBLE_PULSE_FRESH")],
     )
-    sleeps: list[float] = []
     result = _machine(
         client,
         remaining_segments=1,
-        poll_count=76,
-        poll_interval_seconds=240,
-        poll_sleep=sleeps.append,
+        poll_count=151,
+        poll_interval_seconds=120,
+        poll_sleep=clock.sleep,
+        monotonic=clock,
     ).run()
 
-    assert client.decision_calls == 76
-    assert result["successfulPolls"] == 76
-    assert sleeps == [240] * 75
+    assert client.decision_calls == 151
+    assert result["successfulPolls"] == 151
+    assert clock.sleeps == [120] * 150
+    assert clock.value == 5 * 60 * 60
+
+
+def test_slow_poll_work_does_not_accumulate_into_start_time_drift() -> None:
+    clock = FakeClock()
+
+    class SlowClient(FakeClient):
+        def __init__(self) -> None:
+            super().__init__(
+                successor_snapshots=[[9001]],
+                decisions=[relay.Decision(False, "VISIBLE_PULSE_FRESH")],
+            )
+            self.decision_starts: list[float] = []
+
+        def evaluate_staleness(self):
+            self.decision_starts.append(clock())
+            clock.advance(37)
+            return super().evaluate_staleness()
+
+    client = SlowClient()
+    _machine(
+        client,
+        poll_count=4,
+        poll_interval_seconds=120,
+        poll_sleep=clock.sleep,
+        monotonic=clock,
+    ).run()
+
+    assert client.decision_starts == [0, 120, 240, 360]
+    assert clock.sleeps == [83, 83, 83]
 
 
 def test_workflow_invokes_state_machine_with_exact_finite_geometry() -> None:
@@ -320,8 +403,8 @@ def test_workflow_invokes_state_machine_with_exact_finite_geometry() -> None:
 
     assert "scripts/run_mlb_progress_pulse_bounded_relay.py" in workflow
     assert "RELAY_MAX_SEGMENTS: '10'" in workflow
-    assert "RELAY_POLL_INTERVAL_SECONDS: '240'" in workflow
-    assert "RELAY_POLLS_PER_SEGMENT: '76'" in workflow
+    assert "RELAY_POLL_INTERVAL_SECONDS: '120'" in workflow
+    assert "RELAY_POLLS_PER_SEGMENT: '151'" in workflow
     assert "RELAY_FAILURE_THRESHOLD: '3'" in workflow
     assert "run-name: MLB pulse relay segment" in workflow
     assert "timeout-minutes: 325" in workflow
@@ -340,6 +423,23 @@ def test_workflow_invokes_state_machine_with_exact_finite_geometry() -> None:
     assert "sleep " not in workflow
     assert "gh issue" not in SCRIPT.read_text(encoding="utf-8")
 
-    maximum_visible_age_seconds = 28 * 60 + 4 * 60 + 60
-    assert maximum_visible_age_seconds == 33 * 60
+    # Strictly-over-28 staleness can wait at most one fixed two-minute phase.
+    # Include the checker's outer timeout, dispatch API budget, and the observed
+    # one-minute reporter runtime; this is objective margin, not a platform SLA.
+    maximum_detection_age_seconds = 28 * 60 + 2 * 60
+    checker_budget_seconds = 130
+    dispatch_api_budget_seconds = 60
+    reporter_runtime_budget_seconds = 60
+    maximum_visible_age_seconds = (
+        maximum_detection_age_seconds
+        + checker_budget_seconds
+        + dispatch_api_budget_seconds
+        + reporter_runtime_budget_seconds
+    )
+    assert maximum_visible_age_seconds == 34 * 60 + 10
     assert maximum_visible_age_seconds < 35 * 60
+
+    # A relay poll makes one comment request, one run request, at most four job
+    # proof requests, and one successor request. Thirty fixed-rate polls/hour
+    # remain well below the shared 1,000-request repository token limit.
+    assert 30 * 7 == 210
