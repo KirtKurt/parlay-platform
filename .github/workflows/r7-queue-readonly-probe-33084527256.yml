@@ -577,9 +577,10 @@ jobs:
           PY
 
 
-      - name: Checkout exact isolated diagnostic source
+      - name: Checkout exact deployed R7 source
         uses: actions/checkout@v4
         with:
+          ref: a3d399881254a249f241e77a52486bc694f65de3
           persist-credentials: false
           fetch-depth: 1
 
