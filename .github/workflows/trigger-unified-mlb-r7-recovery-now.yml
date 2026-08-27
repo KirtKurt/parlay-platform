@@ -40,21 +40,10 @@ jobs:
               --event workflow_dispatch \
               --limit 5 \
               --json databaseId,headSha,status,conclusion,url,createdAt)
-            python - "$dispatched_at" <<'PY' <<<"$run_json"
-import json
-import sys
-from datetime import datetime, timezone
-
-rows = json.load(sys.stdin)
-cutoff = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
-for row in rows:
-    created = datetime.fromisoformat(str(row.get("createdAt") or "").replace("Z", "+00:00"))
-    if created >= cutoff:
-        print(json.dumps(row, sort_keys=True))
-        raise SystemExit(0)
-raise SystemExit(1)
-PY
-            if [ "$?" -eq 0 ]; then
+            if printf '%s\n' "$run_json" | jq -e --arg cutoff "$dispatched_at" \
+              'map(select(.createdAt >= $cutoff)) | length > 0' >/dev/null; then
+              printf '%s\n' "$run_json" | jq --arg cutoff "$dispatched_at" \
+                'map(select(.createdAt >= $cutoff)) | .[0]'
               exit 0
             fi
             sleep 2
