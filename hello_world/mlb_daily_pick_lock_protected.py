@@ -1815,10 +1815,24 @@ def lambda_handler(event, context):
                 "sport": "mlb",
                 "run": COOPERATIVE_TERMINAL_REPLAY_RUN,
                 "slateDateEt": str(claimed.get("slate_date_et") or ""),
-                "force": True,
+                # The external queue admission required force=True.  The
+                # owner-side delegate must be non-force so an exact historical
+                # date enters the bounded post-window terminal-only path.
+                # force=True would bypass that path and run full lock
+                # generation, which cannot be bounded by Lambda's 900-second
+                # maximum and is unnecessary after every game has started.
+                "force": False,
                 "cooperativeEventBridgeOwner": True,
             }
             try:
+                replay_remaining_seconds = _remaining_seconds(context)
+                if (
+                    replay_remaining_seconds
+                    < COOPERATIVE_REPLAY_MIN_REMAINING_SECONDS
+                ):
+                    raise RuntimeError(
+                        "MLB_COOPERATIVE_REPLAY_BUDGET_DEPLETED_BEFORE_DELEGATE"
+                    )
                 replay_response = mlb_daily_pick_lock.lambda_handler(
                     replay_event,
                     context,
@@ -1840,6 +1854,10 @@ def lambda_handler(event, context):
                     ),
                     "historicalReplayAttempted": True,
                     "historicalReplayCompleted": True,
+                    "historicalReplayBoundedPostWindowRoute": True,
+                    "historicalReplayStartedWithRemainingSeconds": (
+                        replay_remaining_seconds
+                    ),
                     "claimOwnerIsCurrentLeaseOwner": True,
                 }
             except BaseException:
