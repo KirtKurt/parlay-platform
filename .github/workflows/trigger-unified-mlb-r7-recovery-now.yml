@@ -1,0 +1,63 @@
+name: Trigger post-fix unified MLB R7 recovery now
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/trigger-unified-mlb-r7-recovery-now.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: trigger-post-fix-unified-mlb-r7-recovery
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Dispatch isolated production recovery and confirm run registration
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REQUEST_ID: post-fix-verification-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          dispatched_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          gh workflow run unified-mlb-learning-recovery-once.yml \
+            --repo "$REPOSITORY" \
+            --ref main \
+            -f request_id="$REQUEST_ID"
+
+          for attempt in $(seq 1 30); do
+            run_json=$(gh run list \
+              --repo "$REPOSITORY" \
+              --workflow unified-mlb-learning-recovery-once.yml \
+              --event workflow_dispatch \
+              --limit 5 \
+              --json databaseId,headSha,status,conclusion,url,createdAt)
+            python - "$dispatched_at" <<'PY' <<<"$run_json"
+import json
+import sys
+from datetime import datetime, timezone
+
+rows = json.load(sys.stdin)
+cutoff = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+for row in rows:
+    created = datetime.fromisoformat(str(row.get("createdAt") or "").replace("Z", "+00:00"))
+    if created >= cutoff:
+        print(json.dumps(row, sort_keys=True))
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+            if [ "$?" -eq 0 ]; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Post-fix unified MLB R7 recovery dispatch was not observable"
+          exit 1
