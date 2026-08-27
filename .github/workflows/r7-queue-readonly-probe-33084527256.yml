@@ -575,3 +575,423 @@ jobs:
           if not result['ok']:
               raise SystemExit('Exact queue item failed its deployed identity contract')
           PY
+
+
+      - name: Checkout exact isolated diagnostic source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Reproduce exact prelock classification under hard read-only guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          python -m pip install --quiet 'boto3>=1.34,<2' 'requests>=2,<3'
+          python - <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import os
+          import re
+          import sys
+          from collections import Counter
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          from botocore.client import BaseClient
+
+          # Install the guard before repository modules are importable. The
+          # diagnostic process can issue only strongly-consistent DynamoDB read
+          # operations; every AWS write and every Lambda operation is rejected.
+          original_api_call = BaseClient._make_api_call
+          operation_counts = Counter()
+          allowed_dynamodb = {
+              'BatchGetItem',
+              'GetItem',
+              'Query',
+              'TransactGetItems',
+          }
+
+          def read_only_api_call(self, operation_name, api_params):
+              service = str(self.meta.service_model.service_name or '')
+              operation_counts[f'{service}:{operation_name}'] += 1
+              if service != 'dynamodb' or operation_name not in allowed_dynamodb:
+                  raise RuntimeError(
+                      f'READ_ONLY_GUARD_BLOCKED:{service}:{operation_name}'
+                  )
+              return original_api_call(self, operation_name, api_params)
+
+          BaseClient._make_api_call = read_only_api_call
+          sys.path.insert(0, str(Path.cwd() / 'hello_world'))
+
+          import mlb_daily_pick_lock_protected as protected
+          import mlb_prospective_row_repair as repair
+
+          module = protected.mlb_daily_pick_lock
+          patch = protected.mlb_daily_per_game_lock_patch
+          expected_error = 'PRELOCK_CANDIDATE_REQUIRES_REVIEW'
+
+          queue = module.TABLE.get_item(
+              Key={
+                  'PK': os.environ['EXPECTED_PK'],
+                  'SK': os.environ['EXPECTED_SK'],
+              },
+              ConsistentRead=True,
+          ).get('Item')
+          if not isinstance(queue, dict):
+              raise SystemExit('Exact cooperative queue item is absent')
+          progress = queue.get('terminal_replay_progress')
+          if not isinstance(progress, dict):
+              raise SystemExit('Exact cooperative checkpoint is absent')
+          attempt = progress.get('lastAttempt')
+          if not isinstance(attempt, dict):
+              raise SystemExit('Exact cooperative last attempt is absent')
+          if (
+              str(queue.get('state') or '') not in {'QUEUED', 'CLAIMED'}
+              or str(attempt.get('errorCode') or '') != expected_error
+              or str(attempt.get('stage') or '') != 'PROVE_PRELOCK_ABSENCE'
+          ):
+              raise SystemExit('Live queue is no longer at the target failure')
+
+          slate = str(queue.get('slate_date_et') or '')
+          game_index = int(attempt.get('gameIndex'))
+          status_cache = getattr(patch, '_STATUS_READ_CACHE')
+          alias_limit = getattr(
+              patch,
+              '_COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT',
+          )
+          status_token = status_cache.set({'canonicalPulls': {}})
+          alias_token = alias_limit.set(
+              repair.COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_QUERY_LIMIT
+          )
+          try:
+              pulls = sorted(
+                  list(module._pulls_for_date(slate) or []),
+                  key=lambda pull: patch._pull_at(module, pull)
+                  or datetime.min.replace(tzinfo=timezone.utc),
+              )
+              manifest = sorted(
+                  list(module._latest_games_for_date(slate, pulls) or []),
+                  key=lambda game: (
+                      (
+                          patch._start(module, game)
+                          or datetime.min.replace(tzinfo=timezone.utc)
+                      ).isoformat(),
+                      str(patch.game_identity(game) or ''),
+                  ),
+              )
+              if game_index < 0 or game_index >= len(manifest):
+                  raise RuntimeError('LIVE_GAME_INDEX_OUT_OF_MANIFEST_RANGE')
+              identities = []
+              identity_options = []
+              for game in manifest:
+                  options = repair._cooperative_terminal_identity_options(
+                      patch, game
+                  )
+                  identities.append(options[0])
+                  identity_options.append(options)
+              selected_authority = patch._select_provider_manifest_authority(
+                  module,
+                  pulls,
+                  slate,
+                  manifest,
+              )
+              manifest_authority = (
+                  repair._cooperative_terminal_manifest_authority_evidence(
+                      module,
+                      patch,
+                      selected_authority,
+                      len(manifest),
+                  )
+              )
+              manifest_fingerprint = (
+                  repair._cooperative_terminal_manifest_fingerprint(
+                      module,
+                      patch,
+                      manifest,
+                      identities=identities,
+                      identity_options=identity_options,
+                      manifest_authority=manifest_authority,
+                  )
+              )
+              game = manifest[game_index]
+              scoring = patch._scoring_pulls(module, pulls, game)
+              candidate_items = patch._candidate_items(
+                  module,
+                  slate,
+                  game,
+                  scoring,
+              )
+              candidate, proof, bound, errors = patch._last_prelock_candidate(
+                  module,
+                  slate,
+                  game,
+                  scoring,
+              )
+          finally:
+              alias_limit.reset(alias_token)
+              status_cache.reset(status_token)
+
+          safe_error = re.compile(r'^[a-z0-9_.:-]{1,240}$')
+          safe_errors = []
+          for value in errors or []:
+              value = str(value)
+              if safe_error.fullmatch(value):
+                  safe_errors.append(value)
+              else:
+                  safe_errors.append(
+                      'REDACTED_ERROR_SHA256:'
+                      + hashlib.sha256(value.encode('utf-8')).hexdigest()
+                  )
+
+          def digest(value):
+              return hashlib.sha256(
+                  str(value or '').encode('utf-8')
+              ).hexdigest()
+
+          def iso(value):
+              return value.isoformat() if value is not None else None
+
+          candidate_summaries = []
+          for item in candidate_items:
+              row = item.get('data')
+              row = row if isinstance(row, dict) else {}
+              candidate_summaries.append({
+                  'keyFingerprint': digest(
+                      f"{item.get('PK') or ''}\0{item.get('SK') or ''}"
+                  ),
+                  'recordType': item.get('record_type'),
+                  'snapshotVersion': item.get('snapshot_version'),
+                  'snapshotRole': item.get('snapshot_role'),
+                  'publicAuthorityVersion': item.get(
+                      'public_authority_version'
+                  ),
+                  'userVisible': item.get('user_visible'),
+                  'displayPrediction': item.get('display_prediction'),
+                  'displayStatus': item.get('display_status'),
+                  'displaySurface': item.get('display_surface'),
+                  'predictionPersistenceProofType': item.get(
+                      'prediction_persistence_proof_type'
+                  ),
+                  'predictionPayloadFingerprintVersion': item.get(
+                      'prediction_payload_fingerprint_version'
+                  ),
+                  'createdAtUtc': iso(
+                      patch._candidate_created_at(item, row)
+                  ),
+                  'persistedAtUtc': iso(
+                      patch._candidate_persisted_at(item)
+                  ),
+                  'sourceAtUtc': iso(
+                      patch._candidate_source_at(item, row)
+                  ),
+                  'rowLockedPrediction': row.get('lockedPrediction'),
+                  'rowOfficialPrediction': row.get('officialPrediction'),
+                  'rowDisplayPrediction': row.get('displayPrediction'),
+                  'rowDisplayGroup': row.get('displayGroup'),
+                  'rowOfficialPredictionStatus': row.get(
+                      'officialPredictionStatus'
+                  ),
+                  'rowHasSelection': bool(
+                      row.get('predictedWinner')
+                      and row.get('predictedSide') in {'home', 'away'}
+                  ),
+                  'rowFingerprint': patch._payload_fingerprint(
+                      row,
+                      (
+                          item.get(
+                              'prediction_payload_fingerprint_version'
+                          )
+                          if patch._supported_payload_fingerprint_version(
+                              item.get(
+                                  'prediction_payload_fingerprint_version'
+                              )
+                          )
+                          else None
+                      ),
+                  ),
+              })
+          candidate_summaries.sort(
+              key=lambda item: (
+                  str(item.get('persistedAtUtc') or ''),
+                  str(item.get('keyFingerprint') or ''),
+              )
+          )
+
+          proof_summary = None
+          if isinstance(proof, dict):
+              proof_summary = {
+                  key: proof.get(key)
+                  for key in (
+                      'version',
+                      'recordType',
+                      'snapshotVersion',
+                      'snapshotRole',
+                      'publicAuthorityVersion',
+                      'userVisible',
+                      'displayPrediction',
+                      'displayStatus',
+                      'displaySurface',
+                      'signalPolicyVersion',
+                      'predictionCreatedAtUtc',
+                      'predictionPersistedAtUtc',
+                      'persistenceProofType',
+                      'predictionPayloadFingerprintVersion',
+                      'candidateSnapshotFingerprint',
+                      'predictionSourcePullAtUtc',
+                      'predictionSourcePullFingerprint',
+                      'sourceAgeAtCutoffMinutes',
+                      'evaluationCutoffAtUtc',
+                      'sourceAtOrBeforeCutoff',
+                      'createdAtOrBeforeCutoff',
+                      'persistedAtOrBeforeCutoff',
+                      'candidateRowFingerprint',
+                      'candidateSelectionFingerprint',
+                      'candidateVectorFingerprint',
+                      'identityBindingMode',
+                      'rejectedNewerCandidateCount',
+                      'modelOrSignalRecomputedAtLock',
+                  )
+              }
+              proof_summary['candidateIdentityFingerprint'] = digest(
+                  proof.get('candidateGameIdentity')
+              )
+              proof_summary['stageIdentityFingerprint'] = digest(
+                  proof.get('stageGameIdentity')
+              )
+
+          game_start = patch._start(module, game)
+          lock_at = patch._lock_at(module, game)
+          result = {
+              'ok': True,
+              'proofType': 'R7_PRELOCK_CANDIDATE_EXACT_READ_ONLY_CLASSIFICATION',
+              'observedAtUtc': datetime.now(
+                  timezone.utc
+              ).isoformat().replace('+00:00', 'Z'),
+              'sourceRunId': os.environ.get('GITHUB_RUN_ID'),
+              'readOnly': True,
+              'hardSdkGuardInstalledBeforeRepositoryImport': True,
+              'allowedAwsServices': ['dynamodb'],
+              'allowedDynamoDbOperations': sorted(allowed_dynamodb),
+              'awsOperationCounts': dict(sorted(operation_counts.items())),
+              'lambdaInvocationsAttempted': 0,
+              'tableWritesAttempted': 0,
+              'leaseMutationsAttempted': 0,
+              'queueBinding': {
+                  'state': queue.get('state'),
+                  'lastAttemptAtUtc': attempt.get('atUtc'),
+                  'lastAttemptStage': attempt.get('stage'),
+                  'lastAttemptStatus': attempt.get('status'),
+                  'lastAttemptErrorCode': attempt.get('errorCode'),
+                  'gameIndex': game_index,
+                  'progressCheckpointFingerprint': progress.get(
+                      'checkpointFingerprint'
+                  ),
+                  'progressManifestFingerprint': progress.get(
+                      'manifestFingerprint'
+                  ),
+                  'recomputedManifestFingerprint': manifest_fingerprint,
+                  'manifestFingerprintMatchesCheckpoint': (
+                      manifest_fingerprint
+                      == str(progress.get('manifestFingerprint') or '')
+                  ),
+                  'requestIdMatchedInternally': (
+                      str(progress.get('requestId') or '')
+                      == str(queue.get('request_id') or '')
+                      and bool(queue.get('request_id'))
+                  ),
+                  'requestEpochMatchedInternally': (
+                      int(progress.get('requestEpoch') or 0)
+                      == int(queue.get('requested_at_epoch') or 0)
+                      and int(queue.get('requested_at_epoch') or 0) > 0
+                  ),
+                  'requestIdentifiersRedacted': True,
+              },
+              'target': {
+                  'slateDateEt': slate,
+                  'manifestGameCount': len(manifest),
+                  'gameIndex': game_index,
+                  'gameIdentityFingerprint': digest(identities[game_index]),
+                  'identityOptionCount': len(identity_options[game_index]),
+                  'identityOptionsRedacted': True,
+                  'gameStartUtc': iso(game_start),
+                  'scheduledLockAtUtc': iso(lock_at),
+                  'scoringPullCount': len(scoring),
+              },
+              'authority': {
+                  'version': selected_authority.get('version'),
+                  'recordType': selected_authority.get('recordType'),
+                  'observedAtUtc': selected_authority.get('observedAtUtc'),
+                  'gameCount': selected_authority.get('gameCount'),
+                  'fingerprint': selected_authority.get('fingerprint'),
+                  'immutable': selected_authority.get('immutable'),
+                  'writeOnce': selected_authority.get('writeOnce'),
+                  'consistentReadVerified': selected_authority.get(
+                      'consistentReadVerified'
+                  ),
+                  'authorityEvidenceFingerprint': manifest_authority.get(
+                      'authorityEvidenceFingerprint'
+                  ),
+                  'scheduleRevisionAuthorityVersion': (
+                      (
+                          manifest_authority.get(
+                              'scheduleRevisionAuthority'
+                          )
+                          or {}
+                      ).get('version')
+                  ),
+                  'scheduleRevisionAuthorityFingerprint': (
+                      (
+                          manifest_authority.get(
+                              'scheduleRevisionAuthority'
+                          )
+                          or {}
+                      ).get('fingerprint')
+                  ),
+                  'authorityKeysRedacted': True,
+              },
+              'classification': {
+                  'candidatePresent': isinstance(candidate, dict),
+                  'candidateProofPresent': isinstance(proof, dict),
+                  'boundScoringPullCount': len(bound or []),
+                  'candidateErrors': safe_errors,
+                  'candidateErrorCount': len(safe_errors),
+                  'provenAbsence': bool(
+                      candidate is None
+                      and proof is None
+                      and not bound
+                      and patch._is_no_prediction_candidate_failure(errors)
+                  ),
+                  'reproducesLiveFailure': bool(
+                      not (
+                          candidate is None
+                          and proof is None
+                          and not bound
+                          and patch._is_no_prediction_candidate_failure(errors)
+                      )
+                  ),
+                  'candidateQueryItemCount': len(candidate_items),
+                  'candidateQueryItems': candidate_summaries[:8],
+                  'candidateQueryTruncated': len(candidate_summaries) > 8,
+                  'candidatePayloadRedacted': True,
+                  'candidateIdentityRedacted': True,
+                  'proofSummary': proof_summary,
+              },
+              'safety': {
+                  'postStartPredictionCreationAllowed': False,
+                  'immutablePredictionRewriteAllowed': False,
+                  'productionAuthorityChanged': False,
+                  'rawGamePayloadPrinted': False,
+                  'rawCandidatePayloadPrinted': False,
+                  'secretExposed': False,
+              },
+          }
+          print(json.dumps(result, indent=2, sort_keys=True, default=str))
+          if not result['queueBinding']['manifestFingerprintMatchesCheckpoint']:
+              raise SystemExit('Live manifest no longer matches the checkpoint')
+          if not result['classification']['reproducesLiveFailure']:
+              raise SystemExit('Live prelock classification changed during probe')
+          PY
