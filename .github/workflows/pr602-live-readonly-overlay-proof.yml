@@ -162,6 +162,14 @@ jobs:
               assert storage._canonical_read_overlay(public) is True, {
                   "gameId": expected["gameId"],
                   "keys": sorted(public),
+                  "tags": public.get("tags"),
+                  "lockOutcomeRecorded": public.get("lockOutcomeRecorded"),
+                  "scheduledLockAtUtc": public.get("scheduledLockAtUtc"),
+                  "lockedAtUtc": public.get("lockedAtUtc"),
+                  "officialPredictionReason": public.get("officialPredictionReason"),
+                  "canonicalPerGameStageAuthority": public.get(
+                      "canonicalPerGameStageAuthority"
+                  ),
                   "perGameCanonicalLock": public.get("perGameCanonicalLock"),
                   "slatePredictionLock": public.get("slatePredictionLock"),
                   "lastPossiblePredictionGate": public.get(
