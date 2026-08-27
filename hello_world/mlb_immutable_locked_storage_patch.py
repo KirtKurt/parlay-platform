@@ -387,25 +387,10 @@ def _canonical_read_overlay(row: Dict[str, Any]) -> bool:
         if isinstance(public_lock, dict)
         else None
     )
-    valid_public_status = public_status in {
-        "PARTIAL_PER_GAME_CANONICAL",
-        "COMPLETE_MANIFEST_ALL_CANONICAL",
-        "COMPLETE_WITH_NO_PREDICTION_DATA",
-    }
     public_status_consistent = bool(
-        isinstance(public_locked, bool)
-        and public_locked
-        == (public_status == "COMPLETE_MANIFEST_ALL_CANONICAL")
-        and (
-            (
-                public_locked
-                and _parse_dt(public_lock.get("lockAtUtc")) is not None
-            )
-            or (
-                not public_locked
-                and public_lock.get("lockAtUtc") in (None, "")
-            )
-        )
+        public_status == "OFFICIAL_LOCKED_PREDICTION"
+        and public_locked is True
+        and _parse_dt(public_lock.get("lockAtUtc")) == row_lock_at
     )
     return bool(
         row.get("slateCoverageVersion") == coverage.VERSION
@@ -445,7 +430,6 @@ def _canonical_read_overlay(row: Dict[str, Any]) -> bool:
         and public_lock.get("canonicalReadOperational") is True
         and public_lock.get("perGameLock") is True
         and public_lock.get("slateWideLock") is False
-        and valid_public_status
         and public_status_consistent
         and isinstance(authority, dict)
         and authority.get("version") == AUTHORITY_VERSION
