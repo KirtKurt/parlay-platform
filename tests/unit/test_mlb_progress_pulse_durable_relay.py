@@ -43,6 +43,7 @@ def test_durable_relay_has_independent_seeds_and_serial_dedupe() -> None:
 
     assert "cron: '23 3 * * *'" in relay
     assert "workflow_run:" in relay
+    assert "MLB Daily Yesterday Audit" in relay
     assert "Tennis Autonomy Status Backstop" in relay
     assert "Publish Tennis Autonomy Status" in relay
     assert "NFL Auto AWS Stack Probe" in relay
