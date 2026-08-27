@@ -416,9 +416,11 @@ def _canonical_read_overlay(row: Dict[str, Any]) -> bool:
         "OFFICIAL_LOCKED_PREDICTION",
         "CANONICAL_PER_GAME_LOCK",
     }
+    # PRE_LOCK_PREDICTION and PER_GAME_CANONICAL_LOCK_PENDING are
+    # immutable provenance on existing v5 rows; _official_row intentionally
+    # preserves them. Exact tag reconstruction below prevents injection while
+    # retaining that live history.
     conflicting_tags = {
-        "PRE_LOCK_PREDICTION",
-        "PER_GAME_CANONICAL_LOCK_PENDING",
         "LOCKED_NO_PREDICTION_DATA",
         "MISSED_LOCK",
         "SLATE_WIDE_45_MIN_LOCK_POLICY",
