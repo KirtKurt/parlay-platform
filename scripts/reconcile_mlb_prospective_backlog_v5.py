@@ -25,8 +25,8 @@ import reconcile_mlb_prospective_backlog_v3 as v3
 import reconcile_mlb_prospective_backlog_v4 as v4
 
 VERSION = (
-    "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5.5-"
-    "exact-slate-and-terminal-identity-evidence"
+    "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5.6-"
+    "dephased-lease-retry-exact-slate-terminal-identity"
 )
 STATUS_PATH = "/v1/mlb/locks/status"
 SETTLEMENT_RUN = "prospective_backlog_settlement_v4"
@@ -89,11 +89,22 @@ SAFE_FAILURE_ROW_FIELDS = (
 MAX_DIAGNOSTIC_ITEMS = 8
 MAX_DIAGNOSTIC_STRING = 480
 PROTECTED_REPLAY_LEASE_SECONDS = 960
-PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS = 60
+PROTECTED_REPLAY_SCHEDULE_PERIOD_SECONDS = 60
+PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS = (
+    PROTECTED_REPLAY_SCHEDULE_PERIOD_SECONDS
+)
 MAX_PROTECTED_REPLAY_ATTEMPTS = 19
-PROTECTED_REPLAY_RETRY_DELAYS_SECONDS = (20, 40) + (60,) * 16
+# Never poll a one-minute EventBridge lease contender at a fixed one-minute
+# phase. This deterministic cycle preserves a bounded horizon while walking
+# every retry to a distinct phase of the live schedule.
+PROTECTED_REPLAY_RETRY_DELAYS_SECONDS = (20, 37) + (53, 61, 73, 79) * 4
 PROTECTED_REPLAY_RETRY_HORIZON_SECONDS = sum(
     PROTECTED_REPLAY_RETRY_DELAYS_SECONDS
+)
+PROTECTED_REPLAY_RETRY_PHASES_SECONDS = tuple(
+    sum(PROTECTED_REPLAY_RETRY_DELAYS_SECONDS[:index])
+    % PROTECTED_REPLAY_SCHEDULE_PERIOD_SECONDS
+    for index in range(1, len(PROTECTED_REPLAY_RETRY_DELAYS_SECONDS) + 1)
 )
 if (
     len(PROTECTED_REPLAY_RETRY_DELAYS_SECONDS)
@@ -103,6 +114,10 @@ if (
     + PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS
 ):
     raise RuntimeError("protected_terminal_replay_retry_horizon_invalid")
+if len(set(PROTECTED_REPLAY_RETRY_PHASES_SECONDS)) != len(
+    PROTECTED_REPLAY_RETRY_PHASES_SECONDS
+):
+    raise RuntimeError("protected_terminal_replay_retry_schedule_phase_locked")
 _SENSITIVE_ASSIGNMENT_RE = re.compile(
     r"(?i)(api[_-]?key|token|secret|authorization|password|credential)"
     r"(\s*[:=]\s*)"
@@ -488,6 +503,10 @@ def _execute_protected_terminal_replay(
         "protectedLockReplayLeaseSeconds": PROTECTED_REPLAY_LEASE_SECONDS,
         "protectedLockReplayRetryHorizonSeconds": (
             PROTECTED_REPLAY_RETRY_HORIZON_SECONDS
+        ),
+        "protectedLockReplayRetryScheduleDephased": True,
+        "protectedLockReplayRetryDistinctMinutePhaseCount": len(
+            set(PROTECTED_REPLAY_RETRY_PHASES_SECONDS)
         ),
         "settlement409TreatedAsSuccess": False,
         "directTableWrite": False,

@@ -64,6 +64,7 @@ RETIRED_WORKFLOWS = {
     "dispatch-mlb-production-repair-deployments.yml",
     "finalize-mlb-auto-production-deploy-now.yml",
     "finalize-mlb-auto-production-once.yml",
+    "fix-mlb-continuity-exact-sha-checkout-once.yml",
     "fix-mlb-r7-terminal-identity-now.yml",
     "install-mlb-titan-native-recovery-v2.yml",
     "install-mlb-titan-native-recovery-v3.yml",
@@ -174,6 +175,22 @@ def test_all_remaining_mlb_workflows_are_valid_yaml() -> None:
 def test_obsolete_mlb_proofs_repairs_and_dispatchers_are_manual_only() -> None:
     for filename in MANUAL_ONLY:
         assert set(_triggers(WORKFLOWS / filename)) == {"workflow_dispatch"}, filename
+
+
+def test_all_r7_recovery_mutators_and_dispatchers_are_manual_only() -> None:
+    recovery_markers = {
+        "prospective_terminal_backlog_reconciliation_v5",
+        "repair-mlb-training-continuity-now.yml",
+        "unified-mlb-learning-recovery-once.yml",
+    }
+    for workflow in WORKFLOWS.glob("*.yml"):
+        source = workflow.read_text(encoding="utf-8")
+        matched = sorted(marker for marker in recovery_markers if marker in source)
+        if not matched:
+            continue
+        assert set(_triggers(workflow)) == {"workflow_dispatch"}, (
+            f"{workflow.name} has automatic R7 recovery marker(s): {matched}"
+        )
 
 
 def test_no_mlb_workflow_has_an_unscoped_push_trigger() -> None:

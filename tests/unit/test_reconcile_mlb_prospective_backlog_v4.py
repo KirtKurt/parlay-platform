@@ -91,6 +91,23 @@ def mutation(slate_date):
     }
 
 
+def verified_terminal_repair_mutation(slate_date):
+    payload = mutation(slate_date)
+    payload["missedLockTerminalReconciliation"] = {
+        "ok": True,
+        "slateDateEt": slate_date,
+        "reconciledCount": 1,
+        "remainingMissedCount": 0,
+        "unresolved": [],
+        "postStartPredictionCreationAllowed": False,
+        "progressAfter": {
+            "missedCount": 0,
+            "dueMissingCount": 0,
+        },
+    }
+    return payload
+
+
 def test_throttle_is_retried_idempotently(monkeypatch):
     calls = []
     sleeps = []
@@ -269,6 +286,77 @@ def test_incomplete_status_uses_one_protected_mutation_then_readback():
     assert row["manifestGameCount"] == 15
     assert [event.get("httpMethod") for event in calls].count("GET") == 2
     assert [event.get("force") for event in calls].count(True) == 1
+
+
+def test_persistent_missed_projection_requires_and_accepts_verified_repair():
+    calls = []
+    persistent = official_status("2026-08-03")
+    persistent.update({"missedGameCount": 1, "missedLockCount": 1})
+    statuses = [dict(persistent), dict(persistent)]
+
+    def invoke(client, function, event):
+        del client, function
+        calls.append(event)
+        if event.get("httpMethod") == "GET":
+            return statuses.pop(0)
+        if event.get("force") is True:
+            return verified_terminal_repair_mutation("2026-08-03")
+        if event.get("run") == "prospective_backlog_settlement_v4":
+            return settlement("2026-08-03")
+        raise AssertionError(event)
+
+    result = subject.reconcile(
+        FakeCloudFormation(),
+        FakeLambda(),
+        stack_name="stack",
+        now_utc=datetime(2026, 8, 4, 20, 0, tzinfo=timezone.utc),
+        invoke=invoke,
+    )
+
+    assert result["reconciledSlateCount"] == 1
+    row = result["slates"][0]
+    assert row["protectedLockReplay"] is True
+    assert row["protectedTerminalReconciliationVerified"] is True
+    assert [event.get("force") for event in calls].count(True) == 1
+    assert [
+        event.get("run") for event in calls
+    ].count("prospective_backlog_settlement_v4") == 1
+
+
+def test_persistent_missed_projection_without_verified_repair_fails_closed():
+    calls = []
+    persistent = official_status("2026-08-03")
+    persistent.update({"missedGameCount": 1, "missedLockCount": 1})
+    statuses = [dict(persistent), dict(persistent)]
+
+    def invoke(client, function, event):
+        del client, function
+        calls.append(event)
+        if event.get("httpMethod") == "GET":
+            return statuses.pop(0)
+        if event.get("force") is True:
+            return mutation("2026-08-03")
+        if event.get("run") == "prospective_backlog_settlement_v4":
+            raise AssertionError("settlement must not run without repair proof")
+        raise AssertionError(event)
+
+    with pytest.raises(
+        base.ReconciliationError,
+        match="^official_status_terminal_durability_incomplete$",
+    ):
+        subject.reconcile(
+            FakeCloudFormation(),
+            FakeLambda(),
+            stack_name="stack",
+            now_utc=datetime(2026, 8, 4, 20, 0, tzinfo=timezone.utc),
+            invoke=invoke,
+        )
+
+    assert [event.get("force") for event in calls].count(True) == 1
+    assert not any(
+        event.get("run") == "prospective_backlog_settlement_v4"
+        for event in calls
+    )
 
 
 def test_transient_unhealthy_status_is_retried_read_only_without_mutation():

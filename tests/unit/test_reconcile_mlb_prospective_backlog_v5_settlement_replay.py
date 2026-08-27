@@ -320,11 +320,38 @@ def test_protected_replay_waits_through_full_lease_then_succeeds(monkeypatch):
     assert forced_attempts == 18
     assert result["protectedLockReplayAttemptCount"] == 18
     assert result["protectedLockReplayOverlapRetryCount"] == 17
-    assert sum(sleeps) == subject.PROTECTED_REPLAY_LEASE_SECONDS
+    assert sum(sleeps) >= (
+        subject.PROTECTED_REPLAY_LEASE_SECONDS
+        + subject.PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS
+    )
+    assert result["protectedLockReplayRetryScheduleDephased"] is True
+    assert result["protectedLockReplayRetryDistinctMinutePhaseCount"] == len(
+        subject.PROTECTED_REPLAY_RETRY_DELAYS_SECONDS
+    )
     assert result["protectedLockReplayRetryHorizonSeconds"] >= (
         subject.PROTECTED_REPLAY_LEASE_SECONDS
         + subject.PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS
     )
+
+
+def test_protected_replay_retry_schedule_dephases_every_minute_attempt():
+    delays = subject.PROTECTED_REPLAY_RETRY_DELAYS_SECONDS
+    elapsed = 0
+    phases = []
+    for delay in delays:
+        elapsed += delay
+        phases.append(
+            elapsed % subject.PROTECTED_REPLAY_SCHEDULE_PERIOD_SECONDS
+        )
+
+    assert len(delays) == subject.MAX_PROTECTED_REPLAY_ATTEMPTS - 1
+    assert sum(delays) == subject.PROTECTED_REPLAY_RETRY_HORIZON_SECONDS
+    assert sum(delays[:-1]) >= (
+        subject.PROTECTED_REPLAY_LEASE_SECONDS
+        + subject.PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS
+    )
+    assert tuple(phases) == subject.PROTECTED_REPLAY_RETRY_PHASES_SECONDS
+    assert len(set(phases)) == len(phases)
 
 
 def test_protected_replay_overlap_exhaustion_remains_bounded_fail_closed(
