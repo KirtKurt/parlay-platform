@@ -972,7 +972,54 @@ def _cooperative_terminal_completion_response(
     }
 
 
-def _run_cooperative_terminal_chunk(
+
+def _cooperative_terminal_observed_state(
+    module: Any,
+    patch: Any,
+    *,
+    slate: str,
+    pulls: List[Dict[str, Any]],
+    manifest: List[Dict[str, Any]],
+    game: Dict[str, Any],
+) -> tuple[Optional[str], Optional[str]]:
+    """Strongly observe one durable terminal; never create or rewrite it."""
+
+    outcome = patch._get_lock_outcome(module, slate, game)
+    if outcome:
+        if (
+            outcome.get("lock_status") != "LOCKED_NO_PREDICTION_DATA"
+            or outcome.get("locked_prediction") is not False
+            or outcome.get("training_eligible") is not False
+        ):
+            return None, "NO_PREDICTION_TERMINAL_AUTHORITY_INVALID"
+        return "LOCKED_NO_PREDICTION_DATA", None
+
+    stored_stage = patch._get_stage(module, slate, game)
+    if not stored_stage:
+        return None, None
+    scoring = patch._scoring_pulls(module, pulls, game)
+    stage_errors = list(
+        patch._validate_stage(
+            module,
+            stored_stage,
+            slate,
+            game,
+            manifest,
+            scoring,
+        )
+        or []
+    )
+    if stage_errors:
+        return None, "IMMUTABLE_STAGE_AUTHORITY_INVALID"
+    stage_row = copy.deepcopy(
+        ((stored_stage.get("data") or {}).get("row")) or {}
+    )
+    canonical = patch._canonical_readback(module, stage_row)
+    if not canonical:
+        return None, "IMMUTABLE_CANONICAL_READBACK_MISSING"
+    return "LOCKED_CANONICAL", None
+
+def _run_cooperative_terminal_chunk_impl(
     module: Any,
     patch: Any,
     *,
@@ -995,8 +1042,11 @@ def _run_cooperative_terminal_chunk(
         remaining_seconds=remaining,
     )
     if remaining < COOPERATIVE_TERMINAL_CHUNK_INITIAL_MIN_REMAINING_SECONDS:
+        # The manifest-bound checkpoint has not been validated yet.  Requeue
+        # the claim without rewriting that hint when admission is already too
+        # late for a safe strong read.
         return _cooperative_terminal_deferred(
-            checkpoint if isinstance(checkpoint, dict) else None,
+            None,
             slate=slate,
             stage=stage,
             remaining_seconds=remaining,
@@ -1071,6 +1121,76 @@ def _run_cooperative_terminal_chunk(
             status="READY",
         )
 
+        # The queue cursor is only a manifest-bound hint.  Before it can skip
+        # any game, the next owner strongly rereads the immediately preceding
+        # immutable canonical/outcome row.  A missing or changed anchor fails
+        # closed; the coordination record never substitutes for game authority.
+        if game_index > 0:
+            stage = "VERIFY_DURABLE_CHECKPOINT_ANCHOR"
+            if (
+                remaining
+                < COOPERATIVE_TERMINAL_CHUNK_GAME_MIN_REMAINING_SECONDS
+            ):
+                return _cooperative_terminal_deferred(
+                    current_checkpoint,
+                    slate=slate,
+                    stage="ANCHOR_BUDGET",
+                    remaining_seconds=remaining,
+                    now=module._now_utc().astimezone(timezone.utc),
+                    game_index=game_index,
+                )
+            anchor_index = game_index - 1
+            anchor_game = manifest[anchor_index]
+            anchor_identity = identities[anchor_index]
+            _cooperative_chunk_telemetry(
+                slate=slate,
+                stage=stage,
+                remaining_seconds=remaining,
+                game_index=anchor_index,
+                game_identity=anchor_identity,
+            )
+            anchor_state, anchor_error = (
+                _cooperative_terminal_observed_state(
+                    module,
+                    patch,
+                    slate=slate,
+                    pulls=pulls,
+                    manifest=manifest,
+                    game=anchor_game,
+                )
+            )
+            expected_anchor_state = str(
+                current_checkpoint["processedGames"][-1].get(
+                    "terminalState"
+                )
+                or ""
+            )
+            if anchor_error or anchor_state != expected_anchor_state:
+                return _cooperative_terminal_failure(
+                    current_checkpoint,
+                    slate=slate,
+                    stage=stage,
+                    remaining_seconds=(
+                        _cooperative_chunk_remaining_seconds(context)
+                    ),
+                    now=module._now_utc().astimezone(timezone.utc),
+                    error_code=(
+                        anchor_error
+                        or "DURABLE_CHECKPOINT_ANCHOR_MISMATCH"
+                    ),
+                    game_index=anchor_index,
+                    game_identity=anchor_identity,
+                )
+            remaining = _cooperative_chunk_remaining_seconds(context)
+            _cooperative_chunk_telemetry(
+                slate=slate,
+                stage=stage,
+                remaining_seconds=remaining,
+                game_index=anchor_index,
+                game_identity=anchor_identity,
+                status="DURABLE_ANCHOR_VERIFIED",
+            )
+
         if game_index == len(manifest):
             stage = "COMPLETE"
             if (
@@ -1135,7 +1255,7 @@ def _run_cooperative_terminal_chunk(
                 game_identity=identity,
             )
 
-        stage = "READ_STAGE"
+        stage = "READ_DURABLE_TERMINAL"
         _cooperative_chunk_telemetry(
             slate=slate,
             stage=stage,
@@ -1143,142 +1263,112 @@ def _run_cooperative_terminal_chunk(
             game_index=game_index,
             game_identity=identity,
         )
-        stored_stage = patch._get_stage(module, slate, game)
-        reconciled = False
-        if stored_stage:
-            stage = "VALIDATE_STAGE"
-            scoring = patch._scoring_pulls(module, pulls, game)
-            stage_errors = list(
-                patch._validate_stage(
-                    module,
-                    stored_stage,
-                    slate,
-                    game,
-                    manifest,
-                    scoring,
-                )
-                or []
+        terminal_state, terminal_error = _cooperative_terminal_observed_state(
+            module,
+            patch,
+            slate=slate,
+            pulls=pulls,
+            manifest=manifest,
+            game=game,
+        )
+        if terminal_error:
+            return _cooperative_terminal_failure(
+                current_checkpoint,
+                slate=slate,
+                stage=stage,
+                remaining_seconds=_cooperative_chunk_remaining_seconds(
+                    context
+                ),
+                now=module._now_utc().astimezone(timezone.utc),
+                error_code=terminal_error,
+                game_index=game_index,
+                game_identity=identity,
             )
-            if stage_errors:
-                return _cooperative_terminal_failure(
-                    current_checkpoint,
-                    slate=slate,
-                    stage=stage,
-                    remaining_seconds=_cooperative_chunk_remaining_seconds(
-                        context
-                    ),
-                    now=module._now_utc().astimezone(timezone.utc),
-                    error_code="IMMUTABLE_STAGE_AUTHORITY_INVALID",
-                    game_index=game_index,
-                    game_identity=identity,
-                )
-            stage = "READ_CANONICAL"
-            stage_row = copy.deepcopy(
-                ((stored_stage.get("data") or {}).get("row")) or {}
-            )
-            canonical = patch._canonical_readback(module, stage_row)
-            if not canonical:
-                return _cooperative_terminal_failure(
-                    current_checkpoint,
-                    slate=slate,
-                    stage=stage,
-                    remaining_seconds=_cooperative_chunk_remaining_seconds(
-                        context
-                    ),
-                    now=module._now_utc().astimezone(timezone.utc),
-                    error_code="IMMUTABLE_CANONICAL_READBACK_MISSING",
-                    game_index=game_index,
-                    game_identity=identity,
-                )
-            terminal_state = "LOCKED_CANONICAL"
-        else:
-            stage = "READ_OUTCOME"
-            outcome = patch._get_lock_outcome(module, slate, game)
-            if outcome:
-                terminal_state = "LOCKED_NO_PREDICTION_DATA"
-            else:
-                stage = "PROVE_PRELOCK_ABSENCE"
-                scoring = patch._scoring_pulls(module, pulls, game)
-                candidate, proof, bound, errors = patch._last_prelock_candidate(
-                    module,
-                    slate,
-                    game,
-                    scoring,
-                )
-                proven_absence = bool(
-                    candidate is None
-                    and proof is None
-                    and not bound
-                    and patch._is_no_prediction_candidate_failure(errors)
-                )
-                if not proven_absence:
-                    return _cooperative_terminal_failure(
-                        current_checkpoint,
-                        slate=slate,
-                        stage=stage,
-                        remaining_seconds=(
-                            _cooperative_chunk_remaining_seconds(context)
-                        ),
-                        now=module._now_utc().astimezone(timezone.utc),
-                        error_code="PRELOCK_CANDIDATE_REQUIRES_REVIEW",
-                        game_index=game_index,
-                        game_identity=identity,
-                    )
 
-                stage = "BIND_MANIFEST_AUTHORITY"
-                authority = patch._select_provider_manifest_authority(
-                    module,
-                    pulls,
-                    slate,
-                    manifest,
-                )
-                remaining = _cooperative_chunk_remaining_seconds(context)
-                if (
-                    remaining
-                    < COOPERATIVE_TERMINAL_CHUNK_WRITE_MIN_REMAINING_SECONDS
-                ):
-                    return _cooperative_terminal_deferred(
-                        current_checkpoint,
-                        slate=slate,
-                        stage="WRITE_BUDGET",
-                        remaining_seconds=remaining,
-                        now=module._now_utc().astimezone(timezone.utc),
-                        game_index=game_index,
-                        game_identity=identity,
-                    )
-                stage = "WRITE_NO_PREDICTION_TERMINAL"
-                _cooperative_chunk_telemetry(
+        reconciled = False
+        if terminal_state is None:
+            stage = "PROVE_PRELOCK_ABSENCE"
+            scoring = patch._scoring_pulls(module, pulls, game)
+            candidate, proof, bound, errors = patch._last_prelock_candidate(
+                module,
+                slate,
+                game,
+                scoring,
+            )
+            proven_absence = bool(
+                candidate is None
+                and proof is None
+                and not bound
+                and patch._is_no_prediction_candidate_failure(errors)
+            )
+            if not proven_absence:
+                return _cooperative_terminal_failure(
+                    current_checkpoint,
                     slate=slate,
                     stage=stage,
-                    remaining_seconds=remaining,
+                    remaining_seconds=(
+                        _cooperative_chunk_remaining_seconds(context)
+                    ),
+                    now=module._now_utc().astimezone(timezone.utc),
+                    error_code="PRELOCK_CANDIDATE_REQUIRES_REVIEW",
                     game_index=game_index,
                     game_identity=identity,
                 )
-                patch._put_no_prediction_outcome(
-                    module,
-                    slate,
-                    game,
-                    module._now_utc().astimezone(timezone.utc),
-                    [
-                        *(errors or []),
-                        "POST_START_PROVEN_NO_PREGAME_PREDICTION_RECONCILIATION",
-                    ],
-                    authority,
+
+            stage = "BIND_MANIFEST_AUTHORITY"
+            authority = patch._select_provider_manifest_authority(
+                module,
+                pulls,
+                slate,
+                manifest,
+            )
+            remaining = _cooperative_chunk_remaining_seconds(context)
+            if (
+                remaining
+                < COOPERATIVE_TERMINAL_CHUNK_WRITE_MIN_REMAINING_SECONDS
+            ):
+                return _cooperative_terminal_deferred(
+                    current_checkpoint,
+                    slate=slate,
+                    stage="WRITE_BUDGET",
+                    remaining_seconds=remaining,
+                    now=module._now_utc().astimezone(timezone.utc),
+                    game_index=game_index,
+                    game_identity=identity,
                 )
-                stage = "READBACK_NO_PREDICTION_TERMINAL"
-                outcome = patch._get_lock_outcome(module, slate, game)
-                if (
-                    not isinstance(outcome, dict)
-                    or outcome.get("lock_status")
-                    != "LOCKED_NO_PREDICTION_DATA"
-                    or outcome.get("locked_prediction") is not False
-                    or outcome.get("training_eligible") is not False
-                ):
-                    raise RuntimeError(
-                        "COOPERATIVE_TERMINAL_CHUNK_OUTCOME_READBACK_INVALID"
-                    )
-                terminal_state = "LOCKED_NO_PREDICTION_DATA"
-                reconciled = True
+            stage = "WRITE_NO_PREDICTION_TERMINAL"
+            _cooperative_chunk_telemetry(
+                slate=slate,
+                stage=stage,
+                remaining_seconds=remaining,
+                game_index=game_index,
+                game_identity=identity,
+            )
+            patch._put_no_prediction_outcome(
+                module,
+                slate,
+                game,
+                module._now_utc().astimezone(timezone.utc),
+                [
+                    *(errors or []),
+                    "POST_START_PROVEN_NO_PREGAME_PREDICTION_RECONCILIATION",
+                ],
+                authority,
+            )
+            stage = "READBACK_NO_PREDICTION_TERMINAL"
+            outcome = patch._get_lock_outcome(module, slate, game)
+            if (
+                not isinstance(outcome, dict)
+                or outcome.get("lock_status")
+                != "LOCKED_NO_PREDICTION_DATA"
+                or outcome.get("locked_prediction") is not False
+                or outcome.get("training_eligible") is not False
+            ):
+                raise RuntimeError(
+                    "COOPERATIVE_TERMINAL_CHUNK_OUTCOME_READBACK_INVALID"
+                )
+            terminal_state = "LOCKED_NO_PREDICTION_DATA"
+            reconciled = True
 
         stage = "CHECKPOINT_READY"
         advanced = copy.deepcopy(current_checkpoint)
@@ -1350,6 +1440,38 @@ def _run_cooperative_terminal_chunk(
             game_index=game_index,
             game_identity=identity,
         )
+
+
+def _run_cooperative_terminal_chunk(
+    module: Any,
+    patch: Any,
+    *,
+    slate_date: str,
+    checkpoint: Optional[Dict[str, Any]] = None,
+    context: Any,
+) -> Dict[str, Any]:
+    # Cache only canonicalized pull material.  Deliberately omit the
+    # consistentItems cache: this path may create one terminal row and its
+    # mandatory strong readback must never replay a cached pre-write absence.
+    status_cache = getattr(patch, "_STATUS_READ_CACHE", None)
+    token = None
+    if (
+        status_cache is not None
+        and callable(getattr(status_cache, "set", None))
+        and callable(getattr(status_cache, "reset", None))
+    ):
+        token = status_cache.set({"canonicalPulls": {}})
+    try:
+        return _run_cooperative_terminal_chunk_impl(
+            module,
+            patch,
+            slate_date=slate_date,
+            checkpoint=checkpoint,
+            context=context,
+        )
+    finally:
+        if token is not None:
+            status_cache.reset(token)
 
 def install_prospective_row_repair(module: Any, patch: Any) -> Any:
     if getattr(module, _RUNTIME_PATCH_FLAG, False):

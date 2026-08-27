@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import sys
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,6 +44,7 @@ class ChunkModule:
     def __init__(self, game_count: int = 2):
         self.games = [_game(index) for index in range(game_count)]
         self.outcomes = {}
+        self.outcome_reads = []
         self.terminal_writes = []
         self.original_calls = 0
 
@@ -74,6 +76,11 @@ class ChunkModule:
 
 
 class ChunkPatch:
+    _STATUS_READ_CACHE = ContextVar(
+        "test_cooperative_terminal_chunk_cache",
+        default=None,
+    )
+
     @staticmethod
     def game_identity(game):
         return game["game_id"]
@@ -103,6 +110,10 @@ class ChunkPatch:
     @staticmethod
     def _get_lock_outcome(module, slate, game):
         assert slate == SLATE
+        request_cache = ChunkPatch._STATUS_READ_CACHE.get()
+        assert isinstance(request_cache, dict)
+        assert set(request_cache) == {"canonicalPulls"}
+        module.outcome_reads.append(game["game_id"])
         return copy.deepcopy(module.outcomes.get(game["game_id"]))
 
     @staticmethod
@@ -190,6 +201,11 @@ def test_chunk_processes_at_most_one_terminal_per_owner_then_zero_work_completes
     assert first["checkpoint"]["nextGameIndex"] == 1
     assert first["checkpoint"]["terminalCount"] == 1
     assert module.terminal_writes == ["provider:game-0"]
+    assert module.outcome_reads == [
+        "provider:game-0",
+        "provider:game-0",
+    ]
+    assert ChunkPatch._STATUS_READ_CACHE.get() is None
     assert module.original_calls == 0
 
     second = module.run_cooperative_terminal_chunk(
@@ -205,6 +221,16 @@ def test_chunk_processes_at_most_one_terminal_per_owner_then_zero_work_completes
         "provider:game-0",
         "provider:game-1",
     ]
+    # The next owner rereads game 0 as its durable cursor anchor, then
+    # independently reads and strongly verifies game 1 around its write.
+    assert module.outcome_reads == [
+        "provider:game-0",
+        "provider:game-0",
+        "provider:game-0",
+        "provider:game-1",
+        "provider:game-1",
+    ]
+    assert ChunkPatch._STATUS_READ_CACHE.get() is None
     assert module.original_calls == 0
 
     final = module.run_cooperative_terminal_chunk(
@@ -218,6 +244,17 @@ def test_chunk_processes_at_most_one_terminal_per_owner_then_zero_work_completes
         "provider:game-0",
         "provider:game-1",
     ]
+    # Completion is a zero-write owner only after a fresh strong read of the
+    # last durable terminal anchor.
+    assert module.outcome_reads == [
+        "provider:game-0",
+        "provider:game-0",
+        "provider:game-0",
+        "provider:game-1",
+        "provider:game-1",
+        "provider:game-1",
+    ]
+    assert ChunkPatch._STATUS_READ_CACHE.get() is None
     response = final["terminalReplayResponse"]
     assert response["lockStatusComplete"] is True
     assert response["missedGameCount"] == 0
