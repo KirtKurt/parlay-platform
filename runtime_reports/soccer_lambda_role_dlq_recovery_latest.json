@@ -1,13 +1,13 @@
 {
-  "deployRunId": 33038899308,
+  "deployRunId": 33073920521,
   "historicalStatus": {
     "component": "historical_backfill",
     "enabled": true,
     "modes": {
       "additional": {
-        "calls_completed": 1790,
+        "calls_completed": 2005,
         "complete": 0,
-        "cursors": 6,
+        "cursors": 7,
         "quarantined": 0,
         "rows": [
           {
@@ -105,135 +105,132 @@
           {
             "PK": "HISTORICAL_CURSOR",
             "SK": "ADDITIONAL#soccer_brazil_campeonato",
-            "calls_completed": 574,
+            "calls_completed": 765,
             "entity_type": "SOCCER_HISTORICAL_BACKFILL_CURSOR",
-            "last_attempt_at": "2026-08-27T03:47:58.685290Z",
-            "last_progress_at": "2026-08-27T03:47:58.953657Z",
+            "last_attempt_at": "2026-08-27T11:47:54.273388Z",
+            "last_progress_at": "2026-08-27T11:47:54.508518Z",
             "last_provider_at": "2023-05-03T05:25:40Z",
             "mode": "ADDITIONAL",
-            "pending_event_index": 12,
+            "pending_event_index": 0,
+            "pending_events": [],
+            "pending_market_index": 0,
+            "revision": 814,
+            "snapshot_at": "2023-05-03T05:30:39Z",
+            "sport_key": "soccer_brazil_campeonato",
+            "status": "RUNNING",
+            "updated_at": "2026-08-27T11:47:54.585591Z"
+          },
+          {
+            "PK": "HISTORICAL_CURSOR",
+            "SK": "ADDITIONAL#soccer_brazil_serie_b",
+            "calls_completed": 24,
+            "entity_type": "SOCCER_HISTORICAL_BACKFILL_CURSOR",
+            "last_attempt_at": "2026-08-27T12:47:59.201527Z",
+            "last_progress_at": "2026-08-27T12:47:59.439708Z",
+            "last_provider_at": "2023-05-03T05:25:40Z",
+            "mode": "ADDITIONAL",
+            "pending_event_index": 0,
             "pending_events": [
               {
-                "away_team": "Santos",
+                "away_team": "ABC",
+                "commence_time": "2023-05-03T22:00:00Z",
+                "home_team": "Ituano",
+                "id": "ff9ecd45d4c1b98e44f2d51399b94906",
+                "sport_key": "soccer_brazil_serie_b"
+              },
+              {
+                "away_team": "Gr\u00eamio Novorizontino",
+                "commence_time": "2023-05-03T22:00:00Z",
+                "home_team": "Mirassol",
+                "id": "6be96e6e7d6950660cedfe81b1912ad8",
+                "sport_key": "soccer_brazil_serie_b"
+              },
+              {
+                "away_team": "Guarani",
+                "commence_time": "2023-05-03T22:00:00Z",
+                "home_team": "Juventude",
+                "id": "36bc2e1c690236558e8c1e38a9999a41",
+                "sport_key": "soccer_brazil_serie_b"
+              },
+              {
+                "away_team": "Vila Nova",
+                "commence_time": "2023-05-04T00:15:00Z",
+                "home_team": "Avai",
+                "id": "cbebade3dd8fc4ecdd7f6d4f24918cf0",
+                "sport_key": "soccer_brazil_serie_b"
+              },
+              {
+                "away_team": "Vitoria",
+                "commence_time": "2023-05-06T00:30:00Z",
+                "home_team": "Botafogo",
+                "id": "53b62a0d5ba35648a603b85425a177ea",
+                "sport_key": "soccer_brazil_serie_b"
+              },
+              {
+                "away_team": "Ituano",
                 "commence_time": "2023-05-06T19:00:00Z",
-                "home_team": "Cruzeiro",
-                "id": "d42cf3e4115a849e7324814ed44d3800",
-                "sport_key": "soccer_brazil_campeonato"
+                "home_team": "Criciuma",
+                "id": "2c95095b9b5c6be2e092f2526e2a44fb",
+                "sport_key": "soccer_brazil_serie_b"
               },
               {
-                "away_team": "Vasco da Gama",
-                "commence_time": "2023-05-07T00:00:00Z",
-                "home_team": "Fluminense",
-                "id": "c87abf6f229147c1c27ac40dd2d8450c",
-                "sport_key": "soccer_brazil_campeonato"
+                "away_team": "Avai",
+                "commence_time": "2023-05-06T21:15:00Z",
+                "home_team": "Tombense Futebol Clube",
+                "id": "ffc7d9434acbfa2c8fe1c33f61ebf1ce",
+                "sport_key": "soccer_brazil_serie_b"
               },
               {
-                "away_team": "Cuiab\u00e1",
+                "away_team": "Juventude",
+                "commence_time": "2023-05-06T21:15:00Z",
+                "home_team": "Sampaio Corr\u00eaa Futebol Clube",
+                "id": "3d91ac143c61a9196d9cba704e36b3d6",
+                "sport_key": "soccer_brazil_serie_b"
+              },
+              {
+                "away_team": "Vila Nova",
+                "commence_time": "2023-05-06T21:15:00Z",
+                "home_team": "Mirassol",
+                "id": "6f72b2da2e959724c6fd8b0f27b4578c",
+                "sport_key": "soccer_brazil_serie_b"
+              },
+              {
+                "away_team": "ABC",
+                "commence_time": "2023-05-06T23:30:00Z",
+                "home_team": "Clube de Regatas Brasil",
+                "id": "dbded140f32bf1fcffe679d5e936f3a4",
+                "sport_key": "soccer_brazil_serie_b"
+              },
+              {
+                "away_team": "Gr\u00eamio Novorizontino",
+                "commence_time": "2023-05-06T23:30:00Z",
+                "home_team": "Chapecoense",
+                "id": "c902716c934aabcd8a3638773a2d7047",
+                "sport_key": "soccer_brazil_serie_b"
+              },
+              {
+                "away_team": "Cear\u00e1",
                 "commence_time": "2023-05-07T14:00:00Z",
-                "home_team": "Am\u00e9rica Mineiro",
-                "id": "1458d99efc5ad7676397806291879205",
-                "sport_key": "soccer_brazil_campeonato"
+                "home_team": "Ponte Preta",
+                "id": "43281d39c502cdb88bfe0d587a7ea125",
+                "sport_key": "soccer_brazil_serie_b"
               },
               {
-                "away_team": "Flamengo",
-                "commence_time": "2023-05-07T19:00:00Z",
-                "home_team": "Atletico Paranaense",
-                "id": "58db1844155a5d860d0796981502e664",
-                "sport_key": "soccer_brazil_campeonato"
+                "away_team": "Guarani",
+                "commence_time": "2023-05-07T22:00:00Z",
+                "home_team": "Sport Recife",
+                "id": "b730e64ebd3700c0f7203f38f7648786",
+                "sport_key": "soccer_brazil_serie_b"
               },
               {
-                "away_team": "Coritiba",
-                "commence_time": "2023-05-07T19:00:00Z",
-                "home_team": "Bahia",
-                "id": "b8e5a569af13f2ed923aff7569db5bda",
-                "sport_key": "soccer_brazil_campeonato"
-              },
-              {
-                "away_team": "Internacional",
-                "commence_time": "2023-05-07T19:00:00Z",
-                "home_team": "Sao Paulo",
-                "id": "7fc774c0af05b2788c08706657a55d55",
-                "sport_key": "soccer_brazil_campeonato"
-              },
-              {
-                "away_team": "Atletico Mineiro",
-                "commence_time": "2023-05-07T21:30:00Z",
-                "home_team": "Botafogo",
-                "id": "b46dd2993d1f5ce48f3340f74ca438ac",
-                "sport_key": "soccer_brazil_campeonato"
-              },
-              {
-                "away_team": "Bragantino-SP",
-                "commence_time": "2023-05-07T21:30:00Z",
-                "home_team": "Gremio",
-                "id": "987f4171e2dccadfad4f7951dbb32593",
-                "sport_key": "soccer_brazil_campeonato"
-              },
-              {
-                "away_team": "Palmeiras",
-                "commence_time": "2023-05-07T21:30:00Z",
-                "home_team": "Goi\u00e1s",
-                "id": "7be8762aaafb89fdff580cc93ff539ab",
-                "sport_key": "soccer_brazil_campeonato"
-              },
-              {
-                "away_team": "Fortaleza",
+                "away_team": "Londrina",
                 "commence_time": "2023-05-08T23:00:00Z",
-                "home_team": "Corinthians",
-                "id": "ec6969f46cf3d26cbd54a19544ed75d1",
-                "sport_key": "soccer_brazil_campeonato"
-              },
-              {
-                "away_team": "Atletico Paranaense",
-                "commence_time": "2023-05-10T22:00:00Z",
-                "home_team": "Internacional",
-                "id": "791f38eb01f387ed7d8da00159543dcb",
-                "sport_key": "soccer_brazil_campeonato"
-              },
-              {
-                "away_team": "Bahia",
-                "commence_time": "2023-05-10T22:00:00Z",
-                "home_team": "Santos",
-                "id": "fd784488d791c0e6835af709c7bcc333",
-                "sport_key": "soccer_brazil_campeonato"
-              },
-              {
-                "away_team": "Fluminense",
-                "commence_time": "2023-05-11T00:30:00Z",
-                "home_team": "Cruzeiro",
-                "id": "5c03ca3aa61ef9f304a6a75569443f0c",
-                "sport_key": "soccer_brazil_campeonato"
-              },
-              {
-                "away_team": "Gremio",
-                "commence_time": "2023-05-11T00:30:00Z",
-                "home_team": "Palmeiras",
-                "id": "3271c28177ae672c372e0a74f4cbc358",
-                "sport_key": "soccer_brazil_campeonato"
-              },
-              {
-                "away_team": "Corinthians",
-                "commence_time": "2023-05-11T22:00:00Z",
-                "home_team": "Botafogo",
-                "id": "af095f37825b035b68e54ba139e87ddb",
-                "sport_key": "soccer_brazil_campeonato"
-              },
-              {
-                "away_team": "Vasco da Gama",
-                "commence_time": "2023-05-11T22:00:00Z",
-                "home_team": "Coritiba",
-                "id": "2e403ec56446e243e935bb656c636ba2",
-                "sport_key": "soccer_brazil_campeonato"
-              },
-              {
-                "away_team": "Sao Paulo",
-                "commence_time": "2023-05-11T23:00:00Z",
-                "home_team": "Fortaleza",
-                "id": "ef2b631f1bd838d7003cb74d7372273f",
-                "sport_key": "soccer_brazil_campeonato"
+                "home_team": "Atletico Goianiense",
+                "id": "9aade075757f382280cdff4a02d38603",
+                "sport_key": "soccer_brazil_serie_b"
               }
             ],
-            "pending_market_index": 34,
+            "pending_market_index": 24,
             "pending_market_plan": [
               [
                 "alternate_spreads"
@@ -375,17 +372,17 @@
             "pending_next_timestamp": "2023-05-03T05:30:39Z",
             "pending_provider_at": "2023-05-03T05:25:40Z",
             "pending_requested_at": "2023-05-03T05:30:00Z",
-            "revision": 610,
+            "revision": 26,
             "snapshot_at": "2023-05-03T05:30:00Z",
-            "sport_key": "soccer_brazil_campeonato",
+            "sport_key": "soccer_brazil_serie_b",
             "status": "RUNNING",
-            "updated_at": "2026-08-27T03:47:59.016582Z"
+            "updated_at": "2026-08-27T12:47:59.509989Z"
           }
         ],
-        "running": 6
+        "running": 7
       },
       "featured": {
-        "calls_completed": 248,
+        "calls_completed": 274,
         "complete": 0,
         "cursors": 15,
         "quarantined": 0,
@@ -393,231 +390,231 @@
           {
             "PK": "HISTORICAL_CURSOR",
             "SK": "FEATURED#soccer_denmark_superliga",
-            "calls_completed": 17,
+            "calls_completed": 18,
             "entity_type": "SOCCER_HISTORICAL_BACKFILL_CURSOR",
-            "last_attempt_at": "2026-08-27T03:17:24.680289Z",
-            "last_progress_at": "2026-08-27T03:17:24.956368Z",
-            "last_provider_at": "2020-06-06T12:45:00Z",
+            "last_attempt_at": "2026-08-27T08:17:24.218841Z",
+            "last_progress_at": "2026-08-27T08:17:24.527542Z",
+            "last_provider_at": "2020-06-06T12:55:00Z",
             "mode": "FEATURED",
-            "revision": 17,
-            "snapshot_at": "2020-06-06T12:55:00Z",
+            "revision": 18,
+            "snapshot_at": "2020-06-06T13:05:00Z",
             "sport_key": "soccer_denmark_superliga",
             "status": "RUNNING",
-            "updated_at": "2026-08-27T03:17:24.956368Z"
+            "updated_at": "2026-08-27T08:17:24.527542Z"
           },
           {
             "PK": "HISTORICAL_CURSOR",
             "SK": "FEATURED#soccer_epl",
-            "calls_completed": 20,
+            "calls_completed": 22,
             "entity_type": "SOCCER_HISTORICAL_BACKFILL_CURSOR",
-            "last_attempt_at": "2026-08-27T04:21:05.584651Z",
-            "last_progress_at": "2026-08-27T04:21:06.049110Z",
-            "last_provider_at": "2020-06-06T13:15:00Z",
+            "last_attempt_at": "2026-08-27T12:56:42.989916Z",
+            "last_progress_at": "2026-08-27T12:56:43.433927Z",
+            "last_provider_at": "2020-06-06T13:35:00Z",
             "mode": "FEATURED",
             "official_historical_start": "2020-06-06T10:05:00Z",
             "prestart_schema_quarantine_from": "2020-06-06T00:00:00Z",
             "prestart_schema_quarantine_migrated_at": "2026-08-14T03:52:09.233295Z",
             "recovery_reason": "OFFICIAL_SPORT_START_CORRECTION",
-            "revision": 35,
-            "snapshot_at": "2020-06-06T13:25:00Z",
+            "revision": 37,
+            "snapshot_at": "2020-06-06T13:45:00Z",
             "sport_key": "soccer_epl",
             "status": "RUNNING",
-            "updated_at": "2026-08-27T04:21:06.049110Z"
+            "updated_at": "2026-08-27T12:56:43.433927Z"
           },
           {
             "PK": "HISTORICAL_CURSOR",
             "SK": "FEATURED#soccer_fa_cup",
-            "calls_completed": 17,
+            "calls_completed": 18,
             "entity_type": "SOCCER_HISTORICAL_BACKFILL_CURSOR",
-            "last_attempt_at": "2026-08-27T04:17:23.405567Z",
-            "last_progress_at": "2026-08-27T04:17:23.725789Z",
-            "last_provider_at": "2020-06-06T12:45:00Z",
+            "last_attempt_at": "2026-08-27T08:17:24.606585Z",
+            "last_progress_at": "2026-08-27T08:17:24.910249Z",
+            "last_provider_at": "2020-06-06T12:55:00Z",
             "mode": "FEATURED",
-            "revision": 17,
-            "snapshot_at": "2020-06-06T12:55:00Z",
+            "revision": 18,
+            "snapshot_at": "2020-06-06T13:05:00Z",
             "sport_key": "soccer_fa_cup",
             "status": "RUNNING",
-            "updated_at": "2026-08-27T04:17:23.725789Z"
+            "updated_at": "2026-08-27T08:17:24.910249Z"
           },
           {
             "PK": "HISTORICAL_CURSOR",
             "SK": "FEATURED#soccer_germany_bundesliga",
-            "calls_completed": 17,
+            "calls_completed": 18,
             "entity_type": "SOCCER_HISTORICAL_BACKFILL_CURSOR",
-            "last_attempt_at": "2026-08-27T04:17:23.817544Z",
-            "last_progress_at": "2026-08-27T04:17:24.201475Z",
-            "last_provider_at": "2020-06-06T12:45:00Z",
+            "last_attempt_at": "2026-08-27T09:17:23.586712Z",
+            "last_progress_at": "2026-08-27T09:17:24.071933Z",
+            "last_provider_at": "2020-06-06T12:55:00Z",
             "mode": "FEATURED",
-            "revision": 17,
-            "snapshot_at": "2020-06-06T12:55:00Z",
+            "revision": 18,
+            "snapshot_at": "2020-06-06T13:05:00Z",
             "sport_key": "soccer_germany_bundesliga",
             "status": "RUNNING",
-            "updated_at": "2026-08-27T04:17:24.201475Z"
+            "updated_at": "2026-08-27T09:17:24.071933Z"
           },
           {
             "PK": "HISTORICAL_CURSOR",
             "SK": "FEATURED#soccer_germany_bundesliga2",
-            "calls_completed": 17,
+            "calls_completed": 18,
             "entity_type": "SOCCER_HISTORICAL_BACKFILL_CURSOR",
-            "last_attempt_at": "2026-08-27T04:17:24.287115Z",
-            "last_progress_at": "2026-08-27T04:17:24.612719Z",
-            "last_provider_at": "2020-06-06T12:45:00Z",
+            "last_attempt_at": "2026-08-27T09:17:24.247444Z",
+            "last_progress_at": "2026-08-27T09:17:24.579647Z",
+            "last_provider_at": "2020-06-06T12:55:00Z",
             "mode": "FEATURED",
-            "revision": 254,
-            "snapshot_at": "2020-06-06T12:55:00Z",
+            "revision": 255,
+            "snapshot_at": "2020-06-06T13:05:00Z",
             "sport_key": "soccer_germany_bundesliga2",
             "status": "RUNNING",
-            "updated_at": "2026-08-27T04:17:24.612719Z"
+            "updated_at": "2026-08-27T09:17:24.579647Z"
           },
           {
             "PK": "HISTORICAL_CURSOR",
             "SK": "FEATURED#soccer_italy_serie_a",
-            "calls_completed": 16,
+            "calls_completed": 18,
             "entity_type": "SOCCER_HISTORICAL_BACKFILL_CURSOR",
-            "last_attempt_at": "2026-08-27T00:17:24.272715Z",
-            "last_progress_at": "2026-08-27T00:17:24.667749Z",
-            "last_provider_at": "2020-06-06T12:35:00Z",
+            "last_attempt_at": "2026-08-27T09:17:24.708510Z",
+            "last_progress_at": "2026-08-27T09:17:25.068051Z",
+            "last_provider_at": "2020-06-06T12:55:00Z",
             "mode": "FEATURED",
-            "revision": 16,
-            "snapshot_at": "2020-06-06T12:45:00Z",
+            "revision": 18,
+            "snapshot_at": "2020-06-06T13:05:00Z",
             "sport_key": "soccer_italy_serie_a",
             "status": "RUNNING",
-            "updated_at": "2026-08-27T00:17:24.667749Z"
+            "updated_at": "2026-08-27T09:17:25.068051Z"
           },
           {
             "PK": "HISTORICAL_CURSOR",
             "SK": "FEATURED#soccer_korea_kleague1",
-            "calls_completed": 16,
+            "calls_completed": 18,
             "entity_type": "SOCCER_HISTORICAL_BACKFILL_CURSOR",
-            "last_attempt_at": "2026-08-27T00:17:24.871423Z",
-            "last_progress_at": "2026-08-27T00:17:25.124178Z",
-            "last_provider_at": "2020-06-06T12:35:00Z",
+            "last_attempt_at": "2026-08-27T10:17:23.738565Z",
+            "last_progress_at": "2026-08-27T10:17:24.108629Z",
+            "last_provider_at": "2020-06-06T12:55:00Z",
             "mode": "FEATURED",
-            "revision": 16,
-            "snapshot_at": "2020-06-06T12:45:00Z",
+            "revision": 18,
+            "snapshot_at": "2020-06-06T13:05:00Z",
             "sport_key": "soccer_korea_kleague1",
             "status": "RUNNING",
-            "updated_at": "2026-08-27T00:17:25.124178Z"
+            "updated_at": "2026-08-27T10:17:24.108629Z"
           },
           {
             "PK": "HISTORICAL_CURSOR",
             "SK": "FEATURED#soccer_norway_eliteserien",
-            "calls_completed": 16,
+            "calls_completed": 18,
             "entity_type": "SOCCER_HISTORICAL_BACKFILL_CURSOR",
-            "last_attempt_at": "2026-08-27T01:17:23.332538Z",
-            "last_progress_at": "2026-08-27T01:17:23.647891Z",
-            "last_provider_at": "2020-06-06T12:35:00Z",
+            "last_attempt_at": "2026-08-27T10:17:24.219013Z",
+            "last_progress_at": "2026-08-27T10:17:24.517230Z",
+            "last_provider_at": "2020-06-06T12:55:00Z",
             "mode": "FEATURED",
-            "revision": 16,
-            "snapshot_at": "2020-06-06T12:45:00Z",
+            "revision": 18,
+            "snapshot_at": "2020-06-06T13:05:00Z",
             "sport_key": "soccer_norway_eliteserien",
             "status": "RUNNING",
-            "updated_at": "2026-08-27T01:17:23.647891Z"
+            "updated_at": "2026-08-27T10:17:24.517230Z"
           },
           {
             "PK": "HISTORICAL_CURSOR",
             "SK": "FEATURED#soccer_portugal_primeira_liga",
-            "calls_completed": 16,
+            "calls_completed": 18,
             "entity_type": "SOCCER_HISTORICAL_BACKFILL_CURSOR",
-            "last_attempt_at": "2026-08-27T01:17:23.747327Z",
-            "last_progress_at": "2026-08-27T01:17:24.097257Z",
-            "last_provider_at": "2020-06-06T12:35:00Z",
+            "last_attempt_at": "2026-08-27T10:17:24.624189Z",
+            "last_progress_at": "2026-08-27T10:17:24.963655Z",
+            "last_provider_at": "2020-06-06T12:55:00Z",
             "mode": "FEATURED",
-            "revision": 16,
-            "snapshot_at": "2020-06-06T12:45:00Z",
+            "revision": 18,
+            "snapshot_at": "2020-06-06T13:05:00Z",
             "sport_key": "soccer_portugal_primeira_liga",
             "status": "RUNNING",
-            "updated_at": "2026-08-27T01:17:24.097257Z"
+            "updated_at": "2026-08-27T10:17:24.963655Z"
           },
           {
             "PK": "HISTORICAL_CURSOR",
             "SK": "FEATURED#soccer_spain_la_liga",
-            "calls_completed": 16,
+            "calls_completed": 18,
             "entity_type": "SOCCER_HISTORICAL_BACKFILL_CURSOR",
-            "last_attempt_at": "2026-08-27T01:17:24.169241Z",
-            "last_progress_at": "2026-08-27T01:17:24.608374Z",
-            "last_provider_at": "2020-06-06T12:35:00Z",
+            "last_attempt_at": "2026-08-27T11:17:23.711675Z",
+            "last_progress_at": "2026-08-27T11:17:24.169141Z",
+            "last_provider_at": "2020-06-06T12:55:00Z",
             "mode": "FEATURED",
-            "revision": 16,
-            "snapshot_at": "2020-06-06T12:45:00Z",
+            "revision": 18,
+            "snapshot_at": "2020-06-06T13:05:00Z",
             "sport_key": "soccer_spain_la_liga",
             "status": "RUNNING",
-            "updated_at": "2026-08-27T01:17:24.608374Z"
+            "updated_at": "2026-08-27T11:17:24.169141Z"
           },
           {
             "PK": "HISTORICAL_CURSOR",
             "SK": "FEATURED#soccer_spain_segunda_division",
-            "calls_completed": 16,
+            "calls_completed": 18,
             "entity_type": "SOCCER_HISTORICAL_BACKFILL_CURSOR",
-            "last_attempt_at": "2026-08-27T02:17:23.821853Z",
-            "last_progress_at": "2026-08-27T02:17:24.206029Z",
-            "last_provider_at": "2020-06-06T12:35:00Z",
+            "last_attempt_at": "2026-08-27T11:17:24.369982Z",
+            "last_progress_at": "2026-08-27T11:17:24.702037Z",
+            "last_provider_at": "2020-06-06T12:55:00Z",
             "mode": "FEATURED",
-            "revision": 16,
-            "snapshot_at": "2020-06-06T12:45:00Z",
+            "revision": 18,
+            "snapshot_at": "2020-06-06T13:05:00Z",
             "sport_key": "soccer_spain_segunda_division",
             "status": "RUNNING",
-            "updated_at": "2026-08-27T02:17:24.206029Z"
+            "updated_at": "2026-08-27T11:17:24.702037Z"
           },
           {
             "PK": "HISTORICAL_CURSOR",
             "SK": "FEATURED#soccer_sweden_allsvenskan",
-            "calls_completed": 16,
+            "calls_completed": 18,
             "entity_type": "SOCCER_HISTORICAL_BACKFILL_CURSOR",
-            "last_attempt_at": "2026-08-27T02:17:24.344041Z",
-            "last_progress_at": "2026-08-27T02:17:24.669941Z",
-            "last_provider_at": "2020-06-06T12:35:00Z",
+            "last_attempt_at": "2026-08-27T11:17:24.808268Z",
+            "last_progress_at": "2026-08-27T11:17:25.085922Z",
+            "last_provider_at": "2020-06-06T12:55:00Z",
             "mode": "FEATURED",
-            "revision": 16,
-            "snapshot_at": "2020-06-06T12:45:00Z",
+            "revision": 18,
+            "snapshot_at": "2020-06-06T13:05:00Z",
             "sport_key": "soccer_sweden_allsvenskan",
             "status": "RUNNING",
-            "updated_at": "2026-08-27T02:17:24.669941Z"
+            "updated_at": "2026-08-27T11:17:25.085922Z"
           },
           {
             "PK": "HISTORICAL_CURSOR",
             "SK": "FEATURED#soccer_sweden_superettan",
-            "calls_completed": 16,
+            "calls_completed": 18,
             "entity_type": "SOCCER_HISTORICAL_BACKFILL_CURSOR",
-            "last_attempt_at": "2026-08-27T02:17:24.748588Z",
-            "last_progress_at": "2026-08-27T02:17:25.122127Z",
-            "last_provider_at": "2020-06-06T12:35:00Z",
+            "last_attempt_at": "2026-08-27T12:17:23.899757Z",
+            "last_progress_at": "2026-08-27T12:17:24.248163Z",
+            "last_provider_at": "2020-06-06T12:55:00Z",
             "mode": "FEATURED",
-            "revision": 16,
-            "snapshot_at": "2020-06-06T12:45:00Z",
+            "revision": 18,
+            "snapshot_at": "2020-06-06T13:05:00Z",
             "sport_key": "soccer_sweden_superettan",
             "status": "RUNNING",
-            "updated_at": "2026-08-27T02:17:25.122127Z"
+            "updated_at": "2026-08-27T12:17:24.248163Z"
           },
           {
             "PK": "HISTORICAL_CURSOR",
             "SK": "FEATURED#soccer_switzerland_superleague",
-            "calls_completed": 16,
+            "calls_completed": 18,
             "entity_type": "SOCCER_HISTORICAL_BACKFILL_CURSOR",
-            "last_attempt_at": "2026-08-27T03:17:23.796552Z",
-            "last_progress_at": "2026-08-27T03:17:24.133842Z",
-            "last_provider_at": "2020-06-06T12:35:00Z",
+            "last_attempt_at": "2026-08-27T12:17:24.360256Z",
+            "last_progress_at": "2026-08-27T12:17:24.638135Z",
+            "last_provider_at": "2020-06-06T12:55:00Z",
             "mode": "FEATURED",
-            "revision": 16,
-            "snapshot_at": "2020-06-06T12:45:00Z",
+            "revision": 18,
+            "snapshot_at": "2020-06-06T13:05:00Z",
             "sport_key": "soccer_switzerland_superleague",
             "status": "RUNNING",
-            "updated_at": "2026-08-27T03:17:24.133842Z"
+            "updated_at": "2026-08-27T12:17:24.638135Z"
           },
           {
             "PK": "HISTORICAL_CURSOR",
             "SK": "FEATURED#soccer_turkey_super_league",
-            "calls_completed": 16,
+            "calls_completed": 18,
             "entity_type": "SOCCER_HISTORICAL_BACKFILL_CURSOR",
-            "last_attempt_at": "2026-08-27T03:17:24.229880Z",
-            "last_progress_at": "2026-08-27T03:17:24.603098Z",
-            "last_provider_at": "2020-06-06T12:35:00Z",
+            "last_attempt_at": "2026-08-27T12:17:24.699641Z",
+            "last_progress_at": "2026-08-27T12:17:25.071745Z",
+            "last_provider_at": "2020-06-06T12:55:00Z",
             "mode": "FEATURED",
-            "revision": 16,
-            "snapshot_at": "2020-06-06T12:45:00Z",
+            "revision": 18,
+            "snapshot_at": "2020-06-06T13:05:00Z",
             "sport_key": "soccer_turkey_super_league",
             "status": "RUNNING",
-            "updated_at": "2026-08-27T03:17:24.603098Z"
+            "updated_at": "2026-08-27T12:17:25.071745Z"
           }
         ],
         "running": 15
@@ -626,17 +623,17 @@
     "ok": true,
     "provider_calls": 0,
     "supervised_materialization": {
-      "authoritative_settlements": 41,
-      "classified_authoritative_settlements": 41,
+      "authoritative_settlements": 44,
+      "classified_authoritative_settlements": 44,
       "conflict_blocked_authoritative_settlements": 0,
       "duplicate_training_eligible_locks": 0,
       "existing_historical_training_locks": 8,
-      "existing_live_training_locks": 29,
-      "existing_training_eligible_locks": 37,
+      "existing_live_training_locks": 32,
+      "existing_training_eligible_locks": 40,
       "historical_training_manifest_digest": "e6c24fc2617a81e96a0767faa6e2799e4a6aab38c07358231fd5a840858cbfb6",
       "historical_training_manifest_version": "soccer-auto-historical-training-manifest-v1",
       "historical_training_rows": 8,
-      "ineligible_validated_settlements": 364,
+      "ineligible_validated_settlements": 365,
       "invalid_existing_lock_reasons": {},
       "invalid_existing_locks": 0,
       "label_policy": "Only immutable, trainer-eligible The Odds API final-score settlements are admitted; regulation-ambiguous results and older odds-only archives remain training-ineligible.",
@@ -653,12 +650,12 @@
       "state_rows": 19,
       "state_rows_truncated": false,
       "terminal_authoritative_settlements": 4,
-      "validated_settlements": 405
+      "validated_settlements": 409
     },
     "system": "soccer_auto"
   },
   "immutablePredictionRewriteAllowed": false,
-  "observedAtUtc": "2026-08-27T04:22:41.933620+00:00",
+  "observedAtUtc": "2026-08-27T12:58:29.633281+00:00",
   "otherSportsDeployed": false,
   "postStartPredictionCreationAllowed": false,
   "productionAuthorityChanged": false,
@@ -679,9 +676,9 @@
           "errors": 0,
           "function_name": "parlay-platform-soccer-auto-SoccerDispatchFunction-1ifvUl8Yj5dK",
           "healthy": true,
-          "invocations": 10,
+          "invocations": 11,
           "latest_error_metric_bucket_at": null,
-          "latest_metric_bucket_at": "2026-08-27T04:21:00+00:00",
+          "latest_metric_bucket_at": "2026-08-27T12:56:00+00:00",
           "lookback_minutes": 10,
           "reason": "HEALTHY"
         },
@@ -695,7 +692,7 @@
           "healthy": true,
           "invocations": 10,
           "latest_error_metric_bucket_at": null,
-          "latest_metric_bucket_at": "2026-08-27T04:21:00+00:00",
+          "latest_metric_bucket_at": "2026-08-27T12:56:00+00:00",
           "lookback_minutes": 10,
           "reason": "HEALTHY"
         },
@@ -707,9 +704,9 @@
           "errors": 0,
           "function_name": "parlay-platform-soccer-au-SoccerHistoricalFunction-SFTGZ2pWfUG2",
           "healthy": true,
-          "invocations": 12,
+          "invocations": 16,
           "latest_error_metric_bucket_at": null,
-          "latest_metric_bucket_at": "2026-08-27T04:21:00+00:00",
+          "latest_metric_bucket_at": "2026-08-27T12:56:00+00:00",
           "lookback_minutes": 130,
           "reason": "HEALTHY"
         },
@@ -723,7 +720,7 @@
           "healthy": true,
           "invocations": 4,
           "latest_error_metric_bucket_at": null,
-          "latest_metric_bucket_at": "2026-08-27T04:18:00+00:00",
+          "latest_metric_bucket_at": "2026-08-27T12:53:00+00:00",
           "lookback_minutes": 45,
           "reason": "HEALTHY"
         },
@@ -737,7 +734,7 @@
           "healthy": true,
           "invocations": 3,
           "latest_error_metric_bucket_at": null,
-          "latest_metric_bucket_at": "2026-08-27T04:21:00+00:00",
+          "latest_metric_bucket_at": "2026-08-27T12:22:00+00:00",
           "lookback_minutes": 130,
           "reason": "HEALTHY"
         },
@@ -749,9 +746,9 @@
           "errors": 0,
           "function_name": "parlay-platform-soccer-au-SoccerSettlementFunction-gEgL7wF6quPi",
           "healthy": true,
-          "invocations": 3,
+          "invocations": 4,
           "latest_error_metric_bucket_at": null,
-          "latest_metric_bucket_at": "2026-08-27T04:19:00+00:00",
+          "latest_metric_bucket_at": "2026-08-27T12:54:00+00:00",
           "lookback_minutes": 20,
           "reason": "HEALTHY"
         },
@@ -763,9 +760,9 @@
           "errors": 0,
           "function_name": "parlay-platform-soccer-auto-SoccerTrainerFunction-TWBv5lurcuf3",
           "healthy": true,
-          "invocations": 2,
+          "invocations": 4,
           "latest_error_metric_bucket_at": null,
-          "latest_metric_bucket_at": "2026-08-27T01:37:00+00:00",
+          "latest_metric_bucket_at": "2026-08-27T10:48:00+00:00",
           "lookback_minutes": 780,
           "reason": "HEALTHY"
         },
@@ -780,9 +777,9 @@
         "errors": 0,
         "function_name": "parlay-platform-soccer-auto-SoccerDispatchFunction-1ifvUl8Yj5dK",
         "healthy": true,
-        "invocations": 10,
+        "invocations": 11,
         "latest_error_metric_bucket_at": null,
-        "latest_metric_bucket_at": "2026-08-27T04:21:00+00:00",
+        "latest_metric_bucket_at": "2026-08-27T12:56:00+00:00",
         "lookback_minutes": 10,
         "reason": "HEALTHY"
       },
@@ -792,7 +789,7 @@
         "healthy": true,
         "invocations": 10,
         "latest_error_metric_bucket_at": null,
-        "latest_metric_bucket_at": "2026-08-27T04:21:00+00:00",
+        "latest_metric_bucket_at": "2026-08-27T12:56:00+00:00",
         "lookback_minutes": 10,
         "reason": "HEALTHY"
       },
@@ -800,9 +797,9 @@
         "errors": 0,
         "function_name": "parlay-platform-soccer-au-SoccerHistoricalFunction-SFTGZ2pWfUG2",
         "healthy": true,
-        "invocations": 12,
+        "invocations": 16,
         "latest_error_metric_bucket_at": null,
-        "latest_metric_bucket_at": "2026-08-27T04:21:00+00:00",
+        "latest_metric_bucket_at": "2026-08-27T12:56:00+00:00",
         "lookback_minutes": 130,
         "reason": "HEALTHY"
       },
@@ -812,7 +809,7 @@
         "healthy": true,
         "invocations": 4,
         "latest_error_metric_bucket_at": null,
-        "latest_metric_bucket_at": "2026-08-27T04:18:00+00:00",
+        "latest_metric_bucket_at": "2026-08-27T12:53:00+00:00",
         "lookback_minutes": 45,
         "reason": "HEALTHY"
       },
@@ -822,7 +819,7 @@
         "healthy": true,
         "invocations": 3,
         "latest_error_metric_bucket_at": null,
-        "latest_metric_bucket_at": "2026-08-27T04:21:00+00:00",
+        "latest_metric_bucket_at": "2026-08-27T12:22:00+00:00",
         "lookback_minutes": 130,
         "reason": "HEALTHY"
       },
@@ -830,9 +827,9 @@
         "errors": 0,
         "function_name": "parlay-platform-soccer-au-SoccerSettlementFunction-gEgL7wF6quPi",
         "healthy": true,
-        "invocations": 3,
+        "invocations": 4,
         "latest_error_metric_bucket_at": null,
-        "latest_metric_bucket_at": "2026-08-27T04:19:00+00:00",
+        "latest_metric_bucket_at": "2026-08-27T12:54:00+00:00",
         "lookback_minutes": 20,
         "reason": "HEALTHY"
       },
@@ -840,9 +837,9 @@
         "errors": 0,
         "function_name": "parlay-platform-soccer-auto-SoccerTrainerFunction-TWBv5lurcuf3",
         "healthy": true,
-        "invocations": 2,
+        "invocations": 4,
         "latest_error_metric_bucket_at": null,
-        "latest_metric_bucket_at": "2026-08-27T01:37:00+00:00",
+        "latest_metric_bucket_at": "2026-08-27T10:48:00+00:00",
         "lookback_minutes": 780,
         "reason": "HEALTHY"
       }
@@ -850,16 +847,16 @@
     "component_liveness_complete": true,
     "consecutive_failures": 0,
     "counts": {
-      "admissibility_certificates": 164,
+      "admissibility_certificates": 168,
       "competitions": 67,
       "events": 1000,
       "locks": 79,
       "models": 0,
       "predictions": 0,
-      "settlement_table_items": 569,
-      "settlements": 405,
+      "settlement_table_items": 577,
+      "settlements": 409,
       "snapshot_slots": 394,
-      "training_rows_ready": 37
+      "training_rows_ready": 40
     },
     "counts_are_lower_bounds_at": 1000,
     "distributed_rate_limit_state": {
@@ -868,37 +865,37 @@
       "burst_capacity": 1,
       "configured_rps": 3,
       "entity_type": "SOCCER_DISTRIBUTED_RATE_LIMIT_STATE",
-      "last_granted_slot_ms": 1787804535086,
-      "last_operation": "sports/soccer_uefa_champs_league_women/scores",
+      "last_granted_slot_ms": 1787835496388,
+      "last_operation": "sports/soccer_portugal_primeira_liga/scores",
       "last_provider_attempt": 1,
       "minimum_spacing_ms": 334,
-      "next_allowed_ms": 1787804535420,
-      "updated_at": "2026-08-27T04:22:15.086000Z"
+      "next_allowed_ms": 1787835496722,
+      "updated_at": "2026-08-27T12:58:16.388000Z"
     },
     "entity_type": "SOCCER_AUTONOMY_STATE",
     "failures": [],
     "historical_backfill": {
-      "calls_completed": 2038,
+      "calls_completed": 2279,
       "completed_cursor_rows": 0,
-      "cursor_rows": 21,
+      "cursor_rows": 22,
       "cursors_truncated": false,
       "enabled": true,
       "historical_training_rows": 8,
-      "latest_progress_at": "2026-08-27T04:21:06.049110Z",
+      "latest_progress_at": "2026-08-27T12:56:43.433927Z",
       "mode": "RAW_ARCHIVE_PLUS_AUTHORITATIVE_T45",
       "state": "RUNNING",
       "supervised_materialization": {
-        "authoritative_settlements": 41,
-        "classified_authoritative_settlements": 41,
+        "authoritative_settlements": 44,
+        "classified_authoritative_settlements": 44,
         "conflict_blocked_authoritative_settlements": 0,
         "duplicate_training_eligible_locks": 0,
         "existing_historical_training_locks": 8,
-        "existing_live_training_locks": 29,
-        "existing_training_eligible_locks": 37,
+        "existing_live_training_locks": 32,
+        "existing_training_eligible_locks": 40,
         "historical_training_manifest_digest": "e6c24fc2617a81e96a0767faa6e2799e4a6aab38c07358231fd5a840858cbfb6",
         "historical_training_manifest_version": "soccer-auto-historical-training-manifest-v1",
         "historical_training_rows": 8,
-        "ineligible_validated_settlements": 364,
+        "ineligible_validated_settlements": 365,
         "invalid_existing_lock_reasons": {},
         "invalid_existing_locks": 0,
         "label_policy": "Only immutable, trainer-eligible The Odds API final-score settlements are admitted; regulation-ambiguous results and older odds-only archives remain training-ineligible.",
@@ -915,48 +912,48 @@
         "state_rows": 19,
         "state_rows_truncated": false,
         "terminal_authoritative_settlements": 4,
-        "validated_settlements": 405
+        "validated_settlements": 409
       },
       "training_note": "Recent rows are admitted only after immutable Odds API final-score evidence is joined to a point-in-time T45 snapshot; older odds-only archives remain training-ineligible."
     },
     "latest_quota": {
       "PK": "QUOTA",
-      "SK": "OBSERVED#2026-08-27T04:22:09.917936Z#08fdce377c6d",
+      "SK": "OBSERVED#2026-08-27T12:57:02.600575Z#a887e66b5966",
       "entity_type": "SOCCER_AUTO_QUOTA_OBSERVATION",
-      "expires_at": 1795580529,
-      "last_cost": 2,
-      "observed_at": "2026-08-27T04:22:09.917936Z",
-      "operation": "scores",
-      "remaining": 23416995,
-      "used": 1583005
+      "expires_at": 1795611422,
+      "last_cost": 81,
+      "observed_at": "2026-08-27T12:57:02.600575Z",
+      "operation": "event_odds",
+      "remaining": 23357921,
+      "used": 1642079
     },
     "llm_analyst": {
       "analyses": 1,
-      "analysis_digest": "f62c1bd93fe4ca6e25eaf5020260008914e951e95bcab593b89a8a89712e8d07",
+      "analysis_digest": "1056a1109469c3419f7ec1eff9df81529856bb8592272c53eac3d692d79d17cb",
       "analysis_origin": "BEDROCK_CONVERSE",
-      "attempt_id": "2026-08-27T04:21:33.655507Z#9c13e33b04644798b0319d2e8b4c36df",
-      "attempt_started_at": "2026-08-27T04:21:33.655507Z",
+      "attempt_id": "2026-08-27T12:57:11.143528Z#416d3002b61b42b49317ebe4eea9f70b",
+      "attempt_started_at": "2026-08-27T12:57:11.143528Z",
       "configured": true,
-      "created_at": "2026-08-27T04:21:38.743199Z",
-      "expires_at": 1787934098,
+      "created_at": "2026-08-27T12:57:16.629919Z",
+      "expires_at": 1787965036,
       "fresh": true,
       "last_attempt": {
         "PK": "LLM_ANALYSIS",
         "SK": "LAST_ATTEMPT",
-        "analysis_digest": "f62c1bd93fe4ca6e25eaf5020260008914e951e95bcab593b89a8a89712e8d07",
-        "attempt_id": "2026-08-27T04:21:33.655507Z#9c13e33b04644798b0319d2e8b4c36df",
-        "attempt_started_at": "2026-08-27T04:21:33.655507Z",
-        "attempt_started_order": 1787804493655507,
+        "analysis_digest": "1056a1109469c3419f7ec1eff9df81529856bb8592272c53eac3d692d79d17cb",
+        "attempt_id": "2026-08-27T12:57:11.143528Z#416d3002b61b42b49317ebe4eea9f70b",
+        "attempt_started_at": "2026-08-27T12:57:11.143528Z",
+        "attempt_started_order": 1787835431143528,
         "attempted_model_ids": [
           "us.amazon.nova-2-lite-v1:0"
         ],
-        "context_byte_count": 2720,
+        "context_byte_count": 2730,
         "entity_type": "SOCCER_LLM_ATTEMPT",
-        "expires_at": 1790396498,
+        "expires_at": 1790427436,
         "max_output_tokens": 384,
         "model_id": "us.amazon.nova-2-lite-v1:0",
-        "observed_at": "2026-08-27T04:21:38.743199Z",
-        "request_byte_count": 4354,
+        "observed_at": "2026-08-27T12:57:16.629919Z",
+        "request_byte_count": 4366,
         "status": "ANALYZED"
       },
       "model_id": "us.amazon.nova-2-lite-v1:0",
@@ -974,11 +971,11 @@
       "evidence_health:availability_warnings"
     ],
     "prediction_and_training_health": {
-      "availability_warnings": 5,
+      "availability_warnings": 4,
       "contract_version": "soccer-auto-health-proof-v1",
       "healthy": true,
       "integrity_failures": 0,
-      "observed_at": "2026-08-27T04:22:08.131695Z",
+      "observed_at": "2026-08-27T12:57:47.379743Z",
       "proof_complete": true,
       "public_authority": {
         "binding_integrity_failures": 0,
@@ -993,22 +990,20 @@
       "t10_decisions": {
         "capture_lead_seconds": 90,
         "commit_headroom_seconds": 10,
-        "due_events": 5,
+        "due_events": 1,
         "invalid_locks": 0,
         "invalid_sample": [],
         "late_discovered_due_events": 0,
-        "missed_locks": 1,
-        "missing_locks": 1,
-        "missing_sample": [
-          "EVENT#soccer_concacaf_leagues_cup#0f0a74e0b62562ad71254c1c4408e946"
-        ],
+        "missed_locks": 0,
+        "missing_locks": 0,
+        "missing_sample": [],
         "open_capture_events": 0,
         "publication_cutoff_minutes": 10,
-        "valid_or_present_locks": 4
+        "valid_or_present_locks": 1
       },
       "training": {
-        "admissibility_certificates": 164,
-        "admissible_final_score_rows": 41,
+        "admissibility_certificates": 168,
+        "admissible_final_score_rows": 44,
         "conversion_backlog": 4,
         "duplicate_training_eligible_locks": 0,
         "exclusion_reasons": {
@@ -1017,11 +1012,11 @@
           "no_t45_lock": 4
         },
         "invalid_existing_locks": 0,
-        "latest_certificate_at": "2026-08-27T03:18:18.250343Z",
+        "latest_certificate_at": "2026-08-27T05:13:18.318279Z",
         "nontraining_live_locks": 6,
         "state": "CONVERTING_ADMISSIBLE_SETTLEMENTS",
-        "training_rows_ready": 37,
-        "validated_final_score_rows": 405
+        "training_rows_ready": 40,
+        "validated_final_score_rows": 409
       }
     },
     "promotion_blocked": false,
@@ -1061,8 +1056,8 @@
       "soccer_request_limit_per_second": 3
     },
     "system": "soccer_auto",
-    "updated_at": "2026-08-27T04:22:08.131695Z",
-    "updated_at_epoch_ms": 1787804528131
+    "updated_at": "2026-08-27T12:57:47.379743Z",
+    "updated_at_epoch_ms": 1787835467379
   },
   "recentTargetedWorkerErrors": [],
   "recovery": {
