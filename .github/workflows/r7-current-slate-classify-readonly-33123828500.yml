@@ -251,16 +251,21 @@ jobs:
                   }
 
           canonical = {}
+          visible_prelock = {}
           for item in winner_items:
               data = item.get('data') if isinstance(item.get('data'), dict) else {}
               pk = official_pk(data) or official_pk(item)
               key_identity = identity(data) or identity(item)
-              canonical[pk or key_identity] = {
+              entry = {
                   'item': item,
                   'data': data,
                   'officialPk': pk,
                   'identity': key_identity,
               }
+              if str(item.get('SK') or '').startswith('LOCKED#GAME#'):
+                  canonical[pk or key_identity] = entry
+              else:
+                  visible_prelock[pk or key_identity] = entry
 
           def find(mapping, game):
               pk = official_pk(game)
@@ -284,6 +289,7 @@ jobs:
               stage = find(stages, game)
               winner = find(canonical, game)
               outcome = find(outcomes, game)
+              prelock = find(visible_prelock, game)
               if stage and winner:
                   state = 'LOCKED_CANONICAL'
               elif stage:
@@ -328,6 +334,7 @@ jobs:
                       else None
                   ),
                   'lockOutcomePresent': bool(outcome),
+                  'visiblePrelockPresent': bool(prelock),
                   'postStartPredictionCreationObserved': False,
                   'identityRedacted': True,
                   'selectionMaterialRedacted': True,
@@ -379,7 +386,8 @@ jobs:
               ),
               'durableCounts': {
                   'stageCount': len(stages),
-                  'canonicalWinnerItemCount': len(canonical),
+                  'lockedCanonicalWinnerItemCount': len(canonical),
+                  'visiblePrelockWinnerItemCount': len(visible_prelock),
                   'lockOutcomeCount': len(outcomes),
               },
               'reconciliation': {
