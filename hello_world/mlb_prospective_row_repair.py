@@ -2342,9 +2342,23 @@ def _cooperative_no_prediction_outcome_error(
 def _cooperative_quarantine_outcome_error(
     outcome: Any,
     normalizer: Any = None,
+    authority_validator: Any = None,
+    forbidden_validator: Any = None,
 ) -> Optional[str]:
     if not isinstance(outcome, dict):
         return "VALID_PRELOCK_QUARANTINE_TERMINAL_AUTHORITY_INVALID"
+    if callable(forbidden_validator):
+        try:
+            if forbidden_validator(outcome):
+                return "VALID_PRELOCK_QUARANTINE_TERMINAL_AUTHORITY_INVALID"
+        except Exception:
+            return "VALID_PRELOCK_QUARANTINE_TERMINAL_AUTHORITY_INVALID"
+    if callable(authority_validator):
+        try:
+            if authority_validator(outcome):
+                return "VALID_PRELOCK_QUARANTINE_TERMINAL_AUTHORITY_INVALID"
+        except Exception:
+            return "VALID_PRELOCK_QUARANTINE_TERMINAL_AUTHORITY_INVALID"
     exact = {
         "lock_status": (
             MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
@@ -2868,11 +2882,41 @@ def _cooperative_terminal_observed_exact_state(
                 error = _cooperative_quarantine_outcome_error(
                     outcome,
                     getattr(patch, "_plain", None),
+                    getattr(
+                        patch,
+                        "_valid_prelock_quarantine_authority_errors",
+                        None,
+                    ),
+                    getattr(
+                        patch,
+                        "_terminal_outcome_forbidden_fields",
+                        None,
+                    ),
                 )
             else:
                 error = "TERMINAL_OUTCOME_STATUS_INVALID"
             if error:
                 return None, None, error
+            manifest_binding_validator = getattr(
+                patch,
+                "_terminal_outcome_manifest_game_errors",
+                None,
+            )
+            if callable(manifest_binding_validator):
+                try:
+                    binding_errors = manifest_binding_validator(
+                        outcome,
+                        slate,
+                        manifest[game_index],
+                    )
+                except Exception:
+                    binding_errors = ["terminal_manifest_binding_failed"]
+                if binding_errors:
+                    return (
+                        None,
+                        None,
+                        "DURABLE_TERMINAL_MANIFEST_AUTHORITY_MISMATCH",
+                    )
             if not _cooperative_terminal_authority_matches_selected(
                 outcome,
                 selected_manifest_authority,

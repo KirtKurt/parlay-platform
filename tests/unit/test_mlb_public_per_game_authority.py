@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import importlib
 import sys
 from contextlib import contextmanager
@@ -38,6 +40,8 @@ def _game(game_id: str, start: str, away: str, home: str):
 
 G1 = _game("game-1", "2026-07-17T23:00:00Z", "Away One", "Home One")
 G2 = _game("game-2", "2026-07-18T02:00:00Z", "Away Two", "Home Two")
+G1["officialGamePk"] = "810001"
+G2["officialGamePk"] = "810002"
 G1["books"] = {"fanduel": {"ml": {"home": -110, "away": 100}}}
 
 
@@ -236,7 +240,14 @@ def _terminal_outcome_item(game, *, reasons=None):
         "slate_date": SLATE,
         "game_identity": coverage.game_identity(game),
         "game_id": game["game_id"],
+        "officialGamePk": game["officialGamePk"],
         "commence_time": game["commence_time"],
+        "scheduled_lock_at_utc": (
+            datetime.fromisoformat(
+                game["commence_time"].replace("Z", "+00:00")
+            )
+            - timedelta(minutes=45)
+        ).isoformat(),
         "lock_status": "LOCKED_NO_PREDICTION_DATA",
         "lock_outcome_recorded": True,
         "locked_prediction": False,
@@ -260,9 +271,101 @@ def _terminal_outcome_item(game, *, reasons=None):
         "provider_manifest_pk": binding["pk"],
         "provider_manifest_sk": binding["sk"],
         "manifest_game_count": manifest["gameCount"],
+        "data": {
+            "manifestGameIdentities": list(
+                manifest.get("canonicalGameIdentities") or []
+            ),
+            "row": {
+                "homeTeam": game["home_team"],
+                "awayTeam": game["away_team"],
+            },
+        },
         "write_once": True,
         "created_at": "2026-07-18T01:15:00+00:00",
     }
+    item["lock_outcome_fingerprint"] = coverage._record_fingerprint(
+        item,
+        "lock_outcome_fingerprint",
+    )
+    return item
+
+
+def _quarantine_terminal_outcome_item(game):
+    item = _terminal_outcome_item(game)
+    cutoff = (
+        datetime.fromisoformat(
+            game["commence_time"].replace("Z", "+00:00")
+        )
+        - timedelta(minutes=45)
+    )
+    source = cutoff - timedelta(minutes=30)
+    created = source + timedelta(minutes=5)
+    persisted = created + timedelta(minutes=5)
+    raw_identity = game["game_id"]
+    digest = lambda value: hashlib.sha256(
+        value.encode("utf-8")
+    ).hexdigest()
+    authority = {
+        "version": coverage.VALID_PRELOCK_QUARANTINE_AUTHORITY_VERSION,
+        "candidatePk": f"GAME_WINNERS#mlb#{SLATE}",
+        "candidateSk": (
+            f"PREGAME#GAME#{raw_identity}#"
+            f"PERSISTED#{persisted.isoformat()}"
+        ),
+        "candidateItemFingerprint": digest("candidate-item"),
+        "candidateSnapshotFingerprint": digest("candidate-snapshot"),
+        "candidatePayloadFingerprint": digest("candidate-payload"),
+        "candidatePayloadFingerprintVersion": (
+            inqsi_pull_history.CANONICAL_PAYLOAD_FINGERPRINT_VERSION
+        ),
+        "candidateRowFingerprint": digest("candidate-row"),
+        "candidateSelectionFingerprint": digest("candidate-selection"),
+        "sourcePullFingerprint": digest("source-pull"),
+        "sourcePullStoragePk": f"PULLS#mlb#{SLATE}",
+        "sourcePullStorageSk": (
+            f"PULL#SLOT#{source.isoformat()}"
+        ),
+        "predictionCreatedAtUtc": created.isoformat(),
+        "predictionPersistedAtUtc": persisted.isoformat(),
+        "predictionSourcePullAtUtc": source.isoformat(),
+        "evaluationCutoffAtUtc": cutoff.isoformat(),
+        "identityBindingMode": "exact_identity",
+        "candidateGameIdentity": raw_identity,
+        "stageGameIdentity": raw_identity,
+        "candidateOfficialGamePk": game["officialGamePk"],
+        "stageOfficialGamePk": game["officialGamePk"],
+        "boundScoringPullCount": 1,
+        "rejectedNewerCandidateCount": 0,
+        "modelOrSignalRecomputedAtLock": False,
+        "predictionAdopted": False,
+    }
+    item.update(
+        {
+            "lock_status": (
+                coverage.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+            ),
+            "operational_defect": True,
+            "playability_block_reasons": [
+                "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+            ],
+            "training_exclusion_reasons": [
+                "missing_immutable_tminus45_lock",
+                "valid_prelock_candidate_not_promoted",
+            ],
+            "reasons": [
+                "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+            ],
+            "valid_prelock_quarantine_authority": authority,
+            "valid_prelock_quarantine_authority_fingerprint": hashlib.sha256(
+                json.dumps(
+                    coverage._plain(authority),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                ).encode("utf-8")
+            ).hexdigest(),
+        }
+    )
     item["lock_outcome_fingerprint"] = coverage._record_fingerprint(
         item,
         "lock_outcome_fingerprint",
@@ -1335,3 +1438,197 @@ def test_nested_prediction_material_in_terminal_authority_is_rejected(
     serialized = json.dumps(result["predictions"], sort_keys=True)
     assert "Hostile Home" not in serialized
     assert "0.99" not in serialized
+
+def _refingerprint_quarantine_terminal(item):
+    authority = item["valid_prelock_quarantine_authority"]
+    item["valid_prelock_quarantine_authority_fingerprint"] = hashlib.sha256(
+        json.dumps(
+            coverage._plain(authority),
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+    item["lock_outcome_fingerprint"] = coverage._record_fingerprint(
+        item,
+        "lock_outcome_fingerprint",
+    )
+
+
+def test_valid_quarantine_terminal_is_lifecycle_only_on_public_surface(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        exact_contract,
+        "validate_exact_locked_row",
+        lambda row: [],
+    )
+    monkeypatch.setattr(
+        immutable_storage,
+        "validate_canonical_stage_authority",
+        lambda table, row: [],
+    )
+    canonical = _canonical_item(G1, G1["home_team"], "home", 71)
+    terminal = _quarantine_terminal_outcome_item(G2)
+    engine = _engine(
+        [canonical],
+        current=[
+            _live(G1, G1["away_team"], "away"),
+            {
+                **_live(G2, G2["home_team"], "home"),
+                "futureNestedModel": {
+                    "winner": "Hostile Selection Winner",
+                    "probability": 0.99,
+                },
+            },
+        ],
+        status_items=[terminal],
+    )
+    _install(engine)
+    monkeypatch.setattr(
+        coverage,
+        "_now_utc",
+        lambda: datetime(2026, 7, 18, 2, 1, tzinfo=timezone.utc),
+    )
+
+    result = engine.predict_all(SLATE, store=False)
+    row = {
+        value["gameId"]: value
+        for value in result["predictions"]
+    }["game-2"]
+
+    assert result["missedLockValidPrelockQuarantineCount"] == 1
+    assert result["noPredictionDataCount"] == 0
+    assert row["lockStatus"] == (
+        "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+    )
+    assert row["canonicalPrediction"] is False
+    assert row["officialPrediction"] is False
+    assert row["trainingEligible"] is False
+    assert row["accuracyEligible"] is False
+    assert row["wagerAllowed"] is False
+    assert row["predictionAdopted"] is False
+    serialized = json.dumps(row, sort_keys=True)
+    assert "Hostile Selection Winner" not in serialized
+    assert "0.99" not in serialized
+    assert "futureNestedModel" not in serialized
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("version", "forged-version"),
+        ("candidateItemFingerprint", "g" * 64),
+        ("candidatePayloadFingerprintVersion", "forged-version"),
+        ("sourcePullStorageSk", "PULL#SLOT#forged"),
+        ("predictionCreatedAtUtc", "2026-07-18T01:16:00+00:00"),
+        ("boundScoringPullCount", 1.5),
+        ("rejectedNewerCandidateCount", 1),
+        ("modelOrSignalRecomputedAtLock", True),
+        ("predictionAdopted", True),
+        ("candidatePk", "GAME_WINNERS#mlb#wrong-date"),
+    ],
+)
+def test_quarantine_authority_semantic_mutations_fail_public_closed(
+    monkeypatch,
+    field,
+    value,
+):
+    monkeypatch.setattr(
+        exact_contract,
+        "validate_exact_locked_row",
+        lambda row: [],
+    )
+    monkeypatch.setattr(
+        immutable_storage,
+        "validate_canonical_stage_authority",
+        lambda table, row: [],
+    )
+    terminal = _quarantine_terminal_outcome_item(G2)
+    terminal["valid_prelock_quarantine_authority"][field] = value
+    _refingerprint_quarantine_terminal(terminal)
+    engine = _engine([], status_items=[terminal])
+    _install(engine)
+    monkeypatch.setattr(
+        coverage,
+        "_now_utc",
+        lambda: datetime(2026, 7, 18, 2, 1, tzinfo=timezone.utc),
+    )
+
+    result = engine.predict_all(SLATE, store=False)
+
+    assert "provider:game-2" in result["invalidTerminalLifecycleRows"]
+    assert result["missedLockValidPrelockQuarantineCount"] == 0
+
+
+def test_quarantine_authority_extra_key_fails_public_closed(monkeypatch):
+    monkeypatch.setattr(
+        exact_contract,
+        "validate_exact_locked_row",
+        lambda row: [],
+    )
+    monkeypatch.setattr(
+        immutable_storage,
+        "validate_canonical_stage_authority",
+        lambda table, row: [],
+    )
+    terminal = _quarantine_terminal_outcome_item(G2)
+    terminal["valid_prelock_quarantine_authority"][
+        "futurePredictionMaterial"
+    ] = {"winner": "Hostile Extra Winner"}
+    _refingerprint_quarantine_terminal(terminal)
+    engine = _engine([], status_items=[terminal])
+    _install(engine)
+    monkeypatch.setattr(
+        coverage,
+        "_now_utc",
+        lambda: datetime(2026, 7, 18, 2, 1, tzinfo=timezone.utc),
+    )
+
+    result = engine.predict_all(SLATE, store=False)
+
+    assert "provider:game-2" in result["invalidTerminalLifecycleRows"]
+    assert "Hostile Extra Winner" not in json.dumps(
+        result["predictions"],
+        sort_keys=True,
+    )
+
+
+def test_same_count_terminal_official_pk_swap_is_rejected(monkeypatch):
+    monkeypatch.setattr(
+        exact_contract,
+        "validate_exact_locked_row",
+        lambda row: [],
+    )
+    monkeypatch.setattr(
+        immutable_storage,
+        "validate_canonical_stage_authority",
+        lambda table, row: [],
+    )
+    first = _terminal_outcome_item(G1)
+    second = _terminal_outcome_item(G2)
+    first["officialGamePk"], second["officialGamePk"] = (
+        second["officialGamePk"],
+        first["officialGamePk"],
+    )
+    for item in (first, second):
+        item["lock_outcome_fingerprint"] = coverage._record_fingerprint(
+            item,
+            "lock_outcome_fingerprint",
+        )
+    engine = _engine([], current=[], status_items=[first, second])
+    _install(engine)
+    monkeypatch.setattr(
+        coverage,
+        "_now_utc",
+        lambda: datetime(2026, 7, 18, 2, 1, tzinfo=timezone.utc),
+    )
+
+    result = engine.predict_all(SLATE, store=False)
+
+    assert set(result["invalidTerminalLifecycleRows"]) == {
+        "provider:game-1",
+        "provider:game-2",
+    }
+    assert result["lockedStatusCount"] == 0
+

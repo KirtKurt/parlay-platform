@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import mlb_daily_per_game_lock_patch as patch
+import mlb_prospective_row_repair as repair
 import mlb_daily_lock_coverage_patch as coverage_patch
 import mlb_daily_lock_audit_fallback_patch as audit_fallback
 import inqsi_pull_history as history_contract
@@ -196,12 +197,17 @@ class FakeHistory:
     def query_pulls(self, sport, date=None, limit=500):
         assert sport == "mlb"
         assert date == SLATE
-        for pull in self.pulls[:limit]:
+        rows = []
+        for original in self.pulls[:limit]:
+            pull = copy.deepcopy(original)
             self._persist_provider_manifest_once(pull)
-            key = (
-                f"PULLS#mlb#{pull['slate_date']}",
-                f"PULL#{pull['pulled_at']}#{pull['pull_id']}",
-            )
+            storage = pull.get("canonicalPullStorage") or {
+                "pk": f"PULLS#mlb#{pull['slate_date']}",
+                "sk": f"PULL#{pull['pulled_at']}#{pull['pull_id']}",
+                "recordType": "pull_run",
+            }
+            key = (storage["pk"], storage["sk"])
+            pull["canonicalPullStorage"] = copy.deepcopy(storage)
             if key not in self.PULLS.items:
                 self.PULLS.items[key] = {
                     "PK": key[0],
@@ -213,7 +219,8 @@ class FakeHistory:
                     "pull_id": pull["pull_id"],
                     "data": copy.deepcopy(pull),
                 }
-        return copy.deepcopy(self.pulls[:limit])
+            rows.append(pull)
+        return rows
 
     def provider_manifest_authority_for_lock(self, pull, slate, expected_games):
         original_table = history_contract.PULLS
@@ -719,6 +726,206 @@ def test_no_prediction_terminal_persists_fingerprint_bound_official_game_pk():
     assert item["blocked"] is True
     assert item["operational_defect"] is False
     assert item["write_once"] is True
+
+
+@pytest.mark.parametrize(
+    ("identity_binding_mode", "canonical_source_key"),
+    [
+        ("exact_identity", False),
+        ("official_game_pk", True),
+    ],
+)
+def test_real_quarantine_writer_is_idempotent_and_recovery_strict(
+    identity_binding_mode,
+    canonical_source_key,
+):
+    target = game(
+        (
+            "mlb_statsapi:991556"
+            if identity_binding_mode == "exact_identity"
+            else "provider-event-991556"
+        ),
+        "2026-07-13T18:00:00+00:00",
+    )
+    target.update(
+        {
+            "official_game_pk": "991556",
+            "official_commence_time": target["commence_time"],
+            "official_status": {"abstractGameState": "Preview"},
+        }
+    )
+    candidate_game = copy.deepcopy(target)
+    if identity_binding_mode == "official_game_pk":
+        candidate_game["game_id"] = "mlb_statsapi:991556"
+        candidate_game["game_key"] = "mlb-mlb_statsapi:991556"
+    source = pull(
+        "2026-07-13T17:00:00+00:00",
+        [target],
+        "real-quarantine",
+    )
+    if canonical_source_key:
+        source["canonicalPullStorage"] = {
+            "pk": f"PULLS#mlb#{SLATE}",
+            "sk": "PULL#SLOT#2026-07-13T17:00:00+00:00",
+            "recordType": "pull_run",
+        }
+    module = build_module(
+        [source],
+        "2026-07-13T20:00:00+00:00",
+        seed=False,
+    )
+    persist_candidate(module, candidate_game, source)
+    pulls = module._pulls_for_date(SLATE)
+    manifest = module._latest_games_for_date(SLATE, pulls)
+    scoring = patch._scoring_pulls(module, pulls, manifest[0])
+    candidate, proof, bound, errors = patch._last_prelock_candidate(
+        module,
+        SLATE,
+        manifest[0],
+        scoring,
+    )
+    assert errors == []
+    assert candidate is not None
+    assert proof is not None
+    assert bound
+    manifest_authority = patch._select_provider_manifest_authority(
+        module,
+        pulls,
+        SLATE,
+        manifest,
+    )
+
+    first = patch._put_valid_prelock_missed_lock_quarantine(
+        module,
+        SLATE,
+        manifest[0],
+        module._now_utc(),
+        candidate,
+        proof,
+        bound,
+        manifest_authority,
+    )
+    # Simulate a crash after the immutable terminal write and before the queue
+    # checkpoint. The next owner must revalidate and reuse the exact row.
+    second = patch._put_valid_prelock_missed_lock_quarantine(
+        module,
+        SLATE,
+        manifest[0],
+        module._now_utc(),
+        candidate,
+        proof,
+        bound,
+        manifest_authority,
+    )
+
+    assert second == first
+    assert len(lock_outcome_items(module)) == 1
+    assert first["lock_status"] == (
+        patch.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+    )
+    assert first["canonical_prediction"] is False
+    assert first["training_eligible"] is False
+    authority = first["valid_prelock_quarantine_authority"]
+    assert authority["identityBindingMode"] == identity_binding_mode
+    if canonical_source_key:
+        assert authority["sourcePullStorageSk"] == (
+            "PULL#SLOT#2026-07-13T17:00:00+00:00"
+        )
+    else:
+        assert authority["sourcePullStorageSk"].startswith(
+            "PULL#2026-07-13T17:00:00+00:00#"
+        )
+    assert (
+        patch._valid_prelock_quarantine_authority_errors(first)
+        == []
+    )
+    assert repair._cooperative_quarantine_outcome_error(
+        first,
+        patch._plain,
+        patch._valid_prelock_quarantine_authority_errors,
+        patch._terminal_outcome_forbidden_fields,
+    ) is None
+
+    observation = patch._cooperative_terminal_lock_outcome_observation(
+        module,
+        SLATE,
+        manifest[0],
+    )
+    assert observation["exists"] is True
+    assert observation["valid"] is True
+    evidence = patch._cooperative_terminal_authority_evidence(
+        module,
+        durable_identity=patch.game_identity(manifest[0]),
+        terminal_state=first["lock_status"],
+        outcome=first,
+        stored_stage=None,
+        canonical=None,
+    )
+    assert evidence["authorityItemCount"] == 3
+    assert evidence["dependencyItemCount"] >= 1
+    assert evidence["predictionAdopted"] is False
+    assert len(evidence["evidenceFingerprint"]) == 64
+
+    hostile = copy.deepcopy(first)
+    hostile["data"]["metadata"] = {
+        "prediction": {
+            "winner": "Hostile Winner",
+            "probability": 0.99,
+        }
+    }
+    hostile["lock_outcome_fingerprint"] = hashlib.sha256(
+        json.dumps(
+            {
+                str(key): value
+                for key, value in patch._plain(hostile).items()
+                if key != "lock_outcome_fingerprint"
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+    assert repair._cooperative_quarantine_outcome_error(
+        hostile,
+        patch._plain,
+        patch._valid_prelock_quarantine_authority_errors,
+        patch._terminal_outcome_forbidden_fields,
+    ) == "VALID_PRELOCK_QUARANTINE_TERMINAL_AUTHORITY_INVALID"
+
+    fractional = copy.deepcopy(first)
+    fractional["valid_prelock_quarantine_authority"][
+        "boundScoringPullCount"
+    ] = Decimal("1.5")
+    fractional[
+        "valid_prelock_quarantine_authority_fingerprint"
+    ] = hashlib.sha256(
+        json.dumps(
+            patch._plain(
+                fractional["valid_prelock_quarantine_authority"]
+            ),
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+    fractional["lock_outcome_fingerprint"] = hashlib.sha256(
+        json.dumps(
+            {
+                str(key): value
+                for key, value in patch._plain(fractional).items()
+                if key != "lock_outcome_fingerprint"
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+    assert repair._cooperative_quarantine_outcome_error(
+        fractional,
+        patch._plain,
+        patch._valid_prelock_quarantine_authority_errors,
+        patch._terminal_outcome_forbidden_fields,
+    ) == "VALID_PRELOCK_QUARANTINE_TERMINAL_AUTHORITY_INVALID"
 
 
 def diagnostic_items(module):

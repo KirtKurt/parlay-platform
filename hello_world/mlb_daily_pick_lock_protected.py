@@ -1798,16 +1798,45 @@ def _claim_cooperative_replay(
 def _application_payload(response: Any) -> Dict[str, Any]:
     if not isinstance(response, dict):
         raise RuntimeError("MLB_COOPERATIVE_REPLAY_RESPONSE_INVALID")
-    try:
-        status_code = int(response.get("statusCode") or 200)
-    except (TypeError, ValueError) as exc:
-        raise RuntimeError("MLB_COOPERATIVE_REPLAY_STATUS_INVALID") from exc
+    gateway_transport = bool(
+        "statusCode" in response or "body" in response
+    )
+    # The in-process chunk and persisted COMPLETED/ACK records carry one
+    # already-decoded, schema-validated receipt. Lambda/API Gateway carries an
+    # envelope instead. Never merge the two transports: conflicting top-level
+    # receipt material beside an envelope is ambiguous and fails closed.
+    if not gateway_transport:
+        return copy.deepcopy(response)
+    if "body" not in response or any(
+        field in response
+        for field in {
+            "ok",
+            "sport",
+            "slateDateEt",
+            "terminalChunkVersion",
+            "perGameLockProgress",
+            "missedLockTerminalReconciliation",
+        }
+    ):
+        raise RuntimeError("MLB_COOPERATIVE_REPLAY_RESPONSE_INVALID")
+    status_code = _nonnegative_receipt_integer(
+        response.get("statusCode", 200),
+        "response_status_code",
+    )
     body = response.get("body")
     try:
-        payload = json.loads(body) if isinstance(body, str) else dict(body or {})
+        payload = (
+            json.loads(body)
+            if isinstance(body, str)
+            else copy.deepcopy(body)
+        )
     except Exception as exc:
         raise RuntimeError("MLB_COOPERATIVE_REPLAY_BODY_INVALID") from exc
-    if status_code < 200 or status_code >= 300 or not isinstance(payload, dict):
+    if (
+        status_code < 200
+        or status_code >= 300
+        or not isinstance(payload, dict)
+    ):
         raise RuntimeError("MLB_COOPERATIVE_REPLAY_APPLICATION_FAILED")
     return payload
 

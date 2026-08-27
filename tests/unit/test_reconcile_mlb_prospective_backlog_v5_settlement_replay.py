@@ -790,6 +790,24 @@ def test_completion_receipt_rejects_missing_or_forged_progress():
 
 
 def test_closed_exact_target_refreshes_receipt_on_every_rerun(monkeypatch):
+    receipt = cooperative_completion_receipt()
+    safe_receipt = (
+        subject._validated_safe_cooperative_completion_receipt(
+            receipt,
+            "2026-08-04",
+        )
+    )
+    lifecycle_games = sorted(
+        [
+            {
+                "officialGamePk": game["officialGamePk"],
+                "gameIdentity": game["gameIdentity"],
+                "terminalState": game["terminalState"],
+            }
+            for game in receipt["perGameLockProgress"]["terminalGames"]
+        ],
+        key=lambda game: int(game["officialGamePk"]),
+    )
     row = {
         "slateDateEt": "2026-08-04",
         "manifestGameCount": 15,
@@ -797,6 +815,9 @@ def test_closed_exact_target_refreshes_receipt_on_every_rerun(monkeypatch):
         "terminalNoPredictionCount": 14,
         "missedLockValidPrelockQuarantineCount": 1,
         "lockOutcomeCount": 15,
+        "providerManifestFingerprint": "c" * 64,
+        "lifecycleGames": lifecycle_games,
+        "settlement": {"lifecycleGames": lifecycle_games},
     }
     monkeypatch.setattr(
         v4,
@@ -815,7 +836,7 @@ def test_closed_exact_target_refreshes_receipt_on_every_rerun(monkeypatch):
             kwargs["request"].slate_date
         ) or {
             "slateDateEt": kwargs["request"].slate_date,
-            "cooperativeCompletionReceipt": {"verificationIndex": 15},
+            "cooperativeCompletionReceipt": safe_receipt,
         },
     )
 

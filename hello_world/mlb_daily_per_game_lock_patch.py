@@ -19,6 +19,9 @@ import mlb_official_schedule_authority as official_schedule_contract
 from mlb_slate_coverage_patch import (
     AUTHORITY_VERSION as PREGAME_PUBLIC_AUTHORITY_VERSION,
     _assessment_errors as playability_assessment_errors,
+    _terminal_outcome_forbidden_fields,
+    _terminal_outcome_manifest_game_errors,
+    _valid_prelock_quarantine_authority_errors,
     game_identity,
     resolve_playability_lifecycle,
 )
@@ -72,6 +75,9 @@ LEGACY_SCHEDULED_SINGLE_FLIGHT_RECORD_TYPE = (
     "mlb_lock_scheduled_single_flight_lease"
 )
 POST_WINDOW_RECONCILIATION_VERSION = "MLB-LOCK-POST-WINDOW-RECONCILIATION-v1"
+# DynamoDB TransactGetItems permits at most 100 exact items. A 15-game
+# all-quarantine slate requires up to 47 unique immutable authority reads.
+COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS = 100
 
 _DIAGNOSTIC_STATES = {
     "WAITING_FOR_CUTOFF_STABILIZATION",
@@ -2243,6 +2249,21 @@ def _cooperative_terminal_lock_outcome_observation(
         errors.append("lock_outcome_identity_mismatch")
     if item.get("lock_outcome_fingerprint") != fingerprint:
         errors.append("lock_outcome_fingerprint_mismatch")
+    errors.extend(_terminal_outcome_forbidden_fields(item))
+    errors.extend(
+        _terminal_outcome_manifest_game_errors(
+            item,
+            slate,
+            game,
+        )
+    )
+    if (
+        str(item.get("lock_status") or "")
+        == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+    ):
+        errors.extend(
+            _valid_prelock_quarantine_authority_errors(item)
+        )
     errors.extend(_provider_manifest_authority_errors(module.TABLE, item))
     errors = sorted(set(errors))
     return {
@@ -6360,7 +6381,7 @@ def _cooperative_terminal_atomic_verify(
     requests = [
         requests_by_key[key] for key in sorted(requests_by_key)
     ]
-    if not requests or len(requests) > 32:
+    if not requests or len(requests) > COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS:
         raise RuntimeError(
             "COOPERATIVE_TERMINAL_ATOMIC_READ_SET_OUT_OF_RANGE"
         )
@@ -6436,7 +6457,7 @@ def _cooperative_terminal_atomic_verify(
         "ok": True,
         "atomicSnapshot": True,
         "itemCount": len(requests),
-        "maxItemCount": 32,
+        "maxItemCount": COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS,
         "readSetFingerprint": read_set_fingerprint,
         "postStartPredictionCreationAllowed": False,
     }

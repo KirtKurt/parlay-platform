@@ -516,31 +516,14 @@ def _terminal_outcome_errors(item: Dict[str, Any], slate_date: str) -> List[str]
         }
         if any(item.get(field) != value for field, value in exact.items()):
             errors.append("terminal_quarantine_flags_invalid")
-        authority = item.get("valid_prelock_quarantine_authority")
-        authority_fingerprint = hashlib.sha256(
-            json.dumps(
-                _plain(authority),
-                sort_keys=True,
-                separators=(",", ":"),
-                default=str,
-            ).encode("utf-8")
-        ).hexdigest() if isinstance(authority, dict) else ""
-        if (
-            not isinstance(authority, dict)
-            or authority.get("predictionAdopted") is not False
-            or not slate_coverage._quarantine_authority_identity_valid(
-                item,
-                authority,
+        authority_errors = (
+            slate_coverage._valid_prelock_quarantine_authority_errors(
+                item
             )
-            or str(
-                item.get(
-                    "valid_prelock_quarantine_authority_fingerprint"
-                )
-                or ""
-            )
-            != authority_fingerprint
-        ):
+        )
+        if authority_errors:
             errors.append("terminal_quarantine_authority_invalid")
+            errors.extend(authority_errors)
     if item.get("lock_outcome_recorded") is not True or item.get("write_once") is not True:
         errors.append("terminal_write_once_proof_missing")
     if item.get("locked_prediction") is not False or item.get("training_eligible") is not False:
@@ -616,6 +599,17 @@ def _validated_terminal_outcomes(
         "PER_GAME_LOCK_OUTCOME#TMINUS45#",
     )
     crosswalk = rolling_audit._verified_provider_alias_crosswalk(slate_date)
+    official_game_list = [
+        copy.deepcopy(game)
+        for game in (official_games or [])
+        if isinstance(game, dict)
+    ]
+    official_games_by_pk: Dict[str, List[Dict[str, Any]]] = {}
+    for game in official_game_list:
+        official_games_by_pk.setdefault(
+            str(game.get("officialGamePk") or ""),
+            [],
+        ).append(game)
     grouped: Dict[str, List[Dict[str, Any]]] = {}
     rejected: List[Dict[str, Any]] = []
     for item in items:
@@ -623,10 +617,25 @@ def _validated_terminal_outcomes(
         official_pk = _terminal_official_game_pk(
             item,
             crosswalk,
-            official_games,
+            official_game_list,
         )
         if not official_pk:
             errors.append("terminal_official_game_pk_unresolved")
+        elif official_game_list:
+            matching_official_games = official_games_by_pk.get(
+                str(official_pk),
+                [],
+            )
+            if len(matching_official_games) != 1:
+                errors.append("terminal_official_manifest_game_ambiguous")
+            else:
+                errors.extend(
+                    slate_coverage._terminal_outcome_manifest_game_errors(
+                        item,
+                        slate_date,
+                        matching_official_games[0],
+                    )
+                )
         if errors:
             rejected.append(
                 {

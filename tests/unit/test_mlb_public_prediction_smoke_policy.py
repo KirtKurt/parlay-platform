@@ -51,6 +51,7 @@ def _row(game_id, start, *, winner=None, locked=False, status="OPEN_PRE_LOCK"):
     return {
         "gameId": game_id,
         "gameIdentity": game_id,
+        "officialGamePk": game_id,
         "commenceTime": start.isoformat(),
         "lockStatus": status,
         "officialPredictionStatus": status,
@@ -58,6 +59,16 @@ def _row(game_id, start, *, winner=None, locked=False, status="OPEN_PRE_LOCK"):
         "predictedSide": "home" if winner else None,
         "selectionFingerprint": "a" * 64 if winner else None,
         "lockedPrediction": locked,
+        "officialPrediction": bool(locked and winner),
+        "canonicalPrediction": bool(locked and winner),
+        "playable": bool(locked and winner),
+        "blocked": not bool(locked and winner),
+        "trainingEligible": bool(locked and winner),
+        "accuracyEligible": bool(locked and winner),
+        "wagerAllowed": False,
+        "predictionAdopted": False,
+        "operationalDefect": False,
+        "canonicalPredictionComplete": bool(locked and winner),
     }
 
 
@@ -147,12 +158,15 @@ def test_no_champion_projection_keeps_quarantine_distinct_and_non_predictive():
     quarantine.update({
         "lockedPrediction": False,
         "officialPrediction": False,
+        "canonicalPrediction": False,
         "playable": False,
+        "blocked": True,
         "trainingEligible": False,
         "accuracyEligible": False,
         "wagerAllowed": False,
         "predictionAdopted": False,
         "operationalDefect": True,
+        "canonicalPredictionComplete": False,
     })
     no_data = _row("g2", past, status="LOCKED_NO_PREDICTION_DATA")
 
@@ -177,3 +191,67 @@ def test_no_champion_projection_keeps_quarantine_distinct_and_non_predictive():
         and row.get("predictedSide") in (None, "")
         for row in lifecycle["predictions"]
     )
+
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda row: row.__setitem__("accuracyEligible", True),
+        lambda row: row.__setitem__("blocked", False),
+        lambda row: row.__setitem__(
+            "metadata",
+            {"model": {"winner": "Hostile"}},
+        ),
+        lambda row: row.__setitem__(
+            "authority",
+            {"labels": {"result": "home"}},
+        ),
+    ],
+)
+def test_terminal_status_projection_rejects_unsafe_flags_and_nested_material(
+    mutate,
+):
+    row = _row(
+        "g-terminal",
+        NOW - timedelta(hours=3),
+        status="LOCKED_NO_PREDICTION_DATA",
+    )
+    mutate(row)
+
+    with pytest.raises(
+        ValueError,
+        match="terminal_status_projection_authority_invalid",
+    ):
+        reconcile_public_prediction_lifecycle(
+            503,
+            _no_champion(),
+            [row],
+            1,
+            now=NOW,
+        )
+
+
+def test_quarantine_status_projection_emits_only_bounded_lifecycle_schema():
+    row = _row(
+        "g-quarantine",
+        NOW - timedelta(hours=3),
+        status="MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED",
+    )
+    row["operationalDefect"] = True
+    row["harmlessUnknown"] = {"diagnostic": "must-not-copy"}
+
+    result = reconcile_public_prediction_lifecycle(
+        503,
+        _no_champion(),
+        [row],
+        1,
+        now=NOW,
+    )
+
+    projected = result["lifecyclePayload"]["predictions"][0]
+    assert "harmlessUnknown" not in projected
+    assert projected["predictedWinner"] is None
+    assert projected["predictedSide"] is None
+    assert projected["canonicalPrediction"] is False
+    assert projected["accuracyEligible"] is False

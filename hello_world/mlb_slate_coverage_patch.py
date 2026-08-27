@@ -23,6 +23,38 @@ LOCK_OUTCOME_VERSION = "MLB-LOCK-OUTCOME-v1-explicit-terminal-status"
 MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED = (
     "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
 )
+VALID_PRELOCK_QUARANTINE_AUTHORITY_VERSION = (
+    "MLB-VALID-PRELOCK-MISSED-LOCK-QUARANTINE-v1"
+)
+_VALID_PRELOCK_QUARANTINE_AUTHORITY_KEYS = frozenset(
+    {
+        "version",
+        "candidatePk",
+        "candidateSk",
+        "candidateItemFingerprint",
+        "candidateSnapshotFingerprint",
+        "candidatePayloadFingerprint",
+        "candidatePayloadFingerprintVersion",
+        "candidateRowFingerprint",
+        "candidateSelectionFingerprint",
+        "sourcePullFingerprint",
+        "sourcePullStoragePk",
+        "sourcePullStorageSk",
+        "predictionCreatedAtUtc",
+        "predictionPersistedAtUtc",
+        "predictionSourcePullAtUtc",
+        "evaluationCutoffAtUtc",
+        "identityBindingMode",
+        "candidateGameIdentity",
+        "stageGameIdentity",
+        "candidateOfficialGamePk",
+        "stageOfficialGamePk",
+        "boundScoringPullCount",
+        "rejectedNewerCandidateCount",
+        "modelOrSignalRecomputedAtLock",
+        "predictionAdopted",
+    }
+)
 PLAYABILITY_RECORD_TYPE = "mlb_immutable_playability_assessment"
 PLAYABILITY_VERSION = "MLB-PLAYABILITY-ASSESSMENT-v1-immutable-selection-bound"
 PLAYABILITY_CHECKPOINTS = (
@@ -525,6 +557,263 @@ def _quarantine_authority_identity_valid(
 
 
 
+def _strict_utc_instant(value: Any) -> Optional[datetime]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        instant = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if instant.tzinfo is None:
+        return None
+    return instant.astimezone(timezone.utc)
+
+
+def _valid_prelock_quarantine_authority_errors(
+    item: Dict[str, Any],
+) -> List[str]:
+    """Validate the exact non-selection quarantine provenance contract."""
+
+    errors: List[str] = []
+    authority = item.get("valid_prelock_quarantine_authority")
+    if not isinstance(authority, dict):
+        return ["quarantine_authority_missing"]
+    if set(authority) != _VALID_PRELOCK_QUARANTINE_AUTHORITY_KEYS:
+        errors.append("quarantine_authority_keyset_invalid")
+    if authority.get("version") != VALID_PRELOCK_QUARANTINE_AUTHORITY_VERSION:
+        errors.append("quarantine_authority_version_invalid")
+
+    digest_fields = (
+        "candidateItemFingerprint",
+        "candidateSnapshotFingerprint",
+        "candidatePayloadFingerprint",
+        "candidateRowFingerprint",
+        "candidateSelectionFingerprint",
+        "sourcePullFingerprint",
+    )
+    for field in digest_fields:
+        if re.fullmatch(r"[0-9a-f]{64}", str(authority.get(field) or "")) is None:
+            errors.append(f"quarantine_authority_{field}_invalid")
+    if (
+        authority.get("candidatePayloadFingerprintVersion")
+        != history_contract.CANONICAL_PAYLOAD_FINGERPRINT_VERSION
+    ):
+        errors.append("quarantine_authority_payload_version_invalid")
+
+    slate = str(item.get("slate_date") or "")
+    candidate_identity = str(authority.get("candidateGameIdentity") or "")
+    stage_identity = str(authority.get("stageGameIdentity") or "")
+    item_identity = str(item.get("game_identity") or "")
+    if item_identity.startswith("provider:"):
+        item_identity = item_identity.replace("provider:", "", 1)
+    official_pk = str(item.get("officialGamePk") or "")
+    try:
+        if _exact_nonnegative_integer(
+            official_pk,
+            error="quarantine_official_game_pk_invalid",
+        ) <= 0:
+            raise ValueError("quarantine_official_game_pk_invalid")
+    except Exception:
+        errors.append("quarantine_official_game_pk_invalid")
+    mode = str(authority.get("identityBindingMode") or "")
+    identity_valid = bool(
+        candidate_identity
+        and stage_identity
+        and stage_identity == item_identity
+        and mode in {"exact_identity", "official_game_pk"}
+        and (
+            (mode == "exact_identity" and candidate_identity == stage_identity)
+            or (
+                mode == "official_game_pk"
+                and candidate_identity != stage_identity
+            )
+        )
+        and str(authority.get("candidateOfficialGamePk") or "")
+        == official_pk
+        and str(authority.get("stageOfficialGamePk") or "")
+        == official_pk
+    )
+    if not identity_valid:
+        errors.append("quarantine_authority_identity_invalid")
+
+    candidate_pk = str(authority.get("candidatePk") or "")
+    candidate_sk = str(authority.get("candidateSk") or "")
+    source_pk = str(authority.get("sourcePullStoragePk") or "")
+    source_sk = str(authority.get("sourcePullStorageSk") or "")
+    if candidate_pk != f"GAME_WINNERS#mlb#{slate}":
+        errors.append("quarantine_authority_candidate_pk_invalid")
+    if (
+        not candidate_identity
+        or not candidate_sk.startswith(
+            f"PREGAME#GAME#{candidate_identity}#"
+        )
+    ):
+        errors.append("quarantine_authority_candidate_sk_invalid")
+    if source_pk != f"PULLS#mlb#{slate}":
+        errors.append("quarantine_authority_source_pk_invalid")
+
+    timestamp_fields = (
+        "predictionSourcePullAtUtc",
+        "predictionCreatedAtUtc",
+        "predictionPersistedAtUtc",
+        "evaluationCutoffAtUtc",
+    )
+    instants = {
+        field: _strict_utc_instant(authority.get(field))
+        for field in timestamp_fields
+    }
+    if any(value is None for value in instants.values()):
+        errors.append("quarantine_authority_timestamp_invalid")
+    else:
+        ordered = [instants[field] for field in timestamp_fields]
+        if ordered != sorted(ordered):
+            errors.append("quarantine_authority_timestamp_order_invalid")
+        source = instants["predictionSourcePullAtUtc"]
+        canonical_slot = source.replace(
+            minute=(source.minute // 15) * 15,
+            second=0,
+            microsecond=0,
+        )
+        canonical_sk = f"PULL#SLOT#{canonical_slot.isoformat()}"
+        legacy_prefix = (
+            "PULL#"
+            + str(authority.get("predictionSourcePullAtUtc") or "")
+            + "#"
+        )
+        if source_sk != canonical_sk and not (
+            source_sk.startswith(legacy_prefix)
+            and len(source_sk) > len(legacy_prefix)
+        ):
+            errors.append("quarantine_authority_source_sk_invalid")
+
+    try:
+        bound_count = _exact_nonnegative_integer(
+            authority.get("boundScoringPullCount"),
+            error="quarantine_bound_scoring_pull_count_invalid",
+        )
+        rejected_count = _exact_nonnegative_integer(
+            authority.get("rejectedNewerCandidateCount"),
+            error="quarantine_rejected_newer_candidate_count_invalid",
+        )
+        if bound_count <= 0:
+            errors.append("quarantine_bound_scoring_pull_count_invalid")
+        if rejected_count != 0:
+            errors.append("quarantine_rejected_newer_candidate_count_invalid")
+    except Exception as exc:
+        errors.append(str(exc))
+    if authority.get("modelOrSignalRecomputedAtLock") is not False:
+        errors.append("quarantine_authority_recomputed_at_lock_invalid")
+    if authority.get("predictionAdopted") is not False:
+        errors.append("quarantine_authority_prediction_adopted_invalid")
+
+    authority_fingerprint = hashlib.sha256(
+        json.dumps(
+            _plain(authority),
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+    if (
+        re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(
+                item.get(
+                    "valid_prelock_quarantine_authority_fingerprint"
+                )
+                or ""
+            ),
+        )
+        is None
+        or str(
+            item.get(
+                "valid_prelock_quarantine_authority_fingerprint"
+            )
+            or ""
+        )
+        != authority_fingerprint
+    ):
+        errors.append("quarantine_authority_fingerprint_invalid")
+    return sorted(set(errors))
+
+
+def _terminal_outcome_manifest_game_errors(
+    item: Dict[str, Any],
+    slate: str,
+    game: Dict[str, Any],
+) -> List[str]:
+    """Bind one immutable terminal row to the exact manifest game."""
+
+    errors: List[str] = []
+    expected_identity = game_identity(game)
+    expected_game_id = str(
+        game.get("game_id")
+        or game.get("gameId")
+        or game.get("id")
+        or ""
+    )
+    expected_official_pk = str(
+        game.get("officialGamePk")
+        or game.get("official_game_pk")
+        or ""
+    )
+    if str(item.get("slate_date") or "") != str(slate):
+        errors.append("terminal_manifest_slate_mismatch")
+    if str(item.get("game_identity") or "") != expected_identity:
+        errors.append("terminal_manifest_game_identity_mismatch")
+    if str(item.get("game_id") or "") != expected_game_id:
+        errors.append("terminal_manifest_game_id_mismatch")
+    if (
+        not expected_official_pk
+        or str(item.get("officialGamePk") or "") != expected_official_pk
+    ):
+        errors.append("terminal_manifest_official_game_pk_mismatch")
+
+    expected_start = _strict_utc_instant(
+        game.get("commence_time")
+        or game.get("commenceTime")
+        or game.get("gameDate")
+    )
+    terminal_start = _strict_utc_instant(item.get("commence_time"))
+    terminal_lock = _strict_utc_instant(
+        item.get("scheduled_lock_at_utc")
+    )
+    if expected_start is None or terminal_start != expected_start:
+        errors.append("terminal_manifest_start_mismatch")
+    if (
+        expected_start is None
+        or terminal_lock
+        != expected_start - timedelta(minutes=45)
+    ):
+        errors.append("terminal_manifest_lock_cutoff_mismatch")
+
+    row = (item.get("data") or {}).get("row")
+    if not isinstance(row, dict):
+        errors.append("terminal_manifest_team_row_missing")
+    else:
+        terminal_away = _norm_team(
+            row.get("awayTeam") or row.get("away_team")
+        )
+        terminal_home = _norm_team(
+            row.get("homeTeam") or row.get("home_team")
+        )
+        expected_away = _norm_team(
+            game.get("away_team") or game.get("awayTeam")
+        )
+        expected_home = _norm_team(
+            game.get("home_team") or game.get("homeTeam")
+        )
+        if (
+            not terminal_away
+            or not terminal_home
+            or (terminal_away, terminal_home)
+            != (expected_away, expected_home)
+        ):
+            errors.append("terminal_manifest_ordered_teams_mismatch")
+    return sorted(set(errors))
+
+
 def _exact_nonnegative_integer(
     value: Any,
     *,
@@ -563,6 +852,13 @@ def _terminal_outcome_for_public(
         errors.append("lock_outcome_contract_mismatch")
     if str(item.get("slate_date") or "") != slate or str(item.get("game_identity") or "") != game_identity(game):
         errors.append("lock_outcome_identity_mismatch")
+    errors.extend(
+        _terminal_outcome_manifest_game_errors(
+            item,
+            slate,
+            game,
+        )
+    )
     if item.get("lock_outcome_fingerprint") != _record_fingerprint(item, "lock_outcome_fingerprint"):
         errors.append("lock_outcome_fingerprint_mismatch")
     outcome_status = str(item.get("lock_status") or "")
@@ -618,31 +914,12 @@ def _terminal_outcome_for_public(
         }
         if any(item.get(field) != value for field, value in exact.items()):
             errors.append("lock_outcome_quarantine_flags_invalid")
-        authority = item.get("valid_prelock_quarantine_authority")
-        authority_fingerprint = hashlib.sha256(
-            json.dumps(
-                _plain(authority),
-                sort_keys=True,
-                separators=(",", ":"),
-                default=str,
-            ).encode("utf-8")
-        ).hexdigest() if isinstance(authority, dict) else ""
-        if (
-            not isinstance(authority, dict)
-            or authority.get("predictionAdopted") is not False
-            or not _quarantine_authority_identity_valid(
-                item,
-                authority,
-            )
-            or str(
-                item.get(
-                    "valid_prelock_quarantine_authority_fingerprint"
-                )
-                or ""
-            )
-            != authority_fingerprint
-        ):
+        authority_errors = (
+            _valid_prelock_quarantine_authority_errors(item)
+        )
+        if authority_errors:
             errors.append("lock_outcome_quarantine_authority_invalid")
+            errors.extend(authority_errors)
     if str(item.get("provider_manifest_fingerprint") or "") != str(manifest_authority.get("providerManifestFingerprint") or ""):
         errors.append("lock_outcome_manifest_fingerprint_mismatch")
     if str(item.get("provider_manifest_pk") or "") != str(manifest_authority.get("providerManifestPk") or ""):

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -148,6 +151,9 @@ def official_game(
         "officialGamePk": official_pk,
         "officialDate": SLATE,
         "gameDate": "2026-07-21T23:05:00Z",
+        "game_id": f"mlb_statsapi:{official_pk}",
+        "id": f"mlb_statsapi:{official_pk}",
+        "commence_time": "2026-07-21T23:05:00Z",
         "awayTeam": away,
         "homeTeam": home,
         "awayScore": away_score,
@@ -229,6 +235,147 @@ def terminal_outcome(official_pk: str):
         "immutable_prediction_rewrite_allowed": False,
         "write_once": True,
     }
+
+
+def quarantine_terminal_outcome(game):
+    official_pk = str(game["officialGamePk"])
+    start = datetime.fromisoformat(
+        str(game["gameDate"]).replace("Z", "+00:00")
+    )
+    cutoff = start - timedelta(minutes=45)
+    source = cutoff - timedelta(minutes=35)
+    created = source + timedelta(minutes=5)
+    persisted = created + timedelta(minutes=5)
+    raw_identity = str(game["game_id"])
+    digest = lambda value: hashlib.sha256(
+        value.encode("utf-8")
+    ).hexdigest()
+    authority = {
+        "version": (
+            labels.slate_coverage.VALID_PRELOCK_QUARANTINE_AUTHORITY_VERSION
+        ),
+        "candidatePk": f"GAME_WINNERS#mlb#{SLATE}",
+        "candidateSk": (
+            f"PREGAME#GAME#{raw_identity}#"
+            f"PERSISTED#{persisted.isoformat()}"
+        ),
+        "candidateItemFingerprint": digest("candidate-item"),
+        "candidateSnapshotFingerprint": digest("candidate-snapshot"),
+        "candidatePayloadFingerprint": digest("candidate-payload"),
+        "candidatePayloadFingerprintVersion": (
+            labels.history.CANONICAL_PAYLOAD_FINGERPRINT_VERSION
+        ),
+        "candidateRowFingerprint": digest("candidate-row"),
+        "candidateSelectionFingerprint": digest("candidate-selection"),
+        "sourcePullFingerprint": digest("source-pull"),
+        "sourcePullStoragePk": f"PULLS#mlb#{SLATE}",
+        "sourcePullStorageSk": f"PULL#SLOT#{source.isoformat()}",
+        "predictionCreatedAtUtc": created.isoformat(),
+        "predictionPersistedAtUtc": persisted.isoformat(),
+        "predictionSourcePullAtUtc": source.isoformat(),
+        "evaluationCutoffAtUtc": cutoff.isoformat(),
+        "identityBindingMode": "exact_identity",
+        "candidateGameIdentity": raw_identity,
+        "stageGameIdentity": raw_identity,
+        "candidateOfficialGamePk": official_pk,
+        "stageOfficialGamePk": official_pk,
+        "boundScoringPullCount": 1,
+        "rejectedNewerCandidateCount": 0,
+        "modelOrSignalRecomputedAtLock": False,
+        "predictionAdopted": False,
+    }
+    item = {
+        "PK": f"LOCKED_PICKS#mlb#{SLATE}",
+        "SK": f"PER_GAME_LOCK_OUTCOME#TMINUS45#{official_pk}",
+        "record_type": labels.per_game_lock.LOCK_OUTCOME_RECORD_TYPE,
+        "version": labels.per_game_lock.LOCK_OUTCOME_VERSION,
+        "sport": "mlb",
+        "slate_date": SLATE,
+        "game_identity": labels.slate_coverage.game_identity(game),
+        "game_id": raw_identity,
+        "officialGamePk": official_pk,
+        "commence_time": start.isoformat(),
+        "scheduled_lock_at_utc": cutoff.isoformat(),
+        "recorded_at_utc": (start + timedelta(hours=1)).isoformat(),
+        "lock_status": (
+            labels.per_game_lock.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+        ),
+        "lock_outcome_recorded": True,
+        "locked_prediction": False,
+        "canonical": False,
+        "canonical_prediction": False,
+        "official_prediction": False,
+        "playable": False,
+        "blocked": True,
+        "playability_block_reasons": [
+            "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+        ],
+        "training_eligible": False,
+        "accuracy_eligible": False,
+        "wager_allowed": False,
+        "prediction_adopted": False,
+        "operational_defect": True,
+        "canonical_prediction_complete": False,
+        "training_exclusion_reasons": [
+            "missing_immutable_tminus45_lock",
+            "valid_prelock_candidate_not_promoted",
+        ],
+        "reasons": [
+            "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+        ],
+        "valid_prelock_quarantine_authority": authority,
+        "valid_prelock_quarantine_authority_fingerprint": hashlib.sha256(
+            json.dumps(
+                labels.slate_coverage._plain(authority),
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest(),
+        "provider_manifest_authority": {},
+        "provider_manifest_fingerprint": "a" * 64,
+        "provider_manifest_pk": f"PROVIDER_MANIFEST#mlb#{SLATE}",
+        "provider_manifest_sk": "OBSERVED#fixture",
+        "manifest_game_count": 1,
+        "data": {
+            "manifestGameIdentities": [
+                labels.slate_coverage.game_identity(game)
+            ],
+            "row": {
+                "awayTeam": game["awayTeam"],
+                "homeTeam": game["homeTeam"],
+            },
+        },
+        "post_start_prediction_creation_allowed": False,
+        "immutable_prediction_rewrite_allowed": False,
+        "write_once": True,
+        "created_at": (start + timedelta(hours=1)).isoformat(),
+    }
+    item["lock_outcome_fingerprint"] = (
+        labels.slate_coverage._record_fingerprint(
+            item,
+            "lock_outcome_fingerprint",
+        )
+    )
+    return item
+
+
+def refingerprint_quarantine_terminal(item):
+    authority = item["valid_prelock_quarantine_authority"]
+    item["valid_prelock_quarantine_authority_fingerprint"] = hashlib.sha256(
+        json.dumps(
+            labels.slate_coverage._plain(authority),
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+    item["lock_outcome_fingerprint"] = (
+        labels.slate_coverage._record_fingerprint(
+            item,
+            "lock_outcome_fingerprint",
+        )
+    )
 
 
 def legacy_provider_terminal(*, commence_time="2026-07-21T23:05:00+00:00"):
@@ -931,3 +1078,170 @@ def test_training_loader_emits_no_rows_until_every_official_game_is_final(monkey
     assert report["finalizedSlateDates"] == []
     assert report["rows"] == []
     assert report["slates"][0]["slateFinalized"] is False
+
+def test_valid_quarantine_authority_passes_final_label_terminal_validator(
+    monkeypatch,
+):
+    game = official_game("700070")
+    item = quarantine_terminal_outcome(game)
+    monkeypatch.setattr(
+        labels.per_game_lock,
+        "_provider_manifest_authority_errors",
+        lambda table, value: [],
+    )
+
+    assert labels._terminal_outcome_errors(item, SLATE) == []
+    assert labels.slate_coverage._terminal_outcome_manifest_game_errors(
+        item,
+        SLATE,
+        game,
+    ) == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("version", "forged-version"),
+        ("candidateSnapshotFingerprint", "z" * 64),
+        ("candidatePayloadFingerprintVersion", "forged-version"),
+        ("sourcePullStorageSk", "PULL#SLOT#forged"),
+        ("predictionPersistedAtUtc", "2026-07-21T22:21:00+00:00"),
+        ("boundScoringPullCount", 0.5),
+        ("rejectedNewerCandidateCount", 1),
+        ("modelOrSignalRecomputedAtLock", True),
+        ("predictionAdopted", True),
+    ],
+)
+def test_quarantine_authority_semantic_mutation_is_rejected_by_final_labels(
+    monkeypatch,
+    field,
+    value,
+):
+    item = quarantine_terminal_outcome(official_game("700071"))
+    item["valid_prelock_quarantine_authority"][field] = value
+    refingerprint_quarantine_terminal(item)
+    monkeypatch.setattr(
+        labels.per_game_lock,
+        "_provider_manifest_authority_errors",
+        lambda table, stored: [],
+    )
+
+    errors = labels._terminal_outcome_errors(item, SLATE)
+
+    assert "terminal_quarantine_authority_invalid" in errors
+
+
+def test_quarantine_authority_extra_and_nested_selection_are_rejected(
+    monkeypatch,
+):
+    item = quarantine_terminal_outcome(official_game("700072"))
+    item["valid_prelock_quarantine_authority"]["futureField"] = {
+        "winner": "Hostile Winner",
+    }
+    refingerprint_quarantine_terminal(item)
+    monkeypatch.setattr(
+        labels.per_game_lock,
+        "_provider_manifest_authority_errors",
+        lambda table, stored: [],
+    )
+
+    errors = labels._terminal_outcome_errors(item, SLATE)
+
+    assert "terminal_quarantine_authority_invalid" in errors
+    assert any("terminal_forbidden_field" in error for error in errors)
+
+
+def test_final_label_validation_rejects_same_count_official_pk_swap(
+    monkeypatch,
+):
+    first_game = official_game("700080")
+    second_game = official_game("700081")
+    first = quarantine_terminal_outcome(first_game)
+    second = quarantine_terminal_outcome(second_game)
+    first["officialGamePk"], second["officialGamePk"] = (
+        second["officialGamePk"],
+        first["officialGamePk"],
+    )
+    for item in (first, second):
+        authority = item["valid_prelock_quarantine_authority"]
+        authority["candidateOfficialGamePk"] = item["officialGamePk"]
+        authority["stageOfficialGamePk"] = item["officialGamePk"]
+        refingerprint_quarantine_terminal(item)
+    monkeypatch.setattr(
+        labels,
+        "_query_partition",
+        lambda table, pk, prefix: [first, second],
+    )
+    monkeypatch.setattr(
+        labels.rolling_audit,
+        "_verified_provider_alias_crosswalk",
+        lambda slate: {},
+    )
+    monkeypatch.setattr(
+        labels.per_game_lock,
+        "_provider_manifest_authority_errors",
+        lambda table, stored: [],
+    )
+
+    valid, rejected = labels._validated_terminal_outcomes(
+        SLATE,
+        [first_game, second_game],
+    )
+
+    assert valid == {}
+    assert len(rejected) == 2
+    assert all(
+        any(
+            "terminal_manifest_" in error
+            for error in row["errors"]
+        )
+        for row in rejected
+    )
+
+
+
+@pytest.mark.parametrize("case", ["outside_roster", "duplicate_roster"])
+def test_final_label_terminal_requires_unique_official_roster_membership(
+    monkeypatch,
+    case,
+):
+    game_row = official_game("700082")
+    item = quarantine_terminal_outcome(game_row)
+    official_roster = [game_row]
+    if case == "outside_roster":
+        item["officialGamePk"] = "799999"
+        item["valid_prelock_quarantine_authority"][
+            "candidateOfficialGamePk"
+        ] = "799999"
+        item["valid_prelock_quarantine_authority"][
+            "stageOfficialGamePk"
+        ] = "799999"
+        refingerprint_quarantine_terminal(item)
+    else:
+        official_roster.append(copy.deepcopy(game_row))
+    monkeypatch.setattr(
+        labels,
+        "_query_partition",
+        lambda table, pk, prefix: [item],
+    )
+    monkeypatch.setattr(
+        labels.rolling_audit,
+        "_verified_provider_alias_crosswalk",
+        lambda slate: {},
+    )
+    monkeypatch.setattr(
+        labels.per_game_lock,
+        "_provider_manifest_authority_errors",
+        lambda table, stored: [],
+    )
+
+    valid, rejected = labels._validated_terminal_outcomes(
+        SLATE,
+        official_roster,
+    )
+
+    assert valid == {}
+    assert len(rejected) == 1
+    assert "terminal_official_manifest_game_ambiguous" in (
+        rejected[0]["errors"]
+    )

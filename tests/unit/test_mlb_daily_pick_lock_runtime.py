@@ -419,6 +419,7 @@ def _complete_terminal_checkpoint(
     request_epoch: int = 1_700_000_000,
     request_id: str = "fixture-request",
     game_count: int = 15,
+    quarantine_count: int = 0,
 ) -> dict:
     manifest_item = {
         "tableRole": "PULLS_TABLE",
@@ -466,9 +467,16 @@ def _complete_terminal_checkpoint(
         manifest_authority
     )
 
+    assert 0 <= quarantine_count <= game_count
     processed_games = []
     for index in range(game_count):
         identity = f"provider:game-{index + 1}"
+        quarantine = index < quarantine_count
+        terminal_state = (
+            "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+            if quarantine
+            else "LOCKED_NO_PREDICTION_DATA"
+        )
         outcome_item = {
             "tableRole": "LOCK_TABLE",
             "PK": f"MLB_LOCK_OUTCOME#{slate_date}",
@@ -478,18 +486,52 @@ def _complete_terminal_checkpoint(
                     "kind": "outcome",
                     "slate": slate_date,
                     "identity": identity,
+                    "state": terminal_state,
                 }
             ),
         }
+        primary_items = [outcome_item]
+        if quarantine:
+            primary_items.extend(
+                [
+                    {
+                        "tableRole": "PULLS_TABLE",
+                        "PK": f"GAME_WINNERS#mlb#{slate_date}",
+                        "SK": f"PREGAME#{identity}",
+                        "itemFingerprint": _fixture_hash(
+                            {
+                                "kind": "candidate",
+                                "slate": slate_date,
+                                "identity": identity,
+                            }
+                        ),
+                    },
+                    {
+                        "tableRole": "PULLS_TABLE",
+                        "PK": f"PULLS#mlb#{slate_date}",
+                        "SK": f"PULL#SLOT#{index:02d}",
+                        "itemFingerprint": _fixture_hash(
+                            {
+                                "kind": "source",
+                                "slate": slate_date,
+                                "identity": identity,
+                            }
+                        ),
+                    },
+                ]
+            )
         evidence = {
             "durableIdentity": identity,
-            "terminalState": "LOCKED_NO_PREDICTION_DATA",
-            "authorityItemCount": 1,
+            "terminalState": terminal_state,
+            "authorityItemCount": 3 if quarantine else 1,
             "dependencyItemCount": 1,
             "manifestAuthorityEvidenceFingerprint": (
                 manifest_authority["authorityEvidenceFingerprint"]
             ),
-            "items": [outcome_item, copy.deepcopy(manifest_item)],
+            "items": [
+                *primary_items,
+                copy.deepcopy(manifest_item),
+            ],
         }
         evidence["evidenceFingerprint"] = (
             COOPERATIVE_REPAIR._cooperative_terminal_evidence_fingerprint(
@@ -501,7 +543,7 @@ def _complete_terminal_checkpoint(
                 "gameIdentity": identity,
                 "durableIdentity": identity,
                 "officialGamePk": str(100000 + index),
-                "terminalState": "LOCKED_NO_PREDICTION_DATA",
+                "terminalState": terminal_state,
                 "reconciled": True,
                 "durableEvidence": evidence,
             }
@@ -530,8 +572,8 @@ def _complete_terminal_checkpoint(
         "processedGameCount": game_count,
         "terminalCount": game_count,
         "canonicalCount": 0,
-        "noPredictionDataCount": game_count,
-        "missedLockValidPrelockQuarantineCount": 0,
+        "noPredictionDataCount": game_count - quarantine_count,
+        "missedLockValidPrelockQuarantineCount": quarantine_count,
         "reconciledCount": game_count,
         "processedGames": processed_games,
         "verificationIndex": game_count,
@@ -3272,6 +3314,29 @@ def test_persisted_completed_receipt_is_revalidated_and_rejects_hostile_extra():
             handler._cooperative_request_response(table.queue_item)
 
 
+def test_application_payload_rejects_mixed_or_nonintegral_gateway_transport():
+    with _load_handler() as (handler, _, _):
+        with pytest.raises(
+            RuntimeError,
+            match="MLB_COOPERATIVE_REPLAY_RESPONSE_INVALID",
+        ):
+            handler._application_payload(
+                {
+                    "statusCode": 200,
+                    "body": "{}",
+                    "ok": True,
+                }
+            )
+        for status_code in (0, Decimal("200.5"), True):
+            with pytest.raises(RuntimeError):
+                handler._application_payload(
+                    {
+                        "statusCode": status_code,
+                        "body": "{}",
+                    }
+                )
+
+
 def test_coordination_record_rejects_fractional_request_epoch():
     table = FakeLeaseTable()
     with _load_handler(lease_table=table) as (handler, _, _):
@@ -3385,3 +3450,35 @@ def test_v3_migration_rejects_any_non_exact_or_fractional_zero_work_shape(
             identities=[identity],
             identity_options=[options],
         )
+
+def test_all_quarantine_completion_response_crosses_protected_receipt_boundary():
+    checkpoint = _complete_terminal_checkpoint(
+        slate_date="2026-07-20",
+        game_count=15,
+        quarantine_count=15,
+    )
+    produced = COOPERATIVE_REPAIR._cooperative_terminal_completion_response(
+        checkpoint
+    )
+
+    assert produced["atomicDurableItemCount"] == 46
+    assert produced["atomicDurableProofMaxItemCount"] == 100
+    assert produced["perGameLockProgress"][
+        "missedLockValidPrelockQuarantineCount"
+    ] == 15
+
+    with _load_handler() as (handler, _, _):
+        receipt = handler._terminal_replay_receipt(
+            produced,
+            "2026-07-20",
+        )
+
+    assert receipt["atomicDurableItemCount"] == 46
+    assert receipt["missedLockTerminalReconciliation"][
+        "missedLockValidPrelockQuarantineCount"
+    ] == 15
+    assert {
+        game["terminalState"]
+        for game in receipt["perGameLockProgress"]["terminalGames"]
+    } == {"MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"}
+
