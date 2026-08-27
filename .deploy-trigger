@@ -9,6 +9,10 @@ Required provider smoke behavior: the provider call must be live and fallback-fr
 Required historical policy: July 12 and earlier invalid rows remain quarantined and are not reconstructed after outcomes are known.
 Required ML policy: outcome and reliability models remain separate, recommendation reliability threshold remains 60%, rolling 24-hour all-games audit target remains 90%, and champion promotion remains manual and DynamoDB-reviewed.
 
+Deployment request UTC: 2026-08-27T05:55:00Z
+Purpose: rerun the exact-source MLB SAM deployment after removing two one-shot push-to-trainer dispatch chains that the live ownership guard correctly rejected.
+Required outcome: EventBridge remains the sole automatic trainer owner; recovery remains manual-only; the T15 checkpoint scheduler, exact fail-closed public authority, and post-deploy lifecycle smokes all pass without changing production authority.
+
 Deployment request UTC: 2026-07-17T02:57:00Z
 Purpose: verify the MLB T-minus-45 last-prelock promotion runtime and the exact zero-game post-game provider-manifest cutover smoke on production main.
 Expected behavior: live nonzero pulls require complete immutable manifests; zero-game post-cutover history remains unbackfilled and fails closed without being misclassified as a runtime installation failure.
