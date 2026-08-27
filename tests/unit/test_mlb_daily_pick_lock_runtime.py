@@ -10,6 +10,7 @@ import sys
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
 
@@ -3091,3 +3092,224 @@ def test_invalid_completion_handoff_blocks_queue_completion_and_cleans_up(
             handler.mlb_daily_pick_lock._completion_release_calls
         ) == release_count
         assert table.item is None
+
+def test_dynamodb_decimal_game_index_serializes_after_execution_lease_release():
+    table = FakeLeaseTable()
+
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=_successful_current_slate_payload(),
+    ) as (handler, _, _):
+        checkpoint = _complete_terminal_checkpoint(
+            slate_date="2026-07-20",
+            request_epoch=1,
+            request_id="placeholder",
+            game_count=1,
+        )
+        checkpoint.update(
+            {
+                "phase": "VERIFY",
+                "verificationIndex": 0,
+                "verifiedGameCount": 0,
+                "verificationComplete": False,
+                "attemptCount": 1,
+                "lastAttempt": {
+                    "status": "TERMINAL_CHECKPOINT_READY",
+                    "stage": "PROCESS_CHECKPOINT_READY",
+                    "atUtc": "2026-07-21T22:10:00+00:00",
+                    "phase": "VERIFY",
+                    "gameIndex": 0,
+                    "gameIdentity": "provider:game-1",
+                    "durableIdentity": "provider:game-1",
+                },
+            }
+        )
+
+        def ddb_numbers(value):
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, int):
+                return Decimal(value)
+            if isinstance(value, dict):
+                return {
+                    key: ddb_numbers(nested)
+                    for key, nested in value.items()
+                }
+            if isinstance(value, list):
+                return [ddb_numbers(nested) for nested in value]
+            return value
+
+        original_update_item = table.update_item
+
+        def update_item_with_ddb_return_values(**kwargs):
+            result = original_update_item(**kwargs)
+            values = kwargs.get("ExpressionAttributeValues") or {}
+            if ":progress" in values and "Attributes" in result:
+                result["Attributes"] = ddb_numbers(result["Attributes"])
+            return result
+
+        table.update_item = update_item_with_ddb_return_values
+
+        def chunk_runner(
+            *,
+            slate_date,
+            request_epoch,
+            request_id,
+            checkpoint,
+            context,
+        ):
+            del checkpoint, context
+            bound = copy.deepcopy(checkpoint_template)
+            bound["slateDateEt"] = slate_date
+            bound["requestEpoch"] = int(request_epoch)
+            bound["requestId"] = str(request_id)
+            bound["checkpointFingerprint"] = (
+                COOPERATIVE_REPAIR._cooperative_terminal_checkpoint_fingerprint(
+                    bound
+                )
+            )
+            return {
+                "ok": True,
+                "complete": False,
+                "deferred": False,
+                "stage": "PROCESS_CHECKPOINT_READY",
+                "remainingSeconds": 820,
+                "checkpointWriteAllowed": True,
+                "checkpoint": bound,
+                "terminalChunkVersion": (
+                    handler.COOPERATIVE_TERMINAL_CHUNK_VERSION
+                ),
+                "terminalWrittenThisInvocation": True,
+                "postStartPredictionCreationAllowed": False,
+                "immutablePredictionRewriteAllowed": False,
+                "productionAuthorityChanged": False,
+            }
+
+        checkpoint_template = checkpoint
+        handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk = (
+            chunk_runner
+        )
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+
+        response = handler.lambda_handler(
+            _scheduled_event(),
+            FakeContext(
+                request_id="decimal-status-owner",
+                remaining_millis=900_000,
+            ),
+        )
+        payload = _body(response)
+        owner = payload["cooperativeTerminalReplayOwnerExecution"]
+        last_attempt = owner["terminalChunkProgress"]["lastAttempt"]
+
+        assert last_attempt["gameIndex"] == 0
+        assert type(last_attempt["gameIndex"]) is int
+        assert payload["lockExecutionConcurrency"]["leaseReleased"] is True
+        assert table.queue_item["state"] == "QUEUED"
+        assert table.item is None
+        assert len(table.delete_calls) == 1
+        json.dumps(response, sort_keys=True)
+
+
+@pytest.mark.parametrize(
+    "last_attempt",
+    (
+        ["not-an-object"],
+        {
+            "status": {"nested": "FAILED_CLOSED"},
+            "stage": "PROCESS",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "PROCESS",
+        },
+        {
+            "status": "FAILED_CLOSED",
+            "stage": "PROCESS",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "PROCESS",
+            "gameIndex": Decimal("0.5"),
+        },
+        {
+            "status": "FAILED_CLOSED",
+            "stage": "PROCESS",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "PROCESS",
+            "gameIndex": {"nested": 0},
+        },
+        {
+            "status": "FAILED_CLOSED",
+            "stage": "PROCESS",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "PROCESS",
+            "unexpected": {"nested": True},
+        },
+    ),
+)
+def test_cooperative_public_progress_fails_closed_on_corrupt_last_attempt(
+    last_attempt,
+):
+    with _load_handler() as (handler, _, _):
+        progress = _complete_terminal_checkpoint(
+            slate_date="2026-07-20",
+            game_count=1,
+        )
+        progress["lastAttempt"] = copy.deepcopy(last_attempt)
+        item = {
+            "slate_date_et": "2026-07-20",
+            "terminal_replay_progress": progress,
+        }
+
+        public = handler._cooperative_terminal_progress_public(item)
+
+        assert public == {
+            "version": handler.COOPERATIVE_TERMINAL_CHUNK_VERSION,
+            "valid": False,
+            "failClosed": True,
+        }
+        json.dumps(public, sort_keys=True)
+
+
+def test_newly_due_mid_run_failure_keeps_cooperative_replay_queued():
+    table = FakeLeaseTable()
+    chunk_calls = []
+    current_slate_failure = {
+        "ok": False,
+        "sport": "mlb",
+        "slateDateEt": "2026-07-21",
+        "reason": "PER_GAME_LOCK_DUE_BUT_NOT_CANONICAL",
+        "perGameLockProgress": {
+            "manifestGameCount": 7,
+            "lockOutcomeCount": 3,
+            "pendingCount": 3,
+            "dueMissingCount": 1,
+            "games": [
+                {"gameIdentity": "provider:newly-due", "state": "DUE_NOT_STAGED"}
+            ],
+        },
+    }
+
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=current_slate_failure,
+    ) as (handler, _, delegate_calls):
+        handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk = (
+            lambda **kwargs: chunk_calls.append(kwargs)
+        )
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                _scheduled_event(),
+                FakeContext(
+                    request_id="mid-run-cutoff-owner",
+                    remaining_millis=900_000,
+                ),
+            ),
+            "MLB_SCHEDULED_LOCK_FAILED",
+        )
+
+        assert len(delegate_calls) == 1
+        assert chunk_calls == []
+        assert table.queue_item["state"] == "QUEUED"
+        assert "current_slate_success_proof" not in table.queue_item
+        assert table.item is None
+        assert len(table.delete_calls) == 1
