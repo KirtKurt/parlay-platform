@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Optional, Protocol
 
@@ -36,7 +37,7 @@ class Decision:
 
 
 class RelayClient(Protocol):
-    def list_successor_run_ids(self) -> list[int]:
+    def list_successor_run_ids(self, expected_remaining_segments: int) -> list[int]:
         ...
 
     def dispatch_successor(self, remaining_segments: int) -> None:
@@ -71,14 +72,36 @@ def resolve_remaining_segments(
     return value
 
 
+def _timestamp(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def successor_run_title(remaining_segments: int) -> str:
+    return f"MLB pulse relay segment {remaining_segments}"
+
+
 def filter_successor_run_ids(
     runs: Iterable[Mapping[str, Any]],
     *,
     current_run_id: Any,
+    current_created_at: Any,
+    expected_remaining_segments: int,
 ) -> list[int]:
-    """Return only actual, noncompleted main workflow_dispatch successors."""
+    """Return only a chain-bound, noncompleted main dispatch successor."""
 
     current = str(current_run_id)
+    current_created = _timestamp(current_created_at)
+    if current_created is None:
+        raise ValueError("current_run_created_at_invalid")
+    expected_title = successor_run_title(expected_remaining_segments)
     found: list[int] = []
     for run in runs:
         if str(run.get("id")) == current:
@@ -87,7 +110,12 @@ def filter_successor_run_ids(
             continue
         if str(run.get("head_branch") or "") != "main":
             continue
+        if str(run.get("display_title") or "") != expected_title:
+            continue
         if str(run.get("status") or "") not in ACTIVE_RUN_STATUSES:
+            continue
+        created = _timestamp(run.get("created_at"))
+        if created is None or created <= current_created:
             continue
         try:
             found.append(int(run["id"]))
@@ -100,6 +128,7 @@ class CommandRelayClient:
     def __init__(self, *, repository: str, current_run_id: str) -> None:
         self.repository = repository
         self.current_run_id = current_run_id
+        self._current_created_at: Optional[str] = None
 
     @staticmethod
     def _run(args: list[str], *, timeout_seconds: int = 60) -> str:
@@ -119,7 +148,17 @@ class CommandRelayClient:
         output = self._run(["gh", "api", path])
         return json.loads(output or "null")
 
-    def list_successor_run_ids(self) -> list[int]:
+    def _get_current_created_at(self) -> str:
+        if self._current_created_at is None:
+            payload = self._gh_json(
+                f"repos/{self.repository}/actions/runs/{self.current_run_id}"
+            )
+            if not isinstance(payload, Mapping) or not payload.get("created_at"):
+                raise RuntimeError("current_relay_run_missing_created_at")
+            self._current_created_at = str(payload["created_at"])
+        return self._current_created_at
+
+    def list_successor_run_ids(self, expected_remaining_segments: int) -> list[int]:
         payload = self._gh_json(
             f"repos/{self.repository}/actions/workflows/{RELAY_WORKFLOW}/runs"
             "?event=workflow_dispatch&per_page=100"
@@ -132,6 +171,8 @@ class CommandRelayClient:
         return filter_successor_run_ids(
             [row for row in rows if isinstance(row, Mapping)],
             current_run_id=self.current_run_id,
+            current_created_at=self._get_current_created_at(),
+            expected_remaining_segments=expected_remaining_segments,
         )
 
     def dispatch_successor(self, remaining_segments: int) -> None:
@@ -261,7 +302,7 @@ class RelayStateMachine:
 
         errors: list[str] = []
         try:
-            if self.client.list_successor_run_ids():
+            if self.client.list_successor_run_ids(self.next_segments):
                 return
         except Exception as exc:
             errors.append(f"initial_list={exc}")
@@ -273,7 +314,7 @@ class RelayStateMachine:
 
         for attempt in range(1, self.verify_attempts + 1):
             try:
-                if self.client.list_successor_run_ids():
+                if self.client.list_successor_run_ids(self.next_segments):
                     return
             except Exception as exc:
                 errors.append(f"verify_{attempt}={exc}")
@@ -329,9 +370,8 @@ class RelayStateMachine:
         self.successful_polls += 1
 
     def assert_final_liveness(self) -> None:
-        # The final probe cannot degrade into another warning: any failure makes
-        # the current segment fail and releases its already-verified successor.
-        self._poll(final=True)
+        # The last configured poll is strict. This assertion does not perform a
+        # 77th decision that could race the reporter dispatched by poll 76.
         if self.successful_polls < 1 or self.last_decision is None:
             raise RelayFailure("no_successful_staleness_decision")
         if self.consecutive_decision_failures != 0:
@@ -348,7 +388,7 @@ class RelayStateMachine:
 
     def run(self) -> dict[str, Any]:
         for poll_index in range(1, self.poll_count + 1):
-            self._poll(final=False)
+            self._poll(final=poll_index == self.poll_count)
             if poll_index < self.poll_count:
                 self.poll_sleep(self.poll_interval_seconds)
         self.assert_final_liveness()
