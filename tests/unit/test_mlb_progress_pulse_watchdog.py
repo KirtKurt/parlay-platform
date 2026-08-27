@@ -273,6 +273,9 @@ def test_workflow_stale_gates_automatic_triggers_and_forces_explicit_dispatch() 
         "Verify MLB Scoring Fix After Deploy",
         "MLB Production Source Contract",
         "Unified MLB learning recovery once",
+        "MLB Daily Yesterday Audit",
+        "Tennis Autonomy Status Backstop",
+        "NFL Auto AWS Stack Probe",
     ):
         assert producer in pulse
     assert "runtime_reports/mlb_*.json" in pulse

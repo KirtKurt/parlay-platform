@@ -17,6 +17,11 @@ on:
       - Verify MLB Scoring Fix After Deploy
       - MLB Production Source Contract
       - Unified MLB learning recovery once
+      # Independent main-branch completions that remained admissible while
+      # the pulse/watchdog cron slots were selectively absent.
+      - MLB Daily Yesterday Audit
+      - Tennis Autonomy Status Backstop
+      - NFL Auto AWS Stack Probe
     types: [completed]
     branches: [main]
   workflow_dispatch:
