@@ -1,74 +1,221 @@
-name: Unified MLB Learning Recovery Queue Control
-run-name: Release patched MLB deploy lane and dispatch canonical recovery
+name: MLB R7 Overnight Advancement Queue Control
+run-name: "MLB R7 queue control ${{ github.event_name }} #${{ github.run_number }}"
 
 "on":
+  schedule:
+    # Run at off-peak minutes across the UTC window that covers midnight-7 AM
+    # America/New_York in both EDT and EST. The job enforces the exact ET window.
+    - cron: '17,47 4-11 * * *'
   push:
     branches: [main]
     paths:
       - '.github/workflows/mlb-r7-overnight-advance.yml'
+      - '.github/workflows/bootstrap-unified-mlb-r7-recovery-now.yml'
+      - 'tests/unit/test_mlb_r7_overnight_queue_control.py'
   workflow_dispatch:
+    inputs:
+      force:
+        description: Dispatch even after the 33-row recovery has succeeded
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: write
   contents: read
 
-# This workflow intentionally shares the deployment concurrency group. Its
-# update supersedes only the stale pre-fix deploy that has already completed
-# CloudFormation and is waiting in a read-only smoke loop. It performs no AWS
-# call, then delegates exact-current-main deployment and R7 recovery to the
-# canonical bootstrap workflow.
+# Queue control is isolated from deployment and trainer concurrency. It never
+# invokes AWS. The canonical recovery owns GitHub-side recovery serialization;
+# EventBridge remains the only automatic trainer invocation owner.
 concurrency:
-  group: parlay-platform-deploy
-  cancel-in-progress: true
+  group: mlb-r7-overnight-queue-control
+  cancel-in-progress: false
+
+env:
+  RECOVERY_EPOCH_UTC: '2026-08-26T23:45:00Z'
+  RECOVERY_TARGET_SLATE_DATE: '2026-08-25'
+  RECOVERY_MIN_ACCEPTED_ROWS: '33'
 
 jobs:
-  release-and-dispatch:
+  queue-canonical-recovery:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 105
     steps:
-      - name: Dispatch exact-main bootstrap after releasing stale deploy lane
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json
-          import os
-          import urllib.request
+      - name: Checkout queue-control contract
+        uses: actions/checkout@v4
 
-          repository = os.environ['REPOSITORY']
-          token = os.environ['GH_TOKEN']
-          url = (
-              f'https://api.github.com/repos/{repository}/actions/workflows/'
-              'bootstrap-unified-mlb-r7-recovery-now.yml/dispatches'
-          )
-          body = json.dumps({'ref': 'main'}).encode('utf-8')
-          request = urllib.request.Request(
-              url,
-              data=body,
-              headers={
-                  'Accept': 'application/vnd.github+json',
-                  'Authorization': f'Bearer {token}',
-                  'Content-Type': 'application/json',
-                  'User-Agent': 'unified-mlb-learning-queue-control',
-                  'X-GitHub-Api-Version': '2022-11-28',
+      - name: Prove scheduled single-owner queue-control contract
+        run: python tests/unit/test_mlb_r7_overnight_queue_control.py
+
+      - name: Drain legacy bootstrap and queue one canonical recovery
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const recoveryWorkflow = 'unified-mlb-learning-recovery-once.yml';
+            const bootstrapWorkflow = 'bootstrap-unified-mlb-r7-recovery-now.yml';
+            const activeStatuses = new Set([
+              'queued',
+              'in_progress',
+              'waiting',
+              'pending',
+              'requested',
+            ]);
+            const force = (
+              context.eventName === 'workflow_dispatch'
+              && String(context.payload.inputs?.force || '').toLowerCase() === 'true'
+            );
+
+            const sleep = (milliseconds) => new Promise(
+              (resolve) => setTimeout(resolve, milliseconds)
+            );
+
+            async function listRuns(workflowId) {
+              return await github.paginate(
+                github.rest.actions.listWorkflowRuns,
+                {
+                  owner,
+                  repo,
+                  workflow_id: workflowId,
+                  branch: 'main',
+                  per_page: 100,
+                },
+              );
+            }
+
+            const now = new Date();
+            const newYorkHourPart = new Intl.DateTimeFormat(
+              'en-US',
+              {
+                timeZone: 'America/New_York',
+                hour: '2-digit',
+                hourCycle: 'h23',
               },
-              method='POST',
-          )
-          with urllib.request.urlopen(request, timeout=30) as response:
-              if response.status != 204:
-                  raise SystemExit(
-                      f'Unexpected canonical bootstrap dispatch status: {response.status}'
-                  )
-          print(json.dumps({
-              'ok': True,
-              'awsInvocation': False,
-              'cloudFormationAction': False,
-              'dynamoDbLeaseMutation': False,
-              'canonicalBootstrapDispatched': True,
-              'immutablePredictionOrLockMutated': False,
-              'productionAuthorityChanged': False,
-              'otherSportChanged': False,
-          }, sort_keys=True))
-          PY
+            ).formatToParts(now).find((part) => part.type === 'hour');
+            const nyHour = Number(newYorkHourPart?.value);
+
+            if (
+              context.eventName === 'schedule'
+              && !(Number.isInteger(nyHour) && nyHour >= 0 && nyHour < 7)
+            ) {
+              core.notice(
+                `Scheduled queue pulse skipped outside 00:00-06:59 America/New_York; hour=${nyHour}`
+              );
+              return;
+            }
+
+            // A legacy bootstrap run created before this repair may still be
+            // waiting on a deploy. Let it drain before deciding whether another
+            // canonical recovery is needed, preventing a duplicate dispatch race.
+            const bootstrapDrainDeadline = Date.now() + (95 * 60 * 1000);
+            let lastBootstrapNoticeAt = 0;
+            while (true) {
+              const bootstrapRuns = await listRuns(bootstrapWorkflow);
+              const activeBootstrap = bootstrapRuns.find(
+                (run) => activeStatuses.has(String(run.status || ''))
+              );
+              if (!activeBootstrap) {
+                break;
+              }
+              if (Date.now() >= bootstrapDrainDeadline) {
+                throw new Error(
+                  `legacy_bootstrap_did_not_drain:${activeBootstrap.html_url}`
+                );
+              }
+              if (Date.now() - lastBootstrapNoticeAt >= 60_000) {
+                core.notice(`Waiting for legacy bootstrap to drain: ${activeBootstrap.html_url}`);
+                lastBootstrapNoticeAt = Date.now();
+              }
+              await sleep(20_000);
+            }
+
+            const recoveryRuns = await listRuns(recoveryWorkflow);
+            const activeRecovery = recoveryRuns.find(
+              (run) => activeStatuses.has(String(run.status || ''))
+            );
+            if (activeRecovery) {
+              core.notice(`Canonical recovery already active: ${activeRecovery.html_url}`);
+              return;
+            }
+
+            const recoveryEpoch = new Date(process.env.RECOVERY_EPOCH_UTC);
+            const successfulRecovery = recoveryRuns.find((run) => (
+              run.status === 'completed'
+              && run.conclusion === 'success'
+              && new Date(run.created_at) >= recoveryEpoch
+            ));
+            if (successfulRecovery && !force) {
+              core.notice(
+                `R7 recovery target already satisfied by ${successfulRecovery.html_url}`
+              );
+              return;
+            }
+
+            const stamp = now.toISOString()
+              .replace(/[-:.]/g, '')
+              .replace('Z', 'z')
+              .toLowerCase();
+            const requestId = [
+              'mlb-r7-overnight',
+              process.env.RECOVERY_TARGET_SLATE_DATE.replaceAll('-', ''),
+              `min${process.env.RECOVERY_MIN_ACCEPTED_ROWS}`,
+              stamp,
+              context.runId,
+            ].join('-');
+
+            await github.rest.actions.createWorkflowDispatch({
+              owner,
+              repo,
+              workflow_id: recoveryWorkflow,
+              ref: 'main',
+              inputs: {
+                request_id: requestId,
+              },
+            });
+
+            let observedRun = null;
+            for (let attempt = 0; attempt < 36; attempt += 1) {
+              await sleep(5_000);
+              const refreshed = await listRuns(recoveryWorkflow);
+              observedRun = refreshed.find(
+                (run) => String(run.display_title || '').includes(requestId)
+              );
+              if (observedRun) {
+                break;
+              }
+            }
+            if (!observedRun) {
+              throw new Error(`canonical_recovery_dispatch_not_observable:${requestId}`);
+            }
+
+            const result = {
+              ok: true,
+              eventName: context.eventName,
+              newYorkHour: nyHour,
+              force,
+              requestId,
+              targetSlateDate: process.env.RECOVERY_TARGET_SLATE_DATE,
+              minimumAcceptedRows: Number(process.env.RECOVERY_MIN_ACCEPTED_ROWS),
+              canonicalRecoveryRunId: observedRun.id,
+              canonicalRecoveryRunUrl: observedRun.html_url,
+              automaticTrainerOwner: 'eventbridge_schedule',
+              awsInvocation: false,
+              cloudFormationAction: false,
+              dynamoDbLeaseMutation: false,
+              productionAuthorityChanged: false,
+              otherSportChanged: false,
+            };
+            core.info(JSON.stringify(result, null, 2));
+            await core.summary
+              .addHeading('MLB R7 overnight queue control')
+              .addTable([
+                [{data: 'Field', header: true}, {data: 'Value', header: true}],
+                ['Request', requestId],
+                ['Target slate', process.env.RECOVERY_TARGET_SLATE_DATE],
+                ['Minimum accepted rows', process.env.RECOVERY_MIN_ACCEPTED_ROWS],
+                ['Recovery run', observedRun.html_url],
+                ['Automatic trainer owner', 'eventbridge_schedule'],
+              ])
+              .write();
