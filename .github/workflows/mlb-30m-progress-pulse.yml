@@ -21,6 +21,7 @@ on:
       # the pulse/watchdog cron slots were selectively absent.
       - MLB Daily Yesterday Audit
       - Tennis Autonomy Status Backstop
+      - Publish Tennis Autonomy Status
       - NFL Auto AWS Stack Probe
     types: [completed]
     branches: [main]
@@ -66,7 +67,7 @@ env:
 
 jobs:
   pulse_decision:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.head_branch == 'main'
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)
     permissions:
       actions: read
       contents: read
