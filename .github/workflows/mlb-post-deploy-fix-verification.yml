@@ -109,21 +109,44 @@ jobs:
             local candidate_id
             local candidate_attempt
             local candidate_sha
+            local candidate_sam_completed_at
+            local candidate_sam_epoch
+            local best_sam_epoch=0
+            local best_run_id=0
+            local best_run_attempt=0
+            local best_source_json=""
+            local best_source_jobs=""
+
             runs_json="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/$canonical_workflow_id/runs?branch=main&per_page=100")"
             while IFS=$'\t' read -r candidate_id candidate_attempt candidate_sha; do
-              if load_and_validate_source "$candidate_id" "$candidate_attempt" "$candidate_sha"; then
-                return 0
+              if ! load_and_validate_source "$candidate_id" "$candidate_attempt" "$candidate_sha"; then
+                continue
+              fi
+              candidate_sam_completed_at="$(
+                jq -r \
+                  --arg step "$sam_step_name" \
+                  '.jobs[] | select(.name == "deploy") | .steps[] | select(.name == $step) | .completed_at' \
+                  <<<"$source_jobs"
+              )"
+              [[ "$candidate_sam_completed_at" != "null" ]] || continue
+              candidate_sam_epoch="$(date -u -d "$candidate_sam_completed_at" +%s)" || continue
+              if (( candidate_sam_epoch > best_sam_epoch )) || \
+                 { (( candidate_sam_epoch == best_sam_epoch )) && (( candidate_id > best_run_id )); } || \
+                 { (( candidate_sam_epoch == best_sam_epoch )) && (( candidate_id == best_run_id )) && (( candidate_attempt > best_run_attempt )); }; then
+                best_sam_epoch="$candidate_sam_epoch"
+                best_run_id="$candidate_id"
+                best_run_attempt="$candidate_attempt"
+                best_source_json="$source_json"
+                best_source_jobs="$source_jobs"
               fi
             done < <(
-              jq -r '
-                .workflow_runs
-                | sort_by([(.run_number | tonumber), (.run_attempt | tonumber)])
-                | reverse[]
-                | [.id, .run_attempt, .head_sha]
-                | @tsv
-              ' <<<"$runs_json"
+              jq -r '.workflow_runs[] | [.id, .run_attempt, .head_sha] | @tsv' \
+                <<<"$runs_json"
             )
-            return 1
+
+            [[ -n "$best_source_json" ]] || return 1
+            source_json="$best_source_json"
+            source_jobs="$best_source_jobs"
           }
 
           explicit_count=0
@@ -160,19 +183,35 @@ jobs:
           chosen_run_number="$(jq -r '.run_number' <<<"$chosen_source_json")"
           chosen_run_attempt="$(jq -r '.run_attempt' <<<"$chosen_source_json")"
           chosen_run_id="$(jq -r '.id' <<<"$chosen_source_json")"
+          chosen_sam_completed_at="$(
+            jq -r \
+              --arg step "$sam_step_name" \
+              '.jobs[] | select(.name == "deploy") | .steps[] | select(.name == $step) | .completed_at' \
+              <<<"$chosen_source_jobs"
+          )"
+          chosen_sam_epoch="$(date -u -d "$chosen_sam_completed_at" +%s)"
 
           find_latest_successful_sam_source || {
             echo "::error::Unable to resolve the latest successful canonical SAM deployment"
             exit 1
           }
-          latest_run_number="$(jq -r '.run_number' <<<"$source_json")"
           latest_run_attempt="$(jq -r '.run_attempt' <<<"$source_json")"
+          latest_run_id="$(jq -r '.id' <<<"$source_json")"
+          latest_sam_completed_at="$(
+            jq -r \
+              --arg step "$sam_step_name" \
+              '.jobs[] | select(.name == "deploy") | .steps[] | select(.name == $step) | .completed_at' \
+              <<<"$source_jobs"
+          )"
+          latest_sam_epoch="$(date -u -d "$latest_sam_completed_at" +%s)"
           source_json="$chosen_source_json"
           source_jobs="$chosen_source_jobs"
 
           should_verify=true
           resolution_reason="exact_successful_sam_source"
-          if (( chosen_run_number < latest_run_number )) ||              { (( chosen_run_number == latest_run_number )) && (( chosen_run_attempt < latest_run_attempt )); }; then
+          if (( chosen_sam_epoch < latest_sam_epoch )) || \
+             { (( chosen_sam_epoch == latest_sam_epoch )) && (( chosen_run_id < latest_run_id )); } || \
+             { (( chosen_sam_epoch == latest_sam_epoch )) && (( chosen_run_id == latest_run_id )) && (( chosen_run_attempt < latest_run_attempt )); }; then
             should_verify=false
             resolution_reason="source_superseded_by_newer_successful_sam_deployment"
           fi
