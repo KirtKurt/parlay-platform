@@ -1,197 +1,66 @@
 name: Bootstrap canonical unified MLB R7 recovery now
+run-name: "Manual MLB R7 recovery bootstrap #${{ github.run_number }}"
 
 "on":
-  workflow_run:
-    workflows: ["MLB Scoring Guard"]
-    types: [completed]
   workflow_dispatch:
 
 permissions:
   actions: write
   contents: read
 
-# This is an idempotent one-time dispatcher, not a trainer implementation.
-# It first proves the exact current main source was deployed successfully, then
-# delegates to the only canonical GitHub recovery. The recovery and deployed
-# trainer retain their unified concurrency group and DynamoDB execution lease.
+# Manual alias only. Automatic R7 retries are owned by
+# mlb-r7-overnight-advance.yml, while EventBridge remains the only automatic
+# trainer invoker. This workflow performs no deploy or AWS call.
 concurrency:
-  group: unified-mlb-recovery-bootstrap
+  group: mlb-r7-recovery-bootstrap-dispatch
   cancel-in-progress: false
 
-env:
-  REQUEST_ID: bootstrap-mlb-r7-20260826-v4
-
 jobs:
-  deploy-and-dispatch-once:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'main')
+  dispatch-queue-control:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 5
     steps:
-      - name: Deploy exact current main and dispatch canonical recovery once
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json
-          import os
-          import time
-          import urllib.error
-          import urllib.request
+      - name: Dispatch canonical queue control with force
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const workflowId = 'mlb-r7-overnight-advance.yml';
 
-          repository = os.environ['REPOSITORY']
-          request_id = os.environ['REQUEST_ID']
-          token = os.environ['GH_TOKEN']
-          headers = {
-              'Accept': 'application/vnd.github+json',
-              'Authorization': f'Bearer {token}',
-              'User-Agent': 'unified-mlb-r7-recovery-bootstrap',
-              'X-GitHub-Api-Version': '2022-11-28',
-          }
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRuns,
+              {
+                owner,
+                repo,
+                workflow_id: workflowId,
+                branch: 'main',
+                per_page: 100,
+              },
+            );
+            const activeStatuses = new Set([
+              'queued',
+              'in_progress',
+              'waiting',
+              'pending',
+              'requested',
+            ]);
+            const active = runs.find(
+              (run) => activeStatuses.has(String(run.status || ''))
+            );
+            if (active) {
+              core.notice(`R7 queue control already active: ${active.html_url}`);
+              return;
+            }
 
-          def api_json(url):
-              request = urllib.request.Request(url, headers=headers)
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  return json.load(response)
-
-          def dispatch(workflow, *, inputs=None):
-              url = (
-                  f'https://api.github.com/repos/{repository}/actions/workflows/'
-                  f'{workflow}/dispatches'
-              )
-              body = {'ref': 'main'}
-              if inputs:
-                  body['inputs'] = inputs
-              request = urllib.request.Request(
-                  url,
-                  data=json.dumps(body).encode('utf-8'),
-                  headers={**headers, 'Content-Type': 'application/json'},
-                  method='POST',
-              )
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  if response.status != 204:
-                      raise SystemExit(
-                          f'Unexpected {workflow} dispatch status: {response.status}'
-                      )
-
-          main = api_json(
-              f'https://api.github.com/repos/{repository}/branches/main'
-          )
-          main_sha = str(((main.get('commit') or {}).get('sha')) or '')
-          if not main_sha:
-              raise SystemExit('Current main SHA could not be resolved')
-
-          deploy_runs_url = (
-              f'https://api.github.com/repos/{repository}/actions/workflows/'
-              'deploy.yml/runs?event=workflow_dispatch&branch=main&per_page=100'
-          )
-
-          def exact_deploy_runs():
-              payload = api_json(deploy_runs_url)
-              return [
-                  run for run in payload.get('workflow_runs', [])
-                  if str(run.get('head_sha') or '') == main_sha
-              ]
-
-          deploy_runs = exact_deploy_runs()
-          if not deploy_runs:
-              dispatch('deploy.yml')
-              observable_deadline = time.monotonic() + 180
-              while time.monotonic() < observable_deadline:
-                  deploy_runs = exact_deploy_runs()
-                  if deploy_runs:
-                      break
-                  time.sleep(5)
-              if not deploy_runs:
-                  raise SystemExit('Exact-source deployment dispatch was not observable')
-
-          deploy_run = max(
-              deploy_runs,
-              key=lambda run: int(run.get('run_number') or 0),
-          )
-          if (
-              deploy_run.get('status') == 'completed'
-              and deploy_run.get('conclusion') != 'success'
-          ):
-              raise SystemExit(
-                  'Exact-source deployment already failed: '
-                  + json.dumps({
-                      'runId': deploy_run.get('id'),
-                      'conclusion': deploy_run.get('conclusion'),
-                      'headSha': deploy_run.get('head_sha'),
-                  }, sort_keys=True)
-              )
-
-          deploy_deadline = time.monotonic() + 4200
-          while time.monotonic() < deploy_deadline:
-              run = api_json(
-                  f'https://api.github.com/repos/{repository}/actions/runs/'
-                  f'{deploy_run.get("id")}'
-              )
-              if run.get('status') == 'completed':
-                  if run.get('conclusion') != 'success':
-                      raise SystemExit(
-                          'Exact-source deployment failed: '
-                          + json.dumps({
-                              'runId': run.get('id'),
-                              'conclusion': run.get('conclusion'),
-                              'headSha': run.get('head_sha'),
-                          }, sort_keys=True)
-                      )
-                  deploy_run = run
-                  break
-              time.sleep(15)
-          else:
-              raise SystemExit('Timed out waiting for exact-source deployment')
-
-          recovery_runs_url = (
-              f'https://api.github.com/repos/{repository}/actions/workflows/'
-              'unified-mlb-learning-recovery-once.yml/runs'
-              '?event=workflow_dispatch&branch=main&per_page=100'
-          )
-
-          def matching_recovery_runs():
-              payload = api_json(recovery_runs_url)
-              return [
-                  run for run in payload.get('workflow_runs', [])
-                  if request_id in str(run.get('display_title') or '')
-              ]
-
-          recovery_runs = matching_recovery_runs()
-          already_dispatched = bool(recovery_runs)
-          if not recovery_runs:
-              dispatch(
-                  'unified-mlb-learning-recovery-once.yml',
-                  inputs={'request_id': request_id},
-              )
-              observable_deadline = time.monotonic() + 180
-              while time.monotonic() < observable_deadline:
-                  recovery_runs = matching_recovery_runs()
-                  if recovery_runs:
-                      break
-                  time.sleep(5)
-              if not recovery_runs:
-                  raise SystemExit('Canonical recovery dispatch was not observable')
-
-          recovery_run = max(
-              recovery_runs,
-              key=lambda run: int(run.get('run_number') or 0),
-          )
-          print(json.dumps({
-              'ok': True,
-              'requestId': request_id,
-              'mainSha': main_sha,
-              'deployRunId': deploy_run.get('id'),
-              'deployConclusion': deploy_run.get('conclusion'),
-              'recoveryAlreadyDispatched': already_dispatched,
-              'recoveryRunId': recovery_run.get('id'),
-              'immutablePredictionOrLockMutated': False,
-              'automaticPromotionEnabled': False,
-              'productionAuthorityChanged': False,
-              'otherSportChanged': False,
-          }, sort_keys=True))
-          PY
+            await github.rest.actions.createWorkflowDispatch({
+              owner,
+              repo,
+              workflow_id: workflowId,
+              ref: 'main',
+              inputs: {
+                force: 'true',
+              },
+            });
+            core.notice(`Dispatched ${workflowId} with force=true`);
