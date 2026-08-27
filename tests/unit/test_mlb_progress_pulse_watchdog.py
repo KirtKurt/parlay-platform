@@ -180,6 +180,9 @@ def test_self_renewing_clock_is_bounded_deduplicated_and_read_only() -> None:
     assert "workflow_dispatch:" in clock
     assert "branches: [main]" in clock
     assert "inputs.renewal == true" in clock
+    assert "inputs.continue_chain == true" in clock
+    assert "github.event_name == 'push'" in clock
+    assert "-f continue_chain=true" in clock
     assert 'sleep "$MLB_PROGRESS_SELF_CLOCK_WAIT_SECONDS"' in clock
     assert "MLB_PROGRESS_SELF_CLOCK_WAIT_SECONDS: '600'" in clock
     assert "timeout-minutes: 12" in clock

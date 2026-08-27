@@ -8,6 +8,11 @@ on:
         required: false
         default: false
         type: boolean
+      continue_chain:
+        description: Queue another bounded clock iteration
+        required: false
+        default: true
+        type: boolean
   push:
     branches: [main]
     paths:
@@ -101,7 +106,7 @@ jobs:
 
   renew-clock:
     needs: [decide, dispatch-reporter]
-    if: ${{ always() }}
+    if: ${{ always() && (github.event_name == 'push' || inputs.continue_chain == true) }}
     permissions:
       actions: write
     runs-on: ubuntu-latest
@@ -124,5 +129,6 @@ jobs:
           gh workflow run mlb-progress-pulse-cadence-watchdog.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref main \
-            -f renewal=true
+            -f renewal=true \
+            -f continue_chain=true
           echo 'Queued one fixed self-renewing clock iteration on main.' >> "$GITHUB_STEP_SUMMARY"
