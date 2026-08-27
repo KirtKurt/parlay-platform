@@ -23,9 +23,13 @@ EXPECTED_REPOSITORY = "KirtKurt/parlay-platform"
 EXPECTED_REF = "refs/heads/main"
 RELAY_ENVIRONMENT = "mlb-pulse-30m-delay"
 REQUIRED_WAIT_MINUTES = 30
+MINIMUM_WAIT_SECONDS = REQUIRED_WAIT_MINUTES * 60
 MAX_RELAY_HOPS = 96
 DURABLE_RELAY_WORKFLOW = "mlb-progress-pulse-durable-relay.yml"
 BOUNDED_RELAY_WORKFLOW = "mlb-progress-pulse-bounded-runner-relay.yml"
+DURABLE_RELAY_PATH = f".github/workflows/{DURABLE_RELAY_WORKFLOW}"
+BOUNDED_RELAY_PATH = f".github/workflows/{BOUNDED_RELAY_WORKFLOW}"
+SHARED_RELAY_CONCURRENCY = "mlb-progress-pulse-bounded-runner-relay"
 REPORTER_WORKFLOW = "mlb-30m-progress-pulse.yml"
 STALENESS_SCRIPT = "scripts/check_mlb_progress_pulse_staleness.py"
 ACTIVE_RUN_STATUSES = {"queued", "in_progress", "waiting", "pending", "requested"}
@@ -156,6 +160,11 @@ def validate_environment(payload: Mapping[str, Any]) -> None:
         for row in rules
         if isinstance(row, Mapping) and row.get("type") == "wait_timer"
     ]
+    branch_policies = [
+        row
+        for row in rules
+        if isinstance(row, Mapping) and row.get("type") == "branch_policy"
+    ]
     incompatible = [
         row
         for row in rules
@@ -166,23 +175,52 @@ def validate_environment(payload: Mapping[str, Any]) -> None:
         payload.get("name") != RELAY_ENVIRONMENT
         or len(wait_timers) != 1
         or wait_timers[0].get("wait_timer") != REQUIRED_WAIT_MINUTES
+        or len(branch_policies) > 1
         or incompatible
+        or payload.get("deployment_branch_policy") is not None
     ):
         raise ValueError("environment_wait_timer_contract_invalid")
 
 
-def _trusted_run_common(run: Mapping[str, Any]) -> bool:
+def _workflow_path(run: Mapping[str, Any]) -> str:
+    return str(run.get("path") or "").split("@", 1)[0]
+
+
+def _trusted_run_common(
+    run: Mapping[str, Any],
+    *,
+    expected_path: str,
+) -> bool:
     head_repository = run.get("head_repository")
     return (
         run.get("head_branch") == "main"
         and isinstance(head_repository, Mapping)
         and head_repository.get("full_name") == EXPECTED_REPOSITORY
+        and _workflow_path(run) == expected_path
         and run.get("status") in ACTIVE_RUN_STATUSES
         and _timestamp(run.get("created_at")) is not None
     )
 
 
-def filter_active_bounded_runs(
+def validate_wait_elapsed(
+    run: Mapping[str, Any],
+    *,
+    now: Optional[datetime] = None,
+) -> float:
+    created = _timestamp(run.get("created_at"))
+    observed = now or datetime.now(timezone.utc)
+    if observed.tzinfo is None:
+        observed = observed.replace(tzinfo=timezone.utc)
+    observed = observed.astimezone(timezone.utc)
+    if created is None:
+        raise ValueError("current_run_created_at_invalid")
+    seconds = (observed - created).total_seconds()
+    if seconds < MINIMUM_WAIT_SECONDS:
+        raise ValueError("environment_wait_timer_not_observed")
+    return round(seconds / 60.0, 3)
+
+
+def filter_active_bounded_runs(def filter_active_bounded_runs(
     runs: Iterable[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     trusted: list[dict[str, Any]] = []
@@ -191,7 +229,7 @@ def filter_active_bounded_runs(
         title = str(row.get("display_title") or "")
         match = re.fullmatch(r"MLB pulse relay segment (10|[1-9])", title)
         if (
-            _trusted_run_common(row)
+            _trusted_run_common(row, expected_path=BOUNDED_RELAY_PATH)
             and row.get("event") in {"push", "workflow_dispatch"}
             and match is not None
         ):
@@ -229,7 +267,7 @@ def filter_newer_durable_runs(
         hop = durable_run_hop(row)
         if (
             str(row.get("id")) != current_id
-            and _trusted_run_common(row)
+            and _trusted_run_common(row, expected_path=DURABLE_RELAY_PATH)
             and row.get("event") in ALLOWED_EVENTS
             and created is not None
             and created > current_created
@@ -275,6 +313,17 @@ class CommandDurableRelayClient:
             raise RuntimeError("workflow_runs_not_a_list")
         return [dict(row) for row in rows if isinstance(row, Mapping)]
 
+    def _repository_runs(self) -> list[dict[str, Any]]:
+        payload = self._gh_json(
+            f"repos/{self.repository}/actions/runs?branch=main&per_page=100"
+        )
+        if not isinstance(payload, Mapping):
+            raise RuntimeError("repository_runs_response_not_an_object")
+        rows = payload.get("workflow_runs")
+        if not isinstance(rows, list):
+            raise RuntimeError("repository_runs_not_a_list")
+        return [dict(row) for row in rows if isinstance(row, Mapping)]
+
     def get_environment(self) -> Mapping[str, Any]:
         payload = self._gh_json(
             f"repos/{self.repository}/environments/{RELAY_ENVIRONMENT}"
@@ -292,7 +341,9 @@ class CommandDurableRelayClient:
         return payload
 
     def list_bounded_runs(self) -> list[dict[str, Any]]:
-        return self._workflow_runs(BOUNDED_RELAY_WORKFLOW)
+        # Repository-wide lookup remains valid even if a later migration removes
+        # the legacy workflow file while already-admitted legacy runs continue.
+        return self._repository_runs()
 
     def list_durable_runs(self) -> list[dict[str, Any]]:
         return self._workflow_runs(DURABLE_RELAY_WORKFLOW)
@@ -376,6 +427,7 @@ class DurableRelayController:
         verify_attempts: int = VERIFY_ATTEMPTS,
         verify_delay_seconds: int = VERIFY_DELAY_SECONDS,
         verify_sleep=time.sleep,
+        observed_now: Optional[datetime] = None,
     ) -> None:
         if remaining_hops < 1 or remaining_hops > MAX_RELAY_HOPS:
             raise ValueError("remaining_hops_out_of_range")
@@ -388,6 +440,7 @@ class DurableRelayController:
         self.verify_attempts = verify_attempts
         self.verify_delay_seconds = verify_delay_seconds
         self.verify_sleep = verify_sleep
+        self.observed_now = observed_now
 
     @staticmethod
     def _validate_current_run(
@@ -398,7 +451,7 @@ class DurableRelayController:
     ) -> None:
         if (
             str(row.get("id")) != str(current_run_id)
-            or not _trusted_run_common(row)
+            or not _trusted_run_common(row, expected_path=DURABLE_RELAY_PATH)
             or row.get("event") not in ALLOWED_EVENTS
             or durable_run_hop(row) != remaining_hops
         ):
@@ -445,6 +498,10 @@ class DurableRelayController:
             current_run_id=self.current_run_id,
             remaining_hops=self.remaining_hops,
         )
+        actual_wait_minutes = validate_wait_elapsed(
+            current,
+            now=self.observed_now,
+        )
 
         bounded = filter_active_bounded_runs(self.client.list_bounded_runs())
         if bounded:
@@ -454,6 +511,8 @@ class DurableRelayController:
                 "boundedRunId": bounded[0].get("id"),
                 "boundedSegment": bounded[0].get("_segment"),
                 "remainingHops": self.remaining_hops,
+                "actualWaitMinutes": actual_wait_minutes,
+                "environmentValid": True,
                 "successorRunId": None,
                 "reporterDispatched": False,
                 "terminalWarning": False,
@@ -492,6 +551,12 @@ class DurableRelayController:
 
         result = {
             "migrationReady": True,
+            "relayMode": "durable_environment_timer",
+            "currentRunId": int(self.current_run_id),
+            "environment": RELAY_ENVIRONMENT,
+            "environmentValid": True,
+            "waitTimerMinutes": REQUIRED_WAIT_MINUTES,
+            "actualWaitMinutes": actual_wait_minutes,
             "reason": (
                 "TERMINAL_LEASE_WARNING"
                 if terminal_warning
@@ -528,14 +593,24 @@ def _write_summary(result: Mapping[str, Any]) -> None:
             handle.write(f"- {key}: {value}\n")
 
 
+def _write_github_output(path: str, values: Mapping[str, Any]) -> None:
+    if not path:
+        return
+    with Path(path).open("a", encoding="utf-8") as handle:
+        for key, value in values.items():
+            handle.write(f"{key}={value}\n")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=("preflight", "relay"), default="relay")
     parser.add_argument("--event-name", default=os.environ.get("GITHUB_EVENT_NAME", ""))
     parser.add_argument(
         "--remaining-hops",
         default=os.environ.get("INPUT_REMAINING_HOPS", ""),
     )
     parser.add_argument("--event-path", default=os.environ.get("GITHUB_EVENT_PATH", ""))
+    parser.add_argument("--github-output", default=os.environ.get("GITHUB_OUTPUT", ""))
     args = parser.parse_args()
 
     try:
@@ -553,11 +628,27 @@ def main() -> int:
             repository=os.environ["GITHUB_REPOSITORY"],
             current_run_id=os.environ["GITHUB_RUN_ID"],
         )
-        result = DurableRelayController(
-            client=client,
-            current_run_id=os.environ["GITHUB_RUN_ID"],
-            remaining_hops=remaining_hops,
-        ).run()
+        if args.mode == "preflight":
+            validate_environment(client.get_environment())
+            result = {
+                "preflightValid": True,
+                "remainingHops": remaining_hops,
+                "environment": RELAY_ENVIRONMENT,
+                "waitTimerMinutes": REQUIRED_WAIT_MINUTES,
+            }
+            _write_github_output(
+                args.github_output,
+                {
+                    "remaining_hops": remaining_hops,
+                    "environment_valid": "true",
+                },
+            )
+        else:
+            result = DurableRelayController(
+                client=client,
+                current_run_id=os.environ["GITHUB_RUN_ID"],
+                remaining_hops=remaining_hops,
+            ).run()
     except (
         KeyError,
         OSError,
