@@ -1,0 +1,327 @@
+name: Read-only R7 delegate failure payload proof 33124090260
+run-name: Read-only R7 delegate failure proof ${{ github.run_id }}
+
+"on":
+  push:
+    branches:
+      - codex/r7-queue-readonly-probe-33084527256-a1
+    paths:
+      - .github/workflows/r7-delegate-failure-readonly-33124090260.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r7-delegate-failure-readonly-33124090260
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  proof:
+    if: github.repository == 'KirtKurt/parlay-platform' && github.ref == 'refs/heads/codex/r7-queue-readonly-probe-33084527256-a1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Guard branch-only reads
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/codex/r7-queue-readonly-probe-33084527256-a1
+          test "$GITHUB_REPOSITORY" = KirtKurt/parlay-platform
+
+      - name: Configure read credential
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Read exact 22 25 delegate failure and emit bounded classification
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          export AWS_PAGER=""
+          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id MLBDailyPickLockFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          START_MS=$(date -u -d '2026-08-27T22:24:50Z' +%s000)
+          END_MS=$(date -u -d '2026-08-27T22:25:10Z' +%s000)
+          aws logs filter-log-events \
+            --log-group-name "/aws/lambda/$FUNCTION_NAME" \
+            --start-time "$START_MS" \
+            --end-time "$END_MS" \
+            --region "$AWS_REGION" \
+            --limit 1000 \
+            --output json > /tmp/r7-delegate-failure.json
+          python - <<'PY'
+          import json
+          import re
+          from datetime import datetime, timezone
+
+          with open('/tmp/r7-delegate-failure.json', encoding='utf-8') as stream:
+              raw = json.load(stream)
+          messages = [
+              str(event.get('message') or '')
+              for event in raw.get('events') or []
+          ]
+          prefix = 'MLB_SCHEDULED_LOCK_FAILED:'
+
+          def balanced_object(text, start):
+              if start < 0 or start >= len(text) or text[start] != '{':
+                  return None
+              depth = 0
+              in_string = False
+              escape = False
+              for index in range(start, len(text)):
+                  character = text[index]
+                  if escape:
+                      escape = False
+                      continue
+                  if character == '\\' and in_string:
+                      escape = True
+                      continue
+                  if character == '"':
+                      in_string = not in_string
+                      continue
+                  if in_string:
+                      continue
+                  if character == '{':
+                      depth += 1
+                  elif character == '}':
+                      depth -= 1
+                      if depth == 0:
+                          return text[start:index + 1]
+              return None
+
+          def payload_candidates(message):
+              positions = [
+                  match.end()
+                  for match in re.finditer(re.escape(prefix), message)
+              ]
+              for position in positions:
+                  suffix = message[position:].lstrip()
+                  variants = [suffix]
+                  try:
+                      decoded = json.loads(suffix)
+                      if isinstance(decoded, str):
+                          variants.append(decoded)
+                  except Exception:
+                      pass
+                  variants.append(
+                      suffix.replace('\\"', '"').replace('\\\\', '\\')
+                  )
+                  for variant in variants:
+                      brace = variant.find('{')
+                      if brace < 0:
+                          continue
+                      material = balanced_object(variant, brace)
+                      if not material:
+                          continue
+                      try:
+                          candidate = json.loads(material)
+                      except Exception:
+                          continue
+                      if isinstance(candidate, dict):
+                          yield candidate
+
+          candidates = []
+          for message in messages:
+              candidates.extend(payload_candidates(message))
+          payload = next(
+              (
+                  candidate
+                  for candidate in candidates
+                  if isinstance(
+                      candidate.get('perGameLockProgress'), dict
+                  )
+              ),
+              None,
+          )
+          if payload is None:
+              raise SystemExit(
+                  'Exact scheduled failure payload could not be decoded'
+              )
+
+          progress = payload.get('perGameLockProgress') or {}
+          games = [
+              game
+              for game in progress.get('games') or []
+              if isinstance(game, dict)
+          ]
+          failures = [
+              failure
+              for failure in payload.get('failures') or []
+              if isinstance(failure, dict)
+          ]
+
+          def safe_list(value):
+              return [
+                  str(entry)[:240]
+                  for entry in value
+                  if isinstance(entry, (str, int, float, bool))
+              ] if isinstance(value, list) else []
+
+          safe_failures = []
+          for failure in failures:
+              identity = str(failure.get('gameIdentity') or '')
+              matching = next(
+                  (
+                      game for game in games
+                      if str(game.get('gameIdentity') or '') == identity
+                  ),
+                  {},
+              )
+              safe_failures.append({
+                  'officialGamePk': str(
+                      matching.get('officialGamePk') or ''
+                  ),
+                  'reason': failure.get('reason'),
+                  'errors': safe_list(failure.get('errors')),
+                  'identityRedacted': True,
+              })
+
+          safe_games = []
+          marker_locations = {
+              'essential_groups_incomplete': [],
+              'coin_flip_pass_or_hard_weakness_present': [],
+          }
+          for game in games:
+              official = str(game.get('officialGamePk') or '')
+              safe = {
+                  'officialGamePk': official,
+                  'state': game.get('state'),
+                  'lockStatus': game.get('lockStatus'),
+                  'scheduledLockAtUtc': game.get('scheduledLockAtUtc'),
+                  'lockedPrediction': game.get('lockedPrediction'),
+                  'canonical': game.get('canonical'),
+                  'lockOutcomeRecorded': game.get(
+                      'lockOutcomeRecorded'
+                  ),
+                  'errors': safe_list(game.get('errors')),
+                  'playabilityBlockReasons': safe_list(
+                      game.get('playabilityBlockReasons')
+                  ),
+                  'releaseBlockReasons': safe_list(
+                      game.get('releaseBlockReasons')
+                  ),
+                  'trainingExclusionReasons': safe_list(
+                      game.get('trainingExclusionReasons')
+                  ),
+                  'exactVectorValidationErrors': safe_list(
+                      game.get('exactVectorValidationErrors')
+                  ),
+                  'playabilityAssessmentValidationErrors': safe_list(
+                      game.get(
+                          'playabilityAssessmentValidationErrors'
+                      )
+                  ),
+                  'readiness': {
+                      key: value
+                      for key, value in (
+                          game.get('readiness')
+                          if isinstance(game.get('readiness'), dict)
+                          else {}
+                      ).items()
+                      if key in {'tMinus60', 'tMinus50'}
+                  },
+                  'identityRedacted': True,
+                  'selectionMaterialRedacted': True,
+              }
+              safe_games.append(safe)
+              for marker in marker_locations:
+                  paths = []
+                  for field in (
+                      'errors',
+                      'playabilityBlockReasons',
+                      'releaseBlockReasons',
+                      'trainingExclusionReasons',
+                      'exactVectorValidationErrors',
+                      'playabilityAssessmentValidationErrors',
+                  ):
+                      if marker in safe_list(game.get(field)):
+                          paths.append(field)
+                  readiness = game.get('readiness')
+                  if isinstance(readiness, dict):
+                      for checkpoint, value in readiness.items():
+                          if (
+                              isinstance(value, dict)
+                              and marker in safe_list(
+                                  value.get('blockingReasons')
+                              )
+                          ):
+                              paths.append(
+                                  f'readiness.{checkpoint}.blockingReasons'
+                              )
+                  if paths:
+                      marker_locations[marker].append({
+                          'officialGamePk': official,
+                          'fieldPaths': sorted(set(paths)),
+                      })
+
+          due = [
+              game
+              for game in safe_games
+              if game.get('state') in {
+                  'DUE_NOT_STAGED',
+                  'STAGED_CANONICAL_WRITE_BLOCKED',
+                  'INVALID_STAGE_BLOCKED',
+              }
+          ]
+          target = next(
+              (
+                  game for game in safe_games
+                  if game.get('officialGamePk') == '822771'
+              ),
+              None,
+          )
+          result = {
+              'ok': True,
+              'proofType': (
+                  'R7_2225_DELEGATE_FAILURE_EXACT_SAFE_PAYLOAD'
+              ),
+              'observedAtUtc': datetime.now(
+                  timezone.utc
+              ).isoformat().replace('+00:00', 'Z'),
+              'topLevel': {
+                  'ok': payload.get('ok'),
+                  'reason': payload.get('reason'),
+                  'failClosed': payload.get('failClosed'),
+                  'manifestGameCount': progress.get(
+                      'manifestGameCount'
+                  ),
+                  'stagedCount': progress.get('stagedCount'),
+                  'canonicalCount': progress.get('canonicalCount'),
+                  'lockOutcomeCount': progress.get('lockOutcomeCount'),
+                  'dueMissingCount': progress.get('dueMissingCount'),
+                  'pendingCount': progress.get('pendingCount'),
+                  'missedCount': progress.get('missedCount'),
+              },
+              'failureCount': len(failures),
+              'failures': safe_failures,
+              'dueGames': due,
+              'official822771': target,
+              'markerLocations': marker_locations,
+              'allGamesSafeClassification': safe_games,
+              'actualAuthorityFailureFields': [
+                  'failures[].errors',
+                  'perGameLockProgress.games[].errors',
+              ],
+              'playabilityAndTrainingMetadataFields': [
+                  'playabilityBlockReasons',
+                  'releaseBlockReasons',
+                  'trainingExclusionReasons',
+                  'readiness.*.blockingReasons',
+              ],
+              'rawPayloadRedacted': True,
+              'tableWritesAttempted': 0,
+              'lambdaInvocationsAttempted': 0,
+              'leaseMutationsAttempted': 0,
+              'readOnly': True,
+          }
+          print(json.dumps(result, indent=2, sort_keys=True, default=str))
+          PY
