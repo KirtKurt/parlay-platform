@@ -26,6 +26,7 @@ concurrency:
 
 jobs:
   deploy:
+    name: deploy
     runs-on: ubuntu-latest
     outputs:
       deployment_succeeded: ${{ steps.deploy.outputs.deployment_succeeded }}
