@@ -932,3 +932,73 @@ def test_incoming_extra_label_field_is_rejected_without_write():
         in rejected["authorityErrors"]
     )
 
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda row: row["slatePredictionLock"].update(
+            {"latestScoringPullAt": "2026-08-27T00:00:00+00:00"}
+        ),
+        lambda row: row["slatePredictionLock"].update(
+            {"unexpectedPerGameAuthority": True}
+        ),
+    ],
+)
+def test_public_lock_preserved_or_unknown_field_tamper_fails_closed(
+    mutation,
+):
+    module, canonical_rows, _ = _module_with_existing_canonical_rows(1)
+    overlay = _canonical_public_overlay(canonical_rows[0])
+    mutation(overlay)
+    assert immutable_storage._canonical_read_overlay(overlay) is True
+    table = module.history.PULLS
+    before = copy.deepcopy(table.items)
+    write_calls = _arm_zero_write_guard(table)
+
+    rejected = _assert_rejected_without_write(
+        module,
+        overlay,
+        before,
+        write_calls,
+    )
+
+    assert any(
+        error.startswith(
+            "canonical_overlay_public_lock_preserved_fields_mismatch:"
+        )
+        or error.startswith(
+            "canonical_overlay_public_lock_unknown_fields:"
+        )
+        for error in rejected["authorityErrors"]
+    )
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "BENIGN_EXTRA_TAG",
+        "CORRECT",
+        "FINAL_LOCKED",
+    ],
+)
+def test_extra_label_or_duplicate_rendered_tag_fails_closed(tag):
+    module, canonical_rows, _ = _module_with_existing_canonical_rows(1)
+    overlay = _canonical_public_overlay(canonical_rows[0])
+    overlay["tags"].append(tag)
+    assert immutable_storage._canonical_read_overlay(overlay) is True
+    table = module.history.PULLS
+    before = copy.deepcopy(table.items)
+    write_calls = _arm_zero_write_guard(table)
+
+    rejected = _assert_rejected_without_write(
+        module,
+        overlay,
+        before,
+        write_calls,
+    )
+
+    assert any(
+        error.startswith("canonical_overlay_rendered_tags_")
+        for error in rejected["authorityErrors"]
+    )
+
