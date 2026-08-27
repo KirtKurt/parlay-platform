@@ -2117,6 +2117,18 @@ def test_eventbridge_owner_checkpoints_chunk_then_completes_without_full_replay(
         assert second_status["historicalReplayChunked"] is True
         assert second_status["historicalReplayCompleted"] is True
         assert table.queue_item["state"] == "COMPLETED"
+        receipt = table.queue_item["replay_receipt"]
+        assert receipt["ok"] is True
+        assert receipt["sport"] == "mlb"
+        assert receipt["slateDateEt"] == "2026-07-20"
+        assert receipt["postStartPredictionCreationAllowed"] is False
+        assert receipt["immutablePredictionRewriteAllowed"] is False
+        assert receipt["productionAuthorityChanged"] is False
+        reconciliation = receipt["missedLockTerminalReconciliation"]
+        assert reconciliation["remainingMissedCount"] == 0
+        assert reconciliation["unresolved"] == []
+        assert reconciliation["progressAfter"]["missedCount"] == 0
+        assert reconciliation["progressAfter"]["dueMissingCount"] == 0
         assert len(runner_calls) == 2
         assert runner_calls[0][1] is None
         assert runner_calls[1][1]["nextGameIndex"] == 1

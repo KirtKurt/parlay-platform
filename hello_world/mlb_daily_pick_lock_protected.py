@@ -2058,9 +2058,18 @@ def lambda_handler(event, context):
                             raise RuntimeError(
                                 "MLB_COOPERATIVE_TERMINAL_CHUNK_COMPLETE_UNHEALTHY"
                             )
-                        replay_response = chunk_result.get(
+                        terminal_payload = chunk_result.get(
                             "terminalReplayResponse"
                         )
+                        if not isinstance(terminal_payload, dict):
+                            raise RuntimeError(
+                                "MLB_COOPERATIVE_TERMINAL_CHUNK_"
+                                "COMPLETION_RESPONSE_INVALID"
+                            )
+                        # The receipt validator consumes the Lambda HTTP
+                        # response contract.  The internal chunk runner returns
+                        # an application payload so wrap it exactly once here.
+                        replay_response = _resp(200, terminal_payload)
                         completed = _complete_cooperative_replay(
                             item=claimed,
                             owner=owner,
