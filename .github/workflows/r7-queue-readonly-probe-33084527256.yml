@@ -265,6 +265,17 @@ jobs:
               'CURRENT_SLATE_SUCCESS_PROOF_REQUIRED',
           )
           marker_counts = {name: 0 for name in marker_names}
+          safe_error_evidence = []
+          safe_lower_markers = (
+              'candidatePersistenceFailures',
+              'canonical_locked_storage_errors',
+              'incomplete',
+              'count_mismatch',
+              'winner_prediction_failed',
+              'dailyCardComplete',
+              'candidate_persistence',
+              'canonicalLockedStorage',
+          )
           for event in logs:
               message = str(event.get('message') or '')
               timestamp = event.get('timestamp')
@@ -313,6 +324,44 @@ jobs:
               for marker in marker_names:
                   if marker in message:
                       marker_counts[marker] += 1
+              if '[ERROR]' in message or 'Traceback' in message:
+                  uppercase_tokens = sorted(set(re.findall(
+                      r'\b(?:MLB|PRELOCK|PROVE|VERIFY|CANONICAL|LOCKED|'
+                      r'PREDICTION|SCHEDULED|CHUNK)[A-Z0-9_]*'
+                      r'(?:_[A-Z0-9]+)+\b',
+                      message,
+                  )))
+                  lower_markers = sorted(
+                      marker
+                      for marker in safe_lower_markers
+                      if marker in message
+                  )
+                  exception_types = sorted(set(re.findall(
+                      r'\b([A-Za-z_][A-Za-z0-9_.]*'
+                      r'(?:Error|Exception|Unavailable|Conflict))(?=:)',
+                      message,
+                  )))
+                  request_match = re.search(
+                      r'\b[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,36}\b',
+                      message,
+                  )
+                  if uppercase_tokens or lower_markers or exception_types:
+                      safe_error_evidence.append({
+                          'atUtc': datetime.fromtimestamp(
+                              timestamp / 1000, tz=timezone.utc
+                          ).isoformat().replace('+00:00', 'Z'),
+                          'requestIdHash': (
+                              hashlib.sha256(
+                                  request_match.group(0).encode('utf-8')
+                              ).hexdigest()[:12]
+                              if request_match
+                              else None
+                          ),
+                          'exceptionTypes': exception_types,
+                          'uppercaseCodes': uppercase_tokens[:40],
+                          'knownLowerMarkers': lower_markers,
+                          'rawMessageRedacted': True,
+                      })
           starts.sort(key=lambda entry: entry['atUtc'])
           gaps = []
           for previous, current in zip(starts, starts[1:]):
@@ -451,6 +500,7 @@ jobs:
                       'reports': reports,
                       'gapsOver90Seconds': gaps,
                       'markerCounts': marker_counts,
+                      'safeErrorEvidence': safe_error_evidence,
                       'rawMessagesRedacted': True,
                   },
               },
