@@ -7,6 +7,8 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 HELLO_WORLD = ROOT / "hello_world"
@@ -239,11 +241,19 @@ def _terminal_outcome_item(game, *, reasons=None):
         "lock_outcome_recorded": True,
         "locked_prediction": False,
         "canonical": False,
+        "canonical_prediction": False,
         "official_prediction": False,
         "playable": False,
         "blocked": True,
         "playability_block_reasons": ["NO_VALID_PREGAME_PREDICTION"],
         "training_eligible": False,
+        "accuracy_eligible": False,
+        "wager_allowed": False,
+        "prediction_adopted": False,
+        "operational_defect": False,
+        "canonical_prediction_complete": False,
+        "post_start_prediction_creation_allowed": False,
+        "immutable_prediction_rewrite_allowed": False,
         "training_exclusion_reasons": ["missing_immutable_prediction"],
         "reasons": list(reasons or ["no_valid_user_visible_platform_prelock_prediction"]),
         "provider_manifest_fingerprint": manifest["fingerprint"],
@@ -638,6 +648,8 @@ def test_persisted_reader_uses_one_read_scope_without_scoping_writer(monkeypatch
     resource = BatchResource()
     engine.history.DDB = resource
     _install(engine)
+    observed_at = datetime(2026, 7, 17, 21, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(coverage, "_now_utc", lambda: observed_at)
     events = []
     original_scope = per_game._status_read_scope
 
@@ -1020,6 +1032,7 @@ def test_terminal_no_prediction_status_displays_without_current_prediction_row(m
     assert terminal_row["lockStatus"] == "LOCKED_NO_PREDICTION_DATA"
     assert terminal_row["lockOutcomeRecorded"] is True
     assert terminal_row["lockedPrediction"] is False
+    assert terminal_row["canonicalPrediction"] is False
     assert terminal_row["officialPrediction"] is False
     assert terminal_row["predictedWinner"] is None
     assert terminal_row["predictedSide"] is None
@@ -1227,3 +1240,98 @@ def test_verified_effective_schedule_revision_rejects_membership_change(monkeypa
         raise AssertionError("expected effective-schedule membership mismatch")
 
     assert "resolved_games_membership_mismatch" in message
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("canonical", True),
+        ("official_prediction", True),
+        ("playable", True),
+        ("blocked", False),
+        ("training_eligible", True),
+        ("accuracy_eligible", True),
+        ("wager_allowed", True),
+        ("prediction_adopted", True),
+        ("operational_defect", True),
+    ],
+)
+def test_raw_no_data_terminal_with_prediction_authority_is_rejected(
+    monkeypatch,
+    field,
+    value,
+):
+    monkeypatch.setattr(
+        exact_contract,
+        "validate_exact_locked_row",
+        lambda row: [],
+    )
+    monkeypatch.setattr(
+        immutable_storage,
+        "validate_canonical_stage_authority",
+        lambda table, row: [],
+    )
+    canonical = _canonical_item(G1, G1["home_team"], "home", 71)
+    terminal = _terminal_outcome_item(G2)
+    terminal[field] = value
+    terminal["lock_outcome_fingerprint"] = coverage._record_fingerprint(
+        terminal,
+        "lock_outcome_fingerprint",
+    )
+    engine = _engine([canonical], status_items=[terminal])
+    _install(engine)
+    monkeypatch.setattr(
+        coverage,
+        "_now_utc",
+        lambda: datetime(2026, 7, 18, 2, 1, tzinfo=timezone.utc),
+    )
+
+    result = engine.predict_all(SLATE, store=False)
+
+    assert "provider:game-2" in result["invalidTerminalLifecycleRows"]
+    assert result["operationalDefect"] is True
+
+
+def test_nested_prediction_material_in_terminal_authority_is_rejected(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        exact_contract,
+        "validate_exact_locked_row",
+        lambda row: [],
+    )
+    monkeypatch.setattr(
+        immutable_storage,
+        "validate_canonical_stage_authority",
+        lambda table, row: [],
+    )
+    canonical = _canonical_item(G1, G1["home_team"], "home", 71)
+    terminal = _terminal_outcome_item(G2)
+    terminal["data"] = {
+        "metadata": {
+            "authority": {
+                "prediction": {
+                    "predictedWinner": "Hostile Home",
+                    "probability": 0.99,
+                }
+            }
+        }
+    }
+    terminal["lock_outcome_fingerprint"] = coverage._record_fingerprint(
+        terminal,
+        "lock_outcome_fingerprint",
+    )
+    engine = _engine([canonical], status_items=[terminal])
+    _install(engine)
+    monkeypatch.setattr(
+        coverage,
+        "_now_utc",
+        lambda: datetime(2026, 7, 18, 2, 1, tzinfo=timezone.utc),
+    )
+
+    result = engine.predict_all(SLATE, store=False)
+
+    assert "provider:game-2" in result["invalidTerminalLifecycleRows"]
+    serialized = json.dumps(result["predictions"], sort_keys=True)
+    assert "Hostile Home" not in serialized
+    assert "0.99" not in serialized

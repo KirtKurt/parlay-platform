@@ -28,6 +28,7 @@ def _payload():
         "lockedPredictionCount": 0,
         "lockedStatusCount": 0,
         "noPredictionDataCount": 0,
+        "missedLockValidPrelockQuarantineCount": 0,
         "lockStatusComplete": False,
         "canonicalPredictionComplete": False,
         "operationalDefect": False,
@@ -137,6 +138,124 @@ def test_direct_status_warmup_rejects_non_official_or_incomplete_payload(monkeyp
     monkeypatch.setattr(subject.boto3, "client", lambda *args, **kwargs: client)
 
     with pytest.raises(RuntimeError, match="official-schedule-backed"):
+        subject.invoke(
+            function_name="lock-function",
+            region="us-east-1",
+            attempts=1,
+            delay_seconds=0,
+        )
+
+
+def test_exact_historical_slate_date_is_sent_and_must_round_trip(monkeypatch):
+    client = _Lambda([_response()])
+    monkeypatch.setattr(subject.boto3, "client", lambda *args, **kwargs: client)
+
+    _, invocation = subject.invoke(
+        function_name="lock-function",
+        region="us-east-1",
+        attempts=1,
+        delay_seconds=0,
+        slate_date="2026-08-04",
+    )
+
+    event = json.loads(client.calls[0]["Payload"].decode())
+    assert event["queryStringParameters"] == {"date": "2026-08-04"}
+    assert invocation["requestedSlateDateEt"] == "2026-08-04"
+    assert invocation["slateDateEt"] == "2026-08-04"
+
+    wrong = _payload()
+    wrong["slateDateEt"] = "2026-08-05"
+    client = _Lambda([_response(wrong)])
+    monkeypatch.setattr(subject.boto3, "client", lambda *args, **kwargs: client)
+    with pytest.raises(RuntimeError, match="wrong exact slate date"):
+        subject.invoke(
+            function_name="lock-function",
+            region="us-east-1",
+            attempts=1,
+            delay_seconds=0,
+            slate_date="2026-08-04",
+        )
+
+
+def test_quarantine_is_terminal_but_never_prediction_authority(monkeypatch):
+    payload = _payload()
+    payload.update({
+        "lockedStatusCount": 1,
+        "noPredictionDataCount": 0,
+        "missedLockValidPrelockQuarantineCount": 1,
+        "lockStatusComplete": True,
+        "operationalDefect": True,
+    })
+    payload["perGameStatus"][0].update({
+        "lockStatus": "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED",
+        "predictedWinner": None,
+        "predictedSide": None,
+        "lockedPrediction": False,
+        "canonicalPrediction": False,
+        "officialPrediction": False,
+        "playable": False,
+        "trainingEligible": False,
+        "accuracyEligible": False,
+        "wagerAllowed": False,
+        "predictionAdopted": False,
+        "operationalDefect": True,
+    })
+    client = _Lambda([_response(payload)])
+    monkeypatch.setattr(subject.boto3, "client", lambda *args, **kwargs: client)
+
+    result, _ = subject.invoke(
+        function_name="lock-function",
+        region="us-east-1",
+        attempts=1,
+        delay_seconds=0,
+        slate_date="2026-08-04",
+    )
+    row = result["perGameStatus"][0]
+    assert row["predictedWinner"] is None
+    assert row["trainingEligible"] is False
+    assert row["accuracyEligible"] is False
+    assert row["wagerAllowed"] is False
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        {"predictedWinner": "Home"},
+        {"lockedPrediction": True},
+        {"trainingEligible": True},
+        {"accuracyEligible": True},
+        {"wagerAllowed": True},
+        {"predictionAdopted": True},
+        {"operationalDefect": False},
+    ],
+)
+def test_quarantine_rejects_any_prediction_authority(monkeypatch, mutation):
+    payload = _payload()
+    payload.update({
+        "lockedStatusCount": 1,
+        "missedLockValidPrelockQuarantineCount": 1,
+        "lockStatusComplete": True,
+        "operationalDefect": True,
+    })
+    payload["perGameStatus"][0].update({
+        "lockStatus": "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED",
+        "predictedWinner": None,
+        "predictedSide": None,
+        "lockedPrediction": False,
+        "canonicalPrediction": False,
+        "officialPrediction": False,
+        "playable": False,
+        "trainingEligible": False,
+        "accuracyEligible": False,
+        "wagerAllowed": False,
+        "predictionAdopted": False,
+        "operationalDefect": True,
+        **mutation,
+    })
+    client = _Lambda([_response(payload)])
+    monkeypatch.setattr(subject.boto3, "client", lambda *args, **kwargs: client)
+
+    with pytest.raises(RuntimeError, match="quarantine exposes prediction authority"):
         subject.invoke(
             function_name="lock-function",
             region="us-east-1",

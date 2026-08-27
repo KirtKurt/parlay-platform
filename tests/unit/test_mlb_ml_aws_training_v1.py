@@ -3129,3 +3129,106 @@ def test_artifact_store_requires_bucket_versioning():
         aws_training.TrainingContractError, match="versioning must be Enabled"
     ):
         store.put_versioned_json("key.json", {"ok": True})
+
+
+def test_unresolved_date_does_not_block_later_terminal_only_slates(monkeypatch):
+    import mlb_canonical_final_labels_v1 as canonical_labels
+
+    monkeypatch.setenv("OUTCOMES_TABLE", "outcomes")
+    monkeypatch.setenv("SNAPSHOTS_TABLE", "snapshots")
+    config = aws_training.TrainingConfig(
+        artifacts_bucket="versioned-artifacts",
+        experiment_id=experiment.PRODUCTION_EXPERIMENT_ID,
+        release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
+        release_cutoff_utc="2026-08-03T04:00:00+00:00",
+        feature_vector_version="vector-v2",
+        deployment_git_sha="a" * 40,
+        deployment_template_sha256="b" * 64,
+    )
+    resolved = {"2026-08-04", "2026-08-05"}
+
+    def official_loader(slate_date):
+        return {
+            "ok": True,
+            "source": canonical_labels.SOURCE,
+            "sourceUrl": "https://statsapi.mlb.com/api/v1/schedule",
+            "slateDateEt": slate_date,
+            "officialGameCount": 1,
+            "officialFinalCount": 1,
+            "games": [{
+                "officialGamePk": "824805",
+                "officialDate": slate_date,
+                "completed": True,
+            }],
+        }
+
+    def finalization_loader(slate_date, official):
+        del official
+        if slate_date not in resolved:
+            raise aws_training.TrainingContractError(
+                "terminal coverage pending"
+            )
+        quarantine = 1 if slate_date == "2026-08-04" else 0
+        return {
+            "ok": True,
+            "requestedSlateDates": [slate_date],
+            "finalizedSlateDates": [slate_date],
+            "rowCount": 0,
+            "rows": [],
+            "slates": [{
+                "slateDateEt": slate_date,
+                "slateFinalized": True,
+                "officialGameCount": 1,
+                "officialFinalCount": 1,
+                "canonicalLockCount": 0,
+                "terminalNoPredictionCount": 1 - quarantine,
+                "missedLockValidPrelockQuarantineCount": quarantine,
+                "terminalExcludedCount": 1,
+                "quarantinedRowsAdmittedToTraining": 0,
+                "trainingCleanSlate": True,
+            }],
+        }
+
+    rows = aws_training.load_canonical_training_rows(
+        config,
+        now=datetime(2026, 8, 6, 16, 0, tzinfo=timezone.utc),
+        official_schedule_loader=official_loader,
+        slate_finalization_loader=finalization_loader,
+    )
+    assert list(rows) == []
+    assert rows.continuity["skippedUnresolvedSlateDates"] == ["2026-08-03"]
+    assert rows.continuity["processedSlateDates"] == [
+        "2026-08-04",
+        "2026-08-05",
+    ]
+    assert rows.continuity["finalizedGameSlateDates"] == [
+        "2026-08-04",
+        "2026-08-05",
+    ]
+    assert all(
+        diagnostic["emittedTrainingRowCount"] == 0
+        and diagnostic["quarantinedRowsAdmittedToTraining"] == 0
+        for diagnostic in rows.continuity[
+            "finalizedSlateDiagnostics"
+        ].values()
+    )
+
+    resolved.add("2026-08-03")
+    rows_after_terminalization = aws_training.load_canonical_training_rows(
+        config,
+        now=datetime(2026, 8, 6, 16, 0, tzinfo=timezone.utc),
+        official_schedule_loader=official_loader,
+        slate_finalization_loader=finalization_loader,
+    )
+    assert list(rows_after_terminalization) == []
+    assert rows_after_terminalization.continuity[
+        "skippedUnresolvedSlateDates"
+    ] == []
+    assert rows_after_terminalization.continuity[
+        "processedSlateDates"
+    ] == ["2026-08-03", "2026-08-04", "2026-08-05"]
+    assert len(
+        rows_after_terminalization.continuity[
+            "finalizedSlateAuthorities"
+        ]
+    ) == 3

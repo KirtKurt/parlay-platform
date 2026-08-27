@@ -12,6 +12,7 @@ ALLOWED_POST_CUTOFF_STATUSES = frozenset({
     "MISSED_NOT_BACKFILLED",
     "LOCK_DUE_CANONICAL_MISSING",
     "LOCKED_NO_PREDICTION_DATA",
+    "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED",
     "POSTPONED",
     "CANCELLED",
     "CANCELED",
@@ -90,7 +91,18 @@ def _project_authoritative_status(
         for row in projected_rows
         if row.get("lockedPrediction") is True and bool(_winner(row))
     )
-    terminal_no_winner = game_count - locked_predictions
+    quarantine_count = sum(
+        1
+        for row in projected_rows
+        if (
+            not bool(_winner(row))
+            and _row_status(row)
+            == "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+        )
+    )
+    terminal_no_winner = (
+        game_count - locked_predictions - quarantine_count
+    )
     ignored_rows = [
         row
         for row in (predictions.get("predictions") or [])
@@ -108,6 +120,10 @@ def _project_authoritative_status(
         "officialPredictionCount": locked_predictions,
         "lockedStatusCount": game_count,
         "noPredictionDataCount": terminal_no_winner,
+        "missedLockValidPrelockQuarantineCount": quarantine_count,
+        "terminalExcludedCount": (
+            terminal_no_winner + quarantine_count
+        ),
         "lockStatusComplete": True,
         "canonicalPredictionComplete": locked_predictions == game_count,
         "operationalDefect": bool(predictions.get("operationalDefect", True)),

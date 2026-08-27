@@ -493,3 +493,44 @@ def test_postdeploy_workflow_preserves_structured_observer_failure():
     assert "scheduled_pull_observation_failed" in source
     assert "'scheduledPullObservationFailure': invocation.get('failure')" in source
 
+
+
+def test_postdeploy_disposition_accepts_quarantine_as_terminal_no_winner() -> None:
+    now = datetime(2026, 8, 27, 12, 0, tzinfo=timezone.utc)
+    quarantine = _row(
+        "official:824805",
+        now - timedelta(hours=4),
+        winner=None,
+        locked=False,
+        status="MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED",
+    )
+    quarantine.update(
+        {
+            "officialGamePk": 824805,
+            "canonicalPrediction": False,
+            "officialPrediction": False,
+            "playable": False,
+            "trainingEligible": False,
+            "accuracyEligible": False,
+            "wagerAllowed": False,
+            "predictionAdopted": False,
+            "operationalDefect": True,
+        }
+    )
+
+    result = observer.classify_dispositions([quarantine], [], now=now)
+
+    assert result == {
+        "gameCount": 1,
+        "candidateCount": 0,
+        "storedCandidateCount": 0,
+        "canonicalLockedCount": 0,
+        "lifecycleCount": 1,
+        "dispositionCount": 1,
+        "complete": True,
+        "errors": [],
+    }
+    assert quarantine["predictedWinner"] is None
+    assert quarantine["trainingEligible"] is False
+    assert quarantine["accuracyEligible"] is False
+    assert quarantine["wagerAllowed"] is False

@@ -10,6 +10,7 @@ OPERATIONAL_DEFECT_SCOPE_VERSION = (
 UNAUTHORIZED_LOCKED_WRITE = "immutable_per_game_stage_authority_missing"
 LIFECYCLE_ONLY_STATUSES = frozenset({
     "LOCKED_NO_PREDICTION_DATA",
+    "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED",
     "LOCK_DUE_CANONICAL_MISSING",
     "MISSED_LOCK",
     "MISSED_NOT_BACKFILLED",
@@ -20,6 +21,7 @@ LIFECYCLE_ONLY_STATUSES = frozenset({
 LIFECYCLE_ONLY_DISPLAY_GROUPS = frozenset({
     "lock_failure",
     "lock_outcome_no_prediction_data",
+    "lock_outcome_missed_lock_quarantine",
 })
 _STORAGE_REQUEST_ACTIVE: ContextVar[bool] = ContextVar(
     "inqsi_mlb_prediction_storage_request_active",

@@ -6,6 +6,7 @@ import hashlib
 import json
 import sys
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -16,8 +17,14 @@ MISSED_LOCK_TERMINAL_RECONCILIATION_VERSION = (
 PROMOTED_LOCK_TRAINING_ELIGIBILITY_VERSION = (
     "MLB-PROMOTED-LOCK-TRAINING-ELIGIBILITY-v2-verified-empty-exclusions"
 )
-COOPERATIVE_TERMINAL_CHUNK_VERSION = (
+COOPERATIVE_TERMINAL_CHUNK_V3_VERSION = (
     "MLB-COOPERATIVE-TERMINAL-CHUNK-v3-bounded-proof-lease-handoff"
+)
+COOPERATIVE_TERMINAL_CHUNK_VERSION = (
+    "MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine"
+)
+MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED = (
+    "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
 )
 # A canonical owner is admitted with at least 660 seconds left.  Each chunk
 # consumes at most one manifest game and stops admitting new work well before
@@ -28,7 +35,7 @@ COOPERATIVE_TERMINAL_CHUNK_WRITE_MIN_REMAINING_SECONDS = 120
 COOPERATIVE_TERMINAL_CHUNK_COMPLETION_MIN_REMAINING_SECONDS = 90
 COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_QUERY_LIMIT = 4
 COOPERATIVE_TERMINAL_IDENTITY_ALIAS_LIMIT = 4
-COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS = 32
+COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS = 100
 COOPERATIVE_TERMINAL_MAX_MANIFEST_GAMES = 15
 COOPERATIVE_TERMINAL_COMPLETION_LEASE_MARGIN_SECONDS = 60
 COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION = (
@@ -48,7 +55,11 @@ _COOPERATIVE_TERMINAL_IDENTITY_OVERRIDE = (
     "_cooperative_terminal_durable_identity_override"
 )
 _TERMINAL_CHUNK_STATES = frozenset(
-    {"LOCKED_CANONICAL", "LOCKED_NO_PREDICTION_DATA"}
+    {
+        "LOCKED_CANONICAL",
+        "LOCKED_NO_PREDICTION_DATA",
+        MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED,
+    }
 )
 _RUNTIME_PATCH_FLAG = "_INQSI_MLB_MISSED_LOCK_TERMINAL_RECONCILIATION_V3"
 _APPLY_HOOK_FLAG = "_INQSI_MLB_MISSED_LOCK_TERMINAL_APPLY_HOOK_V3"
@@ -632,21 +643,45 @@ def _cooperative_chunk_telemetry(
 
 
 def _strict_chunk_integer(value: Any, field: str) -> int:
+    error = f"COOPERATIVE_TERMINAL_CHUNK_{field.upper()}_INVALID"
     if isinstance(value, bool):
-        raise RuntimeError(
-            f"COOPERATIVE_TERMINAL_CHUNK_{field.upper()}_INVALID"
-        )
+        raise RuntimeError(error)
     try:
-        parsed = int(value)
+        numeric = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise RuntimeError(error) from exc
+    if (
+        not numeric.is_finite()
+        or numeric < 0
+        or numeric != numeric.to_integral_value()
+    ):
+        raise RuntimeError(error)
+    return int(numeric)
+
+def _strict_utc_timestamp(value: Any, field: str) -> str:
+    error = f"COOPERATIVE_TERMINAL_CHUNK_{field.upper()}_INVALID"
+    raw = str(value or "").strip()
+    if not raw:
+        raise RuntimeError(error)
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except (TypeError, ValueError) as exc:
-        raise RuntimeError(
-            f"COOPERATIVE_TERMINAL_CHUNK_{field.upper()}_INVALID"
-        ) from exc
-    if parsed < 0:
-        raise RuntimeError(
-            f"COOPERATIVE_TERMINAL_CHUNK_{field.upper()}_INVALID"
-        )
-    return parsed
+        raise RuntimeError(error) from exc
+    if (
+        parsed.tzinfo is None
+        or parsed.utcoffset() is None
+        or parsed.utcoffset().total_seconds() != 0
+    ):
+        raise RuntimeError(error)
+    return parsed.astimezone(timezone.utc).isoformat()
+
+
+def _lower_hex64(value: Any) -> bool:
+    raw = str(value or "")
+    return bool(
+        len(raw) == 64
+        and all(character in "0123456789abcdef" for character in raw)
+    )
 
 
 def _cooperative_prefixed_identity(value: Any, prefix: str) -> str:
@@ -703,11 +738,58 @@ def _cooperative_terminal_manifest_authority_evidence(
     patch: Any,
     authority: Any,
     manifest_count: int,
+    *,
+    manifest: List[Dict[str, Any]],
+    identities: List[str],
+    identity_options: List[List[str]],
 ) -> Dict[str, Any]:
     if not isinstance(authority, dict):
         raise RuntimeError(
             "COOPERATIVE_TERMINAL_CHUNK_MANIFEST_AUTHORITY_INVALID"
         )
+    game_roster = []
+    for index, game in enumerate(manifest):
+        start = patch._start(module, game)
+        lock_at_reader = getattr(patch, "_lock_at", None)
+        lock_at = (
+            lock_at_reader(module, game)
+            if callable(lock_at_reader)
+            else None
+        )
+        game_roster.append(
+            {
+                "index": index,
+                "officialGamePk": str(
+                    game.get("officialGamePk")
+                    or game.get("official_game_pk")
+                    or ""
+                ),
+                "gameIdentity": identities[index],
+                "identityOptions": list(identity_options[index]),
+                "startUtc": start.isoformat() if start is not None else "",
+                "scheduledLockAtUtc": (
+                    lock_at.isoformat() if lock_at is not None else ""
+                ),
+            }
+        )
+    if (
+        len(game_roster) != manifest_count
+        or any(not row["officialGamePk"] for row in game_roster)
+        or len(
+            {row["officialGamePk"] for row in game_roster}
+        )
+        != manifest_count
+    ):
+        raise RuntimeError(
+            "COOPERATIVE_TERMINAL_CHUNK_MANIFEST_IDENTITY_INVALID"
+        )
+    game_roster_fingerprint = hashlib.sha256(
+        json.dumps(
+            game_roster,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
     evidence = {
         "version": str(authority.get("version") or ""),
         "recordType": str(authority.get("recordType") or ""),
@@ -728,6 +810,8 @@ def _cooperative_terminal_manifest_authority_evidence(
         "officialScheduleAuthorityFingerprint": str(
             authority.get("officialScheduleAuthorityFingerprint") or ""
         ),
+        "gameRoster": game_roster,
+        "gameRosterFingerprint": game_roster_fingerprint,
     }
     schedule = authority.get("scheduleRevisionAuthority")
     if isinstance(schedule, dict):
@@ -964,7 +1048,12 @@ def _validated_cooperative_terminal_evidence(
     out = copy.deepcopy(evidence)
     items = out.get("items")
     authority_item_count = (
-        1 if terminal_state == "LOCKED_NO_PREDICTION_DATA" else 2
+        1
+        if terminal_state == "LOCKED_NO_PREDICTION_DATA"
+        else 3
+        if terminal_state
+        == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+        else 2
     )
     if (
         str(out.get("durableIdentity") or "") != durable_identity
@@ -1006,8 +1095,18 @@ def _validated_cooperative_terminal_evidence(
         terminal_state == "LOCKED_NO_PREDICTION_DATA"
         and primary_roles != ["LOCK_TABLE"]
     ) or (
-        terminal_state == "LOCKED_CANONICAL"
-        and primary_roles != ["LOCK_TABLE", "PULLS_TABLE"]
+        terminal_state
+        in {
+            "LOCKED_CANONICAL",
+            MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED,
+        }
+        and primary_roles
+        != (
+            ["LOCK_TABLE", "PULLS_TABLE", "PULLS_TABLE"]
+            if terminal_state
+            == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+            else ["LOCK_TABLE", "PULLS_TABLE"]
+        )
     ):
         raise RuntimeError(
             "COOPERATIVE_TERMINAL_CHUNK_DURABLE_EVIDENCE_INVALID"
@@ -1071,6 +1170,134 @@ def _validated_cooperative_terminal_checkpoint(
             "COOPERATIVE_TERMINAL_CHUNK_CHECKPOINT_NOT_OBJECT"
         )
 
+    if raw.get("version") == COOPERATIVE_TERMINAL_CHUNK_V3_VERSION:
+        v3_last_attempt = raw.get("lastAttempt")
+        v3_checkpoint_keys = {
+            "version",
+            "slateDateEt",
+            "requestEpoch",
+            "requestId",
+            "manifestFingerprint",
+            "manifestBindingVersion",
+            "manifestAuthority",
+            "manifestGameCount",
+            "phase",
+            "nextGameIndex",
+            "processedGameCount",
+            "terminalCount",
+            "canonicalCount",
+            "noPredictionDataCount",
+            "reconciledCount",
+            "processedGames",
+            "verificationIndex",
+            "verifiedGameCount",
+            "verificationComplete",
+            "attemptCount",
+            "identityResolutionVersion",
+            "identityAliasLimit",
+            "candidateAliasQueryLimit",
+            "writerLeaseVersion",
+            "postStartPredictionCreationAllowed",
+            "immutablePredictionRewriteAllowed",
+            "productionAuthorityChanged",
+            "checkpointFingerprint",
+            "lastAttempt",
+            "updatedAtUtc",
+        }
+        v3_last_attempt_keys = {
+            "status",
+            "stage",
+            "atUtc",
+            "phase",
+            "gameIndex",
+            "gameIdentity",
+            "errorCode",
+        }
+        zero_work = bool(
+            set(raw) == v3_checkpoint_keys
+            and isinstance(v3_last_attempt, dict)
+            and set(v3_last_attempt) == v3_last_attempt_keys
+            and str(raw.get("phase") or "") == "PROCESS"
+            and _strict_chunk_integer(
+                raw.get("nextGameIndex"), "v3_next_game_index"
+            )
+            == 0
+            and _strict_chunk_integer(
+                raw.get("processedGameCount"), "v3_processed_game_count"
+            )
+            == 0
+            and _strict_chunk_integer(
+                raw.get("terminalCount"), "v3_terminal_count"
+            )
+            == 0
+            and _strict_chunk_integer(
+                raw.get("canonicalCount"), "v3_canonical_count"
+            )
+            == 0
+            and _strict_chunk_integer(
+                raw.get("noPredictionDataCount"),
+                "v3_no_prediction_data_count",
+            )
+            == 0
+            and _strict_chunk_integer(
+                raw.get("reconciledCount"), "v3_reconciled_count"
+            )
+            == 0
+            and raw.get("processedGames") == []
+            and _strict_chunk_integer(
+                raw.get("verificationIndex"), "v3_verification_index"
+            )
+            == 0
+            and _strict_chunk_integer(
+                raw.get("verifiedGameCount"),
+                "v3_verified_game_count",
+            )
+            == 0
+            and raw.get("verificationComplete") is False
+            and str(v3_last_attempt.get("status") or "")
+            == "FAILED_CLOSED"
+            and str(v3_last_attempt.get("stage") or "")
+            == "PROVE_PRELOCK_ABSENCE"
+            and str(v3_last_attempt.get("phase") or "") == "PROCESS"
+            and _strict_chunk_integer(
+                v3_last_attempt.get("gameIndex"), "v3_last_attempt_game_index"
+            )
+            == 0
+            and str(v3_last_attempt.get("errorCode") or "")
+            == "PRELOCK_CANDIDATE_REQUIRES_REVIEW"
+            and str(v3_last_attempt.get("gameIdentity") or "")
+            == identities[0]
+            and _strict_utc_timestamp(
+                v3_last_attempt.get("atUtc"),
+                "v3_last_attempt_at_utc",
+            )
+            == _strict_utc_timestamp(
+                raw.get("updatedAtUtc"),
+                "v3_updated_at_utc",
+            )
+            and str(raw.get("updatedAtUtc") or "")
+            == str(v3_last_attempt.get("atUtc") or "")
+            and _strict_chunk_integer(
+                raw.get("attemptCount"), "v3_attempt_count"
+            )
+            > 0
+            and str(raw.get("checkpointFingerprint") or "")
+            == _cooperative_terminal_checkpoint_fingerprint(raw)
+        )
+        if not zero_work:
+            raise RuntimeError(
+                "COOPERATIVE_TERMINAL_CHUNK_V3_MIGRATION_NOT_ZERO_WORK"
+            )
+        raw["version"] = COOPERATIVE_TERMINAL_CHUNK_VERSION
+        raw["manifestAuthority"] = copy.deepcopy(
+            manifest_authority
+        )
+        raw["manifestFingerprint"] = manifest_fingerprint
+        raw["missedLockValidPrelockQuarantineCount"] = 0
+        raw["checkpointFingerprint"] = (
+            _cooperative_terminal_checkpoint_fingerprint(raw)
+        )
+
     if raw.get("version") == (
         "MLB-COOPERATIVE-TERMINAL-CHUNK-"
         "v1-one-game-per-eventbridge-owner"
@@ -1098,6 +1325,7 @@ def _validated_cooperative_terminal_checkpoint(
             "terminalCount": 0,
             "canonicalCount": 0,
             "noPredictionDataCount": 0,
+            "missedLockValidPrelockQuarantineCount": 0,
             "reconciledCount": 0,
             "processedGames": [],
             "verificationIndex": 0,
@@ -1201,8 +1429,12 @@ def _validated_cooperative_terminal_checkpoint(
         identity = str(entry.get("gameIdentity") or "")
         durable_identity = str(entry.get("durableIdentity") or "")
         terminal_state = str(entry.get("terminalState") or "")
+        official_game_pk = str(entry.get("officialGamePk") or "")
         if (
             identity != identities[index]
+            or not official_game_pk
+            or f"official:{official_game_pk}"
+            not in identity_options[index]
             or durable_identity not in identity_options[index]
             or terminal_state not in _TERMINAL_CHUNK_STATES
             or not isinstance(entry.get("reconciled"), bool)
@@ -1227,6 +1459,7 @@ def _validated_cooperative_terminal_checkpoint(
                 "gameIdentity": identity,
                 "durableIdentity": durable_identity,
                 "terminalState": terminal_state,
+                "officialGamePk": official_game_pk,
                 "reconciled": entry["reconciled"],
                 "durableEvidence": evidence,
             }
@@ -1245,6 +1478,11 @@ def _validated_cooperative_terminal_checkpoint(
         entry["terminalState"] == "LOCKED_NO_PREDICTION_DATA"
         for entry in normalized_games
     )
+    quarantine_count = sum(
+        entry["terminalState"]
+        == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+        for entry in normalized_games
+    )
     reconciled_count = sum(
         entry["reconciled"] is True for entry in normalized_games
     )
@@ -1253,6 +1491,7 @@ def _validated_cooperative_terminal_checkpoint(
         "terminalCount": next_index,
         "canonicalCount": canonical_count,
         "noPredictionDataCount": no_prediction_count,
+        "missedLockValidPrelockQuarantineCount": quarantine_count,
         "reconciledCount": reconciled_count,
         "verifiedGameCount": verification_index,
     }
@@ -1573,6 +1812,93 @@ def _validated_cooperative_terminal_complete_checkpoint(
             default=str,
         ).encode("utf-8")
     ).hexdigest()
+    game_roster = manifest_authority.get("gameRoster")
+    normalized_game_roster: List[Dict[str, Any]] = []
+    game_roster_valid = bool(
+        isinstance(game_roster, list)
+        and len(game_roster) == manifest_count
+    )
+    if game_roster_valid:
+        official_seen: set[str] = set()
+        for index, roster_entry in enumerate(game_roster):
+            if not isinstance(roster_entry, dict):
+                game_roster_valid = False
+                break
+            try:
+                roster_index = _strict_chunk_integer(
+                    roster_entry.get("index"),
+                    "manifest_roster_index",
+                )
+                official_pk = str(
+                    roster_entry.get("officialGamePk") or ""
+                )
+                if _strict_chunk_integer(
+                    roster_entry.get("officialGamePk"),
+                    "manifest_roster_official_game_pk",
+                ) <= 0:
+                    raise RuntimeError(
+                        "COOPERATIVE_TERMINAL_CHUNK_NOT_COMPLETE"
+                    )
+            except RuntimeError:
+                game_roster_valid = False
+                break
+            game_identity_value = str(
+                roster_entry.get("gameIdentity") or ""
+            )
+            options = roster_entry.get("identityOptions")
+            start_utc = str(roster_entry.get("startUtc") or "")
+            scheduled_lock_at_utc = str(
+                roster_entry.get("scheduledLockAtUtc") or ""
+            )
+            if (
+                set(roster_entry) != {
+                    "index",
+                    "officialGamePk",
+                    "gameIdentity",
+                    "identityOptions",
+                    "startUtc",
+                    "scheduledLockAtUtc",
+                }
+                or roster_index != index
+                or not official_pk
+                or official_pk in official_seen
+                or not game_identity_value
+                or not isinstance(options, list)
+                or not options
+                or not start_utc
+                or not scheduled_lock_at_utc
+                or str(options[0] or "") != game_identity_value
+                or f"official:{official_pk}" not in options
+                or len(options) != len(set(str(value) for value in options))
+            ):
+                game_roster_valid = False
+                break
+            official_seen.add(official_pk)
+            normalized_game_roster.append(
+                {
+                    "index": index,
+                    "officialGamePk": official_pk,
+                    "gameIdentity": game_identity_value,
+                    "identityOptions": [str(value) for value in options],
+                    "startUtc": start_utc,
+                    "scheduledLockAtUtc": scheduled_lock_at_utc,
+                }
+            )
+    expected_game_roster_fingerprint = hashlib.sha256(
+        json.dumps(
+            normalized_game_roster,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    game_roster_valid = bool(
+        game_roster_valid
+        and normalized_game_roster == game_roster
+        and str(
+            manifest_authority.get("gameRosterFingerprint") or ""
+        )
+        == expected_game_roster_fingerprint
+    )
     schedule_authority = manifest_authority.get(
         "scheduleRevisionAuthority"
     )
@@ -1595,8 +1921,7 @@ def _validated_cooperative_terminal_complete_checkpoint(
             str(schedule_authority.get("version") or "")
             and schedule_key[1]
             and schedule_key[2]
-            and len(str(schedule_authority.get("fingerprint") or ""))
-            == 64
+            and _lower_hex64(schedule_authority.get("fingerprint"))
             and _strict_chunk_integer(
                 schedule_authority.get("gameCount"),
                 "schedule_authority_game_count",
@@ -1617,8 +1942,7 @@ def _validated_cooperative_terminal_complete_checkpoint(
                 != "PULLS_TABLE"
                 or not str(atomic_item.get("PK") or "")
                 or not str(atomic_item.get("SK") or "")
-                or len(str(atomic_item.get("itemFingerprint") or ""))
-                != 64
+                or not _lower_hex64(atomic_item.get("itemFingerprint"))
             ):
                 manifest_atomic_items_valid = False
                 break
@@ -1658,16 +1982,17 @@ def _validated_cooperative_terminal_complete_checkpoint(
         or manifest_count > COOPERATIVE_TERMINAL_MAX_MANIFEST_GAMES
         or request_epoch <= 0
         or not request_id
-        or len(str(out.get("manifestFingerprint") or "")) != 64
+        or not _lower_hex64(out.get("manifestFingerprint"))
         or authority_fingerprint != expected_authority_fingerprint
         or not all(
             str(manifest_authority.get(field) or "")
             for field in ("version", "recordType", "pk", "sk")
         )
-        or len(str(manifest_authority.get("fingerprint") or "")) != 64
+        or not _lower_hex64(manifest_authority.get("fingerprint"))
         or manifest_authority.get("immutable") is not True
         or manifest_authority.get("writeOnce") is not True
         or manifest_authority.get("consistentReadVerified") is not True
+        or not game_roster_valid
         or not schedule_authority_valid
         or not manifest_atomic_items_valid
         or _strict_chunk_integer(
@@ -1718,10 +2043,12 @@ def _validated_cooperative_terminal_complete_checkpoint(
         raise RuntimeError("COOPERATIVE_TERMINAL_CHUNK_NOT_COMPLETE")
 
     identities = []
+    official_game_pks = []
     canonical_count = 0
     no_prediction_count = 0
+    quarantine_count = 0
     reconciled_count = 0
-    for entry in processed:
+    for index, entry in enumerate(processed):
         if (
             not isinstance(entry, dict)
             or entry.get("reconciled") not in {True, False}
@@ -1730,9 +2057,18 @@ def _validated_cooperative_terminal_complete_checkpoint(
         game_identity_value = str(entry.get("gameIdentity") or "")
         durable_identity = str(entry.get("durableIdentity") or "")
         terminal_state = str(entry.get("terminalState") or "")
+        official_game_pk = str(entry.get("officialGamePk") or "")
+        expected_roster_entry = normalized_game_roster[index]
         if (
-            not game_identity_value
+            game_identity_value
+            != expected_roster_entry["gameIdentity"]
+            or official_game_pk
+            != expected_roster_entry["officialGamePk"]
+            or durable_identity
+            not in expected_roster_entry["identityOptions"]
+            or not game_identity_value
             or durable_identity != game_identity_value
+            or not official_game_pk
             or terminal_state not in _TERMINAL_CHUNK_STATES
         ):
             raise RuntimeError("COOPERATIVE_TERMINAL_CHUNK_NOT_COMPLETE")
@@ -1756,22 +2092,34 @@ def _validated_cooperative_terminal_complete_checkpoint(
         if not set(expected_manifest_keys).issubset(evidence_keys):
             raise RuntimeError("COOPERATIVE_TERMINAL_CHUNK_NOT_COMPLETE")
         identities.append(game_identity_value)
+        official_game_pks.append(official_game_pk)
         canonical_count += terminal_state == "LOCKED_CANONICAL"
         no_prediction_count += (
             terminal_state == "LOCKED_NO_PREDICTION_DATA"
         )
+        quarantine_count += (
+            terminal_state
+            == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+        )
         reconciled_count += entry["reconciled"] is True
-    if len(set(identities)) != manifest_count:
+    if (
+        len(set(identities)) != manifest_count
+        or len(set(official_game_pks)) != manifest_count
+    ):
         raise RuntimeError("COOPERATIVE_TERMINAL_CHUNK_NOT_COMPLETE")
     expected_counts = {
         "canonicalCount": canonical_count,
         "noPredictionDataCount": no_prediction_count,
+        "missedLockValidPrelockQuarantineCount": quarantine_count,
         "reconciledCount": reconciled_count,
     }
     for field, expected in expected_counts.items():
         if _strict_chunk_integer(out.get(field), field) != expected:
             raise RuntimeError("COOPERATIVE_TERMINAL_CHUNK_NOT_COMPLETE")
-    if canonical_count + no_prediction_count != manifest_count:
+    if (
+        canonical_count + no_prediction_count + quarantine_count
+        != manifest_count
+    ):
         raise RuntimeError("COOPERATIVE_TERMINAL_CHUNK_NOT_COMPLETE")
     requests, read_set_fingerprint = (
         _cooperative_terminal_atomic_read_set(
@@ -1785,7 +2133,7 @@ def _validated_cooperative_terminal_complete_checkpoint(
 def _cooperative_terminal_completion_response(
     checkpoint: Dict[str, Any],
 ) -> Dict[str, Any]:
-    checkpoint, atomic_requests, _ = (
+    checkpoint, atomic_requests, atomic_read_set_fingerprint = (
         _validated_cooperative_terminal_complete_checkpoint(checkpoint)
     )
     manifest_count = _strict_chunk_integer(
@@ -1808,10 +2156,37 @@ def _cooperative_terminal_completion_response(
         checkpoint.get("noPredictionDataCount"),
         "no_prediction_data_count",
     )
+    quarantine_count = _strict_chunk_integer(
+        checkpoint.get("missedLockValidPrelockQuarantineCount"),
+        "missed_lock_valid_prelock_quarantine_count",
+    )
     reconciled_count = _strict_chunk_integer(
         checkpoint.get("reconciledCount"), "reconciled_count"
     )
 
+    terminal_games = [
+        {
+            "index": index,
+            "officialGamePk": str(entry.get("officialGamePk") or ""),
+            "gameIdentity": str(entry.get("gameIdentity") or ""),
+            "durableIdentity": str(entry.get("durableIdentity") or ""),
+            "terminalState": str(entry.get("terminalState") or ""),
+            "evidenceFingerprint": str(
+                (entry.get("durableEvidence") or {}).get(
+                    "evidenceFingerprint"
+                )
+                or ""
+            ),
+        }
+        for index, entry in enumerate(checkpoint.get("processedGames") or [])
+    ]
+    terminal_game_set_fingerprint = hashlib.sha256(
+        json.dumps(
+            terminal_games,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
     progress = {
         "manifestGameCount": manifest_count,
         "processedGameCount": processed_count,
@@ -1819,17 +2194,43 @@ def _cooperative_terminal_completion_response(
         "verificationIndex": verification_index,
         "verificationComplete": True,
         "atomicDurableItemCount": atomic_item_count,
+        "atomicDurableReadSetFingerprint": (
+            atomic_read_set_fingerprint
+        ),
         "atomicDurableProofRequired": True,
         "canonicalCount": canonical_count,
         "noPredictionDataCount": no_prediction_count,
+        "missedLockValidPrelockQuarantineCount": quarantine_count,
         "lockOutcomeCount": terminal_count,
         "missedCount": 0,
         "dueMissingCount": 0,
+        "manifestFingerprint": str(
+            checkpoint.get("manifestFingerprint") or ""
+        ),
+        "checkpointFingerprint": str(
+            checkpoint.get("checkpointFingerprint") or ""
+        ),
+        "manifestAuthorityEvidenceFingerprint": str(
+            (checkpoint.get("manifestAuthority") or {}).get(
+                "authorityEvidenceFingerprint"
+            )
+            or ""
+        ),
+        "providerManifestFingerprint": str(
+            (checkpoint.get("manifestAuthority") or {}).get(
+                "fingerprint"
+            )
+            or ""
+        ),
+        "terminalGames": terminal_games,
+        "terminalGameSetFingerprint": terminal_game_set_fingerprint,
     }
     reason = (
-        "PROVEN_NO_PREDICTION_TERMINALS_RECONCILED"
-        if reconciled_count
-        else "POST_WINDOW_TERMINAL_STATUS_ALREADY_RECONCILED"
+        "POST_WINDOW_TERMINAL_STATUS_ALREADY_RECONCILED"
+        if reconciled_count == 0
+        else "VALID_PRELOCK_MISSED_LOCK_QUARANTINE_RECONCILED"
+        if quarantine_count
+        else "PROVEN_NO_PREDICTION_TERMINALS_RECONCILED"
     )
     repair = {
         "ok": True,
@@ -1842,8 +2243,12 @@ def _cooperative_terminal_completion_response(
         "durableTerminalVerificationComplete": True,
         "atomicDurableProofRequired": True,
         "atomicDurableItemCount": atomic_item_count,
+        "atomicDurableReadSetFingerprint": (
+            atomic_read_set_fingerprint
+        ),
         "completionMutationLeaseRequired": True,
         "reconciledCount": reconciled_count,
+        "missedLockValidPrelockQuarantineCount": quarantine_count,
         "remainingMissedCount": 0,
         "unresolved": [],
         "progressAfter": copy.deepcopy(progress),
@@ -1873,6 +2278,9 @@ def _cooperative_terminal_completion_response(
         "durableTerminalVerificationComplete": True,
         "atomicDurableProofRequired": True,
         "atomicDurableItemCount": atomic_item_count,
+        "atomicDurableReadSetFingerprint": (
+            atomic_read_set_fingerprint
+        ),
         "atomicDurableProofMaxItemCount": (
             COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS
         ),
@@ -1903,10 +2311,18 @@ def _cooperative_no_prediction_outcome_error(
         "lock_outcome_recorded": True,
         "locked_prediction": False,
         "canonical": False,
+        "canonical_prediction": False,
         "official_prediction": False,
         "playable": False,
         "blocked": True,
         "training_eligible": False,
+        "accuracy_eligible": False,
+        "wager_allowed": False,
+        "prediction_adopted": False,
+        "operational_defect": False,
+        "canonical_prediction_complete": False,
+        "post_start_prediction_creation_allowed": False,
+        "immutable_prediction_rewrite_allowed": False,
         "write_once": True,
     }
     if any(outcome.get(field) != value for field, value in exact.items()):
@@ -1920,6 +2336,139 @@ def _cooperative_no_prediction_outcome_error(
     reasons = outcome.get("reasons")
     if not isinstance(reasons, list) or not reasons:
         return "NO_PREDICTION_TERMINAL_AUTHORITY_INVALID"
+    return None
+
+
+def _cooperative_quarantine_outcome_error(
+    outcome: Any,
+    normalizer: Any = None,
+) -> Optional[str]:
+    if not isinstance(outcome, dict):
+        return "VALID_PRELOCK_QUARANTINE_TERMINAL_AUTHORITY_INVALID"
+    exact = {
+        "lock_status": (
+            MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+        ),
+        "lock_outcome_recorded": True,
+        "locked_prediction": False,
+        "canonical": False,
+        "canonical_prediction": False,
+        "official_prediction": False,
+        "playable": False,
+        "blocked": True,
+        "training_eligible": False,
+        "accuracy_eligible": False,
+        "wager_allowed": False,
+        "prediction_adopted": False,
+        "operational_defect": True,
+        "canonical_prediction_complete": False,
+        "post_start_prediction_creation_allowed": False,
+        "immutable_prediction_rewrite_allowed": False,
+        "write_once": True,
+    }
+    if any(outcome.get(field) != value for field, value in exact.items()):
+        return "VALID_PRELOCK_QUARANTINE_TERMINAL_AUTHORITY_INVALID"
+    exclusions = outcome.get("training_exclusion_reasons")
+    if (
+        not isinstance(exclusions, list)
+        or "valid_prelock_candidate_not_promoted" not in exclusions
+        or "missing_immutable_tminus45_lock" not in exclusions
+    ):
+        return "VALID_PRELOCK_QUARANTINE_TERMINAL_AUTHORITY_INVALID"
+    authority = outcome.get("valid_prelock_quarantine_authority")
+    outcome_identity = str(outcome.get("game_identity") or "")
+    if outcome_identity.startswith("provider:"):
+        outcome_identity = outcome_identity.replace("provider:", "", 1)
+    identity_mode = (
+        str(authority.get("identityBindingMode") or "")
+        if isinstance(authority, dict)
+        else ""
+    )
+    candidate_identity = (
+        str(authority.get("candidateGameIdentity") or "")
+        if isinstance(authority, dict)
+        else ""
+    )
+    stage_identity = (
+        str(authority.get("stageGameIdentity") or "")
+        if isinstance(authority, dict)
+        else ""
+    )
+    official_pk = str(outcome.get("officialGamePk") or "")
+    identity_valid = bool(
+        candidate_identity
+        and stage_identity == outcome_identity
+        and (
+            (
+                identity_mode == "exact_identity"
+                and candidate_identity == stage_identity
+            )
+            or (
+                identity_mode == "official_game_pk"
+                and candidate_identity != stage_identity
+                and official_pk
+                and str(
+                    authority.get("candidateOfficialGamePk") or ""
+                )
+                == official_pk
+                and str(authority.get("stageOfficialGamePk") or "")
+                == official_pk
+            )
+        )
+    )
+    if (
+        not isinstance(authority, dict)
+        or authority.get("predictionAdopted") is not False
+        or not identity_valid
+        or authority.get("modelOrSignalRecomputedAtLock") is not False
+        or _strict_chunk_integer(
+            authority.get("rejectedNewerCandidateCount"),
+            "quarantine_rejected_newer_candidate_count",
+        )
+        != 0
+        or _strict_chunk_integer(
+            authority.get("boundScoringPullCount"),
+            "quarantine_bound_scoring_pull_count",
+        )
+        <= 0
+        or any(
+            len(str(authority.get(field) or "")) != 64
+            for field in (
+                "candidateItemFingerprint",
+                "candidateSnapshotFingerprint",
+                "candidatePayloadFingerprint",
+                "candidateRowFingerprint",
+                "candidateSelectionFingerprint",
+                "sourcePullFingerprint",
+            )
+        )
+        or not str(authority.get("candidatePk") or "")
+        or not str(authority.get("candidateSk") or "")
+    ):
+        return "VALID_PRELOCK_QUARANTINE_TERMINAL_AUTHORITY_INVALID"
+    normalized_authority = (
+        normalizer(authority)
+        if callable(normalizer)
+        else authority
+    )
+    expected_fingerprint = hashlib.sha256(
+        json.dumps(
+            normalized_authority,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+    if (
+        str(
+            outcome.get(
+                "valid_prelock_quarantine_authority_fingerprint"
+            )
+            or ""
+        )
+        != expected_fingerprint
+    ):
+        return "VALID_PRELOCK_QUARANTINE_TERMINAL_AUTHORITY_INVALID"
     return None
 
 
@@ -2309,7 +2858,19 @@ def _cooperative_terminal_observed_exact_state(
         if outcome and stored_stage:
             return None, None, "AMBIGUOUS_DUAL_TERMINAL_AUTHORITY"
         if outcome:
-            error = _cooperative_no_prediction_outcome_error(outcome)
+            outcome_status = str(outcome.get("lock_status") or "")
+            if outcome_status == "LOCKED_NO_PREDICTION_DATA":
+                error = _cooperative_no_prediction_outcome_error(outcome)
+            elif (
+                outcome_status
+                == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+            ):
+                error = _cooperative_quarantine_outcome_error(
+                    outcome,
+                    getattr(patch, "_plain", None),
+                )
+            else:
+                error = "TERMINAL_OUTCOME_STATUS_INVALID"
             if error:
                 return None, None, error
             if not _cooperative_terminal_authority_matches_selected(
@@ -2324,7 +2885,7 @@ def _cooperative_terminal_observed_exact_state(
             evidence = evidence_reader(
                 module,
                 durable_identity=durable_identity,
-                terminal_state="LOCKED_NO_PREDICTION_DATA",
+                terminal_state=outcome_status,
                 outcome=outcome,
                 stored_stage=None,
                 canonical=None,
@@ -2336,9 +2897,9 @@ def _cooperative_terminal_observed_exact_state(
             evidence = _validated_cooperative_terminal_evidence(
                 evidence,
                 durable_identity=durable_identity,
-                terminal_state="LOCKED_NO_PREDICTION_DATA",
+                terminal_state=outcome_status,
             )
-            return "LOCKED_NO_PREDICTION_DATA", evidence, None
+            return outcome_status, evidence, None
         if not stored_stage:
             return None, None, None
         if not isinstance(stored_stage, dict):
@@ -2503,6 +3064,58 @@ def _cooperative_put_no_prediction_outcome(
             scoped_game,
             now,
             reasons,
+            authority,
+        )
+    finally:
+        setattr(patch, "game_identity", original_identity)
+
+
+def _cooperative_put_valid_prelock_quarantine(
+    module: Any,
+    patch: Any,
+    *,
+    slate: str,
+    manifest: List[Dict[str, Any]],
+    game_index: int,
+    durable_identity: str,
+    now: datetime,
+    candidate: Dict[str, Any],
+    proof: Dict[str, Any],
+    bound_scoring: List[Dict[str, Any]],
+    authority: Dict[str, Any],
+) -> Any:
+    writer = getattr(
+        patch,
+        "_put_valid_prelock_missed_lock_quarantine",
+        None,
+    )
+    original_identity = getattr(patch, "game_identity", None)
+    if not callable(writer) or not callable(original_identity):
+        raise RuntimeError(
+            "COOPERATIVE_TERMINAL_CHUNK_QUARANTINE_WRITER_NOT_READY"
+        )
+    scoped_game = copy.deepcopy(manifest[game_index])
+    scoped_game[_COOPERATIVE_TERMINAL_IDENTITY_OVERRIDE] = durable_identity
+
+    def scoped_identity(value: Dict[str, Any]) -> str:
+        if isinstance(value, dict):
+            override = str(
+                value.get(_COOPERATIVE_TERMINAL_IDENTITY_OVERRIDE) or ""
+            ).strip()
+            if override:
+                return override
+        return str(original_identity(value) or "")
+
+    setattr(patch, "game_identity", scoped_identity)
+    try:
+        return writer(
+            module,
+            slate,
+            scoped_game,
+            now,
+            candidate,
+            proof,
+            bound_scoring,
             authority,
         )
     finally:
@@ -2684,7 +3297,46 @@ def _execute_cooperative_terminal_target(
                 and not bound
                 and patch._is_no_prediction_candidate_failure(errors)
             )
-            if not proven_absence:
+            valid_quarantine_candidate = bool(
+                isinstance(candidate, dict)
+                and isinstance(proof, dict)
+                and isinstance(bound, list)
+                and bound
+                and not errors
+                and proof.get("identityBindingMode") in {
+                    "exact_identity",
+                    "official_game_pk",
+                }
+                and proof.get("createdAtOrBeforeCutoff") is True
+                and proof.get("sourceAtOrBeforeCutoff") is True
+                and proof.get("persistedAtOrBeforeCutoff") is True
+                and proof.get("modelOrSignalRecomputedAtLock") is False
+                and proof.get("persistenceProofType")
+                == getattr(
+                    patch,
+                    "PREGAME_PERSISTENCE_PROOF_TYPE",
+                    None,
+                )
+                and proof.get("predictionPayloadFingerprintVersion")
+                == getattr(patch, "PAYLOAD_FINGERPRINT_VERSION", None)
+                and all(
+                    len(str(proof.get(field) or "")) == 64
+                    for field in (
+                        "candidateSnapshotFingerprint",
+                        "predictionPayloadFingerprint",
+                        "candidateRowFingerprint",
+                        "candidateSelectionFingerprint",
+                        "predictionSourcePullFingerprint",
+                    )
+                )
+                and str(proof.get("pk") or "")
+                and str(proof.get("sk") or "")
+                and str(proof.get("persistenceWritePk") or "")
+                and str(proof.get("persistenceWriteSk") or "")
+                and proof.get("rejectedNewerCandidateCount") == 0
+                and proof.get("rejectedNewerCandidates") == []
+            )
+            if not proven_absence and not valid_quarantine_candidate:
                 return _cooperative_terminal_failure(
                     checkpoint,
                     slate=slate,
@@ -2718,7 +3370,15 @@ def _execute_cooperative_terminal_target(
             durable_identity = _cooperative_terminal_write_identity(
                 identity_options[game_index]
             )
-            stage = "WRITE_NO_PREDICTION_TERMINAL"
+            expected_readback_state: str
+            if valid_quarantine_candidate:
+                expected_readback_state = (
+                    MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+                )
+                stage = "WRITE_VALID_PRELOCK_MISSED_LOCK_QUARANTINE"
+            else:
+                expected_readback_state = "LOCKED_NO_PREDICTION_DATA"
+                stage = "WRITE_NO_PREDICTION_TERMINAL"
             _cooperative_chunk_telemetry(
                 slate=slate,
                 stage=stage,
@@ -2728,24 +3388,40 @@ def _execute_cooperative_terminal_target(
                 durable_identity=durable_identity,
                 phase=phase,
             )
-            _cooperative_put_no_prediction_outcome(
-                module,
-                patch,
-                slate=slate,
-                manifest=manifest,
-                game_index=game_index,
-                durable_identity=durable_identity,
-                now=module._now_utc().astimezone(timezone.utc),
-                reasons=[
-                    *(errors or []),
-                    (
-                        "POST_START_PROVEN_NO_PREGAME_PREDICTION_"
-                        "RECONCILIATION"
-                    ),
-                ],
-                authority=authority,
-            )
-            stage = "READBACK_NO_PREDICTION_TERMINAL"
+            if valid_quarantine_candidate:
+                _cooperative_put_valid_prelock_quarantine(
+                    module,
+                    patch,
+                    slate=slate,
+                    manifest=manifest,
+                    game_index=game_index,
+                    durable_identity=durable_identity,
+                    now=module._now_utc().astimezone(timezone.utc),
+                    candidate=candidate,
+                    proof=proof,
+                    bound_scoring=bound,
+                    authority=authority,
+                )
+                stage = "READBACK_VALID_PRELOCK_QUARANTINE_TERMINAL"
+            else:
+                _cooperative_put_no_prediction_outcome(
+                    module,
+                    patch,
+                    slate=slate,
+                    manifest=manifest,
+                    game_index=game_index,
+                    durable_identity=durable_identity,
+                    now=module._now_utc().astimezone(timezone.utc),
+                    reasons=[
+                        *(errors or []),
+                        (
+                            "POST_START_PROVEN_NO_PREGAME_PREDICTION_"
+                            "RECONCILIATION"
+                        ),
+                    ],
+                    authority=authority,
+                )
+                stage = "READBACK_NO_PREDICTION_TERMINAL"
             (
                 readback_state,
                 readback_identity,
@@ -2764,7 +3440,7 @@ def _execute_cooperative_terminal_target(
             )
             if (
                 readback_error
-                or readback_state != "LOCKED_NO_PREDICTION_DATA"
+                or readback_state != expected_readback_state
                 or readback_identity != durable_identity
             ):
                 raise RuntimeError(
@@ -2792,6 +3468,11 @@ def _execute_cooperative_terminal_target(
                 "gameIdentity": identity,
                 "durableIdentity": durable_identity,
                 "terminalState": terminal_state,
+                "officialGamePk": str(
+                    game.get("officialGamePk")
+                    or game.get("official_game_pk")
+                    or ""
+                ),
                 "reconciled": reconciled,
                 "durableEvidence": copy.deepcopy(durable_evidence),
             },
@@ -2805,6 +3486,11 @@ def _execute_cooperative_terminal_target(
         )
         advanced["noPredictionDataCount"] = sum(
             entry["terminalState"] == "LOCKED_NO_PREDICTION_DATA"
+            for entry in advanced["processedGames"]
+        )
+        advanced["missedLockValidPrelockQuarantineCount"] = sum(
+            entry["terminalState"]
+            == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
             for entry in advanced["processedGames"]
         )
         advanced["reconciledCount"] = sum(
@@ -2993,6 +3679,9 @@ def _run_cooperative_terminal_chunk_impl(
                 patch,
                 selected_manifest_authority,
                 len(manifest),
+                manifest=manifest,
+                identities=identities,
+                identity_options=identity_options,
             )
         )
         manifest_fingerprint = _cooperative_terminal_manifest_fingerprint(

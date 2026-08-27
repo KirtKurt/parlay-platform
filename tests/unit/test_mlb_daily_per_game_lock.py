@@ -124,6 +124,7 @@ class FakeTable:
         ConsistentRead=False,
         ScanIndexForward=True,
         Limit=None,
+        ExclusiveStartKey=None,
     ):
         values = ExpressionAttributeValues or {}
         pk = values.get(":pk")
@@ -134,6 +135,17 @@ class FakeTable:
             if item_pk == pk and str(item_sk).startswith(prefix)
         ]
         matches.sort(key=lambda item: str(item.get("SK") or ""), reverse=not ScanIndexForward)
+        if ExclusiveStartKey:
+            start = next(
+                (
+                    index + 1
+                    for index, item in enumerate(matches)
+                    if item.get("PK") == ExclusiveStartKey.get("PK")
+                    and item.get("SK") == ExclusiveStartKey.get("SK")
+                ),
+                len(matches),
+            )
+            matches = matches[start:]
         truncated = bool(Limit is not None and len(matches) > Limit)
         selected = matches[:Limit] if Limit is not None else matches
         response = {"Items": selected}
@@ -696,7 +708,16 @@ def test_no_prediction_terminal_persists_fingerprint_bound_official_game_pk():
     assert item["officialGamePk"] == "991555"
     assert item["lock_outcome_fingerprint"] == expected
     assert item["locked_prediction"] is False
+    assert item["canonical"] is False
+    assert item["canonical_prediction"] is False
+    assert item["official_prediction"] is False
+    assert item["playable"] is False
     assert item["training_eligible"] is False
+    assert item["accuracy_eligible"] is False
+    assert item["wager_allowed"] is False
+    assert item["prediction_adopted"] is False
+    assert item["blocked"] is True
+    assert item["operational_defect"] is False
     assert item["write_once"] is True
 
 
@@ -2910,3 +2931,122 @@ def test_per_game_daily_card_remains_authoritative_for_settlement_fallback():
     module.run_lock(SLATE)
 
     assert audit_fallback._authoritative(daily_item(module)) is True
+
+
+def test_candidate_query_paginates_before_classifying_prelock_absence():
+    source = pull("2026-07-13T17:14:00+00:00", [G1], "page-two-prelock")
+    module = build_module([source], "2026-07-13T17:17:00+00:00", seed=False)
+    persist_candidate(module, G1, source)
+    base = next(
+        copy.deepcopy(item)
+        for item in module.TABLE.items.values()
+        if item.get("record_type") == patch.PREGAME_SNAPSHOT_RECORD_TYPE
+    )
+    for index in range(patch._PREGAME_CANDIDATE_QUERY_PAGE_SIZE):
+        item = copy.deepcopy(base)
+        moment = (
+            dt("2026-07-13T17:15:01+00:00") + timedelta(microseconds=index)
+        ).isoformat()
+        item["SK"] = (
+            f"PREGAME#GAME#{base['game_identity']}#PERSISTED#{moment}"
+            f"#CREATED#{moment}#page-one-{index:04d}"
+        )
+        item["prediction_created_at_utc"] = moment
+        item["prediction_persisted_at_utc"] = moment
+        item["prediction_source_pull_at_utc"] = moment
+        module.TABLE.items[(item["PK"], item["SK"])] = item
+
+    scoring = patch._scoring_pulls(module, [source], G1)
+    row, proof, _, errors = patch._last_prelock_candidate(
+        module,
+        SLATE,
+        G1,
+        scoring,
+    )
+
+    assert errors == []
+    assert row is not None
+    assert proof["predictionPersistedAtUtc"] <= "2026-07-13T17:15:00+00:00"
+
+
+def test_candidate_query_bound_exhaustion_fails_closed():
+    class NeverEndingTable:
+        def query(self, **kwargs):
+            index = int(
+                str((kwargs.get("ExclusiveStartKey") or {}).get("SK") or "page-0")
+                .split("-")[-1]
+            )
+            return {
+                "Items": [],
+                "LastEvaluatedKey": {"PK": "pk", "SK": f"page-{index + 1}"},
+            }
+
+    module = SimpleNamespace(
+        history=SimpleNamespace(PULLS=NeverEndingTable()),
+    )
+    with pytest.raises(RuntimeError, match="PREGAME_CANDIDATE_QUERY_BOUND_EXCEEDED"):
+        patch._query_prediction_items(module, SLATE, "PREGAME#GAME#g1#")
+
+
+@pytest.mark.parametrize(
+    "mutation,expected_error",
+    [
+        (lambda item: item.update(record_type="wrong"), "persisted_prelock_record_type_invalid"),
+        (lambda item: item.update(data=[]), "persisted_prelock_data_not_object"),
+        (
+            lambda item: item["data"].update(
+                gameIdentity="provider:wrong",
+                gameId="provider:wrong",
+                sourcePredictionGameId="provider:wrong",
+            ),
+            "persisted_prelock_identity_mismatch",
+        ),
+        (
+            lambda item: item["data"].update(homeTeam="Wrong"),
+            "persisted_prelock_ordered_teams_mismatch",
+        ),
+        (
+            lambda item: (
+                item.update(prediction_created_at_utc=None, created_at=None),
+                item["data"].update(createdAt=None, created_at=None),
+            ),
+            "persisted_prelock_created_at_missing",
+        ),
+        (
+            lambda item: item.pop("prediction_persisted_at_utc"),
+            "persisted_prelock_persisted_at_missing",
+        ),
+        (
+            lambda item: (
+                item.update(prediction_source_pull_at_utc=None),
+                item["data"].update(
+                    predictionSourcePullAt=None,
+                    slatePredictionLock={},
+                    lastPossiblePredictionGate={},
+                    frozenFeatureVector={},
+                ),
+            ),
+            "persisted_prelock_source_at_missing",
+        ),
+    ],
+)
+def test_corrupt_exact_alias_candidate_never_becomes_no_data(
+    mutation,
+    expected_error,
+):
+    source = pull("2026-07-13T17:14:00+00:00", [G1], "corrupt-prelock")
+    module = build_module([source], "2026-07-13T17:17:00+00:00", seed=False)
+    persist_candidate(module, G1, source)
+    snapshot = next(
+        item
+        for item in module.TABLE.items.values()
+        if item.get("record_type") == patch.PREGAME_SNAPSHOT_RECORD_TYPE
+    )
+    mutation(snapshot)
+
+    result = module.run_lock(SLATE)
+
+    assert result["ok"] is False
+    assert result["failClosed"] is True
+    assert expected_error in str(result["failures"])
+    assert not lock_outcome_items(module)

@@ -154,6 +154,10 @@ def _official_evidence(status: Mapping[str, Any], slate_date: str) -> Dict[str, 
         "manifestGameCount": counts["gameCount"],
         "canonicalPredictionCount": counts["lockedPredictionCount"],
         "terminalNoPredictionCount": counts["terminalNoPredictionCount"],
+        "missedLockValidPrelockQuarantineCount": counts[
+            "missedLockValidPrelockQuarantineCount"
+        ],
+        "terminalExcludedCount": counts["terminalExcludedCount"],
         "lockOutcomeCount": counts["lockedStatusCount"],
         "offDay": counts["gameCount"] == 0,
         "officialStatusReadBound": True,

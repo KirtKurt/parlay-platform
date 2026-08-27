@@ -74,7 +74,7 @@ def test_unified_recovery_is_manual_exact_gap_then_target_only():
     assert "last_slate == target" in source
 
 
-def test_unified_recovery_binds_numeric_proof_to_requested_run_evidence():
+def test_unified_recovery_binds_terminal_only_proof_to_requested_run_evidence():
     source = UNIFIED_RECOVERY.read_text(encoding="utf-8")
 
     assert "status.get('requestedRunEvidence')" in source
@@ -117,6 +117,24 @@ def test_unified_recovery_does_not_confuse_current_slate_maturity_with_integrity
     assert "--after /tmp/unified-mlb-recovery/production-after.json" in after_step
     assert '--target-slate-date "$REPAIR_SLATE_DATE"' in source
     assert '--target-slate-date "$TARGET_SLATE_DATE"' in source
-    assert "accepted >= minimum" in source
-    assert "train_count >= minimum" in source
+    assert "MIN_ACCEPTED_ROWS" not in source
+    assert "numeric advancement" not in source
+    assert "HANDOFF_BASELINE_ACCEPTED_ROWS: '32'" in source
+    assert "HANDOFF_BASELINE_REJECTED_ROWS: '1'" in source
+    assert "HANDOFF_BASELINE_TRAIN_ROWS: '32'" in source
+    assert "RECOVERY_TERMINAL_GAME_COUNT: '15'" in source
+    assert "Capture signed pre-recovery learning baseline" in source
+    assert "accepted == baseline_accepted" in source
+    assert "rejected == baseline_rejected" in source
+    assert "train_count == baseline_train" in source
+    assert "finalized == baseline_finalized | {repair, target}" in source
+    assert "processed == baseline_processed | {repair, target}" in source
+    assert "len(finalized) == 5" in source
+    assert "len(processed) == 5" in source
+    assert "finalizedSlateDiagnostics" in source
+    assert "cooperativeCompletionReceipt" in source
+    assert "protectedLockReplayCooperativeReceiptVerified" in source
+    assert "terminal_no_data + quarantined" in source
+    assert "emittedTrainingRowCount" in source
+    assert "quarantinedRowsAdmittedToTraining" in source
     assert "productionAuthorityChanged') is not True" in source

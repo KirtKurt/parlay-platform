@@ -50,6 +50,12 @@ READINESS_VERSION = "MLB-LOCK-READINESS-v1-tminus60-tminus50"
 READINESS_RECORD_TYPE = "mlb_per_game_lock_readiness_checkpoint"
 LOCK_OUTCOME_VERSION = "MLB-LOCK-OUTCOME-v1-explicit-terminal-status"
 LOCK_OUTCOME_RECORD_TYPE = "mlb_immutable_per_game_lock_outcome"
+MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED = (
+    "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+)
+VALID_PRELOCK_QUARANTINE_AUTHORITY_VERSION = (
+    "MLB-VALID-PRELOCK-MISSED-LOCK-QUARANTINE-v1"
+)
 RELEASE_ASSESSMENT_VERSION = "MLB-PLAYABILITY-ASSESSMENT-v1-immutable-selection-bound"
 RELEASE_ASSESSMENT_RECORD_TYPE = "mlb_immutable_playability_assessment"
 READINESS_CHECKPOINT_MINUTES = (60, 50)
@@ -1669,11 +1675,19 @@ def _put_no_prediction_outcome(
         "lock_outcome_recorded": True,
         "locked_prediction": False,
         "canonical": False,
+        "canonical_prediction": False,
         "official_prediction": False,
         "playable": False,
         "blocked": True,
         "playability_block_reasons": ["NO_VALID_PREGAME_PREDICTION"],
         "training_eligible": False,
+        "accuracy_eligible": False,
+        "wager_allowed": False,
+        "prediction_adopted": False,
+        "operational_defect": False,
+        "canonical_prediction_complete": False,
+        "post_start_prediction_creation_allowed": False,
+        "immutable_prediction_rewrite_allowed": False,
         "training_exclusion_reasons": ["missing_immutable_prediction"],
         "reasons": sorted(set(str(reason) for reason in reasons if reason)),
         "provider_manifest_authority": copy.deepcopy(provider_manifest_authority),
@@ -1692,6 +1706,496 @@ def _put_no_prediction_outcome(
         "created_at": now.isoformat(),
     }
     return _put_write_once_record(module, item, fingerprint_field="lock_outcome_fingerprint")
+
+
+def _validated_valid_prelock_quarantine_authority(
+    module: Any,
+    slate: str,
+    game: Dict[str, Any],
+    candidate: Any,
+    proof: Any,
+    bound_scoring: Any,
+) -> Dict[str, Any]:
+    """Strongly bind a valid pre-lock snapshot without adopting its selection."""
+
+    if (
+        not isinstance(candidate, dict)
+        or not isinstance(proof, dict)
+        or not isinstance(bound_scoring, list)
+        or not bound_scoring
+        or proof.get("identityBindingMode") not in {
+            "exact_identity",
+            "official_game_pk",
+        }
+        or proof.get("createdAtOrBeforeCutoff") is not True
+        or proof.get("sourceAtOrBeforeCutoff") is not True
+        or proof.get("persistedAtOrBeforeCutoff") is not True
+        or proof.get("modelOrSignalRecomputedAtLock") is not False
+        or int(proof.get("rejectedNewerCandidateCount") or 0) != 0
+        or list(proof.get("rejectedNewerCandidates") or [])
+        or proof.get("persistenceProofType")
+        != PREGAME_PERSISTENCE_PROOF_TYPE
+        or proof.get("predictionPayloadFingerprintVersion")
+        != PAYLOAD_FINGERPRINT_VERSION
+    ):
+        raise RuntimeError("VALID_PRELOCK_QUARANTINE_PROOF_INVALID")
+
+    # Re-run the complete candidate selector at the write boundary.  This
+    # independently re-derives winner/side, real source price, probability and
+    # temporal provenance, and absence of result labels from strong storage.
+    rebound_candidate, rebound_proof, rebound_bound, rebound_errors = (
+        _last_prelock_candidate(
+            module,
+            slate,
+            game,
+            bound_scoring,
+        )
+    )
+    if (
+        rebound_errors
+        or not isinstance(rebound_candidate, dict)
+        or not isinstance(rebound_proof, dict)
+        or not rebound_bound
+        or _plain(rebound_candidate) != _plain(candidate)
+        or _plain(rebound_proof) != _plain(proof)
+        or _plain(rebound_bound) != _plain(bound_scoring)
+    ):
+        raise RuntimeError("VALID_PRELOCK_QUARANTINE_PROOF_INVALID")
+
+    expected_identity = _raw_game_identity(game)
+    candidate_identity = str(
+        proof.get("candidateGameIdentity") or ""
+    )
+    binding_mode = str(proof.get("identityBindingMode") or "")
+    expected_official_pk = _official_game_pk(game)
+    if (
+        not candidate_identity
+        or str(proof.get("stageGameIdentity") or "") != expected_identity
+        or (
+            binding_mode == "exact_identity"
+            and candidate_identity != expected_identity
+        )
+        or (
+            binding_mode == "official_game_pk"
+            and (
+                candidate_identity == expected_identity
+                or not expected_official_pk
+                or str(proof.get("candidateOfficialGamePk") or "")
+                != expected_official_pk
+                or str(proof.get("stageOfficialGamePk") or "")
+                != expected_official_pk
+            )
+        )
+    ):
+        raise RuntimeError("VALID_PRELOCK_QUARANTINE_IDENTITY_INVALID")
+
+    key = {
+        "PK": str(proof.get("pk") or "").strip(),
+        "SK": str(proof.get("sk") or "").strip(),
+    }
+    if not key["PK"] or not key["SK"]:
+        raise RuntimeError("VALID_PRELOCK_QUARANTINE_SNAPSHOT_KEY_MISSING")
+
+    # Reuse the canonical stage boundary validator against a manifest-derived
+    # synthetic stage.  The proof is never trusted to describe the snapshot it
+    # names: the validator strong-reads that exact key and binds its immutable
+    # row, marker contract, timestamps, source ID, fingerprints, and live-write
+    # acknowledgement back to this exact scheduled game.
+    stage_row = {
+        "gameId": game.get("game_id") or game.get("gameId")
+        or game.get("id") or expected_identity,
+        "gameIdentity": expected_identity,
+        "officialGamePk": _official_game_pk(game) or None,
+        "commenceTime": game.get("commence_time")
+        or game.get("commenceTime"),
+        "homeTeam": game.get("home_team") or game.get("homeTeam"),
+        "awayTeam": game.get("away_team") or game.get("awayTeam"),
+        "lastPrelockSelectionFingerprint": str(
+            proof.get("candidateSelectionFingerprint") or ""
+        ),
+    }
+    strict_stage = {
+        "slate_date": slate,
+        "candidate_proof": copy.deepcopy(proof),
+        "data": {"row": stage_row},
+    }
+    if _candidate_snapshot_authority_errors(
+        module.history.PULLS,
+        strict_stage,
+    ):
+        raise RuntimeError(
+            "VALID_PRELOCK_QUARANTINE_SNAPSHOT_PROOF_MISMATCH"
+        )
+
+    snapshot, read_error = _consistent_item_result(module.history.PULLS, key)
+    if read_error is not None:
+        raise read_error
+    if not isinstance(snapshot, dict):
+        raise RuntimeError("VALID_PRELOCK_QUARANTINE_SNAPSHOT_MISSING")
+    snapshot_row = snapshot.get("data")
+    if not isinstance(snapshot_row, dict):
+        raise RuntimeError("VALID_PRELOCK_QUARANTINE_SNAPSHOT_ROW_INVALID")
+    expected_snapshot_pk = f"GAME_WINNERS#mlb#{slate}"
+    expected_official_pk = _official_game_pk(game)
+    actual_snapshot_identity = str(
+        snapshot.get("game_identity") or _raw_game_identity(snapshot_row)
+    )
+    actual_row_identity = _raw_game_identity(snapshot_row)
+    expected_live_sk = (
+        f"GAME#{snapshot_row.get('commenceTime') or 'unknown'}#"
+        f"{actual_snapshot_identity or 'unknown'}"
+    )
+    expected_source_pk = f"PULLS#mlb#{slate}"
+    source_storage_sk = str(
+        proof.get("predictionSourcePullStorageSk") or ""
+    )
+    source_slot = history_contract.pull_slot_start(
+        proof.get("predictionSourcePullAtUtc")
+    )
+    canonical_source_sk = (
+        f"PULL#SLOT#{source_slot.isoformat()}"
+        if source_slot is not None
+        else ""
+    )
+    legacy_source_sk = (
+        f"PULL#{proof.get('predictionSourcePullAtUtc')}#"
+        f"{proof.get('predictionSourcePullId')}"
+    )
+    marker_proof_fields = (
+        ("record_type", "recordType"),
+        ("snapshot_version", "snapshotVersion"),
+        ("snapshot_role", "snapshotRole"),
+        ("public_authority_version", "publicAuthorityVersion"),
+        ("user_visible", "userVisible"),
+        ("display_prediction", "displayPrediction"),
+        ("display_status", "displayStatus"),
+        ("display_surface", "displaySurface"),
+        ("signal_policy_version", "signalPolicyVersion"),
+    )
+    if (
+        snapshot.get("record_type") != PREGAME_SNAPSHOT_RECORD_TYPE
+        or snapshot.get("immutable_pregame") is not True
+        or snapshot.get("write_once") is not True
+        or str(snapshot.get("slate_date") or "") != slate
+        or key["PK"] != expected_snapshot_pk
+        or str(snapshot.get("PK") or "") != key["PK"]
+        or str(snapshot.get("SK") or "") != key["SK"]
+        or not key["SK"].startswith(
+            f"PREGAME#GAME#{candidate_identity}#"
+        )
+        or actual_snapshot_identity != candidate_identity
+        or actual_row_identity != candidate_identity
+        or not expected_official_pk
+        or _official_game_pk(snapshot) not in {
+            "",
+            expected_official_pk,
+        }
+        or _official_game_pk(snapshot_row) != expected_official_pk
+        or not _ordered_teams_match(game, snapshot_row)
+        or _identity_start(snapshot_row) != _identity_start(game)
+        or str(snapshot.get("prediction_persistence_write_pk") or "")
+        != expected_snapshot_pk
+        or str(snapshot.get("prediction_persistence_write_sk") or "")
+        != expected_live_sk
+        or str(proof.get("persistenceWritePk") or "")
+        != expected_snapshot_pk
+        or str(proof.get("persistenceWriteSk") or "")
+        != expected_live_sk
+        or str(proof.get("predictionSourcePullStoragePk") or "")
+        != expected_source_pk
+        or source_storage_sk
+        not in {canonical_source_sk, legacy_source_sk}
+        or (
+            source_storage_sk == canonical_source_sk
+            and str(
+                proof.get("predictionSourceCanonicalSlotStartUtc")
+                or ""
+            )
+            != (source_slot.isoformat() if source_slot is not None else "")
+        )
+        or any(
+            snapshot.get(stored_key) != proof.get(proof_key)
+            for stored_key, proof_key in marker_proof_fields
+        )
+        or _payload_fingerprint(
+            snapshot,
+            PAYLOAD_FINGERPRINT_VERSION,
+        )
+        != str(proof.get("candidateSnapshotFingerprint") or "")
+        or _payload_fingerprint(
+            snapshot_row,
+            PAYLOAD_FINGERPRINT_VERSION,
+        )
+        != str(proof.get("candidateRowFingerprint") or "")
+        or _payload_fingerprint(
+            candidate,
+            PAYLOAD_FINGERPRINT_VERSION,
+        )
+        != str(proof.get("candidateRowFingerprint") or "")
+        or str(snapshot.get("prediction_payload_fingerprint") or "")
+        != str(proof.get("predictionPayloadFingerprint") or "")
+        or str(snapshot.get("prediction_persistence_write_pk") or "")
+        != str(proof.get("persistenceWritePk") or "")
+        or str(snapshot.get("prediction_persistence_write_sk") or "")
+        != str(proof.get("persistenceWriteSk") or "")
+        or _payload_fingerprint(
+            _selection_material(snapshot_row),
+            PAYLOAD_FINGERPRINT_VERSION,
+        )
+        != str(proof.get("candidateSelectionFingerprint") or "")
+        or len(str(proof.get("predictionSourcePullFingerprint") or "")) != 64
+        or _public_prelock_marker_errors(snapshot, snapshot_row)
+    ):
+        raise RuntimeError("VALID_PRELOCK_QUARANTINE_SNAPSHOT_PROOF_MISMATCH")
+
+    timestamps = {
+        "predictionCreatedAtUtc": str(
+            proof.get("predictionCreatedAtUtc") or ""
+        ),
+        "predictionPersistedAtUtc": str(
+            proof.get("predictionPersistedAtUtc") or ""
+        ),
+        "predictionSourcePullAtUtc": str(
+            proof.get("predictionSourcePullAtUtc") or ""
+        ),
+        "evaluationCutoffAtUtc": str(
+            proof.get("evaluationCutoffAtUtc") or ""
+        ),
+    }
+    parsed = {field: _parse_iso(value) for field, value in timestamps.items()}
+    expected_cutoff = _lock_at(module, game)
+    actual_created = _candidate_created_at(snapshot, snapshot_row)
+    actual_persisted = _candidate_persisted_at(snapshot)
+    actual_source = _candidate_source_at(snapshot, snapshot_row)
+    actual_source_id = _candidate_source_id(snapshot, snapshot_row)
+    if (
+        any(value is None for value in parsed.values())
+        or expected_cutoff is None
+        or parsed["evaluationCutoffAtUtc"] != expected_cutoff
+        or actual_created != parsed["predictionCreatedAtUtc"]
+        or actual_persisted != parsed["predictionPersistedAtUtc"]
+        or actual_source != parsed["predictionSourcePullAtUtc"]
+        or actual_source_id
+        != str(proof.get("predictionSourcePullId") or "")
+        or actual_source > actual_created
+        or actual_created > actual_persisted
+        or parsed["predictionCreatedAtUtc"]
+        > parsed["evaluationCutoffAtUtc"]
+        or parsed["predictionPersistedAtUtc"]
+        > parsed["evaluationCutoffAtUtc"]
+        or parsed["predictionSourcePullAtUtc"]
+        > parsed["evaluationCutoffAtUtc"]
+    ):
+        raise RuntimeError("VALID_PRELOCK_QUARANTINE_TIMESTAMP_INVALID")
+
+    source_id = str(proof.get("predictionSourcePullId") or "")
+    source_pk = str(
+        proof.get("predictionSourcePullStoragePk") or ""
+    )
+    source_sk = str(
+        proof.get("predictionSourcePullStorageSk") or ""
+    )
+    source_pull, rebound_scoring = _source_pull_for_candidate(
+        module,
+        bound_scoring,
+        parsed["predictionSourcePullAtUtc"],
+        source_id,
+    )
+    source_item, source_read_error = _consistent_item_result(
+        module.history.PULLS,
+        {"PK": source_pk, "SK": source_sk},
+    )
+    source_readback = (
+        source_item.get("data")
+        if isinstance(source_item, dict)
+        else None
+    )
+    if source_read_error is not None:
+        raise source_read_error
+    if (
+        not source_id
+        or not source_pk
+        or not source_sk
+        or not isinstance(source_pull, dict)
+        or not rebound_scoring
+        or not isinstance(source_item, dict)
+        or source_item.get("record_type") != "pull_run"
+        or not isinstance(source_readback, dict)
+        or str(source_readback.get("pull_id") or "") != source_id
+        or _parse_iso(source_readback.get("pulled_at"))
+        != parsed["predictionSourcePullAtUtc"]
+        or _status_pull_payload_fingerprint(
+            module.history.PULLS,
+            {"PK": source_pk, "SK": source_sk},
+            source_readback,
+        )
+        != str(proof.get("predictionSourcePullFingerprint") or "")
+        or history_contract.pull_payload_fingerprint(source_pull)
+        != str(proof.get("predictionSourcePullFingerprint") or "")
+    ):
+        raise RuntimeError(
+            "VALID_PRELOCK_QUARANTINE_SOURCE_PULL_PROOF_MISMATCH"
+        )
+
+    return {
+        "version": VALID_PRELOCK_QUARANTINE_AUTHORITY_VERSION,
+        "candidatePk": key["PK"],
+        "candidateSk": key["SK"],
+        "candidateItemFingerprint": (
+            _cooperative_terminal_item_fingerprint(snapshot)
+        ),
+        "candidateSnapshotFingerprint": str(
+            proof.get("candidateSnapshotFingerprint") or ""
+        ),
+        "candidatePayloadFingerprint": str(
+            proof.get("predictionPayloadFingerprint") or ""
+        ),
+        "candidatePayloadFingerprintVersion": (
+            PAYLOAD_FINGERPRINT_VERSION
+        ),
+        "candidateRowFingerprint": str(
+            proof.get("candidateRowFingerprint") or ""
+        ),
+        "candidateSelectionFingerprint": str(
+            proof.get("candidateSelectionFingerprint") or ""
+        ),
+        "sourcePullFingerprint": str(
+            proof.get("predictionSourcePullFingerprint") or ""
+        ),
+        "sourcePullStoragePk": str(
+            proof.get("predictionSourcePullStoragePk") or ""
+        ),
+        "sourcePullStorageSk": str(
+            proof.get("predictionSourcePullStorageSk") or ""
+        ),
+        **timestamps,
+        "identityBindingMode": binding_mode,
+        "candidateGameIdentity": candidate_identity,
+        "stageGameIdentity": expected_identity,
+        "candidateOfficialGamePk": expected_official_pk,
+        "stageOfficialGamePk": expected_official_pk,
+        "boundScoringPullCount": len(bound_scoring),
+        "rejectedNewerCandidateCount": 0,
+        "modelOrSignalRecomputedAtLock": False,
+        "predictionAdopted": False,
+    }
+
+
+def _put_valid_prelock_missed_lock_quarantine(
+    module: Any,
+    slate: str,
+    game: Dict[str, Any],
+    now: datetime,
+    candidate: Any,
+    proof: Any,
+    bound_scoring: Any,
+    provider_manifest_authority: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Write a terminal exclusion; never materialize the persisted selection."""
+
+    authority = _validated_valid_prelock_quarantine_authority(
+        module,
+        slate,
+        game,
+        candidate,
+        proof,
+        bound_scoring,
+    )
+    if (
+        not isinstance(provider_manifest_authority, dict)
+        or not provider_manifest_authority
+    ):
+        raise RuntimeError("VALID_PRELOCK_QUARANTINE_MANIFEST_AUTHORITY_MISSING")
+    key = _lock_outcome_key(module, slate, game)
+    existing = _get_record(module, key)
+    if existing:
+        return existing
+    start = _start(module, game)
+    lock_at = _lock_at(module, game)
+    item = {
+        **key,
+        "record_type": LOCK_OUTCOME_RECORD_TYPE,
+        "version": LOCK_OUTCOME_VERSION,
+        "sport": "mlb",
+        "slate_date": slate,
+        "game_identity": game_identity(game),
+        "game_id": game.get("game_id") or game.get("id"),
+        "officialGamePk": _official_game_pk(game) or None,
+        "commence_time": start.isoformat() if start else None,
+        "scheduled_lock_at_utc": lock_at.isoformat() if lock_at else None,
+        "recorded_at_utc": now.isoformat(),
+        "lock_status": MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED,
+        "lock_outcome_recorded": True,
+        "locked_prediction": False,
+        "canonical": False,
+        "canonical_prediction": False,
+        "official_prediction": False,
+        "playable": False,
+        "blocked": True,
+        "playability_block_reasons": [
+            "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+        ],
+        "training_eligible": False,
+        "accuracy_eligible": False,
+        "wager_allowed": False,
+        "prediction_adopted": False,
+        "operational_defect": True,
+        "canonical_prediction_complete": False,
+        "training_exclusion_reasons": [
+            "missing_immutable_tminus45_lock",
+            "valid_prelock_candidate_not_promoted",
+        ],
+        "reasons": [
+            "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+        ],
+        "valid_prelock_quarantine_authority": copy.deepcopy(authority),
+        "valid_prelock_quarantine_authority_fingerprint": hashlib.sha256(
+            json.dumps(
+                _plain(authority),
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest(),
+        "provider_manifest_authority": copy.deepcopy(
+            provider_manifest_authority
+        ),
+        "provider_manifest_fingerprint": (
+            provider_manifest_authority.get("fingerprint")
+        ),
+        "provider_manifest_pk": provider_manifest_authority.get("pk"),
+        "provider_manifest_sk": provider_manifest_authority.get("sk"),
+        "manifest_game_count": provider_manifest_authority.get("gameCount"),
+        "data": {
+            "manifestGameIdentities": list(
+                provider_manifest_authority.get(
+                    "canonicalGameIdentities"
+                )
+                or []
+            ),
+            "row": {
+                "homeTeam": game.get("home_team") or game.get("homeTeam"),
+                "awayTeam": game.get("away_team") or game.get("awayTeam"),
+            },
+        },
+        "post_start_prediction_creation_allowed": False,
+        "immutable_prediction_rewrite_allowed": False,
+        "write_once": True,
+        "created_at": now.isoformat(),
+    }
+    manifest_errors = _provider_manifest_authority_errors(
+        module.history.PULLS,
+        item,
+    )
+    if manifest_errors:
+        raise RuntimeError(
+            "VALID_PRELOCK_QUARANTINE_MANIFEST_AUTHORITY_INVALID"
+        )
+    return _put_write_once_record(
+        module,
+        item,
+        fingerprint_field="lock_outcome_fingerprint",
+    )
 
 
 def _cooperative_terminal_lock_outcome_observation(
@@ -1769,10 +2273,9 @@ def _is_no_prediction_candidate_failure(errors: Iterable[str]) -> bool:
     # A complete absence is a terminal data outcome.  A candidate that exists
     # but fails integrity validation is an operational/security failure and
     # must stay retryable and fail closed rather than being relabelled no-data.
-    return values in (
-        {"no_persisted_user_visible_platform_prelock_prediction_at_or_before_cutoff"},
-        {"no_valid_user_visible_platform_prelock_prediction"},
-    )
+    return values == {
+        "no_persisted_user_visible_platform_prelock_prediction_at_or_before_cutoff"
+    }
 
 
 def _ordered_team_identity(game: Dict[str, Any]) -> Tuple[str, str]:
@@ -2571,6 +3074,21 @@ def _consistent_item(table: Any, key: Dict[str, str]) -> Optional[Dict[str, Any]
     return _consistent_item_result(table, key)[0]
 
 
+
+def _exact_nonnegative_manifest_integer(
+    value: Any,
+) -> int:
+    if isinstance(value, bool):
+        raise ValueError("manifest_integer_invalid")
+    numeric = Decimal(str(value))
+    if (
+        not numeric.is_finite()
+        or numeric < 0
+        or numeric != numeric.to_integral_value()
+    ):
+        raise ValueError("manifest_integer_invalid")
+    return int(numeric)
+
 def _provider_manifest_authority_errors(table: Any, item: Dict[str, Any]) -> List[str]:
     """Verify the stage's full-slate pointer against its write-once record."""
     import inqsi_pull_history as history_contract
@@ -2618,8 +3136,12 @@ def _provider_manifest_authority_errors(table: Any, item: Dict[str, Any]) -> Lis
     canonical_identities = [game_identity(game) for game in games]
     declared_canonical = list((item.get("data") or {}).get("manifestGameIdentities") or [])
     try:
-        authority_count = int(authority.get("gameCount"))
-        stage_count = int(item.get("manifest_game_count"))
+        authority_count = _exact_nonnegative_manifest_integer(
+            authority.get("gameCount")
+        )
+        stage_count = _exact_nonnegative_manifest_integer(
+            item.get("manifest_game_count")
+        )
     except Exception:
         authority_count = stage_count = -1
     if authority_count != len(games) or stage_count != len(games):
@@ -2716,7 +3238,9 @@ def _provider_manifest_authority_errors(table: Any, item: Dict[str, Any]) -> Lis
             ):
                 errors.append("schedule_revision_authority_identity_mismatch")
             try:
-                schedule_count = int(schedule_authority.get("gameCount"))
+                schedule_count = _exact_nonnegative_manifest_integer(
+                    schedule_authority.get("gameCount")
+                )
             except (TypeError, ValueError):
                 schedule_count = -1
             if schedule_count != len(schedule_games) or len(schedule_games) != len(games):
@@ -4029,19 +4553,65 @@ def _raw_game_identity(game: Dict[str, Any]) -> str:
     return identity.replace("provider:", "", 1) if identity.startswith("provider:") else identity
 
 
-def _query_prediction_items(module: Any, slate: str, prefix: str, limit: int = 500) -> List[Dict[str, Any]]:
+_PREGAME_CANDIDATE_QUERY_PAGE_SIZE = 500
+_PREGAME_CANDIDATE_QUERY_MAX_PAGES = 20
+
+
+def _query_prediction_items(
+    module: Any,
+    slate: str,
+    prefix: str,
+    limit: int = _PREGAME_CANDIDATE_QUERY_PAGE_SIZE,
+) -> List[Dict[str, Any]]:
+    """Strong-read an exact snapshot prefix without proving absence from truncation."""
+
+    if (
+        isinstance(limit, bool)
+        or not isinstance(limit, int)
+        or limit < 1
+        or limit > _PREGAME_CANDIDATE_QUERY_PAGE_SIZE
+    ):
+        raise RuntimeError("PREGAME_CANDIDATE_QUERY_LIMIT_INVALID")
     table = module.history.PULLS
-    response = table.query(
-        KeyConditionExpression="PK = :pk AND begins_with(SK, :prefix)",
-        ExpressionAttributeValues={
-            ":pk": f"GAME_WINNERS#mlb#{slate}",
-            ":prefix": prefix,
-        },
-        ConsistentRead=True,
-        ScanIndexForward=False,
-        Limit=limit,
-    )
-    return [copy.deepcopy(item) for item in (response.get("Items") or []) if isinstance(item, dict)]
+    items: List[Dict[str, Any]] = []
+    exclusive_start_key: Optional[Dict[str, Any]] = None
+    for page_index in range(_PREGAME_CANDIDATE_QUERY_MAX_PAGES):
+        query: Dict[str, Any] = {
+            "KeyConditionExpression": (
+                "PK = :pk AND begins_with(SK, :prefix)"
+            ),
+            "ExpressionAttributeValues": {
+                ":pk": f"GAME_WINNERS#mlb#{slate}",
+                ":prefix": prefix,
+            },
+            "ConsistentRead": True,
+            "ScanIndexForward": False,
+            "Limit": limit,
+        }
+        if exclusive_start_key is not None:
+            query["ExclusiveStartKey"] = exclusive_start_key
+        response = table.query(**query)
+        if not isinstance(response, dict):
+            raise RuntimeError("PREGAME_CANDIDATE_QUERY_RESPONSE_INVALID")
+        raw_items = response.get("Items")
+        if not isinstance(raw_items, list):
+            raise RuntimeError("PREGAME_CANDIDATE_QUERY_ITEMS_INVALID")
+        items.extend(
+            copy.deepcopy(item)
+            for item in raw_items
+            if isinstance(item, dict)
+        )
+        last_evaluated_key = response.get("LastEvaluatedKey")
+        if last_evaluated_key in (None, {}):
+            return items
+        if not isinstance(last_evaluated_key, dict):
+            raise RuntimeError(
+                "PREGAME_CANDIDATE_QUERY_LAST_EVALUATED_KEY_INVALID"
+            )
+        if page_index + 1 >= _PREGAME_CANDIDATE_QUERY_MAX_PAGES:
+            raise RuntimeError("PREGAME_CANDIDATE_QUERY_BOUND_EXCEEDED")
+        exclusive_start_key = copy.deepcopy(last_evaluated_key)
+    raise RuntimeError("PREGAME_CANDIDATE_QUERY_BOUND_EXCEEDED")
 
 
 def _candidate_created_at(item: Dict[str, Any], row: Dict[str, Any]) -> Optional[datetime]:
@@ -4313,6 +4883,80 @@ def _candidate_price_matches_source(
         return False
 
 
+def _candidate_outcome_material_errors(row: Dict[str, Any]) -> List[str]:
+    """Reject any retrospective result/label material in a pregame snapshot."""
+
+    forbidden = {
+        "actual",
+        "actuals",
+        "correct",
+        "finalscore",
+        "finalscores",
+        "homewon",
+        "label",
+        "labels",
+        "outcome",
+        "outcomes",
+        "pickcorrect",
+        "result",
+        "results",
+        "success",
+        "target",
+        "targets",
+        "winner",
+    }
+    errors: set[str] = set()
+    pending: List[Tuple[Tuple[str, ...], Any]] = [((), row)]
+    visited = 0
+    while pending:
+        path, value = pending.pop()
+        visited += 1
+        if visited > 2000 or len(path) > 16:
+            return [
+                "persisted_prelock_outcome_material_scan_bound_exceeded"
+            ]
+        if isinstance(value, dict):
+            for key, child in value.items():
+                key_text = str(key)
+                normalized = "".join(
+                    character
+                    for character in key_text.lower()
+                    if character.isalnum()
+                )
+                child_path = (*path, key_text)
+                # The clean-cohort feature vector deliberately reserves these
+                # two empty labels before settlement.  Any populated value, or
+                # any other label container, remains retrospective authority.
+                frozen_empty_label = bool(
+                    path == ("frozenFeatureVector", "labels")
+                    and normalized in {"homewon", "pickcorrect"}
+                    and child is None
+                )
+                reserved_label_container = bool(
+                    child_path == ("frozenFeatureVector", "labels")
+                    and isinstance(child, dict)
+                    and set(child) == {"homeWon", "pickCorrect"}
+                    and child.get("homeWon") is None
+                    and child.get("pickCorrect") is None
+                )
+                material_present = child not in (None, "", [], {})
+                if (
+                    normalized in forbidden
+                    and material_present
+                    and not frozen_empty_label
+                    and not reserved_label_container
+                ):
+                    errors.add(
+                        "persisted_prelock_contains_outcome_material:"
+                        + ".".join(child_path)
+                    )
+                pending.append((child_path, child))
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                pending.append(((*path, str(index)), child))
+    return sorted(errors)
+
+
 def _last_prelock_candidate(
     module: Any,
     slate: str,
@@ -4338,42 +4982,100 @@ def _last_prelock_candidate(
     expected_home = _norm(game.get("home_team") or game.get("homeTeam"))
     expected_away = _norm(game.get("away_team") or game.get("awayTeam"))
     eligible: List[Tuple[datetime, datetime, datetime, Dict[str, Any], Dict[str, Any]]] = []
-    observed_prelock = 0
-    for item in _candidate_items(module, slate, game, scoring):
+    preliminary_rejected: List[Dict[str, Any]] = []
+    candidate_items = _candidate_items(
+        module,
+        slate,
+        game,
+        scoring,
+    )
+    for item in candidate_items:
+        preliminary_errors: List[str] = []
+        if not isinstance(item, dict):
+            preliminary_rejected.append(
+                {
+                    "sk": None,
+                    "errors": ["persisted_prelock_item_not_object"],
+                }
+            )
+            continue
         if item.get("record_type") != PREGAME_SNAPSHOT_RECORD_TYPE:
-            continue
-        row = item.get("data") or {}
-        if not isinstance(row, dict):
-            continue
-        if (
+            preliminary_errors.append(
+                "persisted_prelock_record_type_invalid"
+            )
+        raw_row = item.get("data")
+        if not isinstance(raw_row, dict):
+            preliminary_errors.append(
+                "persisted_prelock_data_not_object"
+            )
+            row: Dict[str, Any] = {}
+        else:
+            row = raw_row
+        if row and (
             not _same_game(game, row)
             and _raw_game_identity(row) not in candidate_aliases
         ):
-            continue
-        if (
-            _norm(row.get("homeTeam") or row.get("home_team")) != expected_home
-            or _norm(row.get("awayTeam") or row.get("away_team")) != expected_away
+            preliminary_errors.append(
+                "persisted_prelock_identity_mismatch"
+            )
+        if row and (
+            _norm(row.get("homeTeam") or row.get("home_team"))
+            != expected_home
+            or _norm(row.get("awayTeam") or row.get("away_team"))
+            != expected_away
         ):
-            continue
+            preliminary_errors.append(
+                "persisted_prelock_ordered_teams_mismatch"
+            )
         created_at = _candidate_created_at(item, row)
         persisted_at = _candidate_persisted_at(item)
         source_at = _candidate_source_at(item, row)
+        if not created_at:
+            preliminary_errors.append(
+                "persisted_prelock_created_at_missing"
+            )
+        if not persisted_at:
+            preliminary_errors.append(
+                "persisted_prelock_persisted_at_missing"
+            )
+        if not source_at:
+            preliminary_errors.append(
+                "persisted_prelock_source_at_missing"
+            )
+        if preliminary_errors:
+            preliminary_rejected.append(
+                {
+                    "sk": item.get("SK"),
+                    "errors": sorted(set(preliminary_errors)),
+                }
+            )
+            continue
         if (
-            not created_at
-            or not persisted_at
-            or not source_at
-            or created_at > selection_cutoff
+            created_at > selection_cutoff
             or persisted_at > selection_cutoff
             or source_at > selection_cutoff
         ):
+            # A well-formed candidate whose complete time authority is after
+            # the cutoff is conclusive non-prelock evidence, not corruption.
             continue
-        observed_prelock += 1
-        eligible.append((persisted_at, created_at, source_at, item, row))
+        eligible.append(
+            (persisted_at, created_at, source_at, item, row)
+        )
     if not eligible:
+        preliminary_errors = sorted(
+            {
+                error
+                for rejection in preliminary_rejected
+                for error in (rejection.get("errors") or [])
+            }
+        )
+        if preliminary_errors:
+            return None, None, [], [
+                "no_valid_user_visible_platform_prelock_prediction",
+                *preliminary_errors,
+            ]
         return None, None, [], [
             "no_persisted_user_visible_platform_prelock_prediction_at_or_before_cutoff"
-            if observed_prelock == 0
-            else "no_valid_user_visible_platform_prelock_prediction"
         ]
 
     rejected: List[Dict[str, Any]] = []
@@ -4467,12 +5169,7 @@ def _last_prelock_candidate(
         source_age = (selection_cutoff - source_at).total_seconds() / 60.0
         # Age is a release/training reliability gate, not an integrity error.
         # A source-authentic pre-cutoff winner still receives its T-45 lock.
-        for key in ("winner", "correct", "success", "homeWon", "pickCorrect", "outcome", "finalScore"):
-            if key in row:
-                errors.append(f"persisted_prelock_contains_{key}")
-        labels = (row.get("frozenFeatureVector") or {}).get("labels") or {}
-        if labels.get("homeWon") is not None or labels.get("pickCorrect") is not None:
-            errors.append("persisted_prelock_vector_contains_outcome")
+        errors.extend(_candidate_outcome_material_errors(row))
         try:
             import mlb_ml_feature_missingness_v1 as missingness
             import mlb_temporal_features_v1 as temporal
@@ -5193,7 +5890,7 @@ def _cooperative_terminal_evidence_fingerprint(
     ).hexdigest()
 
 
-COOPERATIVE_TERMINAL_EVIDENCE_MAX_ITEMS_PER_GAME = 4
+COOPERATIVE_TERMINAL_EVIDENCE_MAX_ITEMS_PER_GAME = 5
 
 
 def _cooperative_terminal_dependency_keys(
@@ -5277,7 +5974,10 @@ def _cooperative_terminal_authority_evidence(
         "durableIdentity": durable_identity,
         "terminalState": terminal_state,
     }
-    if terminal_state == "LOCKED_NO_PREDICTION_DATA":
+    if terminal_state in {
+        "LOCKED_NO_PREDICTION_DATA",
+        MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED,
+    }:
         if not isinstance(outcome, dict):
             raise RuntimeError(
                 "COOPERATIVE_TERMINAL_OUTCOME_EVIDENCE_MISSING"
@@ -5292,6 +5992,111 @@ def _cooperative_terminal_authority_evidence(
                 ),
             }
         )
+        if (
+            terminal_state
+            == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+        ):
+            quarantine = outcome.get(
+                "valid_prelock_quarantine_authority"
+            )
+            if not isinstance(quarantine, dict):
+                raise RuntimeError(
+                    "COOPERATIVE_TERMINAL_QUARANTINE_EVIDENCE_MISSING"
+                )
+            candidate_key = {
+                "PK": str(quarantine.get("candidatePk") or ""),
+                "SK": str(quarantine.get("candidateSk") or ""),
+            }
+            candidate_item, candidate_error = _consistent_item_result(
+                module.history.PULLS,
+                candidate_key,
+            )
+            if candidate_error is not None:
+                raise candidate_error
+            if (
+                not isinstance(candidate_item, dict)
+                or _cooperative_terminal_item_fingerprint(candidate_item)
+                != str(
+                    quarantine.get("candidateItemFingerprint") or ""
+                )
+            ):
+                raise RuntimeError(
+                    "COOPERATIVE_TERMINAL_QUARANTINE_CANDIDATE_MISMATCH"
+                )
+            items.append(
+                {
+                    "tableRole": "PULLS_TABLE",
+                    "PK": candidate_key["PK"],
+                    "SK": candidate_key["SK"],
+                    "itemFingerprint": (
+                        _cooperative_terminal_item_fingerprint(
+                            candidate_item
+                        )
+                    ),
+                }
+            )
+            source_key = {
+                "PK": str(quarantine.get("sourcePullStoragePk") or ""),
+                "SK": str(quarantine.get("sourcePullStorageSk") or ""),
+            }
+            source_item, source_error = _consistent_item_result(
+                module.history.PULLS,
+                source_key,
+            )
+            source_payload = (
+                source_item.get("data")
+                if isinstance(source_item, dict)
+                else None
+            )
+            if source_error is not None:
+                raise source_error
+            if (
+                not isinstance(source_item, dict)
+                or source_item.get("record_type") != "pull_run"
+                or not isinstance(source_payload, dict)
+                or _status_pull_payload_fingerprint(
+                    module.history.PULLS,
+                    source_key,
+                    source_payload,
+                )
+                != str(quarantine.get("sourcePullFingerprint") or "")
+            ):
+                raise RuntimeError(
+                    "COOPERATIVE_TERMINAL_QUARANTINE_SOURCE_MISMATCH"
+                )
+            items.append(
+                {
+                    "tableRole": "PULLS_TABLE",
+                    "PK": source_key["PK"],
+                    "SK": source_key["SK"],
+                    "itemFingerprint": (
+                        _cooperative_terminal_item_fingerprint(source_item)
+                    ),
+                }
+            )
+            evidence.update(
+                {
+                    "quarantineAuthorityFingerprint": str(
+                        outcome.get(
+                            "valid_prelock_quarantine_authority_fingerprint"
+                        )
+                        or ""
+                    ),
+                    "candidateItemFingerprint": str(
+                        quarantine.get("candidateItemFingerprint") or ""
+                    ),
+                    "candidateSnapshotFingerprint": str(
+                        quarantine.get("candidateSnapshotFingerprint") or ""
+                    ),
+                    "candidateSelectionFingerprint": str(
+                        quarantine.get("candidateSelectionFingerprint") or ""
+                    ),
+                    "sourcePullFingerprint": str(
+                        quarantine.get("sourcePullFingerprint") or ""
+                    ),
+                    "predictionAdopted": False,
+                }
+            )
         evidence.update(
             {
                 "lockOutcomeFingerprint": str(
@@ -5437,7 +6242,15 @@ def _cooperative_terminal_authority_evidence(
             "COOPERATIVE_TERMINAL_EVIDENCE_STATE_INVALID"
         )
 
-    authority_item = outcome if terminal_state == "LOCKED_NO_PREDICTION_DATA" else stored_stage
+    authority_item = (
+        outcome
+        if terminal_state
+        in {
+            "LOCKED_NO_PREDICTION_DATA",
+            MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED,
+        }
+        else stored_stage
+    )
     dependency_keys = _cooperative_terminal_dependency_keys(
         authority_item or {},
         terminal_state=terminal_state,
@@ -5465,7 +6278,12 @@ def _cooperative_terminal_authority_evidence(
         not in primary_keys
     )
     evidence["authorityItemCount"] = (
-        1 if terminal_state == "LOCKED_NO_PREDICTION_DATA" else 2
+        1
+        if terminal_state == "LOCKED_NO_PREDICTION_DATA"
+        else 3
+        if terminal_state
+        == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+        else 2
     )
     evidence["dependencyItemCount"] = (
         len(items) - evidence["authorityItemCount"]
@@ -5709,8 +6527,16 @@ def _progress(
         if errors:
             state = "INVALID_STAGE_BLOCKED"
         elif outcome and not stage:
-            outcomes[identity] = outcome
-            state = "LOCKED_NO_PREDICTION_DATA"
+            outcome_status = str(outcome.get("lock_status") or "")
+            if outcome_status in {
+                "LOCKED_NO_PREDICTION_DATA",
+                MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED,
+            }:
+                outcomes[identity] = outcome
+                state = outcome_status
+            else:
+                errors = ["lock_outcome_status_invalid"]
+                state = "INVALID_STAGE_BLOCKED"
         elif not stage and start and now >= start:
             state = "MISSED_NOT_BACKFILLED"
         elif not stage and lock_at and now >= lock_at and now < (_cutoff_stable_at(module, game) or lock_at):
@@ -5818,7 +6644,20 @@ def _progress(
             "locked": locked_prediction,
             "lockedPrediction": locked_prediction,
             "canonical": locked_prediction,
+            "canonicalPrediction": locked_prediction,
             "officialPrediction": locked_prediction,
+            "accuracyEligible": (
+                stage_row.get("accuracyEligible") is not False
+                if locked_prediction
+                else False
+            ),
+            "wagerAllowed": playable if locked_prediction else False,
+            "predictionAdopted": locked_prediction,
+            "operationalDefect": bool(
+                state
+                == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+            ),
+            "canonicalPredictionComplete": locked_prediction,
             "predictedWinner": stage_row.get("predictedWinner") if locked_prediction else None,
             "predictedSide": stage_row.get("predictedSide") if locked_prediction else None,
             "selectionFingerprint": stage_row.get("lastPrelockSelectionFingerprint") if locked_prediction else None,
@@ -5862,7 +6701,17 @@ def _progress(
         "canonicalCount": len(canonical),
         "lockedPredictionCount": len(canonical),
         "lockOutcomeCount": len(canonical) + len(outcomes),
-        "noPredictionDataCount": len(outcomes),
+        "noPredictionDataCount": len([
+            outcome
+            for outcome in outcomes.values()
+            if outcome.get("lock_status") == "LOCKED_NO_PREDICTION_DATA"
+        ]),
+        "missedLockValidPrelockQuarantineCount": len([
+            outcome
+            for outcome in outcomes.values()
+            if outcome.get("lock_status")
+            == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+        ]),
         "playableCount": len([row for row in rows if row.get("playable") is True]),
         "blockedCount": len([row for row in rows if row.get("blocked") is True]),
         "trainingEligibleCount": len([row for row in rows if row.get("trainingEligible") is True]),
@@ -6238,7 +7087,7 @@ def apply(module: Any) -> Any:
             except Exception as exc:
                 roster_observability["rosterAuthorityReadError"] = f"{type(exc).__name__}:{exc}"
         now = module._now_utc().astimezone(timezone.utc)
-        progress = _progress(module, slate, pulls, manifest, now, ensure_canonical=False) if manifest else {"games": [], "stagedCount": 0, "canonicalCount": 0, "lockedPredictionCount": 0, "lockOutcomeCount": 0, "noPredictionDataCount": 0, "playableCount": 0, "blockedCount": 0, "trainingEligibleCount": 0, "playabilityValidationErrorCount": 0, "playabilityLifecycleErrorCount": 0, "pendingCount": 0, "stabilizingCount": 0, "dueMissingCount": 0, "missedCount": 0}
+        progress = _progress(module, slate, pulls, manifest, now, ensure_canonical=False) if manifest else {"games": [], "stagedCount": 0, "canonicalCount": 0, "lockedPredictionCount": 0, "lockOutcomeCount": 0, "noPredictionDataCount": 0, "missedLockValidPrelockQuarantineCount": 0, "playableCount": 0, "blockedCount": 0, "trainingEligibleCount": 0, "playabilityValidationErrorCount": 0, "playabilityLifecycleErrorCount": 0, "pendingCount": 0, "stabilizingCount": 0, "dueMissingCount": 0, "missedCount": 0}
         daily_authority_errors = (
             _daily_authority_errors(module, slate, raw_existing, manifest, progress)
             if raw_existing
@@ -6265,6 +7114,36 @@ def apply(module: Any) -> Any:
         game_count = len(manifest)
         outcome_count = int(progress.get("lockOutcomeCount") or 0)
         locked_prediction_count = int(progress.get("lockedPredictionCount") or 0)
+        quarantine_count = int(
+            progress.get("missedLockValidPrelockQuarantineCount") or 0
+        )
+        provider_manifest_fingerprints = {
+            str(
+                item.get("provider_manifest_fingerprint")
+                or (item.get("provider_manifest_authority") or {}).get(
+                    "fingerprint"
+                )
+                or ""
+            )
+            for group in (
+                progress.get("stages") or {},
+                progress.get("outcomes") or {},
+            )
+            for item in group.values()
+            if isinstance(item, dict)
+            and str(
+                item.get("provider_manifest_fingerprint")
+                or (item.get("provider_manifest_authority") or {}).get(
+                    "fingerprint"
+                )
+                or ""
+            )
+        }
+        provider_manifest_fingerprint = (
+            next(iter(provider_manifest_fingerprints))
+            if len(provider_manifest_fingerprints) == 1
+            else ""
+        )
         daily_complete = bool(game_count and outcome_count == game_count)
         canonical_prediction_complete = bool(
             game_count and locked_prediction_count == game_count
@@ -6277,11 +7156,18 @@ def apply(module: Any) -> Any:
             or daily_authority_errors
             or progress.get("dueMissingCount")
             or progress.get("missedCount")
+            or quarantine_count
+            or (
+                daily_complete
+                and len(provider_manifest_fingerprints) != 1
+            )
             or playability_lifecycle_error_count
             or len(per_game_status) != game_count
         )
         slate_status = (
             "COMPLETE" if daily_complete and canonical_prediction_complete
+            else "COMPLETE_WITH_MISSED_LOCK_QUARANTINE"
+            if daily_complete and quarantine_count
             else "COMPLETE_WITH_NO_PREDICTION_DATA" if daily_complete
             else "MISSED" if progress.get("missedCount")
             else "PARTIAL" if outcome_count
@@ -6309,6 +7195,8 @@ def apply(module: Any) -> Any:
             "lockedStatusCount": outcome_count,
             "lockOutcomeCount": outcome_count,
             "noPredictionDataCount": progress.get("noPredictionDataCount"),
+            "missedLockValidPrelockQuarantineCount": quarantine_count,
+            "providerManifestFingerprint": provider_manifest_fingerprint,
             "playablePredictionCount": progress.get("playableCount"),
             "blockedPredictionCount": progress.get("blockedCount"),
             "trainingEligibleCount": progress.get("trainingEligibleCount"),

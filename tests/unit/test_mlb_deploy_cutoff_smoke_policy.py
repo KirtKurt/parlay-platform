@@ -212,3 +212,57 @@ def test_workflow_uses_status_authoritative_cutoff_policy():
     assert "statusAuthoritativeHistoricalProjection" in policy
     assert "ignoredNonAuthoritativeWinnerCount" in policy
     assert "projected_rows = copy.deepcopy(status)" in policy
+
+
+def test_historical_projection_splits_quarantine_from_no_data_without_winner():
+    start = NOW - timedelta(hours=2)
+    quarantine = _row(
+        "g1",
+        start,
+        "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED",
+    )
+    quarantine.update({
+        "lockedPrediction": False,
+        "officialPrediction": False,
+        "playable": False,
+        "trainingEligible": False,
+        "accuracyEligible": False,
+        "wagerAllowed": False,
+        "predictionAdopted": False,
+        "operationalDefect": True,
+    })
+    no_data = _row("g2", start, "LOCKED_NO_PREDICTION_DATA")
+    predictions = _empty_predictions()
+
+    assert historical_lifecycle_acceptance(
+        predictions,
+        [quarantine, no_data],
+        2,
+        now=NOW,
+    )
+    assert predictions["lockedPredictionCount"] == 0
+    assert predictions["noPredictionDataCount"] == 1
+    assert predictions["missedLockValidPrelockQuarantineCount"] == 1
+    assert predictions["terminalExcludedCount"] == 2
+    assert predictions["lockStatusComplete"] is True
+    assert all(
+        row.get("predictedWinner") in (None, "")
+        for row in predictions["predictions"]
+    )
+
+
+def test_historical_projection_rejects_quarantine_with_winner_material():
+    start = NOW - timedelta(hours=2)
+    quarantine = _row(
+        "g1",
+        start,
+        "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED",
+        winner="Home",
+        locked=False,
+    )
+    assert not historical_lifecycle_acceptance(
+        _empty_predictions(),
+        [quarantine],
+        1,
+        now=NOW,
+    )
