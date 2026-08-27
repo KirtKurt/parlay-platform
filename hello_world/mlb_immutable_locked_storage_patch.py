@@ -361,7 +361,52 @@ def _canonical_read_overlay(row: Dict[str, Any]) -> bool:
 
     per_game = row.get("perGameCanonicalLock") or {}
     public_lock = row.get("slatePredictionLock") or {}
+    final_gate = row.get("lastPossiblePredictionGate") or {}
     authority = row.get("canonicalPerGameStageAuthority") or {}
+    row_lock_at = _parse_dt(
+        row.get("lockedAtUtc")
+        or (row.get("frozenFeatureVector") or {}).get("lockAtUtc")
+    )
+    per_game_lock_at = _parse_dt(
+        per_game.get("lockAtUtc")
+        if isinstance(per_game, dict)
+        else None
+    )
+    gate_lock_at = _parse_dt(
+        final_gate.get("lockAtUtc")
+        if isinstance(final_gate, dict)
+        else None
+    )
+    public_status = (
+        str(public_lock.get("lockStatus") or "")
+        if isinstance(public_lock, dict)
+        else ""
+    )
+    public_locked = (
+        public_lock.get("locked")
+        if isinstance(public_lock, dict)
+        else None
+    )
+    valid_public_status = public_status in {
+        "PARTIAL_PER_GAME_CANONICAL",
+        "COMPLETE_MANIFEST_ALL_CANONICAL",
+        "COMPLETE_WITH_NO_PREDICTION_DATA",
+    }
+    public_status_consistent = bool(
+        isinstance(public_locked, bool)
+        and public_locked
+        == (public_status == "COMPLETE_MANIFEST_ALL_CANONICAL")
+        and (
+            (
+                public_locked
+                and _parse_dt(public_lock.get("lockAtUtc")) is not None
+            )
+            or (
+                not public_locked
+                and public_lock.get("lockAtUtc") in (None, "")
+            )
+        )
+    )
     return bool(
         row.get("slateCoverageVersion") == coverage.VERSION
         and row.get("officialPredictionReason")
@@ -371,19 +416,37 @@ def _canonical_read_overlay(row: Dict[str, Any]) -> bool:
         and row.get("immutableLockedStorageKeyspace") == "LOCKED#GAME"
         and row.get("immutableLockedStorageVersion") == VERSION
         and row.get("canonical") is True
+        and row.get("locked") is True
         and row.get("lockedPrediction") is True
+        and row.get("officialPrediction") is True
+        and row.get("officialPick") is True
+        and row.get("isOfficialDisplayPick") is True
         and row.get("lockStatus") == "LOCKED_CANONICAL"
         and row.get("officialPredictionStatus")
         == "OFFICIAL_LOCKED_PREDICTION"
+        and row.get("selectionFingerprint")
+        == row.get("lastPrelockSelectionFingerprint")
+        and bool(row.get("lastPrelockSelectionFingerprint"))
+        and row_lock_at is not None
+        and per_game_lock_at == row_lock_at
+        and gate_lock_at == row_lock_at
         and isinstance(per_game, dict)
         and per_game.get("authorityVersion") == coverage.AUTHORITY_VERSION
         and per_game.get("status") == "OFFICIAL_LOCKED_PREDICTION"
         and per_game.get("canonical") is True
+        and isinstance(final_gate, dict)
+        and final_gate.get("policyVersion") == coverage.AUTHORITY_VERSION
+        and final_gate.get("phase") == "FINAL_LOCKED"
+        and final_gate.get("finalLocked") is True
+        and final_gate.get("perGameLock") is True
+        and final_gate.get("slateWideLock") is False
         and isinstance(public_lock, dict)
         and public_lock.get("authorityVersion") == coverage.AUTHORITY_VERSION
         and public_lock.get("canonicalReadOperational") is True
         and public_lock.get("perGameLock") is True
         and public_lock.get("slateWideLock") is False
+        and valid_public_status
+        and public_status_consistent
         and isinstance(authority, dict)
         and authority.get("version") == AUTHORITY_VERSION
         and authority.get("verified") is True
@@ -440,6 +503,91 @@ def _canonical_overlay_projection(row: Dict[str, Any]) -> Dict[str, Any]:
         "canonicalPerGameStageAuthority": copy.deepcopy(authority),
         "frozenFeatureVectorIdentity": _vector_identity(row),
     }
+
+
+def _read_existing_canonical_stage_direct(
+    table: Any,
+    row: Dict[str, Any],
+) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+    """Strong-read and validate the raw stage behind a canonical stored row."""
+
+    key = _stage_key(row)
+    try:
+        stage = table.get_item(
+            Key=key,
+            ConsistentRead=True,
+        ).get("Item")
+    except Exception as exc:
+        return None, [
+            "canonical_overlay_stage_consistent_read_failed:"
+            f"{type(exc).__name__}:{exc}"
+        ]
+    if not isinstance(stage, dict):
+        return None, ["canonical_overlay_verified_stage_not_found"]
+
+    errors = _stage_binding_errors(
+        table,
+        stage,
+        row,
+        key,
+        canonical_row=True,
+    )
+    proof = row.get("canonicalPerGameStageAuthority") or {}
+    expected = _authority_proof(stage)
+    if not isinstance(proof, dict):
+        errors.append(
+            "canonical_overlay_existing_stage_authority_proof_missing"
+        )
+        proof = {}
+    for field, value in expected.items():
+        if proof.get(field) != value:
+            errors.append(
+                "canonical_overlay_existing_stage_authority_"
+                f"{field}_mismatch"
+            )
+    return (stage if not errors else None), sorted(set(errors))
+
+
+def _existing_envelope_binding_errors(
+    module: Any,
+    existing: Dict[str, Any],
+    existing_row: Dict[str, Any],
+) -> List[str]:
+    """Bind every redundant LOCKED#GAME envelope field back to stored data."""
+
+    try:
+        expected = _locked_item(
+            module,
+            copy.deepcopy(existing_row),
+        )
+    except Exception as exc:
+        return [
+            "canonical_overlay_existing_envelope_rebuild_failed:"
+            f"{type(exc).__name__}:{exc}"
+        ]
+    expected_envelope = {
+        key: copy.deepcopy(value)
+        for key, value in expected.items()
+        if key != "data"
+    }
+    actual_envelope = {
+        key: copy.deepcopy(existing.get(key))
+        for key in expected_envelope
+    }
+    if _payload_fingerprint(actual_envelope) != _payload_fingerprint(
+        expected_envelope
+    ):
+        mismatches = sorted(
+            key
+            for key, value in expected_envelope.items()
+            if _payload_fingerprint(actual_envelope.get(key))
+            != _payload_fingerprint(value)
+        )
+        return [
+            "canonical_overlay_existing_envelope_mismatch:"
+            + ",".join(mismatches)
+        ]
+    return []
 
 
 def _canonical_overlay_rejection(
@@ -544,19 +692,18 @@ def _verify_existing_canonical_overlay(
             errors.append(
                 "canonical_overlay_existing_row_storage_version_mismatch"
             )
-        try:
-            errors.extend(
-                f"canonical_overlay_existing_{value}"
-                for value in validate_canonical_stage_authority(
-                    table,
-                    existing_row,
-                )
+        errors.extend(
+            _existing_envelope_binding_errors(
+                module,
+                existing,
+                existing_row,
             )
-        except Exception as exc:
-            errors.append(
-                "canonical_overlay_existing_stage_validation_failed:"
-                f"{type(exc).__name__}:{exc}"
-            )
+        )
+        stage, stage_errors = _read_existing_canonical_stage_direct(
+            table,
+            existing_row,
+        )
+        errors.extend(stage_errors)
         try:
             existing_vector_errors = _require_vector_status(
                 existing_row,
@@ -628,7 +775,7 @@ def _verify_existing_canonical_overlay(
         ),
         "stageAuthorityVerified": True,
         "stageAuthorityVersion": AUTHORITY_VERSION,
-        "stageFingerprint": authority.get("stageFingerprint"),
+        "stageFingerprint": stage.get("stage_fingerprint"),
         "frozenFeatureVectorFingerprint": _fingerprint(existing_row),
         "idempotencyVersion": (
             CANONICAL_READ_OVERLAY_IDEMPOTENCY_VERSION
