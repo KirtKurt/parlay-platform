@@ -650,6 +650,8 @@ def _cooperative_terminal_progress_public(
         or reconciled_count > no_prediction_count
         or verification_index > manifest_count
         or verified_count != verification_index
+        or attempt_count < 1
+        or attempt_count < next_index + verification_index
         or (phase == "PROCESS") != (next_index < manifest_count)
         or (phase == "PROCESS" and verification_index != 0)
         or verification_complete != expected_verification_complete
@@ -751,7 +753,45 @@ def _cooperative_terminal_progress_public(
             return dict(invalid)
         public_attempt[field] = value
 
+    def producer_identity(value: str) -> bool:
+        return any(
+            value.startswith(prefix) and bool(value[len(prefix):])
+            for prefix in ("provider:", "key:", "teams:")
+        )
+
+    for identity_field in ("gameIdentity", "durableIdentity"):
+        identity_value = public_attempt.get(identity_field)
+        if identity_value is not None and not producer_identity(
+            str(identity_value)
+        ):
+            return dict(invalid)
+    if (
+        "durableIdentity" in public_attempt
+        and public_attempt.get("durableIdentity")
+        != public_attempt.get("gameIdentity")
+    ):
+        return dict(invalid)
+
     error_code = public_attempt.get("errorCode")
+
+    def producer_error_code(value: str) -> bool:
+        if all(
+            character.isupper()
+            or character.isdigit()
+            or character in "_:-."
+            for character in value
+        ):
+            return True
+        prefix = stage + "_"
+        if not value.startswith(prefix):
+            return False
+        suffix = value[len(prefix):]
+        return bool(suffix and suffix.isidentifier())
+
+    if error_code is not None and not producer_error_code(
+        str(error_code)
+    ):
+        return dict(invalid)
     if (
         (status == "FAILED_CLOSED" and error_code is None)
         or (
@@ -884,7 +924,7 @@ def _cooperative_terminal_progress_public(
         ),
         ("FAILED_CLOSED", "BIND_MANIFEST_AUTHORITY"): (
             {
-                "phases": {"PROCESS"},
+                "phases": {"PROCESS", "VERIFY"},
                 "cursor": "CURRENT",
                 "gameIdentity": required,
                 "durableIdentity": forbidden,
