@@ -1,0 +1,181 @@
+name: MLB progress pulse bounded runner relay
+
+on:
+  # Best-effort seed only. Once any seed is admitted, the finite runner lease
+  # does not depend on later cron admissions for roughly 50 hours.
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_run:
+    workflows:
+      - MLB Canonical Runtime Health Watch
+      - MLB Scoring Guard
+      - Deploy SAM to AWS
+      - Verify MLB Scoring Fix After Deploy
+      - MLB Production Source Contract
+      - Unified MLB learning recovery once
+      - MLB Daily Yesterday Audit
+      - Tennis Autonomy Status Backstop
+      - Publish Tennis Autonomy Status
+      - NFL Auto AWS Stack Probe
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      remaining_segments:
+        description: Finite five-hour relay segments, from 1 through 10
+        required: false
+        default: 10
+        type: number
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-progress-pulse-bounded-runner-relay.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+# Exactly one active relay and at most one pending successor/refresh seed. A new
+# seed may replace the pending successor, but it never cancels the active lease.
+concurrency:
+  group: mlb-progress-pulse-bounded-runner-relay
+  cancel-in-progress: false
+
+env:
+  MLB_PROGRESS_STALE_AFTER_MINUTES: '28'
+  RELAY_MAX_SEGMENTS: '10'
+  RELAY_POLL_INTERVAL_SECONDS: '240'
+  # 76 polls have 75 four-minute intervals: exactly five hours per segment.
+  RELAY_POLLS_PER_SEGMENT: '76'
+
+jobs:
+  relay:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    # Five hours of polling plus 25 minutes for setup/API queue jitter remains
+    # below GitHub's six-hour hosted-runner execution ceiling.
+    timeout-minutes: 325
+    steps:
+      - name: Checkout exact main staleness policy
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate finite main-only relay lease
+        id: guard
+        env:
+          INPUT_REMAINING_SEGMENTS: ${{ inputs.remaining_segments }}
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_REF" != 'refs/heads/main' ]; then
+            echo "::error::Bounded relay is restricted to refs/heads/main."
+            exit 78
+          fi
+
+          if [ "$GITHUB_EVENT_NAME" = 'workflow_dispatch' ]; then
+            remaining_segments="${INPUT_REMAINING_SEGMENTS:-$RELAY_MAX_SEGMENTS}"
+          else
+            remaining_segments="$RELAY_MAX_SEGMENTS"
+          fi
+          if ! [[ "$remaining_segments" =~ ^[1-9][0-9]*$ ]] ||
+             [ "$remaining_segments" -gt "$RELAY_MAX_SEGMENTS" ]; then
+            echo "::error::remaining_segments must be an integer from 1 through $RELAY_MAX_SEGMENTS."
+            exit 78
+          fi
+
+          {
+            echo "remaining_segments=$remaining_segments"
+            echo "next_segments=$((10#$remaining_segments - 1))"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Maintain a bounded stale-check lease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXT_SEGMENTS: ${{ steps.guard.outputs.next_segments }}
+        run: |
+          set -euo pipefail
+
+          python -m py_compile scripts/check_mlb_progress_pulse_staleness.py
+          ! grep -Ei 'boto3|aws[[:space:]]+(dynamodb|lambda)|put_item|update_item|delete_item'             scripts/check_mlb_progress_pulse_staleness.py
+
+          successor_queued=false
+          reporter_dispatches=0
+          reporter_dispatch_failures=0
+          decision_failures=0
+
+          queue_successor() {
+            if [ "$NEXT_SEGMENTS" = '0' ] || [ "$successor_queued" = 'true' ]; then
+              return 0
+            fi
+            if gh workflow run mlb-progress-pulse-bounded-runner-relay.yml               --repo "$GITHUB_REPOSITORY"               --ref main               --field remaining_segments="$NEXT_SEGMENTS"; then
+              successor_queued=true
+              echo "Queued finite successor with $NEXT_SEGMENTS segments remaining."
+              return 0
+            fi
+            echo "::warning::Successor dispatch failed; the next poll will retry."
+            return 1
+          }
+
+          # Queue the successor before the first wait. If this API call fails,
+          # every four-minute poll retries without interrupting this segment.
+          queue_successor || true
+
+          for poll_index in $(seq 1 "$RELAY_POLLS_PER_SEGMENT"); do
+            if [ "$NEXT_SEGMENTS" != '0' ] && [ "$successor_queued" != 'true' ]; then
+              queue_successor || true
+            fi
+
+            decision_file="$RUNNER_TEMP/mlb-pulse-relay-decision-$poll_index.txt"
+            : > "$decision_file"
+            if python scripts/check_mlb_progress_pulse_staleness.py               --stale-after-minutes "$MLB_PROGRESS_STALE_AFTER_MINUTES"               --retry-cooldown-minutes 10               --github-output "$decision_file"; then
+              dispatch_required="$(sed -n 's/^dispatch_required=//p' "$decision_file" | tail -n 1)"
+              reason="$(sed -n 's/^reason=//p' "$decision_file" | tail -n 1)"
+              case "$dispatch_required" in
+                true)
+                  if gh workflow run mlb-30m-progress-pulse.yml                     --repo "$GITHUB_REPOSITORY"                     --ref main                     --field force=false; then
+                    reporter_dispatches=$((reporter_dispatches + 1))
+                    echo "Poll $poll_index dispatched the stale-gated reporter ($reason)."
+                  else
+                    reporter_dispatch_failures=$((reporter_dispatch_failures + 1))
+                    echo "::warning::Poll $poll_index could not dispatch the reporter; retrying on the next poll."
+                  fi
+                  ;;
+                false)
+                  echo "Poll $poll_index left the reporter idle ($reason)."
+                  ;;
+                *)
+                  decision_failures=$((decision_failures + 1))
+                  echo "::warning::Poll $poll_index returned an invalid dispatch decision."
+                  ;;
+              esac
+            else
+              decision_failures=$((decision_failures + 1))
+              echo "::warning::Poll $poll_index could not evaluate trusted pulse staleness."
+            fi
+
+            if [ "$poll_index" -lt "$RELAY_POLLS_PER_SEGMENT" ]; then
+              sleep "$RELAY_POLL_INTERVAL_SECONDS"
+            fi
+          done
+
+          {
+            echo '## Bounded MLB pulse runner relay'
+            echo
+            echo "- Successor required: $([ "$NEXT_SEGMENTS" = '0' ] && echo false || echo true)"
+            echo "- Successor queued: $successor_queued"
+            echo "- Reporter dispatches: $reporter_dispatches"
+            echo "- Reporter dispatch failures: $reporter_dispatch_failures"
+            echo "- Staleness decision failures: $decision_failures"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$NEXT_SEGMENTS" != '0' ] && [ "$successor_queued" != 'true' ]; then
+            echo "::error::The segment served its polling window but could not secure its finite successor."
+            exit 1
+          fi
