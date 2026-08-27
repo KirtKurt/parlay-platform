@@ -94,7 +94,13 @@ def test_decision_only_fallback_run_does_not_create_false_retry_cooldown() -> No
                 "event": "workflow_run",
                 "status": "completed",
                 "created_at": "2026-08-26T21:55:00Z",
-            }
+            },
+            {
+                "id": 103,
+                "event": "push",
+                "status": "completed",
+                "created_at": "2026-08-26T21:57:00Z",
+            },
         ],
     )
 
@@ -102,15 +108,24 @@ def test_decision_only_fallback_run_does_not_create_false_retry_cooldown() -> No
     assert result["reason"] == "VISIBLE_PULSE_STALE"
 
 
-def test_workflow_uses_offset_schedule_and_workflow_run_fallback() -> None:
+def test_workflow_uses_offset_schedule_and_staleness_gated_event_fallbacks() -> None:
     pulse = (ROOT / ".github/workflows/mlb-30m-progress-pulse.yml").read_text()
 
     assert "cron: '11,41 * * * *'" in pulse
     assert "cron: '7,37 * * * *'" not in pulse
     assert "cron: '0,30 * * * *'" not in pulse
     assert "workflow_run:" in pulse
-    assert "MLB Canonical Runtime Health Watch" in pulse
-    assert "MLB Scoring Guard" in pulse
+    for producer in (
+        "MLB Canonical Runtime Health Watch",
+        "MLB Scoring Guard",
+        "Deploy SAM to AWS",
+        "MLB Production Source Contract",
+        "Repair MLB training continuity now",
+        "Unified MLB learning recovery once",
+    ):
+        assert producer in pulse
+    assert "runtime_reports/mlb_*.json" in pulse
+    assert '[ "$EVENT_NAME" = "workflow_run" ] || [ "$EVENT_NAME" = "push" ]' in pulse
     assert "scripts/check_mlb_progress_pulse_staleness.py" in pulse
     assert "actions: read" in pulse
     assert "needs.pulse_decision.outputs.run_pulse == 'true'" in pulse

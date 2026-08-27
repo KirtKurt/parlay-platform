@@ -5,12 +5,18 @@ on:
     # GitHub documents elevated delay/drop risk at the start of the hour.
     # Keep the 30-minute cadence while moving away from :00/:30 contention.
     - cron: '11,41 * * * *'
-  # Event-driven fallback: either independent 15-minute MLB proof can recover
-  # a dropped GitHub schedule after the visible pulse crosses the stale limit.
+  # Event-driven fallbacks recover a dropped GitHub schedule after the visible
+  # pulse crosses the stale limit. Keep multiple independent MLB runtime,
+  # deploy, and bounded-recovery producers so one dropped cron cannot silence
+  # reporting; the decision job suppresses fresh/noise-only completions.
   workflow_run:
     workflows:
       - MLB Canonical Runtime Health Watch
       - MLB Scoring Guard
+      - Deploy SAM to AWS
+      - MLB Production Source Contract
+      - Repair MLB training continuity now
+      - Unified MLB learning recovery once
     types: [completed]
   workflow_dispatch:
   push:
@@ -21,6 +27,7 @@ on:
       - 'scripts/check_mlb_progress_pulse_staleness.py'
       - 'tests/unit/test_report_mlb_30m_progress.py'
       - 'tests/unit/test_mlb_progress_pulse_watchdog.py'
+      - 'runtime_reports/mlb_*.json'
 
 permissions:
   actions: read
@@ -74,7 +81,7 @@ jobs:
           set -euo pipefail
           python -m py_compile scripts/check_mlb_progress_pulse_staleness.py
           ! grep -Ei 'boto3|aws[[:space:]]+(dynamodb|lambda)|put_item|update_item|delete_item' scripts/check_mlb_progress_pulse_staleness.py
-          if [ "$EVENT_NAME" = "workflow_run" ]; then
+          if [ "$EVENT_NAME" = "workflow_run" ] || [ "$EVENT_NAME" = "push" ]; then
             python scripts/check_mlb_progress_pulse_staleness.py \
               --stale-after-minutes 40 \
               --retry-cooldown-minutes 10 \

@@ -105,13 +105,15 @@ def evaluate_staleness(
         for row in runs
         if current_run_id is None or str(row.get("id")) != str(current_run_id)
     ]
-    # workflow_run entries may be decision-only fallbacks. Counting them as
-    # pulse attempts can create a self-suppressing loop where no reporter job
-    # ever starts. Direct triggers always attempt the pulse and are safe for
-    # active/cooldown suppression; workflow-level concurrency serializes the
-    # event-driven fallback runs themselves.
+    # workflow_run and path-scoped push entries may be decision-only fallbacks.
+    # Counting them as pulse attempts can create a self-suppressing loop where
+    # no reporter job ever starts. Scheduled/manual triggers always attempt the
+    # pulse and are safe for active/cooldown suppression; workflow-level
+    # concurrency serializes the event-driven fallback runs themselves.
     direct_attempt_rows = [
-        row for row in run_rows if str(row.get("event") or "") != "workflow_run"
+        row
+        for row in run_rows
+        if str(row.get("event") or "") not in {"workflow_run", "push"}
     ]
     active_runs = [
         row

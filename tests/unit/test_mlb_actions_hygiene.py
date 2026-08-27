@@ -229,14 +229,22 @@ def test_only_pulse_and_independent_producers_keep_recurring_mlb_schedules() -> 
     ]
 
 
-def test_pulse_keeps_two_independent_fallback_producers() -> None:
+def test_pulse_keeps_independent_staleness_gated_fallback_producers() -> None:
     pulse = _triggers(WORKFLOWS / "mlb-30m-progress-pulse.yml")
     workflow_run = pulse["workflow_run"]
     assert workflow_run["workflows"] == [
         "MLB Canonical Runtime Health Watch",
         "MLB Scoring Guard",
+        "Deploy SAM to AWS",
+        "MLB Production Source Contract",
+        "Repair MLB training continuity now",
+        "Unified MLB learning recovery once",
     ]
     assert workflow_run["types"] == ["completed"]
+    assert pulse["push"]["paths"][-1] == "runtime_reports/mlb_*.json"
+
+    source = (WORKFLOWS / "mlb-30m-progress-pulse.yml").read_text(encoding="utf-8")
+    assert '[ "$EVENT_NAME" = "workflow_run" ] || [ "$EVENT_NAME" = "push" ]' in source
 
 
 def test_trainer_deploy_diagnostic_is_manual_read_only_status() -> None:
