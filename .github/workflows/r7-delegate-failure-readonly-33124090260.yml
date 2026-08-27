@@ -142,10 +142,166 @@ jobs:
               ),
               None,
           )
+          parse_mode = 'FULL_PAYLOAD'
           if payload is None:
-              raise SystemExit(
-                  'Exact scheduled failure payload could not be decoded'
-              )
+              parse_mode = 'BALANCED_SAFE_FRAGMENTS'
+              variants = []
+              for message in messages:
+                  variants.extend([
+                      message,
+                      message.replace('\\"', '"').replace(
+                          '\\\\', '\\'
+                      ),
+                  ])
+
+              def balanced_fragment(text, start, opening, closing):
+                  if (
+                      start < 0
+                      or start >= len(text)
+                      or text[start] != opening
+                  ):
+                      return None
+                  depth = 0
+                  in_string = False
+                  escape = False
+                  for index in range(start, len(text)):
+                      character = text[index]
+                      if escape:
+                          escape = False
+                          continue
+                      if character == '\\' and in_string:
+                          escape = True
+                          continue
+                      if character == '"':
+                          in_string = not in_string
+                          continue
+                      if in_string:
+                          continue
+                      if character == opening:
+                          depth += 1
+                      elif character == closing:
+                          depth -= 1
+                          if depth == 0:
+                              return text[start:index + 1]
+                  return None
+
+              fragment_failures = None
+              fragment_games = []
+              for variant in variants:
+                  for match in re.finditer(
+                      r'"failures"\s*:\s*\[',
+                      variant,
+                  ):
+                      start = variant.find('[', match.start())
+                      material = balanced_fragment(
+                          variant, start, '[', ']'
+                      )
+                      if material:
+                          try:
+                              parsed = json.loads(material)
+                          except Exception:
+                              parsed = None
+                          if isinstance(parsed, list):
+                              fragment_failures = parsed
+                              break
+                  for official_match in re.finditer(
+                      r'"officialGamePk"\s*:\s*"?(822771)"?',
+                      variant,
+                  ):
+                      lower = max(0, official_match.start() - 50000)
+                      starts = [
+                          index
+                          for index in range(
+                              lower, official_match.start()
+                          )
+                          if variant[index] == '{'
+                      ]
+                      for start in reversed(starts):
+                          material = balanced_fragment(
+                              variant, start, '{', '}'
+                          )
+                          if not material:
+                              continue
+                          try:
+                              parsed = json.loads(material)
+                          except Exception:
+                              continue
+                          if (
+                              isinstance(parsed, dict)
+                              and str(
+                                  parsed.get('officialGamePk') or ''
+                              )
+                              == '822771'
+                              and (
+                                  'state' in parsed
+                                  or 'lockStatus' in parsed
+                              )
+                          ):
+                              fragment_games.append(parsed)
+                              break
+
+              def regex_value(field):
+                  values = []
+                  pattern = (
+                      r'"' + re.escape(field) + r'"\s*:\s*'
+                      r'(true|false|null|-?[0-9]+(?:\.[0-9]+)?'
+                      r'|"[A-Za-z0-9_.:-]{1,160}")'
+                  )
+                  for variant in variants:
+                      for match in re.finditer(pattern, variant):
+                          try:
+                              value = json.loads(match.group(1))
+                          except Exception:
+                              continue
+                          if value not in values:
+                              values.append(value)
+                  return values
+
+              counters = {}
+              for field in (
+                  'manifestGameCount',
+                  'stagedCount',
+                  'canonicalCount',
+                  'lockOutcomeCount',
+                  'dueMissingCount',
+                  'pendingCount',
+                  'missedCount',
+              ):
+                  values = regex_value(field)
+                  if values:
+                      counters[field] = values[0]
+              reasons = regex_value('reason')
+              ok_values = regex_value('ok')
+              fail_closed_values = regex_value('failClosed')
+              payload = {
+                  'ok': False if False in ok_values else (
+                      ok_values[0] if ok_values else None
+                  ),
+                  'reason': (
+                      'PER_GAME_LOCK_DUE_BUT_NOT_CANONICAL'
+                      if (
+                          'PER_GAME_LOCK_DUE_BUT_NOT_CANONICAL'
+                          in reasons
+                      )
+                      else reasons[0] if reasons else None
+                  ),
+                  'failClosed': (
+                      True if True in fail_closed_values else (
+                          fail_closed_values[0]
+                          if fail_closed_values
+                          else None
+                      )
+                  ),
+                  'failures': (
+                      fragment_failures
+                      if isinstance(fragment_failures, list)
+                      else []
+                  ),
+                  'perGameLockProgress': {
+                      **counters,
+                      'games': fragment_games,
+                  },
+              }
 
           progress = payload.get('perGameLockProgress') or {}
           games = [
@@ -317,6 +473,7 @@ jobs:
                   'trainingExclusionReasons',
                   'readiness.*.blockingReasons',
               ],
+              'parseMode': parse_mode,
               'rawPayloadRedacted': True,
               'tableWritesAttempted': 0,
               'lambdaInvocationsAttempted': 0,
