@@ -346,6 +346,128 @@ jobs:
                       message,
                   )
                   if uppercase_tokens or lower_markers or exception_types:
+                      frames = [
+                          {
+                              'file': Path(match.group(1)).name,
+                              'line': int(match.group(2)),
+                              'function': match.group(3).strip()[:120],
+                          }
+                          for match in re.finditer(
+                              r'File "([^"]+)", line ([0-9]+), in ([^\n]+)',
+                              message,
+                          )
+                      ]
+                      terminal_exceptions = list(re.finditer(
+                          r'(?:^|\n)([A-Za-z_][A-Za-z0-9_.]*'
+                          r'(?:Error|Exception|Unavailable|Conflict)):\s*'
+                          r'([^\n]*)',
+                          message,
+                      ))
+                      type_error_messages = [
+                          match.group(2)[:240]
+                          for match in terminal_exceptions
+                          if match.group(1).endswith('TypeError')
+                      ]
+                      scheduled_summary = None
+                      prefix = 'MLB_SCHEDULED_LOCK_FAILED:'
+                      prefix_index = message.rfind(prefix)
+                      if prefix_index >= 0:
+                          candidate = message[
+                              prefix_index + len(prefix):
+                          ].lstrip()
+                          try:
+                              payload, _ = json.JSONDecoder().raw_decode(
+                                  candidate
+                              )
+                          except Exception:
+                              payload = None
+                          if isinstance(payload, dict):
+                              safe_scalar_fields = (
+                                  'ok',
+                                  'locked',
+                                  'failClosed',
+                                  'slateDateEt',
+                                  'reason',
+                                  'scheduledInvocation',
+                                  'dailyCardComplete',
+                                  'lockStatusComplete',
+                                  'canonicalPredictionComplete',
+                                  'manifestGameCount',
+                                  'gameCount',
+                                  'pullCount',
+                              )
+                              progress_payload = payload.get(
+                                  'perGameLockProgress'
+                              )
+                              progress_payload = (
+                                  progress_payload
+                                  if isinstance(progress_payload, dict)
+                                  else {}
+                              )
+                              progress_fields = (
+                                  'manifestGameCount',
+                                  'stagedCount',
+                                  'canonicalCount',
+                                  'lockedPredictionCount',
+                                  'lockOutcomeCount',
+                                  'noPredictionDataCount',
+                                  'pendingCount',
+                                  'stabilizingCount',
+                                  'dueMissingCount',
+                                  'missedCount',
+                              )
+                              failures_payload = payload.get('failures')
+                              failures_payload = (
+                                  failures_payload
+                                  if isinstance(failures_payload, list)
+                                  else []
+                              )
+                              scheduled_summary = {
+                                  'payload': {
+                                      key: payload.get(key)
+                                      for key in safe_scalar_fields
+                                      if key in payload
+                                  },
+                                  'progressCounters': {
+                                      key: progress_payload.get(key)
+                                      for key in progress_fields
+                                      if key in progress_payload
+                                  },
+                                  'failureCount': len(failures_payload),
+                                  'failureReasons': sorted(set(
+                                      str(failure.get('reason') or '')[:160]
+                                      for failure in failures_payload
+                                      if isinstance(failure, dict)
+                                      and failure.get('reason')
+                                  )),
+                                  'failureErrorCodes': sorted(set(
+                                      str(error)[:160]
+                                      for failure in failures_payload
+                                      if isinstance(failure, dict)
+                                      for error in (
+                                          failure.get('errors')
+                                          if isinstance(
+                                              failure.get('errors'), list
+                                          )
+                                          else []
+                                      )
+                                      if re.fullmatch(
+                                          r'[A-Za-z0-9_.:-]{1,160}',
+                                          str(error),
+                                      )
+                                  ))[:40],
+                                  'dailyLockAuthorityErrorCount': len(
+                                      payload.get('dailyLockAuthorityErrors')
+                                      if isinstance(
+                                          payload.get(
+                                              'dailyLockAuthorityErrors'
+                                          ),
+                                          list,
+                                      )
+                                      else []
+                                  ),
+                                  'rawPayloadRedacted': True,
+                              }
                       safe_error_evidence.append({
                           'atUtc': datetime.fromtimestamp(
                               timestamp / 1000, tz=timezone.utc
@@ -358,6 +480,9 @@ jobs:
                               else None
                           ),
                           'exceptionTypes': exception_types,
+                          'typeErrorMessages': type_error_messages,
+                          'traceFrames': frames[-12:],
+                          'scheduledFailure': scheduled_summary,
                           'uppercaseCodes': uppercase_tokens[:40],
                           'knownLowerMarkers': lower_markers,
                           'rawMessageRedacted': True,
