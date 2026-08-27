@@ -44,7 +44,7 @@ env:
   MLB_PROGRESS_ISSUE_NUMBER: '567'
   MLB_PROGRESS_TARGET_CADENCE_MINUTES: '30'
   MLB_PROGRESS_CADENCE_GRACE_MINUTES: '5'
-  MLB_PROGRESS_STALE_AFTER_MINUTES: '40'
+  MLB_PROGRESS_STALE_AFTER_MINUTES: '35'
   MLB_R7_EXPERIMENT_ID: mlb-v2-2026-08-03-future-prospective-r7
 
 jobs:
@@ -82,7 +82,7 @@ jobs:
           ! grep -Ei 'boto3|aws[[:space:]]+(dynamodb|lambda)|put_item|update_item|delete_item' scripts/check_mlb_progress_pulse_staleness.py
           if [ "$EVENT_NAME" = "workflow_run" ] || [ "$EVENT_NAME" = "push" ]; then
             python scripts/check_mlb_progress_pulse_staleness.py \
-              --stale-after-minutes 40 \
+              --stale-after-minutes "$MLB_PROGRESS_STALE_AFTER_MINUTES" \
               --retry-cooldown-minutes 10 \
               --current-run-id "$GITHUB_RUN_ID" \
               --github-output "$GITHUB_OUTPUT"
