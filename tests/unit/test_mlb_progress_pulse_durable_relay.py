@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "run_mlb_progress_pulse_durable_relay.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "mlb-progress-pulse-durable-relay.yml"
+AFTER_WAIT = datetime(2026, 8, 27, 21, 31, tzinfo=timezone.utc)
 SPEC = importlib.util.spec_from_file_location(
     "run_mlb_progress_pulse_durable_relay",
     SCRIPT,
@@ -47,6 +49,7 @@ def _run(
         "created_at": created,
         "head_branch": "main",
         "head_repository": {"full_name": repository or relay.EXPECTED_REPOSITORY},
+        "path": relay.DURABLE_RELAY_PATH,
     }
 
 
@@ -59,6 +62,7 @@ def _bounded(*, run_id: int = 9, segment: int = 10) -> dict:
         "created_at": "2026-08-27T20:00:00Z",
         "head_branch": "main",
         "head_repository": _repo(),
+        "path": relay.BOUNDED_RELAY_PATH,
     }
 
 
@@ -206,25 +210,46 @@ def test_trigger_rejects_wrong_repo_ref_schedule_and_source_name() -> None:
         )
 
 
-def test_environment_requires_one_exact_wait_timer_and_no_review_gate() -> None:
-    relay.validate_environment(
-        _environment(
-            {"type": "wait_timer", "wait_timer": 30},
-            {"type": "branch_policy"},
-        )
-    )
+def test_environment_requires_one_exact_wait_timer_and_no_other_gate() -> None:
+    relay.validate_environment(_environment())
+
     hostile = (
         _environment({"type": "wait_timer", "wait_timer": 29}),
         _environment(
             {"type": "wait_timer", "wait_timer": 30},
             {"type": "required_reviewers"},
         ),
+        {
+            **_environment(
+                {"type": "wait_timer", "wait_timer": 30},
+                {"type": "branch_policy"},
+            ),
+            "deployment_branch_policy": {
+                "protected_branches": False,
+                "custom_branch_policies": True,
+            },
+        },
         {"name": relay.RELAY_ENVIRONMENT, "protection_rules": []},
         {"name": "wrong", "protection_rules": [{"type": "wait_timer", "wait_timer": 30}]},
     )
     for payload in hostile:
         with pytest.raises(ValueError, match="environment_wait_timer_contract_invalid"):
             relay.validate_environment(payload)
+
+
+def test_elapsed_proof_rejects_environment_bypass() -> None:
+    current = _run(
+        run_id=100,
+        hop=96,
+        created="2026-08-27T21:00:00Z",
+        status="in_progress",
+    )
+    with pytest.raises(ValueError, match="environment_wait_timer_not_observed"):
+        relay.validate_wait_elapsed(
+            current,
+            now=datetime(2026, 8, 27, 21, 29, 59, tzinfo=timezone.utc),
+        )
+    assert relay.validate_wait_elapsed(current, now=AFTER_WAIT) == 31.0
 
 
 def test_fork_and_wrong_titles_never_count_as_bounded_migration_owner() -> None:
@@ -255,6 +280,7 @@ def test_active_bounded_relay_blocks_migration_without_any_dispatch() -> None:
         current_run_id="100",
         remaining_hops=96,
         verify_delay_seconds=0,
+        observed_now=AFTER_WAIT,
     ).run()
 
     assert result["migrationReady"] is False
@@ -274,6 +300,7 @@ def test_stale_hop_preserves_successor_before_stale_gated_reporter() -> None:
         current_run_id="100",
         remaining_hops=12,
         verify_delay_seconds=0,
+        observed_now=AFTER_WAIT,
     ).run()
 
     assert result["successorHop"] == 11
@@ -290,6 +317,7 @@ def test_fresh_hop_preserves_successor_without_redundant_reporter() -> None:
         current_run_id="100",
         remaining_hops=12,
         verify_delay_seconds=0,
+        observed_now=AFTER_WAIT,
     ).run()
 
     assert result["reason"] == "VISIBLE_PULSE_FRESH"
@@ -306,6 +334,7 @@ def test_preflight_failure_still_preserves_successor_and_requests_safe_recheck()
             current_run_id="100",
             remaining_hops=12,
             verify_delay_seconds=0,
+            observed_now=AFTER_WAIT,
         ).run()
 
     assert client.dispatched_hops == [11]
@@ -324,6 +353,7 @@ def test_reporter_failure_cannot_prevent_successor_creation() -> None:
             current_run_id="100",
             remaining_hops=8,
             verify_delay_seconds=0,
+            observed_now=AFTER_WAIT,
         ).run()
 
     assert client.dispatched_hops == [7]
@@ -337,6 +367,7 @@ def test_terminal_hop_forces_one_visible_diagnostic_without_successor() -> None:
         current_run_id="100",
         remaining_hops=1,
         verify_delay_seconds=0,
+        observed_now=AFTER_WAIT,
     ).run()
 
     assert result["terminalWarning"] is True
@@ -361,6 +392,7 @@ def test_newer_automatic_seed_renews_terminal_hop_without_warning() -> None:
         current_run_id="100",
         remaining_hops=1,
         verify_delay_seconds=0,
+        observed_now=AFTER_WAIT,
     ).run()
 
     assert result["successorRunId"] == 200
@@ -409,8 +441,14 @@ def test_workflow_is_non_billable_read_only_bounded_and_mutually_guarded() -> No
     assert "deployment: false" in workflow
     assert "timeout-minutes: 10" in workflow
     assert "remaining_hops" in workflow
+    assert "  preflight:" in workflow
+    assert "--mode preflight" in workflow
+    assert "needs.preflight.outputs.environment_valid == 'true'" in workflow
+    assert "group: mlb-progress-pulse-bounded-runner-relay" in workflow
     assert "cancel-in-progress: false" in workflow
+    assert "github.repository == 'KirtKurt/parlay-platform'" in workflow
     assert "github.event.workflow_run.head_repository.full_name == github.repository" in workflow
+    assert "always()" not in workflow
     assert "actions: write" in workflow
     assert "contents: read" in workflow
     assert "issues: read" in workflow
@@ -420,6 +458,9 @@ def test_workflow_is_non_billable_read_only_bounded_and_mutually_guarded() -> No
     assert "sleep " not in workflow
     assert "MAX_RELAY_HOPS = 96" in source
     assert "REQUIRED_WAIT_MINUTES = 30" in source
+    assert "MINIMUM_WAIT_SECONDS = REQUIRED_WAIT_MINUTES * 60" in source
+    assert "expected_path=BOUNDED_RELAY_PATH" in source
+    assert "validate_wait_elapsed" in source
     assert relay.BOUNDED_RELAY_WORKFLOW in source
     assert "force=terminal_warning" in source
     assert "dispatch_reporter(force=terminal_warning)" in source
