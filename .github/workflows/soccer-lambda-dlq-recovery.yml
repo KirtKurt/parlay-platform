@@ -73,6 +73,7 @@ jobs:
               raise SystemExit('Soccer concurrency safety contract was not repaired')
           path.write_text(text)
           PY
+          python -m pip install --disable-pip-version-check -q pytest PyYAML
           python -m pytest -q tests/soccer_auto/test_isolation_contract.py
           git diff --check
           git config user.name github-actions
