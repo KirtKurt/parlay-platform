@@ -47,6 +47,7 @@ jobs:
       source_deploy_head_branch: ${{ steps.resolve.outputs.source_deploy_head_branch }}
       source_deploy_head_sha: ${{ steps.resolve.outputs.source_deploy_head_sha }}
       source_deploy_created_at: ${{ steps.resolve.outputs.source_deploy_created_at }}
+      source_deploy_sam_completed_at: ${{ steps.resolve.outputs.source_deploy_sam_completed_at }}
       source_deploy_run_url: ${{ steps.resolve.outputs.source_deploy_run_url }}
     steps:
       - name: Resolve latest real deployment and validate immutable provenance
@@ -211,6 +212,10 @@ jobs:
 
           target_deploy_sha="$(jq -r '.head_sha' <<<"$source_json")"
           source_deploy_created_at="$(jq -r '.created_at' <<<"$source_json")"
+          source_deploy_sam_completed_at="$(
+            jq -r               --arg step "$sam_step_name"               '.jobs[] | select(.name == "deploy") | .steps[] | select(.name == $step) | .completed_at'               <<<"$source_jobs"
+          )"
+          [[ "$source_deploy_sam_completed_at" != "null" ]]
           source_deploy_run_url="$(jq -r '.html_url' <<<"$source_json")"
 
           {
@@ -225,6 +230,7 @@ jobs:
             echo "source_deploy_head_branch=main"
             echo "source_deploy_head_sha=$target_deploy_sha"
             echo "source_deploy_created_at=$source_deploy_created_at"
+            echo "source_deploy_sam_completed_at=$source_deploy_sam_completed_at"
             echo "source_deploy_run_url=$source_deploy_run_url"
           } >> "$GITHUB_OUTPUT"
 
@@ -245,6 +251,7 @@ jobs:
       SOURCE_DEPLOY_HEAD_BRANCH: ${{ needs.resolve.outputs.source_deploy_head_branch }}
       SOURCE_DEPLOY_HEAD_SHA: ${{ needs.resolve.outputs.source_deploy_head_sha }}
       SOURCE_DEPLOY_CREATED_AT: ${{ needs.resolve.outputs.source_deploy_created_at }}
+      SOURCE_DEPLOY_SAM_COMPLETED_AT: ${{ needs.resolve.outputs.source_deploy_sam_completed_at }}
       SOURCE_DEPLOY_RUN_URL: ${{ needs.resolve.outputs.source_deploy_run_url }}
     steps:
       - name: Checkout trusted verifier source
@@ -450,6 +457,7 @@ jobs:
               'sourceDeployHeadBranch': os.environ['SOURCE_DEPLOY_HEAD_BRANCH'],
               'sourceDeployHeadSha': os.environ['SOURCE_DEPLOY_HEAD_SHA'],
               'sourceDeployCreatedAtUtc': os.environ['SOURCE_DEPLOY_CREATED_AT'],
+              'sourceDeploySamCompletedAtUtc': os.environ['SOURCE_DEPLOY_SAM_COMPLETED_AT'],
               'sourceDeployRunUrl': os.environ['SOURCE_DEPLOY_RUN_URL'],
               'sourceDeploySamStepName': 'Deploy exact canonical source',
               'sourceDeploySamStepConclusion': 'success',
@@ -523,6 +531,7 @@ jobs:
               'sourceDeployHeadBranch':os.environ.get('SOURCE_DEPLOY_HEAD_BRANCH'),
               'sourceDeployHeadSha':os.environ.get('SOURCE_DEPLOY_HEAD_SHA'),
               'sourceDeployCreatedAtUtc':os.environ.get('SOURCE_DEPLOY_CREATED_AT'),
+              'sourceDeploySamCompletedAtUtc':os.environ.get('SOURCE_DEPLOY_SAM_COMPLETED_AT'),
               'sourceDeployRunUrl':os.environ.get('SOURCE_DEPLOY_RUN_URL'),
               'sourceDeploySamStepName':'Deploy exact canonical source',
               'sourceDeploySamStepConclusion':'success',
