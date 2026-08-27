@@ -42,7 +42,7 @@ def _evaluate(comments, runs=()):
         comments,
         runs,
         now=NOW,
-        stale_after_minutes=35,
+        stale_after_minutes=28,
         retry_cooldown_minutes=10,
     )
 
@@ -63,22 +63,41 @@ def test_fresh_visible_pulse_does_not_dispatch() -> None:
     assert result["reason"] == "VISIBLE_PULSE_FRESH"
 
 
-def test_exact_35_minute_age_remains_inside_grace_boundary() -> None:
-    result = _evaluate([_comment("2026-08-26T21:25:00Z")])
+def test_exact_28_minute_age_remains_before_dispatch_boundary() -> None:
+    result = _evaluate([_comment("2026-08-26T21:32:00Z")])
 
-    assert result["visiblePulseAgeMinutes"] == 35.0
-    assert result["staleAfterMinutes"] == 35
+    assert result["visiblePulseAgeMinutes"] == 28.0
+    assert result["staleAfterMinutes"] == 28
     assert result["stale"] is False
     assert result["dispatchRequired"] is False
 
 
-def test_age_immediately_above_35_minutes_requires_fallback() -> None:
-    result = _evaluate([_comment("2026-08-26T21:24:59Z")])
+def test_age_immediately_above_28_minutes_requires_fallback() -> None:
+    result = _evaluate([_comment("2026-08-26T21:31:59Z")])
 
-    assert result["visiblePulseAgeMinutes"] == 35.017
-    assert result["staleAfterMinutes"] == 35
+    assert result["visiblePulseAgeMinutes"] == 28.017
+    assert result["staleAfterMinutes"] == 28
     assert result["stale"] is True
     assert result["dispatchRequired"] is True
+
+
+def test_five_minute_phase_geometry_leaves_runtime_margin_inside_35_minutes() -> None:
+    poll_seconds = 5 * 60
+    dispatch_after_seconds = 28 * 60
+    observed_runtime_budget_seconds = 60
+    objective_seconds = 35 * 60
+    first_stale_ages = []
+
+    # Cover every whole-second phase between a visible pulse and the watchdog.
+    for seconds_after_previous_tick in range(poll_seconds):
+        age_at_check = poll_seconds - seconds_after_previous_tick
+        while age_at_check <= dispatch_after_seconds:
+            age_at_check += poll_seconds
+        first_stale_ages.append(age_at_check)
+
+    assert max(first_stale_ages) == 33 * 60
+    assert max(first_stale_ages) + observed_runtime_budget_seconds == 34 * 60
+    assert max(first_stale_ages) + observed_runtime_budget_seconds < objective_seconds
 
 
 def test_public_commenter_cannot_spoof_a_fresh_pulse_marker() -> None:
@@ -171,10 +190,17 @@ def test_checker_source_pins_trusted_bot_and_has_no_history_walk() -> None:
     assert "issue_comment_pagination_limit_exceeded" not in source
 
 
-def test_active_pulse_run_suppresses_duplicate_recovery_dispatch() -> None:
+def test_active_forced_dispatch_suppresses_competing_recovery_race() -> None:
     result = _evaluate(
         [_comment("2026-08-26T20:41:21Z")],
-        [{"id": 99, "status": "in_progress", "created_at": "2026-08-26T21:58:00Z"}],
+        [
+            {
+                "id": 99,
+                "event": "workflow_dispatch",
+                "status": "in_progress",
+                "created_at": "2026-08-26T21:58:00Z",
+            }
+        ],
     )
 
     assert result["dispatchRequired"] is False
@@ -229,13 +255,17 @@ def test_decision_only_fallback_run_does_not_create_false_retry_cooldown() -> No
     assert result["reason"] == "VISIBLE_PULSE_STALE"
 
 
-def test_workflow_uses_offset_schedule_and_staleness_gated_event_fallbacks() -> None:
+def test_workflow_stale_gates_automatic_triggers_and_forces_explicit_dispatch() -> None:
     pulse = (ROOT / ".github/workflows/mlb-30m-progress-pulse.yml").read_text()
 
     assert "cron: '11,41 * * * *'" in pulse
     assert "cron: '7,37 * * * *'" not in pulse
     assert "cron: '0,30 * * * *'" not in pulse
     assert "workflow_run:" in pulse
+    workflow_run_block = pulse.split("workflow_run:", 1)[1].split(
+        "workflow_dispatch:", 1
+    )[0]
+    assert "branches: [main]" in workflow_run_block
     for producer in (
         "MLB Canonical Runtime Health Watch",
         "MLB Scoring Guard",
@@ -246,23 +276,30 @@ def test_workflow_uses_offset_schedule_and_staleness_gated_event_fallbacks() -> 
     ):
         assert producer in pulse
     assert "runtime_reports/mlb_*.json" in pulse
-    assert '[ "$EVENT_NAME" = "workflow_run" ] || [ "$EVENT_NAME" = "push" ]' in pulse
+    assert 'if [ "$EVENT_NAME" = "workflow_dispatch" ]; then' in pulse
+    assert "reason=EXPLICIT_WORKFLOW_DISPATCH" in pulse
+    assert "reason=DIRECT_PULSE_TRIGGER" not in pulse
     assert "scripts/check_mlb_progress_pulse_staleness.py" in pulse
-    assert "MLB_PROGRESS_STALE_AFTER_MINUTES: '35'" in pulse
+    assert "MLB_PROGRESS_STALE_AFTER_MINUTES: '28'" in pulse
     assert '--stale-after-minutes "$MLB_PROGRESS_STALE_AFTER_MINUTES"' in pulse
+    assert '--current-run-id "$GITHUB_RUN_ID"' in pulse
+    assert "--retry-cooldown-minutes 10" in pulse
+    assert "group: mlb-30m-production-progress-pulse" in pulse
+    assert "cancel-in-progress: false" in pulse
+    assert "--stale-after-minutes 35" not in pulse
     assert "--stale-after-minutes 40" not in pulse
     assert "actions: read" in pulse
     assert "needs.pulse_decision.outputs.run_pulse == 'true'" in pulse
 
 
-def test_cli_reads_35_minute_threshold_from_environment(monkeypatch) -> None:
+def test_cli_reads_28_minute_dispatch_threshold_from_environment(monkeypatch) -> None:
     observed: dict[str, int] = {}
 
     def fake_evaluate(comments, runs, **kwargs):
         observed["stale_after_minutes"] = kwargs["stale_after_minutes"]
         return {"stale": False, "dispatchRequired": False, "reason": "fixture"}
 
-    monkeypatch.setenv("MLB_PROGRESS_STALE_AFTER_MINUTES", "35")
+    monkeypatch.setenv("MLB_PROGRESS_STALE_AFTER_MINUTES", "28")
     monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
     monkeypatch.setattr(sys, "argv", [str(SCRIPT)])
     monkeypatch.setattr(watchdog, "_issue_comments", lambda *_args: [])
@@ -270,7 +307,7 @@ def test_cli_reads_35_minute_threshold_from_environment(monkeypatch) -> None:
     monkeypatch.setattr(watchdog, "evaluate_staleness", fake_evaluate)
 
     assert watchdog.main() == 0
-    assert observed["stale_after_minutes"] == 35
+    assert observed["stale_after_minutes"] == 28
 
 
 def test_independent_cadence_watchdog_is_stale_gated_and_read_only() -> None:
@@ -278,9 +315,12 @@ def test_independent_cadence_watchdog_is_stale_gated_and_read_only() -> None:
         ROOT / ".github/workflows/mlb-progress-pulse-cadence-watchdog.yml"
     ).read_text()
 
-    assert "cron: '7,17,27,37,47,57 * * * *'" in watchdog_workflow
+    assert "cron: '4/5 * * * *'" in watchdog_workflow
+    assert "Best effort only" in watchdog_workflow
+    assert "provides no" in watchdog_workflow
+    assert "delivery SLA" in watchdog_workflow
     assert '--stale-after-minutes "$MLB_PROGRESS_STALE_AFTER_MINUTES"' in watchdog_workflow
-    assert "MLB_PROGRESS_STALE_AFTER_MINUTES: '35'" in watchdog_workflow
+    assert "MLB_PROGRESS_STALE_AFTER_MINUTES: '28'" in watchdog_workflow
     assert "needs.decide.outputs.dispatch_required == 'true'" in watchdog_workflow
     assert "gh workflow run mlb-30m-progress-pulse.yml" in watchdog_workflow
     assert "--ref main" in watchdog_workflow
@@ -289,10 +329,35 @@ def test_independent_cadence_watchdog_is_stale_gated_and_read_only() -> None:
     assert "aws-actions/configure-aws-credentials" not in watchdog_workflow
     assert "AWS_ACCESS_KEY_ID" not in watchdog_workflow
     assert "scripts/check_mlb_progress_pulse_staleness.py" in watchdog_workflow
+    assert "--retry-cooldown-minutes 10" in watchdog_workflow
+    assert "group: mlb-progress-pulse-cadence-watchdog" in watchdog_workflow
+    assert "cancel-in-progress: false" in watchdog_workflow
 
 
 def test_primary_reporter_accepts_fixed_watchdog_dispatch() -> None:
     pulse = (ROOT / ".github/workflows/mlb-30m-progress-pulse.yml").read_text()
 
     assert "workflow_dispatch:" in pulse
-    assert "github.event_name != 'workflow_run'" in pulse
+    assert 'if [ "$EVENT_NAME" = "workflow_dispatch" ]; then' in pulse
+    forced_block = pulse.split(
+        'if [ "$EVENT_NAME" = "workflow_dispatch" ]; then', 1
+    )[1].split("else", 1)[0]
+    assert "dispatch_required=true" in forced_block
+
+
+def test_fresh_fallback_pulse_suppresses_following_scheduled_duplicate() -> None:
+    result = _evaluate(
+        [_comment("2026-08-26T21:59:30Z")],
+        [
+            {
+                "id": 104,
+                "event": "workflow_run",
+                "status": "completed",
+                "created_at": "2026-08-26T21:59:30Z",
+            }
+        ],
+    )
+
+    assert result["stale"] is False
+    assert result["dispatchRequired"] is False
+    assert result["reason"] == "VISIBLE_PULSE_FRESH"
