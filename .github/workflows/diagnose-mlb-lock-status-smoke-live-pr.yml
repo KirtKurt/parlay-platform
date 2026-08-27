@@ -1,0 +1,62 @@
+name: Diagnose MLB lock-status smoke live PR
+run-name: "Diagnose live MLB lock-status smoke PR #${{ github.run_number }}"
+
+"on":
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-mlb-lock-status-smoke-live-pr.yml'
+      - 'scripts/diagnose_mlb_lock_status_smoke_live.py'
+      - 'scripts/mlb_deploy_cutoff_smoke_policy.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-mlb-lock-status-smoke-live-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout PR source
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Capture compact read-only lifecycle evidence
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --region "$AWS_REGION_VALUE" \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text)
+          test -n "$API_URL"
+          test "$API_URL" != "None"
+          python scripts/diagnose_mlb_lock_status_smoke_live.py \
+            --api-url "$API_URL" \
+            --source-sha "$GITHUB_SHA" \
+            --output /tmp/mlb-lock-status-smoke-live-diagnostic.json
+
+      - name: Upload compact diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-lock-status-smoke-live-${{ github.run_id }}
+          path: /tmp/mlb-lock-status-smoke-live-diagnostic.json
+          if-no-files-found: error
+          retention-days: 14
