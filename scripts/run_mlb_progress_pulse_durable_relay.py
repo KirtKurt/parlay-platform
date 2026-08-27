@@ -220,7 +220,7 @@ def validate_wait_elapsed(
     return round(seconds / 60.0, 3)
 
 
-def filter_active_bounded_runs(def filter_active_bounded_runs(
+def filter_active_bounded_runs(
     runs: Iterable[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     trusted: list[dict[str, Any]] = []
