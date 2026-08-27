@@ -138,6 +138,7 @@ def test_workflow_uses_offset_schedule_and_staleness_gated_event_fallbacks() -> 
         "MLB Canonical Runtime Health Watch",
         "MLB Scoring Guard",
         "Deploy SAM to AWS",
+        "Verify MLB Scoring Fix After Deploy",
         "MLB Production Source Contract",
         "Unified MLB learning recovery once",
     ):
