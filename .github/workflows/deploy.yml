@@ -27,6 +27,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    outputs:
+      deployment_succeeded: ${{ steps.deploy.outputs.deployment_succeeded }}
+      deployed_sha: ${{ steps.deploy.outputs.deployed_sha }}
     steps:
       - name: Checkout exact source commit
         uses: actions/checkout@v4
@@ -339,6 +342,13 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --parameter-overrides "${parameter_overrides[@]}"
+
+          # These outputs are emitted only after SAM returns success. The
+          # downstream dispatcher intentionally does not depend on later smoke
+          # steps, so a deployed stack is always observed even if a diagnostic
+          # after this point fails.
+          echo "deployment_succeeded=true" >> "$GITHUB_OUTPUT"
+          echo "deployed_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Read stack outputs
         id: stack
@@ -945,3 +955,26 @@ jobs:
             runtime_reports/mlb_lambda_build_manifest_deploy.json
             runtime_reports/mlb_deploy_identity_latest.json
           if-no-files-found: warn
+
+  dispatch-postdeploy:
+    name: Dispatch verifier for the exact successful SAM deployment
+    needs: deploy
+    if: ${{ always() && needs.deploy.outputs.deployment_succeeded == 'true' && needs.deploy.outputs.deployed_sha != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch provenance-bound post-deploy verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOYED_SHA: ${{ needs.deploy.outputs.deployed_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOYED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          gh workflow run mlb-post-deploy-fix-verification.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f "target_deploy_sha=$DEPLOYED_SHA" \
+            -f "source_deploy_run_id=$GITHUB_RUN_ID" \
+            -f "source_deploy_run_attempt=$GITHUB_RUN_ATTEMPT"
