@@ -11,6 +11,7 @@ HELLO = ROOT / "hello_world"
 if str(HELLO) not in sys.path:
     sys.path.insert(0, str(HELLO))
 
+import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
 import mlb_immutable_locked_storage_patch as immutable_storage
 import mlb_locked_prediction_storage_finalizer_v1 as finalizer
 import mlb_slate_coverage_patch as coverage
@@ -105,7 +106,7 @@ def _assert_live_overlay_markers(row):
     assert immutable_storage._canonical_read_overlay(row) is True
 
 
-def _module_with_existing_canonical_rows(count):
+def _module_with_existing_canonical_rows(count, *, vector_excluded=False):
     history = FakeHistory()
     mutable_store_calls = []
 
@@ -141,6 +142,16 @@ def _module_with_existing_canonical_rows(count):
             base,
             game_id=f"canonical-{index}",
         )
+        if vector_excluded:
+            row["frozenFeatureVector"]["fingerprint"] = (
+                f"invalid-vector-{index}"
+            )
+            row = vector_contract.apply_exact_vector_training_status(
+                row
+            )
+            assert row["exactVectorVerified"] is False
+            assert row["trainingEligible"] is False
+            assert row["exactVectorValidationErrors"]
         seed_stage(history, row)
         created = module._store_prediction(row)
         assert created["ok"] is True
@@ -225,6 +236,32 @@ def test_mixed_slate_two_existing_canonical_and_five_future_rows_is_healthy():
         and stored["canonicalWriteAttempted"] is False
         for stored in canonical_results
     )
+
+
+def test_existing_training_ineligible_selection_remains_idempotent():
+    module, canonical_rows, _ = _module_with_existing_canonical_rows(
+        1,
+        vector_excluded=True,
+    )
+    overlay = _canonical_public_overlay(canonical_rows[0])
+    _assert_live_overlay_markers(overlay)
+    before = copy.deepcopy(module.history.PULLS.items)
+
+    verified = module._store_prediction(overlay)
+
+    assert verified["ok"] is True
+    assert verified["immutableExisting"] is True
+    assert verified["idempotentExistingVerified"] is True
+    assert verified["canonicalWriteAttempted"] is False
+    assert verified["canonicalReadOverlayVerified"] is True
+    assert verified["exactVectorVerified"] is False
+    assert verified["exactVectorValidationErrors"]
+    assert verified["incomingExactVectorValidationErrors"] == (
+        verified["exactVectorValidationErrors"]
+    )
+    assert verified["trainingEligible"] is False
+    assert verified["trainingExclusionReasons"]
+    assert module.history.PULLS.items == before
 
 
 def _assert_rejected_without_write(module, row, before):
