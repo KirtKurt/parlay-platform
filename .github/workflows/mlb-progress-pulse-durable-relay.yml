@@ -3,8 +3,8 @@ name: MLB progress pulse durable relay
 run-name: MLB durable pulse relay hop ${{ github.event_name == 'workflow_dispatch' && inputs.remaining_hops || '96' }}
 
 on:
-  # Best-effort seeds renew a finite 48-hour lease. Once any seed is admitted,
-  # each successor waits on the repository-owned non-billable environment timer.
+  # Each admitted seed is a renewable finite lease, not an indefinite loop.
+  # The environment timer is the non-billable 30-minute clock.
   schedule:
     - cron: '23 3 * * *'
   workflow_run:
@@ -24,7 +24,7 @@ on:
   workflow_dispatch:
     inputs:
       remaining_hops:
-        description: Finite 30-minute relay hops, from 1 through 96
+        description: Renewable finite 30-minute relay hops, from 1 through 96
         required: false
         default: 96
         type: number
@@ -38,17 +38,61 @@ permissions:
   contents: read
   issues: read
 
-# Environment waits consume no runner. Concurrency preserves one waiting/active
-# hop and at most one trusted renewal seed without canceling the current hop.
-concurrency:
-  group: mlb-progress-pulse-durable-relay
-  cancel-in-progress: false
-
 jobs:
+  preflight:
+    # Reject untrusted sources before they can enter relay concurrency or wait.
+    if: >-
+      github.repository == 'KirtKurt/parlay-platform' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      remaining_hops: ${{ steps.validate.outputs.remaining_hops }}
+      environment_valid: ${{ steps.validate.outputs.environment_valid }}
+    steps:
+      - name: Checkout exact current main policy
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate source and timer before protected ownership
+        id: validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_REMAINING_HOPS: ${{ inputs.remaining_hops }}
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/check_mlb_progress_pulse_staleness.py
+          python -m py_compile scripts/run_mlb_progress_pulse_durable_relay.py
+          ! grep -Ei 'boto3|aws[[:space:]]+(dynamodb|lambda)|put_item|update_item|delete_item' scripts/check_mlb_progress_pulse_staleness.py scripts/run_mlb_progress_pulse_durable_relay.py
+          ! grep -Ei 'gh[[:space:]]+issue|issues:[[:space:]]+write' scripts/run_mlb_progress_pulse_durable_relay.py
+          python scripts/run_mlb_progress_pulse_durable_relay.py \
+            --mode preflight \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --remaining-hops "${INPUT_REMAINING_HOPS:-}" \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --github-output "$GITHUB_OUTPUT"
+
   relay:
-    if: github.event_name != 'workflow_run' || (github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)
+    needs: preflight
+    if: needs.preflight.outputs.environment_valid == 'true'
+    # This deliberately shares the incumbent #603 group. Cutover must drain
+    # the incumbent first; rollback must drain this implementation first.
+    concurrency:
+      group: mlb-progress-pulse-bounded-runner-relay
+      cancel-in-progress: false
     # Do not merge until the owner configures this public-repository environment
-    # with exactly one 30-minute wait timer and no reviewer/custom gates.
+    # with exactly one 30-minute wait timer, no review/custom/branch gates, and
+    # administrator bypass disabled. Post-wait elapsed proof catches bypass.
     environment:
       name: mlb-pulse-30m-delay
       deployment: false
@@ -66,21 +110,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Validate read-only relay boundary
-        run: |
-          set -euo pipefail
-          python -m py_compile scripts/check_mlb_progress_pulse_staleness.py
-          python -m py_compile scripts/run_mlb_progress_pulse_durable_relay.py
-          ! grep -Ei 'boto3|aws[[:space:]]+(dynamodb|lambda)|put_item|update_item|delete_item' scripts/check_mlb_progress_pulse_staleness.py scripts/run_mlb_progress_pulse_durable_relay.py
-          ! grep -Ei 'gh[[:space:]]+issue|issues:[[:space:]]+write' scripts/run_mlb_progress_pulse_durable_relay.py
-
-      - name: Maintain one protected finite relay hop
+      - name: Revalidate timer, exclude legacy ownership, and maintain lease
         env:
           GH_TOKEN: ${{ github.token }}
-          INPUT_REMAINING_HOPS: ${{ inputs.remaining_hops }}
+          INPUT_REMAINING_HOPS: ${{ needs.preflight.outputs.remaining_hops }}
         run: |
           set -euo pipefail
           python scripts/run_mlb_progress_pulse_durable_relay.py \
+            --mode relay \
             --event-name "$GITHUB_EVENT_NAME" \
-            --remaining-hops "${INPUT_REMAINING_HOPS:-}" \
+            --remaining-hops "$INPUT_REMAINING_HOPS" \
             --event-path "$GITHUB_EVENT_PATH"
