@@ -1,10 +1,13 @@
 name: Verify MLB Scoring Fix After Deploy
+run-name: "Verify MLB scoring deploy ${{ inputs.target_deploy_sha }}"
 
 on:
-  workflow_run:
-    workflows: ["Deploy SAM to AWS"]
-    types: [completed]
   workflow_dispatch:
+    inputs:
+      target_deploy_sha:
+        description: Exact successful deploy commit to verify
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -16,20 +19,31 @@ concurrency:
 env:
   REPORT_PATH: runtime_reports/mlb_scoring_fix_post_deploy_latest.json
   CANDIDATE_PATH: /tmp/mlb-scoring-fix-post-deploy-candidate.json
+  TARGET_DEPLOY_SHA: ${{ inputs.target_deploy_sha }}
 
 jobs:
   verify:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout deployed main source
+      - name: Checkout trusted verifier source
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
+
+      - name: Validate exact deployed commit input
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::target_deploy_sha must be a full lowercase Git commit SHA"
+            exit 1
+          }
+          git fetch --no-tags origin main
+          git cat-file -e "${TARGET_DEPLOY_SHA}^{commit}"
+          git merge-base --is-ancestor "$TARGET_DEPLOY_SHA" origin/main || {
+            echo "::error::target_deploy_sha is not an ancestor of current main"
+            exit 1
+          }
 
       - uses: actions/setup-python@v5
         with:
@@ -50,7 +64,6 @@ jobs:
         continue-on-error: true
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
-          TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
           SNAPSHOTS_TABLE: parlay_platform_snapshots
           SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
           PREDICTIONS_TABLE: parlay_platform_predictions
@@ -96,7 +109,6 @@ jobs:
         id: acceptance
         continue-on-error: true
         env:
-          TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -241,7 +253,6 @@ jobs:
       - name: Ensure durable post-deploy evidence
         if: always()
         env:
-          TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
           OBSERVE_OUTCOME: ${{ steps.observe.outcome }}
           SCORING_OUTCOME: ${{ steps.scoring.outcome }}
           RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}

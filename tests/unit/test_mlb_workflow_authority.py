@@ -16,6 +16,7 @@ def _copy_contract(tmp_path: Path) -> Path:
         ".github/workflows/mlb-production-source-contract.yml",
         ".github/workflows/mlb-production-acceptance.yml",
         ".github/workflows/deploy.yml",
+        ".github/workflows/mlb-post-deploy-fix-verification.yml",
         "template.yaml",
         "hello_world/api.py",
         "hello_world/mlb_date_signal_api.py",
@@ -776,5 +777,141 @@ def test_rejects_terminal_rollback_as_updateable(tmp_path: Path) -> None:
 
     assert (
         "canonical_deploy_treats_terminal_rollback_as_updateable"
+        in authority.verify_repository(root)
+    )
+
+
+def test_rejects_automatic_postdeploy_workflow_run_trigger(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    workflow = root / authority.POSTDEPLOY_VERIFICATION_WORKFLOW
+    text = workflow.read_text(encoding="utf-8")
+    workflow.write_text(
+        text.replace(
+            "  workflow_dispatch:\n",
+            "  workflow_run:\n"
+            '    workflows: ["Deploy SAM to AWS"]\n'
+            "    types: [completed]\n"
+            "  workflow_dispatch:\n",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        "postdeploy_verification_must_be_manual_dispatch_only"
+        in authority.verify_repository(root)
+    )
+
+
+def test_rejects_optional_postdeploy_exact_sha_input(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    workflow = root / authority.POSTDEPLOY_VERIFICATION_WORKFLOW
+    text = workflow.read_text(encoding="utf-8")
+    workflow.write_text(
+        text.replace("        required: true\n", "        required: false\n", 1),
+        encoding="utf-8",
+    )
+
+    assert (
+        "postdeploy_verification_exact_sha_input_invalid"
+        in authority.verify_repository(root)
+    )
+
+
+def test_rejects_postdeploy_sha_bound_to_dispatch_head(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    workflow = root / authority.POSTDEPLOY_VERIFICATION_WORKFLOW
+    text = workflow.read_text(encoding="utf-8")
+    workflow.write_text(
+        text.replace(
+            "TARGET_DEPLOY_SHA: ${{ inputs.target_deploy_sha }}",
+            "TARGET_DEPLOY_SHA: ${{ github.sha }}",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        "postdeploy_verification_exact_sha_binding_invalid"
+        in authority.verify_repository(root)
+    )
+
+
+def test_rejects_missing_postdeploy_dispatch_from_deploy(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace(
+            "gh workflow run mlb-post-deploy-fix-verification.yml",
+            "echo postdeploy-dispatch-removed",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    errors = authority.verify_repository(root)
+    assert "canonical_deploy_postdeploy_dispatch_count_invalid" in errors
+    assert any(
+        error.startswith("canonical_deploy_postdeploy_dispatch_contract_missing:")
+        for error in errors
+    )
+
+
+def test_rejects_postdeploy_dispatch_without_actions_write(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace("      actions: write\n", "      actions: read\n", 1),
+        encoding="utf-8",
+    )
+
+    assert any(
+        error.endswith(
+            "permissions:\n      actions: write\n      contents: read"
+        )
+        for error in authority.verify_repository(root)
+    )
+
+
+def test_rejects_actions_write_on_aws_deploy_job(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace(
+            "  deploy:\n",
+            "  deploy:\n"
+            "    permissions:\n"
+            "      actions: write\n"
+            "      contents: read\n",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        "canonical_deploy_job_actions_write_too_broad"
+        in authority.verify_repository(root)
+    )
+
+
+def test_rejects_optional_postdeploy_dispatch_step(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace(
+            "      - name: Dispatch exact successful deployment verification\n",
+            "      - name: Dispatch exact successful deployment verification\n"
+            "        continue-on-error: true\n",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        "canonical_deploy_postdeploy_dispatch_must_be_enforced"
         in authority.verify_repository(root)
     )

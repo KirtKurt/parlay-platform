@@ -493,3 +493,48 @@ def test_postdeploy_workflow_preserves_structured_observer_failure():
     assert "scheduled_pull_observation_failed" in source
     assert "'scheduledPullObservationFailure': invocation.get('failure')" in source
 
+
+
+def test_postdeploy_workflow_requires_exact_manual_deploy_sha():
+    source = Path(
+        ".github/workflows/mlb-post-deploy-fix-verification.yml"
+    ).read_text(encoding="utf-8")
+    trigger_block = source.split("on:\n", 1)[1].split("\npermissions:\n", 1)[0]
+
+    assert "  workflow_dispatch:\n" in trigger_block
+    assert "      target_deploy_sha:\n" in trigger_block
+    assert "        required: true\n" in trigger_block
+    assert "        type: string\n" in trigger_block
+    assert "  workflow_run:" not in trigger_block
+    assert "  push:" not in trigger_block
+    assert "  schedule:" not in trigger_block
+    assert "github.event.workflow_run" not in source
+    assert source.count(
+        "TARGET_DEPLOY_SHA: ${{ inputs.target_deploy_sha }}"
+    ) == 1
+    assert '[[ "$TARGET_DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]' in source
+    assert 'git cat-file -e "${TARGET_DEPLOY_SHA}^{commit}"' in source
+    assert 'git merge-base --is-ancestor "$TARGET_DEPLOY_SHA" origin/main' in source
+
+
+def test_deploy_dispatches_postdeploy_from_isolated_enforced_job():
+    source = Path(".github/workflows/deploy.yml").read_text(encoding="utf-8")
+    deploy_job, dispatch_job = source.split("\n  dispatch-postdeploy:\n", 1)
+
+    assert "actions: write" not in deploy_job
+    assert "permissions:\n  contents: read\n" in deploy_job
+    assert "    needs: deploy\n" in dispatch_job
+    assert "    if: ${{ needs.deploy.result == 'success' }}\n" in dispatch_job
+    assert (
+        "    permissions:\n"
+        "      actions: write\n"
+        "      contents: read\n"
+    ) in dispatch_job
+    assert "          GH_TOKEN: ${{ github.token }}\n" in dispatch_job
+    assert source.count(
+        "gh workflow run mlb-post-deploy-fix-verification.yml"
+    ) == 1
+    assert '--repo "$GITHUB_REPOSITORY"' in dispatch_job
+    assert "--ref main" in dispatch_job
+    assert '-f "target_deploy_sha=$GITHUB_SHA"' in dispatch_job
+    assert "continue-on-error:" not in dispatch_job

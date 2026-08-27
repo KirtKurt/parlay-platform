@@ -908,3 +908,22 @@ jobs:
             runtime_reports/mlb_lambda_build_manifest_deploy.json
             runtime_reports/mlb_deploy_identity_latest.json
           if-no-files-found: warn
+
+  dispatch-postdeploy:
+    name: Dispatch exact MLB post-deploy verification
+    needs: deploy
+    if: ${{ needs.deploy.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch exact successful deployment verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-post-deploy-fix-verification.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f "target_deploy_sha=$GITHUB_SHA"
