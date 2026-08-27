@@ -1,0 +1,29 @@
+name: Dispatch manual R7 verification from isolated branch
+
+"on":
+  push:
+    branches:
+      - ops/manual-r7-verification-dispatch-20260827
+    paths:
+      - .github/workflows/manual-r7-verification-dispatch-branch.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Dispatch current-main manual recovery
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REQUEST_ID: isolated-manual-verification-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          gh workflow run unified-mlb-learning-recovery-once.yml \
+            --repo "$REPOSITORY" \
+            --ref main \
+            -f request_id="$REQUEST_ID"
