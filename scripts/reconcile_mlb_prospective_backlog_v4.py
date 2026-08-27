@@ -30,8 +30,8 @@ import reconcile_mlb_prospective_backlog_v3 as v3
 
 
 VERSION = (
-    "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v4.4-"
-    "verified-persistent-missed-replay"
+    "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v4.5-"
+    "explicit-settlement-authority-boundary"
 )
 MAX_INVOKE_ATTEMPTS = 12
 RETRY_DELAYS_SECONDS = (5, 10, 20, 30, 45, 60, 60, 60, 60, 60, 60)
@@ -249,6 +249,7 @@ def reconcile(
     slate_dates: Optional[List[str]] = None,
     invoke: Any = invoke_json_with_backpressure,
     status_sleep: Any = time.sleep,
+    settlement_authoritative_persistent_missed: bool = False,
 ) -> Dict[str, Any]:
     functions = base.resolve_stack_functions(cloudformation, stack_name)
     cutoff = base.release_cutoff(lambda_client, functions.trainer)
@@ -292,7 +293,10 @@ def reconcile(
                 sleep=status_sleep,
             )
             lock_evidence = _official_evidence(official_status, slate_date)
-            if _status_requires_terminal_durability_replay(official_status):
+            if (
+                _status_requires_terminal_durability_replay(official_status)
+                and not settlement_authoritative_persistent_missed
+            ):
                 raise base.ReconciliationError(
                     "official_status_terminal_durability_incomplete"
                 )
@@ -386,6 +390,9 @@ def reconcile(
         "selectedSlateDates": selected_slate_dates,
         "boundedMaximumSlateDays": max_slate_days,
         "statusFirst": True,
+        "settlementAuthoritativePersistentMissed": (
+            settlement_authoritative_persistent_missed
+        ),
         "readOnlyOfficialStatusProof": True,
         "backpressureRetryInstalled": True,
         "semanticStatusConsistencyRetryInstalled": True,
