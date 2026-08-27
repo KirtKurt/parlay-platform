@@ -1,0 +1,56 @@
+name: Probe MLB R7 August 4 durability
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/probe-mlb-r7-aug4-status.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Read exact-date lock durability without mutation
+        run: |
+          set -euo pipefail
+          function_name=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id MLBDailyPickLockFunction \
+            --region us-east-1 \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$function_name"
+          test "$function_name" != None
+          aws lambda invoke \
+            --function-name "$function_name" \
+            --region us-east-1 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"httpMethod":"GET","path":"/v1/mlb/locks/status","queryStringParameters":{"date":"2026-08-04"}}' \
+            /tmp/aug4-status-envelope.json \
+            >/tmp/aug4-status-invocation.json
+          python - <<'PY'
+          import json
+          envelope=json.load(open('/tmp/aug4-status-envelope.json'))
+          body=envelope.get('body')
+          payload=json.loads(body) if isinstance(body,str) else dict(body or envelope)
+          fields=(
+              'ok','sport','slateDateEt','gameCount','lockedPredictionCount',
+              'lockedStatusCount','noPredictionDataCount','missedGameCount',
+              'missedLockCount','lockStatusComplete','canonicalPredictionComplete',
+              'operationalDefect','reason','error'
+          )
+          report={key:payload.get(key) for key in fields if key in payload}
+          print(json.dumps(report,indent=2,sort_keys=True,default=str))
+          assert report.get('slateDateEt')=='2026-08-04', report
+          PY
