@@ -647,7 +647,7 @@ def _cooperative_terminal_progress_public(
         or processed_count != next_index
         or terminal_count != next_index
         or canonical_count + no_prediction_count != terminal_count
-        or reconciled_count > terminal_count
+        or reconciled_count > no_prediction_count
         or verification_index > manifest_count
         or verified_count != verification_index
         or (phase == "PROCESS") != (next_index < manifest_count)
@@ -730,6 +730,7 @@ def _cooperative_terminal_progress_public(
             "READ_DURABLE_TERMINAL",
             "VERIFY_DURABLE_TERMINAL",
             "PROVE_PRELOCK_ABSENCE",
+            "BIND_MANIFEST_AUTHORITY",
             "WRITE_NO_PREDICTION_TERMINAL",
             "READBACK_NO_PREDICTION_TERMINAL",
             "VERIFY_GAME_STARTED",
@@ -758,14 +759,54 @@ def _cooperative_terminal_progress_public(
         "atUtc": at_utc,
         "phase": attempt_phase,
     }
+    completion_checkpoint = (
+        phase == "VERIFY"
+        and next_index == manifest_count
+        and verification_index == manifest_count
+        and verification_complete is True
+    )
+    completion_cursor_pairs = {
+        (
+            "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+            "ATOMIC_COMPLETION_PROOF",
+        ),
+        (
+            "DEFERRED_MUTATION_LEASE_CONTENDED",
+            "MUTATION_LEASE_CONTENDED",
+        ),
+        ("FAILED_CLOSED", "ATOMIC_COMPLETION_PROOF"),
+        ("FAILED_CLOSED", "RELEASE_MUTATION_LEASE"),
+    }
+    completion_only_pairs = {
+        (
+            "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+            "ATOMIC_COMPLETION_PROOF",
+        ),
+        ("FAILED_CLOSED", "ATOMIC_COMPLETION_PROOF"),
+    }
+    attempt_pair = (status, stage)
+    if attempt_pair in completion_only_pairs and not completion_checkpoint:
+        return dict(invalid)
+    completion_cursor = (
+        completion_checkpoint and attempt_pair in completion_cursor_pairs
+    )
     if "gameIndex" in last_attempt:
         game_index = strict_integer(
             last_attempt.get("gameIndex"),
-            maximum=manifest_count - 1,
+            maximum=(
+                manifest_count
+                if completion_cursor
+                else manifest_count - 1
+            ),
         )
-        if game_index is None:
+        if (
+            game_index is None
+            or (completion_cursor and game_index != manifest_count)
+        ):
             return dict(invalid)
         public_attempt["gameIndex"] = game_index
+    elif completion_cursor:
+        return dict(invalid)
 
     for field, maximum in (
         ("gameIdentity", 200),
