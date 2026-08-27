@@ -1,0 +1,166 @@
+name: MLB progress pulse durable relay
+
+on:
+  # This schedule only refreshes a finite relay lease. Once admitted, the relay
+  # no longer depends on subsequent cron admissions for up to ~49 hours.
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_run:
+    workflows:
+      - MLB Canonical Runtime Health Watch
+      - MLB Scoring Guard
+      - Deploy SAM to AWS
+      - Verify MLB Scoring Fix After Deploy
+      - MLB Production Source Contract
+      - Unified MLB learning recovery once
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      remaining_hops:
+        description: Finite 31-minute relay hops, from 1 through 96
+        required: false
+        default: 96
+        type: number
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-progress-pulse-durable-relay.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+# GitHub's default single-pending concurrency policy allows one active relay and
+# at most one replacement seed. Never cancel a relay that is already inside its
+# non-billable environment wait.
+concurrency:
+  group: mlb-progress-pulse-durable-relay
+  cancel-in-progress: false
+
+env:
+  RELAY_ENVIRONMENT: mlb-pulse-31m-delay
+  REQUIRED_WAIT_MINUTES: '31'
+  MAX_RELAY_HOPS: '96'
+
+jobs:
+  relay:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.head_branch == 'main'
+    # Repository administrators must configure this public-repository
+    # environment with exactly one 31-minute wait timer and no reviewer/custom
+    # gates before enabling the relay. The timer is applied before a runner is
+    # allocated and does not count toward billable runner time.
+    environment:
+      name: mlb-pulse-31m-delay
+      deployment: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate the non-billable delay and finite lease
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_REMAINING_HOPS: ${{ inputs.remaining_hops }}
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_REF" != 'refs/heads/main' ]; then
+            echo "::error::Durable relay is restricted to the default main branch."
+            exit 78
+          fi
+
+          environment_json="$(
+            gh api \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2026-03-10' \
+              "repos/$GITHUB_REPOSITORY/environments/$RELAY_ENVIRONMENT"
+          )"
+          wait_timer_count="$(
+            jq '[.protection_rules[]? | select(.type == "wait_timer")] | length' \
+              <<<"$environment_json"
+          )"
+          wait_timer_minutes="$(
+            jq -r '[.protection_rules[]? | select(.type == "wait_timer") | .wait_timer] | first // 0' \
+              <<<"$environment_json"
+          )"
+          incompatible_rule_count="$(
+            jq '[.protection_rules[]? |
+              select(.type != "wait_timer" and .type != "branch_policy")] | length' \
+              <<<"$environment_json"
+          )"
+
+          if [ "$wait_timer_count" != '1' ] ||
+             [ "$wait_timer_minutes" != "$REQUIRED_WAIT_MINUTES" ] ||
+             [ "$incompatible_rule_count" != '0' ]; then
+            echo "::error::Environment $RELAY_ENVIRONMENT must have exactly one ${REQUIRED_WAIT_MINUTES}-minute wait timer and no reviewer/custom protection rules."
+            exit 78
+          fi
+
+          if [ "$GITHUB_EVENT_NAME" = 'workflow_dispatch' ]; then
+            remaining_hops="${INPUT_REMAINING_HOPS:-$MAX_RELAY_HOPS}"
+          else
+            remaining_hops="$MAX_RELAY_HOPS"
+          fi
+          if ! [[ "$remaining_hops" =~ ^[0-9]+$ ]] ||
+             [ "$remaining_hops" -lt 1 ] ||
+             [ "$remaining_hops" -gt "$MAX_RELAY_HOPS" ]; then
+            echo "::error::remaining_hops must be an integer from 1 through $MAX_RELAY_HOPS."
+            exit 78
+          fi
+
+          {
+            echo 'environment_valid=true'
+            echo "remaining_hops=$remaining_hops"
+            echo "next_hops=$((remaining_hops - 1))"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo '## Durable MLB pulse relay'
+            echo
+            echo "- Environment wait timer: ${wait_timer_minutes} minutes"
+            echo "- Remaining finite hops including this one: ${remaining_hops}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dispatch the stale-gated read-only reporter
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-30m-progress-pulse.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            --field force=false
+          echo '- Stale-gated reporter dispatched.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dispatch one finite successor unless another seed is waiting
+        if: ${{ always() && steps.guard.outputs.environment_valid == 'true' && steps.guard.outputs.next_hops != '0' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXT_HOPS: ${{ steps.guard.outputs.next_hops }}
+        run: |
+          set -euo pipefail
+
+          runs_json="$(
+            gh api \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2026-03-10' \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/mlb-progress-pulse-durable-relay.yml/runs?per_page=20"
+          )"
+          other_active_count="$(
+            jq --arg current "$GITHUB_RUN_ID" \
+              '[.workflow_runs[] |
+                select((.id | tostring) != $current and .status != "completed")] |
+               length' <<<"$runs_json"
+          )"
+
+          if [ "$other_active_count" -gt 0 ]; then
+            echo "- Successor not dispatched: ${other_active_count} seed/relay run is already active or queued." \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          gh workflow run mlb-progress-pulse-durable-relay.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            --field remaining_hops="$NEXT_HOPS"
+          echo "- Finite successor dispatched with ${NEXT_HOPS} hops remaining." \
+            >> "$GITHUB_STEP_SUMMARY"
