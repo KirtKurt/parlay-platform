@@ -75,6 +75,7 @@ jobs:
             --output /tmp/mlb-lock-status-lifecycle.json
 
       - name: Upload read-only lifecycle evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mlb-lock-status-lifecycle-${{ github.run_id }}
@@ -82,5 +83,5 @@ jobs:
             /tmp/mlb-lock-status-direct.json
             /tmp/mlb-lock-status-direct-invocation.json
             /tmp/mlb-lock-status-lifecycle.json
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
