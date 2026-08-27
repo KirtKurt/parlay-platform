@@ -1,15 +1,6 @@
 name: MLB Historical Hourly Liveness V1
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/mlb-historical-hourly-liveness-v1.yml'
-      - 'scripts/mlb_historical_liveness_policy_v2.py'
-      - 'tests/unit/test_mlb_historical_hourly_liveness_workflow.py'
-      - 'tests/unit/test_mlb_historical_liveness_policy_v2.py'
-  schedule:
-    - cron: '7 * * * *'
   workflow_dispatch:
 
 permissions:

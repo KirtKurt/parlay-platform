@@ -421,6 +421,35 @@ def test_v5_preserves_v4_safety_flags(monkeypatch):
     assert result["automaticWagerAllowed"] is False
 
 
+def test_v5_forwards_exact_target_as_bounded_slate_selection(monkeypatch):
+    observed = {}
+
+    def fake_reconcile(*args, **kwargs):
+        del args
+        observed.update(kwargs)
+        return {
+            "ok": True,
+            "version": v4.VERSION,
+            "directTableWrite": False,
+            "postStartPredictionCreationAllowed": False,
+            "immutablePredictionRewriteAllowed": False,
+            "promotionAuthorityChanged": False,
+            "productionAuthorityChanged": False,
+            "automaticWagerAllowed": False,
+        }
+
+    monkeypatch.setattr(v4, "reconcile", fake_reconcile)
+    subject.reconcile(
+        "cf",
+        "lambda",
+        stack_name="stack",
+        target_slate_date="2026-08-25",
+    )
+
+    assert observed["slate_dates"] == ["2026-08-25"]
+    assert "target_slate_date" not in observed
+
+
 def test_source_has_no_storage_prediction_or_authority_writer():
     source = (
         ROOT / "scripts" / "reconcile_mlb_prospective_backlog_v5.py"

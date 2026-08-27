@@ -4,6 +4,8 @@ from datetime import timezone
 from pathlib import Path
 import re
 
+import yaml
+
 from scripts.publish_monotonic_json import evidence_time
 
 
@@ -39,9 +41,11 @@ def test_v9_uses_candidate_files_and_never_deletes_latest_pointer():
     assert text.count("python scripts/publish_monotonic_json.py") == 2
 
 
-def test_v10_wakes_on_context_and_publishes_only_valid_candidate():
+def test_v10_is_manual_only_and_publishes_only_valid_candidate():
     text = V10_WORKFLOW.read_text(encoding="utf-8")
-    assert "runtime_reports/mlb_v8_historical_context_backfill_latest.json" in text
+    document = yaml.load(text, Loader=yaml.BaseLoader)
+
+    assert set(document["on"]) == {"workflow_dispatch"}
     assert 'CANDIDATE_PATH: /tmp/mlb-v10-autonomous-signal-discovery-candidate.json' in text
     assert 'rm -f "$REPORT_PATH"' not in text
     assert '--output "$CANDIDATE_PATH"' in text

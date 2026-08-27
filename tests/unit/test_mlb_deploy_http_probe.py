@@ -332,3 +332,60 @@ def test_single_attempt_heavy_probe_accepts_valid_json_object() -> None:
     )
     assert result == {"ok": True}
     assert clock.sleeps == []
+
+
+def test_explicit_fail_closed_503_returns_actual_status_and_json_body() -> None:
+    clock = Clock()
+    body = {
+        "ok": False,
+        "status": "NO_QUALIFIED_CHAMPION",
+        "publicationClosed": True,
+        "predictions": [],
+    }
+
+    def opener(_request, *, timeout):
+        raise urllib.error.HTTPError(
+            "https://example.test/predictions",
+            503,
+            "fail closed",
+            {},
+            io.BytesIO(json.dumps(body).encode("utf-8")),
+        )
+
+    response = probe.fetch_json_response(
+        "https://example.test/predictions",
+        accepted_http_statuses=(200, 503),
+        max_attempts=1,
+        opener=opener,
+        monotonic=clock.monotonic,
+        sleep=clock.sleep,
+    )
+
+    assert response.http_status == 503
+    assert response.payload == body
+    assert clock.sleeps == []
+
+
+def test_unaccepted_503_remains_a_transient_failure() -> None:
+    clock = Clock()
+
+    def opener(_request, *, timeout):
+        raise urllib.error.HTTPError(
+            "https://example.test/status",
+            503,
+            "busy",
+            {},
+            io.BytesIO(b'{"message":"Service Unavailable"}'),
+        )
+
+    with pytest.raises(
+        probe.TransientHttpProbeExhausted,
+        match="attempt limit exhausted after 1 attempts",
+    ):
+        probe.fetch_json_response(
+            "https://example.test/status",
+            max_attempts=1,
+            opener=opener,
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+        )

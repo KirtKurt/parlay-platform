@@ -163,6 +163,46 @@ def verify_payload(http_status: int, payload: Any) -> Dict[str, Any]:
     }
 
 
+def verify_public_prediction_payload(
+    http_status: int,
+    payload: Any,
+) -> Dict[str, Any]:
+    """Verify the authority boundary specifically on the predictions route.
+
+    The model-version route intentionally omits prediction arrays, while the
+    public predictions route must prove that a no-champion 503 publishes zero
+    winners. Keep that stricter route contract separate so an arbitrary 503,
+    an authority-shaped body returned with HTTP 200, or a non-empty fallback
+    card can never satisfy deployment verification.
+    """
+
+    report = dict(verify_payload(http_status, payload))
+    errors = list(report.get("errors") or [])
+    body = dict(payload) if isinstance(payload, Mapping) else {}
+
+    if report.get("state") == "NO_QUALIFIED_CHAMPION":
+        if body.get("sport") != "mlb":
+            errors.append("public_predictions_sport_must_be_mlb")
+        if body.get("winner_predictions") != []:
+            errors.append("winner_predictions_must_be_explicitly_empty")
+        if body.get("predictions") != []:
+            errors.append("predictions_must_be_explicitly_empty")
+        if body.get("count") != 0:
+            errors.append("public_prediction_count_must_be_zero")
+
+    report.update({
+        "ok": not errors,
+        "publicPredictionsRoute": True,
+        "publicWinnerCount": (
+            len(body.get("winner_predictions"))
+            if isinstance(body.get("winner_predictions"), list)
+            else None
+        ),
+        "errors": sorted(set(errors)),
+    })
+    return report
+
+
 def fetch_json(url: str, timeout_seconds: float) -> Tuple[int, Dict[str, Any]]:
     request = urllib.request.Request(
         url,

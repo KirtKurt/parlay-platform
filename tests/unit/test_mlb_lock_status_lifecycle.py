@@ -5,6 +5,7 @@ import copy
 from tests.unit.test_mlb_daily_per_game_lock import (
     FakeTable,
     G1,
+    ROOT,
     SLATE,
     _fallback_to_provider_transition,
     build_module,
@@ -250,6 +251,118 @@ def test_missing_due_tminus15_assessment_fails_status_release_closed():
     assert payload["lockStatusComplete"] is True
     assert payload["playabilityValidationErrorCount"] == 1
     assert payload["operationalDefect"] is True
+
+
+def test_lease_independent_minute_sweep_captures_arbitrary_start_tminus30_and_tminus15():
+    arbitrary = game("arbitrary-minute", "2026-07-13T18:37:00+00:00")
+    lock_source = pull(
+        "2026-07-13T17:51:00+00:00",
+        [arbitrary],
+        "arbitrary-lock-source",
+    )
+    module = build_module(
+        [lock_source],
+        "2026-07-13T17:52:05+00:00",
+        seed=False,
+    )
+    persist_candidate(
+        module,
+        arbitrary,
+        lock_source,
+        mutate=_playable_with_confirmed_late_sources,
+    )
+    assert module.run_lock(SLATE)["locked"] is True
+    locked_before = copy.deepcopy(staged_items(module)[0]["data"]["row"])
+
+    t30_source = pull(
+        "2026-07-13T18:06:00+00:00",
+        [arbitrary],
+        "arbitrary-t30-source",
+    )
+    module.history.pulls.append(t30_source)
+    persist_candidate(
+        module,
+        arbitrary,
+        t30_source,
+        mutate=_playable_with_confirmed_late_sources,
+    )
+    module.now = dt("2026-07-13T18:07:20+00:00")
+    t30 = module.run_playability_checkpoints(SLATE)
+
+    assert t30["ok"] is True
+    assert t30["dueCheckpointCount"] == 1
+    assert t30["newlyRecordedCheckpointCount"] == 1
+    assert t30["missingDueCheckpointCount"] == 0
+
+    t15_source = pull(
+        "2026-07-13T18:21:00+00:00",
+        [arbitrary],
+        "arbitrary-t15-source",
+    )
+    module.history.pulls.append(t15_source)
+    persist_candidate(
+        module,
+        arbitrary,
+        t15_source,
+        mutate=_playable_with_confirmed_late_sources,
+    )
+    module.now = dt("2026-07-13T18:22:20+00:00")
+    t15 = module.run_playability_checkpoints(SLATE)
+    status = module._status_payload(SLATE)["perGameStatus"][0]
+
+    assert t15["ok"] is True
+    assert t15["dueCheckpointCount"] == 2
+    assert t15["preexistingCheckpointCount"] == 1
+    assert t15["newlyRecordedCheckpointCount"] == 1
+    assert t15["missingDueCheckpointCount"] == 0
+    assert status["requiredPlayabilityCheckpoint"] == "T_MINUS_15"
+    assert status["playabilityAssessment"]["checkpoint"] == "T_MINUS_15"
+    assert status["playabilityAssessment"]["checkpoint_timing_status"] == "ON_TIME"
+    assert status["playabilityAssessmentValidationErrors"] == []
+    assert status["lockedPrediction"] is True
+
+    locked_after = staged_items(module)[0]["data"]["row"]
+    for field in (
+        "predictedWinner",
+        "predictedSide",
+        "teamWinProbabilityPct",
+        "lastPrelockSelectionFingerprint",
+    ):
+        assert locked_after[field] == locked_before[field]
+
+    assessment_keys_before_start = {
+        (item["PK"], item["SK"])
+        for item in module.TABLE.items.values()
+        if item.get("record_type") == patch.RELEASE_ASSESSMENT_RECORD_TYPE
+    }
+    module.now = dt("2026-07-13T18:37:01+00:00")
+    post_start = module.run_playability_checkpoints(SLATE)
+    assessment_keys_after_start = {
+        (item["PK"], item["SK"])
+        for item in module.TABLE.items.values()
+        if item.get("record_type") == patch.RELEASE_ASSESSMENT_RECORD_TYPE
+    }
+
+    assert post_start["ok"] is True
+    assert post_start["dueCheckpointCount"] == 0
+    assert post_start["reason"] == "NO_PLAYABILITY_CHECKPOINT_DUE"
+    assert assessment_keys_after_start == assessment_keys_before_start
+
+
+def test_template_has_dedicated_minute_aligned_playability_checkpoint_sweep():
+    template = (ROOT / "template.yaml").read_text(encoding="utf-8")
+    resource = template.split(
+        "  MLBPlayabilityCheckpointFunction:\n",
+        1,
+    )[1].split("\n  MLBProductionVerifierFunction:\n", 1)[0]
+
+    assert "Handler: mlb_playability_checkpoint_scheduler.lambda_handler" in resource
+    assert "MLBPlayabilityCheckpointEveryMinute:" in resource
+    assert "Schedule: cron(* * * * ? *)" in resource
+    assert '"run":"playability_checkpoint_sweep"' in resource
+    assert resource.count("MaximumEventAgeInSeconds: 60") == 2
+    assert resource.count("MaximumRetryAttempts: 0") == 2
+    assert "MLBDailyPickLockEveryMinute" not in resource
 
 
 def test_tminus30_playability_rejects_evidence_persisted_after_checkpoint():

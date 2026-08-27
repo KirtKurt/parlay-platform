@@ -72,11 +72,12 @@ ISOLATED_THREE_SOURCE_REQUIREMENTS = {
         "Schedule: cron(2/5 * * * ? *)",
         "DeletionPolicy: Retain",
     ),
-    Path(".github/workflows/deploy-mlb-auto-llm.yml"): (
+    Path(".github/workflows/deploy-mlb-auto-prospective.yml"): (
         "secrets.ODDS_API_KEY",
         "secrets.BBS_API_KEY",
-        "api.bigballsdata.com/v1/user/me",
         'BbsApiKey="${BBS_API_KEY_VALUE}"',
+        "TargetDailyAccuracy='0.80'",
+        'AUTHORITY = "AWS_ML_PROSPECTIVE_R7"',
     ),
 }
 
@@ -85,6 +86,7 @@ ISOLATED_THREE_SOURCE_REQUIREMENTS = {
 # trained AWS ranked ensemble when Bedrock is unavailable. Accept the historical
 # title for old fixtures while requiring one of these explicit authority checks.
 ISOLATED_MODEL_AUTHORITY_MARKERS = (
+    "Prove live Bedrock inference without ML fallback",
     "Prove deployed model authority",
     "Prove Bedrock through deployed MLB Lambda role",
 )
@@ -133,7 +135,7 @@ def _verify_isolated_three_source() -> list[str]:
                     f"isolated_three_source_marker_missing:{path}:{marker}"
                 )
 
-    workflow_path = Path(".github/workflows/deploy-mlb-auto-llm.yml")
+    workflow_path = Path(".github/workflows/deploy-mlb-auto-prospective.yml")
     try:
         workflow = _read(workflow_path)
     except RuntimeError:

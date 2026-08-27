@@ -13,15 +13,12 @@ def _source() -> str:
     return WORKFLOW.read_text(encoding="utf-8")
 
 
-def test_r7_runtime_admission_trigger_isolated_from_main_pushes() -> None:
+def test_r7_runtime_admission_is_manual_only() -> None:
     value = yaml.load(_source(), Loader=yaml.BaseLoader)
     assert isinstance(value, dict)
     assert value["name"] == "Repair MLB R7 runtime admission now"
     assert value["permissions"] == {"contents": "read"}
-    push = value["on"]["push"]
-    assert push["branches"] == ["repair/run-mlb-r7-runtime-admission-20260825"]
-    assert push["paths"] == [".github/r7-runtime-admission-trigger"]
-    assert "main" not in push["branches"]
+    assert set(value["on"]) == {"workflow_dispatch"}
 
 
 def test_r7_runtime_admission_never_deploys_or_resolves_another_sport() -> None:

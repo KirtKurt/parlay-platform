@@ -1,6 +1,8 @@
 import importlib.util
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[2]
 REPAIRS = ROOT / "hello_world" / "mlb_historical_v7_priority_repairs_v1.py"
@@ -133,11 +135,12 @@ def test_candidate_handoff_is_fail_closed_until_evidence_is_complete():
     assert ready["requiresEverySlateAtLeast80Pct"] is True
 
 
-def test_shadow_workflow_checks_out_triggering_sha_and_runs_hourly():
+def test_shadow_workflow_is_retained_for_operator_only_evaluation():
     source = WORKFLOW.read_text(encoding="utf-8")
+    document = yaml.load(source, Loader=yaml.BaseLoader)
+
+    assert set(document["on"]) == {"workflow_dispatch"}
     assert "github.event.pull_request.head.sha || github.sha" in source
-    assert "cron: '17 * * * *'" in source
-    assert "branches: [main]" in source
 
 
 def test_shadow_refit_is_gated_and_canonical_audit_remains_200():

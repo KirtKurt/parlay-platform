@@ -48,6 +48,10 @@ def _scheduled(trigger_block: str) -> bool:
     return bool(re.search(r"(?m)^  schedule:\s*$", trigger_block))
 
 
+def _workflow_run_enabled(trigger_block: str) -> bool:
+    return bool(re.search(r"(?m)^  workflow_run:\s*$", trigger_block))
+
+
 def _workflow_dispatch_enabled(trigger_block: str) -> bool:
     return bool(re.search(r"(?m)^  workflow_dispatch:\s*$", trigger_block))
 
@@ -82,16 +86,119 @@ def _self_only_main_push(path: Path, trigger_block: str) -> bool:
 
 
 def _invokes_training(text: str) -> bool:
-    return (
-        "invoke_mlb_trainer_with_retry.py" in text
-        and "--payload" in text
-        and bool(
-            re.search(
-                r"['\"]mode['\"]\s*:\s*['\"](?:scheduled|training)['\"]",
-                text,
-            )
+    training_mode = bool(
+        re.search(
+            r"['\"]mode['\"]\s*:\s*['\"](?:scheduled|training)['\"]",
+            text,
         )
     )
+    trainer_identity = any(
+        marker in text
+        for marker in (
+            "invoke_mlb_trainer_with_retry.py",
+            "MLBMLTrainingFunction",
+            "MLBMLTrainingFunctionArn",
+            "MLB_ML_TRAINER",
+            "MLB_TRAINER",
+            "TRAINER_ARN",
+        )
+    ) or bool(re.search(r"(?m)^\s*(?:TRAINER|trainer)=", text))
+    return training_mode and trainer_identity
+
+
+def _automatic_trigger_types(trigger_block: str) -> list[str]:
+    trigger_types: list[str] = []
+    if _scheduled(trigger_block):
+        trigger_types.append("schedule")
+    if _workflow_run_enabled(trigger_block):
+        trigger_types.append("workflow_run")
+    if _push_enabled(trigger_block):
+        trigger_types.append("push")
+    return trigger_types
+
+
+def _workflow_dispatch_targets(text: str, known_workflows: set[str]) -> set[str]:
+    """Resolve static workflow-dispatch targets used by repository workflows."""
+    assignments: dict[str, str] = {}
+    for pattern in (
+        r"(?m)^\s*(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"
+        r"['\"]([^'\"]+\.ya?ml)['\"]",
+        r"(?m)^\s*([A-Z][A-Z0-9_]*)\s*:\s*['\"]?"
+        r"([^\s'\"]+\.ya?ml)['\"]?\s*$",
+    ):
+        for match in re.finditer(pattern, text):
+            assignments[match.group(1)] = Path(match.group(2)).name
+
+    targets: set[str] = set()
+    for pattern in (
+        r"\bgh\s+workflow\s+run\s+['\"]?([^\s'\"\\]+\.ya?ml)",
+        r"workflow_id\s*:\s*['\"]([^'\"]+\.ya?ml)['\"]",
+        r"actions/workflows/([^/\s'\"}]+\.ya?ml)/dispatches",
+    ):
+        targets.update(Path(match.group(1)).name for match in re.finditer(pattern, text))
+
+    for match in re.finditer(
+        r"workflow_id\s*:\s*([A-Za-z_][A-Za-z0-9_]*)", text
+    ):
+        resolved = assignments.get(match.group(1))
+        if resolved:
+            targets.add(resolved)
+    for pattern in (
+        r"\bgh\s+workflow\s+run\s+['\"]?\$\{?([A-Z][A-Z0-9_]*)\}?",
+        r"actions/workflows/\$\{?([A-Z][A-Z0-9_]*)\}?/dispatches",
+    ):
+        for match in re.finditer(pattern, text):
+            resolved = assignments.get(match.group(1))
+            if resolved:
+                targets.add(resolved)
+    return targets & known_workflows
+
+
+def _training_dispatch_path(
+    source: str,
+    *,
+    workflows: dict[str, str],
+    dispatch_graph: dict[str, set[str]],
+    seen: tuple[str, ...] = (),
+) -> list[str] | None:
+    if source in seen:
+        return None
+    if _invokes_training(workflows[source]):
+        return [source]
+    for target in sorted(dispatch_graph[source]):
+        path = _training_dispatch_path(
+            target,
+            workflows=workflows,
+            dispatch_graph=dispatch_graph,
+            seen=(*seen, source),
+        )
+        if path:
+            return [source, *path]
+    return None
+
+
+def _automatic_training_dispatch_chains(paths: Iterable[Path]) -> list[str]:
+    workflows = {
+        path.name: path.read_text(encoding="utf-8") for path in sorted(paths)
+    }
+    known_workflows = set(workflows)
+    dispatch_graph = {
+        name: _workflow_dispatch_targets(text, known_workflows)
+        for name, text in workflows.items()
+    }
+    chains: list[str] = []
+    for name, text in workflows.items():
+        trigger_types = _automatic_trigger_types(_trigger_block(text))
+        if not trigger_types:
+            continue
+        path = _training_dispatch_path(
+            name,
+            workflows=workflows,
+            dispatch_graph=dispatch_graph,
+        )
+        if path:
+            chains.append(f"{'+'.join(trigger_types)}:{'->'.join(path)}")
+    return sorted(chains)
 
 
 def _has_unified_concurrency(text: str) -> bool:
@@ -104,7 +211,8 @@ def _has_unified_concurrency(text: str) -> bool:
     )
 
 
-def _workflow_errors(paths: Iterable[Path]) -> tuple[list[str], int]:
+def _workflow_errors(paths: Iterable[Path]) -> tuple[list[str], int, list[str]]:
+    paths = list(paths)
     errors: list[str] = []
     manual_trainers = 0
     for path in sorted(paths):
@@ -116,10 +224,8 @@ def _workflow_errors(paths: Iterable[Path]) -> tuple[list[str], int]:
 
         trigger = _trigger_block(text)
         if path == RECOVERY_WORKFLOW:
-            if _scheduled(trigger):
-                errors.append("github_recovery_training_schedule_still_enabled")
-            if not _self_only_main_push(path, trigger):
-                errors.append("one_time_recovery_push_must_be_self_path_only")
+            if _automatic_trigger_types(trigger):
+                errors.append("github_recovery_must_be_workflow_dispatch_only")
             if not _workflow_dispatch_enabled(trigger):
                 errors.append("recovery_manual_dispatch_missing")
             if not _has_unified_concurrency(text):
@@ -127,13 +233,15 @@ def _workflow_errors(paths: Iterable[Path]) -> tuple[list[str], int]:
             continue
 
         manual_trainers += 1
-        if _scheduled(trigger) or _push_enabled(trigger):
+        if _automatic_trigger_types(trigger):
             errors.append(f"automatic_duplicate_trainer_owner:{path}")
         if not _workflow_dispatch_enabled(trigger):
             errors.append(f"manual_recovery_dispatch_missing:{path}")
         if not _has_unified_concurrency(text):
             errors.append(f"manual_recovery_not_serialized:{path}")
-    return errors, manual_trainers
+    automatic_chains = _automatic_training_dispatch_chains(paths)
+    errors.extend(f"automatic_trainer_dispatch_chain:{chain}" for chain in automatic_chains)
+    return errors, manual_trainers, automatic_chains
 
 
 def verify(root: Path = Path(".")) -> dict[str, object]:
@@ -176,7 +284,7 @@ def verify(root: Path = Path(".")) -> dict[str, object]:
             if required not in recovery:
                 errors.append(f"recovery_acceptance_contract_missing:{required}")
 
-        workflow_errors, manual_trainer_count = _workflow_errors(
+        workflow_errors, manual_trainer_count, automatic_chains = _workflow_errors(
             WORKFLOW_ROOT.glob("*.y*ml")
         )
         errors.extend(workflow_errors)
@@ -197,7 +305,15 @@ def verify(root: Path = Path(".")) -> dict[str, object]:
             "automaticTrainerOwner": "AWS_EVENTBRIDGE_SCHEDULE",
             "deploymentInvokesTraining": _invokes_training(deploy),
             "githubScheduledRecoveryEnabled": _scheduled(recovery_trigger),
+            "githubWorkflowRunRecoveryEnabled": _workflow_run_enabled(
+                recovery_trigger
+            ),
             "githubManualTrainerWorkflowCount": manual_trainer_count,
+            "automaticTrainerDispatchChains": automatic_chains,
+            "recoveryManualOnly": bool(
+                _workflow_dispatch_enabled(recovery_trigger)
+                and not _automatic_trigger_types(recovery_trigger)
+            ),
             "recoveryPushSelfPathOnly": _self_only_main_push(
                 RECOVERY_WORKFLOW, recovery_trigger
             ),

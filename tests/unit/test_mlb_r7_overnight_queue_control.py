@@ -12,12 +12,14 @@ def _trigger_block(workflow: str) -> str:
     return workflow.split('"on":\n', 1)[1].split("\npermissions:\n", 1)[0]
 
 
-def test_overnight_queue_has_dst_safe_schedule_and_dedicated_concurrency() -> None:
+def test_overnight_queue_is_manual_only_and_has_dedicated_concurrency() -> None:
     workflow = QUEUE_WORKFLOW.read_text(encoding="utf-8")
     trigger = _trigger_block(workflow)
 
-    assert "  schedule:\n" in trigger
-    assert "17,47 4-11 * * *" in trigger
+    assert "  workflow_dispatch:\n" in trigger
+    assert "  schedule:\n" not in trigger
+    assert "  workflow_run:\n" not in trigger
+    assert "  push:\n" not in trigger
     assert "America/New_York" in workflow
     assert "nyHour >= 0 && nyHour < 7" in workflow
     assert "group: mlb-r7-overnight-queue-control" in workflow
@@ -70,6 +72,8 @@ def test_bootstrap_is_manual_only_and_cannot_deploy_or_invoke_aws() -> None:
     assert "  push:" not in trigger
     assert "mlb-r7-overnight-advance.yml" in workflow
     assert "force: 'true'" in workflow
+    assert "neither\n# workflow owns automatic retries" in workflow.lower()
+    assert "eventbridge remains the only automatic" in workflow.lower()
     assert "bootstrap-mlb-r7-20260826" not in workflow
 
     for forbidden in (
@@ -83,7 +87,7 @@ def test_bootstrap_is_manual_only_and_cannot_deploy_or_invoke_aws() -> None:
 
 
 def main() -> None:
-    test_overnight_queue_has_dst_safe_schedule_and_dedicated_concurrency()
+    test_overnight_queue_is_manual_only_and_has_dedicated_concurrency()
     test_overnight_queue_dispatches_only_the_canonical_recovery()
     test_overnight_queue_serializes_active_and_legacy_recovery_runs()
     test_bootstrap_is_manual_only_and_cannot_deploy_or_invoke_aws()

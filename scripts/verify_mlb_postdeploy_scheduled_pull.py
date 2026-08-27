@@ -25,16 +25,16 @@ import boto3
 from boto3.dynamodb.conditions import Key
 
 try:
-    from scripts.mlb_deploy_http_probe import fetch_json_object
-    from scripts.mlb_deploy_cutoff_smoke_policy import (
-        ALLOWED_POST_CUTOFF_STATUSES,
-        historical_lifecycle_acceptance,
+    from scripts.mlb_deploy_http_probe import fetch_json_object, fetch_json_response
+    from scripts.mlb_deploy_cutoff_smoke_policy import ALLOWED_POST_CUTOFF_STATUSES
+    from scripts.mlb_public_prediction_smoke_policy import (
+        reconcile_public_prediction_lifecycle,
     )
 except ImportError:  # pragma: no cover - direct script execution
-    from mlb_deploy_http_probe import fetch_json_object
-    from mlb_deploy_cutoff_smoke_policy import (
-        ALLOWED_POST_CUTOFF_STATUSES,
-        historical_lifecycle_acceptance,
+    from mlb_deploy_http_probe import fetch_json_object, fetch_json_response
+    from mlb_deploy_cutoff_smoke_policy import ALLOWED_POST_CUTOFF_STATUSES
+    from mlb_public_prediction_smoke_policy import (
+        reconcile_public_prediction_lifecycle,
     )
 
 VERSION = "MLB-POSTDEPLOY-SCHEDULED-PULL-OBSERVER-v1-no-manual-pull"
@@ -415,11 +415,12 @@ def observe(
         retry_delay_seconds=8,
         headers=headers,
     )
-    predictions = fetch_json_object(
+    prediction_response = fetch_json_response(
         api_url + "/v1/mlb/predictions?" + query,
         deadline_monotonic=fetch_deadline,
         request_timeout_seconds=45,
         retry_delay_seconds=8,
+        accepted_http_statuses=(200, 503),
         headers=headers,
     )
 
@@ -435,11 +436,20 @@ def observe(
         raise RuntimeError("live_status_full_slate_coverage_missing")
 
     now = datetime.now(timezone.utc)
-    historical_projection = historical_lifecycle_acceptance(
-        predictions,
-        status_rows,
-        game_count,
-        now=now,
+    try:
+        public_reconciliation = reconcile_public_prediction_lifecycle(
+            int(prediction_response.http_status or 0),
+            prediction_response.payload,
+            status_rows,
+            game_count,
+            now=now,
+            status_operational_defect=status.get("operationalDefect") is True,
+        )
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+    predictions = public_reconciliation["lifecyclePayload"]
+    historical_projection = bool(
+        public_reconciliation["historicalStatusProjectionUsed"]
     )
     prediction_rows = [
         row for row in (predictions.get("predictions") or []) if isinstance(row, dict)
@@ -475,6 +485,12 @@ def observe(
             "preLockStorageDispositionComplete": dispositions["complete"],
             "canonicalLockedCount": dispositions["canonicalLockedCount"],
             "historicalStatusProjectionUsed": historical_projection,
+            "authorityClosedStatusProjectionUsed": bool(
+                public_reconciliation["authorityClosedStatusProjectionUsed"]
+            ),
+            "publicAuthorityState": public_reconciliation["authority"].get("state"),
+            "publicWinnerCount": public_reconciliation.get("publicWinnerCount"),
+            "statusProjectionPersisted": False,
             "operationalDefect": bool(
                 status.get("operationalDefect")
                 or predictions.get("operationalDefect")

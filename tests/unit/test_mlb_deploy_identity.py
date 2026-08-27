@@ -132,6 +132,15 @@ class FakeLambda:
                         "SNAPSHOTS_TABLE": "snapshots",
                     }
                 )
+            if role == "playability":
+                handler = deploy_identity.PLAYABILITY_HANDLER
+                environment.update(deploy_identity.LOCK_EXPECTED_ENVIRONMENT)
+                environment.update(
+                    {
+                        "SNAPSHOTS_TABLE": "snapshots",
+                        "OUTCOMES_TABLE": "outcomes",
+                    }
+                )
             self.configurations[f"physical-{role}"] = {
                 "FunctionArn": _arn(role),
                 "Handler": handler,
@@ -140,6 +149,8 @@ class FakeLambda:
                     if role == "trainer"
                     else deploy_identity.LOCK_TIMEOUT_SECONDS
                     if role == "lock"
+                    else deploy_identity.PLAYABILITY_TIMEOUT_SECONDS
+                    if role == "playability"
                     else 30
                 ),
                 "Runtime": "python3.11",
@@ -407,6 +418,23 @@ def test_verifies_trainer_identity_configuration_schedule_and_bucket(aws) -> Non
     assert result["lockConfiguration"]["reservedLambdaConcurrencyRequired"] is False
     assert result["lockConfiguration"]["asyncRetryPolicyMatches"] is True
     assert result["lockConfiguration"]["asyncDestinationConfigAbsent"] is True
+    assert result["playabilityConfiguration"]["matches"] is True
+    assert result["playabilityConfiguration"]["handler"] == (
+        deploy_identity.PLAYABILITY_HANDLER
+    )
+    assert result["playabilityConfiguration"]["timeoutSeconds"] == 120
+    assert result["playabilityConfiguration"]["leaseIndependent"] is True
+    assert result["playabilityConfiguration"]["selectionRewriteAllowed"] is False
+    assert result["playabilityConfiguration"]["predictionCreationAllowed"] is False
+    assert result["playabilityConfiguration"][
+        "postStartPredictionCreationAllowed"
+    ] is False
+    assert result["playabilityConfiguration"]["historicalMutationAllowed"] is False
+    assert result["playabilityConfiguration"]["requiredEnvironmentPresent"] is True
+    assert result["playabilityConfiguration"]["snapshotTable"] == "snapshots"
+    assert result["playabilityConfiguration"]["outcomesTable"] == "outcomes"
+    assert result["playabilityConfiguration"]["asyncRetryPolicyMatches"] is True
+    assert result["playabilityConfiguration"]["asyncDestinationConfigAbsent"] is True
     assert result["trainerConfiguration"]["matches"] is True
     assert result["trainerConfiguration"]["executionConcurrencyStrategy"] == (
         "dynamodb_conditional_lease"
@@ -437,7 +465,15 @@ def test_verifies_trainer_identity_configuration_schedule_and_bucket(aws) -> Non
     assert result["schedules"]["trainer"]["deliveryPolicyMatches"] is True
     assert result["schedules"]["trainer"]["sqsFailureDestinationRequired"] is False
     assert result["schedules"]["trainer"]["invocationInputsMatch"] is True
-    for role in ("ingest", "lock", "trainer", "settlement", "soccer", "autopsy"):
+    for role in (
+        "ingest",
+        "lock",
+        "playability",
+        "trainer",
+        "settlement",
+        "soccer",
+        "autopsy",
+    ):
         assert result["schedules"][role]["exactMatch"] is True
         assert result["schedules"][role]["targetTopologyMatches"] is True
         assert result["schedules"][role]["retryPolicyMatches"] is True
@@ -549,6 +585,28 @@ def test_rejects_wrong_trainer_timeout(aws) -> None:
         value.startswith("TRAINER_TIMEOUT_MISMATCH:")
         for value in result["blockers"]
     )
+
+
+def test_rejects_playability_handler_timeout_or_outcomes_environment_drift(aws) -> None:
+    configuration = aws["lambda"].configurations["physical-playability"]
+    configuration["Handler"] = "mlb_daily_pick_lock_protected.lambda_handler"
+    configuration["Timeout"] = 900
+    configuration["Environment"]["Variables"].pop("OUTCOMES_TABLE")
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["playabilityConfiguration"]["matches"] is False
+    assert result["playabilityConfiguration"]["requiredEnvironmentPresent"] is False
+    assert any(
+        value.startswith("PLAYABILITY_HANDLER_MISMATCH:")
+        for value in result["blockers"]
+    )
+    assert any(
+        value.startswith("PLAYABILITY_TIMEOUT_MISMATCH:")
+        for value in result["blockers"]
+    )
+    assert "PLAYABILITY_ENVIRONMENT_MISSING:OUTCOMES_TABLE" in result["blockers"]
 
 
 def test_rejects_incomplete_lambda_update_and_run_identity(aws) -> None:
@@ -1183,6 +1241,12 @@ def test_deploy_verifies_single_learning_owner_without_invoking_trainer() -> Non
         "Bind the verified clean SAM build to the deployment identity"
     ) < workflow.index("Deploy exact canonical source")
     assert "Preflight Lambda artifact attestation access" in workflow
+    assert "MLBPlayabilityCheckpointFunction" in workflow
+    assert "tests/unit/test_mlb_playability_checkpoint_scheduler.py" in workflow
+    assert (
+        "Playability checkpoint function is new and will be attested after this deployment."
+        in workflow
+    )
     assert "aws lambda get-function" in workflow
     assert "for attempt in range(1, 4):" in workflow
     assert (

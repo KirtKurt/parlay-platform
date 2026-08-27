@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "mlb-historical-supervised-v9-shadow.yml"
@@ -15,7 +17,6 @@ def _text() -> str:
 def test_workflow_does_not_depend_only_on_cloudformation_outputs():
     text = _text()
     assert "lambda_handler_scan" in text
-    assert "resolve_mlb_historical_artifacts_bucket.py" in text
     assert "resolved=true" in text
 
 
@@ -51,9 +52,11 @@ def test_workflow_publishes_report_and_handoff_atomically_and_monotonically():
     assert "empty or missing JSON evidence" in publisher
 
 
-def test_context_pointer_advancement_wakes_v7_v9_learning():
+def test_v7_v9_learning_is_retained_for_manual_shadow_evaluation():
     text = _text()
-    assert "runtime_reports/mlb_v8_historical_context_backfill_latest.json" in text
+    document = yaml.load(text, Loader=yaml.BaseLoader)
+
+    assert set(document["on"]) == {"workflow_dispatch"}
     assert "cancel-in-progress: false" in text
 
 

@@ -468,27 +468,55 @@ def _attach_repair(
     out["missedLockTerminalReconciliation"] = copy.deepcopy(report)
     progress = report.get("progressAfter")
     if not isinstance(progress, dict):
+        out.update(
+            {
+                "ok": False,
+                "reason": "PROTECTED_TERMINAL_RECONCILIATION_FAILED_CLOSED",
+                "failClosed": True,
+                "postStartPredictionCreationAllowed": False,
+            }
+        )
         return out
 
     reconciled_count = _int(report.get("reconciledCount"), 0)
     remaining = _int(progress.get("missedCount"), 0)
     due = _int(progress.get("dueMissingCount"), 0)
+    unresolved = report.get("unresolved") or []
+    cached_idempotent = bool(
+        str(result.get("reason") or "")
+        in _CACHED_TERMINAL_RECONCILIATION_REASONS
+        and reconciled_count == 0
+    )
     transition_complete = bool(
         report.get("ok") is True
-        and reconciled_count > 0
+        and isinstance(unresolved, list)
+        and not unresolved
         and remaining == 0
         and due == 0
+        and (reconciled_count > 0 or cached_idempotent)
     )
     if not transition_complete:
+        out.update(
+            {
+                "ok": False,
+                "reason": "PROTECTED_TERMINAL_RECONCILIATION_FAILED_CLOSED",
+                "failClosed": True,
+                "postStartPredictionCreationAllowed": False,
+            }
+        )
         return out
 
     out["durableNoPredictionTerminalReconciled"] = True
     out["durableNoPredictionTerminalReconciledCount"] = reconciled_count
     out["postStartPredictionCreationAllowed"] = False
 
-    if (
+    preserve_existing_success_contract = bool(
         str(result.get("reason") or "")
         in _EXISTING_POST_WINDOW_SUCCESS_REASONS
+        or cached_idempotent
+    )
+    if (
+        preserve_existing_success_contract
         and result.get("lockStatusComplete") is True
     ):
         return out

@@ -148,6 +148,43 @@ def test_function_error_classification_decodes_and_redacts_log_tail() -> None:
     assert report["ok"] is False
 
 
+def test_status_only_report_is_healthy_without_invoking_training() -> None:
+    report = diagnostic.build_report(
+        training=None,
+        training_parse_error="not_collected_read_only_status_mode",
+        training_invocation=None,
+        training_invocation_parse_error="not_collected_read_only_status_mode",
+        status={
+            "ok": True,
+            "manifest": {"phase": "ACCUMULATING_TRAIN", "revision": 5},
+            "trainingHealth": {
+                "ok": True,
+                "deploymentIdentityMatches": True,
+                "latestRun": {
+                    "ok": True,
+                    "status": "ACCUMULATING_TRAIN",
+                    "productionAuthorityChanged": False,
+                },
+            },
+        },
+        status_parse_error=None,
+        status_invocation={"StatusCode": 200},
+        status_invocation_parse_error=None,
+        configuration={"FunctionName": "trainer"},
+        configuration_parse_error=None,
+        source_sha="e" * 40,
+        workflow_run_id="status-only-1",
+        status_only=True,
+    )
+
+    assert report["ok"] is True
+    assert report["classification"] == "TRAINER_STATUS_HEALTHY"
+    assert report["readOnlyStatusMode"] is True
+    assert report["trainerInvocationPerformed"] is False
+    assert report["productionAuthorityChanged"] is False
+    assert report["trainingResponse"] == {}
+
+
 def test_main_writes_valid_atomic_report(tmp_path: Path) -> None:
     training = tmp_path / "training.json"
     invocation = tmp_path / "training-invocation.json"
@@ -191,3 +228,39 @@ def test_main_writes_valid_atomic_report(tmp_path: Path) -> None:
     assert report["classification"] == "TRAINER_HEALTHY"
     assert report["secretExposed"] is False
     assert not output.with_name(f"{output.name}.tmp").exists()
+
+
+def test_main_status_only_does_not_require_training_files(tmp_path: Path) -> None:
+    status = tmp_path / "status.json"
+    status_invocation = tmp_path / "status-invocation.json"
+    configuration = tmp_path / "configuration.json"
+    output = tmp_path / "report.json"
+
+    status.write_text(
+        '{"ok":true,"trainingHealth":{"ok":true}}\n', encoding="utf-8"
+    )
+    status_invocation.write_text('{"StatusCode":200}\n', encoding="utf-8")
+    configuration.write_text('{"FunctionName":"trainer"}\n', encoding="utf-8")
+
+    assert diagnostic.main(
+        [
+            "--status-only",
+            "--status-response",
+            str(status),
+            "--status-invocation",
+            str(status_invocation),
+            "--configuration",
+            str(configuration),
+            "--output",
+            str(output),
+            "--source-sha",
+            "f" * 40,
+            "--workflow-run-id",
+            "status-only-2",
+        ]
+    ) == 0
+
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["classification"] == "TRAINER_STATUS_HEALTHY"
+    assert report["readOnlyStatusMode"] is True
+    assert report["trainerInvocationPerformed"] is False

@@ -269,6 +269,40 @@ text = insert_once(text, "  MLBResultsSchedulerFunction:\n", """
 
 """, "MLBDailyPickLockFunction:")
 
+text = insert_once(text, "  MLBProductionVerifierFunction:\n", """
+  # Lease-independent, forward-only T-30/T-15 playability capture.  The
+  # full lock writer can hold its global lease through an entire checkpoint
+  # window, so this write-once sweep must remain a separate Lambda.
+  MLBPlayabilityCheckpointFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: mlb_playability_checkpoint_scheduler.lambda_handler
+      Timeout: 120
+      MemorySize: 1024
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 60
+        MaximumRetryAttempts: 0
+      Environment:
+        Variables:
+          MLB_LOCK_EXECUTION_LEASE_SECONDS: '960'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SnapshotsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref OutcomesTable
+      Events:
+        MLBPlayabilityCheckpointEveryMinute:
+          Type: Schedule
+          Properties:
+            Schedule: cron(* * * * ? *)
+            Input: '{"sport":"mlb","run":"playability_checkpoint_sweep","auto_ingest":false}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 60
+              MaximumRetryAttempts: 0
+
+""", "MLBPlayabilityCheckpointFunction:")
+
 if "MLBDailyPickLockFunction:" in text:
     for line in ["          MLB_MIN_PULLS_PER_GAME_FOR_LOCK: '4'\n", "          MLB_MAX_LATEST_PULL_AGE_MINUTES_FOR_LOCK: '20'\n"]:
         if line.strip() not in text:
@@ -287,6 +321,11 @@ for required, message in [
     ("INQSI_DEPLOY_TEMPLATE_SHA256: !Ref DeployTemplateSha256", "deploy template SHA environment missing"),
     ("INQSI_DEPLOY_RUN_ID: !Ref DeployRunId", "deploy run ID environment missing"),
     ("MLBDailyPickLockFunction:", "daily lock function missing"),
+    ("MLBPlayabilityCheckpointFunction:", "playability checkpoint function missing"),
+    ("MLBPlayabilityCheckpointEveryMinute:", "playability checkpoint minute scheduler missing"),
+    ("Handler: mlb_playability_checkpoint_scheduler.lambda_handler", "playability checkpoint handler missing"),
+    ("Schedule: cron(* * * * ? *)", "playability checkpoint schedule is not minute-aligned"),
+    ('"run":"playability_checkpoint_sweep"', "playability checkpoint event contract missing"),
     ("Path: /v1/mlb/locks/status", "lock status route missing"),
     ("DynamoDBReadPolicy:\n            TableName: !Ref OutcomesTable", "daily lock outcomes read policy missing"),
     ("MLB_LOCK_EXECUTION_LEASE_SECONDS: '960'", "daily lock execution lease is missing"),
@@ -304,4 +343,4 @@ if violations:
     raise RuntimeError("Unsafe MLB SAM template after patch: " + "; ".join(violations))
 
 TEMPLATE.write_text(text)
-print("Patched template.yaml: canonical quarter-hour MLB ingest, exact deploy identity, and daily lock.")
+print("Patched template.yaml: canonical MLB ingest, daily lock, and lease-independent playability checkpoints.")

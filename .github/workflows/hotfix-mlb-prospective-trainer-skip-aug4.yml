@@ -1,17 +1,13 @@
 name: Hotfix MLB prospective trainer skip unresolved slate
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/hotfix-mlb-prospective-trainer-skip-aug4.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: hotfix-mlb-prospective-trainer-skip-unresolved
+  group: unified-mlb-learning
   cancel-in-progress: false
 
 env:

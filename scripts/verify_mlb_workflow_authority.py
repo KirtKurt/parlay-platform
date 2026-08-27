@@ -382,7 +382,9 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             "Prove shared Lambda capacity recovered before trainer initialization",
             "capacity_deadline=$((SECONDS + 360))",
             "scripts/mlb_deploy_http_probe.py",
-            "from scripts.mlb_deploy_http_probe import fetch_json_object",
+            "from scripts.mlb_deploy_http_probe import (",
+            "fetch_json_object,",
+            "fetch_json_response,",
             "deadline=deadline",
             "def fetch(url, timeout=45, deadline=None, max_attempts=None):",
             "max_attempts=max_attempts,",
@@ -410,7 +412,7 @@ def verify_repository(root: Path = ROOT) -> List[str]:
         )
         prediction_fetches = list(
             re.finditer(
-                r"(?ms)^\s+predictions = fetch\(\s*prediction_url,"
+                r"(?ms)^\s+prediction_response = fetch_json_response\(\s*prediction_url,"
                 r"(?P<body>.*?)^\s+\)\s*$",
                 status_step,
             )
@@ -458,11 +460,24 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             or len(prediction_fetches) != 1
             or _active_python_keyword_values(
                 prediction_fetch_body,
-                "deadline",
+                "deadline_monotonic",
             )
             != ["prediction_deadline"]
         ):
             errors.append("canonical_deploy_heavy_read_probe_deadlines_are_invalid")
+
+        for required_authority_token in (
+            "accepted_http_statuses=(200, 503)",
+            "reconcile_public_prediction_lifecycle(",
+            "public_authority_report.get('state') == 'NO_QUALIFIED_CHAMPION'",
+            "'publicWinnerCount': 0",
+            "'statusProjectionPersisted': public_reconciliation['statusProjectionPersisted']",
+        ):
+            if required_authority_token not in status_step:
+                errors.append(
+                    "canonical_deploy_public_prediction_fail_closed_contract_missing:"
+                    + required_authority_token
+                )
 
         regression_tests = _shell_array_body(deploy, "regression_tests")
         for required_scale_test, error in (

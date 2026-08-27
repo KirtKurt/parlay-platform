@@ -16,6 +16,7 @@ import inqsi_pull_history as history_contract
 import mlb_official_schedule_authority as official_schedule_contract
 from mlb_slate_coverage_patch import (
     AUTHORITY_VERSION as PREGAME_PUBLIC_AUTHORITY_VERSION,
+    _assessment_errors as playability_assessment_errors,
     game_identity,
     resolve_playability_lifecycle,
 )
@@ -1647,6 +1648,7 @@ def _put_no_prediction_outcome(
         "slate_date": slate,
         "game_identity": game_identity(game),
         "game_id": game.get("game_id") or game.get("id"),
+        "officialGamePk": _official_game_pk(game) or None,
         "commence_time": start.isoformat() if start else None,
         "scheduled_lock_at_utc": lock_at.isoformat() if lock_at else None,
         "recorded_at_utc": now.isoformat(),
@@ -2255,6 +2257,58 @@ def _ensure_playability_assessments(
     stages: Dict[str, Dict[str, Any]],
     now: datetime,
 ) -> List[Dict[str, Any]]:
+    errors = _ensure_time_playability_assessments(
+        module,
+        slate,
+        manifest,
+        stages,
+        now,
+    )
+    for game in manifest:
+        stage = stages.get(game_identity(game))
+        start = _start(module, game)
+        if not stage or not start or now >= start:
+            continue
+        game_one = _doubleheader_game_one(manifest, game)
+        if game_one is not None:
+            game_one_final = _game_final(module, slate, game_one)
+            event_checkpoint = (
+                "EVENT_GAME1_FINAL" if game_one_final else "EVENT_GAME1_PENDING"
+            )
+            try:
+                _playability_assessment(
+                    module,
+                    slate,
+                    manifest,
+                    game,
+                    stage,
+                    event_checkpoint,
+                    now,
+                )
+            except Exception as exc:
+                errors.append({
+                    "gameIdentity": game_identity(game),
+                    "checkpoint": event_checkpoint,
+                    "error": f"{type(exc).__name__}:{exc}",
+                })
+    return errors
+
+
+def _ensure_time_playability_assessments(
+    module: Any,
+    slate: str,
+    manifest: List[Dict[str, Any]],
+    stages: Dict[str, Dict[str, Any]],
+    now: datetime,
+) -> List[Dict[str, Any]]:
+    """Write only due pre-start T-30/T-15 assessment records.
+
+    This deliberately excludes winner creation, lock repair, readiness rows,
+    historical reconciliation, and doubleheader event checkpoints.  It is safe
+    for an independent minute scheduler because every assessment is bound to
+    an existing immutable T-45 selection and stored with a write-once
+    conditional put.
+    """
     errors: List[Dict[str, Any]] = []
     for game in manifest:
         stage = stages.get(game_identity(game))
@@ -2285,28 +2339,6 @@ def _ensure_playability_assessments(
                 errors.append({
                     "gameIdentity": game_identity(game),
                     "checkpoint": f"T_MINUS_{minutes}",
-                    "error": f"{type(exc).__name__}:{exc}",
-                })
-        game_one = _doubleheader_game_one(manifest, game)
-        if game_one is not None:
-            game_one_final = _game_final(module, slate, game_one)
-            event_checkpoint = (
-                "EVENT_GAME1_FINAL" if game_one_final else "EVENT_GAME1_PENDING"
-            )
-            try:
-                _playability_assessment(
-                    module,
-                    slate,
-                    manifest,
-                    game,
-                    stage,
-                    event_checkpoint,
-                    now,
-                )
-            except Exception as exc:
-                errors.append({
-                    "gameIdentity": game_identity(game),
-                    "checkpoint": event_checkpoint,
                     "error": f"{type(exc).__name__}:{exc}",
                 })
     return errors
@@ -5772,6 +5804,200 @@ def apply(module: Any) -> Any:
         with _status_read_scope():
             return _status_payload_uncached(slate)
 
+    def run_playability_checkpoints(
+        slate_date: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Capture due T-30/T-15 rows without entering the lock writer lease.
+
+        The minute sweep is intentionally narrower than ``run_lock``: it may
+        read the current slate's immutable manifest/stages and conditionally
+        create write-once playability assessments.  It cannot create or alter
+        predictions, stages, lock outcomes, daily cards, or historical rows.
+        """
+        current_slate = module._today_et()
+        slate = slate_date or current_slate
+        base = {
+            "sport": "mlb",
+            "modelVersion": VERSION,
+            "playabilityAssessmentVersion": RELEASE_ASSESSMENT_VERSION,
+            "slateDateEt": slate,
+            "scheduledCheckpointSweep": True,
+            "selectionRewriteAllowed": False,
+            "predictionCreationAllowed": False,
+            "postStartPredictionCreationAllowed": False,
+            "historicalMutationAllowed": False,
+            "wageringAuthorityChanged": False,
+            "writeOnce": True,
+        }
+        if module.TABLE is None:
+            return {
+                **base,
+                "ok": False,
+                "failClosed": True,
+                "reason": "PLAYABILITY_CHECKPOINT_STORAGE_UNAVAILABLE",
+            }
+        if slate != current_slate:
+            return {
+                **base,
+                "ok": True,
+                "skipped": True,
+                "reason": "NON_CURRENT_SLATE_NOT_MUTATED",
+                "currentSlateDateEt": current_slate,
+            }
+
+        try:
+            pulls = sorted(
+                module._pulls_for_date(slate),
+                key=lambda pull: _pull_at(module, pull)
+                or datetime.min.replace(tzinfo=timezone.utc),
+            )
+            manifest = module._latest_games_for_date(slate, pulls) if pulls else []
+        except Exception as exc:
+            return {
+                **base,
+                "ok": False,
+                "failClosed": True,
+                "reason": "PLAYABILITY_CHECKPOINT_MANIFEST_READ_FAILED",
+                "error": f"{type(exc).__name__}:{exc}",
+            }
+        if not pulls or not manifest:
+            return {
+                **base,
+                "ok": True,
+                "skipped": True,
+                "reason": (
+                    "NO_STORED_ODDS_API_PULL_HISTORY"
+                    if not pulls
+                    else "NO_MLB_GAMES_FOR_SLATE_DATE"
+                ),
+                "pullCount": len(pulls),
+                "manifestGameCount": len(manifest),
+            }
+
+        now = module._now_utc().astimezone(timezone.utc)
+        stages: Dict[str, Dict[str, Any]] = {}
+        due: List[Tuple[Dict[str, Any], str, Dict[str, str]]] = []
+        errors: List[Dict[str, Any]] = []
+        preexisting = 0
+        for game in manifest:
+            start = _start(module, game)
+            if start is None or now >= start:
+                continue
+            game_due: List[Tuple[str, Dict[str, str]]] = []
+            for minutes in RELEASE_CHECKPOINT_MINUTES:
+                checkpoint = f"T_MINUS_{minutes}"
+                if now >= start - timedelta(minutes=minutes):
+                    key = _release_key(module, slate, game, checkpoint)
+                    game_due.append((checkpoint, key))
+                    existing, read_error = _consistent_item_result(
+                        module.TABLE,
+                        key,
+                    )
+                    if read_error is not None:
+                        errors.append({
+                            "gameIdentity": game_identity(game),
+                            "checkpoint": checkpoint,
+                            "error": (
+                                "assessment_read_failed:"
+                                f"{type(read_error).__name__}:{read_error}"
+                            ),
+                        })
+                    elif existing is not None:
+                        preexisting += 1
+            if not game_due:
+                continue
+            stage_key = _stage_key(module, slate, game)
+            stage, stage_read_error = _consistent_item_result(
+                module.TABLE,
+                stage_key,
+            )
+            if stage_read_error is not None:
+                errors.append({
+                    "gameIdentity": game_identity(game),
+                    "error": (
+                        "immutable_stage_read_failed:"
+                        f"{type(stage_read_error).__name__}:{stage_read_error}"
+                    ),
+                })
+            elif stage is not None:
+                stages[game_identity(game)] = stage
+            for checkpoint, key in game_due:
+                due.append((game, checkpoint, key))
+
+        errors.extend(
+            _ensure_time_playability_assessments(
+                module,
+                slate,
+                manifest,
+                stages,
+                now,
+            )
+        )
+        recorded = 0
+        missing: List[Dict[str, str]] = []
+        for game, checkpoint, key in due:
+            item, read_error = _consistent_item_result(module.TABLE, key)
+            if read_error is not None:
+                errors.append({
+                    "gameIdentity": game_identity(game),
+                    "checkpoint": checkpoint,
+                    "error": (
+                        "assessment_readback_failed:"
+                        f"{type(read_error).__name__}:{read_error}"
+                    ),
+                })
+            elif item is None or game_identity(game) not in stages:
+                missing.append({
+                    "gameIdentity": game_identity(game),
+                    "checkpoint": checkpoint,
+                })
+            else:
+                locked_row = copy.deepcopy(
+                    ((stages[game_identity(game)].get("data") or {}).get("row"))
+                    or {}
+                )
+                validation_errors = playability_assessment_errors(
+                    item,
+                    checkpoint=checkpoint,
+                    slate=slate,
+                    game=game,
+                    locked_row=locked_row,
+                )
+                if validation_errors:
+                    errors.append({
+                        "gameIdentity": game_identity(game),
+                        "checkpoint": checkpoint,
+                        "error": "assessment_readback_invalid",
+                        "validationErrors": validation_errors,
+                    })
+                else:
+                    recorded += 1
+
+        ok = not errors and not missing
+        return {
+            **base,
+            "ok": ok,
+            "failClosed": not ok,
+            "reason": (
+                "DUE_PLAYABILITY_CHECKPOINTS_CAPTURED"
+                if ok and due
+                else "NO_PLAYABILITY_CHECKPOINT_DUE"
+                if ok
+                else "DUE_PLAYABILITY_CHECKPOINT_CAPTURE_INCOMPLETE"
+            ),
+            "evaluatedAtUtc": now.isoformat(),
+            "pullCount": len(pulls),
+            "manifestGameCount": len(manifest),
+            "dueCheckpointCount": len(due),
+            "preexistingCheckpointCount": preexisting,
+            "recordedCheckpointCount": recorded,
+            "newlyRecordedCheckpointCount": max(recorded - preexisting, 0),
+            "missingDueCheckpointCount": len(missing),
+            "missingDueCheckpoints": missing,
+            "errorCount": len(errors),
+            "errors": errors,
+        }
+
     def _run_lock_once(
         slate_date: Optional[str] = None,
         force: bool = False,
@@ -6498,6 +6724,7 @@ def apply(module: Any) -> Any:
     module.MODEL_VERSION = VERSION
     module.LOCK_POLICY = LOCK_POLICY
     module._status_payload = status_payload
+    module.run_playability_checkpoints = run_playability_checkpoints
     module.run_lock = run_lock
     module.MLB_DAILY_PER_GAME_LOCK_VERSION = VERSION
     module.MLB_LAST_PRELOCK_PROMOTION_VERSION = PROMOTION_POLICY_VERSION

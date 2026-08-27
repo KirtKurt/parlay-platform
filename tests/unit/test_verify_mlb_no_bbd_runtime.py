@@ -53,16 +53,17 @@ def _write_required_contract_files(tmp_path: Path) -> None:
             "  Schedule: cron(2/5 * * * ? *)\n"
             "DeletionPolicy: Retain\n"
         ),
-        ".github/workflows/deploy-mlb-auto-llm.yml": (
-            "on:\n  workflow_dispatch:\n"
+        ".github/workflows/deploy-mlb-auto-prospective.yml": (
+            "on:\n  push:\n    branches: [main]\n  workflow_dispatch:\n"
             "env:\n"
             "  ODDS: ${{ secrets.ODDS_API_KEY }}\n"
             "  BBS: ${{ secrets.BBS_API_KEY }}\n"
             "steps:\n"
-            "  - run: curl https://api.bigballsdata.com/v1/user/me\n"
-            "  - run: sam deploy BbsApiKey=\"${BBS_API_KEY_VALUE}\"\n"
-            "  - name: Prove Bedrock through deployed MLB Lambda role\n"
-            "  - name: Prove autonomous provider collection in AWS\n"
+            "  - run: sam deploy BbsApiKey=\"${BBS_API_KEY_VALUE}\" "
+            "TargetDailyAccuracy='0.80'\n"
+            '  - run: grep \'AUTHORITY = "AWS_ML_PROSPECTIVE_R7"\' source.py\n'
+            "  - name: Prove live Bedrock inference without ML fallback\n"
+            "  - run: deployment_provider_smoke\n"
         ),
     }
     for name, content in files.items():

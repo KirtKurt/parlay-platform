@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import mlb_v8_historical_point_in_time_context_v1 as context
+import yaml
 
 
 COMPATIBILITY_WORKFLOW = Path(
@@ -29,7 +30,9 @@ def test_single_controller_runs_isolated_official_context_backfill():
     assert "run_mlb_v8_historical_context_backfill_autonomous.py" in controller
     assert "mlb-v8-autonomous-controller.yml" in compatibility
     assert "schedule:" not in compatibility
-    assert "cron: '8/15 * * * *'" in controller
+    assert set(yaml.load(controller, Loader=yaml.BaseLoader)["on"]) == {
+        "workflow_dispatch"
+    }
     assert "V8_HISTORICAL_OFFICIAL_CONTEXT_SHADOW_ONLY" in official
     assert "official_mlb_plus_internal_canonical_context" in official
     assert "install_artifact_bucket_alias" in autonomous
@@ -50,7 +53,9 @@ def test_controller_uses_frequent_micro_batches_without_retired_credentials():
     assert "inputs.context_limit || '5'" in controller
     assert "timeout-minutes: 55" in controller
     assert "--limit \"$CONTEXT_LIMIT\"" in controller
-    assert "cron: '8/15 * * * *'" in controller
+    assert set(yaml.load(controller, Loader=yaml.BaseLoader)["on"]) == {
+        "workflow_dispatch"
+    }
     assert "cancel-in-progress: false" in combined
     assert "BBS_API_KEY" not in combined
     assert "BBS_API_SECRET_ARN" not in combined

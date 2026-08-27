@@ -45,6 +45,8 @@ jobs:
           set -euo pipefail
           python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
           PYTHONPATH=mlb_auto_llm python -m pytest -q \
+            tests/unit/test_mlb_auto_decimal_odds_contract.py \
+            tests/unit/test_mlb_auto_deploy_workflow_contract.py \
             tests/unit/test_mlb_auto_ml_authority.py \
             tests/unit/test_mlb_auto_direct_read.py \
             tests/unit/test_mlb_auto_model_gateway.py
@@ -111,6 +113,122 @@ jobs:
           print('Deployed MLB Auto authority rejects retired V15.10: PASS')
           PY
 
+      - name: Prove live Bedrock inference without ML fallback
+        run: |
+          set -euo pipefail
+          smoke_function=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBAutoLLMBedrockSmokeFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$smoke_function"
+          test "$smoke_function" != 'None'
+          aws lambda invoke \
+            --function-name "$smoke_function" \
+            --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 360 \
+            --payload '{}' \
+            /tmp/mlb-auto-bedrock-smoke.json \
+            > /tmp/mlb-auto-bedrock-smoke-meta.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          meta = json.loads(
+              Path('/tmp/mlb-auto-bedrock-smoke-meta.json').read_text() or '{}'
+          )
+          body = json.loads(
+              Path('/tmp/mlb-auto-bedrock-smoke.json').read_text() or '{}'
+          )
+          assert meta.get('FunctionError') is None, (meta, body)
+          assert body.get('ok') is True, body
+          assert body.get('bedrockAvailable') is True, body
+          assert body.get('decisionAuthority') == 'BEDROCK_LLM', body
+          assert body.get('responseNonEmpty') is True, body
+          assert body.get('mlFallbackAttempted') is False, body
+          print(json.dumps(body, indent=2, sort_keys=True)[:20000])
+          PY
+
+      - name: Prove deployed strict decimal-odds decision contract
+        run: |
+          set -euo pipefail
+          function_name=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBAutoLLMFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$function_name"
+          test "$function_name" != 'None'
+          aws lambda invoke \
+            --function-name "$function_name" \
+            --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 900 \
+            --payload '{"mode":"deployment_decimal_odds_decision_smoke","contractVersion":"MLB-AUTO-DEPLOYMENT-DECIMAL-ODDS-SMOKE-v1"}' \
+            /tmp/mlb-auto-decimal-odds-smoke.json \
+            > /tmp/mlb-auto-decimal-odds-smoke-meta.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          meta = json.loads(
+              Path('/tmp/mlb-auto-decimal-odds-smoke-meta.json').read_text()
+              or '{}'
+          )
+          body = json.loads(
+              Path('/tmp/mlb-auto-decimal-odds-smoke.json').read_text()
+              or '{}'
+          )
+          assert meta.get('FunctionError') is None, (meta, body)
+          assert body.get('ok') is True, body
+          assert body.get('status') == (
+              'DEPLOYMENT_DECIMAL_ODDS_DECISION_VERIFIED'
+          ), body
+          assert body.get('contractVersion') == (
+              'MLB-AUTO-DEPLOYMENT-DECIMAL-ODDS-SMOKE-v1'
+          ), body
+          assert body.get('decisionAuthority') == 'BEDROCK_LLM', body
+          assert body.get('winner') == body.get('marketFavorite'), body
+          assert body.get('winner') == 'Boston Red Sox', body
+          assert body.get('loser') == 'Miami Marlins', body
+          assert body.get('marketFavoritePrice') == 1.411, body
+          assert body.get('otherTeamPrice') == 1.70, body
+          assert (
+              body.get('marketFavoritePrice') < body.get('otherTeamPrice')
+          ), body
+          consensus = body.get('normalizedH2hConsensus') or {}
+          assert consensus.get('marketFavorite') == 'Boston Red Sox', body
+          assert consensus.get('awayProbability') > consensus.get(
+              'homeProbability'
+          ), body
+          odds_contract = body.get('decimalOddsContract') or {}
+          assert odds_contract.get(
+              'lowerPriceMeansHigherImpliedProbability'
+          ) is True, body
+          interpretation = str(body.get('marketInterpretation') or '').lower()
+          assert all(
+              token in interpretation
+              for token in ('lower', 'decimal', 'higher', 'probability')
+          ), body
+          assert body.get('syntheticInputOnly') is True, body
+          assert body.get('writeGuardArmed') is True, body
+          assert body.get('persistenceAttempted') is False, body
+          assert body.get('cardMutationAttempted') is False, body
+          assert body.get('historyMutationAttempted') is False, body
+          assert body.get('mlFallbackAttempted') is False, body
+          assert body.get('modelId'), body
+          text = json.dumps(body, sort_keys=True)
+          assert 'AWS_ML_RANKED_ENSEMBLE' not in text, body
+          assert (
+              'INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble'
+              not in text
+          ), body
+          print(json.dumps(body, indent=2, sort_keys=True)[:20000])
+          PY
+
       - name: Probe runtime without allowing retired fallback
         run: |
           set -euo pipefail
@@ -126,6 +244,8 @@ jobs:
           from pathlib import Path
           meta=json.loads(Path('/tmp/mlb-auto-prospective-meta.json').read_text() or '{}')
           body=json.loads(Path('/tmp/mlb-auto-prospective-probe.json').read_text() or '{}')
+          assert meta.get('FunctionError') is None, (meta, body)
+          assert isinstance(body, dict) and body.get('ok') is True, body
           text=json.dumps(body,sort_keys=True)
           assert 'AWS_ML_RANKED_ENSEMBLE' not in text
           assert 'INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble' not in text or 'RETIRED' in text or 'REJECTED' in text

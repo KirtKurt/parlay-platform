@@ -2,24 +2,6 @@ name: MLB V10 Autonomous Signal Discovery
 
 "on":
   workflow_dispatch:
-  schedule:
-    - cron: '41 * * * *'
-  push:
-    branches: [main]
-    paths:
-      - 'hello_world/mlb_v10_autonomous_signal_discovery_v1.py'
-      - 'hello_world/mlb_v10_development_frozen_portfolio_v3.py'
-      - 'hello_world/mlb_v10_permutation_control_v2.py'
-      - 'scripts/run_mlb_v10_autonomous_signal_discovery.py'
-      - 'scripts/resolve_mlb_historical_artifacts_bucket.py'
-      - 'scripts/publish_monotonic_json.py'
-      - 'runtime_reports/mlb_v8_historical_context_backfill_latest.json'
-      - 'tests/unit/test_mlb_v10_autonomous_signal_discovery_v1.py'
-      - 'tests/unit/test_run_mlb_v10_autonomous_signal_discovery.py'
-      - 'tests/unit/test_mlb_v10_permutation_control_v2.py'
-      - 'tests/unit/test_resolve_mlb_historical_artifacts_bucket.py'
-      - 'tests/unit/test_publish_monotonic_json.py'
-      - '.github/workflows/mlb-v10-autonomous-signal-discovery.yml'
 
 permissions:
   contents: write

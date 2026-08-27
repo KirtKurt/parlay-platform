@@ -37,6 +37,15 @@ RUN_ID = os.environ.get("GITHUB_RUN_ID", "")
 RUN_ATTEMPT = os.environ.get("GITHUB_RUN_ATTEMPT", "")
 ET = ZoneInfo("America/New_York")
 STATE_MARKER = "MLB_PROGRESS_STATE_BASE64"
+PULSE_STALE_AFTER_MINUTES = int(os.environ.get("MLB_PROGRESS_STALE_AFTER_MINUTES", "40"))
+PULSE_TARGET_CADENCE_MINUTES = int(
+    os.environ.get("MLB_PROGRESS_TARGET_CADENCE_MINUTES", "30")
+)
+PULSE_CADENCE_GRACE_MINUTES = int(
+    os.environ.get("MLB_PROGRESS_CADENCE_GRACE_MINUTES", "5")
+)
+CANONICAL_R7_RECOVERY_WORKFLOW = "unified-mlb-learning-recovery-once.yml"
+LEGACY_R7_REPAIR_WORKFLOW = "repair-mlb-training-continuity-now.yml"
 
 
 class CommandError(RuntimeError):
@@ -211,13 +220,13 @@ def _cloudwatch_sum(function_name: Optional[str], metric_name: str, minutes: int
         return None
 
 
-def _latest_continuity_run() -> dict[str, Any]:
+def _latest_workflow_run(workflow_file: str) -> dict[str, Any]:
     try:
         result = _run(
             [
                 "gh",
                 "api",
-                f"repos/{REPO}/actions/workflows/repair-mlb-training-continuity-now.yml/runs?per_page=1&event=workflow_dispatch",
+                f"repos/{REPO}/actions/workflows/{workflow_file}/runs?per_page=1",
             ],
             timeout=60,
         )
@@ -233,9 +242,45 @@ def _latest_continuity_run() -> dict[str, Any]:
             "updatedAtUtc": row.get("updated_at"),
             "url": row.get("html_url"),
             "headSha": row.get("head_sha"),
+            "event": row.get("event"),
+            "workflowFile": workflow_file,
         }
     except Exception as exc:
         return {"error": _plain_error(exc)}
+
+
+def _latest_continuity_run() -> dict[str, Any]:
+    """Return canonical R7 recovery evidence, with an explicit legacy fallback.
+
+    The unified workflow is the current recovery owner. The old continuity
+    repair is consulted only when the canonical workflow has never run or its
+    API lookup is unavailable, so a stale legacy failure cannot mask current
+    recovery progress.
+    """
+    canonical = _latest_workflow_run(CANONICAL_R7_RECOVERY_WORKFLOW)
+    if canonical.get("runId"):
+        canonical["workflowKind"] = "canonical_unified_recovery"
+        return canonical
+
+    legacy = _latest_workflow_run(LEGACY_R7_REPAIR_WORKFLOW)
+    if legacy.get("runId"):
+        legacy["workflowKind"] = "legacy_repair_fallback"
+        if canonical.get("error"):
+            legacy["canonicalLookupError"] = canonical["error"]
+        else:
+            legacy["canonicalLookupState"] = "no_runs"
+        return legacy
+
+    errors = [
+        str(value)
+        for value in (canonical.get("error"), legacy.get("error"))
+        if value
+    ]
+    return {
+        "workflowKind": "unavailable",
+        "workflowFile": CANONICAL_R7_RECOVERY_WORKFLOW,
+        "error": ";".join(errors) if errors else "no_canonical_or_legacy_runs",
+    }
 
 
 def _first_mapping(*values: Any) -> dict[str, Any]:
@@ -306,6 +351,101 @@ def _normalise_accuracy(value: Optional[float]) -> Optional[float]:
     return value
 
 
+def _first_not_none(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _grading_count(value: Any, field: str, errors: list[str]) -> Optional[int]:
+    parsed = _number(value)
+    if parsed is None:
+        errors.append(f"{field}_MISSING_OR_NON_NUMERIC")
+        return None
+    if parsed < 0:
+        errors.append(f"{field}_NEGATIVE")
+        return None
+    if not parsed.is_integer():
+        errors.append(f"{field}_NOT_INTEGER")
+        return None
+    return int(parsed)
+
+
+def _grading_cohort(
+    source: Mapping[str, Any],
+    *,
+    available: bool,
+    name: str,
+    key: str,
+    graded_field: str,
+    correct_field: str,
+    accuracy_field: str,
+    recent_days_field: Optional[str] = None,
+) -> dict[str, Any]:
+    """Extract one grading cohort atomically and verify its arithmetic.
+
+    Counts and accuracy always come from the same source mapping. Legitimate
+    zero values are preserved; they never trigger a fallback to another
+    cohort. Invalid tuples stay visible as diagnostics but their accuracy is
+    not presented as trusted telemetry.
+    """
+    result: dict[str, Any] = {
+        "name": name,
+        "key": key,
+        "available": available,
+        "valid": None,
+        "gradedPicks": None,
+        "correctPicks": None,
+        "accuracy": None,
+        "reportedAccuracy": None,
+        "expectedAccuracy": None,
+        "recentDays": None,
+        "errors": [],
+    }
+    if not available:
+        return result
+
+    errors: list[str] = []
+    graded = _grading_count(source.get(graded_field), "GRADED", errors)
+    correct = _grading_count(source.get(correct_field), "CORRECT", errors)
+    reported_accuracy = _normalise_accuracy(_number(source.get(accuracy_field)))
+    recent_days = (
+        _integer(source.get(recent_days_field)) if recent_days_field else None
+    )
+
+    if correct is not None and graded is not None and correct > graded:
+        errors.append("CORRECT_EXCEEDS_GRADED")
+    if reported_accuracy is not None and not 0.0 <= reported_accuracy <= 1.0:
+        errors.append("ACCURACY_OUT_OF_RANGE")
+
+    expected_accuracy: Optional[float] = None
+    if graded is not None and correct is not None and correct <= graded:
+        expected_accuracy = correct / graded if graded else None
+        if graded > 0:
+            if reported_accuracy is None:
+                errors.append("ACCURACY_MISSING_WITH_GRADED_PICKS")
+            elif abs(reported_accuracy - expected_accuracy) > 0.00001:
+                errors.append("ACCURACY_COUNT_MISMATCH")
+        elif reported_accuracy not in (None, 0.0):
+            errors.append("ACCURACY_PRESENT_WITH_ZERO_GRADED_PICKS")
+
+    valid = not errors
+    result.update(
+        {
+            "valid": valid,
+            "gradedPicks": graded,
+            "correctPicks": correct,
+            "accuracy": reported_accuracy if valid and graded else None,
+            "reportedAccuracy": reported_accuracy,
+            "expectedAccuracy": expected_accuracy,
+            "recentDays": recent_days,
+            "errors": errors,
+        }
+    )
+    return result
+
+
 def _extract_state(
     *,
     r7_invocation: Mapping[str, Any],
@@ -361,8 +501,10 @@ def _extract_state(
         prediction_count = len(predictions)
 
     card = _first_mapping(auto.get("card"))
-    audit = _first_mapping(auto.get("audit"))
-    autonomy = _first_mapping(auto.get("autonomyState"))
+    audit_value = auto.get("audit")
+    autonomy_value = auto.get("autonomyState")
+    audit = _first_mapping(audit_value)
+    autonomy = _first_mapping(autonomy_value)
     picks = card.get("picks") or []
     pick_count = card.get("gameCount")
     if pick_count is None and isinstance(picks, list):
@@ -388,6 +530,41 @@ def _extract_state(
     invocations = _number(auto_invocations_35m)
     errors = _number(auto_errors_35m)
     error_rate = errors / invocations if invocations and errors is not None else None
+    slate_date = str(auto.get("slateDateEt") or "unknown")
+    current_slate_grading = _grading_cohort(
+        audit,
+        available=isinstance(audit_value, Mapping),
+        name="current_slate",
+        key=f"current_slate:{slate_date}",
+        graded_field="graded",
+        correct_field="correct",
+        accuracy_field="accuracy",
+    )
+    trailing_grading = _grading_cohort(
+        autonomy,
+        available=isinstance(autonomy_value, Mapping),
+        name="trailing_14_days",
+        key=f"trailing_14_days:as_of:{slate_date}",
+        graded_field="recentGradedPicks",
+        correct_field="recentCorrectPicks",
+        accuracy_field="recentAccuracy",
+        recent_days_field="recentDays",
+    )
+    if current_slate_grading["available"]:
+        primary_grading = current_slate_grading
+    elif trailing_grading["available"]:
+        primary_grading = trailing_grading
+    else:
+        primary_grading = {
+            "name": "unavailable",
+            "key": f"unavailable:{slate_date}",
+            "available": False,
+            "valid": None,
+            "gradedPicks": None,
+            "correctPicks": None,
+            "accuracy": None,
+            "errors": [],
+        }
 
     training_status = latest.get("status")
     model_trained = bool(
@@ -443,6 +620,15 @@ def _extract_state(
             "MLB_AUTO_R7_AUTHORITY_WITH_NO_QUALIFIED_CHAMPION:"
             + str(authority_counts["AWS_ML_PROSPECTIVE_R7"])
         )
+    for blocker_name, cohort in (
+        ("CURRENT_SLATE", current_slate_grading),
+        ("TRAILING_14_DAY", trailing_grading),
+    ):
+        if cohort.get("available") and cohort.get("valid") is False:
+            blockers.append(
+                f"MLB_AUTO_{blocker_name}_GRADING_INVALID:"
+                + ",".join(str(item) for item in cohort.get("errors") or [])
+            )
 
     state = {
         "generatedAtUtc": datetime.now(timezone.utc).isoformat(),
@@ -471,10 +657,23 @@ def _extract_state(
             "bedrockPickCount": authority_counts["BEDROCK_LLM"],
             "r7AuthorityPickCount": authority_counts["AWS_ML_PROSPECTIVE_R7"],
             "unknownAuthorityPickCount": authority_counts["UNKNOWN"],
-            "gradedPicks": _integer(audit.get("graded")) or _integer(autonomy.get("recentGradedPicks")) or 0,
-            "correctPicks": _integer(audit.get("correct")) or _integer(autonomy.get("recentCorrectPicks")) or 0,
-            "accuracy": _normalise_accuracy(_number(audit.get("accuracy")) or _number(autonomy.get("recentAccuracy"))),
-            "targetAccuracy": _normalise_accuracy(_number(auto.get("targetDailyAccuracy")) or _number(autonomy.get("targetDailyAccuracy"))),
+            "gradingCohort": primary_grading.get("name"),
+            "gradingCohortKey": primary_grading.get("key"),
+            "gradingValid": primary_grading.get("valid"),
+            "gradingErrors": list(primary_grading.get("errors") or []),
+            "gradedPicks": primary_grading.get("gradedPicks"),
+            "correctPicks": primary_grading.get("correctPicks"),
+            "accuracy": primary_grading.get("accuracy"),
+            "currentSlateGrading": current_slate_grading,
+            "trailing14DayGrading": trailing_grading,
+            "targetAccuracy": _normalise_accuracy(
+                _number(
+                    _first_not_none(
+                        auto.get("targetDailyAccuracy"),
+                        autonomy.get("targetDailyAccuracy"),
+                    )
+                )
+            ),
             "invocations35m": invocations,
             "errors35m": errors,
             "errorRate35m": error_rate,
@@ -554,22 +753,80 @@ def _issue_comments() -> list[dict[str, Any]]:
     return comments
 
 
-def _previous_state() -> Optional[dict[str, Any]]:
+def _decode_comment_state(body: str) -> Optional[dict[str, Any]]:
     pattern = re.compile(
         rf"<!--\s*{re.escape(STATE_MARKER)}:([A-Za-z0-9_\-+/=]+)\s*-->"
     )
-    for comment in reversed(_issue_comments()):
-        body = str(comment.get("body") or "")
-        match = pattern.search(body)
-        if not match:
+    match = pattern.search(body)
+    if not match:
+        return None
+    try:
+        raw = base64.b64decode(match.group(1).encode("ascii"))
+        value = json.loads(raw.decode("utf-8"))
+        return value if isinstance(value, dict) else None
+    except Exception:
+        return None
+
+
+def _latest_visible_pulse(
+    comments: Optional[Iterable[Mapping[str, Any]]] = None,
+) -> Optional[dict[str, Any]]:
+    rows = list(comments) if comments is not None else _issue_comments()
+    for comment in reversed(rows):
+        state = _decode_comment_state(str(comment.get("body") or ""))
+        if state is None:
             continue
-        try:
-            raw = base64.b64decode(match.group(1).encode("ascii"))
-            value = json.loads(raw.decode("utf-8"))
-            return value if isinstance(value, dict) else None
-        except Exception:
-            continue
+        return {
+            "state": state,
+            "commentId": comment.get("id"),
+            "createdAtUtc": comment.get("created_at"),
+            "updatedAtUtc": comment.get("updated_at"),
+            "url": comment.get("html_url"),
+        }
     return None
+
+
+def _previous_state(
+    comments: Optional[Iterable[Mapping[str, Any]]] = None,
+) -> Optional[dict[str, Any]]:
+    pulse = _latest_visible_pulse(comments)
+    return pulse.get("state") if pulse else None
+
+
+def _reporting_continuity(
+    previous_pulse: Optional[Mapping[str, Any]],
+    *,
+    now: Optional[datetime] = None,
+) -> dict[str, Any]:
+    observed_now = now or datetime.now(timezone.utc)
+    if observed_now.tzinfo is None:
+        observed_now = observed_now.replace(tzinfo=timezone.utc)
+    created_at = previous_pulse.get("createdAtUtc") if previous_pulse else None
+    age_minutes: Optional[float] = None
+    if created_at:
+        try:
+            parsed = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+            age_minutes = max(
+                0.0,
+                round((observed_now - parsed).total_seconds() / 60.0, 3),
+            )
+        except Exception:
+            age_minutes = None
+    return {
+        "previousVisiblePulseFound": previous_pulse is not None,
+        "previousVisiblePulseAtUtc": created_at,
+        "previousVisiblePulseUrl": previous_pulse.get("url") if previous_pulse else None,
+        "previousPulseAgeMinutes": age_minutes,
+        "targetCadenceMinutes": PULSE_TARGET_CADENCE_MINUTES,
+        "cadenceGraceMinutes": PULSE_CADENCE_GRACE_MINUTES,
+        "staleAfterMinutes": PULSE_STALE_AFTER_MINUTES,
+        "cadenceBreach": (
+            age_minutes
+            > PULSE_TARGET_CADENCE_MINUTES + PULSE_CADENCE_GRACE_MINUTES
+            if age_minutes is not None
+            else None
+        ),
+    }
 
 
 def _path_value(state: Optional[Mapping[str, Any]], path: str) -> Any:
@@ -584,6 +841,25 @@ def _numeric_delta(state: Mapping[str, Any], previous: Optional[Mapping[str, Any
     if now is None or before is None:
         return None
     return round(now - before, 6)
+
+
+def _grading_delta(
+    state: Mapping[str, Any],
+    previous: Optional[Mapping[str, Any]],
+    metric: str,
+) -> Optional[float]:
+    """Compare grading values only when both pulses describe one cohort."""
+    if previous is None:
+        return None
+    current_key = _path_value(state, "mlbAuto.gradingCohortKey")
+    previous_key = _path_value(previous, "mlbAuto.gradingCohortKey")
+    if not current_key or current_key != previous_key:
+        return None
+    if _path_value(state, "mlbAuto.gradingValid") is not True:
+        return None
+    if _path_value(previous, "mlbAuto.gradingValid") is not True:
+        return None
+    return _numeric_delta(state, previous, f"mlbAuto.{metric}")
 
 
 def _date_delta(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]], path: str) -> Optional[int]:
@@ -656,10 +932,14 @@ def _overall_direction(state: Mapping[str, Any], previous: Optional[Mapping[str,
         "r7.finalizedSlateCount",
         "r7.selectionCapturedCount",
         "mlbAuto.pickCount",
-        "mlbAuto.gradedPicks",
-        "mlbAuto.correctPicks",
     ):
         delta = _numeric_delta(state, previous, path)
+        if delta is not None and delta > 0:
+            positive += 1
+        elif delta is not None and delta < 0:
+            negative += 1
+    for metric in ("gradedPicks", "correctPicks"):
+        delta = _grading_delta(state, previous, metric)
         if delta is not None and delta > 0:
             positive += 1
         elif delta is not None and delta < 0:
@@ -700,6 +980,7 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
     r7 = state["r7"]
     mlb = state["mlb"]
     auto = state["mlbAuto"]
+    reporting = state.get("reporting") or {}
 
     processed_delta = _date_delta(state, previous, "r7.processedThroughSlateDate")
     accepted_delta = _numeric_delta(state, previous, "r7.acceptedRowCount")
@@ -711,7 +992,7 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
     err_delta = _numeric_delta(state, previous, "mlbAuto.errors35m")
     error_rate_delta = _numeric_delta(state, previous, "mlbAuto.errorRate35m")
     picks_delta = _numeric_delta(state, previous, "mlbAuto.pickCount")
-    graded_delta = _numeric_delta(state, previous, "mlbAuto.gradedPicks")
+    graded_delta = _grading_delta(state, previous, "gradedPicks")
     pred_delta = _numeric_delta(state, previous, "mlb.winnerPredictionCount")
 
     workflow = r7.get("workflowRun") or {}
@@ -721,6 +1002,7 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
     workflow_link = workflow.get("url")
     if workflow_link:
         workflow_status = f"[{workflow_status}]({workflow_link})"
+    workflow_kind = workflow.get("workflowKind") or "unknown"
 
     model_id = mlb.get("activeModelId") or "none — fail closed"
     authority_safe = bool(
@@ -730,11 +1012,15 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
     )
     authority_icon = "🟢" if authority_safe else "🔴"
     error_rate = auto.get("errorRate35m")
+    current_grading = auto.get("currentSlateGrading") or {}
+    trailing_grading = auto.get("trailing14DayGrading") or {}
 
     lines = [
         f"## MLB production pulse — {generated_et.strftime('%Y-%m-%d %I:%M %p ET')}",
         "",
         f"**Overall:** {overall}  ·  positive movements **{positive}**  ·  regressions **{negative}**",
+        "",
+        f"**Reporting cadence:** previous visible pulse `{reporting.get('previousVisiblePulseAtUtc') or 'none'}` · gap **{_fmt_num(reporting.get('previousPulseAgeMinutes'), 1)} minutes** · target **{_fmt_int(reporting.get('targetCadenceMinutes'))} minutes** (+{_fmt_int(reporting.get('cadenceGraceMinutes'))} grace) · fallback threshold **{_fmt_int(reporting.get('staleAfterMinutes'))} minutes** · breach **{reporting.get('cadenceBreach')}**.",
         "",
         "### R7 prospective experiment",
         "",
@@ -751,7 +1037,7 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
         "",
         f"**Training state:** `{r7.get('trainingStatus') or 'unknown'}` · model trained **{r7.get('modelTrained')}** · candidate `{r7.get('candidateArtifactId') or 'none'}` · promotion `{r7.get('promotionDecision') or 'not evaluated'}` · gate passed **{r7.get('promotionGatePassed')}**.",
         f"**Out-of-sample metrics:** validation accuracy {_fmt_pct(r7.get('validationAccuracy'))}, Brier {_fmt_num(r7.get('validationBrier'))}, ECE {_fmt_num(r7.get('validationEce'))}; prospective accuracy {_fmt_pct(r7.get('prospectiveAccuracy'))}, Brier {_fmt_num(r7.get('prospectiveBrier'))}.",
-        f"**Active repair/backfill workflow:** {workflow_status} · blocked slate `{r7.get('blockedSlateDate') or 'none'}` · continuity blocker `{r7.get('continuityBlocker') or 'none'}`.",
+        f"**R7 recovery workflow:** {workflow_status} · source `{workflow_kind}` · blocked slate `{r7.get('blockedSlateDate') or 'none'}` · continuity blocker `{r7.get('continuityBlocker') or 'none'}`.",
         "",
         "### MLB AUTO",
         "",
@@ -762,7 +1048,9 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
         f"| Error rate, last 35m | {_fmt_pct(error_rate)} | {_fmt_delta(error_rate_delta, percent=True)} | {_arrow(error_rate_delta, lower_is_better=True)} |",
         f"| Scheduled games / published picks | {_fmt_int(auto.get('scheduledGames'))} / {_fmt_int(auto.get('pickCount'))} | {_fmt_delta(picks_delta)} picks | {_arrow(picks_delta)} |",
         f"| Bedrock / R7 / unknown authority picks | {_fmt_int(auto.get('bedrockPickCount'))} / {_fmt_int(auto.get('r7AuthorityPickCount'))} / {_fmt_int(auto.get('unknownAuthorityPickCount'))} | — | — |",
-        f"| Graded / correct / accuracy | {_fmt_int(auto.get('gradedPicks'))} / {_fmt_int(auto.get('correctPicks'))} / {_fmt_pct(auto.get('accuracy'))} | {_fmt_delta(graded_delta)} graded | {_arrow(graded_delta)} |",
+        f"| Current-slate graded / correct / accuracy | {_fmt_int(current_grading.get('gradedPicks'))} / {_fmt_int(current_grading.get('correctPicks'))} / {_fmt_pct(current_grading.get('accuracy'))} | — | {'🟢 valid' if current_grading.get('valid') is True else '🔴 invalid' if current_grading.get('valid') is False else '⚪ unavailable'} |",
+        f"| Trailing-14-day graded / correct / accuracy | {_fmt_int(trailing_grading.get('gradedPicks'))} / {_fmt_int(trailing_grading.get('correctPicks'))} / {_fmt_pct(trailing_grading.get('accuracy'))} | — | {'🟢 valid' if trailing_grading.get('valid') is True else '🔴 invalid' if trailing_grading.get('valid') is False else '⚪ unavailable'} |",
+        f"| Primary grading cohort | `{auto.get('gradingCohort') or 'unavailable'}` | {_fmt_delta(graded_delta)} graded | {_arrow(graded_delta)} |",
         "",
         f"**Slate:** `{auto.get('slateDateEt') or 'n/a'}` · scheduled games **{_fmt_int(auto.get('scheduledGames'))}** · card published **{auto.get('cardPublished')}** · card authority `{auto.get('cardDecisionAuthority') or 'not exposed'}` · target accuracy **{_fmt_pct(auto.get('targetAccuracy'))}**.",
         "",
@@ -872,7 +1160,22 @@ def main() -> int:
         continuity_run=_latest_continuity_run(),
         discovery_errors=discovery_errors,
     )
-    previous = _previous_state()
+    comments = _issue_comments()
+    previous_pulse = _latest_visible_pulse(comments)
+    previous = previous_pulse.get("state") if previous_pulse else None
+    generated_at = datetime.fromisoformat(
+        str(state["generatedAtUtc"]).replace("Z", "+00:00")
+    )
+    state["reporting"] = _reporting_continuity(
+        previous_pulse,
+        now=generated_at,
+    )
+    if state["reporting"].get("cadenceBreach") is True:
+        age = _integer(state["reporting"].get("previousPulseAgeMinutes"))
+        state["blockers"].append(
+            f"PROGRESS_PULSE_CADENCE_BREACH:{age if age is not None else 'unknown'}m"
+        )
+        state["blockers"] = sorted(set(state["blockers"]))
     body = _comment(state, previous)
     _post_comment(body)
     print(body)

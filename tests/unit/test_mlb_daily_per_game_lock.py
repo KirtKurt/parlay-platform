@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import sys
 from datetime import date, datetime, timedelta, timezone
@@ -648,6 +649,57 @@ def lock_outcome_items(module):
     ]
 
 
+def test_no_prediction_terminal_persists_fingerprint_bound_official_game_pk():
+    table = FakeTable()
+    module = SimpleNamespace(
+        TABLE=table,
+        LOCK_MINUTES=45,
+        history=history_contract,
+        _lock_pk=lambda slate: f"LOCKED_PICKS#mlb#{slate}",
+        _parse_dt=lambda value: dt(value) if value else None,
+    )
+    game = {
+        "game_id": "provider:official-bound-terminal",
+        "official_game_pk": "991555",
+        "commence_time": "2026-07-13T18:00:00+00:00",
+        "away_team": "Away",
+        "home_team": "Home",
+    }
+    item = patch._put_no_prediction_outcome(
+        module,
+        SLATE,
+        game,
+        dt("2026-07-13T20:00:00+00:00"),
+        ["no_valid_user_visible_platform_prelock_prediction"],
+        {
+            "fingerprint": "manifest-fingerprint",
+            "pk": "PULL_HISTORY#mlb#2026-07-13",
+            "sk": "PULL#proof",
+            "gameCount": 1,
+            "canonicalGameIdentities": [patch.game_identity(game)],
+        },
+    )
+
+    material = {
+        str(key): value
+        for key, value in patch._plain(item).items()
+        if key != "lock_outcome_fingerprint"
+    }
+    expected = hashlib.sha256(
+        json.dumps(
+            material,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+    assert item["officialGamePk"] == "991555"
+    assert item["lock_outcome_fingerprint"] == expected
+    assert item["locked_prediction"] is False
+    assert item["training_eligible"] is False
+    assert item["write_once"] is True
+
+
 def diagnostic_items(module):
     return [
         item
@@ -810,7 +862,18 @@ def build_module(pulls, now, *, vectorless=False, tampered_provenance=False, see
         vectorless=vectorless,
         tampered_provenance=tampered_provenance,
     )
-    patch.apply(module)
+    apply_patch = patch.apply
+    if getattr(
+        patch,
+        "_INQSI_MLB_MISSED_LOCK_TERMINAL_APPLY_HOOK_V3",
+        False,
+    ):
+        # This unit module owns the raw per-game lock contract.  Some combined
+        # suites import the protected reconciliation installer first; unwrap
+        # that integration hook here so collection order cannot change these
+        # tests' runtime surface.
+        apply_patch = getattr(apply_patch, "__wrapped__", apply_patch)
+    apply_patch(module)
     if seed:
         persist_latest_prelock_candidates(module, pulls)
     return module

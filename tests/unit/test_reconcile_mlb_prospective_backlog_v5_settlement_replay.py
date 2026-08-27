@@ -130,6 +130,28 @@ def test_identity_conflict_never_requests_replay():
     assert "lambda_application_status_not_success" in str(raised.value)
 
 
+def test_rejected_terminal_identity_never_requests_blind_replay():
+    body = settlement_gap()
+    body["rejectedTerminalOutcomes"] = [
+        {
+            "sourcePk": "LOCKED_PICKS#mlb#2026-08-04",
+            "sourceSk": "PER_GAME_LOCK_OUTCOME#TMINUS45#legacy",
+            "errors": ["terminal_official_game_pk_unresolved"],
+        }
+    ]
+    client = FakeLambda(api_gateway(409, body))
+
+    with pytest.raises(base.ReconciliationError) as raised:
+        subject.invoke_json_preserving_status_body(
+            client,
+            "results",
+            {"run": subject.SETTLEMENT_RUN, "slate_date": "2026-08-04"},
+        )
+
+    assert not isinstance(raised.value, subject.DurableTerminalReplayRequired)
+    assert "rejectedTerminalOutcomesObservedCount" in str(raised.value)
+
+
 def test_reconcile_replays_then_retries_full_backlog(monkeypatch):
     attempts = []
     error = replay_required()
@@ -190,6 +212,158 @@ def test_reconcile_replays_then_retries_full_backlog(monkeypatch):
     assert result["settlement409TreatedAsSuccess"] is False
     assert result["directTableWrite"] is False
     assert result["postStartPredictionCreationAllowed"] is False
+
+
+def test_protected_replay_retries_lease_overlap_without_bypassing_owner(monkeypatch):
+    monkeypatch.setattr(
+        base,
+        "resolve_stack_functions",
+        lambda *args: base.StackFunctions("lock", "results", "trainer"),
+    )
+    calls = []
+
+    def fake_invoke(client, function, event):
+        del client, function
+        calls.append(event)
+        if event.get("httpMethod") == "GET":
+            return official_terminal_status()
+        if len([call for call in calls if call.get("force") is True]) == 1:
+            return {
+                "ok": True,
+                "sport": "mlb",
+                "slateDateEt": "2026-08-04",
+                "skipped": True,
+                "reason": "SKIPPED_OVERLAPPING_LOCK_EXECUTION",
+                "mutatingRunAttempted": False,
+            }
+        return {
+            "ok": True,
+            "sport": "mlb",
+            "slateDateEt": "2026-08-04",
+            "perGameLockProgress": {
+                "manifestGameCount": 15,
+                "canonicalCount": 0,
+                "noPredictionDataCount": 15,
+                "lockOutcomeCount": 15,
+                "missedCount": 0,
+                "dueMissingCount": 0,
+            },
+        }
+
+    monkeypatch.setattr(v4, "invoke_json_with_backpressure", fake_invoke)
+    sleeps = []
+
+    result = subject._execute_protected_terminal_replay(
+        object(),
+        object(),
+        stack_name="stack",
+        request=replay_required(),
+        sleep=sleeps.append,
+        max_attempts=3,
+    )
+
+    assert result["protectedLockReplayAttemptCount"] == 2
+    assert result["protectedLockReplayOverlapRetryCount"] == 1
+    assert sleeps == [20]
+    assert [call.get("force") for call in calls].count(True) == 2
+    assert [call.get("httpMethod") for call in calls].count("GET") == 1
+
+
+def test_protected_replay_waits_through_full_lease_then_succeeds(monkeypatch):
+    monkeypatch.setattr(
+        base,
+        "resolve_stack_functions",
+        lambda *args: base.StackFunctions("lock", "results", "trainer"),
+    )
+    forced_attempts = 0
+
+    def fake_invoke(client, function, event):
+        nonlocal forced_attempts
+        del client, function
+        if event.get("httpMethod") == "GET":
+            return official_terminal_status()
+        forced_attempts += 1
+        if forced_attempts <= 17:
+            return {
+                "ok": True,
+                "sport": "mlb",
+                "slateDateEt": "2026-08-04",
+                "skipped": True,
+                "reason": "SKIPPED_OVERLAPPING_LOCK_EXECUTION",
+                "mutatingRunAttempted": False,
+            }
+        return {
+            "ok": True,
+            "sport": "mlb",
+            "slateDateEt": "2026-08-04",
+            "perGameLockProgress": {
+                "manifestGameCount": 15,
+                "canonicalCount": 0,
+                "noPredictionDataCount": 15,
+                "lockOutcomeCount": 15,
+                "missedCount": 0,
+                "dueMissingCount": 0,
+            },
+        }
+
+    monkeypatch.setattr(v4, "invoke_json_with_backpressure", fake_invoke)
+    sleeps = []
+
+    result = subject._execute_protected_terminal_replay(
+        object(),
+        object(),
+        stack_name="stack",
+        request=replay_required(),
+        sleep=sleeps.append,
+    )
+
+    assert forced_attempts == 18
+    assert result["protectedLockReplayAttemptCount"] == 18
+    assert result["protectedLockReplayOverlapRetryCount"] == 17
+    assert sum(sleeps) == subject.PROTECTED_REPLAY_LEASE_SECONDS
+    assert result["protectedLockReplayRetryHorizonSeconds"] >= (
+        subject.PROTECTED_REPLAY_LEASE_SECONDS
+        + subject.PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS
+    )
+
+
+def test_protected_replay_overlap_exhaustion_remains_bounded_fail_closed(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        base,
+        "resolve_stack_functions",
+        lambda *args: base.StackFunctions("lock", "results", "trainer"),
+    )
+
+    def always_overlap(client, function, event):
+        del client, function, event
+        return {
+            "ok": True,
+            "sport": "mlb",
+            "slateDateEt": "2026-08-04",
+            "skipped": True,
+            "reason": "SKIPPED_OVERLAPPING_LOCK_EXECUTION",
+            "mutatingRunAttempted": False,
+        }
+
+    monkeypatch.setattr(v4, "invoke_json_with_backpressure", always_overlap)
+    sleeps = []
+
+    with pytest.raises(
+        base.ReconciliationError,
+        match="protected_terminal_replay_overlap_retry_exhausted:2026-08-04",
+    ):
+        subject._execute_protected_terminal_replay(
+            object(),
+            object(),
+            stack_name="stack",
+            request=replay_required(),
+            sleep=sleeps.append,
+        )
+
+    assert len(sleeps) == subject.MAX_PROTECTED_REPLAY_ATTEMPTS - 1
+    assert sum(sleeps) == subject.PROTECTED_REPLAY_RETRY_HORIZON_SECONDS
 
 
 def test_same_slate_remaining_incomplete_after_replay_fails_closed(monkeypatch):

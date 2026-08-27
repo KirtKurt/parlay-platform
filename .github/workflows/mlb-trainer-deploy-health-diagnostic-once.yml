@@ -7,9 +7,6 @@ on:
       - "scripts/diagnose_mlb_trainer_deploy_health.py"
       - "tests/unit/test_diagnose_mlb_trainer_deploy_health.py"
       - ".github/workflows/mlb-trainer-deploy-health-diagnostic-once.yml"
-  workflow_run:
-    workflows: ["Deploy SAM to AWS"]
-    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -57,15 +54,12 @@ jobs:
           git diff --check
 
   diagnose:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.head_branch == 'main')
+    if: github.event_name == 'workflow_dispatch'
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      TARGET_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      TARGET_SOURCE_SHA: ${{ github.sha }}
     steps:
       - name: Checkout exact deployed source
         uses: actions/checkout@v4
@@ -85,16 +79,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Invoke deployed trainer and retain redacted failure evidence
+      - name: Read deployed trainer status and retain redacted evidence
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           mkdir -p runtime_reports
           rm -f \
-            /tmp/mlb-trainer-diagnostic-training.json \
-            /tmp/mlb-trainer-diagnostic-training-invocation.json \
-            /tmp/mlb-trainer-diagnostic-training.stderr \
             /tmp/mlb-trainer-diagnostic-status.json \
             /tmp/mlb-trainer-diagnostic-status-invocation.json \
             /tmp/mlb-trainer-diagnostic-status.stderr \
@@ -120,17 +111,6 @@ jobs:
             --region "$AWS_REGION_VALUE" \
             --cli-binary-format raw-in-base64-out \
             --log-type Tail \
-            --payload '{"sport":"mlb","mode":"scheduled","run":"aws_native_deploy_health_diagnostic"}' \
-            /tmp/mlb-trainer-diagnostic-training.json \
-            > /tmp/mlb-trainer-diagnostic-training-invocation.json \
-            2> /tmp/mlb-trainer-diagnostic-training.stderr
-          TRAINING_EXIT=$?
-
-          aws lambda invoke \
-            --function-name "$TRAINER_ARN" \
-            --region "$AWS_REGION_VALUE" \
-            --cli-binary-format raw-in-base64-out \
-            --log-type Tail \
             --payload '{"sport":"mlb","mode":"status"}' \
             /tmp/mlb-trainer-diagnostic-status.json \
             > /tmp/mlb-trainer-diagnostic-status-invocation.json \
@@ -138,24 +118,18 @@ jobs:
           STATUS_EXIT=$?
           set -e
 
-          TRAINING_EXIT="$TRAINING_EXIT" STATUS_EXIT="$STATUS_EXIT" python - <<'PY'
+          STATUS_EXIT="$STATUS_EXIT" python - <<'PY'
           import json
           import os
           from pathlib import Path
 
           pairs = (
-              (
-                  Path('/tmp/mlb-trainer-diagnostic-training.json'),
-                  Path('/tmp/mlb-trainer-diagnostic-training-invocation.json'),
-                  Path('/tmp/mlb-trainer-diagnostic-training.stderr'),
-                  int(os.environ['TRAINING_EXIT']),
-              ),
-              (
-                  Path('/tmp/mlb-trainer-diagnostic-status.json'),
-                  Path('/tmp/mlb-trainer-diagnostic-status-invocation.json'),
-                  Path('/tmp/mlb-trainer-diagnostic-status.stderr'),
-                  int(os.environ['STATUS_EXIT']),
-              ),
+            (
+              Path('/tmp/mlb-trainer-diagnostic-status.json'),
+              Path('/tmp/mlb-trainer-diagnostic-status-invocation.json'),
+              Path('/tmp/mlb-trainer-diagnostic-status.stderr'),
+              int(os.environ['STATUS_EXIT']),
+            ),
           )
           for response_path, invocation_path, stderr_path, exit_code in pairs:
               if not response_path.exists():
@@ -179,8 +153,7 @@ jobs:
           PY
 
           python scripts/diagnose_mlb_trainer_deploy_health.py \
-            --training-response /tmp/mlb-trainer-diagnostic-training.json \
-            --training-invocation /tmp/mlb-trainer-diagnostic-training-invocation.json \
+            --status-only \
             --status-response /tmp/mlb-trainer-diagnostic-status.json \
             --status-invocation /tmp/mlb-trainer-diagnostic-status-invocation.json \
             --configuration /tmp/mlb-trainer-diagnostic-configuration.json \
@@ -231,6 +204,8 @@ jobs:
           assert value.get('proofType') == 'MLB_TRAINER_DEPLOY_HEALTH_DIAGNOSTIC', value
           assert value.get('secretExposed') is False, value
           assert value.get('diagnosticOnly') is True, value
+          assert value.get('readOnlyStatusMode') is True, value
+          assert value.get('trainerInvocationPerformed') is False, value
           assert value.get('modelOrPromotionGateChanged') is False, value
           assert value.get('productionAuthorityChanged') is False, value
           PY

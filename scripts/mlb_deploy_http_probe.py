@@ -9,8 +9,9 @@ import json
 import time
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, Collection, Mapping, Optional
 
 
 TRANSIENT_HTTP_STATUSES = {429, *range(500, 600)}
@@ -27,6 +28,14 @@ class PermanentHttpProbeError(HttpProbeError):
 
 class TransientHttpProbeExhausted(HttpProbeError):
     """Transient delivery failures consumed the bounded probe deadline."""
+
+
+@dataclass(frozen=True)
+class JsonProbeResponse:
+    """One accepted JSON response, including its actual HTTP status."""
+
+    http_status: Optional[int]
+    payload: dict[str, Any]
 
 
 def _transient_probe_result(attempts: int, reason: str) -> dict[str, Any]:
@@ -48,7 +57,7 @@ def _transient_probe_result(attempts: int, reason: str) -> dict[str, Any]:
     }
 
 
-def fetch_json_object(
+def fetch_json_response(
     url: str,
     *,
     deadline_monotonic: Optional[float] = None,
@@ -57,15 +66,22 @@ def fetch_json_object(
     retry_delay_seconds: float = 4.0,
     max_attempts: Optional[int] = None,
     headers: Optional[Mapping[str, str]] = None,
+    accepted_http_statuses: Collection[int] = (200,),
     opener: Callable[..., Any] = urllib.request.urlopen,
     monotonic: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
-) -> dict[str, Any]:
-    """Fetch one JSON object, retrying only capacity/network-class failures.
+) -> JsonProbeResponse:
+    """Fetch one JSON object and retain the accepted HTTP status.
 
     Calls are strictly sequential. HTTP 429, HTTP 5xx, transport errors, and
-    truncated/invalid JSON are retryable. ``max_attempts`` always bounds the
-    deliveries made by this function call.
+    truncated/invalid JSON are retryable unless the caller explicitly accepts
+    the HTTP status and its response body is a valid JSON object.
+    ``max_attempts`` always bounds the deliveries made by this function call.
+
+    Explicit status acceptance is required for domain-level fail-closed
+    responses such as MLB's intentional ``503 NO_QUALIFIED_CHAMPION``. The
+    actual status is returned so the caller can verify the status and body as
+    one atomic contract; an arbitrary 503 can never be mistaken for success.
 
     When the caller supplies an explicit shared deadline and the local attempt
     cap is reached first, the function returns a fail-closed transient object
@@ -87,6 +103,9 @@ def fetch_json_object(
             "probe timeout/max attempts must be positive and retry delay "
             "must be non-negative"
         )
+    accepted_statuses = {int(status) for status in accepted_http_statuses}
+    if not accepted_statuses:
+        raise ValueError("accepted HTTP statuses must not be empty")
     shared_deadline = deadline_monotonic is not None
     deadline = (
         float(deadline_monotonic)
@@ -99,6 +118,7 @@ def fetch_json_object(
         **dict(headers or {}),
     }
     last_transient = "transient delivery failure"
+    last_http_status: Optional[int] = None
     attempt = 0
 
     while True:
@@ -124,7 +144,8 @@ def fetch_json_object(
         try:
             with opener(request, timeout=timeout) as response:
                 status = int(response.getcode())
-                if status != 200:
+                last_http_status = status
+                if status not in accepted_statuses:
                     if status in TRANSIENT_HTTP_STATUSES:
                         raise urllib.error.HTTPError(
                             url,
@@ -139,11 +160,26 @@ def fetch_json_object(
                 raw = response.read()
                 payload = json.loads(raw.decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            if int(exc.code) not in TRANSIENT_HTTP_STATUSES:
+            status = int(exc.code)
+            last_http_status = status
+            if status in accepted_statuses:
+                try:
+                    raw = exc.read()
+                    payload = json.loads(raw.decode("utf-8"))
+                except (json.JSONDecodeError, UnicodeDecodeError) as decode_exc:
+                    last_transient = type(decode_exc).__name__
+                else:
+                    if not isinstance(payload, dict):
+                        raise PermanentHttpProbeError(
+                            "JSON probe returned a valid non-object payload"
+                        )
+                    return JsonProbeResponse(status, payload)
+            elif status not in TRANSIENT_HTTP_STATUSES:
                 raise PermanentHttpProbeError(
-                    f"JSON probe returned non-retryable HTTP {exc.code}"
+                    f"JSON probe returned non-retryable HTTP {status}"
                 ) from exc
-            last_transient = f"HTTP {exc.code}"
+            else:
+                last_transient = f"HTTP {status}"
         except (
             urllib.error.URLError,
             TimeoutError,
@@ -158,11 +194,14 @@ def fetch_json_object(
                 raise PermanentHttpProbeError(
                     "JSON probe returned a valid non-object payload"
                 )
-            return payload
+            return JsonProbeResponse(status, payload)
 
         if max_attempts is not None and attempt >= max_attempts:
             if shared_deadline:
-                return _transient_probe_result(attempt, last_transient)
+                return JsonProbeResponse(
+                    last_http_status,
+                    _transient_probe_result(attempt, last_transient),
+                )
             raise TransientHttpProbeExhausted(
                 f"JSON probe attempt limit exhausted after {attempt} attempts: "
                 f"{last_transient}"
@@ -174,6 +213,36 @@ def fetch_json_object(
                 f"{last_transient}"
             )
         sleep(min(float(retry_delay_seconds), remaining))
+
+
+def fetch_json_object(
+    url: str,
+    *,
+    deadline_monotonic: Optional[float] = None,
+    max_wait_seconds: float = 180.0,
+    request_timeout_seconds: float = 20.0,
+    retry_delay_seconds: float = 4.0,
+    max_attempts: Optional[int] = None,
+    headers: Optional[Mapping[str, str]] = None,
+    opener: Callable[..., Any] = urllib.request.urlopen,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, Any]:
+    """Fetch an HTTP-200 JSON object with bounded transient retries."""
+
+    return fetch_json_response(
+        url,
+        deadline_monotonic=deadline_monotonic,
+        max_wait_seconds=max_wait_seconds,
+        request_timeout_seconds=request_timeout_seconds,
+        retry_delay_seconds=retry_delay_seconds,
+        max_attempts=max_attempts,
+        headers=headers,
+        accepted_http_statuses=(200,),
+        opener=opener,
+        monotonic=monotonic,
+        sleep=sleep,
+    ).payload
 
 
 def main() -> None:

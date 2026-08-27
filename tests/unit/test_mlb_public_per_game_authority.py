@@ -766,6 +766,9 @@ def test_schedule_drift_invalidates_old_canonical_row(monkeypatch):
     assert "manifest_tminus45_cutoff_mismatch" in errors
     assert result["officialPredictionCount"] == 0
     assert result["operationalDefect"] is True
+    assert result["winnerLifecycleOperationalDefect"] is True
+    assert result["releasePlayabilityOperationalDefect"] is False
+    assert result["operationalDefectScopes"] == ["WINNER_LIFECYCLE"]
 
 
 def test_missing_canonical_at_cutoff_is_failure_not_prelock(monkeypatch):
@@ -787,6 +790,9 @@ def test_missing_canonical_at_cutoff_is_failure_not_prelock(monkeypatch):
     assert by_id["game-1"]["perGameCanonicalLock"]["status"] == "LOCK_DUE_CANONICAL_MISSING"
     assert by_id["game-1"]["lockedPrediction"] is False
     assert result["operationalDefect"] is True
+    assert result["winnerLifecycleOperationalDefect"] is True
+    assert result["releasePlayabilityOperationalDefect"] is False
+    assert result["operationalDefectScopes"] == ["WINNER_LIFECYCLE"]
 
 
 def test_missing_provider_manifest_fails_closed_and_never_appears_complete(monkeypatch):
@@ -955,6 +961,13 @@ def test_missing_latest_due_playability_assessment_fails_release_closed(monkeypa
         in row["playabilityBlockReasons"]
     )
     assert result["operationalDefect"] is True
+    assert result["winnerLifecycleOperationalDefect"] is False
+    assert result["releasePlayabilityOperationalDefect"] is True
+    assert result["operationalDefectScopes"] == ["RELEASE_PLAYABILITY"]
+    assert result["invalidPlayabilityReleaseRows"] == {
+        "provider:game-1": ["T_MINUS_15:required_assessment_missing"],
+    }
+    assert result["invalidTerminalLifecycleRows"] == {}
 
 
 def test_terminal_no_prediction_status_displays_without_current_prediction_row(monkeypatch):
@@ -1214,4 +1227,3 @@ def test_verified_effective_schedule_revision_rejects_membership_change(monkeypa
         raise AssertionError("expected effective-schedule membership mismatch")
 
     assert "resolved_games_membership_mismatch" in message
-

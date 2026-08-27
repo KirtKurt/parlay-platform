@@ -27,13 +27,76 @@ def validate_lock_result(
     if str(payload.get("slateDateEt") or "") != slate_date:
         raise base.ReconciliationError("lock_reconciliation_slate_mismatch")
 
+    terminal_repair = payload.get("missedLockTerminalReconciliation")
+    terminal_repair_complete = False
+    if terminal_repair is not None:
+        if not isinstance(terminal_repair, Mapping):
+            raise base.ReconciliationError(
+                "protected_terminal_reconciliation_invalid"
+            )
+        repair_progress = terminal_repair.get("progressAfter")
+        if not isinstance(repair_progress, Mapping):
+            raise base.ReconciliationError(
+                "protected_terminal_reconciliation_invalid"
+            )
+        reconciled = base._integer(
+            terminal_repair.get("reconciledCount", 0),
+            field="terminal_repair_reconciled_count",
+        )
+        remaining = base._integer(
+            terminal_repair.get(
+                "remainingMissedCount",
+                repair_progress.get("missedCount", 0),
+            ),
+            field="terminal_repair_remaining_missed_count",
+        )
+        due_after = base._integer(
+            repair_progress.get("dueMissingCount", 0),
+            field="terminal_repair_due_missing_count",
+        )
+        unresolved = terminal_repair.get("unresolved") or []
+        if not isinstance(unresolved, list):
+            raise base.ReconciliationError(
+                "protected_terminal_reconciliation_invalid"
+            )
+        cached_idempotent = bool(
+            str(payload.get("reason") or "")
+            == "POST_WINDOW_TERMINAL_STATUS_ALREADY_RECONCILED"
+            and reconciled == 0
+        )
+        if (
+            terminal_repair.get("ok") is not True
+            or terminal_repair.get("postStartPredictionCreationAllowed") is not False
+            or (reconciled <= 0 and not cached_idempotent)
+        ):
+            raise base.ReconciliationError(
+                "protected_terminal_reconciliation_unhealthy"
+            )
+        if remaining or due_after or unresolved:
+            raise base.ReconciliationError("prospective_slate_still_unresolved")
+        terminal_repair_complete = True
+
+    for field in (
+        "missedGameCount",
+        "missedCount",
+        "dueMissingGameCount",
+        "dueMissingCount",
+    ):
+        if field not in payload:
+            continue
+        if (
+            base._integer(payload.get(field), field=field)
+            and not terminal_repair_complete
+        ):
+            raise base.ReconciliationError("prospective_slate_still_unresolved")
+
     progress = payload.get("perGameLockProgress") or {}
     if progress and not isinstance(progress, Mapping):
         raise base.ReconciliationError("lock_progress_invalid")
     if isinstance(progress, Mapping):
         missed = base._integer(progress.get("missedCount", 0), field="missed_count")
         due = base._integer(progress.get("dueMissingCount", 0), field="due_missing_count")
-        if missed or due:
+        if (missed or due) and not terminal_repair_complete:
             raise base.ReconciliationError("prospective_slate_still_unresolved")
 
     official = base._validate_official_status(official_status, slate_date)
@@ -84,6 +147,7 @@ def validate_lock_result(
         "mutationCanonicalPredictionCount": mutation_canonical,
         "mutationTerminalNoPredictionCount": mutation_terminal,
         "mutationLockOutcomeCount": mutation_outcomes,
+        "protectedTerminalReconciliationVerified": terminal_repair_complete,
     }
 
 

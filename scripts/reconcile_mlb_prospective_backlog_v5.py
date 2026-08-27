@@ -16,6 +16,7 @@ import base64
 import json
 import re
 import sys
+import time
 from contextlib import contextmanager
 from typing import Any, Dict, Iterable, Mapping, Optional
 
@@ -24,8 +25,8 @@ import reconcile_mlb_prospective_backlog_v3 as v3
 import reconcile_mlb_prospective_backlog_v4 as v4
 
 VERSION = (
-    "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5.4-"
-    "status-consistency-retry-and-redacted-function-error-evidence"
+    "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5.5-"
+    "exact-slate-and-terminal-identity-evidence"
 )
 STATUS_PATH = "/v1/mlb/locks/status"
 SETTLEMENT_RUN = "prospective_backlog_settlement_v4"
@@ -87,6 +88,21 @@ SAFE_FAILURE_ROW_FIELDS = (
 )
 MAX_DIAGNOSTIC_ITEMS = 8
 MAX_DIAGNOSTIC_STRING = 480
+PROTECTED_REPLAY_LEASE_SECONDS = 960
+PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS = 60
+MAX_PROTECTED_REPLAY_ATTEMPTS = 19
+PROTECTED_REPLAY_RETRY_DELAYS_SECONDS = (20, 40) + (60,) * 16
+PROTECTED_REPLAY_RETRY_HORIZON_SECONDS = sum(
+    PROTECTED_REPLAY_RETRY_DELAYS_SECONDS
+)
+if (
+    len(PROTECTED_REPLAY_RETRY_DELAYS_SECONDS)
+    != MAX_PROTECTED_REPLAY_ATTEMPTS - 1
+    or PROTECTED_REPLAY_RETRY_HORIZON_SECONDS
+    < PROTECTED_REPLAY_LEASE_SECONDS
+    + PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS
+):
+    raise RuntimeError("protected_terminal_replay_retry_horizon_invalid")
 _SENSITIVE_ASSIGNMENT_RE = re.compile(
     r"(?i)(api[_-]?key|token|secret|authorization|password|credential)"
     r"(\s*[:=]\s*)"
@@ -264,6 +280,9 @@ def _terminal_replay_detail(
         return None
     if application.get("immutablePregameRowsMutated") is not False:
         return None
+    rejected_terminal = application.get("rejectedTerminalOutcomes") or []
+    if not isinstance(rejected_terminal, list) or rejected_terminal:
+        return None
 
     slate_date = str(event.get("slate_date") or event.get("slateDateEt") or "")
     returned_date = str(
@@ -394,32 +413,82 @@ def _execute_protected_terminal_replay(
     *,
     stack_name: str,
     request: DurableTerminalReplayRequired,
+    sleep: Any = time.sleep,
+    max_attempts: int = MAX_PROTECTED_REPLAY_ATTEMPTS,
 ) -> Dict[str, Any]:
+    if max_attempts < 1:
+        raise base.ReconciliationError("protected_terminal_replay_attempts_invalid")
     functions = base.resolve_stack_functions(cloudformation, stack_name)
     with _status_body_adapter():
-        replay = v4.invoke_json_with_backpressure(
-            lambda_client,
-            functions.lock,
-            {
-                "sport": "mlb",
-                "run": TERMINAL_REPLAY_RUN,
-                "slateDateEt": request.slate_date,
-                "force": True,
-            },
-        )
-        status = v4.read_official_status_with_consistency_retry(
-            lambda_client,
-            functions.lock,
-            request.slate_date,
-            invoke=v4.invoke_json_with_backpressure,
-            retryable_errors=v4.POST_MUTATION_STATUS_ERRORS,
-        )
-    evidence = v3.validate_lock_result(replay, status, request.slate_date)
+        for attempt in range(1, max_attempts + 1):
+            replay = v4.invoke_json_with_backpressure(
+                lambda_client,
+                functions.lock,
+                {
+                    "sport": "mlb",
+                    "run": TERMINAL_REPLAY_RUN,
+                    "slateDateEt": request.slate_date,
+                    "force": True,
+                },
+            )
+            concurrency = replay.get("lockExecutionConcurrency") or {}
+            overlap = bool(
+                str(replay.get("reason") or replay.get("status") or "")
+                == "SKIPPED_OVERLAPPING_LOCK_EXECUTION"
+                or str(replay.get("error") or "")
+                == "MLB_LOCK_EXECUTION_ALREADY_RUNNING"
+                or (
+                    isinstance(concurrency, Mapping)
+                    and concurrency.get("overlapSkipped") is True
+                )
+                or (
+                    replay.get("skipped") is True
+                    and replay.get("mutatingRunAttempted") is False
+                )
+            )
+            if overlap:
+                if attempt >= max_attempts:
+                    raise base.ReconciliationError(
+                        "protected_terminal_replay_overlap_retry_exhausted:"
+                        + request.slate_date
+                    )
+                sleep(
+                    PROTECTED_REPLAY_RETRY_DELAYS_SECONDS[
+                        min(
+                            attempt - 1,
+                            len(PROTECTED_REPLAY_RETRY_DELAYS_SECONDS) - 1,
+                        )
+                    ]
+                )
+                continue
+            status = v4.read_official_status_with_consistency_retry(
+                lambda_client,
+                functions.lock,
+                request.slate_date,
+                invoke=v4.invoke_json_with_backpressure,
+                retryable_errors=v4.POST_MUTATION_STATUS_ERRORS,
+            )
+            evidence = v3.validate_lock_result(
+                replay,
+                status,
+                request.slate_date,
+            )
+            break
+        else:
+            raise base.ReconciliationError(
+                "protected_terminal_replay_retry_state_invalid"
+            )
     return {
         "slateDateEt": request.slate_date,
         "settlementFailure": dict(request.detail),
         "lockEvidence": evidence,
         "protectedLockReplay": True,
+        "protectedLockReplayAttemptCount": attempt,
+        "protectedLockReplayOverlapRetryCount": attempt - 1,
+        "protectedLockReplayLeaseSeconds": PROTECTED_REPLAY_LEASE_SECONDS,
+        "protectedLockReplayRetryHorizonSeconds": (
+            PROTECTED_REPLAY_RETRY_HORIZON_SECONDS
+        ),
         "settlement409TreatedAsSuccess": False,
         "directTableWrite": False,
         "postStartPredictionCreationAllowed": False,
@@ -427,6 +496,11 @@ def _execute_protected_terminal_replay(
 
 
 def reconcile(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    target_slate_date = str(kwargs.pop("target_slate_date", "") or "").strip()
+    if target_slate_date:
+        if kwargs.get("slate_dates") is not None:
+            raise base.ReconciliationError("target_and_slate_dates_are_mutually_exclusive")
+        kwargs["slate_dates"] = [target_slate_date]
     stack_name = str(kwargs.get("stack_name") or "")
     if len(args) < 2 or not stack_name:
         raise base.ReconciliationError("reconcile_arguments_invalid")
@@ -475,7 +549,12 @@ def reconcile(*args: Any, **kwargs: Any) -> Dict[str, Any]:
 
 
 def main() -> int:
-    args = base._parser().parse_args()
+    parser = base._parser()
+    parser.add_argument(
+        "--target-slate-date",
+        help="Reconcile one exact date inside the bounded prospective horizon.",
+    )
+    args = parser.parse_args()
     session = base.boto3.session.Session(region_name=args.region)
     cloudformation = session.client("cloudformation", config=v4.control_plane_config())
     lambda_client = session.client("lambda", config=v4.durable_lambda_config())
@@ -485,6 +564,7 @@ def main() -> int:
             lambda_client,
             stack_name=args.stack_name,
             max_slate_days=args.max_slate_days,
+            target_slate_date=args.target_slate_date,
         )
     except Exception as exc:
         report = {

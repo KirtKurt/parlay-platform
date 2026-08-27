@@ -131,7 +131,7 @@ def test_rejects_removal_of_capacity_safe_postdeploy_http_probe(
     text = deploy.read_text(encoding="utf-8")
     deploy.write_text(
         text.replace(
-            "from scripts.mlb_deploy_http_probe import fetch_json_object",
+            "              fetch_json_object,",
             "# capacity-safe helper removed",
             1,
         ),
@@ -141,7 +141,7 @@ def test_rejects_removal_of_capacity_safe_postdeploy_http_probe(
     assert any(
         error.startswith(
             "canonical_deploy_capacity_backpressure_missing:"
-            "from scripts.mlb_deploy_http_probe import fetch_json_object"
+            "fetch_json_object,"
         )
         for error in authority.verify_repository(root)
     )
@@ -207,8 +207,8 @@ def test_rejects_status_or_prediction_probe_delivery_retries(
     (
         ("                  deadline=deadline,", "                  deadline=None,"),
         (
-            "                  deadline=prediction_deadline,",
-            "                  deadline=None,",
+            "                  deadline_monotonic=prediction_deadline,",
+            "                  deadline_monotonic=None,",
         ),
     ),
 )
@@ -227,13 +227,44 @@ def test_rejects_status_or_prediction_probe_without_active_deadline(
             replacement,
             1,
         )
-        + "\n# Detached deadline=deadline, deadline=prediction_deadline markers.\n",
+        + "\n# Detached deadline=deadline, deadline_monotonic=prediction_deadline markers.\n",
         encoding="utf-8",
     )
 
     assert (
         "canonical_deploy_heavy_read_probe_deadlines_are_invalid"
         in authority.verify_repository(root)
+    )
+
+
+@pytest.mark.parametrize(
+    "required_token",
+    (
+        "accepted_http_statuses=(200, 503)",
+        "reconcile_public_prediction_lifecycle(",
+        "public_authority_report.get('state') == 'NO_QUALIFIED_CHAMPION'",
+        "'publicWinnerCount': 0",
+        "'statusProjectionPersisted': public_reconciliation['statusProjectionPersisted']",
+    ),
+)
+def test_rejects_deploy_smoke_without_atomic_fail_closed_prediction_contract(
+    tmp_path: Path,
+    required_token: str,
+) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    assert required_token in text
+    deploy.write_text(
+        text.replace(required_token, "removed_fail_closed_contract", 1),
+        encoding="utf-8",
+    )
+
+    assert any(
+        error.startswith(
+            "canonical_deploy_public_prediction_fail_closed_contract_missing:"
+        )
+        for error in authority.verify_repository(root)
     )
 
 

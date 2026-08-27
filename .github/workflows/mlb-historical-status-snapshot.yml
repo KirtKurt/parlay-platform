@@ -1,22 +1,6 @@
 name: MLB Historical Status Snapshot
 
 "on":
-  schedule:
-    - cron: '7 * * * *'
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/mlb-historical-status-snapshot.yml'
-      - '.github/workflows/mlb-historical-watchdog.yml'
-      - '.github/workflows/mlb-historical-v7-recovery.yml'
-      - '.github/workflows/mlb-historical-next-round-catchup.yml'
-      - 'scripts/build_mlb_historical_status.py'
-      - 'scripts/enrich_mlb_historical_status_input.py'
-      - 'scripts/run_mlb_historical_watchdog.py'
-      - 'hello_world/mlb_historical_optimizer_entrypoint.py'
-      - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
-      - 'hello_world/mlb_historical_feature_rematerialization_v1.py'
-      - 'mlb_historical_optimizer/**'
   workflow_dispatch:
 
 permissions:

@@ -30,6 +30,7 @@ except ModuleNotFoundError:
 FUNCTIONS = {
     "MLBAuditedPullFunction": "ingest",
     "MLBDailyPickLockFunction": "lock",
+    "MLBPlayabilityCheckpointFunction": "playability",
     "MLBMLTrainingFunction": "trainer",
     "MLBProductionVerifierFunction": "verifier",
     "MLBV3ReadFunction": "read",
@@ -42,6 +43,7 @@ EXPECTED_SCHEDULES = {
     "read": [],
     "ingest": ["cron(0/15 * * * ? *)"],
     "lock": ["rate(1 minute)"],
+    "playability": ["cron(* * * * ? *)"],
     "trainer": ["cron(11 1/6 * * ? *)", "cron(4/15 * * * ? *)"],
     # The old verifier is intentionally schedule-disabled until its runtime is
     # persisted-summary-only. It remains directly invocable for diagnostics.
@@ -92,6 +94,16 @@ SCHEDULE_EXPECTED_INVOCATIONS = {
             },
         },
     ),
+    "playability": (
+        {
+            "schedule": "cron(* * * * ? *)",
+            "input": {
+                "sport": "mlb",
+                "run": "playability_checkpoint_sweep",
+                "auto_ingest": False,
+            },
+        },
+    ),
     "trainer": TRAINER_EXPECTED_INVOCATIONS,
     "settlement": (
         {
@@ -138,6 +150,9 @@ LOCK_EXECUTION_CONCURRENCY_STRATEGY = "dynamodb_conditional_lease"
 LOCK_EXECUTION_LEASE_SECONDS = "960"
 LOCK_EXECUTION_LEASE_SAFETY_MARGIN_SECONDS = 60
 LOCK_REQUIRED_ENVIRONMENT = ("SNAPSHOTS_TABLE",)
+PLAYABILITY_HANDLER = "mlb_playability_checkpoint_scheduler.lambda_handler"
+PLAYABILITY_TIMEOUT_SECONDS = 120
+PLAYABILITY_REQUIRED_ENVIRONMENT = ("SNAPSHOTS_TABLE", "OUTCOMES_TABLE")
 TRAINER_RETRY_POLICY = {
     "MaximumEventAgeInSeconds": 300,
     "MaximumRetryAttempts": 0,
@@ -155,6 +170,12 @@ SCHEDULE_RETRY_POLICIES = {
     },
     "lock": {
         "rate(1 minute)": {
+            "MaximumEventAgeInSeconds": 60,
+            "MaximumRetryAttempts": 0,
+        },
+    },
+    "playability": {
+        "cron(* * * * ? *)": {
             "MaximumEventAgeInSeconds": 60,
             "MaximumRetryAttempts": 0,
         },
@@ -191,6 +212,10 @@ FUNCTION_ASYNC_RETRY_POLICIES = {
         "MaximumRetryAttempts": 1,
     },
     "lock": {
+        "MaximumEventAgeInSeconds": 60,
+        "MaximumRetryAttempts": 0,
+    },
+    "playability": {
         "MaximumEventAgeInSeconds": 60,
         "MaximumRetryAttempts": 0,
     },
@@ -578,6 +603,22 @@ def verify(
         "reservedLambdaConcurrencyRequired": False,
         "matches": False,
     }
+    playability_configuration: Dict[str, Any] = {
+        "expectedHandler": PLAYABILITY_HANDLER,
+        "expectedTimeoutSeconds": PLAYABILITY_TIMEOUT_SECONDS,
+        "expectedAsyncRetryPolicy": dict(
+            FUNCTION_ASYNC_RETRY_POLICIES["playability"]
+        ),
+        "requiredEnvironmentKeys": list(
+            PLAYABILITY_REQUIRED_ENVIRONMENT
+        ),
+        "leaseIndependent": True,
+        "selectionRewriteAllowed": False,
+        "predictionCreationAllowed": False,
+        "postStartPredictionCreationAllowed": False,
+        "historicalMutationAllowed": False,
+        "matches": False,
+    }
     trainer_configuration: Dict[str, Any] = {
         "expectedHandler": TRAINER_HANDLER,
         "expectedEnvironment": dict(TRAINER_EXPECTED_ENVIRONMENT),
@@ -919,6 +960,66 @@ def verify(
                     "matches": configuration_matches,
                 }
             )
+        if role == "playability":
+            actual_handler = str(config.get("Handler") or "")
+            actual_timeout = config.get("Timeout")
+            missing_environment = [
+                key
+                for key in PLAYABILITY_REQUIRED_ENVIRONMENT
+                if not str(environment.get(key) or "").strip()
+            ]
+            lease_contract = str(
+                environment.get("MLB_LOCK_EXECUTION_LEASE_SECONDS") or ""
+            )
+            if actual_handler != PLAYABILITY_HANDLER:
+                configuration_matches = False
+                blockers.append(
+                    "PLAYABILITY_HANDLER_MISMATCH:"
+                    f"expected={PLAYABILITY_HANDLER}:actual={actual_handler}"
+                )
+            if actual_timeout != PLAYABILITY_TIMEOUT_SECONDS:
+                configuration_matches = False
+                blockers.append(
+                    "PLAYABILITY_TIMEOUT_MISMATCH:"
+                    f"expected={PLAYABILITY_TIMEOUT_SECONDS}:actual={actual_timeout}"
+                )
+            if lease_contract != LOCK_EXECUTION_LEASE_SECONDS:
+                configuration_matches = False
+                blockers.append(
+                    "PLAYABILITY_RUNTIME_LEASE_CONTRACT_MISMATCH:"
+                    f"expected={LOCK_EXECUTION_LEASE_SECONDS}:"
+                    f"actual={lease_contract or 'MISSING'}"
+                )
+            for key in missing_environment:
+                configuration_matches = False
+                blockers.append(
+                    f"PLAYABILITY_ENVIRONMENT_MISSING:{key}"
+                )
+            playability_configuration.update({
+                "handler": actual_handler,
+                "timeoutSeconds": actual_timeout,
+                "timeoutMatches": (
+                    actual_timeout == PLAYABILITY_TIMEOUT_SECONDS
+                ),
+                "runtimeLeaseContractSeconds": lease_contract or None,
+                "requiredEnvironmentPresent": not missing_environment,
+                "snapshotTable": str(
+                    environment.get("SNAPSHOTS_TABLE") or ""
+                ),
+                "outcomesTable": str(
+                    environment.get("OUTCOMES_TABLE") or ""
+                ),
+                "asyncRetryPolicy": async_retry_policy,
+                "asyncRetryPolicyMatches": (
+                    async_retry_policy
+                    == FUNCTION_ASYNC_RETRY_POLICIES["playability"]
+                ),
+                "asyncDestinationConfigAbsent": bool(
+                    async_destination_config_valid
+                    and not configured_async_destinations
+                ),
+                "matches": configuration_matches,
+            })
         if role == "trainer":
             actual_handler = str(config.get("Handler") or "")
             function_dead_letter_config = dict(
@@ -1485,6 +1586,7 @@ def verify(
         },
         "functions": function_proofs,
         "lockConfiguration": lock_configuration,
+        "playabilityConfiguration": playability_configuration,
         "trainerConfiguration": trainer_configuration,
         "lockExecutionConfiguration": lock_execution_configuration,
         "providerCredentialBoundary": provider_credential_proof,

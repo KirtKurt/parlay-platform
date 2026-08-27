@@ -2,15 +2,28 @@ name: MLB 30-minute production progress pulse
 
 on:
   schedule:
-    - cron: '0,30 * * * *'
+    # GitHub documents elevated delay/drop risk at the start of the hour.
+    # Keep the 30-minute cadence while moving away from :00/:30 contention.
+    - cron: '11,41 * * * *'
+  # Event-driven fallback: either independent 15-minute MLB proof can recover
+  # a dropped GitHub schedule after the visible pulse crosses the stale limit.
+  workflow_run:
+    workflows:
+      - MLB Canonical Runtime Health Watch
+      - MLB Scoring Guard
+    types: [completed]
   workflow_dispatch:
   push:
     branches: [main]
     paths:
       - '.github/workflows/mlb-30m-progress-pulse.yml'
       - 'scripts/report_mlb_30m_progress.py'
+      - 'scripts/check_mlb_progress_pulse_staleness.py'
+      - 'tests/unit/test_report_mlb_30m_progress.py'
+      - 'tests/unit/test_mlb_progress_pulse_watchdog.py'
 
 permissions:
+  actions: read
   contents: read
   issues: write
 
@@ -23,10 +36,80 @@ env:
   MLB_ROOT_STACK: parlay-platform-dev
   MLB_AUTO_STACK: parlay-platform-mlb-auto-llm
   MLB_PROGRESS_ISSUE_NUMBER: '567'
+  MLB_PROGRESS_TARGET_CADENCE_MINUTES: '30'
+  MLB_PROGRESS_CADENCE_GRACE_MINUTES: '5'
+  MLB_PROGRESS_STALE_AFTER_MINUTES: '40'
   MLB_R7_EXPERIMENT_ID: mlb-v2-2026-08-03-future-prospective-r7
 
 jobs:
+  pulse_decision:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.head_branch == 'main'
+    permissions:
+      actions: read
+      contents: read
+      issues: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run_pulse: ${{ steps.decision.outputs.dispatch_required }}
+      reason: ${{ steps.decision.outputs.reason }}
+    steps:
+      - name: Checkout exact main source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Decide whether this event should emit a pulse
+        id: decision
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/check_mlb_progress_pulse_staleness.py
+          ! grep -Ei 'boto3|aws[[:space:]]+(dynamodb|lambda)|put_item|update_item|delete_item' scripts/check_mlb_progress_pulse_staleness.py
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            python scripts/check_mlb_progress_pulse_staleness.py \
+              --stale-after-minutes 40 \
+              --retry-cooldown-minutes 10 \
+              --current-run-id "$GITHUB_RUN_ID" \
+              --github-output "$GITHUB_OUTPUT"
+          else
+            echo 'stale=false' >> "$GITHUB_OUTPUT"
+            echo 'dispatch_required=true' >> "$GITHUB_OUTPUT"
+            echo 'reason=DIRECT_PULSE_TRIGGER' >> "$GITHUB_OUTPUT"
+            echo 'visible_pulse_age_minutes=n/a' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Record pulse decision
+        env:
+          STALE: ${{ steps.decision.outputs.stale }}
+          RUN_PULSE: ${{ steps.decision.outputs.dispatch_required }}
+          REASON: ${{ steps.decision.outputs.reason }}
+          VISIBLE_AGE: ${{ steps.decision.outputs.visible_pulse_age_minutes }}
+        run: |
+          {
+            echo '## MLB progress pulse decision'
+            echo
+            echo "- Visible pulse stale: ${STALE}"
+            echo "- Reporter job required: ${RUN_PULSE}"
+            echo "- Decision: ${REASON}"
+            echo "- Previous visible pulse age: ${VISIBLE_AGE} minutes"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   read-only-progress-pulse:
+    needs: pulse_decision
+    if: needs.pulse_decision.outputs.run_pulse == 'true'
+    permissions:
+      actions: read
+      contents: read
+      issues: write
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

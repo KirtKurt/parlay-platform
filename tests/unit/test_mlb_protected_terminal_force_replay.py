@@ -42,6 +42,53 @@ def test_forced_scheduled_reconciliation_writes_only_no_prediction_terminal():
     assert reconciliation["identityCrosswalkCount"] == 1
 
 
+def test_cached_protected_reconciliation_is_idempotent_on_second_invocation():
+    class CachedAfterFirstModule(lifecycle.FakeModule):
+        def run_lock(self, slate_date=None, force=False, *, scheduled=False):
+            result = super().run_lock(
+                slate_date=slate_date,
+                force=force,
+                scheduled=scheduled,
+            )
+            if self.original_calls > 1:
+                return {
+                    "ok": True,
+                    "sport": "mlb",
+                    "slateDateEt": slate_date or lifecycle.SLATE,
+                    "reason": "POST_WINDOW_TERMINAL_STATUS_ALREADY_RECONCILED",
+                    "lockStatusComplete": True,
+                    "missedGameCount": 1,
+                    "postStartPredictionCreationAllowed": False,
+                }
+            return result
+
+    module = CachedAfterFirstModule()
+    repair.install_prospective_row_repair(module, lifecycle.FakePatch)
+
+    first = module.run_lock(
+        slate_date=lifecycle.SLATE,
+        force=True,
+        scheduled=True,
+    )
+    first_outcome = dict(module.outcome or {})
+    second = module.run_lock(
+        slate_date=lifecycle.SLATE,
+        force=True,
+        scheduled=True,
+    )
+
+    assert first["ok"] is True
+    assert second["ok"] is True
+    assert second["reason"] == "POST_WINDOW_TERMINAL_STATUS_ALREADY_RECONCILED"
+    assert second["durableNoPredictionTerminalReconciled"] is True
+    assert second["durableNoPredictionTerminalReconciledCount"] == 0
+    assert second["missedLockTerminalReconciliation"]["ok"] is True
+    assert second["missedLockTerminalReconciliation"]["reconciledCount"] == 0
+    assert second["missedLockTerminalReconciliation"]["remainingMissedCount"] == 0
+    assert module.outcome == first_outcome
+    assert module.original_calls == 2
+
+
 def test_manual_force_probe_remains_fail_closed():
     module = lifecycle.FakeModule()
     repair.install_prospective_row_repair(module, lifecycle.FakePatch)
@@ -169,7 +216,8 @@ def test_ambiguous_official_identity_remains_fail_closed():
 
     assert module.outcome is None
     assert result["ok"] is False
-    assert result["reason"] == "MISSED_PER_GAME_LOCK_NOT_BACKFILLED"
+    assert result["reason"] == "PROTECTED_TERMINAL_RECONCILIATION_FAILED_CLOSED"
+    assert result["failClosed"] is True
     reconciliation = result["missedLockTerminalReconciliation"]
     assert reconciliation["ok"] is False
     assert reconciliation["reason"] == "TERMINAL_IDENTITY_RESOLUTION_FAILED_CLOSED"

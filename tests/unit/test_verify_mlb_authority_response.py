@@ -9,7 +9,11 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from verify_mlb_authority_response import AUTHORITY_CONTRACT, verify_payload
+from verify_mlb_authority_response import (
+    AUTHORITY_CONTRACT,
+    verify_payload,
+    verify_public_prediction_payload,
+)
 
 
 def no_champion_payload():
@@ -112,3 +116,64 @@ def test_retired_suppression_fields_are_mandatory():
     assert report["ok"] is False
     assert "retiredAuthoritySuppressed_must_be_true" in report["errors"]
     assert "retiredV15_10Eligible_must_be_false" in report["errors"]
+
+
+def test_predictions_route_accepts_only_atomic_zero_winner_no_champion_503():
+    payload = no_champion_payload()
+    payload.update({
+        "sport": "mlb",
+        "winner_predictions": [],
+        "predictions": [],
+        "count": 0,
+    })
+
+    report = verify_public_prediction_payload(503, payload)
+
+    assert report["ok"] is True, report
+    assert report["state"] == "NO_QUALIFIED_CHAMPION"
+    assert report["publicationClosed"] is True
+    assert report["retiredAuthoritySuppressed"] is True
+    assert report["publicWinnerCount"] == 0
+
+
+def test_predictions_route_rejects_arbitrary_503_or_published_fallback_winner():
+    arbitrary = verify_public_prediction_payload(
+        503,
+        {
+            "ok": False,
+            "status": "Service Unavailable",
+            "predictions": [],
+            "winner_predictions": [],
+            "count": 0,
+        },
+    )
+    assert arbitrary["ok"] is False
+    assert arbitrary["state"] == "INVALID"
+
+    payload = no_champion_payload()
+    payload.update({
+        "sport": "mlb",
+        "winner_predictions": [{"predictedWinner": "Retired fallback"}],
+        "predictions": [{"predictedWinner": "Retired fallback"}],
+        "count": 1,
+    })
+    leaked = verify_public_prediction_payload(503, payload)
+    assert leaked["ok"] is False
+    assert "winner_predictions_must_be_explicitly_empty" in leaked["errors"]
+    assert "predictions_must_be_explicitly_empty" in leaked["errors"]
+    assert "public_prediction_count_must_be_zero" in leaked["errors"]
+
+
+def test_predictions_route_rejects_no_champion_body_returned_with_http_200():
+    payload = no_champion_payload()
+    payload.update({
+        "sport": "mlb",
+        "winner_predictions": [],
+        "predictions": [],
+        "count": 0,
+    })
+
+    report = verify_public_prediction_payload(200, payload)
+
+    assert report["ok"] is False
+    assert "http_and_body_do_not_match_an_allowed_authority_state" in report["errors"]

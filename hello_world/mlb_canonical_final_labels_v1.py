@@ -103,6 +103,21 @@ def _official_game_pk_values(row: Dict[str, Any]) -> Set[str]:
     return {value for value in values if value}
 
 
+def _exact_utc_instant(value: Any) -> Optional[datetime]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
 def _provider_event_id(row: Dict[str, Any]) -> Optional[str]:
     authority = row.get("canonicalLockAuthority") or {}
     proof = authority.get("providerAliasCrosswalk") or {}
@@ -469,6 +484,7 @@ def _terminal_outcome_errors(item: Dict[str, Any], slate_date: str) -> List[str]
 def _terminal_official_game_pk(
     item: Dict[str, Any],
     crosswalk: Dict[str, Dict[str, Any]],
+    official_games: Optional[Iterable[Dict[str, Any]]] = None,
 ) -> Optional[str]:
     values = _official_game_pk_values(item)
     game_id = str(item.get("game_id") or "").strip()
@@ -490,11 +506,31 @@ def _terminal_official_game_pk(
         )
         == (away, home)
     ]
-    return candidates[0] if len(candidates) == 1 else None
+    if len(candidates) == 1:
+        return candidates[0]
+
+    # Legacy write-once terminal rows may predate embedded official gamePk.
+    # Resolve them read-only only when exact ordered teams and the exact
+    # canonical start instant select one official game.  No stored row changes.
+    terminal_teams = _ordered_teams((item.get("data") or {}).get("row") or item)
+    terminal_start = _exact_utc_instant(
+        item.get("commence_time") or item.get("commenceTime")
+    )
+    if not all(terminal_teams) or terminal_start is None:
+        return None
+    exact_candidates = [
+        str(game.get("officialGamePk") or "").strip()
+        for game in (official_games or [])
+        if str(game.get("officialGamePk") or "").strip()
+        and _ordered_teams(game) == terminal_teams
+        and _exact_utc_instant(game.get("gameDate")) == terminal_start
+    ]
+    return exact_candidates[0] if len(exact_candidates) == 1 else None
 
 
 def _validated_terminal_outcomes(
     slate_date: str,
+    official_games: Optional[Iterable[Dict[str, Any]]] = None,
 ) -> Tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]]]:
     items = _query_partition(
         history.PULLS,
@@ -506,7 +542,11 @@ def _validated_terminal_outcomes(
     rejected: List[Dict[str, Any]] = []
     for item in items:
         errors = _terminal_outcome_errors(item, slate_date)
-        official_pk = _terminal_official_game_pk(item, crosswalk)
+        official_pk = _terminal_official_game_pk(
+            item,
+            crosswalk,
+            official_games,
+        )
         if not official_pk:
             errors.append("terminal_official_game_pk_unresolved")
         if errors:
@@ -1115,16 +1155,19 @@ def load_canonical_training_rows(
     diagnostics: List[Dict[str, Any]] = []
     for slate in _requested_slate_dates(slate_date, slate_dates):
         try:
+            official = fetcher(slate)
+            official_games = official.get("games") or []
             locks, rejected_locks = _validated_canonical_locks(slate)
             lock_by_pk, duplicate_locks = _lock_index(locks)
-            terminal_by_pk, rejected_terminal = _validated_terminal_outcomes(slate)
+            terminal_by_pk, rejected_terminal = _validated_terminal_outcomes(
+                slate,
+                official_games,
+            )
             proof = _proof_from_stored(slate, lock_by_pk, terminal_by_pk)
             labels = {
                 str(label.get("official_game_pk") or ""): label
                 for label in proof.get("labels") or []
             }
-            official = fetcher(slate)
-            official_games = official.get("games") or []
             official_pks = {
                 str(game.get("officialGamePk") or "") for game in official_games
             }
@@ -1290,10 +1333,14 @@ def settle_mlb_slate(
     slate = slate_date or _slate_date_et()
     created_at = _now_iso()
     try:
+        official = fetch_official_schedule(slate) if fetch_scores else None
         locks, rejected_locks = _validated_canonical_locks(slate)
         lock_by_pk, duplicate_locks = _lock_index(locks)
         rejected_locks.extend(duplicate_locks)
-        terminal_by_pk, rejected_terminal = _validated_terminal_outcomes(slate)
+        terminal_by_pk, rejected_terminal = _validated_terminal_outcomes(
+            slate,
+            (official or {}).get("games") or None,
+        )
         lock_terminal_conflicts = sorted(set(lock_by_pk) & set(terminal_by_pk))
         if not fetch_scores:
             proof = _proof_from_stored(slate, lock_by_pk, terminal_by_pk)
@@ -1313,7 +1360,6 @@ def settle_mlb_slate(
                 "legacySettlementAuthority": False,
             }
 
-        official = fetch_official_schedule(slate)
         writes: List[Dict[str, Any]] = []
         skipped_not_final: List[Dict[str, Any]] = []
         missing_locks: List[Dict[str, Any]] = []

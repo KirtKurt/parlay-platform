@@ -8,10 +8,6 @@ run-name: Unified MLB learning recovery ${{ github.event.inputs.request_id || gi
         description: Unique unified MLB recovery request identifier
         required: false
         type: string
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/unified-mlb-learning-recovery-once.yml'
 
 permissions:
   actions: read
@@ -24,6 +20,7 @@ concurrency:
 env:
   AWS_REGION: us-east-1
   MLB_ROOT_STACK: parlay-platform-dev
+  REPAIR_SLATE_DATE: '2026-08-04'
   TARGET_SLATE_DATE: '2026-08-25'
   MIN_ACCEPTED_ROWS: '33'
 
@@ -327,15 +324,26 @@ jobs:
             --stack-name "$MLB_ROOT_STACK" \
             --region "$AWS_REGION" \
             --max-slate-days 31 \
+            --target-slate-date "$REPAIR_SLATE_DATE" \
+            --output /tmp/unified-mlb-recovery/settlement-gap-repair.json
+          python scripts/reconcile_mlb_prospective_backlog_v5.py \
+            --stack-name "$MLB_ROOT_STACK" \
+            --region "$AWS_REGION" \
+            --max-slate-days 31 \
+            --target-slate-date "$TARGET_SLATE_DATE" \
             --output /tmp/unified-mlb-recovery/settlement-recovery.json
           python - <<'PY'
           import json
           import os
           from pathlib import Path
 
+          gap_report = json.loads(
+              Path('/tmp/unified-mlb-recovery/settlement-gap-repair.json').read_text()
+          )
           report = json.loads(
               Path('/tmp/unified-mlb-recovery/settlement-recovery.json').read_text()
           )
+          repair = os.environ['REPAIR_SLATE_DATE']
           target = os.environ['TARGET_SLATE_DATE']
           last_slate = str(report.get('lastSlateDateEt') or '')
           expected_false = (
@@ -351,14 +359,32 @@ jobs:
               for key in expected_false
               if report.get(key) is not False
           }
+          gap_bad = {
+              key: gap_report.get(key)
+              for key in expected_false
+              if gap_report.get(key) is not False
+          }
           assert report.get('ok') is True, report
+          assert gap_report.get('ok') is True, gap_report
+          assert gap_report.get('exactSlateSelection') is True, gap_report
+          assert gap_report.get('selectedSlateDates') == [repair], gap_report
+          assert gap_report.get('firstSlateDateEt') == repair, gap_report
+          assert gap_report.get('lastSlateDateEt') == repair, gap_report
+          assert int(gap_report.get('reconciledSlateCount') or 0) == 1, gap_report
           assert int(report.get('boundedMaximumSlateDays') or 0) == 31, report
-          assert last_slate >= target, report
+          assert report.get('exactSlateSelection') is True, report
+          assert report.get('selectedSlateDates') == [target], report
+          assert report.get('firstSlateDateEt') == target, report
+          assert last_slate == target, report
+          assert int(report.get('reconciledSlateCount') or 0) == 1, report
           assert not bad, bad
+          assert not gap_bad, gap_bad
           assert report.get('readOnlyNonSuccessStatusBodiesPreserved') is True, report
           assert report.get('mutatingNonSuccessStatusesStillFailClosed') is True, report
           print(json.dumps({
               'ok': True,
+              'repairedGapSlateDate': repair,
+              'repairedGapSlateOk': gap_report.get('ok'),
               'firstSlateDateEt': report.get('firstSlateDateEt'),
               'lastSlateDateEt': report.get('lastSlateDateEt'),
               'reconciledSlateCount': report.get('reconciledSlateCount'),
@@ -422,16 +448,24 @@ jobs:
           settlement = json.loads(
               Path('/tmp/unified-mlb-recovery/settlement-recovery.json').read_text()
           )
+          gap_settlement = json.loads(
+              Path('/tmp/unified-mlb-recovery/settlement-gap-repair.json').read_text()
+          )
           training = json.loads(Path('/tmp/unified-mlb-recovery/training.json').read_text())
           selection = json.loads(Path('/tmp/unified-mlb-recovery/selection.json').read_text())
           status = json.loads(Path('/tmp/unified-mlb-recovery/status.json').read_text())
-          health = status.get('trainingHealth') or {}
-          selection_health = status.get('selectionCaptureHealth') or {}
-          latest = health.get('latestRun') or training
+          requested = status.get('requestedRunEvidence') or {}
+          training_evidence = requested.get('training') or {}
+          selection_evidence = requested.get('selectionCapture') or {}
+          latest = training_evidence.get('run') or {}
+          selection_run = selection_evidence.get('run') or {}
+          training_run_id = str(training.get('runId') or '')
+          selection_run_id = str(selection.get('runId') or '')
           continuity = latest.get('canonicalSlateContinuity') or {}
           finalized = set(continuity.get('finalizedGameSlateDates') or [])
           processed = set(continuity.get('processedSlateDates') or [])
           target = os.environ['TARGET_SLATE_DATE']
+          repair = os.environ['REPAIR_SLATE_DATE']
           minimum = int(os.environ['MIN_ACCEPTED_ROWS'])
           accepted = int(latest.get('acceptedRowCount') or 0)
           counts = latest.get('partitionCounts') or ((latest.get('milestones') or {}).get('counts') or {})
@@ -439,9 +473,18 @@ jobs:
           proof = {
               'ok': (
                   settlement.get('ok') is True
+                  and gap_settlement.get('ok') is True
                   and training.get('ok') is True
                   and selection.get('ok') is True
                   and status.get('ok') is True
+                  and training_evidence.get('ok') is True
+                  and selection_evidence.get('ok') is True
+                  and training_evidence.get('requestedRunId') == training_run_id
+                  and selection_evidence.get('requestedRunId') == selection_run_id
+                  and latest.get('runId') == training_run_id
+                  and selection_run.get('runId') == selection_run_id
+                  and latest.get('executionMode') == 'training'
+                  and selection_run.get('executionMode') == 'selection_capture'
               ),
               'acceptedRowCount': accepted,
               'partitionCounts': counts,
@@ -452,12 +495,16 @@ jobs:
               'blockedSlateDate': continuity.get('blockedSlateDate'),
               'continuityBlocker': continuity.get('blocker'),
               'settlementRecoveryOk': settlement.get('ok'),
+              'gapSettlementRecoveryOk': gap_settlement.get('ok'),
+              'gapSettlementSlateDateEt': gap_settlement.get('lastSlateDateEt'),
               'settlementLastSlateDateEt': settlement.get('lastSlateDateEt'),
               'settlementProtectedReplayCount': settlement.get(
                   'settlementTriggeredProtectedTerminalReplayCount'
               ),
-              'trainingDeploymentIdentityMatches': health.get('deploymentIdentityMatches'),
-              'selectionDeploymentIdentityMatches': selection_health.get('deploymentIdentityMatches'),
+              'trainingRunId': training_run_id,
+              'selectionCaptureRunId': selection_run_id,
+              'trainingDeploymentIdentityMatches': training_evidence.get('deploymentIdentityMatches'),
+              'selectionDeploymentIdentityMatches': selection_evidence.get('deploymentIdentityMatches'),
               'automaticPromotionEnabled': latest.get('automaticPromotionEnabled'),
               'championChanged': latest.get('championChanged'),
               'liveInferenceAuthority': latest.get('liveInferenceAuthority'),
@@ -471,12 +518,13 @@ jobs:
           )
           print(json.dumps(proof, indent=2, sort_keys=True))
           assert proof['ok'] is True, proof
+          assert gap_settlement.get('lastSlateDateEt') == repair, proof
           assert target in finalized, proof
           assert target in processed, proof
           assert continuity.get('blockedSlateDate') in (None, ''), proof
           assert continuity.get('blocker') in (None, ''), proof
-          assert health.get('deploymentIdentityMatches') is True, proof
-          assert selection_health.get('deploymentIdentityMatches') is True, proof
+          assert training_evidence.get('deploymentIdentityMatches') is True, proof
+          assert selection_evidence.get('deploymentIdentityMatches') is True, proof
           assert accepted >= minimum, proof
           assert train_count >= minimum, proof
           assert latest.get('automaticPromotionEnabled') is not True, proof

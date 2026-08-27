@@ -8,8 +8,8 @@ permissions:
   actions: write
   contents: read
 
-# Manual alias only. Automatic R7 retries are owned by
-# mlb-r7-overnight-advance.yml, while EventBridge remains the only automatic
+# Manual alias only. It dispatches the manual queue-control workflow; neither
+# workflow owns automatic retries. EventBridge remains the only automatic
 # trainer invoker. This workflow performs no deploy or AWS call.
 concurrency:
   group: mlb-r7-recovery-bootstrap-dispatch

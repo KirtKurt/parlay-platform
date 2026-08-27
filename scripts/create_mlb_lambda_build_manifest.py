@@ -20,6 +20,7 @@ except ModuleNotFoundError:
 FUNCTION_LOGICAL_IDS = (
     "MLBAuditedPullFunction",
     "MLBDailyPickLockFunction",
+    "MLBPlayabilityCheckpointFunction",
     "MLBMLTrainingFunction",
     "MLBProductionVerifierFunction",
     "MLBV3ReadFunction",

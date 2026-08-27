@@ -183,6 +183,59 @@ def test_complete_official_status_skips_heavy_lock_mutation():
     assert not any(event.get("force") is True for _, event in calls)
 
 
+def test_exact_slate_selection_reconciles_only_requested_target():
+    calls = []
+
+    def invoke(client, function, event):
+        del client, function
+        calls.append(event)
+        slate = event.get("queryStringParameters", {}).get("date") or event.get(
+            "slate_date"
+        )
+        if event.get("httpMethod") == "GET":
+            return official_status(slate)
+        if event.get("run") == "prospective_backlog_settlement_v4":
+            return settlement(slate)
+        raise AssertionError(event)
+
+    result = subject.reconcile(
+        FakeCloudFormation(),
+        FakeLambda(),
+        stack_name="stack",
+        now_utc=datetime(2026, 8, 27, 20, 0, tzinfo=timezone.utc),
+        max_slate_days=31,
+        slate_dates=["2026-08-25"],
+        invoke=invoke,
+    )
+
+    assert result["exactSlateSelection"] is True
+    assert result["selectedSlateDates"] == ["2026-08-25"]
+    assert result["firstSlateDateEt"] == "2026-08-25"
+    assert result["lastSlateDateEt"] == "2026-08-25"
+    assert result["reconciledSlateCount"] == 1
+    assert {
+        event.get("queryStringParameters", {}).get("date")
+        or event.get("slate_date")
+        for event in calls
+    } == {"2026-08-25"}
+
+
+def test_exact_slate_selection_rejects_date_outside_bounded_horizon():
+    with pytest.raises(
+        base.ReconciliationError,
+        match="requested_slate_dates_outside_prospective_horizon:2026-08-28",
+    ):
+        subject.reconcile(
+            FakeCloudFormation(),
+            FakeLambda(),
+            stack_name="stack",
+            now_utc=datetime(2026, 8, 27, 20, 0, tzinfo=timezone.utc),
+            max_slate_days=31,
+            slate_dates=["2026-08-28"],
+            invoke=lambda *args: (_ for _ in ()).throw(AssertionError(args)),
+        )
+
+
 def test_incomplete_status_uses_one_protected_mutation_then_readback():
     calls = []
     statuses = [

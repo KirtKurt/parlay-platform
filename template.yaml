@@ -739,6 +739,39 @@ Resources:
             Method: GET
 
 
+  # Playability checkpoints cannot share the long-running T-45 lock lease.
+  # A full-slate lock verification may occupy that lease for the complete
+  # T-15-to-start interval.  This minute-aligned, write-once sweep only reads
+  # existing immutable stages and writes selection-bound T-30/T-15 assessments.
+  MLBPlayabilityCheckpointFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: mlb_playability_checkpoint_scheduler.lambda_handler
+      Timeout: 120
+      MemorySize: 1024
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 60
+        MaximumRetryAttempts: 0
+      Environment:
+        Variables:
+          MLB_LOCK_EXECUTION_LEASE_SECONDS: '960'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SnapshotsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref OutcomesTable
+      Events:
+        MLBPlayabilityCheckpointEveryMinute:
+          Type: Schedule
+          Properties:
+            Schedule: cron(* * * * ? *)
+            Input: '{"sport":"mlb","run":"playability_checkpoint_sweep","auto_ingest":false}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 60
+              MaximumRetryAttempts: 0
+
+
   MLBProductionVerifierFunction:
     Type: AWS::Serverless::Function
     Properties:

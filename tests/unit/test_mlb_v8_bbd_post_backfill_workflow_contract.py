@@ -1,11 +1,13 @@
 from pathlib import Path
 
+import yaml
+
 
 def _workflow(path):
     return Path(path).read_text()
 
 
-def test_retired_v8_workflows_delegate_to_one_scheduled_controller():
+def test_retired_v8_workflows_delegate_to_one_manual_controller():
     trainer = _workflow('.github/workflows/mlb-supervised-shadow-v2-recurring.yml')
     context = _workflow('.github/workflows/mlb-v8-historical-context-backfill.yml')
     realtime = _workflow('.github/workflows/mlb-v8-shadow-realtime-72.yml')
@@ -16,7 +18,9 @@ def test_retired_v8_workflows_delegate_to_one_scheduled_controller():
         assert 'mlb_v8_historical_bbs_backfill_latest.json' not in source
         assert 'cancel-in-progress: false' in source
         assert 'mlb-v8-autonomous-controller.yml' in source
-    assert "cron: '8/15 * * * *'" in controller
+    assert set(yaml.load(controller, Loader=yaml.BaseLoader)["on"]) == {
+        "workflow_dispatch"
+    }
     assert 'group: mlb-v8-autonomous-control-plane' in controller
     assert 'cancel-in-progress: false' in controller
     assert "MLB_V8_HISTORICAL_BBS_OVERLAY_ENABLED: 'false'" in controller
@@ -44,7 +48,9 @@ def test_only_controller_owns_v8_monotonic_latest_publication():
     assert 'git push origin HEAD:main' in controller
 
     v9 = _workflow('.github/workflows/mlb-historical-supervised-v9-shadow.yml')
-    assert "cron: '17 * * * *'" in v9
+    assert set(yaml.load(v9, Loader=yaml.BaseLoader)["on"]) == {
+        "workflow_dispatch"
+    }
     assert 'group: mlb-historical-v7-v9-shadow-${{ github.ref }}' in v9
 
 

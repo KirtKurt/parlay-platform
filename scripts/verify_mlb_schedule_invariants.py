@@ -238,6 +238,11 @@ for required in [
 required_template_strings = {
     'MLBDailyPickLockFunction': 'daily lock function missing',
     'MLBDailyPickLockEveryMinute': 'daily lock one-minute scheduler missing',
+    'MLBPlayabilityCheckpointFunction': 'playability checkpoint function missing',
+    'MLBPlayabilityCheckpointEveryMinute': 'playability checkpoint minute scheduler missing',
+    'Handler: mlb_playability_checkpoint_scheduler.lambda_handler': 'playability checkpoint handler missing',
+    'Schedule: cron(* * * * ? *)': 'playability checkpoint schedule is not minute-aligned',
+    '"run":"playability_checkpoint_sweep"': 'playability checkpoint event contract missing',
     'MLBProductionVerifierFunction': 'AWS production verifier function missing',
     'MLBProductionVerifierEvery5Min': '5-minute AWS production verifier schedule missing',
     'MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME': 'lock T-minus env missing',
@@ -359,6 +364,20 @@ if lock_resource_start >= 0:
         violations.append(
             'daily lock must use one exact 960-second outer execution lease'
         )
+playability_resource = _resource_block('MLBPlayabilityCheckpointFunction')
+if playability_resource:
+    if 'Handler: mlb_playability_checkpoint_scheduler.lambda_handler' not in playability_resource:
+        violations.append('playability checkpoint function has the wrong handler')
+    if playability_resource.count('Schedule: cron(* * * * ? *)') != 1:
+        violations.append('playability checkpoint function must have one wall-clock minute schedule')
+    if playability_resource.count('MaximumEventAgeInSeconds: 60') != 2:
+        violations.append('playability checkpoint delivery must expire within one minute')
+    if playability_resource.count('MaximumRetryAttempts: 0') != 2:
+        violations.append('playability checkpoint delivery must not fan out retries')
+    if 'DynamoDBCrudPolicy:\n            TableName: !Ref SnapshotsTable' not in playability_resource:
+        violations.append('playability checkpoint function cannot write immutable assessment rows')
+    if 'DynamoDBReadPolicy:\n            TableName: !Ref OutcomesTable' not in playability_resource:
+        violations.append('playability checkpoint function cannot read doubleheader outcomes')
 if not ('MLB_MIN_PULLS_FOR_LOCK' in text or 'MLB_MIN_PULLS_PER_GAME_FOR_LOCK' in text):
     violations.append('minimum pull-depth lock guardrail missing')
 if not ('MLB_MAX_LOCK_SNAPSHOT_AGE_MINUTES' in text or 'MLB_MAX_LATEST_PULL_AGE_MINUTES_FOR_LOCK' in text):

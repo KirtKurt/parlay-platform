@@ -4,6 +4,9 @@ from contextvars import ContextVar
 from typing import Any, Dict, List, Tuple
 
 VERSION = "MLB-LOCKED-PREDICTION-STORAGE-FINALIZER-v6-effective-schedule-lifecycle"
+OPERATIONAL_DEFECT_SCOPE_VERSION = (
+    "MLB-WINNER-LIFECYCLE-DEFECT-SCOPE-v1-release-separated"
+)
 UNAUTHORIZED_LOCKED_WRITE = "immutable_per_game_stage_authority_missing"
 LIFECYCLE_ONLY_STATUSES = frozenset({
     "LOCKED_NO_PREDICTION_DATA",
@@ -96,6 +99,22 @@ def _validate_row(row: Dict[str, Any]) -> List[str]:
 
 def _game_id(row: Dict[str, Any]) -> str:
     return str(row.get("gameId") or row.get("game_id") or row.get("gameIdentity") or "unknown")
+
+
+def _mark_winner_lifecycle_operational_defect(out: Dict[str, Any]) -> None:
+    """Promote persistence failures without erasing release-lane evidence."""
+
+    release_defect = out.get("releasePlayabilityOperationalDefect") is True
+    scopes = ["WINNER_LIFECYCLE"]
+    if release_defect:
+        scopes.append("RELEASE_PLAYABILITY")
+    out.update({
+        "operationalDefect": True,
+        "operationalDefectScopeVersion": OPERATIONAL_DEFECT_SCOPE_VERSION,
+        "winnerLifecycleOperationalDefect": True,
+        "releasePlayabilityOperationalDefect": release_defect,
+        "operationalDefectScopes": scopes,
+    })
 
 
 def _store_final(module: Any, result: Dict[str, Any], requested: bool) -> Dict[str, Any]:
@@ -211,20 +230,26 @@ def _store_final(module: Any, result: Dict[str, Any], requested: bool) -> Dict[s
         "canonicalLockedStorageAuthority": "consistent-read verified immutable T-minus-45 stage",
         "canonicalLockedStorageSuppressedEarlyWrites": True,
     })
+    storage_or_disposition_failure = bool(
+        not storage_disposition_complete
+        or canonical_storage_errors
+        or (canonical_candidate_count and not canonical_storage_complete)
+        or pre_lock_storage_errors
+        or (pre_lock_candidate_count and not pre_lock_storage_complete)
+    )
+    if storage_or_disposition_failure:
+        _mark_winner_lifecycle_operational_defect(out)
     if not storage_disposition_complete:
         out["ok"] = False
-        out["operationalDefect"] = True
         out["allGamesPredicted"] = False
     if canonical_candidate_count and not canonical_storage_complete:
         out["ok"] = False
-        out["operationalDefect"] = True
         out["allGamesPredicted"] = False
     if pre_lock_candidate_count and not pre_lock_storage_complete:
         # The lock can only promote a prediction that was durably persisted
         # before cutoff. Never report a successful HOT candidate run when one
         # or more open pre-lock rows failed storage.
         out["ok"] = False
-        out["operationalDefect"] = True
         out["allGamesPredicted"] = False
     return out
 

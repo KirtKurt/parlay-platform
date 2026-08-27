@@ -190,7 +190,10 @@ def install_inputs(monkeypatch, locks, games, terminals=None, rejected_locks=Non
     monkeypatch.setattr(
         labels,
         "_validated_terminal_outcomes",
-        lambda slate: (copy.deepcopy(terminals or {}), []),
+        lambda slate, official_games=None: (
+            copy.deepcopy(terminals or {}),
+            [],
+        ),
     )
     monkeypatch.setattr(
         labels,
@@ -214,6 +217,49 @@ def terminal_outcome(official_pk: str):
         "training_eligible": False,
         "write_once": True,
     }
+
+
+def legacy_provider_terminal(*, commence_time="2026-07-21T23:05:00+00:00"):
+    return {
+        "game_id": "provider:legacy-event",
+        "commence_time": commence_time,
+        "data": {
+            "row": {
+                "awayTeam": "Boston Red Sox",
+                "homeTeam": "New York Yankees",
+            }
+        },
+    }
+
+
+def test_legacy_terminal_resolves_read_only_by_unique_exact_teams_and_start():
+    item = legacy_provider_terminal()
+    game = official_game("700099")
+
+    assert labels._terminal_official_game_pk(item, {}, [game]) == "700099"
+    assert "officialGamePk" not in item
+
+
+def test_legacy_terminal_never_uses_team_only_or_fuzzy_start_fallback():
+    item = legacy_provider_terminal(
+        commence_time="2026-07-21T23:05:01+00:00"
+    )
+
+    assert labels._terminal_official_game_pk(
+        item,
+        {},
+        [official_game("700099")],
+    ) is None
+
+
+def test_legacy_terminal_ambiguous_exact_doubleheader_remains_unresolved():
+    item = legacy_provider_terminal()
+
+    assert labels._terminal_official_game_pk(
+        item,
+        {},
+        [official_game("700099"), official_game("700100")],
+    ) is None
 
 
 def complete_v2_lock(official_pk: str):

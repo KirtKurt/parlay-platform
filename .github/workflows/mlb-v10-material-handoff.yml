@@ -1,19 +1,7 @@
 name: MLB V10 Material State Handoff
 
 on:
-  workflow_run:
-    workflows: ["MLB Historical Hourly Liveness V1"]
-    types: [completed]
-  schedule:
-    - cron: '17,47 * * * *'
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'scripts/decide_mlb_v10_dispatch.py'
-      - 'tests/unit/test_decide_mlb_v10_dispatch.py'
-      - 'tests/unit/test_mlb_v10_material_handoff_workflow.py'
-      - '.github/workflows/mlb-v10-material-handoff.yml'
 
 permissions:
   actions: write

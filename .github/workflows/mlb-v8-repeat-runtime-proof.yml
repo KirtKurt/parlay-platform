@@ -2,12 +2,6 @@ name: MLB V8 Runtime Continuity
 
 "on":
   workflow_dispatch:
-  schedule:
-    - cron: '19 * * * *'
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/mlb-v8-repeat-runtime-proof.yml'
 
 permissions:
   contents: write

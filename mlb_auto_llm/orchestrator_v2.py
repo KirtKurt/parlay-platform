@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -111,26 +112,139 @@ def _strict_packet(game: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any
     }
     return {
         "officialMlb": safe_official,
-        "theOddsApi": _core_market_summary(game),
+        "theOddsApi": {
+            **_core_market_summary(game),
+            # Do not ask a language model to rediscover decimal-odds direction
+            # from a large raw bookmaker packet.  The base collector computes a
+            # no-vig, multi-book h2h consensus deterministically.  Publishing it
+            # alongside the raw evidence prevents the model from treating a
+            # larger decimal payout as a larger win probability.
+            "normalizedH2hConsensus": copy.deepcopy(
+                game.get("marketConsensus")
+                if isinstance(game.get("marketConsensus"), dict)
+                else {"available": False, "bookCount": 0}
+            ),
+            "decimalOddsContract": {
+                "format": "decimal",
+                "lowerPriceMeansHigherImpliedProbability": True,
+                "rawImpliedProbabilityFormula": "1 / decimal_price",
+                "favoriteAuthority": "normalizedH2hConsensus.marketFavorite",
+            },
+        },
         "bigBallsDataPro": _compact_bbs(game),
         "autonomyState": state,
     }
 
 
-def _strict_bedrock_decision(game: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
+def _strict_prompt_packet(
+    game: Dict[str, Any],
+    state: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build a bounded prompt without ever truncating the odds contract.
+
+    ``handler._compact_for_llm`` replaces an oversized object with one JSON
+    prefix.  Applying it to the complete multi-provider packet can therefore
+    let a large, alphabetically earlier BBS payload consume the prefix before
+    the normalized market authority is reached.  Bound the bulky evidence
+    sources independently and keep the small decision contract in a protected
+    structured envelope.
+    """
+
+    packet = _strict_packet(game, state)
+    odds = packet["theOddsApi"]
+    odds_evidence = {
+        key: value
+        for key, value in odds.items()
+        if key not in {"normalizedH2hConsensus", "decimalOddsContract"}
+    }
+    return {
+        "packetContractVersion": (
+            "MLB-AUTO-STRICT-PROMPT-v2-nontruncatable-decimal-odds-authority"
+        ),
+        "autonomyState": base._compact_for_llm(packet["autonomyState"], 2500),
+        "officialMlb": base._compact_for_llm(packet["officialMlb"], 4000),
+        "theOddsApi": {
+            # These two objects are deliberately outside every truncation
+            # boundary.  They are the deterministic authority for interpreting
+            # the separately bounded raw market evidence.
+            "normalizedH2hConsensus": copy.deepcopy(
+                odds["normalizedH2hConsensus"]
+            ),
+            "decimalOddsContract": copy.deepcopy(odds["decimalOddsContract"]),
+            "boundedMarketEvidence": base._compact_for_llm(
+                odds_evidence,
+                9000,
+            ),
+        },
+        "bigBallsDataPro": base._compact_for_llm(
+            packet["bigBallsDataPro"],
+            9000,
+        ),
+    }
+
+
+def _strict_bedrock_decision(
+    game: Dict[str, Any],
+    state: Dict[str, Any],
+    *,
+    deployment_smoke_contract: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     home = str((game.get("home") or {}).get("name") or "")
     away = str((game.get("away") or {}).get("name") or "")
+    expected_market_favorite = ""
+    expected_market_favorite_price: Optional[float] = None
+    smoke_prompt = ""
+    if deployment_smoke_contract is not None:
+        if set(deployment_smoke_contract) != {
+            "expectedMarketFavorite",
+            "expectedMarketFavoritePrice",
+        }:
+            raise RuntimeError("DEPLOYMENT_SMOKE_DECISION_CONTRACT_INVALID")
+        expected_market_favorite = str(
+            deployment_smoke_contract.get("expectedMarketFavorite") or ""
+        )
+        if expected_market_favorite not in {home, away}:
+            raise RuntimeError("DEPLOYMENT_SMOKE_MARKET_FAVORITE_INVALID")
+        try:
+            expected_market_favorite_price = float(
+                deployment_smoke_contract.get("expectedMarketFavoritePrice")
+            )
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                "DEPLOYMENT_SMOKE_MARKET_FAVORITE_PRICE_INVALID"
+            ) from exc
+        smoke_prompt = (
+            " This is a no-write deployment decision-contract probe with no "
+            "non-market evidence. You MUST select the normalized market favorite "
+            f"{expected_market_favorite!r}. Also return market_favorite exactly "
+            f"{expected_market_favorite!r}, market_favorite_price as "
+            f"{expected_market_favorite_price}, and market_interpretation as a "
+            "short statement explicitly saying that the lower decimal price means "
+            "higher implied probability."
+        )
     prompt = (
         "You are the autonomous MLB winner-selection analyst for Inqsi. "
         "Choose exactly one winner using only the supplied pregame evidence. "
         "Do not invent missing data and do not copy a result from postgame fields. "
+        "The Odds API prices are DECIMAL odds: a LOWER decimal price means a "
+        "HIGHER raw implied win probability (1 / price). Never call the team "
+        "with the higher decimal price the favorite. Use the supplied "
+        "theOddsApi.normalizedH2hConsensus probabilities and marketFavorite "
+        "instead of recomputing or guessing the favorite from raw prices. "
+        f"Give normalized consensus at least autonomyState.marketAnchorWeight="
+        f"{state.get('marketAnchorWeight')} of the decision weight. If choosing "
+        "the normalized market underdog, identify concrete, quantified pregame "
+        "evidence strong enough to overcome that anchor in disagreements; "
+        "otherwise select the normalized market favorite. "
         "Return ONLY JSON with winner, loser, probability, confidence, rationale, "
         "source_weights, disagreements. "
         f"winner must be exactly {home!r} or {away!r}; loser must be the other team; "
-        "probability must be between 0.50 and 0.95.\n"
+        "probability must be between 0.50 and 0.95."
+        + smoke_prompt
+        + "\n"
         "DATA="
         + base.json.dumps(
-            base._compact_for_llm(_strict_packet(game, state), 30000),
+            _strict_prompt_packet(game, state),
             separators=(",", ":"),
             default=str,
         )
@@ -156,8 +270,45 @@ def _strict_bedrock_decision(game: Dict[str, Any], state: Dict[str, Any]) -> Dic
     if winner not in {home, away}:
         raise RuntimeError("LLM_WINNER_NOT_EXACT_TEAM")
     loser = away if winner == home else home
+    if deployment_smoke_contract is not None:
+        if winner != expected_market_favorite:
+            raise RuntimeError(
+                "DEPLOYMENT_SMOKE_DECIMAL_ODDS_FAVORITE_NOT_SELECTED"
+            )
+        if str(parsed.get("loser") or "") != loser:
+            raise RuntimeError("DEPLOYMENT_SMOKE_LOSER_CONTRACT_INVALID")
+        if str(parsed.get("market_favorite") or "") != expected_market_favorite:
+            raise RuntimeError(
+                "DEPLOYMENT_SMOKE_MARKET_FAVORITE_INTERPRETATION_INVALID"
+            )
+        try:
+            parsed_market_favorite_price = float(
+                parsed.get("market_favorite_price")
+            )
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                "DEPLOYMENT_SMOKE_MARKET_FAVORITE_PRICE_MISSING"
+            ) from exc
+        if (
+            expected_market_favorite_price is None
+            or abs(parsed_market_favorite_price - expected_market_favorite_price)
+            > 0.000001
+        ):
+            raise RuntimeError(
+                "DEPLOYMENT_SMOKE_MARKET_FAVORITE_PRICE_INVALID"
+            )
+        market_interpretation = str(
+            parsed.get("market_interpretation") or ""
+        ).lower()
+        if not all(
+            token in market_interpretation
+            for token in ("lower", "decimal", "higher", "probability")
+        ):
+            raise RuntimeError(
+                "DEPLOYMENT_SMOKE_DECIMAL_ODDS_INTERPRETATION_MISSING"
+            )
     probability = min(max(float(parsed.get("probability") or 0.5), 0.50), 0.95)
-    return {
+    result = {
         "ok": True,
         "authority": "BEDROCK_LLM",
         "modelId": response.get("modelId"),
@@ -170,6 +321,13 @@ def _strict_bedrock_decision(game: Dict[str, Any], state: Dict[str, Any]) -> Dic
         "disagreements": parsed.get("disagreements") or [],
         "errorsBeforeSuccess": response.get("errorsBeforeSuccess") or [],
     }
+    if deployment_smoke_contract is not None:
+        result["marketFavorite"] = str(parsed.get("market_favorite") or "")
+        result["marketFavoritePrice"] = parsed_market_favorite_price
+        result["marketInterpretation"] = str(
+            parsed.get("market_interpretation") or ""
+        )
+    return result
 
 
 def _build_strict_bedrock_card(packet: Dict[str, Any]) -> Dict[str, Any]:
@@ -228,6 +386,175 @@ import orchestrator as production
 
 production._build_card_three_source_bedrock = _build_strict_bedrock_card
 production._ORIGINAL_BUILD_CARD = _build_strict_bedrock_card
+
+
+DEPLOYMENT_DECIMAL_ODDS_SMOKE_MODE = (
+    "deployment_decimal_odds_decision_smoke"
+)
+DEPLOYMENT_DECIMAL_ODDS_SMOKE_CONTRACT = (
+    "MLB-AUTO-DEPLOYMENT-DECIMAL-ODDS-SMOKE-v1"
+)
+_DEPLOYMENT_DECIMAL_ODDS_SMOKE_EVENT = {
+    "mode": DEPLOYMENT_DECIMAL_ODDS_SMOKE_MODE,
+    "contractVersion": DEPLOYMENT_DECIMAL_ODDS_SMOKE_CONTRACT,
+}
+
+
+def _deployment_decimal_odds_decision_smoke(
+    event: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Exercise the deployed strict decision path without a mutation surface.
+
+    The event is intentionally closed rather than configurable: deployment can
+    prove one known decimal-odds contract, while callers cannot turn this mode
+    into an alternate card-generation or arbitrary-prompt endpoint.
+    """
+
+    if event != _DEPLOYMENT_DECIMAL_ODDS_SMOKE_EVENT:
+        raise RuntimeError("DEPLOYMENT_DECIMAL_ODDS_SMOKE_EVENT_REJECTED")
+
+    home = "Miami Marlins"
+    away = "Boston Red Sox"
+    home_price = 1.70
+    away_price = 1.411
+    game: Dict[str, Any] = {
+        "gamePk": "DEPLOYMENT-DECIMAL-ODDS-SMOKE",
+        "gameDate": "2099-07-15T23:10:00Z",
+        "home": {"name": home},
+        "away": {"name": away},
+        "official": {
+            "gamePk": "DEPLOYMENT-DECIMAL-ODDS-SMOKE",
+            "officialDate": "2099-07-15",
+            "gameDate": "2099-07-15T23:10:00Z",
+            "gameType": "R",
+            "home": {"name": home},
+            "away": {"name": away},
+        },
+        "oddsCore": {
+            "id": "deployment-decimal-odds-smoke",
+            "commence_time": "2099-07-15T23:10:00Z",
+            "home_team": home,
+            "away_team": away,
+            "bookmakers": [
+                {
+                    "key": "deployment_contract_book",
+                    "title": "Deployment contract book",
+                    "markets": [
+                        {
+                            "key": "h2h",
+                            "outcomes": [
+                                {"name": home, "price": home_price},
+                                {"name": away, "price": away_price},
+                            ],
+                        }
+                    ],
+                }
+            ],
+        },
+        "bbs": {
+            "match": {"id": "deployment-decimal-odds-smoke"},
+            "detail": {
+                "deploymentSynthetic": True,
+                "nonMarketEvidenceAvailable": False,
+            },
+        },
+    }
+    consensus = base._market_consensus(game)
+    game["marketConsensus"] = consensus
+    if (
+        consensus.get("available") is not True
+        or consensus.get("marketFavorite") != away
+        or float(consensus.get("awayProbability") or 0.0)
+        <= float(consensus.get("homeProbability") or 0.0)
+        or not away_price < home_price
+    ):
+        raise RuntimeError(
+            "DEPLOYMENT_DECIMAL_ODDS_NORMALIZATION_CONTRACT_FAILED"
+        )
+
+    # Guard the application's shared persistence surface even though this
+    # branch calls only the strict decision routine. A future refactor that
+    # introduces a packet/card/audit write will therefore fail deployment.
+    original_put = base._put
+    write_attempts: List[Dict[str, str]] = []
+
+    def reject_write(pk: str, sk: str, *_args: Any, **_kwargs: Any) -> bool:
+        write_attempts.append({"pk": str(pk), "sk": str(sk)})
+        raise RuntimeError(
+            "DEPLOYMENT_DECIMAL_ODDS_SMOKE_WRITE_FORBIDDEN:"
+            + str(pk)
+            + ":"
+            + str(sk)
+        )
+
+    base._put = reject_write
+    try:
+        decision = _strict_bedrock_decision(
+            game,
+            {
+                "targetDailyAccuracy": base.TARGET_ACCURACY,
+                "recentDays": 0,
+                "recentGradedPicks": 0,
+                "recentCorrectPicks": 0,
+                "recentAccuracy": None,
+                "marketAnchorWeight": 1.0,
+                "policy": (
+                    "Deployment contract: only normalized h2h consensus is "
+                    "available, so select its market favorite."
+                ),
+            },
+            deployment_smoke_contract={
+                "expectedMarketFavorite": away,
+                "expectedMarketFavoritePrice": away_price,
+            },
+        )
+    finally:
+        base._put = original_put
+
+    if write_attempts:
+        raise RuntimeError("DEPLOYMENT_DECIMAL_ODDS_SMOKE_WRITE_ATTEMPTED")
+    if decision.get("authority") != "BEDROCK_LLM":
+        raise RuntimeError("DEPLOYMENT_SMOKE_BEDROCK_AUTHORITY_REQUIRED")
+    if not decision.get("modelId"):
+        raise RuntimeError("DEPLOYMENT_SMOKE_BEDROCK_MODEL_ID_REQUIRED")
+    if decision.get("winner") != away or decision.get("loser") != home:
+        raise RuntimeError("DEPLOYMENT_SMOKE_DECIMAL_ODDS_DECISION_INVALID")
+    if (
+        decision.get("marketFavorite") != away
+        or float(decision.get("marketFavoritePrice") or 0.0) != away_price
+    ):
+        raise RuntimeError(
+            "DEPLOYMENT_SMOKE_DECIMAL_ODDS_INTERPRETATION_INVALID"
+        )
+
+    return {
+        "ok": True,
+        "status": "DEPLOYMENT_DECIMAL_ODDS_DECISION_VERIFIED",
+        "contractVersion": DEPLOYMENT_DECIMAL_ODDS_SMOKE_CONTRACT,
+        "syntheticInputOnly": True,
+        "writeGuardArmed": True,
+        "persistenceAttempted": False,
+        "cardMutationAttempted": False,
+        "historyMutationAttempted": False,
+        "mlFallbackAttempted": False,
+        "decisionAuthority": decision.get("authority"),
+        "modelId": decision.get("modelId"),
+        "winner": decision.get("winner"),
+        "loser": decision.get("loser"),
+        "marketFavorite": decision.get("marketFavorite"),
+        "marketFavoritePrice": decision.get("marketFavoritePrice"),
+        "otherTeam": home,
+        "otherTeamPrice": home_price,
+        "marketInterpretation": decision.get("marketInterpretation"),
+        "normalizedH2hConsensus": consensus,
+        "decimalOddsContract": {
+            "format": "decimal",
+            "lowerPriceMeansHigherImpliedProbability": True,
+            "rawImpliedProbabilityFormula": "1 / decimal_price",
+            "favoriteAuthority": "normalizedH2hConsensus.marketFavorite",
+        },
+        "errorsBeforeBedrockSuccess": decision.get("errorsBeforeSuccess") or [],
+    }
 
 
 def _run_payload(event: Any) -> Optional[Dict[str, Any]]:
@@ -357,9 +684,19 @@ def _late_guard(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 def lambda_handler(event: Any, context: Any) -> Any:
+    if (
+        isinstance(event, dict)
+        and event.get("mode") == DEPLOYMENT_DECIMAL_ODDS_SMOKE_MODE
+    ):
+        return _deployment_decimal_odds_decision_smoke(event)
+
     payload = _run_payload(event)
     if payload is not None:
         try:
+            if payload.get("mode") == DEPLOYMENT_DECIMAL_ODDS_SMOKE_MODE:
+                raise RuntimeError(
+                    "DEPLOYMENT_DECIMAL_ODDS_SMOKE_DIRECT_INVOKE_REQUIRED"
+                )
             guarded = _late_guard(payload)
             if guarded is not None:
                 return guarded

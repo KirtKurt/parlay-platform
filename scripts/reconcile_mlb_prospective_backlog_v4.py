@@ -243,18 +243,40 @@ def reconcile(
     stack_name: str,
     now_utc: Optional[datetime] = None,
     max_slate_days: int = base.DEFAULT_MAX_SLATE_DAYS,
+    slate_dates: Optional[List[str]] = None,
     invoke: Any = invoke_json_with_backpressure,
     status_sleep: Any = time.sleep,
 ) -> Dict[str, Any]:
     functions = base.resolve_stack_functions(cloudformation, stack_name)
     cutoff = base.release_cutoff(lambda_client, functions.trainer)
-    slate_dates = base.prospective_slate_dates(
+    bounded_slate_dates = base.prospective_slate_dates(
         cutoff,
         now_utc=now_utc,
         max_slate_days=max_slate_days,
     )
+    if slate_dates is None:
+        selected_slate_dates = bounded_slate_dates
+        exact_slate_selection = False
+    else:
+        requested_slate_dates = [str(value).strip() for value in slate_dates]
+        if (
+            not requested_slate_dates
+            or any(not value for value in requested_slate_dates)
+            or len(set(requested_slate_dates)) != len(requested_slate_dates)
+        ):
+            raise base.ReconciliationError("requested_slate_dates_invalid")
+        outside_horizon = sorted(
+            set(requested_slate_dates) - set(bounded_slate_dates)
+        )
+        if outside_horizon:
+            raise base.ReconciliationError(
+                "requested_slate_dates_outside_prospective_horizon:"
+                + ",".join(outside_horizon)
+            )
+        selected_slate_dates = sorted(requested_slate_dates)
+        exact_slate_selection = True
     rows: List[Dict[str, Any]] = []
-    for slate_date in slate_dates:
+    for slate_date in selected_slate_dates:
         mutation_payload: Optional[Dict[str, Any]] = None
         mutation_executed = False
         try:
@@ -298,6 +320,10 @@ def reconcile(
                 official_status,
                 slate_date,
             )
+            if _status_requires_terminal_durability_replay(official_status):
+                raise base.ReconciliationError(
+                    "official_status_terminal_durability_incomplete"
+                )
 
         settlement_payload = invoke(
             lambda_client,
@@ -334,10 +360,16 @@ def reconcile(
         "version": VERSION,
         "stackName": stack_name,
         "releaseCutoffUtc": cutoff,
-        "firstSlateDateEt": slate_dates[0] if slate_dates else None,
-        "lastSlateDateEt": slate_dates[-1] if slate_dates else None,
+        "firstSlateDateEt": (
+            selected_slate_dates[0] if selected_slate_dates else None
+        ),
+        "lastSlateDateEt": (
+            selected_slate_dates[-1] if selected_slate_dates else None
+        ),
         "reconciledSlateCount": len(rows),
         "slates": rows,
+        "exactSlateSelection": exact_slate_selection,
+        "selectedSlateDates": selected_slate_dates,
         "boundedMaximumSlateDays": max_slate_days,
         "statusFirst": True,
         "readOnlyOfficialStatusProof": True,

@@ -13,6 +13,9 @@ import inqsi_pull_history as history_contract
 
 VERSION = "MLB-SLATE-COVERAGE-v4-immutable-provider-manifest-authority"
 AUTHORITY_VERSION = "MLB-LAST-PRELOCK-PROMOTION-AUTHORITY-v1-canonical-read-overlay"
+OPERATIONAL_DEFECT_SCOPE_VERSION = (
+    "MLB-WINNER-LIFECYCLE-DEFECT-SCOPE-v1-release-separated"
+)
 CANONICAL_RECORD_TYPE = "mlb_immutable_locked_single_game_prediction"
 LOCK_OUTCOME_RECORD_TYPE = "mlb_immutable_per_game_lock_outcome"
 LOCK_OUTCOME_VERSION = "MLB-LOCK-OUTCOME-v1-explicit-terminal-status"
@@ -1396,6 +1399,10 @@ def _fail_closed(result: Dict[str, Any], error: str) -> Dict[str, Any]:
     out["slatePredictionLock"] = public
     out["locked"] = False
     out["operationalDefect"] = True
+    out["operationalDefectScopeVersion"] = OPERATIONAL_DEFECT_SCOPE_VERSION
+    out["winnerLifecycleOperationalDefect"] = True
+    out["releasePlayabilityOperationalDefect"] = False
+    out["operationalDefectScopes"] = ["WINNER_LIFECYCLE"]
     out["canonicalPredictionComplete"] = False
     out["lockStatusComplete"] = False
     out["lockedPredictionCount"] = 0
@@ -1525,6 +1532,8 @@ def apply(lock_module: Any):
         playability_lifecycles: Dict[str, Dict[str, Any]] = {}
         readiness_lifecycles: Dict[str, Dict[str, Any]] = {}
         lifecycle_validation_errors: Dict[str, List[str]] = {}
+        playability_release_validation_errors: Dict[str, List[str]] = {}
+        terminal_lifecycle_validation_errors: Dict[str, List[str]] = {}
         readiness_validation_warnings: Dict[str, List[str]] = {}
         now = _now_utc()
         for game in manifest:
@@ -1560,6 +1569,9 @@ def apply(lock_module: Any):
                     lifecycle_validation_errors.setdefault(identity, []).extend(
                         lifecycle_errors
                     )
+                    playability_release_validation_errors.setdefault(
+                        identity, []
+                    ).extend(lifecycle_errors)
                 continue
             outcome, outcome_errors = _terminal_outcome_for_public(
                 module,
@@ -1574,9 +1586,22 @@ def apply(lock_module: Any):
                 lifecycle_validation_errors.setdefault(identity, []).extend(
                     outcome_errors
                 )
+                terminal_lifecycle_validation_errors.setdefault(
+                    identity, []
+                ).extend(outcome_errors)
         lifecycle_validation_errors = {
             identity: sorted(set(errors))
             for identity, errors in lifecycle_validation_errors.items()
+            if errors
+        }
+        playability_release_validation_errors = {
+            identity: sorted(set(errors))
+            for identity, errors in playability_release_validation_errors.items()
+            if errors
+        }
+        terminal_lifecycle_validation_errors = {
+            identity: sorted(set(errors))
+            for identity, errors in terminal_lifecycle_validation_errors.items()
             if errors
         }
         no_prediction_data_count = len(terminal_outcomes)
@@ -1603,6 +1628,21 @@ def apply(lock_module: Any):
             value for value in pending_states.values()
             if value == "MISSED_LOCK"
         ])
+        winner_lifecycle_operational_defect = bool(
+            query_error
+            or invalid
+            or terminal_lifecycle_validation_errors
+            or lock_due_count
+            or missed_lock_count
+        )
+        release_playability_operational_defect = bool(
+            playability_release_validation_errors
+        )
+        operational_defect_scopes = []
+        if winner_lifecycle_operational_defect:
+            operational_defect_scopes.append("WINNER_LIFECYCLE")
+        if release_playability_operational_defect:
+            operational_defect_scopes.append("RELEASE_PLAYABILITY")
         lock_times = [
             _parse_dt(row.get("lockedAtUtc") or (row.get("frozenFeatureVector") or {}).get("lockAtUtc"))
             for row in canonical.values()
@@ -1657,6 +1697,18 @@ def apply(lock_module: Any):
             "canonicalReadError": query_error,
             "invalidCanonicalRows": invalid,
             "invalidLifecycleStatusRows": lifecycle_validation_errors,
+            "invalidPlayabilityReleaseRows": (
+                playability_release_validation_errors
+            ),
+            "invalidTerminalLifecycleRows": terminal_lifecycle_validation_errors,
+            "operationalDefectScopeVersion": OPERATIONAL_DEFECT_SCOPE_VERSION,
+            "winnerLifecycleOperationalDefect": (
+                winner_lifecycle_operational_defect
+            ),
+            "releasePlayabilityOperationalDefect": (
+                release_playability_operational_defect
+            ),
+            "operationalDefectScopes": operational_defect_scopes,
             "readinessValidationWarnings": readiness_validation_warnings,
             "readinessWarningGameCount": len(readiness_validation_warnings),
             "doubleheaderSafeIdentity": True,
@@ -1807,6 +1859,35 @@ def apply(lock_module: Any):
             predictions.append(row)
 
         displayed_complete = not missing and len(predictions) == len(manifest_ids)
+        winner_lifecycle_operational_defect = bool(
+            winner_lifecycle_operational_defect
+            or ambiguous_current
+            or not displayed_complete
+        )
+        operational_defect_scopes = []
+        if winner_lifecycle_operational_defect:
+            operational_defect_scopes.append("WINNER_LIFECYCLE")
+        if release_playability_operational_defect:
+            operational_defect_scopes.append("RELEASE_PLAYABILITY")
+        defect_scope_evidence = {
+            "operationalDefectScopeVersion": OPERATIONAL_DEFECT_SCOPE_VERSION,
+            "winnerLifecycleOperationalDefect": (
+                winner_lifecycle_operational_defect
+            ),
+            "releasePlayabilityOperationalDefect": (
+                release_playability_operational_defect
+            ),
+            "operationalDefectScopes": operational_defect_scopes,
+            "invalidPlayabilityReleaseRows": (
+                playability_release_validation_errors
+            ),
+            "invalidTerminalLifecycleRows": terminal_lifecycle_validation_errors,
+        }
+        public.update(defect_scope_evidence)
+        for prediction in predictions:
+            row_lock = prediction.get("slatePredictionLock")
+            if isinstance(row_lock, dict):
+                row_lock.update(copy.deepcopy(defect_scope_evidence))
         winner_predictions = [row for row in predictions if row.get("predictedWinner")]
         winner_prediction_complete = bool(manifest_ids) and (
             len(winner_predictions) == len(manifest_ids)
@@ -1857,6 +1938,7 @@ def apply(lock_module: Any):
             "invalidPersistedPrelockRows": persisted_prelock_invalid,
             **manifest_authority,
         })
+        coverage.update(copy.deepcopy(defect_scope_evidence))
         public["coverageComplete"] = winner_prediction_complete
         public["predictionCoverageComplete"] = winner_prediction_complete
         public["displayStatusCoverageComplete"] = displayed_complete
@@ -1955,15 +2037,19 @@ def apply(lock_module: Any):
                 "resultLocked": all_canonical,
                 "recomputedLockedPredictions": False,
             },
-            "operationalDefect": bool(
-                query_error
-                or invalid
-                or lifecycle_validation_errors
-                or ambiguous_current
-                or not displayed_complete
-                or lock_due_count
-                or missed_lock_count
+            "operationalDefect": bool(operational_defect_scopes),
+            "operationalDefectScopeVersion": OPERATIONAL_DEFECT_SCOPE_VERSION,
+            "winnerLifecycleOperationalDefect": (
+                winner_lifecycle_operational_defect
             ),
+            "releasePlayabilityOperationalDefect": (
+                release_playability_operational_defect
+            ),
+            "operationalDefectScopes": operational_defect_scopes,
+            "invalidPlayabilityReleaseRows": (
+                playability_release_validation_errors
+            ),
+            "invalidTerminalLifecycleRows": terminal_lifecycle_validation_errors,
             "predictions": predictions,
             "perGameStatus": lifecycle_cards,
             "requiredWinnerPredictionDisplay": cards,

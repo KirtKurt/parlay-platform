@@ -587,6 +587,63 @@ def test_invalid_authorized_stage_status_does_not_block_pre_lock_storage(monkeyp
     assert result["canonicalLockedStorageErrors"] == {"invalid-stage": ["bad_vector_status"]}
     assert result["ok"] is False
     assert result["operationalDefect"] is True
+    assert result["winnerLifecycleOperationalDefect"] is True
+    assert result["releasePlayabilityOperationalDefect"] is False
+    assert result["operationalDefectScopes"] == ["WINNER_LIFECYCLE"]
+
+
+def test_canonical_storage_failure_promotes_release_only_scope_without_erasing_it(monkeypatch):
+    validator = ModuleType("mlb_daily_lock_ml_vector_preservation_patch")
+    validator.validate_selection_lock_vector_status = lambda row: []
+    monkeypatch.setitem(sys.modules, validator.__name__, validator)
+
+    source_result = {
+        "ok": True,
+        "operationalDefect": True,
+        "operationalDefectScopeVersion": finalizer.OPERATIONAL_DEFECT_SCOPE_VERSION,
+        "winnerLifecycleOperationalDefect": False,
+        "releasePlayabilityOperationalDefect": True,
+        "operationalDefectScopes": ["RELEASE_PLAYABILITY"],
+        "invalidPlayabilityReleaseRows": {
+            "provider:combined-defect": ["T_MINUS_15:required_assessment_missing"],
+        },
+        "predictions": [
+            {
+                "gameId": "combined-defect",
+                "predictedWinner": "Home",
+                "lockedPrediction": True,
+                "officialPredictionStatus": "OFFICIAL_LOCKED_PREDICTION",
+                "immutablePerGameStage": True,
+            },
+        ],
+    }
+    module = SimpleNamespace(
+        predict_all=lambda *args, **kwargs: copy.deepcopy(source_result),
+        _store_prediction=lambda row: {
+            "ok": False,
+            "error": "injected canonical write failure",
+        },
+    )
+    finalizer.apply(module)
+
+    result = module.predict_all("2026-07-16", store=True)
+
+    assert result["canonicalLockedStorageCandidateCount"] == 1
+    assert result["canonicalLockedStoredCount"] == 0
+    assert result["canonicalLockedStorageComplete"] is False
+    assert result["canonicalLockedStorageErrors"]
+    assert result["ok"] is False
+    assert result["operationalDefect"] is True
+    assert result["operationalDefectScopeVersion"] == finalizer.OPERATIONAL_DEFECT_SCOPE_VERSION
+    assert result["winnerLifecycleOperationalDefect"] is True
+    assert result["releasePlayabilityOperationalDefect"] is True
+    assert result["operationalDefectScopes"] == [
+        "WINNER_LIFECYCLE",
+        "RELEASE_PLAYABILITY",
+    ]
+    assert result["invalidPlayabilityReleaseRows"] == {
+        "provider:combined-defect": ["T_MINUS_15:required_assessment_missing"],
+    }
 
 
 def test_pre_lock_storage_failure_marks_candidate_run_failed():
@@ -618,6 +675,9 @@ def test_pre_lock_storage_failure_marks_candidate_run_failed():
     assert result["preLockStorageErrors"]
     assert result["ok"] is False
     assert result["operationalDefect"] is True
+    assert result["winnerLifecycleOperationalDefect"] is True
+    assert result["releasePlayabilityOperationalDefect"] is False
+    assert result["operationalDefectScopes"] == ["WINNER_LIFECYCLE"]
     assert result["allGamesPredicted"] is False
 
 

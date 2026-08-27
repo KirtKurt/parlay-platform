@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Build durable, public-safe evidence for one deployed MLB trainer invocation.
+"""Build durable, public-safe evidence for deployed MLB trainer health.
 
 The normal deployment verifier intentionally fails closed when the AWS trainer is
 unhealthy. This utility preserves enough redacted evidence to diagnose that
 failure without printing environment values, credentials, raw provider payloads,
-or changing any model, promotion, inference, or production authority.
+or changing any model, promotion, inference, or production authority. The
+canonical workflow uses only the trainer's read-only ``status`` mode.
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence
 
 
-VERSION = "MLB-TRAINER-DEPLOY-DIAGNOSTIC-v1-redacted-fail-closed"
+VERSION = "MLB-TRAINER-DEPLOY-DIAGNOSTIC-v2-status-read-only"
 PROOF_TYPE = "MLB_TRAINER_DEPLOY_HEALTH_DIAGNOSTIC"
 REDACTED = "[REDACTED]"
 MAX_DEPTH = 7
@@ -311,6 +312,43 @@ def _classification(
     return f"TRAINER_RESPONSE_UNHEALTHY:{status}"
 
 
+def _status_only_classification(
+    status: Any,
+    status_invocation: Any,
+    *,
+    status_parse_error: Optional[str],
+    invocation_parse_error: Optional[str],
+) -> str:
+    if invocation_parse_error:
+        return "TRAINER_STATUS_INVOCATION_METADATA_UNREADABLE"
+    if not isinstance(status_invocation, Mapping):
+        return "TRAINER_STATUS_INVOCATION_METADATA_INVALID"
+    if int(status_invocation.get("StatusCode") or 0) != 200:
+        return "TRAINER_STATUS_LAMBDA_INVOKE_NON_200"
+    if status_invocation.get("FunctionError"):
+        return "TRAINER_STATUS_LAMBDA_FUNCTION_ERROR"
+    if status_parse_error:
+        return "TRAINER_STATUS_RESPONSE_UNREADABLE"
+    if not isinstance(status, Mapping):
+        return "TRAINER_STATUS_RESPONSE_INVALID"
+
+    health = status.get("trainingHealth")
+    if isinstance(health, Mapping):
+        if health.get("deploymentIdentityMatches") is False:
+            return "TRAINER_STATUS_UNHEALTHY:DEPLOYMENT_IDENTITY_MISMATCH"
+        if health.get("ok") is False:
+            latest = health.get("latestRun")
+            latest_status = (
+                str(latest.get("status") or "UNKNOWN")
+                if isinstance(latest, Mapping)
+                else "UNKNOWN"
+            )
+            return f"TRAINER_STATUS_UNHEALTHY:{latest_status.strip().upper()}"
+    if status.get("ok") is False:
+        return "TRAINER_STATUS_UNHEALTHY:STATUS_NOT_OK"
+    return "TRAINER_STATUS_HEALTHY"
+
+
 def build_report(
     *,
     training: Any,
@@ -325,13 +363,22 @@ def build_report(
     configuration_parse_error: Optional[str],
     source_sha: str,
     workflow_run_id: str,
+    status_only: bool = False,
 ) -> Dict[str, Any]:
-    classification = _classification(
-        training,
-        training_invocation,
-        training_parse_error=training_parse_error,
-        invocation_parse_error=training_invocation_parse_error,
-    )
+    if status_only:
+        classification = _status_only_classification(
+            status,
+            status_invocation,
+            status_parse_error=status_parse_error,
+            invocation_parse_error=status_invocation_parse_error,
+        )
+    else:
+        classification = _classification(
+            training,
+            training_invocation,
+            training_parse_error=training_parse_error,
+            invocation_parse_error=training_invocation_parse_error,
+        )
     training_summary = _allowlisted(training, TRAINING_FIELDS)
     status_summary = _status_summary(status)
     status_invocation_ok = bool(
@@ -350,7 +397,8 @@ def build_report(
         )
     )
     return {
-        "ok": classification == "TRAINER_HEALTHY" and status_invocation_ok,
+        "ok": classification in {"TRAINER_HEALTHY", "TRAINER_STATUS_HEALTHY"}
+        and status_invocation_ok,
         "proofType": PROOF_TYPE,
         "version": VERSION,
         "createdAtUtc": _now_iso(),
@@ -372,14 +420,17 @@ def build_report(
         "productionAuthorityChanged": production_authority_changed,
         "secretExposed": False,
         "diagnosticOnly": True,
+        "readOnlyStatusMode": status_only,
+        "trainerInvocationPerformed": not status_only,
         "modelOrPromotionGateChanged": False,
     }
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--training-response", type=Path, required=True)
-    parser.add_argument("--training-invocation", type=Path, required=True)
+    parser.add_argument("--status-only", action="store_true")
+    parser.add_argument("--training-response", type=Path)
+    parser.add_argument("--training-invocation", type=Path)
     parser.add_argument("--status-response", type=Path, required=True)
     parser.add_argument("--status-invocation", type=Path, required=True)
     parser.add_argument("--configuration", type=Path, required=True)
@@ -388,10 +439,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--workflow-run-id", required=True)
     args = parser.parse_args(argv)
 
-    training, training_error = _load_json(args.training_response)
-    training_invocation, training_invocation_error = _load_json(
-        args.training_invocation
-    )
+    if not args.status_only and (
+        args.training_response is None or args.training_invocation is None
+    ):
+        parser.error(
+            "--training-response and --training-invocation are required unless --status-only is used"
+        )
+    if args.status_only:
+        training, training_error = None, "not_collected_read_only_status_mode"
+        training_invocation, training_invocation_error = (
+            None,
+            "not_collected_read_only_status_mode",
+        )
+    else:
+        training, training_error = _load_json(args.training_response)
+        training_invocation, training_invocation_error = _load_json(
+            args.training_invocation
+        )
     status, status_error = _load_json(args.status_response)
     status_invocation, status_invocation_error = _load_json(args.status_invocation)
     configuration, configuration_error = _load_json(args.configuration)
@@ -408,6 +472,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         configuration_parse_error=configuration_error,
         source_sha=args.source_sha,
         workflow_run_id=args.workflow_run_id,
+        status_only=args.status_only,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.output.with_name(f"{args.output.name}.tmp")

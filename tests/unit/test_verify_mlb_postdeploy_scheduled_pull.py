@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from scripts import verify_mlb_postdeploy_scheduled_pull as observer
+from scripts.verify_mlb_authority_response import AUTHORITY_CONTRACT
 
 
 def _event(stream, stamp, message):
@@ -23,6 +25,38 @@ def _row(game_id, start, *, winner=None, locked=False, status="OPEN_PRE_LOCK"):
         "lockStatus": status,
         "officialPredictionStatus": status,
         "perGameCanonicalLock": {"status": status},
+    }
+
+
+def _no_champion_payload():
+    return {
+        "ok": False,
+        "sport": "mlb",
+        "status": "NO_QUALIFIED_CHAMPION",
+        "error": "NO_QUALIFIED_CHAMPION",
+        "publicationClosed": True,
+        "productionSelectionAllowed": False,
+        "model_version": None,
+        "primaryAlgorithm": None,
+        "primaryAlgorithmActive": False,
+        "soleProductionAlgorithm": None,
+        "game_winner_model": None,
+        "requestedAuthority": "AWS_ML_PROSPECTIVE_R7",
+        "qualifiedChampionRequired": True,
+        "qualifiedChampionPresent": False,
+        "r7ChampionQualified": False,
+        "r7DeploymentIdentity": None,
+        "legacyFallbackAllowed": False,
+        "automaticLegacyRestoreAllowed": False,
+        "legacyRecommendationAuthority": False,
+        "retiredAuthoritySuppressed": True,
+        "retiredV15_10Eligible": False,
+        "automaticWagerAllowed": False,
+        "rowLevelAutomaticWagerAllowed": False,
+        "authorityContractVersion": AUTHORITY_CONTRACT,
+        "winner_predictions": [],
+        "predictions": [],
+        "count": 0,
     }
 
 
@@ -153,3 +187,42 @@ def test_disposition_accepts_locked_winner_and_explicit_no_backfill_lifecycle():
         "complete": True,
         "errors": [],
     }
+
+
+def test_postdeploy_policy_accepts_exact_no_champion_503_without_public_winners():
+    now = datetime(2026, 8, 27, 2, 0, tzinfo=timezone.utc)
+    past = now - timedelta(hours=4)
+    status_rows = [
+        _row(
+            "g1",
+            past,
+            winner="Home",
+            locked=True,
+            status="OFFICIAL_LOCKED_PREDICTION",
+        )
+    ]
+
+    result = observer.reconcile_public_prediction_lifecycle(
+        503,
+        _no_champion_payload(),
+        status_rows,
+        1,
+        now=now,
+    )
+
+    assert result["authority"]["state"] == "NO_QUALIFIED_CHAMPION"
+    assert result["publicWinnerCount"] == 0
+    assert result["publicPayload"]["predictions"] == []
+    assert result["lifecyclePayload"]["predictions"][0]["predictedWinner"] == "Home"
+    assert result["statusProjectionPersisted"] is False
+
+
+def test_postdeploy_source_accepts_only_verified_200_or_503_prediction_contract():
+    source = Path(observer.__file__).read_text(encoding="utf-8")
+
+    assert "prediction_response = fetch_json_response(" in source
+    assert "accepted_http_statuses=(200, 503)" in source
+    assert "reconcile_public_prediction_lifecycle(" in source
+    assert 'public_reconciliation["authority"].get("state")' in source
+    assert 'public_reconciliation.get("publicWinnerCount")' in source
+    assert '"statusProjectionPersisted": False' in source

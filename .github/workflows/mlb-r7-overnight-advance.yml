@@ -2,16 +2,6 @@ name: MLB R7 Overnight Advancement Queue Control
 run-name: "MLB R7 queue control ${{ github.event_name }} #${{ github.run_number }}"
 
 "on":
-  schedule:
-    # Run at off-peak minutes across the UTC window that covers midnight-7 AM
-    # America/New_York in both EDT and EST. The job enforces the exact ET window.
-    - cron: '17,47 4-11 * * *'
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/mlb-r7-overnight-advance.yml'
-      - '.github/workflows/bootstrap-unified-mlb-r7-recovery-now.yml'
-      - 'tests/unit/test_mlb_r7_overnight_queue_control.py'
   workflow_dispatch:
     inputs:
       force:
@@ -24,9 +14,9 @@ permissions:
   actions: write
   contents: read
 
-# Queue control is isolated from deployment and trainer concurrency. It never
-# invokes AWS. The canonical recovery owns GitHub-side recovery serialization;
-# EventBridge remains the only automatic trainer invocation owner.
+# Queue control is an explicit operator action. It never invokes AWS directly.
+# The canonical recovery owns GitHub-side recovery serialization; EventBridge
+# remains the only automatic trainer invocation owner.
 concurrency:
   group: mlb-r7-overnight-queue-control
   cancel-in-progress: false

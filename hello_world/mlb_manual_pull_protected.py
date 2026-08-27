@@ -38,6 +38,10 @@ _REQUIRED_RUNTIME_STEPS = {
     "legacyFinalGateDisabled",
 }
 
+_WINNER_LIFECYCLE_DEFECT_SCOPE_VERSION = (
+    "MLB-WINNER-LIFECYCLE-DEFECT-SCOPE-v1-release-separated"
+)
+
 if isinstance(_raw_runtime_status, dict):
     ML_RUNTIME_INSTALL_STATUS = dict(_raw_runtime_status)
 else:
@@ -141,6 +145,102 @@ def _is_scheduled(event: Dict[str, Any]) -> bool:
     return not (event.get("httpMethod") or event.get("requestContext"))
 
 
+def _scoped_lifecycle_defects(
+    result: Dict[str, Any],
+) -> Optional[tuple[bool, bool]]:
+    if not isinstance(result, dict):
+        return None
+    winner_defect = result.get("winnerLifecycleOperationalDefect")
+    release_defect = result.get("releasePlayabilityOperationalDefect")
+    expected_scopes = []
+    if winner_defect is True:
+        expected_scopes.append("WINNER_LIFECYCLE")
+    if release_defect is True:
+        expected_scopes.append("RELEASE_PLAYABILITY")
+    if not (
+        result.get("operationalDefectScopeVersion")
+        == _WINNER_LIFECYCLE_DEFECT_SCOPE_VERSION
+        and isinstance(winner_defect, bool)
+        and isinstance(release_defect, bool)
+        and result.get("operationalDefectScopes") == expected_scopes
+        and (result.get("operationalDefect") is True) == bool(expected_scopes)
+    ):
+        return None
+    return winner_defect, release_defect
+
+
+def _canonical_locked_storage_failures(
+    result: Dict[str, Any], game_date: str
+) -> list[str]:
+    """Validate canonical lock persistence independently of defect scoping."""
+
+    suffix = game_date or "unknown"
+    failures = []
+    try:
+        candidate_count = int(
+            result.get("canonicalLockedStorageCandidateCount") or 0
+        )
+        if candidate_count < 0:
+            raise ValueError("negative canonical candidate count")
+    except Exception:
+        candidate_count = -1
+        failures.append(f"canonical_locked_storage_contract_invalid:{suffix}")
+
+    storage_errors = result.get("canonicalLockedStorageErrors")
+    if bool(storage_errors):
+        failures.append(f"canonical_locked_storage_errors:{suffix}")
+
+    if candidate_count > 0:
+        if result.get("canonicalLockedStorageComplete") is not True:
+            failures.append(f"canonical_locked_storage_incomplete:{suffix}")
+        try:
+            stored_count = int(result.get("canonicalLockedStoredCount") or 0)
+        except Exception:
+            stored_count = -1
+        if stored_count != candidate_count:
+            failures.append(f"canonical_locked_storage_count_mismatch:{suffix}")
+    return failures
+
+
+def _winner_lifecycle_health(payload: Dict[str, Any]) -> Dict[str, Any]:
+    results = [
+        result
+        for result in (payload.get("game_winner_predictions") or [])
+        if isinstance(result, dict)
+    ]
+    scoped = [
+        (result, defects)
+        for result in results
+        if (defects := _scoped_lifecycle_defects(result)) is not None
+    ]
+    winner_defect_dates = sorted({
+        str(result.get("game_date_et") or "unknown")
+        for result, defects in scoped
+        if defects[0]
+    })
+    release_defect_dates = sorted({
+        str(result.get("game_date_et") or "unknown")
+        for result, defects in scoped
+        if defects[1]
+    })
+    scope_complete = len(scoped) == len(results)
+    return {
+        "version": _WINNER_LIFECYCLE_DEFECT_SCOPE_VERSION,
+        "resultCount": len(results),
+        "scopedResultCount": len(scoped),
+        "scopeComplete": scope_complete,
+        "winnerLifecycleHealthy": (
+            not winner_defect_dates if scope_complete else None
+        ),
+        "winnerLifecycleOperationalDefectDates": winner_defect_dates,
+        "releasePlayabilityHealthy": (
+            not release_defect_dates if scope_complete else None
+        ),
+        "releasePlayabilityOperationalDefectDates": release_defect_dates,
+        "releasePlayabilityFailClosed": True,
+    }
+
+
 def _runtime_failure(event: Dict[str, Any]) -> Dict[str, Any]:
     body = {
         "ok": False,
@@ -166,6 +266,15 @@ def _attach_runtime_status(response: Any) -> Any:
     except Exception:
         payload = {"rawBody": body}
     if isinstance(payload, dict):
+        lifecycle_health = _winner_lifecycle_health(payload)
+        payload = {
+            "winnerLifecycleHealth": lifecycle_health,
+            **{
+                key: value
+                for key, value in payload.items()
+                if key != "winnerLifecycleHealth"
+            },
+        }
         payload["mlRuntimeInstallation"] = ML_RUNTIME_INSTALL_STATUS
         out["body"] = json.dumps(payload, default=str)
     return out
@@ -254,9 +363,31 @@ def _raise_scheduled_delegate_failure(event: Dict[str, Any], response: Any) -> N
                 # NEGATIVE_EV_GUARD) without being an operational persistence failure.
                 # Only fail the scheduled ingest when the result is explicitly an
                 # operational defect or its lifecycle/storage contract is incomplete.
+                scoped_defects = _scoped_lifecycle_defects(result)
+                scoped_winner_defect = (
+                    scoped_defects[0] if scoped_defects is not None else None
+                )
+                # Release/playability assessment failures keep wagering blocked,
+                # but they do not mean that the canonical winner or its durable
+                # pre-lock storage failed.  A scoped delegate result lets the
+                # ingest alarm distinguish those lanes.  Unscoped/older results
+                # retain the conservative legacy behavior and fail closed.
+                operational_winner_failure = (
+                    scoped_winner_defect is True
+                    if scoped_winner_defect is not None
+                    else result.get("operationalDefect") is True
+                )
+                canonical_storage_failures = _canonical_locked_storage_failures(
+                    result, game_date
+                )
+                candidate_failures.extend(canonical_storage_failures)
                 hard_winner_failure = bool(
-                    result.get("operationalDefect") is True
-                    or (result.get("ok") is not True and not lifecycle_complete_for_result)
+                    operational_winner_failure
+                    or canonical_storage_failures
+                    or (
+                        result.get("ok") is not True
+                        and not lifecycle_complete_for_result
+                    )
                 )
                 if hard_winner_failure:
                     candidate_failures.append(

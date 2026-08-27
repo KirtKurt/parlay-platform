@@ -1,15 +1,7 @@
 name: MLB V1 Pull Guard
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/mlb-v1-pull-guard.yml'
-      - 'scripts/mlb_pull_guard_status.py'
-      - 'tests/unit/test_mlb_pull_guard_status.py'
   workflow_dispatch:
-  schedule:
-    - cron: "0/15 * * * *"
 
 permissions:
   contents: write

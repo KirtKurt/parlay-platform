@@ -1,13 +1,16 @@
 from pathlib import Path
 
+import yaml
+
 
 WORKFLOW = Path(".github/workflows/mlb-v8-hourly-status.yml")
 
 
-def test_hourly_schedule_and_permanent_issue_channel():
+def test_status_reporter_is_manual_only_and_keeps_permanent_issue_channel():
     text = WORKFLOW.read_text(encoding="utf-8")
+    document = yaml.load(text, Loader=yaml.BaseLoader)
 
-    assert "cron: '7 * * * *'" in text
+    assert set(document["on"]) == {"workflow_dispatch"}
     assert "STATUS_ISSUE: '458'" in text
     assert "issues: write" in text
     assert "actions: read" in text

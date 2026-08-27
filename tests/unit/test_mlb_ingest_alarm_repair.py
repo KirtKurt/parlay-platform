@@ -22,6 +22,7 @@ REQUIRED = {
     'lastPrelockPromotionAuthority','canonicalProbabilityAndPersistedPrelockAuthority',
     'providerNeutralCalibrationAndActionability','legacyFinalGateDisabled',
 }
+DEFECT_SCOPE_VERSION = 'MLB-WINNER-LIFECYCLE-DEFECT-SCOPE-v1-release-separated'
 
 def manifest(bound=True):
     return {
@@ -92,6 +93,143 @@ def test_operational_winner_failure_still_raises():
     assert 'winner_prediction_failed:2026-08-24' in message
     assert len(calls)==1
 
+def test_release_only_playability_gap_remains_visible_without_failing_winner_ingest():
+    release_only = winner(ok=True, operational=True)
+    release_only.update({
+        'operationalDefectScopeVersion': DEFECT_SCOPE_VERSION,
+        'winnerLifecycleOperationalDefect': False,
+        'releasePlayabilityOperationalDefect': True,
+        'operationalDefectScopes': ['RELEASE_PLAYABILITY'],
+        'invalidPlayabilityReleaseRows': {
+            'provider:game-1': ['T_MINUS_15:required_assessment_missing'],
+        },
+    })
+    with loaded([payload(winner_row=release_only)]) as (handler,calls):
+        response=handler.lambda_handler({'sport':'mlb'},None)
+
+    body=json.loads(response['body'])
+    returned=body['game_winner_predictions'][0]
+    health=body['winnerLifecycleHealth']
+    assert response['statusCode']==200
+    assert returned['operationalDefect'] is True
+    assert returned['winnerLifecycleOperationalDefect'] is False
+    assert returned['releasePlayabilityOperationalDefect'] is True
+    assert returned['invalidPlayabilityReleaseRows'] == {
+        'provider:game-1': ['T_MINUS_15:required_assessment_missing'],
+    }
+    assert health == {
+        'version': DEFECT_SCOPE_VERSION,
+        'resultCount': 1,
+        'scopedResultCount': 1,
+        'scopeComplete': True,
+        'winnerLifecycleHealthy': True,
+        'winnerLifecycleOperationalDefectDates': [],
+        'releasePlayabilityHealthy': False,
+        'releasePlayabilityOperationalDefectDates': ['2026-08-24'],
+        'releasePlayabilityFailClosed': True,
+    }
+    assert len(calls)==1
+
+def test_release_only_scope_cannot_suppress_incomplete_canonical_locked_storage():
+    combined_defect = winner(ok=False, operational=True)
+    combined_defect.update({
+        'operationalDefectScopeVersion': DEFECT_SCOPE_VERSION,
+        # Reproduce the stale release-only scope emitted before the storage
+        # finalizer discovered that its canonical write failed.
+        'winnerLifecycleOperationalDefect': False,
+        'releasePlayabilityOperationalDefect': True,
+        'operationalDefectScopes': ['RELEASE_PLAYABILITY'],
+        'canonicalLockedStorageCandidateCount': 1,
+        'canonicalLockedStoredCount': 0,
+        'canonicalLockedStorageComplete': False,
+        'canonicalLockedStorageErrors': {
+            'provider:game-1': ['injected canonical write failure'],
+        },
+    })
+    with loaded([payload(winner_row=combined_defect)]) as (handler,calls):
+        try: handler.lambda_handler({'sport':'mlb'},None)
+        except RuntimeError as exc: message=str(exc)
+        else: raise AssertionError('expected canonical locked storage failure')
+
+    assert 'winner_prediction_failed:2026-08-24' in message
+    assert 'canonical_locked_storage_incomplete:2026-08-24' in message
+    assert 'canonical_locked_storage_count_mismatch:2026-08-24' in message
+    assert 'canonical_locked_storage_errors:2026-08-24' in message
+    assert len(calls)==1
+
+def test_canonical_locked_storage_errors_fail_even_without_candidates():
+    orphan_error = winner(ok=True, operational=False)
+    orphan_error.update({
+        'canonicalLockedStorageCandidateCount': 0,
+        'canonicalLockedStoredCount': 0,
+        'canonicalLockedStorageComplete': False,
+        'canonicalLockedStorageErrors': {
+            'provider:orphan': ['injected disposition error'],
+        },
+    })
+    with loaded([payload(winner_row=orphan_error)]) as (handler,calls):
+        try: handler.lambda_handler({'sport':'mlb'},None)
+        except RuntimeError as exc: message=str(exc)
+        else: raise AssertionError('expected canonical locked storage error')
+
+    assert 'winner_prediction_failed:2026-08-24' in message
+    assert 'canonical_locked_storage_errors:2026-08-24' in message
+    assert 'canonical_locked_storage_incomplete:2026-08-24' not in message
+    assert len(calls)==1
+
+def test_incomplete_defect_scope_cannot_suppress_an_operational_winner_failure():
+    malformed_scope = winner(ok=True, operational=True)
+    malformed_scope.update({
+        'operationalDefectScopeVersion': DEFECT_SCOPE_VERSION,
+        'winnerLifecycleOperationalDefect': False,
+        # The required release boolean and exact scopes are intentionally absent.
+    })
+    with loaded([payload(winner_row=malformed_scope)]) as (handler,calls):
+        try: handler.lambda_handler({'sport':'mlb'},None)
+        except RuntimeError as exc: message=str(exc)
+        else: raise AssertionError('expected malformed defect scope to fail closed')
+
+    assert 'winner_prediction_failed:2026-08-24' in message
+    assert len(calls)==1
+
+def test_scoped_terminal_lifecycle_defect_still_fails_winner_ingest():
+    terminal_defect = winner(ok=True, operational=True)
+    terminal_defect.update({
+        'operationalDefectScopeVersion': DEFECT_SCOPE_VERSION,
+        'winnerLifecycleOperationalDefect': True,
+        'releasePlayabilityOperationalDefect': False,
+        'operationalDefectScopes': ['WINNER_LIFECYCLE'],
+        'invalidTerminalLifecycleRows': {
+            'provider:game-1': ['terminal_outcome_fingerprint_mismatch'],
+        },
+    })
+    with loaded([payload(winner_row=terminal_defect)]) as (handler,calls):
+        try: handler.lambda_handler({'sport':'mlb'},None)
+        except RuntimeError as exc: message=str(exc)
+        else: raise AssertionError('expected scoped terminal lifecycle failure')
+
+    assert 'winner_prediction_failed:2026-08-24' in message
+    assert len(calls)==1
+
+def test_scoped_storage_defect_still_fails_winner_ingest():
+    storage_defect = winner(ok=False, operational=True)
+    storage_defect.update({
+        'operationalDefectScopeVersion': DEFECT_SCOPE_VERSION,
+        'winnerLifecycleOperationalDefect': True,
+        'releasePlayabilityOperationalDefect': False,
+        'operationalDefectScopes': ['WINNER_LIFECYCLE'],
+        'preLockStoredCount': 0,
+        'preLockStorageComplete': False,
+    })
+    with loaded([payload(winner_row=storage_defect)]) as (handler,calls):
+        try: handler.lambda_handler({'sport':'mlb'},None)
+        except RuntimeError as exc: message=str(exc)
+        else: raise AssertionError('expected scoped storage lifecycle failure')
+
+    assert 'winner_prediction_failed:2026-08-24' in message
+    assert 'prelock_storage_incomplete:2026-08-24' in message
+    assert len(calls)==1
+
 def test_manifest_binding_failure_retries_once_and_requires_valid_retry():
     with loaded([payload(bound=False),payload(bound=True,winner_row=winner(ok=True))]) as (handler,calls):
         response=handler.lambda_handler({'sport':'mlb'},None)
@@ -99,3 +237,13 @@ def test_manifest_binding_failure_retries_once_and_requires_valid_retry():
     assert len(calls)==2
     assert calls[1].get('manifest_binding_retry') is True
     assert calls[1].get('force') is True
+
+def test_canonical_manifest_defect_still_fails_after_bounded_retry():
+    with loaded([payload(bound=False),payload(bound=False)]) as (handler,calls):
+        try: handler.lambda_handler({'sport':'mlb'},None)
+        except RuntimeError as exc: message=str(exc)
+        else: raise AssertionError('expected canonical manifest binding failure')
+
+    assert 'provider_schedule_manifest_authority_invalid:2026-08-24' in message
+    assert 'provider_schedule_manifest_incomplete' in message
+    assert len(calls)==2

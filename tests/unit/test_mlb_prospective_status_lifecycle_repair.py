@@ -224,6 +224,34 @@ def test_existing_post_window_success_contract_is_preserved():
     assert result["durableNoPredictionTerminalReconciled"] is True
 
 
+def test_failed_attached_terminal_repair_overrides_cached_success_fail_closed():
+    result = prospective._attach_repair(
+        {
+            "ok": True,
+            "reason": "POST_WINDOW_TERMINAL_STATUS_ALREADY_RECONCILED",
+            "lockStatusComplete": True,
+            "missedGameCount": 1,
+        },
+        {
+            "ok": False,
+            "reason": "TERMINAL_RECONCILIATION_FAILED_CLOSED",
+            "reconciledCount": 0,
+            "remainingMissedCount": 1,
+            "unresolved": [],
+            "progressAfter": {
+                "missedCount": 0,
+                "dueMissingCount": 0,
+            },
+            "postStartPredictionCreationAllowed": False,
+        },
+    )
+
+    assert result["ok"] is False
+    assert result["failClosed"] is True
+    assert result["reason"] == "PROTECTED_TERMINAL_RECONCILIATION_FAILED_CLOSED"
+    assert result["postStartPredictionCreationAllowed"] is False
+
+
 def _locked_row(*reasons, verified=True):
     return {
         "lockedPrediction": True,
