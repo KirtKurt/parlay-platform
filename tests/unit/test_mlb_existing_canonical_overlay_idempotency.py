@@ -925,7 +925,7 @@ def test_existing_stage_authority_extra_field_fails_closed():
         lambda row: row["slatePredictionLock"].update(
             {"policyVersion": "tampered-policy"}
         ),
-        lambda row: row["tags"].append("PRE_LOCK_PREDICTION"),
+        lambda row: row["tags"].append("LOCKED_NO_PREDICTION_DATA"),
     ],
 )
 def test_contradictory_public_lock_marker_never_uses_idempotent_path(
