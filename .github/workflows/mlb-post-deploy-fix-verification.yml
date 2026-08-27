@@ -1,35 +1,268 @@
 name: Verify MLB Scoring Fix After Deploy
+run-name: "Verify MLB deployed source ${{ inputs.source_deploy_run_id || github.event.workflow_run.id || 'latest-successful-sam' }} attempt ${{ inputs.source_deploy_run_attempt || github.event.workflow_run.run_attempt || 'latest' }}"
 
 on:
   workflow_run:
     workflows: ["Deploy SAM to AWS"]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      target_deploy_sha:
+        description: Exact deployed SHA; leave all inputs blank to verify the latest successful SAM step
+        required: false
+        type: string
+      source_deploy_run_id:
+        description: Exact Deploy SAM workflow run ID; leave all inputs blank for latest
+        required: false
+        type: string
+      source_deploy_run_attempt:
+        description: Exact Deploy SAM workflow run attempt; leave all inputs blank for latest
+        required: false
+        type: string
 
 permissions:
-  contents: write
-
-concurrency:
-  group: mlb-post-deploy-fix-verification
-  cancel-in-progress: true
+  contents: read
 
 env:
   REPORT_PATH: runtime_reports/mlb_scoring_fix_post_deploy_latest.json
   CANDIDATE_PATH: /tmp/mlb-scoring-fix-post-deploy-candidate.json
+  CANDIDATE_ARTIFACT_PATH: runtime_reports/mlb_scoring_fix_post_deploy_candidate.json
 
 jobs:
-  verify:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'main')
+  resolve:
+    name: Resolve and attest the successful SAM source
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      should_verify: ${{ steps.resolve.outputs.should_verify }}
+      resolution_reason: ${{ steps.resolve.outputs.resolution_reason }}
+      target_deploy_sha: ${{ steps.resolve.outputs.target_deploy_sha }}
+      source_deploy_run_id: ${{ steps.resolve.outputs.source_deploy_run_id }}
+      source_deploy_run_attempt: ${{ steps.resolve.outputs.source_deploy_run_attempt }}
+      source_deploy_run_number: ${{ steps.resolve.outputs.source_deploy_run_number }}
+      source_deploy_workflow_id: ${{ steps.resolve.outputs.source_deploy_workflow_id }}
+      source_deploy_workflow_path: ${{ steps.resolve.outputs.source_deploy_workflow_path }}
+      source_deploy_head_branch: ${{ steps.resolve.outputs.source_deploy_head_branch }}
+      source_deploy_head_sha: ${{ steps.resolve.outputs.source_deploy_head_sha }}
+      source_deploy_created_at: ${{ steps.resolve.outputs.source_deploy_created_at }}
+      source_deploy_run_url: ${{ steps.resolve.outputs.source_deploy_run_url }}
     steps:
-      - name: Checkout deployed main source
+      - name: Resolve latest real deployment and validate immutable provenance
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TARGET_DEPLOY_SHA: ${{ inputs.target_deploy_sha }}
+          INPUT_SOURCE_DEPLOY_RUN_ID: ${{ inputs.source_deploy_run_id }}
+          INPUT_SOURCE_DEPLOY_RUN_ATTEMPT: ${{ inputs.source_deploy_run_attempt }}
+          EVENT_SOURCE_DEPLOY_RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_SOURCE_DEPLOY_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          EVENT_TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          canonical_path=".github/workflows/deploy.yml"
+          canonical_name="Deploy SAM to AWS"
+          sam_step_name="Deploy exact canonical source"
+          canonical_workflow_id="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml" --jq '.id')"
+          [[ "$canonical_workflow_id" =~ ^[0-9]+$ ]]
+
+          source_json=""
+          source_jobs=""
+
+          load_and_validate_source() {
+            local run_id="$1"
+            local run_attempt="$2"
+            local expected_target="$3"
+            [[ "$run_id" =~ ^[0-9]+$ ]] || return 1
+            [[ "$run_attempt" =~ ^[1-9][0-9]*$ ]] || return 1
+
+            source_json="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$run_id")" || return 1
+            jq -e               --arg repo "$GITHUB_REPOSITORY"               --arg path "$canonical_path"               --arg name "$canonical_name"               --argjson workflow_id "$canonical_workflow_id"               --argjson run_id "$run_id"               --argjson run_attempt "$run_attempt"               '
+                .id == $run_id and
+                .run_attempt == $run_attempt and
+                .workflow_id == $workflow_id and
+                .name == $name and
+                .path == $path and
+                .head_repository.full_name == $repo and
+                .head_branch == "main" and
+                (.head_sha | test("^[0-9a-f]{40}$")) and
+                (.event == "push" or .event == "workflow_dispatch")
+              ' <<<"$source_json" >/dev/null || return 1
+
+            if [[ -n "$expected_target" ]]; then
+              [[ "$expected_target" =~ ^[0-9a-f]{40}$ ]] || return 1
+              jq -e --arg target "$expected_target" '.head_sha == $target'                 <<<"$source_json" >/dev/null || return 1
+            fi
+
+            source_jobs="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$run_id/attempts/$run_attempt/jobs?per_page=100")" || return 1
+            [[ "$(jq '[.jobs[] | select(.name == "deploy")] | length' <<<"$source_jobs")" == "1" ]] || return 1
+            [[ "$(jq --arg step "$sam_step_name" '[.jobs[] | select(.name == "deploy") | .steps[] | select(.name == $step)] | length' <<<"$source_jobs")" == "1" ]] || return 1
+            [[ "$(jq --arg step "$sam_step_name" '[.jobs[] | select(.name == "deploy") | .steps[] | select(.name == $step and .conclusion == "success")] | length' <<<"$source_jobs")" == "1" ]] || return 1
+          }
+
+          find_latest_successful_sam_source() {
+            local runs_json
+            local candidate_id
+            local candidate_attempt
+            local candidate_sha
+            runs_json="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/$canonical_workflow_id/runs?branch=main&per_page=100")"
+            while IFS=$'\t' read -r candidate_id candidate_attempt candidate_sha; do
+              if load_and_validate_source "$candidate_id" "$candidate_attempt" "$candidate_sha"; then
+                return 0
+              fi
+            done < <(
+              jq -r '
+                .workflow_runs
+                | sort_by([(.run_number | tonumber), (.run_attempt | tonumber)])
+                | reverse[]
+                | [.id, .run_attempt, .head_sha]
+                | @tsv
+              ' <<<"$runs_json"
+            )
+            return 1
+          }
+
+          explicit_count=0
+          [[ -n "$INPUT_TARGET_DEPLOY_SHA" ]] && explicit_count=$((explicit_count + 1))
+          [[ -n "$INPUT_SOURCE_DEPLOY_RUN_ID" ]] && explicit_count=$((explicit_count + 1))
+          [[ -n "$INPUT_SOURCE_DEPLOY_RUN_ATTEMPT" ]] && explicit_count=$((explicit_count + 1))
+
+          if (( explicit_count > 0 )); then
+            (( explicit_count == 3 )) || {
+              echo "::error::target SHA, source run ID, and source attempt must be supplied together"
+              exit 1
+            }
+            load_and_validate_source               "$INPUT_SOURCE_DEPLOY_RUN_ID"               "$INPUT_SOURCE_DEPLOY_RUN_ATTEMPT"               "$INPUT_TARGET_DEPLOY_SHA" || {
+                echo "::error::Explicit source is not an exact successful canonical SAM deployment"
+                exit 1
+              }
+          elif [[ "$EVENT_NAME" == "workflow_run" ]]; then
+            load_and_validate_source               "$EVENT_SOURCE_DEPLOY_RUN_ID"               "$EVENT_SOURCE_DEPLOY_RUN_ATTEMPT"               "$EVENT_TARGET_DEPLOY_SHA" || {
+                echo "::error::workflow_run source is not an exact successful canonical SAM deployment"
+                exit 1
+              }
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            find_latest_successful_sam_source || {
+              echo "::error::No successful canonical SAM deployment was found in the latest 100 runs"
+              exit 1
+            }
+          else
+            echo "::error::Unsupported verifier event: $EVENT_NAME"
+            exit 1
+          fi
+
+          chosen_source_json="$source_json"
+          chosen_source_jobs="$source_jobs"
+          chosen_run_number="$(jq -r '.run_number' <<<"$chosen_source_json")"
+          chosen_run_attempt="$(jq -r '.run_attempt' <<<"$chosen_source_json")"
+          chosen_run_id="$(jq -r '.id' <<<"$chosen_source_json")"
+
+          find_latest_successful_sam_source || {
+            echo "::error::Unable to resolve the latest successful canonical SAM deployment"
+            exit 1
+          }
+          latest_run_number="$(jq -r '.run_number' <<<"$source_json")"
+          latest_run_attempt="$(jq -r '.run_attempt' <<<"$source_json")"
+          source_json="$chosen_source_json"
+          source_jobs="$chosen_source_jobs"
+
+          should_verify=true
+          resolution_reason="exact_successful_sam_source"
+          if (( chosen_run_number < latest_run_number )) ||              { (( chosen_run_number == latest_run_number )) && (( chosen_run_attempt < latest_run_attempt )); }; then
+            should_verify=false
+            resolution_reason="source_superseded_by_newer_successful_sam_deployment"
+          fi
+
+          if [[ "$EVENT_NAME" == "workflow_run" && "$should_verify" == "true" ]]; then
+            expected_title="Verify MLB deployed source $chosen_run_id attempt $chosen_run_attempt"
+            direct_state=""
+            for retry in 1 2 3 4 5; do
+              direct_state="$(
+                gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/mlb-post-deploy-fix-verification.yml/runs?event=workflow_dispatch&per_page=100" |
+                  jq -r                     --arg title "$expected_title"                     --arg repo "$GITHUB_REPOSITORY"                     '
+                      [
+                        .workflow_runs[]
+                        | select(
+                            .display_title == $title and
+                            .head_branch == "main" and
+                            .head_repository.full_name == $repo
+                          )
+                      ]
+                      | sort_by(.run_number)
+                      | reverse
+                      | .[0]
+                      | if . == null then "" else [.status, (.conclusion // "")] | @tsv end
+                    '
+              )" || direct_state=""
+              [[ -n "$direct_state" ]] && break
+              sleep $((retry * 2))
+            done
+            if [[ -n "$direct_state" ]]; then
+              IFS=$'\t' read -r direct_status direct_conclusion <<<"$direct_state"
+              if [[ "$direct_status" != "completed" || "$direct_conclusion" == "success" ]]; then
+                should_verify=false
+                resolution_reason="canonical_direct_verifier_already_active_or_successful"
+              fi
+            fi
+          fi
+
+          target_deploy_sha="$(jq -r '.head_sha' <<<"$source_json")"
+          source_deploy_created_at="$(jq -r '.created_at' <<<"$source_json")"
+          source_deploy_run_url="$(jq -r '.html_url' <<<"$source_json")"
+
+          {
+            echo "should_verify=$should_verify"
+            echo "resolution_reason=$resolution_reason"
+            echo "target_deploy_sha=$target_deploy_sha"
+            echo "source_deploy_run_id=$chosen_run_id"
+            echo "source_deploy_run_attempt=$chosen_run_attempt"
+            echo "source_deploy_run_number=$chosen_run_number"
+            echo "source_deploy_workflow_id=$canonical_workflow_id"
+            echo "source_deploy_workflow_path=$canonical_path"
+            echo "source_deploy_head_branch=main"
+            echo "source_deploy_head_sha=$target_deploy_sha"
+            echo "source_deploy_created_at=$source_deploy_created_at"
+            echo "source_deploy_run_url=$source_deploy_run_url"
+          } >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Observe the exact deployed source without writes
+    needs: resolve
+    if: ${{ needs.resolve.outputs.should_verify == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      TARGET_DEPLOY_SHA: ${{ needs.resolve.outputs.target_deploy_sha }}
+      SOURCE_DEPLOY_RUN_ID: ${{ needs.resolve.outputs.source_deploy_run_id }}
+      SOURCE_DEPLOY_RUN_ATTEMPT: ${{ needs.resolve.outputs.source_deploy_run_attempt }}
+      SOURCE_DEPLOY_RUN_NUMBER: ${{ needs.resolve.outputs.source_deploy_run_number }}
+      SOURCE_DEPLOY_WORKFLOW_ID: ${{ needs.resolve.outputs.source_deploy_workflow_id }}
+      SOURCE_DEPLOY_WORKFLOW_PATH: ${{ needs.resolve.outputs.source_deploy_workflow_path }}
+      SOURCE_DEPLOY_HEAD_BRANCH: ${{ needs.resolve.outputs.source_deploy_head_branch }}
+      SOURCE_DEPLOY_HEAD_SHA: ${{ needs.resolve.outputs.source_deploy_head_sha }}
+      SOURCE_DEPLOY_CREATED_AT: ${{ needs.resolve.outputs.source_deploy_created_at }}
+      SOURCE_DEPLOY_RUN_URL: ${{ needs.resolve.outputs.source_deploy_run_url }}
+    steps:
+      - name: Checkout trusted verifier source
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
+
+      - name: Validate exact deployed commit against trusted main
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TARGET_DEPLOY_SHA" == "$SOURCE_DEPLOY_HEAD_SHA" ]]
+          [[ "$SOURCE_DEPLOY_HEAD_BRANCH" == "main" ]]
+          [[ "$SOURCE_DEPLOY_WORKFLOW_PATH" == ".github/workflows/deploy.yml" ]]
+          git fetch --no-tags origin main
+          git cat-file -e "$TARGET_DEPLOY_SHA^{commit}"
+          git merge-base --is-ancestor "$TARGET_DEPLOY_SHA" origin/main
 
       - uses: actions/setup-python@v5
         with:
@@ -50,7 +283,7 @@ jobs:
         continue-on-error: true
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
-          TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          TARGET_DEPLOY_SHA: ${{ needs.resolve.outputs.target_deploy_sha }}
           SNAPSHOTS_TABLE: parlay_platform_snapshots
           SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
           PREDICTIONS_TABLE: parlay_platform_predictions
@@ -96,7 +329,7 @@ jobs:
         id: acceptance
         continue-on-error: true
         env:
-          TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          TARGET_DEPLOY_SHA: ${{ needs.resolve.outputs.target_deploy_sha }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -207,6 +440,19 @@ jobs:
               'runId': os.environ.get('GITHUB_RUN_ID'),
               'sourceSha': os.environ.get('GITHUB_SHA'),
               'deployedCommit': os.environ['TARGET_DEPLOY_SHA'],
+              'deploymentSucceeded': True,
+              'sourceDeployRunId': os.environ['SOURCE_DEPLOY_RUN_ID'],
+              'sourceDeployRunAttempt': int(os.environ['SOURCE_DEPLOY_RUN_ATTEMPT']),
+              'sourceDeployRunNumber': int(os.environ['SOURCE_DEPLOY_RUN_NUMBER']),
+              'sourceDeployWorkflowId': int(os.environ['SOURCE_DEPLOY_WORKFLOW_ID']),
+              'sourceDeployWorkflowName': 'Deploy SAM to AWS',
+              'sourceDeployWorkflowPath': os.environ['SOURCE_DEPLOY_WORKFLOW_PATH'],
+              'sourceDeployHeadBranch': os.environ['SOURCE_DEPLOY_HEAD_BRANCH'],
+              'sourceDeployHeadSha': os.environ['SOURCE_DEPLOY_HEAD_SHA'],
+              'sourceDeployCreatedAtUtc': os.environ['SOURCE_DEPLOY_CREATED_AT'],
+              'sourceDeployRunUrl': os.environ['SOURCE_DEPLOY_RUN_URL'],
+              'sourceDeploySamStepName': 'Deploy exact canonical source',
+              'sourceDeploySamStepConclusion': 'success',
               'status': status,
               'deploymentHealthy': deployment_healthy,
               'promotionReady': promotion_ready,
@@ -241,7 +487,7 @@ jobs:
       - name: Ensure durable post-deploy evidence
         if: always()
         env:
-          TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          TARGET_DEPLOY_SHA: ${{ needs.resolve.outputs.target_deploy_sha }}
           OBSERVE_OUTCOME: ${{ steps.observe.outcome }}
           SCORING_OUTCOME: ${{ steps.scoring.outcome }}
           RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}
@@ -267,6 +513,19 @@ jobs:
               'runId':os.environ.get('GITHUB_RUN_ID'),
               'sourceSha':os.environ.get('GITHUB_SHA'),
               'deployedCommit':os.environ.get('TARGET_DEPLOY_SHA'),
+              'deploymentSucceeded':True,
+              'sourceDeployRunId':os.environ.get('SOURCE_DEPLOY_RUN_ID'),
+              'sourceDeployRunAttempt':int(os.environ['SOURCE_DEPLOY_RUN_ATTEMPT']),
+              'sourceDeployRunNumber':int(os.environ['SOURCE_DEPLOY_RUN_NUMBER']),
+              'sourceDeployWorkflowId':int(os.environ['SOURCE_DEPLOY_WORKFLOW_ID']),
+              'sourceDeployWorkflowName':'Deploy SAM to AWS',
+              'sourceDeployWorkflowPath':os.environ.get('SOURCE_DEPLOY_WORKFLOW_PATH'),
+              'sourceDeployHeadBranch':os.environ.get('SOURCE_DEPLOY_HEAD_BRANCH'),
+              'sourceDeployHeadSha':os.environ.get('SOURCE_DEPLOY_HEAD_SHA'),
+              'sourceDeployCreatedAtUtc':os.environ.get('SOURCE_DEPLOY_CREATED_AT'),
+              'sourceDeployRunUrl':os.environ.get('SOURCE_DEPLOY_RUN_URL'),
+              'sourceDeploySamStepName':'Deploy exact canonical source',
+              'sourceDeploySamStepConclusion':'success',
               'status':'DEPLOYMENT_HEALTH_UNVERIFIED',
               'deploymentHealthy':False,
               'promotionReady':False,
@@ -282,6 +541,9 @@ jobs:
           fi
           test -s "$CANDIDATE_PATH"
           python -m json.tool "$CANDIDATE_PATH" >/dev/null
+          mkdir -p "$(dirname "$CANDIDATE_ARTIFACT_PATH")"
+          cp "$CANDIDATE_PATH" "$CANDIDATE_ARTIFACT_PATH"
+          cmp --silent "$CANDIDATE_PATH" "$CANDIDATE_ARTIFACT_PATH"
 
       - name: Upload post-deploy proof
         if: always()
@@ -295,31 +557,14 @@ jobs:
             runtime_reports/mlb_pull_lambda_runtime_diagnostic_latest.json
           if-no-files-found: warn
 
-      - name: Publish post-deploy evidence atomically
+      - name: Upload exact publication candidate
         if: always()
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          for attempt in 1 2 3 4 5; do
-            git fetch origin main
-            git checkout -B mlb-post-deploy-proof origin/main
-            git reset --hard origin/main
-            git clean -fd
-            mkdir -p runtime_reports
-            python scripts/publish_monotonic_json.py \
-              --candidate "$CANDIDATE_PATH" \
-              --existing "$REPORT_PATH" \
-              --output "$REPORT_PATH"
-            test -s "$REPORT_PATH"
-            python -m json.tool "$REPORT_PATH" >/dev/null
-            git add "$REPORT_PATH"
-            git diff --cached --quiet && exit 0
-            git commit -m 'Publish MLB scoring fix post-deploy proof'
-            git push origin HEAD:main && exit 0
-            sleep $((attempt * 3))
-          done
-          exit 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-postdeploy-publish-candidate-${{ github.run_id }}
+          path: ${{ env.CANDIDATE_ARTIFACT_PATH }}
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Enforce deployment health without forcing promotion readiness
         if: always()
@@ -335,3 +580,59 @@ jobs:
               assert value.get('status') == 'DEPLOYMENT_HEALTHY_READINESS_GATED', value
               assert value.get('readinessBlockers'), value
           PY
+
+
+  publish:
+    name: Publish the globally monotonic deployment proof
+    needs: [resolve, verify]
+    if: ${{ always() && needs.resolve.result == 'success' && needs.resolve.outputs.should_verify == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    concurrency:
+      group: mlb-postdeploy-proof-publication
+      cancel-in-progress: false
+    steps:
+      - name: Checkout trusted publication source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download exact verification candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: mlb-postdeploy-publish-candidate-${{ github.run_id }}
+          path: /tmp/mlb-postdeploy-publish
+
+      - name: Publish without source rollback
+        env:
+          PUBLISH_CANDIDATE: /tmp/mlb-postdeploy-publish/mlb_scoring_fix_post_deploy_candidate.json
+        run: |
+          set -euo pipefail
+          test -s "$PUBLISH_CANDIDATE"
+          python -m json.tool "$PUBLISH_CANDIDATE" >/dev/null
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-post-deploy-proof origin/main
+            git reset --hard origin/main
+            git clean -fd
+            mkdir -p runtime_reports
+            python scripts/publish_mlb_postdeploy_proof.py               --candidate "$PUBLISH_CANDIDATE"               --existing "$REPORT_PATH"               --output "$REPORT_PATH" |
+              tee /tmp/mlb-postdeploy-publication-result.json
+            test -s "$REPORT_PATH"
+            python -m json.tool "$REPORT_PATH" >/dev/null
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB scoring fix post-deploy proof'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
