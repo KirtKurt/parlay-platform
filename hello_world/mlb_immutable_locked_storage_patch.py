@@ -562,11 +562,6 @@ def _verify_existing_canonical_overlay(
                 existing_row,
                 context="existing_canonical_overlay",
             )
-            errors.extend(
-                "canonical_overlay_existing_vector_error:"
-                f"{value}"
-                for value in existing_vector_errors
-            )
         except Exception as exc:
             existing_vector_errors = []
             errors.append(
@@ -578,16 +573,17 @@ def _verify_existing_canonical_overlay(
                 row,
                 context="canonical_read_overlay",
             )
-            errors.extend(
-                "canonical_overlay_vector_error:"
-                f"{value}"
-                for value in incoming_vector_errors
-            )
         except Exception as exc:
             incoming_vector_errors = []
             errors.append(
                 "canonical_overlay_vector_status_invalid:"
                 f"{type(exc).__name__}:{exc}"
+            )
+        if sorted(set(existing_vector_errors)) != sorted(
+            set(incoming_vector_errors)
+        ):
+            errors.append(
+                "canonical_overlay_vector_error_set_mismatch"
             )
         try:
             if _payload_fingerprint(
