@@ -534,6 +534,196 @@ def _immutable_overlay_base(row: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+_SLATE_LOCK_RENDERER_FIELDS = frozenset(
+    {
+        "authorityVersion",
+        "lockAtUtc",
+        "locked",
+        "lockStatus",
+        "perGameLock",
+        "policyVersion",
+        "slateWideLock",
+    }
+)
+
+# Keys produced by _manifest_lock_state, provider-manifest authority, and the
+# aggregate public lock summary. They are observability overlays, not stored
+# per-game stage material.
+_SLATE_LOCK_PUBLIC_OBSERVABILITY_FIELDS = frozenset(
+    {
+        "applied",
+        "canonicalCoverageComplete",
+        "canonicalLockedGameCount",
+        "canonicalPredictionComplete",
+        "canonicalPredictionCount",
+        "canonicalReadError",
+        "canonicalReadOperational",
+        "doubleheaderSafeIdentity",
+        "durableRosterImmutableReadbackVerified",
+        "eventRosterBacked",
+        "firstGameStartUtc",
+        "firstPerGameLockAtUtc",
+        "invalidCanonicalRows",
+        "invalidLifecycleStatusRows",
+        "invalidPlayabilityReleaseRows",
+        "invalidTerminalLifecycleRows",
+        "lastGameStartUtc",
+        "lastPerGameLockAtUtc",
+        "latestAvailablePullAt",
+        "latestProviderFeedAnomalies",
+        "latestProviderFeedAnomalyCount",
+        "latestProviderFeedContracted",
+        "latestProviderFeedGameCount",
+        "latestProviderManifestFingerprint",
+        "latestProviderManifestObservedAtUtc",
+        "latestScoringPullAt",
+        "legacyRosterMigrationFallback",
+        "lockDueCanonicalMissingCount",
+        "lockMinutesBeforeEachGame",
+        "lockMinutesBeforeFirstGame",
+        "lockOutcomeCount",
+        "lockOutcomeCoveragePct",
+        "lockStatusComplete",
+        "lockedPredictionCount",
+        "lockedStatusCount",
+        "manifestGameCount",
+        "manifestGameIdentities",
+        "manifestVersion",
+        "minutesUntilFirstGameStart",
+        "minutesUntilFirstPerGameLock",
+        "missedLockCount",
+        "noPredictionDataCount",
+        "officialScheduleAuthoritativeStartTimes",
+        "officialScheduleAuthorityFingerprint",
+        "officialScheduleAuthoritySource",
+        "officialScheduleAuthorityVersion",
+        "officialScheduleBacked",
+        "officialScheduleGameCount",
+        "officialScheduleMissingProviderEventGameIds",
+        "operationalDefectScopeVersion",
+        "operationalDefectScopes",
+        "pendingCanonicalGameCount",
+        "pendingCanonicalStatuses",
+        "pendingLockStatusGameCount",
+        "providerManifestFingerprint",
+        "providerManifestFullProviderSchedule",
+        "providerManifestImmutable",
+        "providerManifestObservedAtUtc",
+        "providerManifestPk",
+        "providerManifestPullId",
+        "providerManifestSk",
+        "providerManifestValidated",
+        "providerManifestVersion",
+        "readinessValidationWarnings",
+        "readinessWarningGameCount",
+        "releasePlayabilityOperationalDefect",
+        "rosterAuthorityMode",
+        "rules",
+        "scoringPullCount",
+        "source",
+        "totalPullCountAvailable",
+        "verifiedFullSlateGameCount",
+        "verifiedFullSlateManifestVersion",
+        "winnerLifecycleOperationalDefect",
+    }
+)
+
+
+def _public_lock_binding_errors(
+    existing_row: Dict[str, Any],
+    incoming_row: Dict[str, Any],
+) -> List[str]:
+    """Bind every stored slate-lock field that _official_row preserves."""
+
+    existing_lock = existing_row.get("slatePredictionLock") or {}
+    incoming_lock = incoming_row.get("slatePredictionLock") or {}
+    if not isinstance(existing_lock, dict) or not isinstance(
+        incoming_lock, dict
+    ):
+        return ["canonical_overlay_public_lock_not_mapping"]
+
+    preserved = {
+        key: copy.deepcopy(value)
+        for key, value in existing_lock.items()
+        if key not in _SLATE_LOCK_RENDERER_FIELDS
+    }
+    missing = sorted(set(preserved) - set(incoming_lock))
+    mismatched = sorted(
+        key
+        for key, value in preserved.items()
+        if key in incoming_lock
+        and _payload_fingerprint(incoming_lock.get(key))
+        != _payload_fingerprint(value)
+    )
+    allowed = (
+        set(preserved)
+        | set(_SLATE_LOCK_RENDERER_FIELDS)
+        | set(_SLATE_LOCK_PUBLIC_OBSERVABILITY_FIELDS)
+    )
+    extra = sorted(set(incoming_lock) - allowed)
+    errors = []
+    if missing:
+        errors.append(
+            "canonical_overlay_public_lock_preserved_fields_missing:"
+            + ",".join(missing)
+        )
+    if mismatched:
+        errors.append(
+            "canonical_overlay_public_lock_preserved_fields_mismatch:"
+            + ",".join(mismatched)
+        )
+    if extra:
+        errors.append(
+            "canonical_overlay_public_lock_unknown_fields:"
+            + ",".join(extra)
+        )
+    return errors
+
+
+def _rendered_tag_binding_errors(
+    existing_row: Dict[str, Any],
+    incoming_row: Dict[str, Any],
+) -> List[str]:
+    """Reconstruct the exact official/playability tag overlay."""
+
+    raw_tags = incoming_row.get("tags")
+    if not isinstance(raw_tags, list):
+        return ["canonical_overlay_rendered_tags_not_list"]
+    actual = [str(tag) for tag in raw_tags]
+    errors = []
+    if len(actual) != len(set(actual)):
+        errors.append("canonical_overlay_rendered_tags_duplicate")
+
+    expected = {
+        str(tag)
+        for tag in (existing_row.get("tags") or [])
+        if str(tag) != "SLATE_WIDE_45_MIN_LOCK_POLICY"
+    }
+    expected.update(
+        {
+            "CANONICAL_PER_GAME_LOCK",
+            "FINAL_LOCKED",
+            "OFFICIAL_LOCKED_PREDICTION",
+            "OFFICIAL_PREDICTION",
+        }
+    )
+    if incoming_row.get("playable") is True:
+        expected.update({"ACTIONABLE_PICK", "PLAYABLE_PREDICTION"})
+        expected.difference_update(
+            {"NOT_PLAYABLE", "RELEASE_BLOCKED", "WAGER_RELEASE_BLOCKED"}
+        )
+    else:
+        expected.update(
+            {"NOT_PLAYABLE", "RELEASE_BLOCKED", "WAGER_RELEASE_BLOCKED"}
+        )
+        expected.difference_update(
+            {"ACTIONABLE_PICK", "PLAYABLE_PREDICTION"}
+        )
+    if actual != sorted(expected):
+        errors.append("canonical_overlay_rendered_tags_mismatch")
+    return errors
+
+
 def _canonical_overlay_projection(row: Dict[str, Any]) -> Dict[str, Any]:
     """Return immutable selection/stage material unaffected by public overlays."""
 
@@ -836,6 +1026,18 @@ def _verify_existing_canonical_overlay(
             errors.append(
                 "canonical_overlay_existing_row_storage_version_mismatch"
             )
+        errors.extend(
+            _public_lock_binding_errors(
+                existing_row,
+                row,
+            )
+        )
+        errors.extend(
+            _rendered_tag_binding_errors(
+                existing_row,
+                row,
+            )
+        )
         errors.extend(
             _existing_envelope_binding_errors(
                 module,
