@@ -1,93 +1,296 @@
 from __future__ import annotations
 
-import re
+import importlib.util
+import sys
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-RELAY = ROOT / ".github/workflows/mlb-progress-pulse-bounded-runner-relay.yml"
+WORKFLOW = ROOT / ".github/workflows/mlb-progress-pulse-bounded-runner-relay.yml"
+SCRIPT = ROOT / "scripts/run_mlb_progress_pulse_bounded_relay.py"
+SPEC = importlib.util.spec_from_file_location(
+    "run_mlb_progress_pulse_bounded_relay",
+    SCRIPT,
+)
+assert SPEC and SPEC.loader
+relay = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = relay
+SPEC.loader.exec_module(relay)
 
 
-def _integer_constant(relay: str, name: str) -> int:
-    match = re.search(rf"^  {name}: '(\d+)'$", relay, flags=re.MULTILINE)
-    assert match is not None
-    return int(match.group(1))
+class FakeClient:
+    def __init__(
+        self,
+        *,
+        successor_snapshots=None,
+        decisions=None,
+        reporter_failures: int = 0,
+        successor_dispatch_failure: bool = False,
+    ) -> None:
+        self.successor_snapshots = list(successor_snapshots or [[9001]])
+        self.decisions = list(
+            decisions or [relay.Decision(False, "VISIBLE_PULSE_FRESH")]
+        )
+        self.reporter_failures = reporter_failures
+        self.successor_dispatch_failure = successor_dispatch_failure
+        self.successor_dispatches: list[int] = []
+        self.reporter_dispatches = 0
+        self.successor_list_calls = 0
+
+    @staticmethod
+    def _next(values):
+        value = values.pop(0) if len(values) > 1 else values[0]
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    def list_successor_run_ids(self):
+        self.successor_list_calls += 1
+        return list(self._next(self.successor_snapshots))
+
+    def dispatch_successor(self, remaining_segments: int) -> None:
+        self.successor_dispatches.append(remaining_segments)
+        if self.successor_dispatch_failure:
+            raise RuntimeError("successor dispatch failed")
+
+    def evaluate_staleness(self):
+        return self._next(self.decisions)
+
+    def dispatch_reporter(self) -> None:
+        self.reporter_dispatches += 1
+        if self.reporter_failures > 0:
+            self.reporter_failures -= 1
+            raise RuntimeError("reporter dispatch failed")
 
 
-def test_runner_relay_is_finite_main_only_and_self_protecting() -> None:
-    relay = RELAY.read_text(encoding="utf-8")
-
-    assert "name: MLB progress pulse bounded runner relay" in relay
-    assert "github.event.workflow_run.head_branch == 'main'" in relay
-    assert "[ \"$GITHUB_EVENT_NAME\" != 'workflow_run' ]" in relay
-    assert "[ \"$GITHUB_REF\" != 'refs/heads/main' ]" in relay
-    assert "remaining_segments must be an integer from 1 through" in relay
-    assert "^ [1-9]" not in relay
-    assert "^[1-9][0-9]*$" in relay
-    assert '[ "${#remaining_segments}" -gt 2 ]' in relay
-    assert "next_segments=$((10#$remaining_segments - 1))" in relay
-    assert "timeout-minutes: 325" in relay
-    assert "group: mlb-progress-pulse-bounded-runner-relay" in relay
-    assert "cancel-in-progress: false" in relay
-
-    max_segments = _integer_constant(relay, "RELAY_MAX_SEGMENTS")
-    poll_seconds = _integer_constant(relay, "RELAY_POLL_INTERVAL_SECONDS")
-    polls = _integer_constant(relay, "RELAY_POLLS_PER_SEGMENT")
-    assert max_segments == 10
-    assert poll_seconds == 240
-    assert polls == 76
-    assert (polls - 1) * poll_seconds == 5 * 60 * 60
-    assert max_segments * (polls - 1) * poll_seconds == 50 * 60 * 60
-
-
-def test_runner_relay_preserves_the_existing_read_only_staleness_gate() -> None:
-    relay = RELAY.read_text(encoding="utf-8")
-
-    assert "actions: write" in relay
-    assert "issues: write" not in relay
-    assert "secrets." not in relay
-    assert "AWS_ACCESS_KEY_ID" not in relay
-    assert "environment:" not in relay
-    assert "scripts/check_mlb_progress_pulse_staleness.py" in relay
-    assert "--stale-after-minutes \"$MLB_PROGRESS_STALE_AFTER_MINUTES\"" in relay
-    assert "--retry-cooldown-minutes 10" in relay
-    assert "timeout 60s gh workflow run mlb-30m-progress-pulse.yml" in relay
-    assert "--field force=false" in relay
-    assert "gh issue comment" not in relay
-    assert "sleep \"$RELAY_POLL_INTERVAL_SECONDS\"" in relay
-
-
-def test_runner_relay_queues_one_bounded_successor_before_waiting() -> None:
-    relay = RELAY.read_text(encoding="utf-8")
-
-    assert "timeout 60s gh workflow run mlb-progress-pulse-bounded-runner-relay.yml" in relay
-    assert '--field remaining_segments="$NEXT_SEGMENTS"' in relay
-    assert "queue_successor || true" in relay
-    assert relay.index("queue_successor || true") < relay.index(
-        'sleep "$RELAY_POLL_INTERVAL_SECONDS"'
+def _machine(client: FakeClient, **kwargs):
+    return relay.RelayStateMachine(
+        client=client,
+        remaining_segments=kwargs.pop("remaining_segments", 10),
+        poll_count=kwargs.pop("poll_count", 1),
+        poll_interval_seconds=kwargs.pop("poll_interval_seconds", 0),
+        failure_threshold=kwargs.pop("failure_threshold", 3),
+        poll_sleep=kwargs.pop("poll_sleep", lambda _seconds: None),
+        verify_sleep=kwargs.pop("verify_sleep", lambda _seconds: None),
+        **kwargs,
     )
-    assert "the next poll will retry" in relay
-    assert "could not secure its finite successor" in relay
 
 
-def test_runner_relay_has_only_trusted_independent_main_seeds() -> None:
-    relay = RELAY.read_text(encoding="utf-8")
+def test_only_merge_push_or_explicit_dispatch_can_seed_a_finite_chain() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    trigger_block = workflow.split("on:", 1)[1].split("permissions:", 1)[0]
 
-    for producer in (
-        "MLB Canonical Runtime Health Watch",
-        "MLB Scoring Guard",
-        "Deploy SAM to AWS",
-        "Verify MLB Scoring Fix After Deploy",
-        "MLB Production Source Contract",
-        "Unified MLB learning recovery once",
-        "MLB Daily Yesterday Audit",
-        "Tennis Autonomy Status Backstop",
-        "Publish Tennis Autonomy Status",
-        "NFL Auto AWS Stack Probe",
-    ):
-        assert producer in relay
+    assert "workflow_dispatch:" in trigger_block
+    assert "push:" in trigger_block
+    assert "schedule:" not in trigger_block
+    assert "workflow_run:" not in trigger_block
+    assert (
+        "'.github/workflows/mlb-progress-pulse-bounded-runner-relay.yml'"
+        in trigger_block
+    )
 
-    assert "branches: [main]" in relay
-    assert "cron: '23 3 * * *'" in relay
-    assert "workflow_dispatch:" in relay
-    assert "MLB 30-minute production progress pulse" not in relay
+    assert relay.resolve_remaining_segments("push", "") == 10
+    assert relay.resolve_remaining_segments("workflow_dispatch", "10") == 10
+    assert relay.resolve_remaining_segments("workflow_dispatch", "1") == 1
+    for forbidden in ("schedule", "workflow_run"):
+        with pytest.raises(ValueError, match="push_or_workflow_dispatch"):
+            relay.resolve_remaining_segments(forbidden, "")
+
+
+@pytest.mark.parametrize("bad", ("0", "11", "01", "1.0", "1e1", "999999999999"))
+def test_explicit_seed_rejects_unbounded_or_noninteger_inputs(bad: str) -> None:
+    with pytest.raises(ValueError):
+        relay.resolve_remaining_segments("workflow_dispatch", bad)
+
+
+def test_segment_count_decrements_exactly_once_and_stops_at_zero() -> None:
+    assert [
+        _machine(FakeClient(), remaining_segments=value).next_segments
+        for value in range(10, 0, -1)
+    ] == list(range(9, -1, -1))
+
+    last_client = FakeClient(successor_snapshots=[])
+    result = _machine(
+        last_client,
+        remaining_segments=1,
+        decisions=[
+            relay.Decision(False, "VISIBLE_PULSE_FRESH"),
+            relay.Decision(False, "VISIBLE_PULSE_FRESH"),
+        ],
+    ).run()
+    assert result["nextSegments"] == 0
+    assert result["successorRequired"] is False
+    assert last_client.successor_list_calls == 0
+    assert last_client.successor_dispatches == []
+
+
+def test_successor_filter_excludes_current_completed_push_and_nonmain_runs() -> None:
+    rows = [
+        {
+            "id": 10,
+            "event": "workflow_dispatch",
+            "status": "in_progress",
+            "head_branch": "main",
+        },
+        {
+            "id": 11,
+            "event": "workflow_dispatch",
+            "status": "completed",
+            "head_branch": "main",
+        },
+        {
+            "id": 12,
+            "event": "push",
+            "status": "pending",
+            "head_branch": "main",
+        },
+        {
+            "id": 13,
+            "event": "workflow_dispatch",
+            "status": "pending",
+            "head_branch": "feature",
+        },
+        {
+            "id": 14,
+            "event": "workflow_dispatch",
+            "status": "pending",
+            "head_branch": "main",
+        },
+    ]
+
+    assert relay.filter_successor_run_ids(rows, current_run_id=10) == [14]
+
+
+def test_pending_loss_or_push_replacement_is_requeued_with_decremented_input() -> None:
+    client = FakeClient(
+        # Poll 1: successor exists. Poll 2: it was canceled/replaced by a push
+        # and therefore disappears from the filtered workflow_dispatch view.
+        # The dispatch is then verified as run 202. Final probes retain it.
+        successor_snapshots=[[201], [], [202], [202], [202]],
+        decisions=[
+            relay.Decision(False, "VISIBLE_PULSE_FRESH"),
+            relay.Decision(False, "VISIBLE_PULSE_FRESH"),
+            relay.Decision(False, "VISIBLE_PULSE_FRESH"),
+        ],
+    )
+
+    result = _machine(client, remaining_segments=9, poll_count=2).run()
+
+    assert client.successor_dispatches == [8]
+    assert result["nextSegments"] == 8
+    assert result["successorRequired"] is True
+
+
+def test_three_consecutive_staleness_failures_fail_current_segment() -> None:
+    client = FakeClient(
+        decisions=[
+            RuntimeError("decision one"),
+            RuntimeError("decision two"),
+            RuntimeError("decision three"),
+        ]
+    )
+
+    with pytest.raises(relay.RelayFailure, match="staleness_decision failure 3/3"):
+        _machine(client, poll_count=3).run()
+
+    assert client.successor_list_calls == 3
+    assert client.reporter_dispatches == 0
+
+
+def test_three_consecutive_reporter_dispatch_failures_escalate() -> None:
+    client = FakeClient(
+        decisions=[
+            relay.Decision(True, "VISIBLE_PULSE_STALE"),
+            relay.Decision(True, "VISIBLE_PULSE_STALE"),
+            relay.Decision(True, "VISIBLE_PULSE_STALE"),
+        ],
+        reporter_failures=3,
+    )
+
+    with pytest.raises(relay.RelayFailure, match="reporter_dispatch failure 3/3"):
+        _machine(client, poll_count=3).run()
+
+    assert client.reporter_dispatches == 3
+
+
+def test_successful_probe_resets_consecutive_decision_failures() -> None:
+    client = FakeClient(
+        decisions=[
+            RuntimeError("temporary decision failure"),
+            relay.Decision(False, "VISIBLE_PULSE_FRESH"),
+            relay.Decision(False, "VISIBLE_PULSE_FRESH"),
+        ]
+    )
+
+    result = _machine(client, poll_count=2).run()
+
+    assert result["successfulPolls"] == 2
+    assert result["finalDecisionReason"] == "VISIBLE_PULSE_FRESH"
+
+
+def test_final_probe_cannot_exit_green_on_a_new_decision_failure() -> None:
+    client = FakeClient(
+        decisions=[
+            relay.Decision(False, "VISIBLE_PULSE_FRESH"),
+            RuntimeError("final decision failure"),
+        ]
+    )
+
+    with pytest.raises(relay.RelayFailure, match="staleness_decision failure 1/3"):
+        _machine(client, poll_count=1).run()
+
+
+def test_final_liveness_rejects_unrecovered_reporter_warning() -> None:
+    client = FakeClient(
+        decisions=[
+            relay.Decision(True, "VISIBLE_PULSE_STALE"),
+            relay.Decision(False, "RECENT_PULSE_ATTEMPT_IN_COOLDOWN"),
+        ],
+        reporter_failures=1,
+    )
+
+    with pytest.raises(relay.RelayFailure, match="unrecovered_reporter"):
+        _machine(client, poll_count=1).run()
+
+
+def test_successor_failure_is_bounded_and_never_warns_for_five_hours() -> None:
+    client = FakeClient(
+        successor_snapshots=[[]],
+        successor_dispatch_failure=True,
+    )
+
+    with pytest.raises(relay.RelayFailure, match="successor_liveness failure 3/3"):
+        _machine(
+            client,
+            poll_count=3,
+            verify_attempts=1,
+            verify_delay_seconds=0,
+        ).run()
+
+    assert client.successor_dispatches == [9, 9, 9]
+
+
+def test_workflow_invokes_state_machine_with_exact_finite_geometry() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "scripts/run_mlb_progress_pulse_bounded_relay.py" in workflow
+    assert "RELAY_MAX_SEGMENTS: '10'" in workflow
+    assert "RELAY_POLL_INTERVAL_SECONDS: '240'" in workflow
+    assert "RELAY_POLLS_PER_SEGMENT: '76'" in workflow
+    assert "RELAY_FAILURE_THRESHOLD: '3'" in workflow
+    assert "timeout-minutes: 325" in workflow
+    assert "actions: write" in workflow
+    assert "issues: write" not in workflow
+    assert "secrets." not in workflow
+    assert "AWS_ACCESS_KEY_ID" not in workflow
+    assert "environment:" not in workflow
+    assert "cancel-in-progress: false" in workflow
+    assert "--failure-threshold \"$RELAY_FAILURE_THRESHOLD\"" in workflow
+    assert "sleep " not in workflow
+    assert "gh issue" not in SCRIPT.read_text(encoding="utf-8")
+
+    maximum_visible_age_seconds = 28 * 60 + 4 * 60 + 60
+    assert maximum_visible_age_seconds == 33 * 60
+    assert maximum_visible_age_seconds < 35 * 60
