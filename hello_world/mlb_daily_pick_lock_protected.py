@@ -5,6 +5,7 @@ import math
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, Optional
 
 from botocore.exceptions import ClientError
@@ -573,6 +574,12 @@ def _cooperative_terminal_progress_public(
     if not isinstance(progress, dict):
         return None
 
+    invalid = {
+        "version": COOPERATIVE_TERMINAL_CHUNK_VERSION,
+        "valid": False,
+        "failClosed": True,
+    }
+
     def safe_integer(field: str) -> Optional[int]:
         value = progress.get(field)
         if isinstance(value, bool):
@@ -582,6 +589,24 @@ def _cooperative_terminal_progress_public(
         except (TypeError, ValueError):
             return None
         return parsed if parsed >= 0 else None
+
+    def safe_attempt_integer(value: Any) -> Optional[int]:
+        if isinstance(value, bool) or not isinstance(
+            value,
+            (Decimal, int, float, str),
+        ):
+            return None
+        try:
+            numeric = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            return None
+        if (
+            not numeric.is_finite()
+            or numeric < 0
+            or numeric != numeric.to_integral_value()
+        ):
+            return None
+        return int(numeric)
 
     fields = (
         "manifestGameCount",
@@ -607,11 +632,7 @@ def _cooperative_terminal_progress_public(
         or progress.get("immutablePredictionRewriteAllowed") is not False
         or progress.get("productionAuthorityChanged") is not False
     ):
-        return {
-            "version": COOPERATIVE_TERMINAL_CHUNK_VERSION,
-            "valid": False,
-            "failClosed": True,
-        }
+        return dict(invalid)
     manifest_count = int(values["manifestGameCount"] or 0)
     next_index = int(values["nextGameIndex"] or 0)
     public = {
@@ -630,22 +651,40 @@ def _cooperative_terminal_progress_public(
         "immutablePredictionRewriteAllowed": False,
         "productionAuthorityChanged": False,
     }
+
     last_attempt = progress.get("lastAttempt")
-    if isinstance(last_attempt, dict):
-        public["lastAttempt"] = {
-            key: last_attempt.get(key)
-            for key in (
-                "status",
-                "stage",
-                "atUtc",
-                "gameIndex",
-                "gameIdentity",
-                "durableIdentity",
-                "phase",
-                "errorCode",
-            )
-            if last_attempt.get(key) is not None
-        }
+    if last_attempt is not None:
+        if not isinstance(last_attempt, dict):
+            return dict(invalid)
+        string_fields = (
+            "status",
+            "stage",
+            "atUtc",
+            "gameIdentity",
+            "durableIdentity",
+            "phase",
+            "errorCode",
+        )
+        allowed_fields = {*string_fields, "gameIndex"}
+        if any(
+            not isinstance(key, str) or key not in allowed_fields
+            for key in last_attempt
+        ):
+            return dict(invalid)
+        public_attempt: Dict[str, Any] = {}
+        for field in string_fields:
+            value = last_attempt.get(field)
+            if value is None:
+                continue
+            if not isinstance(value, str):
+                return dict(invalid)
+            public_attempt[field] = value
+        if "gameIndex" in last_attempt:
+            game_index = safe_attempt_integer(last_attempt.get("gameIndex"))
+            if game_index is None:
+                return dict(invalid)
+            public_attempt["gameIndex"] = game_index
+        public["lastAttempt"] = public_attempt
     return public
 
 def _cooperative_public_state(item: Dict[str, Any]) -> Dict[str, Any]:
