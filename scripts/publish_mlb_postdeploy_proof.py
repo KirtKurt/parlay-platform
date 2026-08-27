@@ -114,7 +114,8 @@ def validate_provenance(value: Mapping[str, Any]) -> dict[str, Any]:
         "created_at": created_at,
         "source_created_at": source_created_at,
         "sam_completed_at": sam_completed_at,
-        "source_key": (run_number, run_attempt),
+        "source_identity": (run_id, run_attempt),
+        "deployment_order": (sam_completed_at, run_id, run_attempt),
         "identity": (
             run_id,
             run_attempt,
@@ -173,20 +174,20 @@ def selection_reason(
             else "newer_source_supersedes_legacy_pointer"
         )
 
-    if candidate_meta["source_key"] > current_meta["source_key"]:
-        return True, "newer_deployed_source"
-    if candidate_meta["source_key"] < current_meta["source_key"]:
-        return False, "deployed_source_regression"
+    if candidate_meta["source_identity"] == current_meta["source_identity"]:
+        if candidate_meta["identity"] != current_meta["identity"]:
+            raise ValueError("same source has conflicting immutable identity")
+        if current_meta["ok"] and not candidate_meta["ok"]:
+            return False, "same_source_success_cannot_regress"
+        if not current_meta["ok"] and candidate_meta["ok"]:
+            return True, "same_source_retry_repaired_evidence"
+        if candidate_meta["created_at"] > current_meta["created_at"]:
+            return True, "same_source_newer_observation"
+        return False, "same_source_observation_not_newer"
 
-    if candidate_meta["identity"] != current_meta["identity"]:
-        raise ValueError("same source order has conflicting immutable identity")
-    if current_meta["ok"] and not candidate_meta["ok"]:
-        return False, "same_source_success_cannot_regress"
-    if not current_meta["ok"] and candidate_meta["ok"]:
-        return True, "same_source_retry_repaired_evidence"
-    if candidate_meta["created_at"] > current_meta["created_at"]:
-        return True, "same_source_newer_observation"
-    return False, "same_source_observation_not_newer"
+    if candidate_meta["deployment_order"] > current_meta["deployment_order"]:
+        return True, "newer_deployed_source"
+    return False, "deployed_source_regression"
 
 
 def _atomic_write(value: Mapping[str, Any], destination: Path) -> None:
