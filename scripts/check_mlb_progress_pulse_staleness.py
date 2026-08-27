@@ -20,6 +20,7 @@ ACTIVE_RUN_STATUSES = {"queued", "in_progress", "waiting", "pending", "requested
 REPORTER_JOB_NAME = "read-only-progress-pulse"
 REPORTER_ATTEMPT_PROOF_KEY = "_reporterJobAttempted"
 REPORTER_ACTIVE_PROOF_KEY = "_reporterJobActive"
+REPORTER_JOB_PROOF_LIMIT = 4
 
 
 def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -101,48 +102,53 @@ def _annotate_reporter_job_evidence(
     now: datetime,
     retry_cooldown_minutes: int,
 ) -> list[dict[str, Any]]:
-    """Bind suppression to an actual reporter job, not a decision-only run."""
+    """Bind suppression to a bounded set of actual reporter jobs."""
 
-    annotated: list[dict[str, Any]] = []
-    for source in runs:
-        row = dict(source)
+    annotated = [dict(source) for source in runs]
+    candidates: list[int] = []
+    for index, row in enumerate(annotated):
         status = str(row.get("status") or "")
-        event = str(row.get("event") or "")
-
-        # Event type alone is insufficient: every trigger, including an
-        # explicit force=false dispatch, can complete as a decision-only no-op.
-        # Suppression therefore requires the reporter job itself to exist.
         created = _timestamp(row.get("created_at"))
         age_minutes = (
             max(0.0, (now - created).total_seconds() / 60.0)
             if created is not None
             else None
         )
-        needs_job_proof = status in ACTIVE_RUN_STATUSES or (
+        if status in ACTIVE_RUN_STATUSES or (
             status == "completed"
             and age_minutes is not None
             and age_minutes < retry_cooldown_minutes
+        ):
+            candidates.append(index)
+
+    # Active runs are most important; within each class inspect newest first.
+    # Missing proof never suppresses a recovery, so this hard cap is fail-open
+    # for duplicate prevention and fail-closed for visible reporting cadence.
+    candidates.sort(
+        key=lambda index: (
+            str(annotated[index].get("status") or "") in ACTIVE_RUN_STATUSES,
+            _timestamp(annotated[index].get("created_at"))
+            or datetime.min.replace(tzinfo=timezone.utc),
+        ),
+        reverse=True,
+    )
+    for index in candidates[:REPORTER_JOB_PROOF_LIMIT]:
+        row = annotated[index]
+        try:
+            jobs = _workflow_run_jobs(repo, row.get("id"))
+        except Exception:
+            jobs = []
+        reporter_jobs = [
+            job for job in jobs if str(job.get("name") or "") == REPORTER_JOB_NAME
+        ]
+        row[REPORTER_ATTEMPT_PROOF_KEY] = any(
+            str(job.get("conclusion") or "") != "skipped"
+            for job in reporter_jobs
         )
-        if needs_job_proof:
-            try:
-                jobs = _workflow_run_jobs(repo, row.get("id"))
-            except Exception:
-                # Missing proof must never suppress a required recovery run.
-                jobs = []
-            reporter_jobs = [
-                job for job in jobs if str(job.get("name") or "") == REPORTER_JOB_NAME
-            ]
-            attempted = any(
-                str(job.get("conclusion") or "") != "skipped"
-                for job in reporter_jobs
-            )
-            active = any(
-                str(job.get("status") or "") in ACTIVE_RUN_STATUSES
-                for job in reporter_jobs
-            )
-            row[REPORTER_ATTEMPT_PROOF_KEY] = attempted
-            row[REPORTER_ACTIVE_PROOF_KEY] = active
-        annotated.append(row)
+        row[REPORTER_ACTIVE_PROOF_KEY] = any(
+            str(job.get("status") or "") in ACTIVE_RUN_STATUSES
+            for job in reporter_jobs
+        )
     return annotated
 
 
