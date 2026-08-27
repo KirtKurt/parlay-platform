@@ -212,7 +212,10 @@ def evaluate_staleness(
         row
         for row in run_rows
         if str(row.get("status") or "") in ACTIVE_RUN_STATUSES
-        and bool(row.get(REPORTER_ACTIVE_PROOF_KEY))
+        and (
+            str(row.get("event") or "") == "workflow_dispatch"
+            or bool(row.get(REPORTER_ACTIVE_PROOF_KEY))
+        )
     ]
     active_run = max(
         active_runs,
@@ -223,7 +226,10 @@ def evaluate_staleness(
     attempted_runs = [
         (_timestamp(row.get("created_at")), row)
         for row in run_rows
-        if bool(row.get(REPORTER_ATTEMPT_PROOF_KEY))
+        if (
+            str(row.get("event") or "") == "workflow_dispatch"
+            or bool(row.get(REPORTER_ATTEMPT_PROOF_KEY))
+        )
         and _timestamp(row.get("created_at")) is not None
     ]
     latest_attempt = (
