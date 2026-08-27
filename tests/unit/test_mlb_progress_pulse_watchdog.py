@@ -169,3 +169,28 @@ def test_cli_reads_35_minute_threshold_from_environment(monkeypatch) -> None:
 
     assert watchdog.main() == 0
     assert observed["stale_after_minutes"] == 35
+
+
+def test_independent_cadence_watchdog_is_stale_gated_and_read_only() -> None:
+    watchdog_workflow = (
+        ROOT / ".github/workflows/mlb-progress-pulse-cadence-watchdog.yml"
+    ).read_text()
+
+    assert "cron: '7,17,27,37,47,57 * * * *'" in watchdog_workflow
+    assert '--stale-after-minutes "$MLB_PROGRESS_STALE_AFTER_MINUTES"' in watchdog_workflow
+    assert "MLB_PROGRESS_STALE_AFTER_MINUTES: '35'" in watchdog_workflow
+    assert "needs.decide.outputs.dispatch_required == 'true'" in watchdog_workflow
+    assert "gh workflow run mlb-30m-progress-pulse.yml" in watchdog_workflow
+    assert '--ref main' in watchdog_workflow
+    assert "actions: write" in watchdog_workflow
+    assert "issues: write" not in watchdog_workflow
+    assert "aws-actions/configure-aws-credentials" not in watchdog_workflow
+    assert "AWS_ACCESS_KEY_ID" not in watchdog_workflow
+    assert "scripts/check_mlb_progress_pulse_staleness.py" in watchdog_workflow
+
+
+def test_primary_reporter_accepts_fixed_watchdog_dispatch() -> None:
+    pulse = (ROOT / ".github/workflows/mlb-30m-progress-pulse.yml").read_text()
+
+    assert "workflow_dispatch:" in pulse
+    assert "github.event_name != 'workflow_run'" in pulse

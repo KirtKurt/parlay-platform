@@ -1,0 +1,86 @@
+name: MLB progress pulse cadence watchdog
+
+on:
+  schedule:
+    # Six off-boundary recovery opportunities per hour. The 35-minute stale
+    # gate prevents fresh/noise-only dispatches.
+    - cron: '7,17,27,37,47,57 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  issues: read
+
+concurrency:
+  group: mlb-progress-pulse-cadence-watchdog
+  cancel-in-progress: false
+
+env:
+  MLB_PROGRESS_STALE_AFTER_MINUTES: '35'
+
+jobs:
+  decide:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      dispatch_required: ${{ steps.decision.outputs.dispatch_required }}
+      reason: ${{ steps.decision.outputs.reason }}
+      visible_pulse_age_minutes: ${{ steps.decision.outputs.visible_pulse_age_minutes }}
+    steps:
+      - name: Checkout exact main source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Decide whether the primary pulse is overdue
+        id: decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/check_mlb_progress_pulse_staleness.py
+          ! grep -Ei 'boto3|aws[[:space:]]+(dynamodb|lambda)|put_item|update_item|delete_item' scripts/check_mlb_progress_pulse_staleness.py
+          python scripts/check_mlb_progress_pulse_staleness.py \
+            --stale-after-minutes "$MLB_PROGRESS_STALE_AFTER_MINUTES" \
+            --retry-cooldown-minutes 10 \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Record watchdog decision
+        env:
+          REQUIRED: ${{ steps.decision.outputs.dispatch_required }}
+          REASON: ${{ steps.decision.outputs.reason }}
+          VISIBLE_AGE: ${{ steps.decision.outputs.visible_pulse_age_minutes }}
+        run: |
+          {
+            echo '## MLB pulse cadence watchdog'
+            echo
+            echo "- Recovery dispatch required: ${REQUIRED}"
+            echo "- Decision: ${REASON}"
+            echo "- Previous visible pulse age: ${VISIBLE_AGE} minutes"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  dispatch:
+    needs: decide
+    if: needs.decide.outputs.dispatch_required == 'true'
+    permissions:
+      actions: write
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Dispatch the fixed read-only progress reporter
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-30m-progress-pulse.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+          echo 'Dispatched mlb-30m-progress-pulse.yml on main.' >> "$GITHUB_STEP_SUMMARY"
