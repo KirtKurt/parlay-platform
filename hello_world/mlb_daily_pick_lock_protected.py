@@ -712,36 +712,6 @@ def _cooperative_terminal_progress_public(
     ):
         return dict(invalid)
 
-    expected_stages = {
-        "TERMINAL_CHECKPOINT_READY": {"PROCESS_CHECKPOINT_READY"},
-        "DURABLE_TERMINAL_VERIFIED": {
-            "VERIFICATION_CHECKPOINT_READY",
-            "COMPLETE_READY",
-        },
-        "DEFERRED_INSUFFICIENT_REMAINING_TIME": {
-            "WRITE_BUDGET",
-            "GAME_BUDGET",
-            "ATOMIC_COMPLETION_PROOF",
-        },
-        "DEFERRED_MUTATION_LEASE_CONTENDED": {
-            "MUTATION_LEASE_CONTENDED",
-        },
-        "FAILED_CLOSED": {
-            "READ_DURABLE_TERMINAL",
-            "VERIFY_DURABLE_TERMINAL",
-            "PROVE_PRELOCK_ABSENCE",
-            "BIND_MANIFEST_AUTHORITY",
-            "WRITE_NO_PREDICTION_TERMINAL",
-            "READBACK_NO_PREDICTION_TERMINAL",
-            "VERIFY_GAME_STARTED",
-            "ACQUIRE_MUTATION_LEASE",
-            "ATOMIC_COMPLETION_PROOF",
-            "RELEASE_MUTATION_LEASE",
-        },
-    }
-    if status not in expected_stages or stage not in expected_stages[status]:
-        return dict(invalid)
-
     try:
         parsed_at = datetime.fromisoformat(at_utc)
     except (TypeError, ValueError):
@@ -759,54 +729,15 @@ def _cooperative_terminal_progress_public(
         "atUtc": at_utc,
         "phase": attempt_phase,
     }
-    completion_checkpoint = (
-        phase == "VERIFY"
-        and next_index == manifest_count
-        and verification_index == manifest_count
-        and verification_complete is True
-    )
-    completion_cursor_pairs = {
-        (
-            "DEFERRED_INSUFFICIENT_REMAINING_TIME",
-            "ATOMIC_COMPLETION_PROOF",
-        ),
-        (
-            "DEFERRED_MUTATION_LEASE_CONTENDED",
-            "MUTATION_LEASE_CONTENDED",
-        ),
-        ("FAILED_CLOSED", "ATOMIC_COMPLETION_PROOF"),
-        ("FAILED_CLOSED", "RELEASE_MUTATION_LEASE"),
-    }
-    completion_only_pairs = {
-        (
-            "DEFERRED_INSUFFICIENT_REMAINING_TIME",
-            "ATOMIC_COMPLETION_PROOF",
-        ),
-        ("FAILED_CLOSED", "ATOMIC_COMPLETION_PROOF"),
-    }
-    attempt_pair = (status, stage)
-    if attempt_pair in completion_only_pairs and not completion_checkpoint:
+    if "gameIndex" not in last_attempt:
         return dict(invalid)
-    completion_cursor = (
-        completion_checkpoint and attempt_pair in completion_cursor_pairs
+    game_index = strict_integer(
+        last_attempt.get("gameIndex"),
+        maximum=manifest_count,
     )
-    if "gameIndex" in last_attempt:
-        game_index = strict_integer(
-            last_attempt.get("gameIndex"),
-            maximum=(
-                manifest_count
-                if completion_cursor
-                else manifest_count - 1
-            ),
-        )
-        if (
-            game_index is None
-            or (completion_cursor and game_index != manifest_count)
-        ):
-            return dict(invalid)
-        public_attempt["gameIndex"] = game_index
-    elif completion_cursor:
+    if game_index is None:
         return dict(invalid)
+    public_attempt["gameIndex"] = game_index
 
     for field, maximum in (
         ("gameIdentity", 200),
@@ -836,6 +767,264 @@ def _cooperative_terminal_progress_public(
             and error_code is not None
         )
     ):
+        return dict(invalid)
+
+    required = "REQUIRED"
+    optional = "OPTIONAL"
+    forbidden = "FORBIDDEN"
+    attempt_schemas = {
+        (
+            "TERMINAL_CHECKPOINT_READY",
+            "PROCESS_CHECKPOINT_READY",
+        ): (
+            {
+                "phases": {"PROCESS", "VERIFY"},
+                "cursor": "PROCESSED_PREVIOUS",
+                "gameIdentity": required,
+                "durableIdentity": required,
+            },
+        ),
+        (
+            "DURABLE_TERMINAL_VERIFIED",
+            "VERIFICATION_CHECKPOINT_READY",
+        ): (
+            {
+                "phases": {"VERIFY"},
+                "cursor": "VERIFIED_PREVIOUS",
+                "verificationComplete": False,
+                "gameIdentity": required,
+                "durableIdentity": required,
+            },
+        ),
+        (
+            "DURABLE_TERMINAL_VERIFIED",
+            "COMPLETE_READY",
+        ): (
+            {
+                "phases": {"VERIFY"},
+                "cursor": "VERIFIED_PREVIOUS",
+                "verificationComplete": True,
+                "gameIdentity": required,
+                "durableIdentity": required,
+            },
+        ),
+        (
+            "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+            "WRITE_BUDGET",
+        ): (
+            {
+                "phases": {"PROCESS"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": forbidden,
+            },
+        ),
+        (
+            "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+            "GAME_BUDGET",
+        ): (
+            {
+                "phases": {"PROCESS", "VERIFY"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": forbidden,
+            },
+        ),
+        (
+            "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+            "ATOMIC_COMPLETION_PROOF",
+        ): (
+            {
+                "phases": {"VERIFY"},
+                "cursor": "COMPLETION",
+                "gameIdentity": forbidden,
+                "durableIdentity": forbidden,
+            },
+        ),
+        (
+            "DEFERRED_MUTATION_LEASE_CONTENDED",
+            "MUTATION_LEASE_CONTENDED",
+        ): (
+            {
+                "phases": {"PROCESS", "VERIFY"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": forbidden,
+            },
+            {
+                "phases": {"VERIFY"},
+                "cursor": "COMPLETION",
+                "gameIdentity": forbidden,
+                "durableIdentity": forbidden,
+            },
+        ),
+        ("FAILED_CLOSED", "READ_DURABLE_TERMINAL"): (
+            {
+                "phases": {"PROCESS"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": optional,
+            },
+        ),
+        ("FAILED_CLOSED", "VERIFY_DURABLE_TERMINAL"): (
+            {
+                "phases": {"VERIFY"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": optional,
+            },
+        ),
+        ("FAILED_CLOSED", "PROVE_PRELOCK_ABSENCE"): (
+            {
+                "phases": {"PROCESS"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": forbidden,
+            },
+        ),
+        ("FAILED_CLOSED", "BIND_MANIFEST_AUTHORITY"): (
+            {
+                "phases": {"PROCESS"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": forbidden,
+            },
+        ),
+        ("FAILED_CLOSED", "WRITE_NO_PREDICTION_TERMINAL"): (
+            {
+                "phases": {"PROCESS"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": required,
+            },
+        ),
+        ("FAILED_CLOSED", "READBACK_NO_PREDICTION_TERMINAL"): (
+            {
+                "phases": {"PROCESS"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": required,
+            },
+        ),
+        ("FAILED_CLOSED", "VERIFY_GAME_STARTED"): (
+            {
+                "phases": {"PROCESS"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": forbidden,
+            },
+        ),
+        ("FAILED_CLOSED", "ACQUIRE_MUTATION_LEASE"): (
+            {
+                "phases": {"PROCESS", "VERIFY"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": forbidden,
+            },
+        ),
+        ("FAILED_CLOSED", "ATOMIC_COMPLETION_PROOF"): (
+            {
+                "phases": {"VERIFY"},
+                "cursor": "COMPLETION",
+                "gameIdentity": forbidden,
+                "durableIdentity": forbidden,
+            },
+        ),
+        ("FAILED_CLOSED", "RELEASE_MUTATION_LEASE"): (
+            {
+                "phases": {"PROCESS", "VERIFY"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": forbidden,
+            },
+            {
+                "phases": {"VERIFY"},
+                "cursor": "COMPLETION",
+                "gameIdentity": forbidden,
+                "durableIdentity": forbidden,
+            },
+        ),
+    }
+
+    def cursor_matches(cursor: str) -> bool:
+        if cursor == "CURRENT":
+            if game_index >= manifest_count:
+                return False
+            expected = (
+                next_index
+                if phase == "PROCESS"
+                else verification_index
+            )
+            return (
+                game_index == expected
+                and (
+                    phase != "VERIFY"
+                    or verification_complete is False
+                )
+            )
+        if cursor == "PROCESSED_PREVIOUS":
+            return (
+                game_index < manifest_count
+                and next_index >= 1
+                and game_index == next_index - 1
+                and (
+                    phase == "PROCESS"
+                    or (
+                        phase == "VERIFY"
+                        and verification_index == 0
+                        and verification_complete is False
+                    )
+                )
+            )
+        if cursor == "VERIFIED_PREVIOUS":
+            return (
+                phase == "VERIFY"
+                and verification_index >= 1
+                and game_index == verification_index - 1
+                and game_index < manifest_count
+            )
+        if cursor == "COMPLETION":
+            return (
+                phase == "VERIFY"
+                and next_index == manifest_count
+                and verification_index == manifest_count
+                and verification_complete is True
+                and game_index == manifest_count
+            )
+        return False
+
+    def field_matches(field: str, rule: str) -> bool:
+        present = field in public_attempt
+        if rule == required:
+            return present
+        if rule == forbidden:
+            return not present
+        return rule == optional
+
+    schemas = attempt_schemas.get((status, stage), ())
+    schema_valid = False
+    for schema in schemas:
+        expected_complete = schema.get("verificationComplete")
+        if (
+            phase not in schema["phases"]
+            or (
+                expected_complete is not None
+                and verification_complete is not expected_complete
+            )
+            or not cursor_matches(str(schema["cursor"]))
+            or not field_matches(
+                "gameIdentity",
+                str(schema["gameIdentity"]),
+            )
+            or not field_matches(
+                "durableIdentity",
+                str(schema["durableIdentity"]),
+            )
+        ):
+            continue
+        schema_valid = True
+        break
+    if not schema_valid:
         return dict(invalid)
 
     public["lastAttempt"] = public_attempt
