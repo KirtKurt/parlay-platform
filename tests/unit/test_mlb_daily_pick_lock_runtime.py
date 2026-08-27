@@ -3450,6 +3450,7 @@ def test_cooperative_public_progress_rejects_non_integral_or_unbounded_counts(
         ("verificationIndex", 0),
         ("verifiedGameCount", 0),
         ("attemptCount", 0),
+        ("attemptCount", 1),
         ("phase", "PROCESS"),
         ("verificationComplete", False),
     ),
@@ -3549,7 +3550,10 @@ def _producer_attempt_public_progress(state):
         game_index = 2
     else:
         raise AssertionError(f"unknown producer attempt state: {state}")
-    progress["attemptCount"] = 1
+    progress["attemptCount"] = max(
+        1,
+        progress["nextGameIndex"] + progress["verificationIndex"],
+    )
     return progress, game_index
 
 
@@ -3682,6 +3686,14 @@ def _producer_attempt_public_progress(state):
             True,
             False,
             "MANIFEST_AUTHORITY_INVALID",
+        ),
+        (
+            "FAILED_CLOSED",
+            "BIND_MANIFEST_AUTHORITY",
+            "VERIFY_CURRENT",
+            True,
+            False,
+            "COOPERATIVE_TERMINAL_CHUNK_WRITER_LEASE_NOT_READY",
         ),
         (
             "FAILED_CLOSED",
@@ -4027,6 +4039,247 @@ def test_real_completion_producer_persists_and_projects_exact_end_cursor(
         assert table.queue_item["state"] == "QUEUED"
         assert payload["lockExecutionConcurrency"]["leaseReleased"] is True
         json.dumps(response, sort_keys=True)
+
+
+def test_cooperative_public_progress_rejects_zero_attempt_initial_shape():
+    with _load_handler() as (handler, _, _):
+        progress, _ = _producer_attempt_public_progress("PROCESS_CURRENT")
+        progress["attemptCount"] = 0
+        progress.pop("lastAttempt", None)
+
+        public = handler._cooperative_terminal_progress_public(
+            {
+                "slate_date_et": "2026-07-20",
+                "terminal_replay_progress": progress,
+            }
+        )
+
+        assert public == {
+            "version": handler.COOPERATIVE_TERMINAL_CHUNK_VERSION,
+            "valid": False,
+            "failClosed": True,
+        }
+
+
+def test_real_verify_bind_failure_persists_and_projects_producer_shape():
+    producer_fixtures = _cooperative_producer_fixtures()
+    producer_module = producer_fixtures._install(
+        producer_fixtures.ChunkModule(game_count=1)
+    )
+    table = FakeLeaseTable()
+    delegate_payload = _successful_current_slate_payload(
+        producer_fixtures.TODAY
+    )
+
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=delegate_payload,
+    ) as (handler, _, _):
+        handler.mlb_daily_pick_lock._today_et = (
+            lambda: producer_fixtures.TODAY
+        )
+        handler.lambda_handler(
+            _cooperative_event(producer_fixtures.SLATE),
+            FakeContext(),
+        )
+        claimed, _ = handler._claim_cooperative_replay(
+            owner="seed-real-bind-verify",
+            context=FakeContext(remaining_millis=900_000),
+            current_slate_response={
+                "statusCode": 200,
+                "body": json.dumps(delegate_payload),
+            },
+            expected_slate_date=producer_fixtures.TODAY,
+        )
+        assert claimed is not None
+
+        processed = producer_fixtures._invoke(
+            producer_module,
+            None,
+            request_epoch=claimed["requested_at_epoch"],
+            request_id=claimed["request_id"],
+        )
+        checkpoint = processed["checkpoint"]
+        assert checkpoint["phase"] == "VERIFY"
+        assert checkpoint["verificationComplete"] is False
+
+        producer_module.patch._acquire_lock_execution_lease = None
+        failed = producer_fixtures._invoke(
+            producer_module,
+            checkpoint,
+            request_epoch=claimed["requested_at_epoch"],
+            request_id=claimed["request_id"],
+        )
+        attempt = failed["checkpoint"]["lastAttempt"]
+
+        assert failed["ok"] is False
+        assert failed["stage"] == "BIND_MANIFEST_AUTHORITY"
+        assert attempt["phase"] == "VERIFY"
+        assert attempt["gameIndex"] == 0
+        assert attempt["gameIdentity"] == "provider:game-0"
+        assert "durableIdentity" not in attempt
+
+        public_state = handler._checkpoint_cooperative_replay(
+            item=claimed,
+            owner="seed-real-bind-verify",
+            progress=failed["checkpoint"],
+            failed=True,
+        )
+        public = public_state["terminalChunkProgress"]
+
+        assert public["valid"] is True
+        assert public["lastAttempt"]["stage"] == (
+            "BIND_MANIFEST_AUTHORITY"
+        )
+        assert public["lastAttempt"]["phase"] == "VERIFY"
+        assert table.queue_item["state"] == "QUEUED"
+        json.dumps(public_state, sort_keys=True)
+
+
+@pytest.mark.parametrize(
+    ("identity_field", "identity_value"),
+    (
+        ("gameIdentity", "official:824805"),
+        ("gameIdentity", "arbitrary-identity"),
+        ("gameIdentity", "provider:"),
+        ("durableIdentity", "provider:different-game"),
+    ),
+)
+def test_cooperative_public_progress_rejects_noncanonical_identity(
+    identity_field,
+    identity_value,
+):
+    with _load_handler() as (handler, _, _):
+        progress, game_index = _producer_attempt_public_progress(
+            "VERIFY_TRANSITION"
+        )
+        progress["lastAttempt"] = {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
+            "gameIndex": game_index,
+            "gameIdentity": "provider:game-2",
+            "durableIdentity": "provider:game-2",
+        }
+        progress["lastAttempt"][identity_field] = identity_value
+
+        public = handler._cooperative_terminal_progress_public(
+            {
+                "slate_date_et": "2026-07-20",
+                "terminal_replay_progress": progress,
+            }
+        )
+
+        assert public == {
+            "version": handler.COOPERATIVE_TERMINAL_CHUNK_VERSION,
+            "valid": False,
+            "failClosed": True,
+        }
+
+
+@pytest.mark.parametrize(
+    "error_code",
+    (
+        "arbitrary_error",
+        "BAD\nCODE",
+        "wrongStage_RuntimeError",
+    ),
+)
+def test_cooperative_public_progress_rejects_nonproducer_error_code(
+    error_code,
+):
+    with _load_handler() as (handler, _, _):
+        progress, game_index = _producer_attempt_public_progress(
+            "PROCESS_CURRENT"
+        )
+        progress["lastAttempt"] = {
+            "status": "FAILED_CLOSED",
+            "stage": "BIND_MANIFEST_AUTHORITY",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "PROCESS",
+            "gameIndex": game_index,
+            "gameIdentity": "provider:game-1",
+            "errorCode": error_code,
+        }
+
+        public = handler._cooperative_terminal_progress_public(
+            {
+                "slate_date_et": "2026-07-20",
+                "terminal_replay_progress": progress,
+            }
+        )
+
+        assert public == {
+            "version": handler.COOPERATIVE_TERMINAL_CHUNK_VERSION,
+            "valid": False,
+            "failClosed": True,
+        }
+
+
+def test_cooperative_public_progress_preserves_compatible_identity_suffix():
+    with _load_handler() as (handler, _, _):
+        progress, game_index = _producer_attempt_public_progress(
+            "VERIFY_TRANSITION"
+        )
+        compatible_identity = "provider:producer suffix\nvalue"
+        progress["lastAttempt"] = {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
+            "gameIndex": game_index,
+            "gameIdentity": compatible_identity,
+            "durableIdentity": compatible_identity,
+        }
+
+        public = handler._cooperative_terminal_progress_public(
+            {
+                "slate_date_et": "2026-07-20",
+                "terminal_replay_progress": progress,
+            }
+        )
+
+        assert public["valid"] is True
+        assert public["lastAttempt"]["gameIdentity"] == compatible_identity
+        json.dumps(public, sort_keys=True)
+
+
+@pytest.mark.parametrize(
+    "fallback_suffix",
+    ("RuntimeError", "custom_error"),
+)
+def test_cooperative_public_progress_accepts_stage_exception_error_fallback(
+    fallback_suffix,
+):
+    with _load_handler() as (handler, _, _):
+        progress, game_index = _producer_attempt_public_progress(
+            "PROCESS_CURRENT"
+        )
+        progress["lastAttempt"] = {
+            "status": "FAILED_CLOSED",
+            "stage": "BIND_MANIFEST_AUTHORITY",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "PROCESS",
+            "gameIndex": game_index,
+            "gameIdentity": "provider:game-1",
+            "errorCode": (
+                "BIND_MANIFEST_AUTHORITY_" + fallback_suffix
+            ),
+        }
+
+        public = handler._cooperative_terminal_progress_public(
+            {
+                "slate_date_et": "2026-07-20",
+                "terminal_replay_progress": progress,
+            }
+        )
+
+        assert public["valid"] is True
+        assert public["lastAttempt"]["errorCode"] == (
+            "BIND_MANIFEST_AUTHORITY_" + fallback_suffix
+        )
+        json.dumps(public, sort_keys=True)
 
 
 def test_cooperative_public_progress_rejects_reconciled_canonical_count():
