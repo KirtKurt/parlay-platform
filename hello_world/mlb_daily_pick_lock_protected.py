@@ -5,6 +5,7 @@ import math
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, Optional
 
 from botocore.exceptions import ClientError
@@ -116,6 +117,8 @@ COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION = (
     "MLB-COOPERATIVE-TERMINAL-COMPLETION-HANDOFF-v1"
 )
 COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS = 32
+COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES = 15
+COOPERATIVE_TERMINAL_PUBLIC_MAX_ATTEMPTS = 1_000_000
 COOPERATIVE_REPLAY_MIN_REMAINING_SECONDS = (
     COOPERATIVE_REPLAY_EXECUTION_BUDGET_SECONDS
     + LOCK_EXECUTION_TIMEOUT_SAFETY_MARGIN_SECONDS
@@ -573,80 +576,500 @@ def _cooperative_terminal_progress_public(
     if not isinstance(progress, dict):
         return None
 
-    def safe_integer(field: str) -> Optional[int]:
-        value = progress.get(field)
-        if isinstance(value, bool):
-            return None
-        try:
-            parsed = int(value)
-        except (TypeError, ValueError):
-            return None
-        return parsed if parsed >= 0 else None
+    invalid = {
+        "version": COOPERATIVE_TERMINAL_CHUNK_VERSION,
+        "valid": False,
+        "failClosed": True,
+    }
 
-    fields = (
-        "manifestGameCount",
-        "nextGameIndex",
-        "processedGameCount",
-        "terminalCount",
-        "canonicalCount",
-        "noPredictionDataCount",
-        "reconciledCount",
-        "verificationIndex",
-        "verifiedGameCount",
-        "attemptCount",
-    )
-    values = {field: safe_integer(field) for field in fields}
+    def strict_integer(value: Any, *, maximum: int) -> Optional[int]:
+        if isinstance(value, bool) or not isinstance(value, (int, Decimal)):
+            return None
+        if isinstance(value, int):
+            return value if 0 <= value <= maximum else None
+        if (
+            not value.is_finite()
+            or value < 0
+            or value > maximum
+            or value != value.to_integral_value()
+        ):
+            return None
+        return int(value)
+
+    field_maximums = {
+        "manifestGameCount": COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES,
+        "nextGameIndex": COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES,
+        "processedGameCount": COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES,
+        "terminalCount": COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES,
+        "canonicalCount": COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES,
+        "noPredictionDataCount": (
+            COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES
+        ),
+        "reconciledCount": COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES,
+        "verificationIndex": COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES,
+        "verifiedGameCount": COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES,
+        "attemptCount": COOPERATIVE_TERMINAL_PUBLIC_MAX_ATTEMPTS,
+    }
+    values = {
+        field: strict_integer(progress.get(field), maximum=maximum)
+        for field, maximum in field_maximums.items()
+    }
+    phase = progress.get("phase")
+    verification_complete = progress.get("verificationComplete")
     if (
         progress.get("version") != COOPERATIVE_TERMINAL_CHUNK_VERSION
-        or str(progress.get("slateDateEt") or "")
-        != str(item.get("slate_date_et") or "")
+        or progress.get("slateDateEt") != item.get("slate_date_et")
         or any(value is None for value in values.values())
-        or str(progress.get("phase") or "") not in {"PROCESS", "VERIFY"}
-        or not isinstance(progress.get("verificationComplete"), bool)
+        or phase not in {"PROCESS", "VERIFY"}
+        or not isinstance(verification_complete, bool)
         or progress.get("postStartPredictionCreationAllowed") is not False
         or progress.get("immutablePredictionRewriteAllowed") is not False
         or progress.get("productionAuthorityChanged") is not False
     ):
-        return {
-            "version": COOPERATIVE_TERMINAL_CHUNK_VERSION,
-            "valid": False,
-            "failClosed": True,
-        }
+        return dict(invalid)
+
     manifest_count = int(values["manifestGameCount"] or 0)
     next_index = int(values["nextGameIndex"] or 0)
+    processed_count = int(values["processedGameCount"] or 0)
+    terminal_count = int(values["terminalCount"] or 0)
+    canonical_count = int(values["canonicalCount"] or 0)
+    no_prediction_count = int(values["noPredictionDataCount"] or 0)
+    reconciled_count = int(values["reconciledCount"] or 0)
+    verification_index = int(values["verificationIndex"] or 0)
+    verified_count = int(values["verifiedGameCount"] or 0)
+    attempt_count = int(values["attemptCount"] or 0)
+    expected_verification_complete = (
+        phase == "VERIFY" and verification_index == manifest_count
+    )
+    if (
+        manifest_count < 1
+        or next_index > manifest_count
+        or processed_count != next_index
+        or terminal_count != next_index
+        or canonical_count + no_prediction_count != terminal_count
+        or reconciled_count > no_prediction_count
+        or verification_index > manifest_count
+        or verified_count != verification_index
+        or attempt_count < 1
+        or attempt_count < next_index + verification_index
+        or (phase == "PROCESS") != (next_index < manifest_count)
+        or (phase == "PROCESS" and verification_index != 0)
+        or verification_complete != expected_verification_complete
+    ):
+        return dict(invalid)
+
     public = {
         "version": COOPERATIVE_TERMINAL_CHUNK_VERSION,
         "valid": True,
         **values,
-        "phase": str(progress.get("phase") or ""),
-        "verificationComplete": progress.get("verificationComplete"),
-        "remainingGameCount": max(manifest_count - next_index, 0),
-        "remainingVerificationCount": max(
-            manifest_count - int(values["verificationIndex"] or 0),
-            0,
-        ),
+        "phase": phase,
+        "verificationComplete": verification_complete,
+        "remainingGameCount": manifest_count - next_index,
+        "remainingVerificationCount": manifest_count - verification_index,
         "oneGamePerEventBridgeOwner": True,
         "postStartPredictionCreationAllowed": False,
         "immutablePredictionRewriteAllowed": False,
         "productionAuthorityChanged": False,
     }
+
     last_attempt = progress.get("lastAttempt")
-    if isinstance(last_attempt, dict):
-        public["lastAttempt"] = {
-            key: last_attempt.get(key)
-            for key in (
-                "status",
-                "stage",
-                "atUtc",
-                "gameIndex",
-                "gameIdentity",
-                "durableIdentity",
-                "phase",
-                "errorCode",
+    if (attempt_count == 0) != (last_attempt is None):
+        return dict(invalid)
+    if last_attempt is None:
+        return public
+    if not isinstance(last_attempt, dict):
+        return dict(invalid)
+
+    required_fields = {"status", "stage", "atUtc", "phase"}
+    optional_fields = {
+        "gameIndex",
+        "gameIdentity",
+        "durableIdentity",
+        "errorCode",
+    }
+    if (
+        not required_fields.issubset(last_attempt)
+        or any(
+            not isinstance(key, str)
+            or key not in required_fields | optional_fields
+            for key in last_attempt
+        )
+    ):
+        return dict(invalid)
+
+    status = last_attempt.get("status")
+    stage = last_attempt.get("stage")
+    at_utc = last_attempt.get("atUtc")
+    attempt_phase = last_attempt.get("phase")
+    if (
+        not isinstance(status, str)
+        or not isinstance(stage, str)
+        or not isinstance(at_utc, str)
+        or not isinstance(attempt_phase, str)
+        or not status
+        or not stage
+        or not at_utc
+        or attempt_phase != phase
+        or len(at_utc) > 32
+    ):
+        return dict(invalid)
+
+    try:
+        parsed_at = datetime.fromisoformat(at_utc)
+    except (TypeError, ValueError):
+        return dict(invalid)
+    if (
+        parsed_at.tzinfo is None
+        or parsed_at.utcoffset() != timedelta(0)
+        or parsed_at.isoformat() != at_utc
+    ):
+        return dict(invalid)
+
+    public_attempt: Dict[str, Any] = {
+        "status": status,
+        "stage": stage,
+        "atUtc": at_utc,
+        "phase": attempt_phase,
+    }
+    if "gameIndex" not in last_attempt:
+        return dict(invalid)
+    game_index = strict_integer(
+        last_attempt.get("gameIndex"),
+        maximum=manifest_count,
+    )
+    if game_index is None:
+        return dict(invalid)
+    public_attempt["gameIndex"] = game_index
+
+    for field, maximum in (
+        ("gameIdentity", 200),
+        ("durableIdentity", 200),
+        ("errorCode", 160),
+    ):
+        if field not in last_attempt:
+            continue
+        value = last_attempt.get(field)
+        if not isinstance(value, str) or not value or len(value) > maximum:
+            return dict(invalid)
+        public_attempt[field] = value
+
+    def producer_identity(value: str) -> bool:
+        return any(
+            value.startswith(prefix) and bool(value[len(prefix):])
+            for prefix in ("provider:", "key:", "teams:")
+        )
+
+    for identity_field in ("gameIdentity", "durableIdentity"):
+        identity_value = public_attempt.get(identity_field)
+        if identity_value is not None and not producer_identity(
+            str(identity_value)
+        ):
+            return dict(invalid)
+    if (
+        "durableIdentity" in public_attempt
+        and public_attempt.get("durableIdentity")
+        != public_attempt.get("gameIdentity")
+    ):
+        return dict(invalid)
+
+    error_code = public_attempt.get("errorCode")
+
+    def producer_error_code(value: str) -> bool:
+        if all(
+            character.isupper()
+            or character.isdigit()
+            or character in "_:-."
+            for character in value
+        ):
+            return True
+        prefix = stage + "_"
+        if not value.startswith(prefix):
+            return False
+        suffix = value[len(prefix):]
+        return bool(suffix and suffix.isidentifier())
+
+    if error_code is not None and not producer_error_code(
+        str(error_code)
+    ):
+        return dict(invalid)
+    if (
+        (status == "FAILED_CLOSED" and error_code is None)
+        or (
+            status == "DEFERRED_MUTATION_LEASE_CONTENDED"
+            and error_code != "WRITER_LEASE_CONTENDED"
+        )
+        or (
+            status
+            not in {
+                "FAILED_CLOSED",
+                "DEFERRED_MUTATION_LEASE_CONTENDED",
+            }
+            and error_code is not None
+        )
+    ):
+        return dict(invalid)
+
+    required = "REQUIRED"
+    optional = "OPTIONAL"
+    forbidden = "FORBIDDEN"
+    attempt_schemas = {
+        (
+            "TERMINAL_CHECKPOINT_READY",
+            "PROCESS_CHECKPOINT_READY",
+        ): (
+            {
+                "phases": {"PROCESS", "VERIFY"},
+                "cursor": "PROCESSED_PREVIOUS",
+                "gameIdentity": required,
+                "durableIdentity": required,
+            },
+        ),
+        (
+            "DURABLE_TERMINAL_VERIFIED",
+            "VERIFICATION_CHECKPOINT_READY",
+        ): (
+            {
+                "phases": {"VERIFY"},
+                "cursor": "VERIFIED_PREVIOUS",
+                "verificationComplete": False,
+                "gameIdentity": required,
+                "durableIdentity": required,
+            },
+        ),
+        (
+            "DURABLE_TERMINAL_VERIFIED",
+            "COMPLETE_READY",
+        ): (
+            {
+                "phases": {"VERIFY"},
+                "cursor": "VERIFIED_PREVIOUS",
+                "verificationComplete": True,
+                "gameIdentity": required,
+                "durableIdentity": required,
+            },
+        ),
+        (
+            "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+            "WRITE_BUDGET",
+        ): (
+            {
+                "phases": {"PROCESS"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": forbidden,
+            },
+        ),
+        (
+            "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+            "GAME_BUDGET",
+        ): (
+            {
+                "phases": {"PROCESS", "VERIFY"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": forbidden,
+            },
+        ),
+        (
+            "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+            "ATOMIC_COMPLETION_PROOF",
+        ): (
+            {
+                "phases": {"VERIFY"},
+                "cursor": "COMPLETION",
+                "gameIdentity": forbidden,
+                "durableIdentity": forbidden,
+            },
+        ),
+        (
+            "DEFERRED_MUTATION_LEASE_CONTENDED",
+            "MUTATION_LEASE_CONTENDED",
+        ): (
+            {
+                "phases": {"PROCESS", "VERIFY"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": forbidden,
+            },
+            {
+                "phases": {"VERIFY"},
+                "cursor": "COMPLETION",
+                "gameIdentity": forbidden,
+                "durableIdentity": forbidden,
+            },
+        ),
+        ("FAILED_CLOSED", "READ_DURABLE_TERMINAL"): (
+            {
+                "phases": {"PROCESS"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": optional,
+            },
+        ),
+        ("FAILED_CLOSED", "VERIFY_DURABLE_TERMINAL"): (
+            {
+                "phases": {"VERIFY"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": optional,
+            },
+        ),
+        ("FAILED_CLOSED", "PROVE_PRELOCK_ABSENCE"): (
+            {
+                "phases": {"PROCESS"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": forbidden,
+            },
+        ),
+        ("FAILED_CLOSED", "BIND_MANIFEST_AUTHORITY"): (
+            {
+                "phases": {"PROCESS", "VERIFY"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": forbidden,
+            },
+        ),
+        ("FAILED_CLOSED", "WRITE_NO_PREDICTION_TERMINAL"): (
+            {
+                "phases": {"PROCESS"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": required,
+            },
+        ),
+        ("FAILED_CLOSED", "READBACK_NO_PREDICTION_TERMINAL"): (
+            {
+                "phases": {"PROCESS"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": required,
+            },
+        ),
+        ("FAILED_CLOSED", "VERIFY_GAME_STARTED"): (
+            {
+                "phases": {"PROCESS"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": forbidden,
+            },
+        ),
+        ("FAILED_CLOSED", "ACQUIRE_MUTATION_LEASE"): (
+            {
+                "phases": {"PROCESS", "VERIFY"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": forbidden,
+            },
+        ),
+        ("FAILED_CLOSED", "ATOMIC_COMPLETION_PROOF"): (
+            {
+                "phases": {"VERIFY"},
+                "cursor": "COMPLETION",
+                "gameIdentity": forbidden,
+                "durableIdentity": forbidden,
+            },
+        ),
+        ("FAILED_CLOSED", "RELEASE_MUTATION_LEASE"): (
+            {
+                "phases": {"PROCESS", "VERIFY"},
+                "cursor": "CURRENT",
+                "gameIdentity": required,
+                "durableIdentity": forbidden,
+            },
+            {
+                "phases": {"VERIFY"},
+                "cursor": "COMPLETION",
+                "gameIdentity": forbidden,
+                "durableIdentity": forbidden,
+            },
+        ),
+    }
+
+    def cursor_matches(cursor: str) -> bool:
+        if cursor == "CURRENT":
+            if game_index >= manifest_count:
+                return False
+            expected = (
+                next_index
+                if phase == "PROCESS"
+                else verification_index
             )
-            if last_attempt.get(key) is not None
-        }
+            return (
+                game_index == expected
+                and (
+                    phase != "VERIFY"
+                    or verification_complete is False
+                )
+            )
+        if cursor == "PROCESSED_PREVIOUS":
+            return (
+                game_index < manifest_count
+                and next_index >= 1
+                and game_index == next_index - 1
+                and (
+                    phase == "PROCESS"
+                    or (
+                        phase == "VERIFY"
+                        and verification_index == 0
+                        and verification_complete is False
+                    )
+                )
+            )
+        if cursor == "VERIFIED_PREVIOUS":
+            return (
+                phase == "VERIFY"
+                and verification_index >= 1
+                and game_index == verification_index - 1
+                and game_index < manifest_count
+            )
+        if cursor == "COMPLETION":
+            return (
+                phase == "VERIFY"
+                and next_index == manifest_count
+                and verification_index == manifest_count
+                and verification_complete is True
+                and game_index == manifest_count
+            )
+        return False
+
+    def field_matches(field: str, rule: str) -> bool:
+        present = field in public_attempt
+        if rule == required:
+            return present
+        if rule == forbidden:
+            return not present
+        return rule == optional
+
+    schemas = attempt_schemas.get((status, stage), ())
+    schema_valid = False
+    for schema in schemas:
+        expected_complete = schema.get("verificationComplete")
+        if (
+            phase not in schema["phases"]
+            or (
+                expected_complete is not None
+                and verification_complete is not expected_complete
+            )
+            or not cursor_matches(str(schema["cursor"]))
+            or not field_matches(
+                "gameIdentity",
+                str(schema["gameIdentity"]),
+            )
+            or not field_matches(
+                "durableIdentity",
+                str(schema["durableIdentity"]),
+            )
+        ):
+            continue
+        schema_valid = True
+        break
+    if not schema_valid:
+        return dict(invalid)
+
+    public["lastAttempt"] = public_attempt
     return public
+
 
 def _cooperative_public_state(item: Dict[str, Any]) -> Dict[str, Any]:
     return {
