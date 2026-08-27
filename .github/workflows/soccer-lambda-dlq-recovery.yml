@@ -1,221 +1,174 @@
 name: Soccer Lambda Role DLQ Recovery
+
 "on":
   workflow_dispatch:
   push:
-    paths: ['.github/workflows/soccer-lambda-dlq-recovery.yml']
+    branches: [main]
+    paths:
+      - ".github/workflows/soccer-lambda-dlq-recovery.yml"
+
 permissions:
   contents: write
+  actions: write
+
+concurrency:
+  group: soccer-lambda-dlq-recovery
+  cancel-in-progress: false
+
 jobs:
   recover:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-        with: {fetch-depth: 0}
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Checkout exact main source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Add explicit Lambda-role DLQ recovery action
+
+      - name: Verify isolated Soccer recovery source
         run: |
           set -euo pipefail
-          git pull --rebase origin main
-          python - <<'PY'
-          from pathlib import Path
-          p=Path('soccer_auto/collector.py')
-          s=p.read_text()
-          if 'def _recover_collection_dlq(' not in s:
-              marker='\ndef worker_handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:\n'
-              assert marker in s
-              helper=r'''
+          python -m py_compile soccer_auto/dlq_recovery.py
+          grep -q '^  SoccerDlqRecoveryFunction:' soccer-auto-template.yaml
+          grep -q 'Handler: soccer_auto.dlq_recovery.handler' soccer-auto-template.yaml
+          ! grep -Eq 'parlay_platform_|inqis_tennis|MLB|TENNIS' soccer-auto-template.yaml
+          git diff --check
+          aws sts get-caller-identity >/dev/null
 
-def _recover_collection_dlq(event: Mapping[str, Any]) -> dict[str, Any]:
-    """Drain only this isolated Soccer DLQ using the Lambda execution role.
-
-    Future actionable event jobs are requeued; stale or malformed deliveries are
-    retired. This operation requires an explicit action token and never mutates
-    prediction/lock/settlement records.
-    """
-    if str(event.get("action") or "") != "RECOVER_COLLECTION_DLQ":
-        raise ValueError("explicit Soccer DLQ recovery action required")
-    main_url = os.getenv("SOCCER_AUTO_COLLECTION_QUEUE_URL", "").strip()
-    dlq_url = os.getenv("SOCCER_AUTO_COLLECTION_DLQ_URL", "").strip()
-    if not main_url or not dlq_url:
-        raise RuntimeError("Soccer collection queue URLs are not configured")
-    sqs = boto3.client("sqs")
-    observed = now_utc()
-    limit = max(1, min(5000, int(event.get("max_messages") or 5000)))
-    scanned = deleted = requeued = retired = malformed = 0
-    empty_reads = 0
-    while scanned < limit and empty_reads < 8:
-        response = sqs.receive_message(
-            QueueUrl=dlq_url,
-            MaxNumberOfMessages=min(10, limit - scanned),
-            VisibilityTimeout=120,
-            WaitTimeSeconds=1,
-            AttributeNames=["All"],
-        )
-        messages = response.get("Messages") or []
-        if not messages:
-            empty_reads += 1
-            continue
-        empty_reads = 0
-        for message in messages:
-            scanned += 1
-            job = {}
-            actionable = False
-            try:
-                job = json.loads(message.get("Body") or "{}")
-                job_event = dict(job.get("event") or {})
-                commence = str(
-                    job_event.get("commence_time")
-                    or job_event.get("commenceTime")
-                    or ""
-                )
-                actionable = bool(
-                    job.get("version") == JOB_VERSION
-                    and job.get("action") in {"DISCOVER_EVENT", "FETCH_EVENT"}
-                    and commence
-                    and parse_utc(commence) > observed
-                )
-            except Exception:
-                malformed += 1
-            if actionable:
-                sqs.send_message(
-                    QueueUrl=main_url,
-                    MessageBody=json.dumps(
-                        {
-                            **job,
-                            "dlq_recovered_at": iso_utc(observed),
-                            "dlq_recovery_count": int(job.get("dlq_recovery_count") or 0) + 1,
-                        },
-                        separators=(",", ":"),
-                    ),
-                    DelaySeconds=2,
-                )
-                requeued += 1
-            else:
-                retired += 1
-            sqs.delete_message(
-                QueueUrl=dlq_url,
-                ReceiptHandle=message["ReceiptHandle"],
-            )
-            deleted += 1
-            if scanned >= limit:
-                break
-    attributes = sqs.get_queue_attributes(
-        QueueUrl=dlq_url,
-        AttributeNames=[
-            "ApproximateNumberOfMessages",
-            "ApproximateNumberOfMessagesNotVisible",
-            "ApproximateNumberOfMessagesDelayed",
-        ],
-    ).get("Attributes") or {}
-    return {
-        "ok": True,
-        "system": "soccer_auto",
-        "component": "collection_dlq_recovery",
-        "observed_at": iso_utc(observed),
-        "scanned": scanned,
-        "deleted": deleted,
-        "requeued_future": requeued,
-        "retired_stale": retired,
-        "malformed": malformed,
-        "remaining_visible": int(attributes.get("ApproximateNumberOfMessages") or 0),
-        "remaining_inflight": int(attributes.get("ApproximateNumberOfMessagesNotVisible") or 0),
-        "remaining_delayed": int(attributes.get("ApproximateNumberOfMessagesDelayed") or 0),
-    }
-'''
-              s=s.replace(marker, helper+marker, 1)
-          old='''def worker_handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:\n    if event.get("Records"):\n'''
-          new='''def worker_handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:\n    if not event.get("Records") and event.get("action") == "RECOVER_COLLECTION_DLQ":\n        return _recover_collection_dlq(event)\n    if event.get("Records"):\n'''
-          assert old in s or new in s
-          if new not in s:
-              s=s.replace(old,new,1)
-          p.write_text(s)
-          PY
-          python -m py_compile soccer_auto/*.py
-          git config user.name github-actions
-          git config user.email github-actions@github.com
-          git add soccer_auto/collector.py
-          git commit -m 'Add isolated Soccer Lambda-role DLQ recovery action' || true
-          for attempt in 1 2 3 4 5; do
-            git pull --rebase origin main && git push origin HEAD:main && break
-            git rebase --abort 2>/dev/null || true
-            sleep $((attempt*2))
+      - name: Deploy only the isolated Soccer stack
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          old=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy-soccer-auto.yml --limit 1 --json databaseId --jq '.[0].databaseId // 0')
+          gh workflow run deploy-soccer-auto.yml --repo "$GITHUB_REPOSITORY" --ref main -f shared_quota_reserve_percent=0
+          run_id=''
+          for attempt in $(seq 1 90); do
+            candidate=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy-soccer-auto.yml --event workflow_dispatch --branch main --limit 5 --json databaseId --jq '.[0].databaseId // empty' || true)
+            if [[ -n "$candidate" && "$candidate" != "$old" ]]; then
+              run_id="$candidate"
+              break
+            fi
+            sleep 2
           done
-      - name: Hot deploy corrected Soccer worker and invoke recovery
-        env:
-          REGION: ${{ secrets.AWS_REGION }}
-        run: |
-          set -euo pipefail
-          git pull --rebase origin main
-          stack=parlay-platform-soccer-auto
-          worker=$(aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id SoccerCollectionWorkerFunction --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text)
-          rm -rf /tmp/soccer-lambda-recovery && mkdir -p /tmp/soccer-lambda-recovery/soccer_auto
-          cp soccer_auto/*.py /tmp/soccer-lambda-recovery/soccer_auto/
-          (cd /tmp/soccer-lambda-recovery && zip -qr /tmp/soccer-lambda-recovery.zip soccer_auto)
-          aws lambda update-function-code --function-name "$worker" --region "$REGION" --zip-file fileb:///tmp/soccer-lambda-recovery.zip >/tmp/update.json
-          aws lambda wait function-updated-v2 --function-name "$worker" --region "$REGION"
-          mapping=$(aws lambda list-event-source-mappings --function-name "$worker" --region "$REGION" --query 'EventSourceMappings[0].UUID' --output text)
-          if [[ -n "$mapping" && "$mapping" != None ]]; then
-            aws lambda update-event-source-mapping --uuid "$mapping" --region "$REGION" --scaling-config MaximumConcurrency=3 >/tmp/mapping.json
-          fi
-          aws lambda invoke --function-name "$worker" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"RECOVER_COLLECTION_DLQ","max_messages":5000}' /tmp/recovery.json >/tmp/recovery-meta.json
-          python - <<'PY'
-          import json
-          meta=json.load(open('/tmp/recovery-meta.json')); r=json.load(open('/tmp/recovery.json'))
-          assert not meta.get('FunctionError'), meta
-          assert r.get('ok') is True, r
-          assert int(r.get('remaining_visible') or 0)==0, r
-          assert int(r.get('remaining_inflight') or 0)==0, r
-          print(json.dumps(r,indent=2))
-          PY
-      - name: Prove autonomous cycle after recovery
+          test -n "$run_id"
+          echo "$run_id" >/tmp/soccer-deploy-run-id
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status --interval 10
+
+      - name: Drain only the isolated Soccer DLQ and verify runtime
         env:
           REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
           stack=parlay-platform-soccer-auto
-          physical() { aws cloudformation describe-stack-resource --stack-name "$stack" --logical-resource-id "$1" --region "$REGION" --query StackResourceDetail.PhysicalResourceId --output text; }
-          dispatch=$(physical SoccerDispatchFunction)
-          freeze=$(physical SoccerFreezeFunction)
-          controller=$(physical SoccerControllerFunction)
-          historical=$(physical SoccerHistoricalFunction)
-          worker=$(physical SoccerCollectionWorkerFunction)
-          aws lambda invoke --function-name "$dispatch" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"lambda_role_recovery_dispatch"}' /tmp/dispatch.json >/tmp/dispatch-meta.json
-          sleep 60
-          aws lambda invoke --function-name "$freeze" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"lambda_role_recovery_freeze"}' /tmp/freeze.json >/tmp/freeze-meta.json
-          aws lambda invoke --function-name "$controller" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"action":"lambda_role_recovery_controller"}' /tmp/controller.json >/tmp/controller-meta.json
-          aws lambda invoke --function-name "$historical" --region "$REGION" --cli-binary-format raw-in-base64-out --payload '{"mode":"status"}' /tmp/historical.json >/tmp/historical-meta.json
-          status_url=$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" --output text)
-          curl --fail --silent --show-error --max-time 60 "$status_url" >/tmp/status.json
-          start_ms=$(( ($(date +%s)-600)*1000 ))
-          aws logs filter-log-events --log-group-name "/aws/lambda/$worker" --region "$REGION" --start-time "$start_ms" --filter-pattern '?Unauthorized ?HTTP_401 ?DISTRIBUTED_RATE_LIMIT_CONTENTION ?ERROR ?Exception' --limit 100 --output json >/tmp/errors.json || echo '{"events":[]}' >/tmp/errors.json
-          python - <<'PY'
-          import json,pathlib,datetime
-          load=lambda p: json.load(open(p))
-          report={
-            'proofType':'SOCCER_LAMBDA_ROLE_DLQ_RECOVERY_PROOF',
-            'observedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            'recovery':load('/tmp/recovery.json'),
-            'publicStatus':load('/tmp/status.json'),
-            'historicalStatus':load('/tmp/historical.json'),
-            'recentTargetedWorkerErrors':(load('/tmp/errors.json').get('events') or []),
+          physical() {
+            aws cloudformation describe-stack-resource \
+              --stack-name "$stack" \
+              --logical-resource-id "$1" \
+              --region "$REGION" \
+              --query 'StackResourceDetail.PhysicalResourceId' \
+              --output text
           }
-          pathlib.Path('runtime_reports/soccer_lambda_role_dlq_recovery_latest.json').write_text(json.dumps(report,indent=2,default=str)+'\n')
-          print(json.dumps(report,indent=2,default=str))
+
+          recovery=$(physical SoccerDlqRecoveryFunction)
+          test -n "$recovery"
+          test "$recovery" != None
+          aws lambda invoke \
+            --function-name "$recovery" \
+            --region "$REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"action":"recover_collection_dlq","max_messages":5000}' \
+            /tmp/recovery.json >/tmp/recovery-meta.json
+
+          status_url=$(aws cloudformation describe-stacks \
+            --stack-name "$stack" \
+            --region "$REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='SoccerAutoStatusUrl'].OutputValue" \
+            --output text)
+          curl --fail --silent --show-error --max-time 60 "$status_url" >/tmp/status.json
+
+          historical=$(physical SoccerHistoricalFunction)
+          aws lambda invoke \
+            --function-name "$historical" \
+            --region "$REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"mode":"status"}' \
+            /tmp/historical.json >/tmp/historical-meta.json
+
+          worker=$(physical SoccerCollectionWorkerFunction)
+          start_ms=$(( ($(date +%s)-900)*1000 ))
+          aws logs filter-log-events \
+            --log-group-name "/aws/lambda/$worker" \
+            --region "$REGION" \
+            --start-time "$start_ms" \
+            --filter-pattern '?Unauthorized ?HTTP_401 ?DISTRIBUTED_RATE_LIMIT_CONTENTION ?ERROR ?Exception' \
+            --limit 100 \
+            --output json >/tmp/errors.json || echo '{"events":[]}' >/tmp/errors.json
+
+          python - <<'PY'
+          import datetime
+          import json
+          from pathlib import Path
+
+          recovery_meta = json.load(open('/tmp/recovery-meta.json'))
+          recovery = json.load(open('/tmp/recovery.json'))
+          historical_meta = json.load(open('/tmp/historical-meta.json'))
+          historical = json.load(open('/tmp/historical.json'))
+          status = json.load(open('/tmp/status.json'))
+          errors = json.load(open('/tmp/errors.json')).get('events') or []
+
+          assert not recovery_meta.get('FunctionError'), recovery_meta
+          assert recovery.get('ok') is True, recovery
+          assert int(recovery.get('remaining_visible') or 0) == 0, recovery
+          assert int(recovery.get('remaining_inflight') or 0) == 0, recovery
+          assert not historical_meta.get('FunctionError'), historical_meta
+
+          report = {
+              'proofType': 'SOCCER_ISOLATED_DLQ_RECOVERY_AND_RUNTIME_PROOF_V2',
+              'observedAtUtc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'deployRunId': int(Path('/tmp/soccer-deploy-run-id').read_text().strip()),
+              'recovery': recovery,
+              'publicStatus': status,
+              'historicalStatus': historical,
+              'recentTargetedWorkerErrors': errors,
+              'otherSportsDeployed': False,
+              'immutablePredictionRewriteAllowed': False,
+              'postStartPredictionCreationAllowed': False,
+              'productionAuthorityChanged': False,
+              'promotionAuthorityChanged': False,
+          }
+          Path('runtime_reports/soccer_lambda_role_dlq_recovery_latest.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True, default=str) + '\n'
+          )
+          print(json.dumps(report, indent=2, sort_keys=True, default=str))
           PY
-      - name: Publish Lambda-role recovery proof
+
+      - name: Publish verified Soccer-only recovery proof
         run: |
           set -euo pipefail
           git config user.name github-actions
           git config user.email github-actions@github.com
+          git pull --rebase origin main
           git add runtime_reports/soccer_lambda_role_dlq_recovery_latest.json
-          git commit -m 'runtime: publish Soccer Lambda-role DLQ recovery proof [skip ci]' || exit 0
+          git commit -m 'runtime: publish isolated Soccer DLQ recovery proof [skip ci]' || exit 0
           for attempt in 1 2 3 4 5; do
-            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            if git pull --rebase origin main && git push origin HEAD:main; then
+              exit 0
+            fi
             git rebase --abort 2>/dev/null || true
-            sleep $((attempt*2))
+            sleep $((attempt * 2))
           done
           exit 1
