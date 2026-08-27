@@ -1,5 +1,7 @@
 name: MLB progress pulse bounded runner relay
 
+run-name: MLB pulse relay segment ${{ github.event_name == 'push' && '10' || inputs.remaining_segments }}
+
 on:
   # The merge push seeds one finite chain. Later renewal requires an explicit
   # workflow_dispatch or another reviewed edit to this relay file.
