@@ -21,6 +21,9 @@ from botocore.exceptions import ClientError
 ROOT = Path(__file__).resolve().parents[2]
 HANDLER = ROOT / "hello_world" / "mlb_daily_pick_lock_protected.py"
 COOPERATIVE_REPAIR_PATH = ROOT / "hello_world" / "mlb_prospective_row_repair.py"
+COOPERATIVE_PRODUCER_FIXTURES_PATH = (
+    ROOT / "tests" / "unit" / "test_mlb_cooperative_terminal_chunk.py"
+)
 _COOPERATIVE_REPAIR_SPEC = importlib.util.spec_from_file_location(
     "_test_mlb_prospective_row_repair", COOPERATIVE_REPAIR_PATH
 )
@@ -407,6 +410,29 @@ def _fixture_hash(value) -> str:
             default=str,
         ).encode("utf-8")
     ).hexdigest()
+
+
+_COOPERATIVE_PRODUCER_FIXTURES = None
+
+
+def _cooperative_producer_fixtures():
+    global _COOPERATIVE_PRODUCER_FIXTURES
+    if _COOPERATIVE_PRODUCER_FIXTURES is not None:
+        return _COOPERATIVE_PRODUCER_FIXTURES
+    module_name = (
+        "_test_real_cooperative_terminal_producer_"
+        + uuid.uuid4().hex
+    )
+    spec = importlib.util.spec_from_file_location(
+        module_name,
+        COOPERATIVE_PRODUCER_FIXTURES_PATH,
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    _COOPERATIVE_PRODUCER_FIXTURES = module
+    return module
 
 
 def _complete_terminal_checkpoint(
@@ -3451,6 +3477,556 @@ def test_cooperative_public_progress_rejects_impossible_relational_state(
             "valid": False,
             "failClosed": True,
         }
+
+
+def _producer_attempt_public_progress(state):
+    progress = _complete_terminal_checkpoint(
+        slate_date="2026-07-20",
+        game_count=2,
+    )
+    if state == "PROCESS_CURRENT":
+        progress.update(
+            {
+                "phase": "PROCESS",
+                "nextGameIndex": 0,
+                "processedGameCount": 0,
+                "terminalCount": 0,
+                "canonicalCount": 0,
+                "noPredictionDataCount": 0,
+                "reconciledCount": 0,
+                "verificationIndex": 0,
+                "verifiedGameCount": 0,
+                "verificationComplete": False,
+            }
+        )
+        game_index = 0
+    elif state == "PROCESS_PREVIOUS":
+        progress.update(
+            {
+                "phase": "PROCESS",
+                "nextGameIndex": 1,
+                "processedGameCount": 1,
+                "terminalCount": 1,
+                "canonicalCount": 0,
+                "noPredictionDataCount": 1,
+                "reconciledCount": 1,
+                "verificationIndex": 0,
+                "verifiedGameCount": 0,
+                "verificationComplete": False,
+            }
+        )
+        game_index = 0
+    elif state == "VERIFY_TRANSITION":
+        progress.update(
+            {
+                "verificationIndex": 0,
+                "verifiedGameCount": 0,
+                "verificationComplete": False,
+            }
+        )
+        game_index = 1
+    elif state == "VERIFY_CURRENT":
+        progress.update(
+            {
+                "verificationIndex": 0,
+                "verifiedGameCount": 0,
+                "verificationComplete": False,
+            }
+        )
+        game_index = 0
+    elif state == "VERIFY_PREVIOUS":
+        progress.update(
+            {
+                "verificationIndex": 1,
+                "verifiedGameCount": 1,
+                "verificationComplete": False,
+            }
+        )
+        game_index = 0
+    elif state == "VERIFY_COMPLETE_PREVIOUS":
+        game_index = 1
+    elif state == "VERIFY_COMPLETION":
+        game_index = 2
+    else:
+        raise AssertionError(f"unknown producer attempt state: {state}")
+    progress["attemptCount"] = 1
+    return progress, game_index
+
+
+@pytest.mark.parametrize(
+    (
+        "status",
+        "stage",
+        "state",
+        "identity_present",
+        "durable_present",
+        "error_code",
+    ),
+    (
+        (
+            "TERMINAL_CHECKPOINT_READY",
+            "PROCESS_CHECKPOINT_READY",
+            "PROCESS_PREVIOUS",
+            True,
+            True,
+            None,
+        ),
+        (
+            "TERMINAL_CHECKPOINT_READY",
+            "PROCESS_CHECKPOINT_READY",
+            "VERIFY_TRANSITION",
+            True,
+            True,
+            None,
+        ),
+        (
+            "DURABLE_TERMINAL_VERIFIED",
+            "VERIFICATION_CHECKPOINT_READY",
+            "VERIFY_PREVIOUS",
+            True,
+            True,
+            None,
+        ),
+        (
+            "DURABLE_TERMINAL_VERIFIED",
+            "COMPLETE_READY",
+            "VERIFY_COMPLETE_PREVIOUS",
+            True,
+            True,
+            None,
+        ),
+        (
+            "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+            "WRITE_BUDGET",
+            "PROCESS_CURRENT",
+            True,
+            False,
+            None,
+        ),
+        (
+            "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+            "GAME_BUDGET",
+            "PROCESS_CURRENT",
+            True,
+            False,
+            None,
+        ),
+        (
+            "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+            "GAME_BUDGET",
+            "VERIFY_CURRENT",
+            True,
+            False,
+            None,
+        ),
+        (
+            "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+            "ATOMIC_COMPLETION_PROOF",
+            "VERIFY_COMPLETION",
+            False,
+            False,
+            None,
+        ),
+        (
+            "DEFERRED_MUTATION_LEASE_CONTENDED",
+            "MUTATION_LEASE_CONTENDED",
+            "PROCESS_CURRENT",
+            True,
+            False,
+            "WRITER_LEASE_CONTENDED",
+        ),
+        (
+            "DEFERRED_MUTATION_LEASE_CONTENDED",
+            "MUTATION_LEASE_CONTENDED",
+            "VERIFY_CURRENT",
+            True,
+            False,
+            "WRITER_LEASE_CONTENDED",
+        ),
+        (
+            "DEFERRED_MUTATION_LEASE_CONTENDED",
+            "MUTATION_LEASE_CONTENDED",
+            "VERIFY_COMPLETION",
+            False,
+            False,
+            "WRITER_LEASE_CONTENDED",
+        ),
+        (
+            "FAILED_CLOSED",
+            "READ_DURABLE_TERMINAL",
+            "PROCESS_CURRENT",
+            True,
+            True,
+            "DURABLE_READ_INVALID",
+        ),
+        (
+            "FAILED_CLOSED",
+            "VERIFY_DURABLE_TERMINAL",
+            "VERIFY_CURRENT",
+            True,
+            False,
+            "DURABLE_VERIFICATION_MISMATCH",
+        ),
+        (
+            "FAILED_CLOSED",
+            "PROVE_PRELOCK_ABSENCE",
+            "PROCESS_CURRENT",
+            True,
+            False,
+            "PRELOCK_CANDIDATE_REQUIRES_REVIEW",
+        ),
+        (
+            "FAILED_CLOSED",
+            "BIND_MANIFEST_AUTHORITY",
+            "PROCESS_CURRENT",
+            True,
+            False,
+            "MANIFEST_AUTHORITY_INVALID",
+        ),
+        (
+            "FAILED_CLOSED",
+            "WRITE_NO_PREDICTION_TERMINAL",
+            "PROCESS_CURRENT",
+            True,
+            True,
+            "TERMINAL_WRITE_FAILED",
+        ),
+        (
+            "FAILED_CLOSED",
+            "READBACK_NO_PREDICTION_TERMINAL",
+            "PROCESS_CURRENT",
+            True,
+            True,
+            "OUTCOME_READBACK_INVALID",
+        ),
+        (
+            "FAILED_CLOSED",
+            "VERIFY_GAME_STARTED",
+            "PROCESS_CURRENT",
+            True,
+            False,
+            "GAME_NOT_STARTED",
+        ),
+        (
+            "FAILED_CLOSED",
+            "ACQUIRE_MUTATION_LEASE",
+            "PROCESS_CURRENT",
+            True,
+            False,
+            "WRITER_LEASE_NOT_READY",
+        ),
+        (
+            "FAILED_CLOSED",
+            "ACQUIRE_MUTATION_LEASE",
+            "VERIFY_CURRENT",
+            True,
+            False,
+            "WRITER_LEASE_NOT_READY",
+        ),
+        (
+            "FAILED_CLOSED",
+            "ATOMIC_COMPLETION_PROOF",
+            "VERIFY_COMPLETION",
+            False,
+            False,
+            "ATOMIC_DURABLE_PROOF_INVALID",
+        ),
+        (
+            "FAILED_CLOSED",
+            "RELEASE_MUTATION_LEASE",
+            "PROCESS_CURRENT",
+            True,
+            False,
+            "MUTATION_LEASE_RELEASE_FAILED",
+        ),
+        (
+            "FAILED_CLOSED",
+            "RELEASE_MUTATION_LEASE",
+            "VERIFY_CURRENT",
+            True,
+            False,
+            "MUTATION_LEASE_RELEASE_FAILED",
+        ),
+        (
+            "FAILED_CLOSED",
+            "RELEASE_MUTATION_LEASE",
+            "VERIFY_COMPLETION",
+            False,
+            False,
+            "MUTATION_LEASE_RELEASE_FAILED",
+        ),
+    ),
+)
+def test_cooperative_public_progress_accepts_every_producer_attempt_shape(
+    status,
+    stage,
+    state,
+    identity_present,
+    durable_present,
+    error_code,
+):
+    with _load_handler() as (handler, _, _):
+        progress, game_index = _producer_attempt_public_progress(state)
+        attempt = {
+            "status": status,
+            "stage": stage,
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": progress["phase"],
+            "gameIndex": Decimal(game_index),
+        }
+        if identity_present:
+            attempt["gameIdentity"] = f"provider:game-{game_index + 1}"
+        if durable_present:
+            attempt["durableIdentity"] = f"provider:game-{game_index + 1}"
+        if error_code is not None:
+            attempt["errorCode"] = error_code
+        progress["lastAttempt"] = attempt
+
+        public = handler._cooperative_terminal_progress_public(
+            {
+                "slate_date_et": "2026-07-20",
+                "terminal_replay_progress": progress,
+            }
+        )
+
+        assert public["valid"] is True
+        assert public["lastAttempt"]["gameIndex"] == game_index
+        assert type(public["lastAttempt"]["gameIndex"]) is int
+        json.dumps(public, sort_keys=True)
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    ("gameIndex", "gameIdentity", "durableIdentity"),
+)
+def test_cooperative_public_progress_rejects_missing_success_attempt_field(
+    missing_field,
+):
+    with _load_handler() as (handler, _, _):
+        progress, game_index = _producer_attempt_public_progress(
+            "VERIFY_TRANSITION"
+        )
+        progress["lastAttempt"] = {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
+            "gameIndex": game_index,
+            "gameIdentity": "provider:game-2",
+            "durableIdentity": "provider:game-2",
+        }
+        progress["lastAttempt"].pop(missing_field)
+
+        public = handler._cooperative_terminal_progress_public(
+            {
+                "slate_date_et": "2026-07-20",
+                "terminal_replay_progress": progress,
+            }
+        )
+
+        assert public == {
+            "version": handler.COOPERATIVE_TERMINAL_CHUNK_VERSION,
+            "valid": False,
+            "failClosed": True,
+        }
+
+
+@pytest.mark.parametrize("identity_field", ("gameIdentity", "durableIdentity"))
+def test_cooperative_public_progress_rejects_completion_identity(
+    identity_field,
+):
+    with _load_handler() as (handler, _, _):
+        progress, game_index = _producer_attempt_public_progress(
+            "VERIFY_COMPLETION"
+        )
+        progress["lastAttempt"] = {
+            "status": "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+            "stage": "ATOMIC_COMPLETION_PROOF",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
+            "gameIndex": game_index,
+            identity_field: "provider:game-2",
+        }
+
+        public = handler._cooperative_terminal_progress_public(
+            {
+                "slate_date_et": "2026-07-20",
+                "terminal_replay_progress": progress,
+            }
+        )
+
+        assert public == {
+            "version": handler.COOPERATIVE_TERMINAL_CHUNK_VERSION,
+            "valid": False,
+            "failClosed": True,
+        }
+
+
+@pytest.mark.parametrize(
+    ("stage", "state"),
+    (
+        ("COMPLETE_READY", "VERIFY_PREVIOUS"),
+        ("VERIFICATION_CHECKPOINT_READY", "VERIFY_COMPLETE_PREVIOUS"),
+    ),
+)
+def test_cooperative_public_progress_binds_verification_stage_to_completion(
+    stage,
+    state,
+):
+    with _load_handler() as (handler, _, _):
+        progress, game_index = _producer_attempt_public_progress(state)
+        progress["lastAttempt"] = {
+            "status": "DURABLE_TERMINAL_VERIFIED",
+            "stage": stage,
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
+            "gameIndex": game_index,
+            "gameIdentity": f"provider:game-{game_index + 1}",
+            "durableIdentity": f"provider:game-{game_index + 1}",
+        }
+
+        public = handler._cooperative_terminal_progress_public(
+            {
+                "slate_date_et": "2026-07-20",
+                "terminal_replay_progress": progress,
+            }
+        )
+
+        assert public == {
+            "version": handler.COOPERATIVE_TERMINAL_CHUNK_VERSION,
+            "valid": False,
+            "failClosed": True,
+        }
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_status", "expected_stage"),
+    (
+        (
+            "budget",
+            "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+            "ATOMIC_COMPLETION_PROOF",
+        ),
+        (
+            "contention",
+            "DEFERRED_MUTATION_LEASE_CONTENDED",
+            "MUTATION_LEASE_CONTENDED",
+        ),
+    ),
+)
+def test_real_completion_producer_persists_and_projects_exact_end_cursor(
+    mode,
+    expected_status,
+    expected_stage,
+):
+    producer_fixtures = _cooperative_producer_fixtures()
+    producer_module = producer_fixtures._install(
+        producer_fixtures.ChunkModule(game_count=1)
+    )
+    table = FakeLeaseTable()
+    delegate_payload = _successful_current_slate_payload(
+        producer_fixtures.TODAY
+    )
+
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=delegate_payload,
+    ) as (handler, _, _):
+        handler.mlb_daily_pick_lock._today_et = (
+            lambda: producer_fixtures.TODAY
+        )
+        handler.lambda_handler(
+            _cooperative_event(producer_fixtures.SLATE),
+            FakeContext(),
+        )
+        claimed, _ = handler._claim_cooperative_replay(
+            owner=f"seed-real-producer-{mode}",
+            context=FakeContext(remaining_millis=900_000),
+            current_slate_response={
+                "statusCode": 200,
+                "body": json.dumps(delegate_payload),
+            },
+            expected_slate_date=producer_fixtures.TODAY,
+        )
+        assert claimed is not None
+
+        checkpoint = None
+        for _ in range(2):
+            produced = producer_fixtures._invoke(
+                producer_module,
+                checkpoint,
+                request_epoch=claimed["requested_at_epoch"],
+                request_id=claimed["request_id"],
+            )
+            assert produced["ok"] is True
+            checkpoint = produced["checkpoint"]
+        assert checkpoint["verificationComplete"] is True
+
+        seed_public = handler._checkpoint_cooperative_replay(
+            item=claimed,
+            owner=f"seed-real-producer-{mode}",
+            progress=checkpoint,
+            failed=False,
+        )
+        assert seed_public["terminalChunkProgress"]["valid"] is True
+
+        if mode == "contention":
+            producer_module.lease_contended = True
+
+        def real_completion_runner(
+            *,
+            slate_date,
+            request_epoch,
+            request_id,
+            checkpoint,
+            context,
+        ):
+            del context
+            assert slate_date == producer_fixtures.SLATE
+            producer_context = (
+                producer_fixtures.BudgetContext(900_000, 89_000)
+                if mode == "budget"
+                else producer_fixtures.BudgetContext(900_000)
+            )
+            return producer_fixtures._invoke(
+                producer_module,
+                checkpoint,
+                request_epoch=request_epoch,
+                request_id=request_id,
+                context=producer_context,
+            )
+
+        handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk = (
+            real_completion_runner
+        )
+        scheduled_event = _scheduled_event()
+        scheduled_event["date"] = producer_fixtures.TODAY
+        response = handler.lambda_handler(
+            scheduled_event,
+            FakeContext(
+                request_id=f"real-completion-{mode}",
+                remaining_millis=900_000,
+            ),
+        )
+        payload = _body(response)
+        public = payload[
+            "cooperativeTerminalReplayOwnerExecution"
+        ]["terminalChunkProgress"]
+        stored_attempt = table.queue_item[
+            "terminal_replay_progress"
+        ]["lastAttempt"]
+
+        assert public["valid"] is True
+        assert public["lastAttempt"]["status"] == expected_status
+        assert public["lastAttempt"]["stage"] == expected_stage
+        assert public["lastAttempt"]["gameIndex"] == 1
+        assert type(public["lastAttempt"]["gameIndex"]) is int
+        assert stored_attempt["gameIndex"] == 1
+        assert "gameIdentity" not in stored_attempt
+        assert "durableIdentity" not in stored_attempt
+        assert table.queue_item["state"] == "QUEUED"
+        assert payload["lockExecutionConcurrency"]["leaseReleased"] is True
+        json.dumps(response, sort_keys=True)
 
 
 def test_cooperative_public_progress_rejects_reconciled_canonical_count():
