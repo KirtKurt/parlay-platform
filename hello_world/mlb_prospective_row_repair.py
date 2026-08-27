@@ -1659,12 +1659,11 @@ def _cooperative_terminal_observed_state(
 def _cooperative_terminal_write_identity(
     identity_options: List[str],
 ) -> str:
-    official = [
-        identity
-        for identity in identity_options
-        if identity.startswith("official:")
-    ]
-    return official[0] if len(official) == 1 else identity_options[0]
+    # New durable authority must use the provider-manifest canonical identity.
+    # Official IDs remain bounded lookup aliases for historical rows only:
+    # the manifest validator rejects an outcome whose game_identity is not in
+    # its canonical provider-first identity list.
+    return identity_options[0]
 
 
 def _cooperative_put_no_prediction_outcome(

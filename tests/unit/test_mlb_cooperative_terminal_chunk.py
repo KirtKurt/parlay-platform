@@ -12,11 +12,14 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 HELLO_WORLD = ROOT / "hello_world"
-if str(HELLO_WORLD) not in sys.path:
-    sys.path.insert(0, str(HELLO_WORLD))
+UNIT_TESTS = ROOT / "tests" / "unit"
+for path in (HELLO_WORLD, UNIT_TESTS):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
 import mlb_daily_per_game_lock_patch as real_patch
 import mlb_prospective_row_repair as repair
+import test_mlb_daily_per_game_lock as real_lock_fixtures
 
 
 SLATE = "2026-08-05"
@@ -483,7 +486,7 @@ def test_chunk_processes_and_verifies_one_target_per_owner_then_atomic_completes
     checkpoint, results = _process_then_verify_all(module)
 
     assert len(results) == 4
-    assert module.terminal_writes == ["official:822865", "official:822866"]
+    assert module.terminal_writes == ["provider:game-0", "provider:game-1"]
     assert len(module.lease_acquires) == 4
     assert len(module.lease_releases) == 4
     assert all(
@@ -603,6 +606,64 @@ def test_candidate_integrity_problem_stays_unresolved_and_writes_nothing():
     assert result["checkpoint"]["nextGameIndex"] == 0
     assert module.terminal_writes == []
     assert len(module.lease_releases) == 1
+
+
+def test_new_outcome_uses_manifest_primary_and_passes_real_manifest_validator():
+    game = real_lock_fixtures.game(
+        "provider-real-validator",
+        "2026-07-13T18:00:00+00:00",
+    )
+    game.update({
+        "provider_event_id": "provider-real-validator",
+        "official_game_pk": "991777",
+        "official_game_id": "mlb_statsapi:991777",
+        "official_commence_time": game["commence_time"],
+        "official_game_type": "R",
+        "official_game_number": 1,
+        "official_double_header": "N",
+        "official_status": {"abstractGameState": "Final"},
+    })
+    source = real_lock_fixtures.pull(
+        "2026-07-13T16:00:00+00:00",
+        [game],
+        "cooperative-real-validator",
+    )
+    module = real_lock_fixtures.build_module(
+        [source],
+        "2026-07-14T12:00:00+00:00",
+        seed=False,
+    )
+    module._today_et = lambda: "2026-07-14"
+    repair.install_prospective_row_repair(module, real_patch)
+
+    result = module.run_cooperative_terminal_chunk(
+        slate_date=real_lock_fixtures.SLATE,
+        request_epoch=REQUEST_EPOCH,
+        request_id=REQUEST_ID,
+        checkpoint=None,
+        context=BudgetContext(900_000),
+    )
+
+    assert result["ok"] is True
+    assert result["checkpoint"]["processedGames"][0][
+        "durableIdentity"
+    ] == "provider-real-validator"
+    outcomes = real_lock_fixtures.lock_outcome_items(module)
+    assert len(outcomes) == 1
+    assert outcomes[0]["game_identity"] == "provider-real-validator"
+
+    pulls = module._pulls_for_date(real_lock_fixtures.SLATE)
+    manifest_game = module._latest_games_for_date(
+        real_lock_fixtures.SLATE,
+        pulls,
+    )[0]
+    # This is the production readback and provider-manifest authority validator,
+    # not the chunk test double.
+    assert real_patch._get_lock_outcome(
+        module,
+        real_lock_fixtures.SLATE,
+        manifest_game,
+    ) == outcomes[0]
 
 
 def test_existing_official_keyed_outcome_is_used_without_duplicate_write():
@@ -728,14 +789,14 @@ def test_writer_lease_release_ambiguity_fails_closed_after_durable_write(
     assert result["ok"] is False
     assert result["stage"] == "RELEASE_MUTATION_LEASE"
     assert result["checkpoint"]["nextGameIndex"] == 0
-    assert module.terminal_writes == ["official:822865"]
-    assert "official:822865" in module.outcomes
+    assert module.terminal_writes == ["provider:game-0"]
+    assert "provider:game-0" in module.outcomes
 
     module.release_mode = "success"
     retry = _invoke(module, result["checkpoint"])
     assert retry["ok"] is True
     assert retry["checkpoint"]["nextGameIndex"] == 1
-    assert module.terminal_writes == ["official:822865"]
+    assert module.terminal_writes == ["provider:game-0"]
 
 
 def test_checkpoint_is_bound_to_request_and_full_manifest_authority():
