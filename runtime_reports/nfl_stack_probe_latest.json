@@ -1,6 +1,21 @@
 {
   "alarms": [
     {
+      "name": "parlay-platform-auto-repair-nfl-AutoRepairFunctionErrorAlarm-3IcwgzJ24xuG",
+      "reason": "Threshold Crossed: 1 datapoint [0.0 (25/08/26 15:52:00)] was not greater than the threshold (0.0).",
+      "state": "OK"
+    },
+    {
+      "name": "parlay-platform-auto-repair-nfl-AutoRepairLivenessAlarm-IHL94nw48dto",
+      "reason": "Threshold Crossed: 1 out of the last 2 datapoints [2.0 (25/08/26 15:42:00)] was not less than the threshold (1.0) and 1 missing datapoint was treated as [Breaching] (minimum 1 datapoint for ALARM -> OK transition).",
+      "state": "OK"
+    },
+    {
+      "name": "parlay-platform-auto-repair-nfl-AutoRepairUnresolvedFailureAlarm-bdaHX1lT96f8",
+      "reason": "Threshold Crossed: 1 datapoint [0.0 (25/08/26 15:52:00)] was not greater than the threshold (0.0).",
+      "state": "OK"
+    },
+    {
       "name": "parlay-platform-nfl-auto-NflAutonomousErrorAlarm-d3AWUHWVevNI",
       "reason": "Threshold Crossed: no datapoints were received for 1 period and 1 missing datapoint was treated as [NonBreaching].",
       "state": "OK"
@@ -14,37 +29,43 @@
   "all_failed_events": [],
   "commit": "db2bb58d5abca9c758d85944f24505fa56f5b281",
   "immutable_history_rewritten": false,
-  "observed_at_utc": "2026-08-25T07:14:05.779791+00:00",
+  "observed_at_utc": "2026-08-27T02:44:08.410559+00:00",
   "production_authority_changed": false,
   "proof_type": "NFL_AUTO_AWS_OPERATIONS_PROOF",
   "public_status": {
-    "at": "2026-08-25T07:14:05Z",
+    "at": "2026-08-27T02:44:07Z",
     "backfill": {
       "PK": "NFL_AUTO_BACKFILL",
       "SK": "CURRENT",
-      "completed": true,
-      "completed_at": "2026-08-25T00:55:12Z",
+      "completed": false,
       "game_type_index": 0,
-      "last_batch_accepted": 0,
-      "last_batch_rejected": 0,
-      "last_provider": "BBD",
+      "last_deferred_at": "2026-08-25T21:55:50Z",
+      "last_deferred_reason": "BBD_UPSTREAM_HTTP_500",
+      "last_game_id": "2020_17_MIN_DET",
+      "last_horizon_minutes": 60,
+      "last_play_count": 171,
+      "last_provider": "ODDS_API",
       "last_transport": {
-        "endpoint": "/v1/nfl/games",
-        "provider": "BBD",
-        "rate_limit": "600",
-        "rate_remaining": "598",
-        "rate_reset": "1787619193",
-        "requests_last": null,
-        "requests_remaining": null,
-        "requests_used": null,
+        "endpoint": "/v4/historical/sports/americanfootball_nfl/odds",
+        "provider": "ODDS_API",
+        "rate_limit": null,
+        "rate_remaining": null,
+        "rate_reset": null,
+        "requests_last": "30",
+        "requests_remaining": "23423505",
+        "requests_used": "1576495",
         "status": 200
       },
       "materialize_index": 0,
+      "metadata_recovery_completed_at": "2026-08-25T11:01:03Z",
+      "metadata_recovery_game_count": 1611,
+      "metadata_recovery_rejected": 4,
+      "metadata_recovery_version": "NFL-HISTORICAL-GAME-METADATA-RECOVERY-v1",
       "offset": 0,
-      "phase": "READY",
+      "phase": "ODDS_SNAPSHOTS",
       "season_index": 0,
       "started_at": "2026-08-25T00:35:41Z",
-      "updated_at": "2026-08-25T00:55:12Z"
+      "updated_at": "2026-08-27T02:43:44Z"
     },
     "champions": {
       "moneyline_home_win": null,
@@ -57,7 +78,7 @@
       "spread_home_cover": 0,
       "total_over": 0
     },
-    "historical_game_count": 0,
+    "historical_game_count": 1611,
     "live_collection_start_utc": "2026-09-09T04:00:00Z",
     "live_schedule_game_count": 0,
     "mode": "HISTORICAL_ONLY",
