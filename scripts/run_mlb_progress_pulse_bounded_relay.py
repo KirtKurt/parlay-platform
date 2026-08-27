@@ -342,53 +342,75 @@ class RelayStateMachine:
         raise RuntimeError(detail)
 
     def _poll(self, *, final: bool) -> None:
-        try:
-            self._ensure_successor()
-        except Exception as exc:
-            self._warn_or_raise(
-                "consecutive_successor_failures",
-                "successor_liveness",
-                exc,
-                final=final,
-            )
-            return
-        self.consecutive_successor_failures = 0
+        # Reporting is the cadence-critical path. Maintain the successor only
+        # after attempting the decision/report, but capture fatal errors so even
+        # a final or third failed decision still gets one successor recovery try.
+        fatal_errors: list[RelayFailure] = []
+        decision_succeeded = False
+        reporter_succeeded = True
 
         try:
             decision = self.client.evaluate_staleness()
         except Exception as exc:
-            self._warn_or_raise(
-                "consecutive_decision_failures",
-                "staleness_decision",
-                exc,
-                final=final,
-            )
-            return
-        self.consecutive_decision_failures = 0
-        self.last_decision = decision
-
-        if decision.dispatch_required:
             try:
-                self.client.dispatch_reporter()
-            except Exception as exc:
                 self._warn_or_raise(
-                    "consecutive_reporter_failures",
-                    "reporter_dispatch",
+                    "consecutive_decision_failures",
+                    "staleness_decision",
                     exc,
                     final=final,
                 )
-                return
-            self.consecutive_reporter_failures = 0
-            self.reporter_dispatches += 1
-        elif decision.reason == "VISIBLE_PULSE_FRESH":
-            # A trusted fresh comment proves that a prior reporter recovered.
-            self.consecutive_reporter_failures = 0
+            except RelayFailure as fatal:
+                fatal_errors.append(fatal)
+        else:
+            decision_succeeded = True
+            self.consecutive_decision_failures = 0
+            self.last_decision = decision
 
-        self.successful_polls += 1
+            if decision.dispatch_required:
+                try:
+                    self.client.dispatch_reporter()
+                except Exception as exc:
+                    reporter_succeeded = False
+                    try:
+                        self._warn_or_raise(
+                            "consecutive_reporter_failures",
+                            "reporter_dispatch",
+                            exc,
+                            final=final,
+                        )
+                    except RelayFailure as fatal:
+                        fatal_errors.append(fatal)
+                else:
+                    self.consecutive_reporter_failures = 0
+                    self.reporter_dispatches += 1
+            elif decision.reason == "VISIBLE_PULSE_FRESH":
+                # A trusted fresh comment proves that a prior reporter recovered.
+                self.consecutive_reporter_failures = 0
+
+        if decision_succeeded and reporter_succeeded:
+            self.successful_polls += 1
+
+        try:
+            self._ensure_successor()
+        except Exception as exc:
+            try:
+                self._warn_or_raise(
+                    "consecutive_successor_failures",
+                    "successor_liveness",
+                    exc,
+                    final=final,
+                )
+            except RelayFailure as fatal:
+                fatal_errors.append(fatal)
+        else:
+            self.consecutive_successor_failures = 0
+
+        if fatal_errors:
+            raise RelayFailure("; ".join(str(error) for error in fatal_errors))
 
     def assert_final_liveness(self) -> None:
         # The last configured poll is strict. This assertion does not perform a
-        # 77th decision that could race the reporter dispatched by poll 76.
+        # 152nd decision that could race the reporter dispatched by poll 76.
         if self.successful_polls < 1 or self.last_decision is None:
             raise RelayFailure("no_successful_staleness_decision")
         if self.consecutive_decision_failures != 0:
