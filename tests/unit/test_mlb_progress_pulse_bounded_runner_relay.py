@@ -115,15 +115,11 @@ def test_segment_count_decrements_exactly_once_and_stops_at_zero() -> None:
         for value in range(10, 0, -1)
     ] == list(range(9, -1, -1))
 
-    last_client = FakeClient(successor_snapshots=[])
-    result = _machine(
-        last_client,
-        remaining_segments=1,
-        decisions=[
-            relay.Decision(False, "VISIBLE_PULSE_FRESH"),
-            relay.Decision(False, "VISIBLE_PULSE_FRESH"),
-        ],
-    ).run()
+    last_client = FakeClient(
+        successor_snapshots=[],
+        decisions=[relay.Decision(False, "VISIBLE_PULSE_FRESH")],
+    )
+    result = _machine(last_client, remaining_segments=1).run()
     assert result["nextSegments"] == 0
     assert result["successorRequired"] is False
     assert last_client.successor_list_calls == 0
@@ -329,7 +325,12 @@ def test_workflow_invokes_state_machine_with_exact_finite_geometry() -> None:
     assert "RELAY_FAILURE_THRESHOLD: '3'" in workflow
     assert "run-name: MLB pulse relay segment" in workflow
     assert "timeout-minutes: 325" in workflow
-    assert "actions: write" in workflow
+    permission_block = workflow.split("permissions:\n", 1)[1].split("\n\n", 1)[0]
+    assert permission_block.splitlines() == [
+        "  actions: write",
+        "  contents: read",
+        "  issues: read",
+    ]
     assert "issues: write" not in workflow
     assert "secrets." not in workflow
     assert "AWS_ACCESS_KEY_ID" not in workflow
