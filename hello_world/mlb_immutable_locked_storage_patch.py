@@ -12,6 +12,9 @@ SELECTION_TRAINING_SEPARATION_VERSION = "MLB-SELECTION-TRAINING-SEPARATION-v1"
 AUTHORITY_VERSION = "MLB-CANONICAL-PER-GAME-STAGE-AUTHORITY-v2-persisted-chain"
 UNAUTHORIZED_LOCKED_WRITE = "LOCKED_WRITE_REQUIRES_VERIFIED_IMMUTABLE_PER_GAME_STAGE"
 REQUIRED_LOCK_MINUTES = 45
+CANONICAL_READ_OVERLAY_IDEMPOTENCY_VERSION = (
+    "MLB-CANONICAL-READ-OVERLAY-IDEMPOTENCY-v1"
+)
 
 
 def _tags(row: Dict[str, Any]) -> set[str]:
@@ -328,16 +331,804 @@ def _fingerprint(row: Dict[str, Any]) -> str:
 
 
 def _vector_identity(row: Dict[str, Any]) -> Dict[str, Any]:
-    vector = row.get("frozenFeatureVector") or {}
+    """Bind the complete frozen vector, not only its self-reported digest."""
+
     return {
-        "version": vector.get("version"),
-        "fingerprint": vector.get("fingerprint"),
-        "gameId": vector.get("gameId"),
-        "lockAtUtc": vector.get("lockAtUtc"),
-        "sourcePullAtUtc": vector.get("sourcePullAtUtc"),
-        "predictedWinner": vector.get("predictedWinner"),
-        "predictedSide": vector.get("predictedSide"),
-        "labels": vector.get("labels") or {},
+        "frozenFeatureVector": copy.deepcopy(
+            row.get("frozenFeatureVector") or {}
+        ),
+        "frozenFeatureVectorVersion": row.get(
+            "frozenFeatureVectorVersion"
+        ),
+        "featureVectorFrozenAtLock": row.get(
+            "featureVectorFrozenAtLock"
+        ),
+        "frozenOutcomeFeatures": copy.deepcopy(
+            row.get("frozenOutcomeFeatures")
+        ),
+        "frozenReliabilityFeatures": copy.deepcopy(
+            row.get("frozenReliabilityFeatures")
+        ),
+        "mlFeatureFreeze": copy.deepcopy(
+            row.get("mlFeatureFreeze") or {}
+        ),
+        "exactVectorVerified": row.get("exactVectorVerified"),
+        "exactVectorValidationErrors": list(
+            row.get("exactVectorValidationErrors") or []
+        ),
+        "selectionTrainingSeparationVersion": row.get(
+            "selectionTrainingSeparationVersion"
+        ),
+    }
+
+
+def _locked_key(row: Dict[str, Any]) -> Dict[str, str]:
+    return {
+        "PK": f"GAME_WINNERS#mlb#{_slate(row)}",
+        "SK": f"LOCKED#GAME#{_commence(row)}#{_identity(row)}",
+    }
+
+
+def _canonical_read_overlay(row: Dict[str, Any]) -> bool:
+    """Recognize only the validated public view of an existing canonical row."""
+
+    try:
+        import mlb_slate_coverage_patch as coverage
+    except Exception:
+        return False
+
+    per_game = row.get("perGameCanonicalLock") or {}
+    public_lock = row.get("slatePredictionLock") or {}
+    final_gate = row.get("lastPossiblePredictionGate") or {}
+    authority = row.get("canonicalPerGameStageAuthority") or {}
+    row_lock_at = _parse_dt(
+        row.get("lockedAtUtc")
+        or (row.get("frozenFeatureVector") or {}).get("lockAtUtc")
+    )
+    per_game_lock_at = _parse_dt(
+        per_game.get("lockAtUtc")
+        if isinstance(per_game, dict)
+        else None
+    )
+    gate_lock_at = _parse_dt(
+        final_gate.get("lockAtUtc")
+        if isinstance(final_gate, dict)
+        else None
+    )
+    public_status = (
+        str(public_lock.get("lockStatus") or "")
+        if isinstance(public_lock, dict)
+        else ""
+    )
+    public_locked = (
+        public_lock.get("locked")
+        if isinstance(public_lock, dict)
+        else None
+    )
+    public_status_consistent = bool(
+        public_status == "OFFICIAL_LOCKED_PREDICTION"
+        and public_locked is True
+        and _parse_dt(public_lock.get("lockAtUtc")) == row_lock_at
+    )
+    required_tags = {
+        "FINAL_LOCKED",
+        "OFFICIAL_PREDICTION",
+        "OFFICIAL_LOCKED_PREDICTION",
+        "CANONICAL_PER_GAME_LOCK",
+    }
+    # PRE_LOCK_PREDICTION and PER_GAME_CANONICAL_LOCK_PENDING are
+    # immutable provenance on existing v5 rows; _official_row intentionally
+    # preserves them. Exact tag reconstruction below prevents injection while
+    # retaining that live history.
+    conflicting_tags = {
+        "LOCKED_NO_PREDICTION_DATA",
+        "MISSED_LOCK",
+        "SLATE_WIDE_45_MIN_LOCK_POLICY",
+    }
+    tags = _tags(row)
+    return bool(
+        row.get("slateCoverageVersion") == coverage.VERSION
+        and row.get("officialPredictionReason")
+        == "validated_immutable_canonical_per_game_lock"
+        and row.get("immutablePerGameStage") is True
+        and row.get("immutableLockedStorage") is True
+        and row.get("immutableLockedStorageKeyspace") == "LOCKED#GAME"
+        and row.get("immutableLockedStorageVersion") == VERSION
+        and row.get("canonical") is True
+        and row.get("locked") is True
+        and row.get("lockedPrediction") is True
+        and row.get("officialPrediction") is True
+        and row.get("officialPick") is True
+        and row.get("isOfficialDisplayPick") is True
+        and row.get("lockOutcomeRecorded") is True
+        and row.get("lockStatus") == "LOCKED_CANONICAL"
+        and row.get("officialPredictionStatus")
+        == "OFFICIAL_LOCKED_PREDICTION"
+        and row.get("selectionFingerprint")
+        == row.get("lastPrelockSelectionFingerprint")
+        and bool(row.get("lastPrelockSelectionFingerprint"))
+        and row_lock_at is not None
+        and _parse_dt(row.get("scheduledLockAtUtc")) == row_lock_at
+        and required_tags.issubset(tags)
+        and not conflicting_tags.intersection(tags)
+        and per_game_lock_at == row_lock_at
+        and gate_lock_at == row_lock_at
+        and isinstance(per_game, dict)
+        and per_game
+        == {
+            "authorityVersion": coverage.AUTHORITY_VERSION,
+            "status": "OFFICIAL_LOCKED_PREDICTION",
+            "lockAtUtc": row.get("lockedAtUtc"),
+            "canonical": True,
+        }
+        and isinstance(final_gate, dict)
+        and final_gate.get("policyVersion") == coverage.AUTHORITY_VERSION
+        and final_gate.get("phase") == "FINAL_LOCKED"
+        and final_gate.get("finalWindowActive") is False
+        and final_gate.get("finalLocked") is True
+        and final_gate.get("perGameLock") is True
+        and final_gate.get("slateWideLock") is False
+        and isinstance(public_lock, dict)
+        and public_lock.get("policyVersion") == coverage.AUTHORITY_VERSION
+        and public_lock.get("authorityVersion") == coverage.AUTHORITY_VERSION
+        and public_lock.get("canonicalReadOperational") is True
+        and public_lock.get("perGameLock") is True
+        and public_lock.get("slateWideLock") is False
+        and public_status_consistent
+        and isinstance(authority, dict)
+        and authority.get("version") == AUTHORITY_VERSION
+        and authority.get("verified") is True
+        and authority.get("consistentRead") is True
+    )
+
+
+_CANONICAL_OVERLAY_PUBLIC_FIELDS = frozenset(
+    {
+        "actionablePick",
+        "blocked",
+        "canonical",
+        "eventPlayabilityAssessmentRequired",
+        "historicalPlayabilityAssessmentValidationErrors",
+        "isOfficialDisplayPick",
+        "lastPossiblePredictionGate",
+        "lockOutcomeRecorded",
+        "locked",
+        "lockedPrediction",
+        "lockStatus",
+        "officialPick",
+        "officialPrediction",
+        "officialPredictionReason",
+        "officialPredictionStatus",
+        "perGameCanonicalLock",
+        "playabilityAssessment",
+        "playabilityAssessmentValidationErrors",
+        "playabilityBlockReasons",
+        "playabilityStatus",
+        "playable",
+        "playablePick",
+        "readiness",
+        "readinessValidationErrors",
+        "releaseBlockReasons",
+        "releaseBlocked",
+        "requiredPlayabilityCheckpoint",
+        "requiredPlayabilityCheckpointDue",
+        "requiredReadinessCheckpoint",
+        "requiredReadinessCheckpointDue",
+        "scheduledLockAtUtc",
+        "selectionFingerprint",
+        "slateCoverageVersion",
+        "slatePredictionLock",
+        "tags",
+        "trainingEligibilityStatus",
+        "trainingEligible",
+        "trainingExclusionReasons",
+        "wagerReleaseBlocked",
+    }
+)
+
+
+def _immutable_overlay_base(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Strip only fields that the canonical public renderer owns."""
+
+    out = copy.deepcopy(row)
+    for field in _CANONICAL_OVERLAY_PUBLIC_FIELDS:
+        out.pop(field, None)
+    return out
+
+
+_SLATE_LOCK_RENDERER_FIELDS = frozenset(
+    {
+        "authorityVersion",
+        "lockAtUtc",
+        "locked",
+        "lockStatus",
+        "perGameLock",
+        "policyVersion",
+        "slateWideLock",
+    }
+)
+
+# Keys produced by _manifest_lock_state, provider-manifest authority, and the
+# aggregate public lock summary. They are observability overlays, not stored
+# per-game stage material.
+_SLATE_LOCK_PUBLIC_OBSERVABILITY_FIELDS = frozenset(
+    {
+        "applied",
+        "canonicalCoverageComplete",
+        "canonicalLockedGameCount",
+        "canonicalPredictionComplete",
+        "canonicalPredictionCount",
+        "canonicalReadError",
+        "canonicalReadOperational",
+        "doubleheaderSafeIdentity",
+        "durableRosterImmutableReadbackVerified",
+        "eventRosterBacked",
+        "firstGameStartUtc",
+        "firstPerGameLockAtUtc",
+        "invalidCanonicalRows",
+        "invalidLifecycleStatusRows",
+        "invalidPlayabilityReleaseRows",
+        "invalidTerminalLifecycleRows",
+        "lastGameStartUtc",
+        "lastPerGameLockAtUtc",
+        "latestAvailablePullAt",
+        "latestProviderFeedAnomalies",
+        "latestProviderFeedAnomalyCount",
+        "latestProviderFeedContracted",
+        "latestProviderFeedGameCount",
+        "latestProviderManifestFingerprint",
+        "latestProviderManifestObservedAtUtc",
+        "latestScoringPullAt",
+        "legacyRosterMigrationFallback",
+        "lockDueCanonicalMissingCount",
+        "lockMinutesBeforeEachGame",
+        "lockMinutesBeforeFirstGame",
+        "lockOutcomeCount",
+        "lockOutcomeCoveragePct",
+        "lockStatusComplete",
+        "lockedPredictionCount",
+        "lockedStatusCount",
+        "manifestGameCount",
+        "manifestGameIdentities",
+        "manifestVersion",
+        "minutesUntilFirstGameStart",
+        "minutesUntilFirstPerGameLock",
+        "missedLockCount",
+        "noPredictionDataCount",
+        "officialScheduleAuthoritativeStartTimes",
+        "officialScheduleAuthorityFingerprint",
+        "officialScheduleAuthoritySource",
+        "officialScheduleAuthorityVersion",
+        "officialScheduleBacked",
+        "officialScheduleGameCount",
+        "officialScheduleMissingProviderEventGameIds",
+        "operationalDefectScopeVersion",
+        "operationalDefectScopes",
+        "pendingCanonicalGameCount",
+        "pendingCanonicalStatuses",
+        "pendingLockStatusGameCount",
+        "providerManifestFingerprint",
+        "providerManifestFullProviderSchedule",
+        "providerManifestImmutable",
+        "providerManifestObservedAtUtc",
+        "providerManifestPk",
+        "providerManifestPullId",
+        "providerManifestSk",
+        "providerManifestValidated",
+        "providerManifestVersion",
+        "readinessValidationWarnings",
+        "readinessWarningGameCount",
+        "releasePlayabilityOperationalDefect",
+        "rosterAuthorityMode",
+        "rules",
+        "scoringPullCount",
+        "source",
+        "totalPullCountAvailable",
+        "verifiedFullSlateGameCount",
+        "verifiedFullSlateManifestVersion",
+        "winnerLifecycleOperationalDefect",
+    }
+)
+
+
+def _public_lock_binding_errors(
+    existing_row: Dict[str, Any],
+    incoming_row: Dict[str, Any],
+) -> List[str]:
+    """Bind every stored slate-lock field that _official_row preserves."""
+
+    existing_lock = existing_row.get("slatePredictionLock") or {}
+    incoming_lock = incoming_row.get("slatePredictionLock") or {}
+    if not isinstance(existing_lock, dict) or not isinstance(
+        incoming_lock, dict
+    ):
+        return ["canonical_overlay_public_lock_not_mapping"]
+
+    preserved = {
+        key: copy.deepcopy(value)
+        for key, value in existing_lock.items()
+        if key not in _SLATE_LOCK_RENDERER_FIELDS
+    }
+    missing = sorted(set(preserved) - set(incoming_lock))
+    mismatched = sorted(
+        key
+        for key, value in preserved.items()
+        if key in incoming_lock
+        and _payload_fingerprint(incoming_lock.get(key))
+        != _payload_fingerprint(value)
+    )
+    allowed = (
+        set(preserved)
+        | set(_SLATE_LOCK_RENDERER_FIELDS)
+        | set(_SLATE_LOCK_PUBLIC_OBSERVABILITY_FIELDS)
+    )
+    extra = sorted(set(incoming_lock) - allowed)
+    errors = []
+    if missing:
+        errors.append(
+            "canonical_overlay_public_lock_preserved_fields_missing:"
+            + ",".join(missing)
+        )
+    if mismatched:
+        errors.append(
+            "canonical_overlay_public_lock_preserved_fields_mismatch:"
+            + ",".join(mismatched)
+        )
+    if extra:
+        errors.append(
+            "canonical_overlay_public_lock_unknown_fields:"
+            + ",".join(extra)
+        )
+    return errors
+
+
+def _rendered_tag_binding_errors(
+    existing_row: Dict[str, Any],
+    incoming_row: Dict[str, Any],
+) -> List[str]:
+    """Reconstruct the exact official/playability tag overlay."""
+
+    raw_tags = incoming_row.get("tags")
+    if not isinstance(raw_tags, list):
+        return ["canonical_overlay_rendered_tags_not_list"]
+    actual = [str(tag) for tag in raw_tags]
+    errors = []
+    if len(actual) != len(set(actual)):
+        errors.append("canonical_overlay_rendered_tags_duplicate")
+
+    expected = {
+        str(tag)
+        for tag in (existing_row.get("tags") or [])
+        if str(tag) != "SLATE_WIDE_45_MIN_LOCK_POLICY"
+    }
+    expected.update(
+        {
+            "CANONICAL_PER_GAME_LOCK",
+            "FINAL_LOCKED",
+            "OFFICIAL_LOCKED_PREDICTION",
+            "OFFICIAL_PREDICTION",
+        }
+    )
+    if incoming_row.get("playable") is True:
+        expected.update({"ACTIONABLE_PICK", "PLAYABLE_PREDICTION"})
+        expected.difference_update(
+            {"NOT_PLAYABLE", "RELEASE_BLOCKED", "WAGER_RELEASE_BLOCKED"}
+        )
+    else:
+        expected.update(
+            {"NOT_PLAYABLE", "RELEASE_BLOCKED", "WAGER_RELEASE_BLOCKED"}
+        )
+        expected.difference_update(
+            {"ACTIONABLE_PICK", "PLAYABLE_PREDICTION"}
+        )
+    if actual != sorted(expected):
+        errors.append("canonical_overlay_rendered_tags_mismatch")
+    return errors
+
+
+def _canonical_overlay_projection(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Return immutable selection/stage material unaffected by public overlays."""
+
+    import mlb_daily_per_game_lock_patch as per_game
+
+    vector = row.get("frozenFeatureVector") or {}
+    authority = row.get("canonicalPerGameStageAuthority") or {}
+    lock_at = (
+        row.get("lockedAtUtc")
+        or vector.get("lockAtUtc")
+        or (row.get("slatePredictionLock") or {}).get("lockAtUtc")
+    )
+    selection_material = per_game._selection_material(row)
+    final_gate = copy.deepcopy(
+        row.get("lastPossiblePredictionGate") or {}
+    )
+    for field in (
+        "policyVersion",
+        "phase",
+        "finalWindowActive",
+        "finalLocked",
+        "slateWideLock",
+        "perGameLock",
+        "lockAtUtc",
+    ):
+        final_gate.pop(field, None)
+    return {
+        "immutableStoredRow": _immutable_overlay_base(row),
+        "slate": _slate(row),
+        "canonicalGameIdentity": _canonical_identity(row),
+        "storageGameIdentity": _identity(row),
+        "commenceTime": _commence(row),
+        "gameId": row.get("gameId") or row.get("game_id"),
+        "gameKey": row.get("gameKey"),
+        "officialGamePk": row.get("officialGamePk"),
+        "officialGameId": row.get("officialGameId"),
+        "sourcePredictionGameId": row.get("sourcePredictionGameId"),
+        "sourcePredictionGameIdentity": row.get(
+            "sourcePredictionGameIdentity"
+        ),
+        "homeTeam": row.get("homeTeam") or row.get("home_team"),
+        "awayTeam": row.get("awayTeam") or row.get("away_team"),
+        "predictedWinner": row.get("predictedWinner"),
+        "predictedSide": row.get("predictedSide"),
+        "confidenceTier": row.get("confidenceTier"),
+        "promotionStatus": row.get("promotionStatus"),
+        "promoted": row.get("promoted"),
+        "score": row.get("score"),
+        "winProbability": row.get("winProbability"),
+        "edgeVsBook": row.get("edgeVsBook"),
+        "expectedValue": row.get("expectedValue"),
+        "createdAt": row.get("createdAt") or row.get("created_at"),
+        "lastPrelockPromotionVersion": row.get(
+            "lastPrelockPromotionVersion"
+        ),
+        "lastPrelockSelectionFingerprint": row.get(
+            "lastPrelockSelectionFingerprint"
+        ),
+        "recomputedSelectionFingerprint": _payload_fingerprint(
+            selection_material
+        ),
+        "lockedAtUtc": (
+            _parse_dt(lock_at).isoformat() if _parse_dt(lock_at) else None
+        ),
+        "predictionSourcePullAt": (
+            _parse_dt(row.get("predictionSourcePullAt")).isoformat()
+            if _parse_dt(row.get("predictionSourcePullAt"))
+            else None
+        ),
+        "predictionSourcePullId": row.get("predictionSourcePullId"),
+        "sourceLockLatestScoringPullAt": (
+            _parse_dt(
+                (row.get("slatePredictionLock") or {}).get(
+                    "latestScoringPullAt"
+                )
+            ).isoformat()
+            if _parse_dt(
+                (row.get("slatePredictionLock") or {}).get(
+                    "latestScoringPullAt"
+                )
+            )
+            else None
+        ),
+        "finalGateImmutableBase": final_gate,
+        "publicTrainingEligible": row.get("trainingEligible"),
+        "publicTrainingEligibilityStatus": row.get(
+            "trainingEligibilityStatus"
+        ),
+        "publicTrainingExclusionReasons": list(
+            row.get("trainingExclusionReasons") or []
+        ),
+        "modelOrSignalRecomputedAtLock": row.get(
+            "modelOrSignalRecomputedAtLock"
+        ),
+        "canonicalPerGameStageAuthority": copy.deepcopy(authority),
+        "frozenFeatureVectorIdentity": _vector_identity(row),
+    }
+
+
+def _read_existing_canonical_stage_direct(
+    table: Any,
+    row: Dict[str, Any],
+) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+    """Strong-read and validate the raw stage behind a canonical stored row."""
+
+    key = _stage_key(row)
+    try:
+        stage = table.get_item(
+            Key=key,
+            ConsistentRead=True,
+        ).get("Item")
+    except Exception as exc:
+        return None, [
+            "canonical_overlay_stage_consistent_read_failed:"
+            f"{type(exc).__name__}:{exc}"
+        ]
+    if not isinstance(stage, dict):
+        return None, ["canonical_overlay_verified_stage_not_found"]
+
+    errors = _stage_binding_errors(
+        table,
+        stage,
+        row,
+        key,
+        canonical_row=True,
+    )
+    proof = row.get("canonicalPerGameStageAuthority") or {}
+    expected = _authority_proof(stage)
+    if not isinstance(proof, dict):
+        errors.append(
+            "canonical_overlay_existing_stage_authority_proof_missing"
+        )
+        proof = {}
+    if set(proof) != set(expected):
+        missing = sorted(set(expected) - set(proof))
+        extra = sorted(set(proof) - set(expected))
+        errors.append(
+            "canonical_overlay_existing_stage_authority_keyset_mismatch:"
+            f"missing={','.join(missing)};extra={','.join(extra)}"
+        )
+    for field, value in expected.items():
+        if proof.get(field) != value:
+            errors.append(
+                "canonical_overlay_existing_stage_authority_"
+                f"{field}_mismatch"
+            )
+    return (stage if not errors else None), sorted(set(errors))
+
+
+def _existing_envelope_binding_errors(
+    module: Any,
+    existing: Dict[str, Any],
+    existing_row: Dict[str, Any],
+) -> List[str]:
+    """Bind every redundant LOCKED#GAME envelope field back to stored data."""
+
+    try:
+        expected = _locked_item(
+            module,
+            copy.deepcopy(existing_row),
+        )
+    except Exception as exc:
+        return [
+            "canonical_overlay_existing_envelope_rebuild_failed:"
+            f"{type(exc).__name__}:{exc}"
+        ]
+    expected_keys = set(expected)
+    actual_keys = set(existing)
+    if actual_keys != expected_keys:
+        missing = sorted(expected_keys - actual_keys)
+        extra = sorted(actual_keys - expected_keys)
+        return [
+            "canonical_overlay_existing_envelope_keyset_mismatch:"
+            f"missing={','.join(missing)};extra={','.join(extra)}"
+        ]
+    expected_envelope = {
+        key: copy.deepcopy(value)
+        for key, value in expected.items()
+        if key != "data"
+    }
+    actual_envelope = {
+        key: copy.deepcopy(existing.get(key))
+        for key in expected_envelope
+    }
+    if _payload_fingerprint(actual_envelope) != _payload_fingerprint(
+        expected_envelope
+    ):
+        mismatches = sorted(
+            key
+            for key, value in expected_envelope.items()
+            if _payload_fingerprint(actual_envelope.get(key))
+            != _payload_fingerprint(value)
+        )
+        return [
+            "canonical_overlay_existing_envelope_mismatch:"
+            + ",".join(mismatches)
+        ]
+    return []
+
+
+def _canonical_overlay_rejection(
+    key: Dict[str, str],
+    errors: List[str],
+) -> Dict[str, Any]:
+    return {
+        "ok": False,
+        "stored": False,
+        "suppressed": True,
+        "error": "LOCKED_CANONICAL_READ_OVERLAY_EXISTING_VERIFICATION_FAILED",
+        "authorityErrors": sorted(set(errors)),
+        "pk": key["PK"],
+        "sk": key["SK"],
+        "storageClass": "LOCKED_REJECTED",
+        "canonicalWriteAuthorized": False,
+        "canonicalWriteAttempted": False,
+        "canonicalReadOverlayVerified": False,
+        "requiredAuthority": (
+            "strongly verified existing immutable LOCKED#GAME row "
+            "with exact stage and immutable selection binding"
+        ),
+        "idempotencyVersion": (
+            CANONICAL_READ_OVERLAY_IDEMPOTENCY_VERSION
+        ),
+        "version": VERSION,
+    }
+
+
+def _verify_existing_canonical_overlay(
+    module: Any,
+    row: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Strong-read an existing canonical overlay without attempting a rewrite."""
+
+    table = module.history.PULLS
+    key = _locked_key(row)
+    try:
+        existing = table.get_item(
+            Key=key,
+            ConsistentRead=True,
+        ).get("Item")
+    except Exception as exc:
+        return _canonical_overlay_rejection(
+            key,
+            [
+                "canonical_overlay_consistent_read_failed:"
+                f"{type(exc).__name__}:{exc}"
+            ],
+        )
+
+    errors: List[str] = []
+    if not isinstance(existing, dict):
+        return _canonical_overlay_rejection(
+            key,
+            ["canonical_overlay_existing_locked_item_missing"],
+        )
+    if existing.get("PK") != key["PK"] or existing.get("SK") != key["SK"]:
+        errors.append("canonical_overlay_existing_key_mismatch")
+    if existing.get("record_type") != (
+        "mlb_immutable_locked_single_game_prediction"
+    ):
+        errors.append("canonical_overlay_existing_record_type_mismatch")
+    if existing.get("immutable_locked") is not True:
+        errors.append("canonical_overlay_existing_immutable_flag_missing")
+    if existing.get("stage_authority_verified") is not True:
+        errors.append(
+            "canonical_overlay_existing_stage_authority_flag_missing"
+        )
+    if existing.get("stage_authority_version") != AUTHORITY_VERSION:
+        errors.append(
+            "canonical_overlay_existing_stage_authority_version_mismatch"
+        )
+    if existing.get("immutable_locked_storage_version") != VERSION:
+        errors.append(
+            "canonical_overlay_existing_storage_version_mismatch"
+        )
+    if existing.get("selection_lock_verified") is not True:
+        errors.append(
+            "canonical_overlay_existing_selection_verification_missing"
+        )
+
+    existing_row = _stored_row(existing)
+    if not existing_row:
+        errors.append("canonical_overlay_existing_data_missing")
+    else:
+        if existing_row.get("immutablePerGameStage") is not True:
+            errors.append(
+                "canonical_overlay_existing_stage_marker_missing"
+            )
+        if existing_row.get("immutableLockedStorage") is not True:
+            errors.append(
+                "canonical_overlay_existing_locked_storage_marker_missing"
+            )
+        if existing_row.get("immutableLockedStorageKeyspace") != (
+            "LOCKED#GAME"
+        ):
+            errors.append(
+                "canonical_overlay_existing_locked_keyspace_mismatch"
+            )
+        if existing_row.get("immutableLockedStorageVersion") != VERSION:
+            errors.append(
+                "canonical_overlay_existing_row_storage_version_mismatch"
+            )
+        errors.extend(
+            _public_lock_binding_errors(
+                existing_row,
+                row,
+            )
+        )
+        errors.extend(
+            _rendered_tag_binding_errors(
+                existing_row,
+                row,
+            )
+        )
+        errors.extend(
+            _existing_envelope_binding_errors(
+                module,
+                existing,
+                existing_row,
+            )
+        )
+        stage, stage_errors = _read_existing_canonical_stage_direct(
+            table,
+            existing_row,
+        )
+        errors.extend(stage_errors)
+        try:
+            existing_vector_errors = _require_vector_status(
+                existing_row,
+                context="existing_canonical_overlay",
+            )
+        except Exception as exc:
+            existing_vector_errors = []
+            errors.append(
+                "canonical_overlay_existing_vector_status_invalid:"
+                f"{type(exc).__name__}:{exc}"
+            )
+        try:
+            incoming_vector_errors = _require_vector_status(
+                row,
+                context="canonical_read_overlay",
+            )
+        except Exception as exc:
+            incoming_vector_errors = []
+            errors.append(
+                "canonical_overlay_vector_status_invalid:"
+                f"{type(exc).__name__}:{exc}"
+            )
+        if sorted(set(existing_vector_errors)) != sorted(
+            set(incoming_vector_errors)
+        ):
+            errors.append(
+                "canonical_overlay_vector_error_set_mismatch"
+            )
+        try:
+            if _payload_fingerprint(
+                _canonical_overlay_projection(row)
+            ) != _payload_fingerprint(
+                _canonical_overlay_projection(existing_row)
+            ):
+                errors.append(
+                    "canonical_overlay_immutable_projection_mismatch"
+                )
+        except Exception as exc:
+            errors.append(
+                "canonical_overlay_projection_validation_failed:"
+                f"{type(exc).__name__}:{exc}"
+            )
+
+    if errors:
+        return _canonical_overlay_rejection(key, errors)
+
+    existing_training = existing_row.get("mlFeatureFreeze") or {}
+    authority = existing_row.get("canonicalPerGameStageAuthority") or {}
+    return {
+        "ok": True,
+        "pk": key["PK"],
+        "sk": key["SK"],
+        "storageClass": "LOCKED_IMMUTABLE",
+        "writeOnce": True,
+        "created": False,
+        "immutableExisting": True,
+        "idempotentExistingVerified": True,
+        "canonicalWriteAttempted": False,
+        "canonicalReadOverlayVerified": True,
+        "selectionLockVerified": True,
+        "exactVectorVerified": not existing_vector_errors,
+        "exactVectorValidationErrors": existing_vector_errors,
+        "incomingExactVectorValidationErrors": incoming_vector_errors,
+        "trainingEligible": bool(
+            existing_training.get("trainingEligible")
+        ),
+        "trainingExclusionReasons": list(
+            existing_training.get("trainingExclusionReasons") or []
+        ),
+        "stageAuthorityVerified": True,
+        "stageAuthorityVersion": AUTHORITY_VERSION,
+        "stageFingerprint": stage.get("stage_fingerprint"),
+        "frozenFeatureVectorFingerprint": _fingerprint(existing_row),
+        "idempotencyVersion": (
+            CANONICAL_READ_OVERLAY_IDEMPOTENCY_VERSION
+        ),
+        "version": VERSION,
     }
 
 
@@ -377,6 +1168,13 @@ def apply(module: Any):
 
         if module.history.PULLS is None:
             return {"ok": False, "error": "SNAPSHOTS_TABLE not configured", "storageClass": "LOCKED_IMMUTABLE"}
+
+        # The public coverage authority may return a display-enriched view of
+        # a canonical row that is already durable.  It is not the exact raw
+        # T-minus-45 stage and must never be rewritten.  Verify the existing
+        # LOCKED#GAME record and its immutable projection instead.
+        if _canonical_read_overlay(row):
+            return _verify_existing_canonical_overlay(module, row)
 
         stage, stage_errors = _read_verified_stage(module.history.PULLS, row, canonical_row=False)
         if not stage or stage_errors:
@@ -472,5 +1270,8 @@ def apply(module: Any):
 
     module._store_prediction = store_prediction
     module.IMMUTABLE_LOCKED_STORAGE_VERSION = VERSION
+    module.MLB_CANONICAL_READ_OVERLAY_IDEMPOTENCY_VERSION = (
+        CANONICAL_READ_OVERLAY_IDEMPOTENCY_VERSION
+    )
     module._INQSI_MLB_IMMUTABLE_LOCKED_STORAGE_APPLIED = True
     return module
