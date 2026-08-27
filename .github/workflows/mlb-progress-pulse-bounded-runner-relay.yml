@@ -30,9 +30,9 @@ concurrency:
 
 env:
   RELAY_MAX_SEGMENTS: '10'
-  RELAY_POLL_INTERVAL_SECONDS: '240'
-  # 76 probes have 75 four-minute intervals: exactly five hours per segment.
-  RELAY_POLLS_PER_SEGMENT: '76'
+  RELAY_POLL_INTERVAL_SECONDS: '120'
+  # 151 fixed-rate probes have 150 two-minute intervals: five hours per segment.
+  RELAY_POLLS_PER_SEGMENT: '151'
   RELAY_FAILURE_THRESHOLD: '3'
 
 jobs:
