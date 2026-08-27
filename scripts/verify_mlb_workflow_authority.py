@@ -283,7 +283,10 @@ def verify_repository(root: Path = ROOT) -> List[str]:
                 "TARGET_DEPLOY_SHA: ${{ needs.resolve.outputs.target_deploy_sha }}"
             )
             != 1
-            or "TARGET_DEPLOY_SHA: ${{ github.event.workflow_run" in postdeploy
+            or re.search(
+                r"(?m)^\\s+TARGET_DEPLOY_SHA: \\$\\{\\{ github\\.event\\.workflow_run",
+                postdeploy,
+            )
         ):
             errors.append("postdeploy_verification_exact_sha_binding_invalid")
         if "permissions:\n  contents: read\n" not in postdeploy:
