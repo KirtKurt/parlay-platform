@@ -7,8 +7,8 @@ on:
     - cron: '11,41 * * * *'
   # Event-driven fallbacks and the direct schedule share the same pre-deadline
   # staleness gate. This prevents a fallback pulse from being followed by a
-  # near-immediate scheduled duplicate. workflow_dispatch remains the explicit
-  # forced diagnostic path.
+  # near-immediate scheduled duplicate. Manual workflow_dispatch defaults to a
+  # forced diagnostic pulse; watchdog dispatches opt into one final fresh check.
   workflow_run:
     workflows:
       - MLB Canonical Runtime Health Watch
@@ -20,6 +20,12 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      force:
+        description: Force a pulse even when the latest visible pulse is fresh
+        required: false
+        default: true
+        type: boolean
   push:
     branches: [main]
     paths:
@@ -81,12 +87,13 @@ jobs:
         id: decision
         env:
           EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_DISPATCH_FORCE: ${{ inputs.force }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           python -m py_compile scripts/check_mlb_progress_pulse_staleness.py
           ! grep -Ei 'boto3|aws[[:space:]]+(dynamodb|lambda)|put_item|update_item|delete_item' scripts/check_mlb_progress_pulse_staleness.py
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$WORKFLOW_DISPATCH_FORCE" = "true" ]; then
             echo 'stale=false' >> "$GITHUB_OUTPUT"
             echo 'dispatch_required=true' >> "$GITHUB_OUTPUT"
             echo 'reason=EXPLICIT_WORKFLOW_DISPATCH' >> "$GITHUB_OUTPUT"

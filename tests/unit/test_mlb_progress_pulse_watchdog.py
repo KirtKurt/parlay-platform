@@ -276,7 +276,11 @@ def test_workflow_stale_gates_automatic_triggers_and_forces_explicit_dispatch() 
     ):
         assert producer in pulse
     assert "runtime_reports/mlb_*.json" in pulse
-    assert 'if [ "$EVENT_NAME" = "workflow_dispatch" ]; then' in pulse
+    assert (
+        'if [ "$EVENT_NAME" = "workflow_dispatch" ] && '
+        '[ "$WORKFLOW_DISPATCH_FORCE" = "true" ]; then'
+    ) in pulse
+    assert "WORKFLOW_DISPATCH_FORCE: ${{ inputs.force }}" in pulse
     assert "reason=EXPLICIT_WORKFLOW_DISPATCH" in pulse
     assert "reason=DIRECT_PULSE_TRIGGER" not in pulse
     assert "scripts/check_mlb_progress_pulse_staleness.py" in pulse
@@ -324,6 +328,7 @@ def test_independent_cadence_watchdog_is_stale_gated_and_read_only() -> None:
     assert "needs.decide.outputs.dispatch_required == 'true'" in watchdog_workflow
     assert "gh workflow run mlb-30m-progress-pulse.yml" in watchdog_workflow
     assert "--ref main" in watchdog_workflow
+    assert "--field force=false" in watchdog_workflow
     assert "actions: write" in watchdog_workflow
     assert "issues: write" not in watchdog_workflow
     assert "aws-actions/configure-aws-credentials" not in watchdog_workflow
@@ -334,15 +339,37 @@ def test_independent_cadence_watchdog_is_stale_gated_and_read_only() -> None:
     assert "cancel-in-progress: false" in watchdog_workflow
 
 
-def test_primary_reporter_accepts_fixed_watchdog_dispatch() -> None:
+def test_default_manual_dispatch_remains_explicitly_forced() -> None:
     pulse = (ROOT / ".github/workflows/mlb-30m-progress-pulse.yml").read_text()
 
-    assert "workflow_dispatch:" in pulse
-    assert 'if [ "$EVENT_NAME" = "workflow_dispatch" ]; then' in pulse
-    forced_block = pulse.split(
-        'if [ "$EVENT_NAME" = "workflow_dispatch" ]; then', 1
-    )[1].split("else", 1)[0]
+    dispatch_block = pulse.split("workflow_dispatch:", 1)[1].split("push:", 1)[0]
+    assert "force:" in dispatch_block
+    assert "default: true" in dispatch_block
+    assert "type: boolean" in dispatch_block
+
+    force_condition = (
+        'if [ "$EVENT_NAME" = "workflow_dispatch" ] && '
+        '[ "$WORKFLOW_DISPATCH_FORCE" = "true" ]; then'
+    )
+    decision_tail = pulse.split(force_condition, 1)[1]
+    forced_block, stale_gated_tail = decision_tail.split("else", 1)
+    stale_gated_block = stale_gated_tail.split("fi", 1)[0]
     assert "dispatch_required=true" in forced_block
+    assert "reason=EXPLICIT_WORKFLOW_DISPATCH" in forced_block
+    assert "python scripts/check_mlb_progress_pulse_staleness.py" in stale_gated_block
+    assert '--current-run-id "$GITHUB_RUN_ID"' in stale_gated_block
+
+
+def test_watchdog_rechecks_after_decision_dispatch_race_and_suppresses_duplicate() -> None:
+    initial_watchdog_decision = _evaluate([_comment("2026-08-26T20:41:21Z")])
+    assert initial_watchdog_decision["dispatchRequired"] is True
+
+    # Another primary event posts while the watchdog dispatch is being queued.
+    dispatched_primary_recheck = _evaluate([_comment("2026-08-26T21:59:30Z")])
+
+    assert dispatched_primary_recheck["stale"] is False
+    assert dispatched_primary_recheck["dispatchRequired"] is False
+    assert dispatched_primary_recheck["reason"] == "VISIBLE_PULSE_FRESH"
 
 
 def test_fresh_fallback_pulse_suppresses_following_scheduled_duplicate() -> None:
