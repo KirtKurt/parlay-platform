@@ -517,10 +517,13 @@ def _complete_terminal_checkpoint(
         "verificationComplete": True,
         "attemptCount": 2 * game_count,
         "lastAttempt": {
-            "status": "ATOMIC_DURABLE_PROOF_VERIFIED",
-            "stage": "COMPLETE",
+            "status": "DURABLE_TERMINAL_VERIFIED",
+            "stage": "COMPLETE_READY",
             "atUtc": "2026-07-21T22:10:00+00:00",
             "phase": "VERIFY",
+            "gameIndex": game_count - 1,
+            "gameIdentity": f"provider:game-{game_count}",
+            "durableIdentity": f"provider:game-{game_count}",
         },
         "identityResolutionVersion": (
             COOPERATIVE_REPAIR.COOPERATIVE_TERMINAL_IDENTITY_RESOLUTION_VERSION
@@ -3214,33 +3217,106 @@ def test_dynamodb_decimal_game_index_serializes_after_execution_lease_release():
 @pytest.mark.parametrize(
     "last_attempt",
     (
+        None,
+        [],
+        {},
         ["not-an-object"],
         {
             "status": {"nested": "FAILED_CLOSED"},
-            "stage": "PROCESS",
+            "stage": "READ_DURABLE_TERMINAL",
             "atUtc": "2026-07-21T22:10:00+00:00",
-            "phase": "PROCESS",
+            "phase": "VERIFY",
+            "errorCode": "NESTED_STATUS",
         },
         {
-            "status": "FAILED_CLOSED",
-            "stage": "PROCESS",
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
             "atUtc": "2026-07-21T22:10:00+00:00",
-            "phase": "PROCESS",
+            "phase": "VERIFY",
             "gameIndex": Decimal("0.5"),
         },
         {
-            "status": "FAILED_CLOSED",
-            "stage": "PROCESS",
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
             "atUtc": "2026-07-21T22:10:00+00:00",
-            "phase": "PROCESS",
+            "phase": "VERIFY",
+            "gameIndex": 0.0,
+        },
+        {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
+            "gameIndex": "0",
+        },
+        {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
+            "gameIndex": Decimal("1"),
+        },
+        {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
             "gameIndex": {"nested": 0},
         },
         {
-            "status": "FAILED_CLOSED",
-            "stage": "PROCESS",
+            "status": "ARBITRARY_STATUS",
+            "stage": "PROCESS_CHECKPOINT_READY",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
+        },
+        {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "ARBITRARY_STAGE",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
+        },
+        {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
             "atUtc": "2026-07-21T22:10:00+00:00",
             "phase": "PROCESS",
+        },
+        {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
+            "atUtc": "2026-07-21T22:10:00",
+            "phase": "VERIFY",
+        },
+        {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
+            "atUtc": "2026-07-21T23:10:00+01:00",
+            "phase": "VERIFY",
+        },
+        {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
+            "atUtc": "2026-07-21T22:10:00Z",
+            "phase": "VERIFY",
+        },
+        {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
+            "gameIdentity": "x" * 201,
+        },
+        {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
             "unexpected": {"nested": True},
+        },
+        {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
+            "phase": "VERIFY",
         },
     ),
 )
@@ -3265,6 +3341,118 @@ def test_cooperative_public_progress_fails_closed_on_corrupt_last_attempt(
             "valid": False,
             "failClosed": True,
         }
+        json.dumps(public, sort_keys=True)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("manifestGameCount", Decimal("1.5")),
+        ("manifestGameCount", 1.0),
+        ("manifestGameCount", "1"),
+        ("manifestGameCount", Decimal("16")),
+        ("nextGameIndex", Decimal("0.5")),
+        ("attemptCount", Decimal("1e100000")),
+    ),
+)
+def test_cooperative_public_progress_rejects_non_integral_or_unbounded_counts(
+    field,
+    value,
+):
+    with _load_handler() as (handler, _, _):
+        progress = _complete_terminal_checkpoint(
+            slate_date="2026-07-20",
+            game_count=1,
+        )
+        progress[field] = value
+
+        public = handler._cooperative_terminal_progress_public(
+            {
+                "slate_date_et": "2026-07-20",
+                "terminal_replay_progress": progress,
+            }
+        )
+
+        assert public == {
+            "version": handler.COOPERATIVE_TERMINAL_CHUNK_VERSION,
+            "valid": False,
+            "failClosed": True,
+        }
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("manifestGameCount", 0),
+        ("nextGameIndex", 0),
+        ("processedGameCount", 0),
+        ("terminalCount", 0),
+        ("canonicalCount", 1),
+        ("reconciledCount", 2),
+        ("verificationIndex", 0),
+        ("verifiedGameCount", 0),
+        ("attemptCount", 0),
+        ("phase", "PROCESS"),
+        ("verificationComplete", False),
+    ),
+)
+def test_cooperative_public_progress_rejects_impossible_relational_state(
+    field,
+    value,
+):
+    with _load_handler() as (handler, _, _):
+        progress = _complete_terminal_checkpoint(
+            slate_date="2026-07-20",
+            game_count=1,
+        )
+        progress[field] = value
+
+        public = handler._cooperative_terminal_progress_public(
+            {
+                "slate_date_et": "2026-07-20",
+                "terminal_replay_progress": progress,
+            }
+        )
+
+        assert public == {
+            "version": handler.COOPERATIVE_TERMINAL_CHUNK_VERSION,
+            "valid": False,
+            "failClosed": True,
+        }
+
+
+def test_cooperative_public_progress_projects_only_integral_ddb_decimals():
+    with _load_handler() as (handler, _, _):
+        progress = _complete_terminal_checkpoint(
+            slate_date="2026-07-20",
+            game_count=1,
+        )
+        for field in (
+            "manifestGameCount",
+            "nextGameIndex",
+            "processedGameCount",
+            "terminalCount",
+            "canonicalCount",
+            "noPredictionDataCount",
+            "reconciledCount",
+            "verificationIndex",
+            "verifiedGameCount",
+            "attemptCount",
+        ):
+            progress[field] = Decimal(progress[field])
+        progress["lastAttempt"]["gameIndex"] = Decimal("0")
+
+        public = handler._cooperative_terminal_progress_public(
+            {
+                "slate_date_et": "2026-07-20",
+                "terminal_replay_progress": progress,
+            }
+        )
+
+        assert public["valid"] is True
+        assert type(public["manifestGameCount"]) is int
+        assert type(public["attemptCount"]) is int
+        assert type(public["lastAttempt"]["gameIndex"]) is int
         json.dumps(public, sort_keys=True)
 
 
