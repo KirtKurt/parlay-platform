@@ -1,0 +1,381 @@
+name: Read-only R7 post-f820 live proof
+run-name: Read-only R7 post-f820 proof ${{ github.run_id }}
+
+"on":
+  push:
+    branches:
+      - codex/r7-postfix-readonly-proof-f820-a1
+    paths:
+      - .github/workflows/r7-postfix-readonly-proof-f820.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r7-postfix-readonly-proof-f820
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  ROOT_STACK: parlay-platform-dev
+  LOCK_LOGICAL_ID: MLBDailyPickLockFunction
+  SNAPSHOTS_TABLE: parlay_platform_snapshots
+  EXPECTED_FIX_SHA: f8209e6ec8d86f5285c85712fdbbe6610d57e62f
+  EXPECTED_PK: MLB_LOCK_EXECUTION#V1
+  EXPECTED_SK: COOPERATIVE_TERMINAL_REPLAY#V1
+  EXPECTED_RECORD_TYPE: mlb_cooperative_terminal_replay_v1
+  EXPECTED_COORDINATION_VERSION: MLB-COOPERATIVE-TERMINAL-REPLAY-v1-eventbridge-owner-handoff
+
+jobs:
+  prove:
+    if: github.repository == 'KirtKurt/parlay-platform' && github.ref == 'refs/heads/codex/r7-postfix-readonly-proof-f820-a1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Guard isolated branch-only execution
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/codex/r7-postfix-readonly-proof-f820-a1'
+          test "$GITHUB_REPOSITORY" = 'KirtKurt/parlay-platform'
+
+      - name: Configure read credential
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Read fixed deploy, bounded logs, and one exact queue snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          CONFIG_PATH="/tmp/r7-postfix-config-${GITHUB_RUN_ID}.json"
+          LOGS_PATH="/tmp/r7-postfix-logs-${GITHUB_RUN_ID}.json"
+          QUEUE_PATH="/tmp/r7-postfix-queue-${GITHUB_RUN_ID}.json"
+          LOCK_FN="$(aws cloudformation describe-stack-resource \
+            --stack-name "$ROOT_STACK" \
+            --logical-resource-id "$LOCK_LOGICAL_ID" \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)"
+          test -n "$LOCK_FN"
+          test "$LOCK_FN" != 'None'
+          aws lambda get-function-configuration \
+            --function-name "$LOCK_FN" \
+            --region "$AWS_REGION" \
+            --query '{handler:Handler,timeoutSeconds:Timeout,memorySizeMb:MemorySize,state:State,lastUpdateStatus:LastUpdateStatus,lastModified:LastModified,deployedGitSha:Environment.Variables.INQSI_DEPLOY_GIT_SHA,deployRunId:Environment.Variables.INQSI_DEPLOY_RUN_ID,deployTemplateSha256:Environment.Variables.INQSI_DEPLOY_TEMPLATE_SHA256,codeSha256:CodeSha256}' \
+            --output json > "$CONFIG_PATH"
+          START_MS="$(CONFIG_PATH="$CONFIG_PATH" python - <<'PY'
+          import json
+          import os
+          from datetime import datetime
+          with open(os.environ['CONFIG_PATH'], encoding='utf-8') as stream:
+              value = json.load(stream)
+          stamp = datetime.fromisoformat(
+              str(value['lastModified']).replace('Z', '+00:00')
+          )
+          print(int(stamp.timestamp() * 1000))
+          PY
+          )"
+          END_MS="$(date -u +%s%3N)"
+          test "$END_MS" -ge "$START_MS"
+          test $((END_MS - START_MS)) -le 1800000
+          LOG_GROUP="/aws/lambda/${LOCK_FN}"
+          aws logs filter-log-events \
+            --log-group-name "$LOG_GROUP" \
+            --start-time "$START_MS" \
+            --end-time "$END_MS" \
+            --interleaved \
+            --region "$AWS_REGION" \
+            --output json > "$LOGS_PATH"
+          aws dynamodb get-item \
+            --table-name "$SNAPSHOTS_TABLE" \
+            --key '{"PK":{"S":"MLB_LOCK_EXECUTION#V1"},"SK":{"S":"COOPERATIVE_TERMINAL_REPLAY#V1"}}' \
+            --consistent-read \
+            --return-consumed-capacity NONE \
+            --region "$AWS_REGION" \
+            --output json > "$QUEUE_PATH"
+          CONFIG_PATH="$CONFIG_PATH" LOGS_PATH="$LOGS_PATH" QUEUE_PATH="$QUEUE_PATH" START_MS="$START_MS" END_MS="$END_MS" python - <<'PY'
+          import json
+          import os
+          import re
+          from datetime import datetime, timezone
+
+          def iso_ms(value):
+              return datetime.fromtimestamp(
+                  int(value) / 1000, timezone.utc
+              ).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+
+          def decode(value):
+              if not isinstance(value, dict) or len(value) != 1:
+                  return None
+              kind, raw = next(iter(value.items()))
+              if kind == 'S':
+                  return raw
+              if kind == 'N':
+                  text = str(raw)
+                  try:
+                      return int(text)
+                  except ValueError:
+                      try:
+                          return float(text)
+                      except ValueError:
+                          return text
+              if kind == 'BOOL':
+                  return bool(raw)
+              if kind == 'NULL':
+                  return None
+              if kind == 'M':
+                  return {key: decode(entry) for key, entry in raw.items()}
+              if kind == 'L':
+                  return [decode(entry) for entry in raw]
+              if kind in {'SS', 'NS'}:
+                  return list(raw)
+              return '[REDACTED_BINARY_OR_UNKNOWN]'
+
+          with open(os.environ['CONFIG_PATH'], encoding='utf-8') as stream:
+              config = json.load(stream)
+          with open(os.environ['LOGS_PATH'], encoding='utf-8') as stream:
+              logs = json.load(stream)
+          with open(os.environ['QUEUE_PATH'], encoding='utf-8') as stream:
+              queue_raw = json.load(stream)
+          item = {
+              key: decode(value)
+              for key, value in (queue_raw.get('Item') or {}).items()
+          }
+
+          report_re = re.compile(
+              r'REPORT RequestId:.*?Duration:\s*([0-9.]+)\s*ms.*?'
+              r'Billed Duration:\s*([0-9.]+)\s*ms.*?'
+              r'Memory Size:\s*(\d+)\s*MB.*?'
+              r'Max Memory Used:\s*(\d+)\s*MB',
+              re.I | re.S,
+          )
+          status_re = re.compile(r'(?:Status|status):\s*([A-Za-z_]+)')
+          app_event_re = re.compile(r'^[A-Z0-9_]{1,180}$')
+          reports = []
+          app_events = []
+          start_count = 0
+          end_count = 0
+          for event in sorted(
+              logs.get('events') or [],
+              key=lambda row: int(row.get('timestamp') or 0),
+          ):
+              message = str(event.get('message') or '')
+              stamp = iso_ms(event.get('timestamp') or 0)
+              if 'START RequestId:' in message:
+                  start_count += 1
+              if 'END RequestId:' in message:
+                  end_count += 1
+              match = report_re.search(message)
+              if match:
+                  status_match = status_re.search(message)
+                  reports.append({
+                      'timestampUtc': stamp,
+                      'durationMs': float(match.group(1)),
+                      'billedDurationMs': float(match.group(2)),
+                      'memorySizeMb': int(match.group(3)),
+                      'maxMemoryUsedMb': int(match.group(4)),
+                      'status': (
+                          status_match.group(1).upper()
+                          if status_match else 'SUCCESS_OR_UNSPECIFIED'
+                      ),
+                  })
+              stripped = message.strip()
+              if stripped.startswith('{') and stripped.endswith('}'):
+                  try:
+                      candidate = json.loads(stripped)
+                  except (TypeError, ValueError):
+                      candidate = None
+                  if isinstance(candidate, dict):
+                      event_name = str(candidate.get('event') or '')
+                      if app_event_re.fullmatch(event_name):
+                          app_events.append({
+                              'timestampUtc': stamp,
+                              'event': event_name,
+                              'slateDateEt': candidate.get('slateDateEt'),
+                              'requestRequeued': candidate.get('requestRequeued'),
+                              'staleClaimReclaimable': candidate.get('staleClaimReclaimable'),
+                              'activeLeaseMutationAllowed': candidate.get('activeLeaseMutationAllowed'),
+                              'releaseErrorCode': candidate.get('releaseErrorCode'),
+                          })
+
+          timeout_reports = [
+              row for row in reports
+              if row['status'] == 'TIMEOUT' or row['durationMs'] >= 899000
+          ]
+          proof = item.get('current_slate_success_proof')
+          proof_safe_fields = (
+              'version', 'currentSlateDateEt', 'requestSlateDateEt',
+              'requestEpoch', 'processedAtEpoch',
+              'postStartPredictionCreationAllowed',
+              'immutablePredictionRewriteAllowed',
+          )
+          safe_proof = (
+              {key: proof.get(key) for key in proof_safe_fields if key in proof}
+              if isinstance(proof, dict) else None
+          )
+          receipt = item.get('replay_receipt')
+          progress_fields = (
+              'manifestGameCount', 'canonicalCount',
+              'noPredictionDataCount', 'lockOutcomeCount',
+              'missedCount', 'dueMissingCount',
+          )
+          safe_receipt = None
+          if isinstance(receipt, dict):
+              progress = receipt.get('perGameLockProgress')
+              repair = receipt.get('missedLockTerminalReconciliation')
+              safe_receipt = {
+                  'ok': receipt.get('ok'),
+                  'sport': receipt.get('sport'),
+                  'slateDateEt': receipt.get('slateDateEt'),
+                  'reason': receipt.get('reason'),
+                  'perGameLockProgress': (
+                      {key: progress.get(key) for key in progress_fields}
+                      if isinstance(progress, dict) else None
+                  ),
+                  'missedLockTerminalReconciliation': ({
+                      'ok': repair.get('ok'),
+                      'version': repair.get('version'),
+                      'slateDateEt': repair.get('slateDateEt'),
+                      'manifestGameCount': repair.get('manifestGameCount'),
+                      'reconciledCount': repair.get('reconciledCount'),
+                      'remainingMissedCount': repair.get('remainingMissedCount'),
+                      'unresolved': repair.get('unresolved'),
+                      'progressAfter': (
+                          {
+                              key: (repair.get('progressAfter') or {}).get(key)
+                              for key in progress_fields
+                          }
+                          if isinstance(repair.get('progressAfter'), dict)
+                          else None
+                      ),
+                      'postStartPredictionCreationAllowed': repair.get(
+                          'postStartPredictionCreationAllowed'
+                      ),
+                  } if isinstance(repair, dict) else None),
+                  'postStartPredictionCreationAllowed': receipt.get(
+                      'postStartPredictionCreationAllowed'
+                  ),
+                  'immutablePredictionRewriteAllowed': receipt.get(
+                      'immutablePredictionRewriteAllowed'
+                  ),
+                  'directWorkflowTableWrite': receipt.get(
+                      'directWorkflowTableWrite'
+                  ),
+                  'productionAuthorityChanged': receipt.get(
+                      'productionAuthorityChanged'
+                  ),
+                  'cooperativeReceiptRedacted': receipt.get(
+                      'cooperativeReceiptRedacted'
+                  ),
+              }
+
+          timeline_fields = (
+              'requested_at_utc', 'requested_at_epoch',
+              'claim_acquired_at_utc', 'claim_acquired_at_epoch',
+              'claim_expires_at_utc', 'claim_expires_at_epoch',
+              'last_failure_at_utc', 'last_failure_at_epoch',
+              'completed_at_utc', 'completed_at_epoch',
+              'acknowledged_at_utc', 'acknowledged_at_epoch',
+          )
+          now_epoch = int(datetime.now(timezone.utc).timestamp())
+          try:
+              claim_expiry = int(item.get('claim_expires_at_epoch') or 0)
+          except (TypeError, ValueError):
+              claim_expiry = 0
+          state = str(item.get('state') or '')
+          identity_ok = bool(item) and all((
+              item.get('PK') == os.environ['EXPECTED_PK'],
+              item.get('SK') == os.environ['EXPECTED_SK'],
+              item.get('record_type') == os.environ['EXPECTED_RECORD_TYPE'],
+              item.get('coordination_version')
+              == os.environ['EXPECTED_COORDINATION_VERSION'],
+          ))
+          deployment_ok = bool(
+              config.get('handler')
+              == 'mlb_daily_pick_lock_protected.lambda_handler'
+              and int(config.get('timeoutSeconds') or 0) == 900
+              and config.get('state') == 'Active'
+              and config.get('lastUpdateStatus') == 'Successful'
+          )
+          result = {
+              'ok': identity_ok and deployment_ok and not timeout_reports,
+              'proofType': 'R7_POST_F820_QUEUE_AND_LOGS_READ_ONLY',
+              'observedAtUtc': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+              'sourceRunId': os.environ.get('GITHUB_RUN_ID'),
+              'sourceBranch': os.environ.get('GITHUB_REF_NAME'),
+              'readOnly': True,
+              'awsOperations': [
+                  'cloudformation:DescribeStackResource',
+                  'lambda:GetFunctionConfiguration',
+                  'logs:FilterLogEvents',
+                  'dynamodb:GetItem',
+              ],
+              'lambdaInvocationsAttempted': 0,
+              'tableWritesAttempted': 0,
+              'leaseMutationsAttempted': 0,
+              'fixedDeployment': {
+                  'expectedFixSha': os.environ['EXPECTED_FIX_SHA'],
+                  'deployedGitSha': config.get('deployedGitSha'),
+                  'exactFixCommitDeployed': (
+                      config.get('deployedGitSha') == os.environ['EXPECTED_FIX_SHA']
+                  ),
+                  'deployRunId': config.get('deployRunId'),
+                  'deployTemplateSha256': config.get('deployTemplateSha256'),
+                  'codeSha256': config.get('codeSha256'),
+                  'lastModified': config.get('lastModified'),
+                  'handler': config.get('handler'),
+                  'timeoutSeconds': config.get('timeoutSeconds'),
+                  'memorySizeMb': config.get('memorySizeMb'),
+                  'state': config.get('state'),
+                  'lastUpdateStatus': config.get('lastUpdateStatus'),
+                  'physicalFunctionIdentifierRedacted': True,
+              },
+              'postFixLogWindow': {
+                  'startUtc': iso_ms(os.environ['START_MS']),
+                  'endUtc': iso_ms(os.environ['END_MS']),
+                  'rawEventCount': len(logs.get('events') or []),
+                  'startCount': start_count,
+                  'endCount': end_count,
+                  'reportCount': len(reports),
+                  'reports': reports,
+                  'safeApplicationEvents': app_events,
+                  'timeout900SecondCount': len(timeout_reports),
+                  'noFurther900SecondTimeoutObserved': not timeout_reports,
+              },
+              'queue': {
+                  'itemPresent': bool(item),
+                  'identityContractPassed': identity_ok,
+                  'key': {
+                      'PK': os.environ['EXPECTED_PK'],
+                      'SK': os.environ['EXPECTED_SK'],
+                  },
+                  'coordinationVersion': item.get('coordination_version'),
+                  'state': state,
+                  'terminalStateReached': state in {'COMPLETED', 'ACKNOWLEDGED'},
+                  'slateDateEt': item.get('slate_date_et'),
+                  'timeline': {
+                      key: item.get(key)
+                      for key in timeline_fields if key in item
+                  },
+                  'claimOwnerPresent': bool(item.get('claim_owner')),
+                  'claimOwner': (
+                      '[REDACTED]' if item.get('claim_owner') else None
+                  ),
+                  'claimFreshAtObservation': bool(
+                      state == 'CLAIMED' and claim_expiry > now_epoch
+                  ),
+                  'currentSlateSuccessProofPresent': isinstance(proof, dict),
+                  'currentSlateSuccessProof': safe_proof,
+                  'replayReceiptPresent': isinstance(receipt, dict),
+                  'replayReceipt': safe_receipt,
+                  'requestOwnerIdentifiersRedacted': True,
+              },
+              'secretsEmitted': False,
+          }
+          print(json.dumps(result, indent=2, sort_keys=True))
+          if not result['ok']:
+              raise SystemExit('Post-fix read-only proof failed its safety/timeout contract')
+          PY
