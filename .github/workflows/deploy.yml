@@ -519,6 +519,7 @@ jobs:
               'lockedPredictionCount',
               'lockedStatusCount',
               'noPredictionDataCount',
+              'missedLockValidPrelockQuarantineCount',
               'lockStatusComplete',
               'canonicalPredictionComplete',
               'operationalDefect',
@@ -565,8 +566,9 @@ jobs:
           locked_predictions = int(payload.get('lockedPredictionCount') or 0)
           locked_statuses = int(payload.get('lockedStatusCount') or 0)
           terminal_no_data = int(payload.get('noPredictionDataCount') or 0)
-          if locked_statuses != locked_predictions + terminal_no_data:
-              raise SystemExit('Lock-status counts conflate canonical predictions and terminal outcomes')
+          quarantine_count = int(payload.get('missedLockValidPrelockQuarantineCount') or 0)
+          if locked_statuses != locked_predictions + terminal_no_data + quarantine_count:
+              raise SystemExit('Lock-status counts conflate canonical predictions, no-data outcomes, and quarantine')
           if not (0 <= locked_predictions <= locked_statuses <= game_count):
               raise SystemExit('Live MLB lock-status counts exceed the full-slate game count')
           if payload.get('canonicalPredictionComplete') != (bool(game_count) and locked_predictions == game_count):
@@ -625,11 +627,29 @@ jobs:
                   raise SystemExit(f'Provider event identity was not preserved for {game_id}')
               if provider_event_id in (None, '') and not game_id.startswith('mlb_statsapi:'):
                   raise SystemExit(f'Provider-missing official game lacks the Stats API fallback identity: {game_id}')
-              if row.get('lockStatus') == 'LOCKED_NO_PREDICTION_DATA':
-                  if row.get('lockedPrediction') is not False or row.get('predictedWinner') not in (None, ''):
-                      raise SystemExit('Terminal no-data status was counted as a canonical winner')
+              terminal_status = str(row.get('lockStatus') or '')
+              if terminal_status in {
+                  'LOCKED_NO_PREDICTION_DATA',
+                  'MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED',
+              }:
+                  if (
+                      row.get('lockedPrediction') is not False
+                      or row.get('predictedWinner') not in (None, '')
+                      or row.get('predictedSide') not in (None, '')
+                  ):
+                      raise SystemExit('Terminal lifecycle row was counted as a canonical winner')
                   if row.get('blocked') is not True or row.get('trainingEligible') is not False:
-                      raise SystemExit('Terminal no-data status is not release/training ineligible')
+                      raise SystemExit('Terminal lifecycle row is not release/training ineligible')
+              if terminal_status == 'MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED':
+                  if (
+                      row.get('officialPrediction') is not False
+                      or row.get('playable') is not False
+                      or row.get('accuracyEligible') is not False
+                      or row.get('wagerAllowed') is not False
+                      or row.get('predictionAdopted') is not False
+                      or row.get('operationalDefect') is not True
+                  ):
+                      raise SystemExit('Missed-lock quarantine exposes prediction authority')
               if row.get('lockedPrediction') is True:
                   if row.get('predictedWinner') in (None, ''):
                       raise SystemExit(f'Immutable lock is missing its winner for {game_id}')
@@ -751,6 +771,7 @@ jobs:
               'officialPredictionCount',
               'lockedStatusCount',
               'noPredictionDataCount',
+              'missedLockValidPrelockQuarantineCount',
               'lockStatusComplete',
               'canonicalPredictionComplete',
               'operationalDefect',
@@ -770,10 +791,13 @@ jobs:
           prediction_locks = int(predictions.get('lockedPredictionCount') or 0)
           prediction_statuses = int(predictions.get('lockedStatusCount') or 0)
           prediction_terminal = int(predictions.get('noPredictionDataCount') or 0)
+          prediction_quarantine = int(predictions.get('missedLockValidPrelockQuarantineCount') or 0)
           if prediction_locks != int(predictions.get('officialPredictionCount') or 0):
               raise SystemExit('Official prediction count does not match canonical winner count')
-          if prediction_statuses != prediction_locks + prediction_terminal:
-              raise SystemExit('Prediction endpoint conflates canonical winners and terminal outcomes')
+          if prediction_statuses != prediction_locks + prediction_terminal + prediction_quarantine:
+              raise SystemExit('Prediction endpoint conflates canonical winners, no-data outcomes, and quarantine')
+          if prediction_quarantine != quarantine_count:
+              raise SystemExit('Prediction and lock-status quarantine counts differ')
 
           prediction_by_game = {
               str(row.get('gameId') or row.get('gameIdentity') or ''): row
@@ -814,13 +838,26 @@ jobs:
                       if prediction_row.get('probabilityCorrectionApplied') is True:
                           if prediction_row.get('playable') is not False or prediction_row.get('trainingEligible') is not False:
                               raise SystemExit(f'Probability correction did not fail closed for {game_id}')
-              if not (status_row.get('lockedPrediction') is True or status_row.get('lockStatus') == 'LOCKED_NO_PREDICTION_DATA'):
+              terminal_status = str(status_row.get('lockStatus') or '')
+              if not (
+                  status_row.get('lockedPrediction') is True
+                  or terminal_status in {
+                      'LOCKED_NO_PREDICTION_DATA',
+                      'MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED',
+                  }
+              ):
                   continue
-              if status_row.get('lockStatus') == 'LOCKED_NO_PREDICTION_DATA':
-                  if prediction_row.get('lockStatus') != 'LOCKED_NO_PREDICTION_DATA':
+              if terminal_status in {
+                  'LOCKED_NO_PREDICTION_DATA',
+                  'MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED',
+              }:
+                  if prediction_row.get('lockStatus') != terminal_status:
                       raise SystemExit(f'Terminal status mismatch between endpoints for {game_id}')
-                  if prediction_row.get('predictedWinner') not in (None, ''):
-                      raise SystemExit(f'Terminal prediction row exposes a winner for {game_id}')
+                  if (
+                      prediction_row.get('predictedWinner') not in (None, '')
+                      or prediction_row.get('predictedSide') not in (None, '')
+                  ):
+                      raise SystemExit(f'Terminal prediction row exposes a selection for {game_id}')
                   continue
               for field in ('predictedWinner', 'predictedSide', 'selectionFingerprint'):
                   if prediction_row.get(field) != status_row.get(field):

@@ -214,7 +214,18 @@ def terminal_outcome(official_pk: str):
         "lock_status": "LOCKED_NO_PREDICTION_DATA",
         "lock_outcome_recorded": True,
         "locked_prediction": False,
+        "canonical": False,
+        "official_prediction": False,
+        "playable": False,
+        "blocked": True,
         "training_eligible": False,
+        "accuracy_eligible": False,
+        "wager_allowed": False,
+        "prediction_adopted": False,
+        "operational_defect": False,
+        "canonical_prediction_complete": False,
+        "post_start_prediction_creation_allowed": False,
+        "immutable_prediction_rewrite_allowed": False,
         "write_once": True,
     }
 
@@ -611,6 +622,25 @@ def test_stored_proof_with_zero_labels_is_not_a_false_green(monkeypatch):
     assert requested_fetch["officialFinalDryRun"]["ok"] is True
 
 
+def test_stored_only_partial_terminal_evidence_is_not_authoritative(monkeypatch):
+    terminal = terminal_outcome("700053")
+    install_inputs(
+        monkeypatch,
+        [],
+        [official_game("700053"), official_game("700054")],
+        terminals={"700053": terminal},
+    )
+
+    report = labels.settlement_proof_report(SLATE, fetch_scores=False)
+
+    assert report["ok"] is False
+    assert report["verificationComplete"] is False
+    assert report["terminalOnlyEmptyLabelProof"] is False
+    assert report["status"] == "WAITING_FOR_FIRST_CANONICAL_FINAL_LABEL"
+    assert report["terminalOutcomeCount"] == 1
+    assert report["proofReadMode"] == "STORED_CANONICAL_LABELS_ONLY"
+
+
 def test_terminal_no_prediction_outcome_is_excluded_not_labeled(monkeypatch):
     terminal = terminal_outcome("700060")
     table = install_inputs(
@@ -807,6 +837,76 @@ def test_training_loader_requires_complete_final_slate_and_exact_labels(monkeypa
     )
     assert no_longer_pregame["rowCount"] == 0
     assert no_longer_pregame["ok"] is False
+
+
+def test_terminal_only_full_final_slate_finalizes_without_training_rows(monkeypatch):
+    games = [official_game(str(710000 + index)) for index in range(15)]
+    terminals = {
+        game["officialGamePk"]: terminal_outcome(game["officialGamePk"])
+        for game in games
+    }
+    terminals[games[0]["officialGamePk"]].update(
+        {
+            "lock_status": (
+                labels.per_game_lock.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+            ),
+            "operationalDefect": True,
+            "canonicalPredictionComplete": False,
+            "accuracyEligible": False,
+            "wagerAllowed": False,
+            "predictedWinner": None,
+            "prediction": None,
+            "selection": None,
+            "validPrelockCandidateQuarantined": True,
+        }
+    )
+    table = install_inputs(monkeypatch, [], games, terminals=terminals)
+
+    settlement = labels.settle_mlb_slate(SLATE)
+    loaded = labels.load_canonical_training_rows(
+        slate_date=SLATE,
+        official_fetcher=lambda slate: copy.deepcopy(official_report(*games)),
+    )
+
+    assert settlement["ok"] is True
+    assert settlement["labelWriteCount"] == 0
+    assert table.items == {}
+    assert loaded["ok"] is True
+    assert loaded["finalizedSlateDates"] == [SLATE]
+    assert loaded["rows"] == []
+    assert loaded["rowCount"] == 0
+    diagnostic = loaded["slates"][0]
+    assert diagnostic["slateFinalized"] is True
+    assert diagnostic["canonicalLockCount"] == 0
+    assert diagnostic["terminalNoPredictionCount"] == 14
+    assert diagnostic["missedLockValidPrelockQuarantineCount"] == 1
+    assert diagnostic["terminalExcludedCount"] == 15
+    assert diagnostic["trainingCleanSlate"] is False
+    assert diagnostic["quarantinedRowsAdmittedToTraining"] == 0
+
+
+def test_terminal_only_incomplete_coverage_never_finalizes(monkeypatch):
+    games = [official_game(str(720000 + index)) for index in range(15)]
+    terminals = {
+        game["officialGamePk"]: terminal_outcome(game["officialGamePk"])
+        for game in games[:-1]
+    }
+    install_inputs(monkeypatch, [], games, terminals=terminals)
+
+    loaded = labels.load_canonical_training_rows(
+        slate_date=SLATE,
+        official_fetcher=lambda slate: copy.deepcopy(official_report(*games)),
+    )
+
+    assert loaded["ok"] is False
+    assert loaded["finalizedSlateDates"] == []
+    assert loaded["rows"] == []
+    assert loaded["rowCount"] == 0
+    diagnostic = loaded["slates"][0]
+    assert diagnostic["slateFinalized"] is False
+    assert diagnostic["coverageComplete"] is False
+    assert diagnostic["terminalExcludedCount"] == 14
+    assert diagnostic["quarantinedRowsAdmittedToTraining"] == 0
 
 
 def test_training_loader_emits_no_rows_until_every_official_game_is_final(monkeypatch):

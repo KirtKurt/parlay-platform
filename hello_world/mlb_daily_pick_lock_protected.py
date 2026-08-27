@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from decimal import Decimal, InvalidOperation
+from typing import Any, Dict, Mapping, Optional
 
 from botocore.exceptions import ClientError
 
@@ -105,17 +108,147 @@ COOPERATIVE_REPLAY_QUEUED = "QUEUED"
 COOPERATIVE_REPLAY_CLAIMED = "CLAIMED"
 COOPERATIVE_REPLAY_COMPLETED = "COMPLETED"
 COOPERATIVE_REPLAY_ACKNOWLEDGED = "ACKNOWLEDGED"
+COOPERATIVE_REPLAY_REVIEW_REQUIRED = "REVIEW_REQUIRED"
 # The normal current-slate run always executes first.  A historical replay is
 # attempted only when Lambda still has a conservative ten-minute execution
 # budget plus the same one-minute release margin used by the global lease.
 COOPERATIVE_REPLAY_EXECUTION_BUDGET_SECONDS = 600
-COOPERATIVE_TERMINAL_CHUNK_VERSION = (
+COOPERATIVE_TERMINAL_CHUNK_V3_VERSION = (
     "MLB-COOPERATIVE-TERMINAL-CHUNK-v3-bounded-proof-lease-handoff"
+)
+COOPERATIVE_TERMINAL_CHUNK_VERSION = (
+    "MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine"
+)
+COOPERATIVE_REPLAY_PERMANENT_REVIEW_ERRORS = frozenset(
+    {
+        "PRELOCK_CANDIDATE_REQUIRES_REVIEW",
+        "COOPERATIVE_TERMINAL_CHUNK_V3_MIGRATION_NOT_ZERO_WORK",
+        "COOPERATIVE_TERMINAL_CHUNK_NOT_COMPLETE",
+        "COOPERATIVE_TERMINAL_CHUNK_NOT_EXACT_HISTORICAL_DATE",
+        "COOPERATIVE_TERMINAL_CHUNK_SLATE_DATE_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_GAME_IDENTITY_NOT_CALLABLE",
+        "COOPERATIVE_TERMINAL_CHUNK_CHECKPOINT_IDENTITY_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_CHECKPOINT_FINGERPRINT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_CHECKPOINT_NOT_OBJECT",
+        "COOPERATIVE_TERMINAL_CHUNK_CURSOR_OUT_OF_RANGE",
+        "COOPERATIVE_TERMINAL_CHUNK_PHASE_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_PROCESSED_GAMES_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_PROCESSED_GAME_NOT_OBJECT",
+        "COOPERATIVE_TERMINAL_CHUNK_PROCESSED_GAME_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_MANIFEST_AUTHORITY_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_MANIFEST_IDENTITY_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_AMBIGUOUS_MANIFEST_IDENTITY",
+        "COOPERATIVE_TERMINAL_CHUNK_MANIFEST_TOO_LARGE",
+        "COOPERATIVE_TERMINAL_CHUNK_MANIFEST_EVIDENCE_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_MANIFEST_AUTHORITY_EVIDENCE_MISMATCH",
+        "COOPERATIVE_TERMINAL_CHUNK_ATOMIC_EVIDENCE_CONFLICT",
+        "COOPERATIVE_TERMINAL_CHUNK_ATOMIC_READ_SET_OUT_OF_RANGE",
+        "COOPERATIVE_TERMINAL_CHUNK_ATOMIC_COMPLETION_PROOF_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_VERIFICATION_STATE_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_PROCESSEDGAMECOUNT_MISMATCH",
+        "COOPERATIVE_TERMINAL_CHUNK_TERMINALCOUNT_MISMATCH",
+        "COOPERATIVE_TERMINAL_CHUNK_CANONICALCOUNT_MISMATCH",
+        "COOPERATIVE_TERMINAL_CHUNK_NOPREDICTIONDATACOUNT_MISMATCH",
+        "COOPERATIVE_TERMINAL_CHUNK_MISSEDLOCKVALIDPRELOCKQUARANTINECOUNT_MISMATCH",
+        "COOPERATIVE_TERMINAL_CHUNK_RECONCILEDCOUNT_MISMATCH",
+        "COOPERATIVE_TERMINAL_CHUNK_VERIFIEDGAMECOUNT_MISMATCH",
+        "COOPERATIVE_TERMINAL_CHUNK_DURABLE_EVIDENCE_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_DURABLE_TARGET_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_OUTCOME_READBACK_INVALID",
+        "DURABLE_VERIFICATION_MISMATCH",
+        "OUTCOME_OBSERVATION_INVALID",
+        "AMBIGUOUS_DUAL_TERMINAL_AUTHORITY",
+        "AMBIGUOUS_DURABLE_TERMINAL_IDENTITY",
+        "NONCANONICAL_TERMINAL_ALIAS_REQUIRES_REVIEW",
+        "IMMUTABLE_LOCK_OUTCOME_AUTHORITY_INVALID",
+        "IMMUTABLE_STAGE_AUTHORITY_INVALID",
+        "IMMUTABLE_CANONICAL_READBACK_MISSING",
+        "TERMINAL_OUTCOME_STATUS_INVALID",
+        "NO_PREDICTION_TERMINAL_AUTHORITY_INVALID",
+        "VALID_PRELOCK_QUARANTINE_TERMINAL_AUTHORITY_INVALID",
+        "DURABLE_TERMINAL_MANIFEST_AUTHORITY_MISMATCH",
+        "VALID_PRELOCK_QUARANTINE_PROOF_INVALID",
+        "VALID_PRELOCK_QUARANTINE_IDENTITY_INVALID",
+        "VALID_PRELOCK_QUARANTINE_SNAPSHOT_KEY_MISSING",
+        "VALID_PRELOCK_QUARANTINE_SNAPSHOT_MISSING",
+        "VALID_PRELOCK_QUARANTINE_SNAPSHOT_ROW_INVALID",
+        "VALID_PRELOCK_QUARANTINE_SNAPSHOT_PROOF_MISMATCH",
+        "VALID_PRELOCK_QUARANTINE_TIMESTAMP_INVALID",
+        "VALID_PRELOCK_QUARANTINE_SOURCE_PULL_PROOF_MISMATCH",
+        "VALID_PRELOCK_QUARANTINE_MANIFEST_AUTHORITY_MISSING",
+        "VALID_PRELOCK_QUARANTINE_MANIFEST_AUTHORITY_INVALID",
+        "COOPERATIVE_TERMINAL_QUARANTINE_SOURCE_MISMATCH",
+        "REQUEST_IDENTITY_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_IDENTITY_ALIAS_LIMIT_EXCEEDED",
+        "COOPERATIVE_TERMINAL_CHUNK_MANIFEST_AUTHORITY_READBACK_MISSING",
+        "COOPERATIVE_TERMINAL_ATOMIC_EVIDENCE_INVALID",
+        "COOPERATIVE_TERMINAL_ATOMIC_EVIDENCE_CONFLICT",
+        "COOPERATIVE_TERMINAL_ATOMIC_TABLE_ROLE_INVALID",
+        "COOPERATIVE_TERMINAL_ATOMIC_TABLE_NAME_MISSING",
+        "COOPERATIVE_TERMINAL_ATOMIC_ITEM_MISSING",
+        "COOPERATIVE_TERMINAL_ATOMIC_ITEM_MISMATCH",
+        "COOPERATIVE_TERMINAL_ATOMIC_RESPONSE_COUNT_MISMATCH",
+        "COOPERATIVE_TERMINAL_ATOMIC_READ_SET_OUT_OF_RANGE",
+        "COOPERATIVE_TERMINAL_CANONICAL_EVIDENCE_MISSING",
+        "COOPERATIVE_TERMINAL_CANONICAL_EVIDENCE_READBACK_MISSING",
+        "COOPERATIVE_TERMINAL_DEPENDENCY_KEY_MISSING",
+        "COOPERATIVE_TERMINAL_DEPENDENCY_READBACK_MISSING",
+        "COOPERATIVE_TERMINAL_DEPENDENCY_SET_TOO_LARGE",
+        "COOPERATIVE_TERMINAL_EVIDENCE_KEY_INVALID",
+        "COOPERATIVE_TERMINAL_EVIDENCE_STATE_INVALID",
+        "COOPERATIVE_TERMINAL_MANIFEST_DEPENDENCY_INVALID",
+        "COOPERATIVE_TERMINAL_OUTCOME_EVIDENCE_MISSING",
+        "COOPERATIVE_TERMINAL_QUARANTINE_CANDIDATE_MISMATCH",
+        "COOPERATIVE_TERMINAL_QUARANTINE_EVIDENCE_MISSING",
+        "COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT_EXCEEDED",
+        "COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT_INVALID",
+        "PREGAME_CANDIDATE_QUERY_LIMIT_INVALID",
+        "PREGAME_CANDIDATE_QUERY_RESPONSE_INVALID",
+        "PREGAME_CANDIDATE_QUERY_ITEMS_INVALID",
+        "PREGAME_CANDIDATE_QUERY_LAST_EVALUATED_KEY_INVALID",
+        "PREGAME_CANDIDATE_QUERY_BOUND_EXCEEDED",
+        "COOPERATIVE_TERMINAL_CHUNK_ATOMIC_ITEM_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_ATTEMPT_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_AUTHORITY_GAME_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_AUTHORITY_ITEM_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_CANDIDATE_ALIAS_QUERY_LIMIT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_CANONICAL_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_CHECKPOINT_REQUEST_EPOCH_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_DEPENDENCY_ITEM_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_IDENTITY_ALIAS_LIMIT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_MANIFEST_GAME_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_MISSED_LOCK_VALID_PRELOCK_QUARANTINE_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_NEXT_GAME_INDEX_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_NO_PREDICTION_DATA_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_PROCESSED_GAME_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_PROOF_ITEM_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_PROOF_REQUEST_EPOCH_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_PROOF_VERIFIED_AT_EPOCH_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_QUARANTINE_BOUND_SCORING_PULL_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_QUARANTINE_REJECTED_NEWER_CANDIDATE_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_RECONCILED_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_REQUEST_EPOCH_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_SCHEDULE_AUTHORITY_GAME_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_TERMINAL_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_V3_CANONICAL_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_V3_LAST_ATTEMPT_GAME_INDEX_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_V3_LAST_ATTEMPT_AT_UTC_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_V3_UPDATED_AT_UTC_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_V3_NEXT_GAME_INDEX_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_V3_NO_PREDICTION_DATA_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_V3_PROCESSED_GAME_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_V3_RECONCILED_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_V3_TERMINAL_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_V3_VERIFICATION_INDEX_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_V3_VERIFIED_GAME_COUNT_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_VERIFICATION_INDEX_INVALID",
+        "COOPERATIVE_TERMINAL_CHUNK_VERIFIED_GAME_COUNT_INVALID",
+    }
 )
 COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION = (
     "MLB-COOPERATIVE-TERMINAL-COMPLETION-HANDOFF-v1"
 )
-COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS = 32
+COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS = 100
 COOPERATIVE_REPLAY_MIN_REMAINING_SECONDS = (
     COOPERATIVE_REPLAY_EXECUTION_BUDGET_SECONDS
     + LOCK_EXECUTION_TIMEOUT_SAFETY_MARGIN_SECONDS
@@ -530,16 +663,27 @@ def _cooperative_record(item: Any, slate_date: str) -> Dict[str, Any]:
         raise RuntimeError("MLB_COOPERATIVE_REPLAY_RECORD_IDENTITY_INVALID")
     if str(item.get("slate_date_et") or "") != slate_date:
         raise RuntimeError("MLB_COOPERATIVE_REPLAY_DIFFERENT_REQUEST_ACTIVE")
+    raw_request_epoch = item.get("requested_at_epoch")
+    if isinstance(raw_request_epoch, bool):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_REPLAY_REQUEST_EPOCH_INVALID"
+        )
     try:
-        request_epoch = int(item.get("requested_at_epoch"))
-    except (TypeError, ValueError) as exc:
+        request_epoch_decimal = Decimal(str(raw_request_epoch))
+    except (InvalidOperation, TypeError, ValueError) as exc:
         raise RuntimeError(
             "MLB_COOPERATIVE_REPLAY_REQUEST_EPOCH_INVALID"
         ) from exc
-    if request_epoch <= 0:
+    if (
+        not request_epoch_decimal.is_finite()
+        or request_epoch_decimal <= 0
+        or request_epoch_decimal
+        != request_epoch_decimal.to_integral_value()
+    ):
         raise RuntimeError(
-            "MLB_COOPERATIVE_REPLAY_REQUEST_IDENTITY_INVALID"
+            "MLB_COOPERATIVE_REPLAY_REQUEST_EPOCH_INVALID"
         )
+    request_epoch = int(request_epoch_decimal)
     normalized = dict(item)
     if not str(normalized.get("request_id") or "").strip():
         # One-time rollout bridge for a pre-v2 coordination row. The derived
@@ -560,6 +704,7 @@ def _cooperative_record(item: Any, slate_date: str) -> Dict[str, Any]:
         COOPERATIVE_REPLAY_CLAIMED,
         COOPERATIVE_REPLAY_COMPLETED,
         COOPERATIVE_REPLAY_ACKNOWLEDGED,
+        COOPERATIVE_REPLAY_REVIEW_REQUIRED,
     }:
         raise RuntimeError("MLB_COOPERATIVE_REPLAY_STATE_INVALID")
     return dict(item)
@@ -578,10 +723,16 @@ def _cooperative_terminal_progress_public(
         if isinstance(value, bool):
             return None
         try:
-            parsed = int(value)
-        except (TypeError, ValueError):
+            numeric = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
             return None
-        return parsed if parsed >= 0 else None
+        if (
+            not numeric.is_finite()
+            or numeric < 0
+            or numeric != numeric.to_integral_value()
+        ):
+            return None
+        return int(numeric)
 
     fields = (
         "manifestGameCount",
@@ -590,6 +741,7 @@ def _cooperative_terminal_progress_public(
         "terminalCount",
         "canonicalCount",
         "noPredictionDataCount",
+        "missedLockValidPrelockQuarantineCount",
         "reconciledCount",
         "verificationIndex",
         "verifiedGameCount",
@@ -630,6 +782,60 @@ def _cooperative_terminal_progress_public(
         "immutablePredictionRewriteAllowed": False,
         "productionAuthorityChanged": False,
     }
+    if progress.get("verificationComplete") is True:
+        try:
+            terminal_games, terminal_game_set_fingerprint = (
+                _validated_terminal_game_receipt(
+                    progress,
+                    manifest_count=manifest_count,
+                    canonical_count=int(values["canonicalCount"] or 0),
+                    no_prediction_count=int(
+                        values["noPredictionDataCount"] or 0
+                    ),
+                    quarantine_count=int(
+                        values[
+                            "missedLockValidPrelockQuarantineCount"
+                        ]
+                        or 0
+                    ),
+                )
+            )
+        except RuntimeError:
+            return {
+                "version": COOPERATIVE_TERMINAL_CHUNK_VERSION,
+                "valid": False,
+                "failClosed": True,
+            }
+        fingerprint_fields = (
+            "manifestFingerprint",
+            "checkpointFingerprint",
+            "manifestAuthorityEvidenceFingerprint",
+            "providerManifestFingerprint",
+            "atomicDurableReadSetFingerprint",
+        )
+        if any(
+            re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(progress.get(field) or ""),
+            )
+            is None
+            for field in fingerprint_fields
+        ):
+            return {
+                "version": COOPERATIVE_TERMINAL_CHUNK_VERSION,
+                "valid": False,
+                "failClosed": True,
+            }
+        public.update(
+            {
+                field: str(progress.get(field) or "")
+                for field in fingerprint_fields
+            }
+        )
+        public["terminalGames"] = terminal_games
+        public["terminalGameSetFingerprint"] = (
+            terminal_game_set_fingerprint
+        )
     last_attempt = progress.get("lastAttempt")
     if isinstance(last_attempt, dict):
         public["lastAttempt"] = {
@@ -648,10 +854,55 @@ def _cooperative_terminal_progress_public(
         }
     return public
 
+def _cooperative_review_reason(item: Dict[str, Any]) -> str:
+    progress = item.get("terminal_replay_progress")
+    attempt = (
+        progress.get("lastAttempt")
+        if isinstance(progress, dict)
+        else None
+    )
+    code = (
+        str(attempt.get("errorCode") or "")
+        if isinstance(attempt, dict)
+        else ""
+    )
+    progress_is_bound = bool(
+        isinstance(progress, dict)
+        and str(progress.get("slateDateEt") or "")
+        == str(item.get("slate_date_et") or "")
+        and (
+            progress.get("requestEpoch") is None
+            or progress.get("requestEpoch")
+            == item.get("requested_at_epoch")
+        )
+        and (
+            not str(progress.get("requestId") or "")
+            or str(progress.get("requestId") or "")
+            == str(item.get("request_id") or "")
+        )
+    )
+    safe_code = bool(
+        code in COOPERATIVE_REPLAY_PERMANENT_REVIEW_ERRORS
+        and len(code) <= 160
+        and all(
+            character.isupper()
+            or character.isdigit()
+            or character in "_:-."
+            for character in code
+        )
+    )
+    return (
+        code
+        if progress_is_bound and safe_code
+        else "PRELOCK_CANDIDATE_REQUIRES_REVIEW"
+    )
+
+
 def _cooperative_public_state(item: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    state = str(item.get("state") or "")
+    public = {
         "version": COOPERATIVE_TERMINAL_REPLAY_VERSION,
-        "state": str(item.get("state") or ""),
+        "state": state,
         "slateDateEt": str(item.get("slate_date_et") or ""),
         "automaticExecutionOwner": "eventbridge_daily_lock_schedule",
         "currentSlateRunsFirst": True,
@@ -667,7 +918,83 @@ def _cooperative_public_state(item: Dict[str, Any]) -> Dict[str, Any]:
         "terminalChunkProgress": _cooperative_terminal_progress_public(item),
         "failClosed": True,
     }
+    if state == COOPERATIVE_REPLAY_REVIEW_REQUIRED:
+        public["reviewRequired"] = True
+        public["reviewReason"] = _cooperative_review_reason(item)
+        public["staleClaimReclaimable"] = False
+    return public
 
+
+
+def _validated_persisted_replay_receipt(
+    item: Dict[str, Any],
+) -> Dict[str, Any]:
+    slate_date = str(item.get("slate_date_et") or "")
+    raw_receipt = item.get("replay_receipt")
+    if not isinstance(raw_receipt, dict):
+        raise RuntimeError("MLB_COOPERATIVE_REPLAY_RECEIPT_MISSING")
+    receipt = _terminal_replay_receipt(raw_receipt, slate_date)
+    if receipt != raw_receipt:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_REPLAY_PERSISTED_RECEIPT_INVALID"
+        )
+    expected_progress = item.get("terminal_replay_progress")
+    validator = getattr(
+        mlb_daily_pick_lock,
+        "validate_cooperative_terminal_completion_checkpoint",
+        None,
+    )
+    if not isinstance(expected_progress, dict) or not callable(validator):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_REPLAY_PERSISTED_RECEIPT_INVALID"
+        )
+    try:
+        validated = validator(expected_progress)
+    except BaseException as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_REPLAY_PERSISTED_RECEIPT_INVALID"
+        ) from exc
+    if (
+        not isinstance(validated, tuple)
+        or len(validated) != 3
+        or validated[0] != expected_progress
+        or not isinstance(validated[1], list)
+        or re.fullmatch(r"[0-9a-f]{64}", str(validated[2] or ""))
+        is None
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_REPLAY_PERSISTED_RECEIPT_INVALID"
+        )
+    expected_games, expected_game_fingerprint = (
+        _checkpoint_terminal_game_receipt(expected_progress)
+    )
+    progress = receipt["perGameLockProgress"]
+    authority = expected_progress.get("manifestAuthority")
+    if (
+        not isinstance(authority, Mapping)
+        or receipt.get("checkpointFingerprint")
+        != expected_progress.get("checkpointFingerprint")
+        or receipt.get("manifestFingerprint")
+        != expected_progress.get("manifestFingerprint")
+        or progress.get("terminalGames") != expected_games
+        or progress.get("terminalGameSetFingerprint")
+        != expected_game_fingerprint
+        or progress.get("manifestAuthorityEvidenceFingerprint")
+        != authority.get("authorityEvidenceFingerprint")
+        or progress.get("providerManifestFingerprint")
+        != authority.get("fingerprint")
+        or _nonnegative_receipt_integer(
+            progress.get("atomicDurableItemCount"),
+            "persisted_receipt_atomic_durable_item_count",
+        )
+        != len(validated[1])
+        or progress.get("atomicDurableReadSetFingerprint")
+        != validated[2]
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_REPLAY_PERSISTED_RECEIPT_INVALID"
+        )
+    return receipt
 
 def _cooperative_request_response(item: Dict[str, Any]) -> Dict[str, Any]:
     state = str(item.get("state") or "")
@@ -676,14 +1003,30 @@ def _cooperative_request_response(item: Dict[str, Any]) -> Dict[str, Any]:
         COOPERATIVE_REPLAY_COMPLETED,
         COOPERATIVE_REPLAY_ACKNOWLEDGED,
     }:
-        receipt = item.get("replay_receipt")
-        if not isinstance(receipt, dict):
-            raise RuntimeError("MLB_COOPERATIVE_REPLAY_RECEIPT_MISSING")
+        receipt = _validated_persisted_replay_receipt(item)
         result = dict(receipt)
         result["cooperativeTerminalReplay"] = public
         result["cooperativeTerminalReplayCompleted"] = True
         result["mutatingRunAttemptedByPollingRequest"] = False
         return result
+    if state == COOPERATIVE_REPLAY_REVIEW_REQUIRED:
+        return {
+            "ok": False,
+            "sport": "mlb",
+            "slateDateEt": str(item.get("slate_date_et") or ""),
+            "status": COOPERATIVE_REPLAY_REVIEW_REQUIRED,
+            "reason": _cooperative_review_reason(item),
+            "reviewRequired": True,
+            "skipped": True,
+            "mutatingRunAttempted": False,
+            "cooperativeTerminalReplayCompleted": False,
+            "cooperativeTerminalReplay": public,
+            "activeLeaseMutationAllowed": False,
+            "postStartPredictionCreationAllowed": False,
+            "immutablePredictionRewriteAllowed": False,
+            "directWorkflowTableWrite": False,
+            "productionAuthorityChanged": False,
+        }
     return {
         "ok": True,
         "sport": "mlb",
@@ -1051,6 +1394,39 @@ def _lease_status() -> Dict[str, Any]:
     }
 
 
+def _cooperative_replay_requires_review(
+    stage: Any,
+    error_code: Any,
+) -> bool:
+    """Classify only deterministic persisted-authority defects.
+
+    Budget, lease, SDK, network, and generic runtime failures deliberately stay
+    retryable.  This avoids both a hot loop on immutable corrupt evidence and
+    an over-broad quarantine of transient infrastructure faults.
+    """
+
+    stage_value = str(stage or "")
+    code_value = str(error_code or "")
+    if code_value not in COOPERATIVE_REPLAY_PERMANENT_REVIEW_ERRORS:
+        return False
+    if code_value == "PRELOCK_CANDIDATE_REQUIRES_REVIEW":
+        return stage_value == "PROVE_PRELOCK_ABSENCE"
+    if code_value == "COOPERATIVE_TERMINAL_CHUNK_V3_MIGRATION_NOT_ZERO_WORK":
+        return stage_value == "BIND_MANIFEST_AUTHORITY"
+    return stage_value in {
+        "BIND_REQUEST",
+        "RESOLVE_MANIFEST",
+        "BIND_MANIFEST_AUTHORITY",
+        "READ_DURABLE_TERMINAL",
+        "VERIFY_DURABLE_TERMINAL",
+        "PROVE_PRELOCK_ABSENCE",
+        "WRITE_VALID_PRELOCK_MISSED_LOCK_QUARANTINE",
+        "READBACK_VALID_PRELOCK_QUARANTINE_TERMINAL",
+        "READBACK_NO_PREDICTION_TERMINAL",
+        "ATOMIC_COMPLETION_PROOF",
+    }
+
+
 def _remaining_seconds(context: Any) -> int:
     reader = getattr(context, "get_remaining_time_in_millis", None)
     if not callable(reader):
@@ -1279,6 +1655,17 @@ def _claim_cooperative_replay(
             "queueReadAttempted": True,
             "remainingSeconds": remaining,
         }
+    if state == COOPERATIVE_REPLAY_REVIEW_REQUIRED:
+        return None, {
+            **_cooperative_public_state(item),
+            "reviewRequired": True,
+            "reason": _cooperative_review_reason(item),
+            "currentSlateRanFirst": True,
+            "queueReadAttempted": True,
+            "remainingSeconds": remaining,
+            "staleClaimReclaimable": False,
+            "activeLeaseMutationAllowed": False,
+        }
 
     now = _utc_now()
     now_epoch = int(now.timestamp())
@@ -1364,6 +1751,28 @@ def _claim_cooperative_replay(
         ).get("Attributes")
     except BaseException as exc:
         if _error_code(exc) == "ConditionalCheckFailedException":
+            observed = _cooperative_record(
+                _read_cooperative_replay(),
+                slate_date,
+            )
+            if (
+                observed.get("state")
+                == COOPERATIVE_REPLAY_REVIEW_REQUIRED
+                and str(observed.get("slate_date_et") or "")
+                == slate_date
+                and observed.get("requested_at_epoch") == request_epoch
+                and str(observed.get("request_id") or "") == request_id
+            ):
+                return None, {
+                    **_cooperative_public_state(observed),
+                    "reviewRequired": True,
+                    "reason": _cooperative_review_reason(observed),
+                    "currentSlateRanFirst": True,
+                    "queueReadAttempted": True,
+                    "remainingSeconds": remaining,
+                    "staleClaimReclaimable": False,
+                    "activeLeaseMutationAllowed": False,
+                }
             return None, {
                 "version": COOPERATIVE_TERMINAL_REPLAY_VERSION,
                 "state": "CLAIM_LOST_TO_ANOTHER_OWNER",
@@ -1431,18 +1840,130 @@ def _assert_current_slate_processed_before_handoff(
         )
 
 
+def _validated_terminal_game_receipt(
+    progress: Dict[str, Any],
+    *,
+    manifest_count: int,
+    canonical_count: int,
+    no_prediction_count: int,
+    quarantine_count: int,
+) -> tuple[list[Dict[str, Any]], str]:
+    games = progress.get("terminalGames")
+    if not isinstance(games, list) or len(games) != manifest_count:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_REPLAY_TERMINAL_GAME_SET_INVALID"
+        )
+    normalized: list[Dict[str, Any]] = []
+    official_seen: set[str] = set()
+    states = {
+        "LOCKED_CANONICAL": 0,
+        "LOCKED_NO_PREDICTION_DATA": 0,
+        "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED": 0,
+    }
+    allowed_keys = {
+        "index",
+        "officialGamePk",
+        "gameIdentity",
+        "durableIdentity",
+        "terminalState",
+        "evidenceFingerprint",
+    }
+    for index, entry in enumerate(games):
+        if not isinstance(entry, dict) or set(entry) != allowed_keys:
+            raise RuntimeError(
+                "MLB_COOPERATIVE_REPLAY_TERMINAL_GAME_SET_INVALID"
+            )
+        official_pk = str(entry.get("officialGamePk") or "")
+        official_pk_number = _nonnegative_receipt_integer(
+            entry.get("officialGamePk"),
+            "terminal_game_official_game_pk",
+        )
+        entry_index = _nonnegative_receipt_integer(
+            entry.get("index"),
+            "terminal_game_index",
+        )
+        game_identity = str(entry.get("gameIdentity") or "")
+        durable_identity = str(entry.get("durableIdentity") or "")
+        state = str(entry.get("terminalState") or "")
+        evidence_fingerprint = str(
+            entry.get("evidenceFingerprint") or ""
+        )
+        if (
+            entry_index != index
+            or official_pk_number <= 0
+            or not official_pk
+            or official_pk in official_seen
+            or not game_identity
+            or not durable_identity
+            or state not in states
+            or re.fullmatch(
+                r"[0-9a-f]{64}",
+                evidence_fingerprint,
+            )
+            is None
+        ):
+            raise RuntimeError(
+                "MLB_COOPERATIVE_REPLAY_TERMINAL_GAME_SET_INVALID"
+            )
+        official_seen.add(official_pk)
+        states[state] += 1
+        normalized.append(
+            {
+                "index": index,
+                "officialGamePk": official_pk,
+                "gameIdentity": game_identity,
+                "durableIdentity": durable_identity,
+                "terminalState": state,
+                "evidenceFingerprint": evidence_fingerprint,
+            }
+        )
+    if (
+        states["LOCKED_CANONICAL"] != canonical_count
+        or states["LOCKED_NO_PREDICTION_DATA"]
+        != no_prediction_count
+        or states[
+            "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+        ]
+        != quarantine_count
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_REPLAY_TERMINAL_GAME_SET_INVALID"
+        )
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            normalized,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    if (
+        str(progress.get("terminalGameSetFingerprint") or "")
+        != fingerprint
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_REPLAY_TERMINAL_GAME_SET_INVALID"
+        )
+    return normalized, fingerprint
+
+
 def _nonnegative_receipt_integer(value: Any, field: str) -> int:
     if isinstance(value, bool):
         raise RuntimeError(f"MLB_COOPERATIVE_REPLAY_{field.upper()}_INVALID")
     try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
+        numeric = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
         raise RuntimeError(
             f"MLB_COOPERATIVE_REPLAY_{field.upper()}_INVALID"
         ) from exc
-    if parsed < 0:
-        raise RuntimeError(f"MLB_COOPERATIVE_REPLAY_{field.upper()}_INVALID")
-    return parsed
+    if (
+        not numeric.is_finite()
+        or numeric < 0
+        or numeric != numeric.to_integral_value()
+    ):
+        raise RuntimeError(
+            f"MLB_COOPERATIVE_REPLAY_{field.upper()}_INVALID"
+        )
+    return int(numeric)
 
 
 def _terminal_replay_receipt(
@@ -1465,6 +1986,7 @@ def _terminal_replay_receipt(
         or payload.get("directWorkflowTableWrite") is not False
         or payload.get("productionAuthorityChanged") is not False
         or payload.get("lockStatusComplete") is not True
+        or payload.get("dailyCardComplete") is not True
     ):
         raise RuntimeError("MLB_COOPERATIVE_REPLAY_RESULT_UNHEALTHY")
 
@@ -1475,8 +1997,8 @@ def _terminal_replay_receipt(
         payload.get("manifestFingerprint") or ""
     )
     if (
-        len(checkpoint_fingerprint) != 64
-        or len(manifest_fingerprint) != 64
+        re.fullmatch(r"[0-9a-f]{64}", checkpoint_fingerprint) is None
+        or re.fullmatch(r"[0-9a-f]{64}", manifest_fingerprint) is None
     ):
         raise RuntimeError(
             "MLB_COOPERATIVE_REPLAY_COMPLETION_FINGERPRINT_MISSING"
@@ -1486,7 +2008,12 @@ def _terminal_replay_receipt(
     if not isinstance(repair, dict):
         raise RuntimeError("MLB_COOPERATIVE_REPLAY_REPAIR_PROOF_MISSING")
     progress = repair.get("progressAfter")
-    if not isinstance(progress, dict):
+    payload_progress = payload.get("perGameLockProgress")
+    if (
+        not isinstance(progress, dict)
+        or not isinstance(payload_progress, dict)
+        or payload_progress != progress
+    ):
         raise RuntimeError("MLB_COOPERATIVE_REPLAY_PROGRESS_PROOF_MISSING")
     unresolved = repair.get("unresolved")
     if not isinstance(unresolved, list) or unresolved:
@@ -1508,12 +2035,19 @@ def _terminal_replay_receipt(
         progress.get("atomicDurableItemCount"),
         "atomic_durable_item_count",
     )
+    atomic_read_set_fingerprint = str(
+        progress.get("atomicDurableReadSetFingerprint") or ""
+    )
     canonical_count = _nonnegative_receipt_integer(
         progress.get("canonicalCount"), "canonical_count"
     )
     no_prediction_count = _nonnegative_receipt_integer(
         progress.get("noPredictionDataCount"),
         "no_prediction_data_count",
+    )
+    quarantine_count = _nonnegative_receipt_integer(
+        progress.get("missedLockValidPrelockQuarantineCount"),
+        "missed_lock_valid_prelock_quarantine_count",
     )
     lock_outcome_count = _nonnegative_receipt_integer(
         progress.get("lockOutcomeCount"), "lock_outcome_count"
@@ -1526,6 +2060,15 @@ def _terminal_replay_receipt(
     )
     reconciled = _nonnegative_receipt_integer(
         repair.get("reconciledCount"), "reconciled_count"
+    )
+    terminal_games, terminal_game_set_fingerprint = (
+        _validated_terminal_game_receipt(
+            progress,
+            manifest_count=manifest_count,
+            canonical_count=canonical_count,
+            no_prediction_count=no_prediction_count,
+            quarantine_count=quarantine_count,
+        )
     )
     remaining = _nonnegative_receipt_integer(
         repair.get("remainingMissedCount", missed),
@@ -1541,18 +2084,110 @@ def _terminal_replay_receipt(
         or processed_count != manifest_count
         or verified_count != manifest_count
         or verification_index != manifest_count
-        or canonical_count + no_prediction_count != manifest_count
+        or (
+            canonical_count + no_prediction_count + quarantine_count
+            != manifest_count
+        )
         or lock_outcome_count != manifest_count
         or atomic_item_count < manifest_count
         or atomic_item_count > COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            atomic_read_set_fingerprint,
+        )
+        is None
         or progress.get("verificationComplete") is not True
         or progress.get("atomicDurableProofRequired") is not True
+        or str(progress.get("manifestFingerprint") or "")
+        != manifest_fingerprint
+        or str(progress.get("checkpointFingerprint") or "")
+        != checkpoint_fingerprint
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(
+                progress.get(
+                    "manifestAuthorityEvidenceFingerprint"
+                )
+                or ""
+            ),
+        )
+        is None
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(progress.get("providerManifestFingerprint") or ""),
+        )
+        is None
+        or _nonnegative_receipt_integer(
+            payload.get("manifestGameCount"), "top_manifest_game_count"
+        )
+        != manifest_count
+        or _nonnegative_receipt_integer(
+            payload.get("processedGameCount"), "top_processed_game_count"
+        )
+        != processed_count
+        or _nonnegative_receipt_integer(
+            payload.get("verifiedGameCount"), "top_verified_game_count"
+        )
+        != verified_count
+        or _nonnegative_receipt_integer(
+            payload.get("verificationIndex"), "top_verification_index"
+        )
+        != verification_index
+        or _nonnegative_receipt_integer(
+            payload.get("lockOutcomeCount"), "top_lock_outcome_count"
+        )
+        != lock_outcome_count
+        or _nonnegative_receipt_integer(
+            payload.get("missedGameCount"), "top_missed_game_count"
+        )
+        != 0
+        or _nonnegative_receipt_integer(
+            payload.get("atomicDurableItemCount"),
+            "top_atomic_durable_item_count",
+        )
+        != atomic_item_count
+        or str(
+            payload.get("atomicDurableReadSetFingerprint") or ""
+        )
+        != atomic_read_set_fingerprint
         or repair.get("ok") is not True
         or repair.get("version") != COOPERATIVE_TERMINAL_CHUNK_VERSION
+        or str(repair.get("slateDateEt") or "") != slate_date
+        or _nonnegative_receipt_integer(
+            repair.get("manifestGameCount"), "repair_manifest_game_count"
+        )
+        != manifest_count
+        or _nonnegative_receipt_integer(
+            repair.get("processedGameCount"), "repair_processed_game_count"
+        )
+        != processed_count
+        or _nonnegative_receipt_integer(
+            repair.get("verifiedGameCount"), "repair_verified_game_count"
+        )
+        != verified_count
+        or _nonnegative_receipt_integer(
+            repair.get("verificationIndex"), "repair_verification_index"
+        )
+        != verification_index
         or repair.get("durableTerminalVerificationComplete") is not True
         or repair.get("atomicDurableProofRequired") is not True
         or repair.get("completionMutationLeaseRequired") is not True
         or repair.get("postStartPredictionCreationAllowed") is not False
+        or repair.get("candidateIntegrityFailuresRelabeled") is not False
+        or _nonnegative_receipt_integer(
+            repair.get("atomicDurableItemCount"),
+            "repair_atomic_durable_item_count",
+        )
+        != atomic_item_count
+        or str(
+            repair.get("atomicDurableReadSetFingerprint") or ""
+        )
+        != atomic_read_set_fingerprint
+        or _nonnegative_receipt_integer(
+            repair.get("missedLockValidPrelockQuarantineCount"),
+            "repair_quarantine_count",
+        )
+        != quarantine_count
         or remaining
         or missed
         or due
@@ -1569,12 +2204,26 @@ def _terminal_replay_receipt(
         "verificationIndex": verification_index,
         "verificationComplete": True,
         "atomicDurableItemCount": atomic_item_count,
+        "atomicDurableReadSetFingerprint": (
+            atomic_read_set_fingerprint
+        ),
         "atomicDurableProofRequired": True,
         "canonicalCount": canonical_count,
         "noPredictionDataCount": no_prediction_count,
+        "missedLockValidPrelockQuarantineCount": quarantine_count,
         "lockOutcomeCount": lock_outcome_count,
         "missedCount": 0,
         "dueMissingCount": 0,
+        "manifestFingerprint": manifest_fingerprint,
+        "checkpointFingerprint": checkpoint_fingerprint,
+        "manifestAuthorityEvidenceFingerprint": str(
+            progress.get("manifestAuthorityEvidenceFingerprint") or ""
+        ),
+        "providerManifestFingerprint": str(
+            progress.get("providerManifestFingerprint") or ""
+        ),
+        "terminalGames": terminal_games,
+        "terminalGameSetFingerprint": terminal_game_set_fingerprint,
     }
     safe_repair = {
         "ok": True,
@@ -1587,8 +2236,12 @@ def _terminal_replay_receipt(
         "durableTerminalVerificationComplete": True,
         "atomicDurableProofRequired": True,
         "atomicDurableItemCount": atomic_item_count,
+        "atomicDurableReadSetFingerprint": (
+            atomic_read_set_fingerprint
+        ),
         "completionMutationLeaseRequired": True,
         "reconciledCount": reconciled,
+        "missedLockValidPrelockQuarantineCount": quarantine_count,
         "remainingMissedCount": 0,
         "unresolved": [],
         "progressAfter": safe_progress,
@@ -1603,10 +2256,24 @@ def _terminal_replay_receipt(
         "terminalChunkVersion": COOPERATIVE_TERMINAL_CHUNK_VERSION,
         "checkpointFingerprint": checkpoint_fingerprint,
         "manifestFingerprint": manifest_fingerprint,
+        "providerManifestFingerprint": safe_progress[
+            "providerManifestFingerprint"
+        ],
+        "manifestGameCount": manifest_count,
+        "processedGameCount": processed_count,
+        "verifiedGameCount": verified_count,
+        "verificationIndex": verification_index,
+        "lockOutcomeCount": lock_outcome_count,
+        "missedGameCount": 0,
+        "lockStatusComplete": True,
+        "dailyCardComplete": True,
         "verificationPhase": "VERIFY",
         "durableTerminalVerificationComplete": True,
         "atomicDurableProofRequired": True,
         "atomicDurableItemCount": atomic_item_count,
+        "atomicDurableReadSetFingerprint": (
+            atomic_read_set_fingerprint
+        ),
         "completionMutationLeaseRequired": True,
         "perGameLockProgress": safe_progress,
         "missedLockTerminalReconciliation": safe_repair,
@@ -1616,6 +2283,78 @@ def _terminal_replay_receipt(
         "productionAuthorityChanged": False,
         "cooperativeReceiptRedacted": True,
     }
+
+
+def _checkpoint_terminal_game_receipt(
+    progress: Mapping[str, Any],
+) -> tuple[list[Dict[str, Any]], str]:
+    manifest_count = _nonnegative_receipt_integer(
+        progress.get("manifestGameCount"),
+        "checkpoint_manifest_game_count",
+    )
+    processed = progress.get("processedGames")
+    if not isinstance(processed, list) or len(processed) != manifest_count:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_REPLAY_COMPLETE_PROGRESS_INVALID"
+        )
+    normalized: list[Dict[str, Any]] = []
+    official_seen: set[str] = set()
+    for index, entry in enumerate(processed):
+        if not isinstance(entry, Mapping):
+            raise RuntimeError(
+                "MLB_COOPERATIVE_REPLAY_COMPLETE_PROGRESS_INVALID"
+            )
+        official_pk = str(entry.get("officialGamePk") or "")
+        official_pk_number = _nonnegative_receipt_integer(
+            entry.get("officialGamePk"),
+            "checkpoint_terminal_game_official_game_pk",
+        )
+        game_identity = str(entry.get("gameIdentity") or "")
+        durable_identity = str(entry.get("durableIdentity") or "")
+        terminal_state = str(entry.get("terminalState") or "")
+        evidence = entry.get("durableEvidence")
+        evidence_fingerprint = (
+            str(evidence.get("evidenceFingerprint") or "")
+            if isinstance(evidence, Mapping)
+            else ""
+        )
+        if (
+            official_pk_number <= 0
+            or not official_pk
+            or official_pk in official_seen
+            or not game_identity
+            or not durable_identity
+            or terminal_state
+            not in {
+                "LOCKED_CANONICAL",
+                "LOCKED_NO_PREDICTION_DATA",
+                "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED",
+            }
+            or re.fullmatch(r"[0-9a-f]{64}", evidence_fingerprint)
+            is None
+        ):
+            raise RuntimeError(
+                "MLB_COOPERATIVE_REPLAY_COMPLETE_PROGRESS_INVALID"
+            )
+        official_seen.add(official_pk)
+        normalized.append(
+            {
+                "index": index,
+                "officialGamePk": official_pk,
+                "gameIdentity": game_identity,
+                "durableIdentity": durable_identity,
+                "terminalState": terminal_state,
+                "evidenceFingerprint": evidence_fingerprint,
+            }
+        )
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            normalized,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return normalized, fingerprint
 
 
 def _complete_cooperative_replay(
@@ -1697,6 +2436,12 @@ def _complete_cooperative_replay(
         not isinstance(validated_progress, tuple)
         or len(validated_progress) != 3
         or validated_progress[0] != expected_progress
+        or not isinstance(validated_progress[1], list)
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(validated_progress[2] or ""),
+        )
+        is None
     ):
         raise RuntimeError(
             "MLB_COOPERATIVE_REPLAY_COMPLETE_PROGRESS_INVALID"
@@ -1704,6 +2449,25 @@ def _complete_cooperative_replay(
 
     receipt = _terminal_replay_receipt(response, slate_date)
     receipt_progress = receipt["perGameLockProgress"]
+    expected_terminal_games, expected_terminal_game_fingerprint = (
+        _checkpoint_terminal_game_receipt(expected_progress)
+    )
+    expected_manifest_authority = expected_progress.get(
+        "manifestAuthority"
+    )
+    if not isinstance(expected_manifest_authority, Mapping):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_REPLAY_COMPLETE_PROGRESS_INVALID"
+        )
+    expected_authority_fingerprint = str(
+        expected_manifest_authority.get(
+            "authorityEvidenceFingerprint"
+        )
+        or ""
+    )
+    expected_provider_manifest_fingerprint = str(
+        expected_manifest_authority.get("fingerprint") or ""
+    )
     expected_fields = {
         "manifestGameCount": "manifestGameCount",
         "processedGameCount": "processedGameCount",
@@ -1711,6 +2475,9 @@ def _complete_cooperative_replay(
         "verificationIndex": "verificationIndex",
         "canonicalCount": "canonicalCount",
         "noPredictionDataCount": "noPredictionDataCount",
+        "missedLockValidPrelockQuarantineCount": (
+            "missedLockValidPrelockQuarantineCount"
+        ),
         "lockOutcomeCount": "terminalCount",
     }
     if (
@@ -1718,6 +2485,25 @@ def _complete_cooperative_replay(
         != expected_progress.get("checkpointFingerprint")
         or receipt.get("manifestFingerprint")
         != expected_progress.get("manifestFingerprint")
+        or receipt_progress.get("terminalGames")
+        != expected_terminal_games
+        or receipt_progress.get("terminalGameSetFingerprint")
+        != expected_terminal_game_fingerprint
+        or receipt_progress.get("manifestAuthorityEvidenceFingerprint")
+        != expected_authority_fingerprint
+        or receipt_progress.get("providerManifestFingerprint")
+        != expected_provider_manifest_fingerprint
+        or receipt.get("providerManifestFingerprint")
+        != expected_provider_manifest_fingerprint
+        or _nonnegative_receipt_integer(
+            receipt_progress.get("atomicDurableItemCount"),
+            "receipt_atomic_durable_item_count",
+        )
+        != len(validated_progress[1])
+        or receipt_progress.get(
+            "atomicDurableReadSetFingerprint"
+        )
+        != validated_progress[2]
         or any(
         _nonnegative_receipt_integer(
             receipt_progress.get(receipt_field),
@@ -1820,6 +2606,7 @@ def _checkpoint_cooperative_replay(
     owner: str,
     progress: Dict[str, Any],
     failed: bool,
+    review_required: bool = False,
 ) -> Dict[str, Any]:
     slate_date = str(item.get("slate_date_et") or "")
     request_id = str(item.get("request_id") or "")
@@ -1827,23 +2614,51 @@ def _checkpoint_cooperative_replay(
         item.get("requested_at_epoch"), "request_epoch"
     )
     prior_progress = item.get("terminal_replay_progress")
+    review_progress = bool(
+        review_required
+        and isinstance(progress, dict)
+        and progress.get("version")
+        in {
+            COOPERATIVE_TERMINAL_CHUNK_V3_VERSION,
+            COOPERATIVE_TERMINAL_CHUNK_VERSION,
+        }
+        and str(progress.get("slateDateEt") or "") == slate_date
+        and _nonnegative_receipt_integer(
+            progress.get("requestEpoch"),
+            "review_progress_request_epoch",
+        )
+        == request_epoch
+        and str(progress.get("requestId") or "") == request_id
+        and progress.get("postStartPredictionCreationAllowed") is False
+        and progress.get("immutablePredictionRewriteAllowed") is False
+        and progress.get("productionAuthorityChanged") is False
+    )
+    normal_progress = bool(
+        not review_required
+        and isinstance(progress, dict)
+        and progress.get("version") == COOPERATIVE_TERMINAL_CHUNK_VERSION
+        and str(progress.get("slateDateEt") or "") == slate_date
+        and _nonnegative_receipt_integer(
+            progress.get("requestEpoch"), "progress_request_epoch"
+        )
+        == request_epoch
+        and str(progress.get("requestId") or "") == request_id
+        and progress.get("postStartPredictionCreationAllowed") is False
+        and progress.get("immutablePredictionRewriteAllowed") is False
+        and progress.get("productionAuthorityChanged") is False
+    )
     if (
         not request_id
         or request_epoch <= 0
-        or not isinstance(progress, dict)
-        or progress.get("version") != COOPERATIVE_TERMINAL_CHUNK_VERSION
-        or str(progress.get("slateDateEt") or "") != slate_date
-        or _nonnegative_receipt_integer(
-            progress.get("requestEpoch"), "progress_request_epoch"
-        )
-        != request_epoch
-        or str(progress.get("requestId") or "") != request_id
-        or progress.get("postStartPredictionCreationAllowed") is not False
-        or progress.get("immutablePredictionRewriteAllowed") is not False
-        or progress.get("productionAuthorityChanged") is not False
+        or not (review_progress or normal_progress)
     ):
         raise RuntimeError("MLB_COOPERATIVE_TERMINAL_CHECKPOINT_INVALID")
     now = _utc_now()
+    target_state = (
+        COOPERATIVE_REPLAY_REVIEW_REQUIRED
+        if review_required
+        else COOPERATIVE_REPLAY_QUEUED
+    )
     last_attempt = progress.get("lastAttempt")
     stage = (
         str(last_attempt.get("stage") or "")[:160]
@@ -1856,7 +2671,7 @@ def _checkpoint_cooperative_replay(
         else ""
     )
     set_parts = [
-        "#state = :queued",
+        "#state = :target_state",
         "terminal_replay_progress = :progress",
         "last_chunk_at_utc = :now_utc",
         "last_chunk_at_epoch = :now_epoch",
@@ -1877,7 +2692,7 @@ def _checkpoint_cooperative_replay(
         ":request_epoch": request_epoch,
         ":request_id": request_id,
         ":claimed": COOPERATIVE_REPLAY_CLAIMED,
-        ":queued": COOPERATIVE_REPLAY_QUEUED,
+        ":target_state": target_state,
         ":owner": owner,
         ":progress": progress,
         ":now_utc": now.isoformat(),
@@ -1924,7 +2739,7 @@ def _checkpoint_cooperative_replay(
             == COOPERATIVE_TERMINAL_REPLAY_RECORD_TYPE
             and observed.get("coordination_version")
             == COOPERATIVE_TERMINAL_REPLAY_VERSION
-            and observed.get("state") == COOPERATIVE_REPLAY_QUEUED
+            and observed.get("state") == target_state
             and str(observed.get("slate_date_et") or "") == slate_date
             and observed.get("requested_at_epoch") == request_epoch
             and str(observed.get("request_id") or "") == request_id
@@ -1941,7 +2756,7 @@ def _checkpoint_cooperative_replay(
         != COOPERATIVE_TERMINAL_REPLAY_RECORD_TYPE
         or checkpointed.get("coordination_version")
         != COOPERATIVE_TERMINAL_REPLAY_VERSION
-        or checkpointed.get("state") != COOPERATIVE_REPLAY_QUEUED
+        or checkpointed.get("state") != target_state
         or str(checkpointed.get("slate_date_et") or "") != slate_date
         or checkpointed.get("requested_at_epoch") != request_epoch
         or str(checkpointed.get("request_id") or "") != request_id
@@ -2575,16 +3390,43 @@ def lambda_handler(event, context):
                     else:
                         checkpointed: Optional[Dict[str, Any]] = None
                         progress = chunk_result.get("checkpoint")
+                        candidate_review_required = bool(
+                            chunk_result.get("ok") is not True
+                            and _cooperative_replay_requires_review(
+                                chunk_stage,
+                                chunk_error_code,
+                            )
+                        )
                         if (
-                            chunk_result.get("checkpointWriteAllowed") is True
-                            and isinstance(progress, dict)
+                            candidate_review_required
+                            and not isinstance(progress, dict)
                         ):
+                            progress = claimed.get(
+                                "terminal_replay_progress"
+                            )
+                        if (
+                            isinstance(progress, dict)
+                            and (
+                                chunk_result.get(
+                                    "checkpointWriteAllowed"
+                                )
+                                is True
+                                or candidate_review_required
+                            )
+                        ):
+                            review_required = (
+                                candidate_review_required
+                            )
                             checkpointed = _checkpoint_cooperative_replay(
                                 item=claimed,
                                 owner=owner,
                                 progress=progress,
                                 failed=chunk_result.get("ok") is not True,
+                                review_required=review_required,
                             )
+                            # A REVIEW_REQUIRED CAS is a completed claim
+                            # transition too; the exception path must not
+                            # turn it back into a hot-looping QUEUED state.
                             claim_requeued = True
                         else:
                             claim_requeued = _requeue_cooperative_replay(
@@ -2611,7 +3453,11 @@ def lambda_handler(event, context):
                                     }
                                 )
                             ),
-                            "state": COOPERATIVE_REPLAY_QUEUED,
+                            "state": (
+                                checkpointed.get("state")
+                                if isinstance(checkpointed, dict)
+                                else COOPERATIVE_REPLAY_QUEUED
+                            ),
                             "currentSlateRanFirst": True,
                             "currentSlateSuccessProofCarriedAcrossInvocation": (
                                 current_slate_proof_carried

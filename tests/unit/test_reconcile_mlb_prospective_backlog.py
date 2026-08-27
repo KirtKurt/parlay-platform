@@ -63,6 +63,38 @@ class FakeLambda:
         }
 
 
+
+def lifecycle_rows(*, canonical=10, terminal=5, quarantine=0):
+    rows = []
+    for index in range(canonical + terminal + quarantine):
+        state = (
+            "LOCKED_CANONICAL"
+            if index < canonical
+            else "LOCKED_NO_PREDICTION_DATA"
+            if index < canonical + terminal
+            else "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+        )
+        rows.append(
+            {
+                "officialGamePk": str(100000 + index),
+                "gameIdentity": f"provider:game-{index}",
+                "state": state,
+                "lockStatus": state,
+                "lockedPrediction": state == "LOCKED_CANONICAL",
+                "officialPrediction": state == "LOCKED_CANONICAL",
+                "playable": state == "LOCKED_CANONICAL",
+                "trainingEligible": state == "LOCKED_CANONICAL",
+                "accuracyEligible": state == "LOCKED_CANONICAL",
+                "wagerAllowed": state == "LOCKED_CANONICAL",
+                "predictionAdopted": state == "LOCKED_CANONICAL",
+                "operationalDefect": (
+                    state
+                    == "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+                ),
+            }
+        )
+    return rows
+
 def lock_result(slate_date, *, canonical=10, terminal=5):
     game_count = canonical + terminal
     return {
@@ -74,10 +106,10 @@ def lock_result(slate_date, *, canonical=10, terminal=5):
                 "slateDateEt": slate_date,
                 "perGameLockProgress": {
                     "manifestGameCount": game_count,
-                    "games": [
-                        {"gameIdentity": f"game-{index}"}
-                        for index in range(game_count)
-                    ],
+                    "games": lifecycle_rows(
+                        canonical=canonical,
+                        terminal=terminal,
+                    ),
                     "canonicalCount": canonical,
                     "noPredictionDataCount": terminal,
                     "lockOutcomeCount": game_count,
@@ -109,6 +141,11 @@ def status_result(slate_date, *, canonical=10, terminal=5):
                 "noPredictionDataCount": terminal,
                 "lockedStatusCount": game_count,
                 "lockStatusComplete": True,
+                "providerManifestFingerprint": "f" * 64,
+                "perGameStatus": lifecycle_rows(
+                    canonical=canonical,
+                    terminal=terminal,
+                ),
             }
         ),
     }
@@ -121,12 +158,47 @@ def settlement_result(slate_date):
             {
                 "ok": True,
                 "slateDateEt": slate_date,
-                "slateFinalized": True,
-                "settledLabelCount": 10,
+                "status": "CANONICAL_FINAL_LABELS_COMPLETE",
+                "authoritativeSettlement": True,
+                "legacySettlementAuthority": False,
+                "officialGameCount": 15,
+                "officialFinalCount": 15,
+                "canonicalLockCount": 10,
+                "terminalNoPredictionCount": 5,
+                "missedLockValidPrelockQuarantineCount": 0,
+                "terminalOutcomeCount": 5,
+                "terminalExcludedCount": 5,
+                "labelWriteCount": 10,
+                "rejectedCanonicalLockCount": 0,
+                "lockTerminalConflictCount": 0,
+                "skippedNotFinalCount": 0,
+                "missingCanonicalLockCount": 0,
+                "identityRejectionCount": 0,
+                "labelConflictCount": 0,
+                "rejectedTerminalOutcomes": [],
+                "immutablePregameRowsMutated": False,
+                "immutablePregameReadbackErrors": [],
+                "labelWrites": [
+                    {
+                        "ok": True,
+                        "status": "CREATED",
+                        "officialGamePk": str(100000 + index),
+                    }
+                    for index in range(10)
+                ],
+                "terminalExclusions": [
+                    {
+                        "officialGamePk": str(100000 + index),
+                        "status": "LOCKED_NO_PREDICTION_DATA",
+                        "accuracyEligible": False,
+                        "trainingEligible": False,
+                        "predictionAdopted": False,
+                    }
+                    for index in range(10, 15)
+                ],
             }
         ),
     }
-
 
 def test_date_range_is_release_cutoff_through_yesterday_et():
     dates = subject.prospective_slate_dates(
@@ -313,3 +385,114 @@ def test_source_contains_no_direct_storage_or_prediction_write_path():
     assert "readOnlyOfficialStatusProof" in source
     assert "postStartPredictionCreationAllowed" in source
     assert "productionAuthorityChanged" in source
+
+
+def test_settlement_rejects_fractional_counts():
+    payload = json.loads(settlement_result("2026-08-04")["body"])
+    payload["terminalOutcomeCount"] = 0.5
+    with pytest.raises(
+        subject.ReconciliationError,
+        match="prospective_settlement_terminalOutcomeCount_invalid",
+    ):
+        subject.validate_settlement_result(payload, "2026-08-04")
+
+
+def test_zero_game_off_day_settlement_is_valid():
+    payload = json.loads(settlement_result("2026-08-03")["body"])
+    for field in (
+        "officialGameCount",
+        "officialFinalCount",
+        "canonicalLockCount",
+        "terminalNoPredictionCount",
+        "missedLockValidPrelockQuarantineCount",
+        "terminalOutcomeCount",
+        "terminalExcludedCount",
+        "labelWriteCount",
+    ):
+        payload[field] = 0
+    result = subject.validate_settlement_result(payload, "2026-08-03")
+    assert result["finalized"] is True
+    assert result["officialGameCount"] == 0
+
+
+def test_settlement_lock_count_mismatch_fails_closed():
+    with pytest.raises(
+        subject.ReconciliationError,
+        match="prospective_settlement_lock_evidence_mismatch",
+    ):
+        subject.validate_settlement_lock_binding(
+            {
+                "manifestGameCount": 15,
+                "canonicalPredictionCount": 10,
+                "terminalNoPredictionCount": 5,
+                "missedLockValidPrelockQuarantineCount": 0,
+                "terminalExcludedCount": 5,
+            },
+            {
+                "officialGameCount": 15,
+                "canonicalLockCount": 10,
+                "terminalNoPredictionCount": 4,
+                "missedLockValidPrelockQuarantineCount": 1,
+                "terminalExcludedCount": 5,
+                "terminalOutcomeCount": 5,
+            },
+        )
+
+
+def test_settlement_missing_exact_slate_date_fails_closed():
+    payload = json.loads(settlement_result("2026-08-04")["body"])
+    payload.pop("slateDateEt")
+    with pytest.raises(
+        subject.ReconciliationError,
+        match="prospective_settlement_slate_mismatch",
+    ):
+        subject.validate_settlement_result(payload, "2026-08-04")
+
+
+@pytest.mark.parametrize(
+    "surface,field",
+    [
+        ("mutation", "manifestGameCount"),
+        ("mutation", "canonicalCount"),
+        ("mutation", "noPredictionDataCount"),
+        ("mutation", "lockOutcomeCount"),
+        ("status", "gameCount"),
+        ("status", "officialScheduleGameCount"),
+        ("status", "lockedPredictionCount"),
+        ("status", "noPredictionDataCount"),
+        ("status", "lockedStatusCount"),
+    ],
+)
+def test_lock_evidence_rejects_fractional_counts(surface, field):
+    mutation = _payload(lock_result("2026-08-03"))
+    status = _payload(status_result("2026-08-03"))
+    target = mutation["perGameLockProgress"] if surface == "mutation" else status
+    target[field] = 15.5
+    with pytest.raises(subject.ReconciliationError, match="invalid"):
+        subject.validate_lock_result(mutation, status, "2026-08-03")
+
+
+def test_same_count_swapped_game_classification_fails_exact_lock_settlement_binding():
+    mutation = _payload(lock_result("2026-08-03"))
+    status = _payload(status_result("2026-08-03"))
+    lock_evidence = subject.validate_lock_result(
+        mutation,
+        status,
+        "2026-08-03",
+    )
+    payload = json.loads(settlement_result("2026-08-03")["body"])
+    payload["labelWrites"][0]["officialGamePk"] = "100010"
+    payload["terminalExclusions"][0]["officialGamePk"] = "100000"
+    settlement = subject.validate_settlement_result(
+        payload,
+        "2026-08-03",
+    )
+
+    with pytest.raises(
+        subject.ReconciliationError,
+        match="prospective_settlement_lock_evidence_mismatch",
+    ):
+        subject.validate_settlement_lock_binding(
+            lock_evidence,
+            settlement,
+        )

@@ -13,11 +13,13 @@ directly by this script.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
 import sys
 import time
 from contextlib import contextmanager
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, Iterable, Mapping, Optional
 
 import reconcile_mlb_prospective_backlog as base
@@ -29,6 +31,7 @@ VERSION = (
     "eventbridge-owner-cooperative-terminal-replay"
 )
 STATUS_PATH = "/v1/mlb/locks/status"
+COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS = 100
 SETTLEMENT_RUN = "prospective_backlog_settlement_v4"
 TERMINAL_REPLAY_RUN = "prospective_terminal_backlog_reconciliation_v5"
 MISSING_LOCK_REASON = "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
@@ -48,6 +51,8 @@ SAFE_APPLICATION_FIELDS = (
     "canonicalLockCount",
     "rejectedCanonicalLockCount",
     "terminalNoPredictionCount",
+    "missedLockValidPrelockQuarantineCount",
+    "terminalExcludedCount",
     "lockTerminalConflictCount",
     "terminalNoPredictionExcludedCount",
     "skippedNotFinalCount",
@@ -344,6 +349,10 @@ def _terminal_replay_detail(
         finals = _nonnegative_integer(application.get("officialFinalCount"), field="official_final_count")
         canonical = _nonnegative_integer(application.get("canonicalLockCount"), field="canonical_lock_count")
         terminal = _nonnegative_integer(application.get("terminalNoPredictionCount"), field="terminal_no_prediction_count")
+        quarantine = _nonnegative_integer(
+            application.get("missedLockValidPrelockQuarantineCount", 0),
+            field="missed_lock_valid_prelock_quarantine_count",
+        )
         missing = _nonnegative_integer(application.get("missingCanonicalLockCount"), field="missing_canonical_lock_count")
         rejected = _nonnegative_integer(application.get("rejectedCanonicalLockCount"), field="rejected_canonical_lock_count")
         conflicts = _nonnegative_integer(application.get("lockTerminalConflictCount"), field="lock_terminal_conflict_count")
@@ -357,7 +366,7 @@ def _terminal_replay_detail(
         return None
     if not missing or rejected or conflicts or identity_rejections or label_conflicts:
         return None
-    if canonical + terminal + missing != official:
+    if canonical + terminal + quarantine + missing != official:
         return None
 
     missing_rows = application.get("missingCanonicalLocks") or []
@@ -378,6 +387,8 @@ def _terminal_replay_detail(
         "officialFinalCount": finals,
         "canonicalLockCount": canonical,
         "terminalNoPredictionCount": terminal,
+        "missedLockValidPrelockQuarantineCount": quarantine,
+        "terminalExcludedCount": terminal + quarantine,
         "missingCanonicalLockCount": missing,
         "missingOfficialGamePks": [
             str(row.get("officialGamePk")) for row in missing_rows[:MAX_DIAGNOSTIC_ITEMS]
@@ -455,6 +466,315 @@ def _status_body_adapter():
         base.invoke_json = original
 
 
+def _validated_safe_cooperative_completion_receipt(
+    replay: Mapping[str, Any],
+    slate_date: str,
+) -> Dict[str, Any]:
+    """Validate the exact redacted receipt persisted by the protected owner."""
+
+    def count(value: Any, field: str) -> int:
+        if isinstance(value, bool):
+            raise base.ReconciliationError(
+                f"cooperative_completion_receipt_{field}_invalid"
+            )
+        try:
+            numeric = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise base.ReconciliationError(
+                f"cooperative_completion_receipt_{field}_invalid"
+            ) from exc
+        if (
+            not numeric.is_finite()
+            or numeric < 0
+            or numeric != numeric.to_integral_value()
+        ):
+            raise base.ReconciliationError(
+                f"cooperative_completion_receipt_{field}_invalid"
+            )
+        return int(numeric)
+
+    progress = replay.get("perGameLockProgress")
+    repair = replay.get("missedLockTerminalReconciliation")
+    if not isinstance(progress, Mapping) or not isinstance(repair, Mapping):
+        raise base.ReconciliationError(
+            "cooperative_completion_receipt_progress_missing"
+        )
+    repair_progress = repair.get("progressAfter")
+    if not isinstance(repair_progress, Mapping):
+        raise base.ReconciliationError(
+            "cooperative_completion_receipt_repair_progress_missing"
+        )
+
+    version = (
+        "MLB-COOPERATIVE-TERMINAL-CHUNK-"
+        "v4-valid-prelock-quarantine"
+    )
+    count_fields = (
+        "manifestGameCount",
+        "processedGameCount",
+        "verifiedGameCount",
+        "verificationIndex",
+        "canonicalCount",
+        "noPredictionDataCount",
+        "missedLockValidPrelockQuarantineCount",
+        "lockOutcomeCount",
+        "missedCount",
+        "dueMissingCount",
+        "atomicDurableItemCount",
+    )
+    counts = {
+        field: count(progress.get(field), field)
+        for field in count_fields
+    }
+    manifest = counts["manifestGameCount"]
+    processed = counts["processedGameCount"]
+    verified = counts["verifiedGameCount"]
+    verification_index = counts["verificationIndex"]
+    canonical = counts["canonicalCount"]
+    no_data = counts["noPredictionDataCount"]
+    quarantine = counts[
+        "missedLockValidPrelockQuarantineCount"
+    ]
+    lock_outcomes = counts["lockOutcomeCount"]
+    atomic_items = counts["atomicDurableItemCount"]
+    reconciled = count(repair.get("reconciledCount"), "reconciledCount")
+    remaining = count(
+        repair.get("remainingMissedCount"), "remainingMissedCount"
+    )
+    fingerprints = {
+        "checkpointFingerprint": str(
+            replay.get("checkpointFingerprint") or ""
+        ),
+        "manifestFingerprint": str(
+            replay.get("manifestFingerprint") or ""
+        ),
+        "manifestAuthorityEvidenceFingerprint": str(
+            progress.get("manifestAuthorityEvidenceFingerprint") or ""
+        ),
+        "providerManifestFingerprint": str(
+            progress.get("providerManifestFingerprint") or ""
+        ),
+        "atomicDurableReadSetFingerprint": str(
+            progress.get("atomicDurableReadSetFingerprint") or ""
+        ),
+    }
+    terminal_games_raw = progress.get("terminalGames")
+    if (
+        not isinstance(terminal_games_raw, list)
+        or len(terminal_games_raw) != manifest
+    ):
+        raise base.ReconciliationError(
+            "cooperative_completion_receipt_terminal_games_invalid"
+        )
+    terminal_games = []
+    terminal_official_seen = set()
+    terminal_states = {
+        "LOCKED_CANONICAL": 0,
+        "LOCKED_NO_PREDICTION_DATA": 0,
+        "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED": 0,
+    }
+    allowed_terminal_game_keys = {
+        "index",
+        "officialGamePk",
+        "gameIdentity",
+        "durableIdentity",
+        "terminalState",
+        "evidenceFingerprint",
+    }
+    for index, entry in enumerate(terminal_games_raw):
+        if (
+            not isinstance(entry, Mapping)
+            or set(entry) != allowed_terminal_game_keys
+        ):
+            raise base.ReconciliationError(
+                "cooperative_completion_receipt_terminal_game_invalid"
+            )
+        entry_index = count(entry.get("index"), "terminalGameIndex")
+        official_pk = str(entry.get("officialGamePk") or "")
+        official_pk_number = count(
+            entry.get("officialGamePk"),
+            "terminalGameOfficialGamePk",
+        )
+        game_identity = str(entry.get("gameIdentity") or "")
+        durable_identity = str(entry.get("durableIdentity") or "")
+        terminal_state = str(entry.get("terminalState") or "")
+        evidence_fingerprint = str(
+            entry.get("evidenceFingerprint") or ""
+        )
+        if (
+            entry_index != index
+            or official_pk_number <= 0
+            or not official_pk
+            or official_pk in terminal_official_seen
+            or not game_identity
+            or not durable_identity
+            or terminal_state not in terminal_states
+            or re.fullmatch(r"[0-9a-f]{64}", evidence_fingerprint)
+            is None
+        ):
+            raise base.ReconciliationError(
+                "cooperative_completion_receipt_terminal_game_invalid"
+            )
+        terminal_official_seen.add(official_pk)
+        terminal_states[terminal_state] += 1
+        terminal_games.append(
+            {
+                "index": index,
+                "officialGamePk": official_pk,
+                "gameIdentity": game_identity,
+                "durableIdentity": durable_identity,
+                "terminalState": terminal_state,
+                "evidenceFingerprint": evidence_fingerprint,
+            }
+        )
+    terminal_game_set_fingerprint = hashlib.sha256(
+        json.dumps(
+            terminal_games,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    if (
+        str(progress.get("terminalGameSetFingerprint") or "")
+        != terminal_game_set_fingerprint
+        or terminal_states["LOCKED_CANONICAL"] != canonical
+        or terminal_states["LOCKED_NO_PREDICTION_DATA"] != no_data
+        or terminal_states[
+            "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+        ]
+        != quarantine
+    ):
+        raise base.ReconciliationError(
+            "cooperative_completion_receipt_terminal_game_set_invalid"
+        )
+
+    progress_copies_match = all(
+        count(repair_progress.get(field), f"repair_{field}")
+        == expected
+        for field, expected in counts.items()
+    )
+    repair_header_match = all(
+        count(repair.get(field), f"repair_header_{field}")
+        == counts[field]
+        for field in (
+            "manifestGameCount",
+            "processedGameCount",
+            "verifiedGameCount",
+            "verificationIndex",
+            "atomicDurableItemCount",
+            "missedLockValidPrelockQuarantineCount",
+        )
+    )
+    cached_idempotent = bool(
+        str(replay.get("reason") or "")
+        == "POST_WINDOW_TERMINAL_STATUS_ALREADY_RECONCILED"
+        and reconciled == 0
+    )
+    if (
+        replay.get("ok") is not True
+        or replay.get("sport") != "mlb"
+        or str(replay.get("slateDateEt") or "") != slate_date
+        or replay.get("terminalChunkVersion") != version
+        or replay.get("cooperativeReceiptRedacted") is not True
+        or replay.get("verificationPhase") != "VERIFY"
+        or manifest <= 0
+        or processed != manifest
+        or verified != manifest
+        or verification_index != manifest
+        or lock_outcomes != manifest
+        or canonical + no_data + quarantine != manifest
+        or counts["missedCount"] != 0
+        or counts["dueMissingCount"] != 0
+        or replay.get("durableTerminalVerificationComplete") is not True
+        or replay.get("atomicDurableProofRequired") is not True
+        or progress.get("verificationComplete") is not True
+        or progress.get("atomicDurableProofRequired") is not True
+        or not manifest <= atomic_items <= COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS
+        or count(
+            replay.get("atomicDurableItemCount"),
+            "top_atomicDurableItemCount",
+        )
+        != atomic_items
+        or replay.get("completionMutationLeaseRequired") is not True
+        or repair.get("ok") is not True
+        or repair.get("version") != version
+        or str(repair.get("slateDateEt") or "") != slate_date
+        or repair.get("durableTerminalVerificationComplete") is not True
+        or repair.get("atomicDurableProofRequired") is not True
+        or repair.get("completionMutationLeaseRequired") is not True
+        or remaining != 0
+        or repair.get("unresolved") != []
+        or repair.get("candidateIntegrityFailuresRelabeled") is not False
+        or repair.get("postStartPredictionCreationAllowed") is not False
+        or (reconciled <= 0 and not cached_idempotent)
+        or not progress_copies_match
+        or repair_progress.get("terminalGames") != terminal_games_raw
+        or str(
+            repair_progress.get("terminalGameSetFingerprint") or ""
+        )
+        != terminal_game_set_fingerprint
+        or str(
+            repair_progress.get(
+                "manifestAuthorityEvidenceFingerprint"
+            )
+            or ""
+        )
+        != fingerprints["manifestAuthorityEvidenceFingerprint"]
+        or str(
+            repair_progress.get("providerManifestFingerprint") or ""
+        )
+        != fingerprints["providerManifestFingerprint"]
+        or str(replay.get("providerManifestFingerprint") or "")
+        != fingerprints["providerManifestFingerprint"]
+        or str(
+            replay.get("atomicDurableReadSetFingerprint") or ""
+        )
+        != fingerprints["atomicDurableReadSetFingerprint"]
+        or str(
+            repair.get("atomicDurableReadSetFingerprint") or ""
+        )
+        != fingerprints["atomicDurableReadSetFingerprint"]
+        or not repair_header_match
+        or any(
+            not re.fullmatch(r"[0-9a-f]{64}", value)
+            for value in fingerprints.values()
+        )
+        or replay.get("postStartPredictionCreationAllowed") is not False
+        or replay.get("immutablePredictionRewriteAllowed") is not False
+        or replay.get("directWorkflowTableWrite") is not False
+        or replay.get("productionAuthorityChanged") is not False
+    ):
+        raise base.ReconciliationError(
+            "cooperative_completion_receipt_invalid"
+        )
+    return {
+        "version": version,
+        "slateDateEt": slate_date,
+        **fingerprints,
+        "terminalGames": terminal_games,
+        "terminalGameSetFingerprint": terminal_game_set_fingerprint,
+        "manifestGameCount": manifest,
+        "processedGameCount": processed,
+        "verifiedGameCount": verified,
+        "verificationIndex": verification_index,
+        "verificationComplete": True,
+        "canonicalCount": canonical,
+        "noPredictionDataCount": no_data,
+        "missedLockValidPrelockQuarantineCount": quarantine,
+        "lockOutcomeCount": lock_outcomes,
+        "reconciledCount": reconciled,
+        "missedCount": 0,
+        "dueMissingCount": 0,
+        "durableTerminalVerificationComplete": True,
+        "atomicDurableProofRequired": True,
+        "atomicDurableItemCount": atomic_items,
+        "completionMutationLeaseRequired": True,
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "directWorkflowTableWrite": False,
+        "productionAuthorityChanged": False,
+    }
+
 def _execute_protected_terminal_replay(
     cloudformation: Any,
     lambda_client: Any,
@@ -471,6 +791,7 @@ def _execute_protected_terminal_replay(
     cooperative_poll_count = 0
     cooperative_handoff_observed = False
     cooperative_acknowledged = False
+    acknowledgement_state: Mapping[str, Any] = {}
     with _status_body_adapter():
         for attempt in range(1, max_attempts + 1):
             replay = v4.invoke_json_with_backpressure(
@@ -558,6 +879,82 @@ def _execute_protected_terminal_replay(
                 status,
                 request.slate_date,
             )
+            completion_receipt = (
+                _validated_safe_cooperative_completion_receipt(
+                    replay,
+                    request.slate_date,
+                )
+                if replay.get("cooperativeTerminalReplayCompleted") is True
+                else None
+            )
+            if completion_receipt is not None:
+                official_lifecycle_games = evidence.get(
+                    "lifecycleGames"
+                )
+                if not isinstance(official_lifecycle_games, list):
+                    raise base.ReconciliationError(
+                        "cooperative_completion_receipt_official_"
+                        "lifecycle_missing"
+                    )
+                receipt_lifecycle_games = sorted(
+                    [
+                        {
+                            "officialGamePk": str(
+                                row.get("officialGamePk") or ""
+                            ),
+                            "gameIdentity": str(
+                                row.get("gameIdentity") or ""
+                            ),
+                            "terminalState": str(
+                                row.get("terminalState") or ""
+                            ),
+                        }
+                        for row in completion_receipt["terminalGames"]
+                    ],
+                    key=lambda row: int(row["officialGamePk"]),
+                )
+                if receipt_lifecycle_games != official_lifecycle_games:
+                    raise base.ReconciliationError(
+                        "cooperative_completion_receipt_official_"
+                        "lifecycle_mismatch"
+                    )
+                official_provider_manifest_fingerprint = str(
+                    evidence.get("providerManifestFingerprint") or ""
+                )
+                if (
+                    re.fullmatch(
+                        r"[0-9a-f]{64}",
+                        official_provider_manifest_fingerprint,
+                    )
+                    is None
+                    or completion_receipt.get(
+                        "providerManifestFingerprint"
+                    )
+                    != official_provider_manifest_fingerprint
+                ):
+                    raise base.ReconciliationError(
+                        "cooperative_completion_receipt_provider_"
+                        "manifest_mismatch"
+                    )
+                exact_receipt_bindings = {
+                    "manifestGameCount": "manifestGameCount",
+                    "canonicalCount": "canonicalPredictionCount",
+                    "noPredictionDataCount": "terminalNoPredictionCount",
+                    "missedLockValidPrelockQuarantineCount": (
+                        "missedLockValidPrelockQuarantineCount"
+                    ),
+                    "lockOutcomeCount": "lockOutcomeCount",
+                }
+                if any(
+                    completion_receipt.get(receipt_field)
+                    != evidence.get(evidence_field)
+                    for receipt_field, evidence_field
+                    in exact_receipt_bindings.items()
+                ):
+                    raise base.ReconciliationError(
+                        "cooperative_completion_receipt_official_"
+                        "status_mismatch"
+                    )
             if cooperative_state in {"COMPLETED", "ACKNOWLEDGED"}:
                 cooperative_handoff_observed = True
                 acknowledgement = v4.invoke_json_with_backpressure(
@@ -595,10 +992,70 @@ def _execute_protected_terminal_replay(
             raise base.ReconciliationError(
                 "protected_terminal_replay_retry_state_invalid"
             )
+    final_cooperative_state = (
+        acknowledgement_state
+        if acknowledgement_state
+        else cooperative
+        if isinstance(cooperative, Mapping)
+        else {}
+    )
+    terminal_progress = (
+        final_cooperative_state.get("terminalChunkProgress") or {}
+        if isinstance(final_cooperative_state, Mapping)
+        else {}
+    )
+    try:
+        progress_manifest_count = int(
+            terminal_progress.get("manifestGameCount")
+        )
+        progress_processed_count = int(
+            terminal_progress.get("processedGameCount")
+        )
+        progress_terminal_count = int(
+            terminal_progress.get("terminalCount")
+        )
+        progress_verified_count = int(
+            terminal_progress.get("verifiedGameCount")
+        )
+    except (TypeError, ValueError):
+        progress_manifest_count = -1
+        progress_processed_count = -1
+        progress_terminal_count = -1
+        progress_verified_count = -1
+    cooperative_receipt_verified = bool(
+        replay.get("cooperativeTerminalReplayCompleted") is True
+        and isinstance(final_cooperative_state, Mapping)
+        and str(final_cooperative_state.get("state") or "")
+        in {"COMPLETED", "ACKNOWLEDGED"}
+        and final_cooperative_state.get("version")
+        == (
+            "MLB-COOPERATIVE-TERMINAL-REPLAY-"
+            "v1-eventbridge-owner-handoff"
+        )
+        and isinstance(terminal_progress, Mapping)
+        and terminal_progress.get("valid") is True
+        and terminal_progress.get("version")
+        == (
+            "MLB-COOPERATIVE-TERMINAL-CHUNK-"
+            "v4-valid-prelock-quarantine"
+        )
+        and progress_manifest_count > 0
+        and progress_processed_count == progress_manifest_count
+        and progress_terminal_count == progress_manifest_count
+        and progress_verified_count == progress_manifest_count
+        and terminal_progress.get("verificationComplete") is True
+        and final_cooperative_state.get("ownerIdentifierExposed") is False
+    )
+    if cooperative_handoff_observed and not cooperative_receipt_verified:
+        raise base.ReconciliationError(
+            "protected_terminal_replay_cooperative_receipt_invalid"
+        )
+
     return {
         "slateDateEt": request.slate_date,
         "settlementFailure": dict(request.detail),
         "lockEvidence": evidence,
+        "cooperativeCompletionReceipt": completion_receipt,
         "protectedLockReplay": True,
         "protectedLockReplayAttemptCount": attempt,
         "protectedLockReplayOverlapRetryCount": overlap_retry_count,
@@ -607,6 +1064,12 @@ def _execute_protected_terminal_replay(
             cooperative_handoff_observed
         ),
         "protectedLockReplayCooperativeAcknowledged": cooperative_acknowledged,
+        "protectedLockReplayCooperativeReceiptVerified": (
+            cooperative_receipt_verified
+        ),
+        "protectedLockReplayCooperativeReceipt": dict(
+            final_cooperative_state
+        ),
         "protectedLockReplayAutomaticExecutionOwner": (
             "eventbridge_daily_lock_schedule"
             if cooperative_handoff_observed
@@ -627,6 +1090,39 @@ def _execute_protected_terminal_replay(
         "immutablePredictionRewriteAllowed": False,
         "postStartPredictionCreationAllowed": False,
     }
+
+
+def _terminal_only_target_needs_durable_receipt(
+    value: Mapping[str, Any],
+    target_slate_date: str,
+) -> bool:
+    """Detect a closed target whose exact protected receipt must be refreshed."""
+
+    slates = value.get("slates")
+    if not isinstance(slates, list) or len(slates) != 1:
+        return False
+    row = slates[0]
+    if (
+        not isinstance(row, Mapping)
+        or str(row.get("slateDateEt") or "") != target_slate_date
+    ):
+        return False
+    try:
+        manifest = int(row.get("manifestGameCount"))
+        canonical = int(row.get("canonicalPredictionCount"))
+        no_data = int(row.get("terminalNoPredictionCount"))
+        quarantine = int(
+            row.get("missedLockValidPrelockQuarantineCount")
+        )
+        lock_outcomes = int(row.get("lockOutcomeCount"))
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        manifest > 0
+        and canonical == 0
+        and no_data + quarantine == manifest
+        and lock_outcomes == manifest
+    )
 
 
 def reconcile(*args: Any, **kwargs: Any) -> Dict[str, Any]:
@@ -667,7 +1163,92 @@ def reconcile(*args: Any, **kwargs: Any) -> Dict[str, Any]:
     else:
         raise base.ReconciliationError("settlement_terminal_replay_bound_exhausted")
 
+    # A prior invocation may have committed one target and crashed before the
+    # next. Aggregate terminal status is not an acceptable rerun proof. Refresh
+    # the exact owner-fenced v4 receipt even when settlement is already closed;
+    # the protected queue reuses an ACK receipt for the same date or performs a
+    # read-only durable scan after another date replaced the singleton slot.
+    if (
+        target_slate_date
+        and target_slate_date not in repaired
+        and _terminal_only_target_needs_durable_receipt(
+            value,
+            target_slate_date,
+        )
+    ):
+        request = DurableTerminalReplayRequired(
+            target_slate_date,
+            {
+                "reason": (
+                    "EXACT_TARGET_DURABLE_TERMINAL_RECEIPT_REVERIFY_REQUIRED"
+                ),
+                "aggregateStatusAcceptedAsReceipt": False,
+                "directTableWrite": False,
+                "postStartPredictionCreationAllowed": False,
+            },
+        )
+        repaired[target_slate_date] = _execute_protected_terminal_replay(
+            cloudformation,
+            lambda_client,
+            stack_name=stack_name,
+            request=request,
+        )
+        with _status_body_adapter():
+            value = v4.reconcile(*args, **kwargs)
+
     value = dict(value)
+    value_slates = value.get("slates")
+    for repaired_slate, repaired_proof in repaired.items():
+        completion_receipt = repaired_proof.get(
+            "cooperativeCompletionReceipt"
+        )
+        if not isinstance(completion_receipt, Mapping):
+            continue
+        if not isinstance(value_slates, list):
+            raise base.ReconciliationError(
+                "cooperative_completion_receipt_settlement_missing"
+            )
+        matching_rows = [
+            row
+            for row in value_slates
+            if isinstance(row, Mapping)
+            and str(row.get("slateDateEt") or "") == repaired_slate
+        ]
+        if len(matching_rows) != 1:
+            raise base.ReconciliationError(
+                "cooperative_completion_receipt_settlement_missing"
+            )
+        final_row = matching_rows[0]
+        settlement = final_row.get("settlement")
+        if not isinstance(settlement, Mapping):
+            raise base.ReconciliationError(
+                "cooperative_completion_receipt_settlement_missing"
+            )
+        receipt_lifecycle_games = sorted(
+            [
+                {
+                    "officialGamePk": str(row.get("officialGamePk") or ""),
+                    "gameIdentity": str(row.get("gameIdentity") or ""),
+                    "terminalState": str(row.get("terminalState") or ""),
+                }
+                for row in completion_receipt.get("terminalGames") or []
+                if isinstance(row, Mapping)
+            ],
+            key=lambda row: int(row["officialGamePk"]),
+        )
+        official_lifecycle_games = final_row.get("lifecycleGames")
+        settlement_lifecycle_games = settlement.get("lifecycleGames")
+        if (
+            not receipt_lifecycle_games
+            or receipt_lifecycle_games != official_lifecycle_games
+            or receipt_lifecycle_games != settlement_lifecycle_games
+            or completion_receipt.get("providerManifestFingerprint")
+            != final_row.get("providerManifestFingerprint")
+        ):
+            raise base.ReconciliationError(
+                "cooperative_completion_receipt_settlement_"
+                "lifecycle_mismatch"
+            )
     value["version"] = VERSION
     value["readOnlyNonSuccessStatusBodiesPreserved"] = True
     value["semanticStatusConsistencyRetryInstalled"] = True

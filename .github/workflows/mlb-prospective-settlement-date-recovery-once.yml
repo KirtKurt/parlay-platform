@@ -32,7 +32,11 @@ jobs:
             .github/workflows/unified-mlb-learning-recovery-once.yml
           grep -q "TARGET_SLATE_DATE: '2026-08-25'" \
             .github/workflows/unified-mlb-learning-recovery-once.yml
-          grep -q "MIN_ACCEPTED_ROWS: '33'" \
+          grep -q "HANDOFF_BASELINE_ACCEPTED_ROWS: '32'" \
+            .github/workflows/unified-mlb-learning-recovery-once.yml
+          grep -q "RECOVERY_TERMINAL_GAME_COUNT: '15'" \
+            .github/workflows/unified-mlb-learning-recovery-once.yml
+          grep -q "cooperativeCompletionReceipt" \
             .github/workflows/unified-mlb-learning-recovery-once.yml
           echo 'AWS invocation: none'
           echo 'Canonical recovery owner: unified-mlb-learning-recovery-once.yml'

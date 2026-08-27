@@ -62,6 +62,7 @@ def validate(payload: Mapping[str, Any]) -> None:
         "lockedPredictionCount",
         "lockedStatusCount",
         "noPredictionDataCount",
+        "missedLockValidPrelockQuarantineCount",
         "lockStatusComplete",
         "canonicalPredictionComplete",
         "operationalDefect",
@@ -101,8 +102,41 @@ def validate(payload: Mapping[str, Any]) -> None:
     locked_predictions = int(payload.get("lockedPredictionCount") or 0)
     locked_statuses = int(payload.get("lockedStatusCount") or 0)
     terminal_no_data = int(payload.get("noPredictionDataCount") or 0)
-    if locked_statuses != locked_predictions + terminal_no_data:
-        raise RuntimeError("lock status conflates predictions and terminal outcomes")
+    quarantine_count = int(
+        payload.get("missedLockValidPrelockQuarantineCount") or 0
+    )
+    if (
+        locked_statuses
+        != locked_predictions + terminal_no_data + quarantine_count
+    ):
+        raise RuntimeError(
+            "lock status conflates predictions and terminal outcomes"
+        )
+    observed_quarantine = 0
+    for row in rows:
+        if (
+            str(row.get("lockStatus") or "")
+            != "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+        ):
+            continue
+        observed_quarantine += 1
+        if (
+            row.get("predictedWinner") not in (None, "")
+            or row.get("predictedSide") not in (None, "")
+            or row.get("lockedPrediction") is not False
+            or row.get("officialPrediction") is not False
+            or row.get("playable") is not False
+            or row.get("trainingEligible") is not False
+            or row.get("accuracyEligible") is not False
+            or row.get("wagerAllowed") is not False
+            or row.get("predictionAdopted") is not False
+            or row.get("operationalDefect") is not True
+        ):
+            raise RuntimeError(
+                "missed-lock quarantine exposes prediction authority"
+            )
+    if observed_quarantine != quarantine_count:
+        raise RuntimeError("quarantine aggregate does not match lifecycle rows")
     if not (0 <= locked_predictions <= locked_statuses <= game_count):
         raise RuntimeError("lock status counts exceed the scheduled slate")
 
@@ -127,6 +161,7 @@ def invoke(
     region: str,
     attempts: int,
     delay_seconds: float,
+    slate_date: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     client = boto3.client(
         "lambda",
@@ -144,7 +179,9 @@ def invoke(
         "path": "/v1/mlb/locks/status",
         "httpMethod": "GET",
         "headers": {"accept": "application/json"},
-        "queryStringParameters": None,
+        "queryStringParameters": (
+            {"date": slate_date} if slate_date else None
+        ),
         "requestContext": {
             "http": {
                 "method": "GET",
@@ -176,6 +213,14 @@ def invoke(
                     + json.dumps(payload, sort_keys=True, default=str)
                 )
             validate(payload)
+            if (
+                slate_date
+                and str(payload.get("slateDateEt") or "")
+                != slate_date
+            ):
+                raise RuntimeError(
+                    "lock status returned the wrong exact slate date"
+                )
             invocation = {
                 "functionName": function_name,
                 "region": region,
@@ -187,6 +232,7 @@ def invoke(
                 ),
                 "gameCount": int(payload.get("gameCount") or 0),
                 "slateDateEt": payload.get("slateDateEt"),
+                "requestedSlateDateEt": slate_date,
             }
             return payload, invocation
         except Exception as exc:
@@ -205,6 +251,7 @@ def main() -> int:
     parser.add_argument("--invocation-output", required=True, type=Path)
     parser.add_argument("--attempts", type=int, default=3)
     parser.add_argument("--delay-seconds", type=float, default=4.0)
+    parser.add_argument("--slate-date")
     args = parser.parse_args()
 
     payload, invocation = invoke(
@@ -212,6 +259,7 @@ def main() -> int:
         region=args.region,
         attempts=args.attempts,
         delay_seconds=args.delay_seconds,
+        slate_date=args.slate_date,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.invocation_output.parent.mkdir(parents=True, exist_ok=True)

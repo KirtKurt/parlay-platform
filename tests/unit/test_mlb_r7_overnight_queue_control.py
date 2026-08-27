@@ -39,6 +39,13 @@ def test_overnight_queue_dispatches_only_the_canonical_recovery() -> None:
     assert "RECOVERY_EPOCH_UTC" in workflow
     assert "run.conclusion === 'success'" in workflow
     assert "automaticTrainerOwner: 'eventbridge_schedule'" in workflow
+    assert "RECOVERY_TERMINAL_GAME_COUNT: '15'" in workflow
+    assert "RECOVERY_CANONICAL_ROW_COUNT: '0'" in workflow
+    assert "recoveryTerminalGameCount" in workflow
+    assert "recoveryCanonicalRowCount" in workflow
+    assert "RECOVERY_MIN_ACCEPTED_ROWS" not in workflow
+    assert "33-row" not in workflow
+    assert "minimumAcceptedRows" not in workflow
 
     for forbidden in (
         "aws lambda invoke",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import sys
@@ -71,7 +72,67 @@ def settlement_gap(slate_date="2026-08-04", games=15):
     }
 
 
-def official_terminal_status(slate_date="2026-08-04", games=15):
+
+def fixture_terminal_games(games=15, quarantine=1):
+    rows = []
+    for index in range(games):
+        state = (
+            "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+            if index < quarantine
+            else "LOCKED_NO_PREDICTION_DATA"
+        )
+        rows.append(
+            {
+                "index": index,
+                "officialGamePk": str(824805 + index),
+                "gameIdentity": f"provider:game-{index}",
+                "durableIdentity": f"provider:game-{index}",
+                "terminalState": state,
+                "evidenceFingerprint": hashlib.sha256(
+                    f"evidence:{index}:{state}".encode("utf-8")
+                ).hexdigest(),
+            }
+        )
+    return rows
+
+
+def fixture_lifecycle_rows(games=15, quarantine=1):
+    return [
+        {
+            "officialGamePk": row["officialGamePk"],
+            "gameIdentity": row["gameIdentity"],
+            "state": row["terminalState"],
+            "lockStatus": row["terminalState"],
+            "lockedPrediction": False,
+            "officialPrediction": False,
+            "playable": False,
+            "trainingEligible": False,
+            "accuracyEligible": False,
+            "wagerAllowed": False,
+            "predictionAdopted": False,
+            "operationalDefect": (
+                row["terminalState"]
+                == "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+            ),
+        }
+        for row in fixture_terminal_games(games, quarantine)
+    ]
+
+
+def fixture_terminal_game_set_fingerprint(games=15, quarantine=1):
+    return hashlib.sha256(
+        json.dumps(
+            fixture_terminal_games(games, quarantine),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+def official_terminal_status(
+    slate_date="2026-08-04",
+    games=15,
+    quarantine=1,
+):
     return {
         "ok": True,
         "sport": "mlb",
@@ -82,11 +143,130 @@ def official_terminal_status(slate_date="2026-08-04", games=15):
         "gameCount": games,
         "officialScheduleGameCount": games,
         "lockedPredictionCount": 0,
-        "noPredictionDataCount": games,
+        "noPredictionDataCount": games - quarantine,
+        "missedLockValidPrelockQuarantineCount": quarantine,
         "lockedStatusCount": games,
         "lockStatusComplete": True,
+        "providerManifestFingerprint": "c" * 64,
+        "perGameStatus": fixture_lifecycle_rows(
+            games,
+            quarantine,
+        ),
     }
 
+
+
+def cooperative_progress(games=15, quarantine=1):
+    return {
+        "manifestGameCount": games,
+        "processedGameCount": games,
+        "verifiedGameCount": games,
+        "verificationIndex": games,
+        "verificationComplete": True,
+        "atomicDurableItemCount": games + 2 * quarantine + 1,
+        "atomicDurableReadSetFingerprint": "d" * 64,
+        "atomicDurableProofRequired": True,
+        "canonicalCount": 0,
+        "noPredictionDataCount": games - quarantine,
+        "missedLockValidPrelockQuarantineCount": quarantine,
+        "lockOutcomeCount": games,
+        "missedCount": 0,
+        "dueMissingCount": 0,
+        "manifestFingerprint": "b" * 64,
+        "checkpointFingerprint": "a" * 64,
+        "manifestAuthorityEvidenceFingerprint": "e" * 64,
+        "providerManifestFingerprint": "c" * 64,
+        "terminalGames": fixture_terminal_games(games, quarantine),
+        "terminalGameSetFingerprint": (
+            fixture_terminal_game_set_fingerprint(games, quarantine)
+        ),
+    }
+
+
+def cooperative_public_state(state="COMPLETED", games=15, quarantine=1):
+    progress = cooperative_progress(games, quarantine)
+    return {
+        "version": (
+            "MLB-COOPERATIVE-TERMINAL-REPLAY-"
+            "v1-eventbridge-owner-handoff"
+        ),
+        "state": state,
+        "slateDateEt": "2026-08-04",
+        "ownerIdentifierExposed": False,
+        "terminalChunkProgress": {
+            "version": (
+                "MLB-COOPERATIVE-TERMINAL-CHUNK-"
+                "v4-valid-prelock-quarantine"
+            ),
+            "valid": True,
+            "manifestGameCount": games,
+            "processedGameCount": games,
+            "terminalCount": games,
+            "verifiedGameCount": games,
+            "verificationComplete": True,
+            "canonicalCount": 0,
+            "noPredictionDataCount": games - quarantine,
+            "missedLockValidPrelockQuarantineCount": quarantine,
+            "postStartPredictionCreationAllowed": False,
+            "immutablePredictionRewriteAllowed": False,
+            "productionAuthorityChanged": False,
+        },
+    }
+
+
+def cooperative_completion_receipt(games=15, quarantine=1):
+    progress = cooperative_progress(games, quarantine)
+    version = (
+        "MLB-COOPERATIVE-TERMINAL-CHUNK-"
+        "v4-valid-prelock-quarantine"
+    )
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "slateDateEt": "2026-08-04",
+        "reason": "VALID_PRELOCK_MISSED_LOCK_QUARANTINE_RECONCILED",
+        "terminalChunkVersion": version,
+        "checkpointFingerprint": "a" * 64,
+        "manifestFingerprint": "b" * 64,
+        "providerManifestFingerprint": "c" * 64,
+        "atomicDurableReadSetFingerprint": "d" * 64,
+        "verificationPhase": "VERIFY",
+        "durableTerminalVerificationComplete": True,
+        "atomicDurableProofRequired": True,
+        "atomicDurableItemCount": games + 2 * quarantine + 1,
+        "completionMutationLeaseRequired": True,
+        "perGameLockProgress": dict(progress),
+        "missedLockTerminalReconciliation": {
+            "ok": True,
+            "version": version,
+            "slateDateEt": "2026-08-04",
+            "manifestGameCount": games,
+            "processedGameCount": games,
+            "verifiedGameCount": games,
+            "verificationIndex": games,
+            "durableTerminalVerificationComplete": True,
+            "atomicDurableProofRequired": True,
+            "atomicDurableItemCount": games + 2 * quarantine + 1,
+            "atomicDurableReadSetFingerprint": "d" * 64,
+            "completionMutationLeaseRequired": True,
+            "reconciledCount": quarantine,
+            "missedLockValidPrelockQuarantineCount": quarantine,
+            "remainingMissedCount": 0,
+            "unresolved": [],
+            "progressAfter": dict(progress),
+            "postStartPredictionCreationAllowed": False,
+            "candidateIntegrityFailuresRelabeled": False,
+        },
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "directWorkflowTableWrite": False,
+        "productionAuthorityChanged": False,
+        "cooperativeReceiptRedacted": True,
+        "cooperativeTerminalReplayCompleted": True,
+        "cooperativeTerminalReplay": cooperative_public_state(
+            "COMPLETED", games, quarantine
+        ),
+    }
 
 def replay_required(slate_date="2026-08-04"):
     detail = subject._terminal_replay_detail(
@@ -394,9 +574,9 @@ def test_protected_replay_polls_eventbridge_handoff_validates_then_acks(
                 "sport": "mlb",
                 "slateDateEt": "2026-08-04",
                 "cooperativeTerminalReplayAcknowledged": True,
-                "cooperativeTerminalReplay": {
-                    "state": "ACKNOWLEDGED",
-                },
+                "cooperativeTerminalReplay": cooperative_public_state(
+                    "ACKNOWLEDGED"
+                ),
             }
         polls += 1
         if polls <= 2:
@@ -413,37 +593,13 @@ def test_protected_replay_polls_eventbridge_handoff_validates_then_acks(
                     "state": "QUEUED" if polls == 1 else "CLAIMED",
                 },
             }
-        progress = {
-            "manifestGameCount": 15,
-            "canonicalCount": 0,
-            "noPredictionDataCount": 15,
-            "lockOutcomeCount": 15,
-            "missedCount": 0,
-            "dueMissingCount": 0,
-        }
-        return {
-            "ok": True,
-            "sport": "mlb",
-            "slateDateEt": "2026-08-04",
-            "reason": "PROVEN_NO_PREDICTION_TERMINALS_RECONCILED",
-            "postStartPredictionCreationAllowed": False,
-            "perGameLockProgress": progress,
-            "missedLockTerminalReconciliation": {
-                "ok": True,
-                "slateDateEt": "2026-08-04",
-                "reconciledCount": 15,
-                "remainingMissedCount": 0,
-                "unresolved": [],
-                "progressAfter": progress,
-                "postStartPredictionCreationAllowed": False,
-            },
-            # The server auto-acknowledges on the first completed poll so an
-            # older v5.7 checkout can safely advance to its next exact date.
-            "cooperativeTerminalReplayCompleted": True,
-            "cooperativeTerminalReplay": {
-                "state": "ACKNOWLEDGED",
-            },
-        }
+        result = cooperative_completion_receipt()
+        # The server can project a completed receipt while the explicit ACK is
+        # still requested by this checkout.
+        result["cooperativeTerminalReplay"] = cooperative_public_state(
+            "COMPLETED"
+        )
+        return result
 
     monkeypatch.setattr(v4, "invoke_json_with_backpressure", fake_invoke)
     sleeps = []
@@ -463,6 +619,13 @@ def test_protected_replay_polls_eventbridge_handoff_validates_then_acks(
     assert result["protectedLockReplayCooperativePollCount"] == 2
     assert result["protectedLockReplayCooperativeHandoffObserved"] is True
     assert result["protectedLockReplayCooperativeAcknowledged"] is True
+    assert result["protectedLockReplayCooperativeReceiptVerified"] is True
+    completion = result["cooperativeCompletionReceipt"]
+    assert completion["verificationIndex"] == 15
+    assert completion["canonicalCount"] == 0
+    assert completion["noPredictionDataCount"] == 14
+    assert completion["missedLockValidPrelockQuarantineCount"] == 1
+    assert completion["lockOutcomeCount"] == 15
     assert result["protectedLockReplayAutomaticExecutionOwner"] == (
         "eventbridge_daily_lock_schedule"
     )
@@ -611,3 +774,74 @@ def test_default_protected_replay_horizon_covers_bounded_two_phase_handoff():
     assert subject.PROTECTED_REPLAY_RETRY_HORIZON_SECONDS == sum(
         subject.PROTECTED_REPLAY_RETRY_DELAYS_SECONDS
     )
+
+
+def test_completion_receipt_rejects_missing_or_forged_progress():
+    receipt = cooperative_completion_receipt()
+    receipt["perGameLockProgress"]["verificationIndex"] = 14
+    with pytest.raises(
+        base.ReconciliationError,
+        match="cooperative_completion_receipt_invalid",
+    ):
+        subject._validated_safe_cooperative_completion_receipt(
+            receipt,
+            "2026-08-04",
+        )
+
+
+def test_closed_exact_target_refreshes_receipt_on_every_rerun(monkeypatch):
+    row = {
+        "slateDateEt": "2026-08-04",
+        "manifestGameCount": 15,
+        "canonicalPredictionCount": 0,
+        "terminalNoPredictionCount": 14,
+        "missedLockValidPrelockQuarantineCount": 1,
+        "lockOutcomeCount": 15,
+    }
+    monkeypatch.setattr(
+        v4,
+        "reconcile",
+        lambda *args, **kwargs: {
+            "ok": True,
+            "slates": [dict(row)],
+            "directTableWrite": False,
+        },
+    )
+    calls = []
+    monkeypatch.setattr(
+        subject,
+        "_execute_protected_terminal_replay",
+        lambda *args, **kwargs: calls.append(
+            kwargs["request"].slate_date
+        ) or {
+            "slateDateEt": kwargs["request"].slate_date,
+            "cooperativeCompletionReceipt": {"verificationIndex": 15},
+        },
+    )
+
+    for _ in range(2):
+        result = subject.reconcile(
+            object(),
+            object(),
+            stack_name="stack",
+            max_slate_days=31,
+            target_slate_date="2026-08-04",
+        )
+        assert result[
+            "settlementTriggeredProtectedTerminalReplayCount"
+        ] == 1
+
+    assert calls == ["2026-08-04", "2026-08-04"]
+
+
+def test_all_quarantine_receipt_uses_supported_atomic_read_set_range():
+    receipt = cooperative_completion_receipt(games=15, quarantine=15)
+    safe = subject._validated_safe_cooperative_completion_receipt(
+        receipt,
+        "2026-08-04",
+    )
+    assert safe["manifestGameCount"] == 15
+    assert safe["missedLockValidPrelockQuarantineCount"] == 15
+    assert safe["noPredictionDataCount"] == 0
+    assert safe["atomicDurableItemCount"] == 46
+    assert safe["atomicDurableItemCount"] <= 100

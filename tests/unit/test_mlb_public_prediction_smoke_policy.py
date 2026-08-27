@@ -135,3 +135,45 @@ def test_arbitrary_503_and_nonempty_fallback_winner_are_rejected():
             1,
             now=NOW,
         )
+
+
+def test_no_champion_projection_keeps_quarantine_distinct_and_non_predictive():
+    past = NOW - timedelta(hours=3)
+    quarantine = _row(
+        "g1",
+        past,
+        status="MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED",
+    )
+    quarantine.update({
+        "lockedPrediction": False,
+        "officialPrediction": False,
+        "playable": False,
+        "trainingEligible": False,
+        "accuracyEligible": False,
+        "wagerAllowed": False,
+        "predictionAdopted": False,
+        "operationalDefect": True,
+    })
+    no_data = _row("g2", past, status="LOCKED_NO_PREDICTION_DATA")
+
+    result = reconcile_public_prediction_lifecycle(
+        503,
+        _no_champion(),
+        [quarantine, no_data],
+        2,
+        now=NOW,
+        status_operational_defect=True,
+    )
+
+    lifecycle = result["lifecyclePayload"]
+    assert lifecycle["lockedPredictionCount"] == 0
+    assert lifecycle["noPredictionDataCount"] == 1
+    assert lifecycle["missedLockValidPrelockQuarantineCount"] == 1
+    assert lifecycle["terminalExcludedCount"] == 2
+    assert lifecycle["lockStatusComplete"] is True
+    assert result["publicPayload"]["predictions"] == []
+    assert all(
+        row.get("predictedWinner") in (None, "")
+        and row.get("predictedSide") in (None, "")
+        for row in lifecycle["predictions"]
+    )

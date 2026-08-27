@@ -22,7 +22,12 @@ env:
   MLB_ROOT_STACK: parlay-platform-dev
   REPAIR_SLATE_DATE: '2026-08-04'
   TARGET_SLATE_DATE: '2026-08-25'
-  MIN_ACCEPTED_ROWS: '33'
+  HANDOFF_BASELINE_ACCEPTED_ROWS: '32'
+  HANDOFF_BASELINE_REJECTED_ROWS: '1'
+  HANDOFF_BASELINE_TRAIN_ROWS: '32'
+  HANDOFF_BASELINE_PROCESSED_SLATES: '3'
+  HANDOFF_BASELINE_FINALIZED_SLATES: '3'
+  RECOVERY_TERMINAL_GAME_COUNT: '15'
 
 jobs:
   recover-and-verify:
@@ -53,7 +58,8 @@ jobs:
             scripts/reconcile_mlb_prospective_backlog_v4.py \
             scripts/reconcile_mlb_prospective_backlog_v5.py \
             scripts/verify_mlb_recovery_current_slate_guard.py \
-            scripts/verify_unified_mlb_learning_ownership.py
+            scripts/verify_unified_mlb_learning_ownership.py \
+            scripts/warm_and_verify_mlb_lock_status.py
           python -m pytest -q \
             tests/unit/test_reconcile_mlb_prospective_backlog_v4.py \
             tests/unit/test_reconcile_mlb_prospective_backlog_v5.py \
@@ -287,6 +293,71 @@ jobs:
           assert int(value.get('Timeout') or 0) == 900, value
           PY
 
+      - name: Capture signed pre-recovery learning baseline
+        run: |
+          set -euo pipefail
+          aws lambda invoke \
+            --function-name "$TRAINER_FN" \
+            --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"sport":"mlb","mode":"status"}' \
+            /tmp/unified-mlb-recovery/trainer-before.json \
+            | tee /tmp/unified-mlb-recovery/trainer-before-invocation.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          invocation = json.loads(
+              Path('/tmp/unified-mlb-recovery/trainer-before-invocation.json').read_text()
+          )
+          status = json.loads(
+              Path('/tmp/unified-mlb-recovery/trainer-before.json').read_text()
+          )
+          latest = status.get('latestStatus') or (
+              (status.get('trainingHealth') or {}).get('latestRun') or {}
+          )
+          continuity = latest.get('canonicalSlateContinuity') or {}
+          counts = latest.get('partitionCounts') or (
+              (latest.get('milestones') or {}).get('counts') or {}
+          )
+          proof = {
+              'awsStatusCode': invocation.get('StatusCode'),
+              'functionError': invocation.get('FunctionError'),
+              'runId': latest.get('runId'),
+              'executionMode': latest.get('executionMode'),
+              'acceptedRowCount': latest.get('acceptedRowCount'),
+              'rejectedRowCount': latest.get('rejectedRowCount'),
+              'trainRowCount': counts.get('train'),
+              'processedSlateDates': continuity.get('processedSlateDates'),
+              'finalizedGameSlateDates': continuity.get('finalizedGameSlateDates'),
+              'automaticPromotionEnabled': latest.get('automaticPromotionEnabled'),
+              'liveInferenceAuthority': latest.get('liveInferenceAuthority'),
+          }
+          print(json.dumps(proof, indent=2, sort_keys=True))
+          assert int(invocation.get('StatusCode') or 0) == 200, proof
+          assert not invocation.get('FunctionError'), proof
+          assert status.get('ok') is True, proof
+          assert latest.get('executionMode') == 'training', proof
+          assert int(latest.get('acceptedRowCount') or 0) == int(
+              os.environ['HANDOFF_BASELINE_ACCEPTED_ROWS']
+          ), proof
+          assert int(latest.get('rejectedRowCount') or 0) == int(
+              os.environ['HANDOFF_BASELINE_REJECTED_ROWS']
+          ), proof
+          assert int(counts.get('train') or 0) == int(
+              os.environ['HANDOFF_BASELINE_TRAIN_ROWS']
+          ), proof
+          assert len(continuity.get('processedSlateDates') or []) == int(
+              os.environ['HANDOFF_BASELINE_PROCESSED_SLATES']
+          ), proof
+          assert len(continuity.get('finalizedGameSlateDates') or []) == int(
+              os.environ['HANDOFF_BASELINE_FINALIZED_SLATES']
+          ), proof
+          assert latest.get('automaticPromotionEnabled') is not True, proof
+          assert latest.get('liveInferenceAuthority') is not True, proof
+          PY
+
       - name: Prove current integrity and August 25 immutable coverage before settlement
         env:
           PYTHONPATH: .
@@ -337,9 +408,31 @@ jobs:
             --max-slate-days 31 \
             --target-slate-date "$TARGET_SLATE_DATE" \
             --output /tmp/unified-mlb-recovery/settlement-recovery.json
+          LOCK_FUNCTION=$(aws cloudformation describe-stack-resource \
+            --stack-name "$MLB_ROOT_STACK" \
+            --logical-resource-id MLBDailyPickLockFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$LOCK_FUNCTION"
+          test "$LOCK_FUNCTION" != "None"
+          python scripts/warm_and_verify_mlb_lock_status.py \
+            --function-name "$LOCK_FUNCTION" \
+            --region "$AWS_REGION" \
+            --slate-date "$REPAIR_SLATE_DATE" \
+            --output /tmp/unified-mlb-recovery/repair-lock-status.json \
+            --invocation-output /tmp/unified-mlb-recovery/repair-lock-status-invocation.json
+          python scripts/warm_and_verify_mlb_lock_status.py \
+            --function-name "$LOCK_FUNCTION" \
+            --region "$AWS_REGION" \
+            --slate-date "$TARGET_SLATE_DATE" \
+            --output /tmp/unified-mlb-recovery/target-lock-status.json \
+            --invocation-output /tmp/unified-mlb-recovery/target-lock-status-invocation.json
           python - <<'PY'
+          import hashlib
           import json
           import os
+          import re
           from pathlib import Path
 
           gap_report = json.loads(
@@ -351,6 +444,12 @@ jobs:
           repair = os.environ['REPAIR_SLATE_DATE']
           target = os.environ['TARGET_SLATE_DATE']
           last_slate = str(report.get('lastSlateDateEt') or '')
+          repair_status = json.loads(
+              Path('/tmp/unified-mlb-recovery/repair-lock-status.json').read_text()
+          )
+          target_status = json.loads(
+              Path('/tmp/unified-mlb-recovery/target-lock-status.json').read_text()
+          )
           expected_false = (
               'directTableWrite',
               'postStartPredictionCreationAllowed',
@@ -382,6 +481,274 @@ jobs:
           assert report.get('firstSlateDateEt') == target, report
           assert last_slate == target, report
           assert int(report.get('reconciledSlateCount') or 0) == 1, report
+
+          def require_terminal_only_receipt(value, slate_date, status):
+              slates = value.get('slates') or []
+              assert len(slates) == 1, value
+              row = slates[0]
+              expected_games = int(os.environ['RECOVERY_TERMINAL_GAME_COUNT'])
+              no_data = int(row.get('terminalNoPredictionCount') or 0)
+              quarantined = int(
+                  row.get('missedLockValidPrelockQuarantineCount') or 0
+              )
+              assert row.get('slateDateEt') == slate_date, row
+              assert int(row.get('manifestGameCount') or 0) == expected_games, row
+              assert int(row.get('canonicalPredictionCount') or 0) == 0, row
+              assert no_data + quarantined == expected_games, row
+              assert int(row.get('terminalExcludedCount') or 0) == expected_games, row
+              assert int(row.get('lockOutcomeCount') or 0) == expected_games, row
+
+              settlement = row.get('settlement') or {}
+              assert settlement.get('finalized') is True, settlement
+              assert settlement.get('status') == 'CANONICAL_FINAL_LABELS_COMPLETE', settlement
+              assert int(settlement.get('officialGameCount') or 0) == expected_games, settlement
+              assert int(settlement.get('officialFinalCount') or 0) == expected_games, settlement
+              assert int(settlement.get('canonicalLockCount') or 0) == 0, settlement
+              assert int(settlement.get('terminalNoPredictionCount') or 0) == no_data, settlement
+              assert int(
+                  settlement.get('missedLockValidPrelockQuarantineCount') or 0
+              ) == quarantined, settlement
+              assert int(settlement.get('terminalExcludedCount') or 0) == expected_games, settlement
+              assert int(settlement.get('labelWriteCount') or 0) == 0, settlement
+              assert int(settlement.get('settledLabelCount') or 0) == 0, settlement
+              assert settlement.get('immutablePregameRowsMutated') is False, settlement
+
+              replays = value.get(
+                  'settlementTriggeredProtectedTerminalReplays'
+              ) or []
+              assert len(replays) == 1, value
+              replay = replays[0]
+              assert replay.get('slateDateEt') == slate_date, replay
+              assert replay.get(
+                  'protectedLockReplayCooperativeHandoffObserved'
+              ) is True, replay
+              assert replay.get(
+                  'protectedLockReplayCooperativeAcknowledged'
+              ) is True, replay
+              assert replay.get(
+                  'protectedLockReplayCooperativeReceiptVerified'
+              ) is True, replay
+              completion = replay.get(
+                  'cooperativeCompletionReceipt'
+              ) or {}
+              receipt = replay.get(
+                  'protectedLockReplayCooperativeReceipt'
+              ) or {}
+              progress = receipt.get('terminalChunkProgress') or {}
+              assert receipt.get('state') == 'ACKNOWLEDGED', receipt
+              assert progress.get('version') == (
+                  'MLB-COOPERATIVE-TERMINAL-CHUNK-'
+                  'v4-valid-prelock-quarantine'
+              ), progress
+              assert progress.get('valid') is True, progress
+              assert int(progress.get('manifestGameCount') or 0) == expected_games, progress
+              assert int(progress.get('processedGameCount') or 0) == expected_games, progress
+              assert int(progress.get('terminalCount') or 0) == expected_games, progress
+              assert int(progress.get('canonicalCount') or 0) == 0, progress
+              assert int(progress.get('noPredictionDataCount') or 0) == no_data, progress
+              assert int(
+                  progress.get('missedLockValidPrelockQuarantineCount') or 0
+              ) == quarantined, progress
+              assert int(progress.get('verifiedGameCount') or 0) == expected_games, progress
+              assert progress.get('verificationComplete') is True, progress
+              assert progress.get('postStartPredictionCreationAllowed') is False, progress
+              assert progress.get('immutablePredictionRewriteAllowed') is False, progress
+              assert progress.get('productionAuthorityChanged') is False, progress
+
+              assert completion.get('version') == (
+                  'MLB-COOPERATIVE-TERMINAL-CHUNK-'
+                  'v4-valid-prelock-quarantine'
+              ), completion
+              assert completion.get('slateDateEt') == slate_date, completion
+              assert int(completion.get('manifestGameCount') or 0) == expected_games, completion
+              assert int(completion.get('processedGameCount') or 0) == expected_games, completion
+              assert int(completion.get('verifiedGameCount') or 0) == expected_games, completion
+              assert int(completion.get('verificationIndex') or 0) == expected_games, completion
+              assert completion.get('verificationComplete') is True, completion
+              assert int(completion.get('canonicalCount') or 0) == 0, completion
+              assert int(completion.get('noPredictionDataCount') or 0) == no_data, completion
+              assert int(
+                  completion.get('missedLockValidPrelockQuarantineCount') or 0
+              ) == quarantined, completion
+              assert int(completion.get('lockOutcomeCount') or 0) == expected_games, completion
+              assert int(completion.get('missedCount') or 0) == 0, completion
+              assert int(completion.get('dueMissingCount') or 0) == 0, completion
+              assert completion.get('durableTerminalVerificationComplete') is True, completion
+              assert completion.get('atomicDurableProofRequired') is True, completion
+              assert 0 < int(completion.get('atomicDurableItemCount') or 0) <= 100, completion
+              assert completion.get('completionMutationLeaseRequired') is True, completion
+              fingerprints = (
+                  'checkpointFingerprint',
+                  'manifestFingerprint',
+                  'manifestAuthorityEvidenceFingerprint',
+                  'providerManifestFingerprint',
+                  'atomicDurableReadSetFingerprint',
+              )
+              assert all(
+                  re.fullmatch(r'[0-9a-f]{64}', str(completion.get(key) or ''))
+                  for key in fingerprints
+              ), completion
+              assert completion.get('postStartPredictionCreationAllowed') is False, completion
+              assert completion.get('immutablePredictionRewriteAllowed') is False, completion
+              assert completion.get('directWorkflowTableWrite') is False, completion
+              assert completion.get('productionAuthorityChanged') is False, completion
+
+              terminal_games = completion.get('terminalGames') or []
+              assert len(terminal_games) == expected_games, completion
+              assert terminal_games == progress.get('terminalGames'), (
+                  terminal_games, progress
+              )
+              expected_game_set_fingerprint = hashlib.sha256(
+                  json.dumps(
+                      terminal_games,
+                      sort_keys=True,
+                      separators=(',', ':'),
+                  ).encode('utf-8')
+              ).hexdigest()
+              assert completion.get('terminalGameSetFingerprint') == (
+                  expected_game_set_fingerprint
+              ), completion
+              assert progress.get('terminalGameSetFingerprint') == (
+                  expected_game_set_fingerprint
+              ), progress
+
+              def lifecycle(rows, state_field):
+                  normalized = []
+                  seen = set()
+                  for game in rows or []:
+                      official_pk = str(game.get('officialGamePk') or '')
+                      identity = str(game.get('gameIdentity') or '')
+                      state = str(game.get(state_field) or '')
+                      assert official_pk and int(official_pk) > 0, game
+                      assert official_pk not in seen, game
+                      assert identity, game
+                      assert state in {
+                          'LOCKED_CANONICAL',
+                          'LOCKED_NO_PREDICTION_DATA',
+                          'MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED',
+                      }, game
+                      seen.add(official_pk)
+                      normalized.append({
+                          'officialGamePk': official_pk,
+                          'gameIdentity': identity,
+                          'terminalState': state,
+                      })
+                  return sorted(
+                      normalized,
+                      key=lambda game: int(game['officialGamePk']),
+                  )
+
+              receipt_lifecycle = lifecycle(terminal_games, 'terminalState')
+              official_lifecycle = lifecycle(row.get('lifecycleGames'), 'terminalState')
+              settlement_lifecycle = lifecycle(
+                  settlement.get('lifecycleGames'),
+                  'terminalState',
+              )
+              public_lifecycle = lifecycle(
+                  status.get('perGameStatus'),
+                  'lockStatus',
+              )
+              assert len(receipt_lifecycle) == expected_games, receipt_lifecycle
+              assert receipt_lifecycle == official_lifecycle, row
+              assert receipt_lifecycle == settlement_lifecycle, settlement
+              assert receipt_lifecycle == public_lifecycle, status
+              assert str(row.get('providerManifestFingerprint') or '') == (
+                  completion.get('providerManifestFingerprint')
+              ), row
+              assert str(status.get('providerManifestFingerprint') or '') == (
+                  completion.get('providerManifestFingerprint')
+              ), status
+              assert status.get('ok') is True, status
+              assert status.get('slateDateEt') == slate_date, status
+              assert int(status.get('gameCount') or 0) == expected_games, status
+              assert int(status.get('lockedPredictionCount') or 0) == 0, status
+              assert int(status.get('lockedStatusCount') or 0) == expected_games, status
+              assert int(status.get('noPredictionDataCount') or 0) == no_data, status
+              assert int(
+                  status.get('missedLockValidPrelockQuarantineCount') or 0
+              ) == quarantined, status
+              assert status.get('lockStatusComplete') is True, status
+              assert status.get('canonicalPredictionComplete') is False, status
+
+              if slate_date == os.environ['REPAIR_SLATE_DATE']:
+                  exact = [
+                      game
+                      for game in status.get('perGameStatus') or []
+                      if str(game.get('officialGamePk') or '') == '824805'
+                  ]
+                  assert len(exact) == 1, status
+                  game = exact[0]
+                  assert game.get('lockStatus') == (
+                      'MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED'
+                  ), game
+                  assert game.get('gameIdentity') == (
+                      'provider:fadc6a3080af39afc5de586f3e2945a3'
+                  ), game
+                  assert (
+                      game.get('gameId') == 'mlb_statsapi:824805'
+                      or game.get('officialGameId') == 'mlb_statsapi:824805'
+                  ), game
+                  assert str(game.get('commenceTime') or '').startswith(
+                      '2026-08-04T22:35:00'
+                  ), game
+                  assert str(game.get('scheduledLockAtUtc') or '').startswith(
+                      '2026-08-04T21:50:00'
+                  ), game
+                  for field in (
+                      'locked',
+                      'lockedPrediction',
+                      'canonical',
+                      'officialPrediction',
+                      'accuracyEligible',
+                      'wagerAllowed',
+                      'predictionAdopted',
+                      'canonicalPredictionComplete',
+                      'playable',
+                      'playablePick',
+                      'actionablePick',
+                      'trainingEligible',
+                  ):
+                      assert game.get(field) is False, (field, game)
+                  assert game.get('lockOutcomeRecorded') is True, game
+                  assert game.get('operationalDefect') is True, game
+                  assert game.get('blocked') is True, game
+                  assert game.get('predictedWinner') is None, game
+                  assert game.get('predictedSide') is None, game
+                  assert game.get('selectionFingerprint') is None, game
+                  receipt_824805 = [
+                      row
+                      for row in terminal_games
+                      if str(row.get('officialGamePk') or '') == '824805'
+                  ]
+                  assert len(receipt_824805) == 1, terminal_games
+                  assert receipt_824805[0].get('terminalState') == (
+                      'MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED'
+                  ), receipt_824805
+                  assert quarantined >= 1, completion
+
+              return {
+                  'slateDateEt': slate_date,
+                  'manifestGameCount': expected_games,
+                  'canonicalPredictionCount': 0,
+                  'terminalNoPredictionCount': no_data,
+                  'missedLockValidPrelockQuarantineCount': quarantined,
+                  'lockOutcomeCount': expected_games,
+                  'terminalGameSetFingerprint': expected_game_set_fingerprint,
+                  'providerManifestFingerprint': completion.get(
+                      'providerManifestFingerprint'
+                  ),
+                  'atomicDurableReadSetFingerprint': completion.get(
+                      'atomicDurableReadSetFingerprint'
+                  ),
+                  'cooperativeReceiptVerified': True,
+              }
+
+          gap_terminal_proof = require_terminal_only_receipt(
+              gap_report, repair, repair_status
+          )
+          target_terminal_proof = require_terminal_only_receipt(
+              report, target, target_status
+          )
           assert not bad, bad
           assert not gap_bad, gap_bad
           assert report.get('readOnlyNonSuccessStatusBodiesPreserved') is True, report
@@ -396,6 +763,8 @@ jobs:
               'settlementTriggeredProtectedTerminalReplayCount': report.get(
                   'settlementTriggeredProtectedTerminalReplayCount'
               ),
+              'gapTerminalOnlyProof': gap_terminal_proof,
+              'targetTerminalOnlyProof': target_terminal_proof,
               'targetSlateDate': target,
               'productionAuthorityChanged': report.get('productionAuthorityChanged'),
           }, indent=2, sort_keys=True))
@@ -433,7 +802,7 @@ jobs:
             --deadline-seconds 1200 \
             --retry-delay-seconds 20
 
-      - name: Bind fresh status and require numeric advancement
+      - name: Bind fresh status and prove terminal-only advancement
         env:
           PYTHONPATH: .
         run: |
@@ -471,10 +840,32 @@ jobs:
           processed = set(continuity.get('processedSlateDates') or [])
           target = os.environ['TARGET_SLATE_DATE']
           repair = os.environ['REPAIR_SLATE_DATE']
-          minimum = int(os.environ['MIN_ACCEPTED_ROWS'])
+          baseline_status = json.loads(
+              Path('/tmp/unified-mlb-recovery/trainer-before.json').read_text()
+          )
+          baseline_latest = baseline_status.get('latestStatus') or (
+              (baseline_status.get('trainingHealth') or {}).get('latestRun') or {}
+          )
+          baseline_counts = baseline_latest.get('partitionCounts') or (
+              (baseline_latest.get('milestones') or {}).get('counts') or {}
+          )
+          baseline_accepted = int(baseline_latest.get('acceptedRowCount') or 0)
+          baseline_rejected = int(baseline_latest.get('rejectedRowCount') or 0)
+          baseline_train = int(baseline_counts.get('train') or 0)
+          baseline_continuity = (
+              baseline_latest.get('canonicalSlateContinuity') or {}
+          )
+          baseline_finalized = set(
+              baseline_continuity.get('finalizedGameSlateDates') or []
+          )
+          baseline_processed = set(
+              baseline_continuity.get('processedSlateDates') or []
+          )
           accepted = int(latest.get('acceptedRowCount') or 0)
+          rejected = int(latest.get('rejectedRowCount') or 0)
           counts = latest.get('partitionCounts') or ((latest.get('milestones') or {}).get('counts') or {})
           train_count = int(counts.get('train') or 0)
+          slate_diagnostics = continuity.get('finalizedSlateDiagnostics') or {}
           proof = {
               'ok': (
                   settlement.get('ok') is True
@@ -491,8 +882,20 @@ jobs:
                   and latest.get('executionMode') == 'training'
                   and selection_run.get('executionMode') == 'selection_capture'
               ),
+              'baselineAcceptedRowCount': baseline_accepted,
+              'baselineRejectedRowCount': baseline_rejected,
+              'baselineTrainRowCount': baseline_train,
+              'baselineProcessedSlateDates': sorted(baseline_processed),
+              'baselineFinalizedSlateDates': sorted(baseline_finalized),
               'acceptedRowCount': accepted,
+              'rejectedRowCount': rejected,
               'partitionCounts': counts,
+              'processedSlateCount': len(processed),
+              'finalizedSlateCount': len(finalized),
+              'terminalOnlySlateDiagnostics': {
+                  repair: slate_diagnostics.get(repair),
+                  target: slate_diagnostics.get(target),
+              },
               'targetSlateDate': target,
               'targetSlateFinalized': target in finalized,
               'targetSlateProcessed': target in processed,
@@ -524,14 +927,40 @@ jobs:
           print(json.dumps(proof, indent=2, sort_keys=True))
           assert proof['ok'] is True, proof
           assert gap_settlement.get('lastSlateDateEt') == repair, proof
-          assert target in finalized, proof
-          assert target in processed, proof
+          assert finalized == baseline_finalized | {repair, target}, proof
+          assert processed == baseline_processed | {repair, target}, proof
+          assert len(finalized) == 5, proof
+          assert len(processed) == 5, proof
           assert continuity.get('blockedSlateDate') in (None, ''), proof
           assert continuity.get('blocker') in (None, ''), proof
           assert training_evidence.get('deploymentIdentityMatches') is True, proof
           assert selection_evidence.get('deploymentIdentityMatches') is True, proof
-          assert accepted >= minimum, proof
-          assert train_count >= minimum, proof
+          assert accepted == baseline_accepted, proof
+          assert rejected == baseline_rejected, proof
+          assert train_count == baseline_train, proof
+          for slate_date in (repair, target):
+              diagnostic = slate_diagnostics.get(slate_date) or {}
+              assert diagnostic.get('slateFinalized') is True, proof
+              assert int(diagnostic.get('officialGameCount') or 0) == int(
+                  os.environ['RECOVERY_TERMINAL_GAME_COUNT']
+              ), proof
+              assert int(diagnostic.get('canonicalLockCount') or 0) == 0, proof
+              terminal_no_data = int(
+                  diagnostic.get('terminalNoPredictionCount') or 0
+              )
+              quarantined = int(
+                  diagnostic.get('missedLockValidPrelockQuarantineCount') or 0
+              )
+              assert terminal_no_data + quarantined == int(
+                  os.environ['RECOVERY_TERMINAL_GAME_COUNT']
+              ), proof
+              assert int(diagnostic.get('terminalExcludedCount') or 0) == int(
+                  os.environ['RECOVERY_TERMINAL_GAME_COUNT']
+              ), proof
+              assert int(diagnostic.get('emittedTrainingRowCount') or 0) == 0, proof
+              assert int(
+                  diagnostic.get('quarantinedRowsAdmittedToTraining') or 0
+              ) == 0, proof
           assert latest.get('automaticPromotionEnabled') is not True, proof
           assert latest.get('championChanged') is not True, proof
           assert latest.get('liveInferenceAuthority') is not True, proof

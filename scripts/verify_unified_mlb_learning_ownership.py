@@ -267,8 +267,8 @@ def verify(root: Path = Path(".")) -> dict[str, object]:
         recovery_trigger = _trigger_block(recovery)
         if "for outer in" in recovery:
             errors.append("ambiguous_outer_transport_retry_still_present")
-        if "MIN_ACCEPTED_ROWS: '33'" not in recovery:
-            errors.append("recovery_minimum_row_gate_missing")
+        if "MIN_ACCEPTED_ROWS" in recovery or "accepted >= minimum" in recovery:
+            errors.append("recovery_stale_row_growth_gate_present")
         if "TARGET_SLATE_DATE: '2026-08-25'" not in recovery:
             errors.append("recovery_exact_target_slate_missing")
         for required in (
@@ -277,7 +277,23 @@ def verify(root: Path = Path(".")) -> dict[str, object]:
             "blockedSlateDate",
             "production-before.json",
             "production-after.json",
-            "accepted >= minimum",
+            "HANDOFF_BASELINE_ACCEPTED_ROWS: '32'",
+            "HANDOFF_BASELINE_REJECTED_ROWS: '1'",
+            "HANDOFF_BASELINE_TRAIN_ROWS: '32'",
+            "RECOVERY_TERMINAL_GAME_COUNT: '15'",
+            "Capture signed pre-recovery learning baseline",
+            "accepted == baseline_accepted",
+            "rejected == baseline_rejected",
+            "train_count == baseline_train",
+            "finalized == baseline_finalized | {repair, target}",
+            "processed == baseline_processed | {repair, target}",
+            "finalizedSlateDiagnostics",
+            "cooperativeCompletionReceipt",
+            "protectedLockReplayCooperativeReceiptVerified",
+            "missedLockValidPrelockQuarantineCount",
+            "terminalNoPredictionCount",
+            "terminalExcludedCount",
+            "quarantinedRowsAdmittedToTraining",
             "automaticPromotionEnabled",
             "productionAuthorityChanged",
         ):

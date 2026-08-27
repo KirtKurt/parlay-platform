@@ -22,7 +22,7 @@ except ImportError:  # pragma: no cover - direct script execution
     from verify_mlb_authority_response import verify_public_prediction_payload
 
 
-VERSION = "MLB-PUBLIC-PREDICTION-SMOKE-POLICY-v1-authority-closed-projection"
+VERSION = "MLB-PUBLIC-PREDICTION-SMOKE-POLICY-v2-split-quarantine"
 
 
 def _winner(row: Mapping[str, Any]) -> bool:
@@ -55,14 +55,26 @@ def _status_projection(
         for row in rows
         if not _winner(row) and _status(row) in ALLOWED_POST_CUTOFF_STATUSES
     )
-    locked_statuses = locked + terminal
+    quarantine = sum(
+        1
+        for row in rows
+        if (
+            not _winner(row)
+            and _status(row)
+            == "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+        )
+    )
+    no_prediction_data = terminal - quarantine
+    locked_statuses = locked + no_prediction_data + quarantine
     return {
         "sport": "mlb",
         "gameCount": int(game_count),
         "lockedPredictionCount": locked,
         "officialPredictionCount": locked,
         "lockedStatusCount": locked_statuses,
-        "noPredictionDataCount": terminal,
+        "noPredictionDataCount": no_prediction_data,
+        "missedLockValidPrelockQuarantineCount": quarantine,
+        "terminalExcludedCount": no_prediction_data + quarantine,
         "lockStatusComplete": bool(game_count) and locked_statuses == game_count,
         "canonicalPredictionComplete": bool(game_count) and locked == game_count,
         "operationalDefect": bool(operational_defect),

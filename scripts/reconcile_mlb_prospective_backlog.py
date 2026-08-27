@@ -11,10 +11,13 @@ exact-date official-schedule status proof before settlement is allowed.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 from zoneinfo import ZoneInfo
@@ -57,13 +60,99 @@ def _json_object(value: Any, *, error: str) -> Dict[str, Any]:
 
 
 def _integer(value: Any, *, field: str) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ReconciliationError(f"{field}_invalid") from exc
-    if parsed < 0:
+    if isinstance(value, bool):
         raise ReconciliationError(f"{field}_invalid")
-    return parsed
+    try:
+        numeric = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ReconciliationError(f"{field}_invalid") from exc
+    if (
+        not numeric.is_finite()
+        or numeric < 0
+        or numeric != numeric.to_integral_value()
+    ):
+        raise ReconciliationError(f"{field}_invalid")
+    return int(numeric)
+
+
+_LIFECYCLE_STATES = frozenset(
+    {
+        "LOCKED_CANONICAL",
+        "LOCKED_NO_PREDICTION_DATA",
+        "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED",
+    }
+)
+
+
+def _validated_lifecycle_games(
+    rows: Any,
+    *,
+    expected_count: int,
+    source: str,
+    require_identity: bool,
+) -> List[Dict[str, Any]]:
+    if not isinstance(rows, list) or len(rows) != expected_count:
+        raise ReconciliationError(f"{source}_lifecycle_games_invalid")
+    normalized: List[Dict[str, Any]] = []
+    official_seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise ReconciliationError(
+                f"{source}_lifecycle_game_invalid"
+            )
+        official_pk = str(row.get("officialGamePk") or "").strip()
+        official_pk_number = _integer(
+            row.get("officialGamePk"),
+            field=f"{source}_official_game_pk",
+        )
+        game_identity = str(row.get("gameIdentity") or "").strip()
+        state = str(
+            row.get("terminalState")
+            or row.get("state")
+            or row.get("lockStatus")
+            or ""
+        )
+        if (
+            official_pk_number <= 0
+            or not official_pk
+            or official_pk in official_seen
+            or (require_identity and not game_identity)
+            or state not in _LIFECYCLE_STATES
+        ):
+            raise ReconciliationError(
+                f"{source}_lifecycle_game_invalid"
+            )
+        official_seen.add(official_pk)
+        normalized.append(
+            {
+                "officialGamePk": official_pk,
+                "gameIdentity": game_identity,
+                "terminalState": state,
+            }
+        )
+    return sorted(
+        normalized,
+        key=lambda row: int(row["officialGamePk"]),
+    )
+
+
+def _lifecycle_game_set_fingerprint(
+    rows: Sequence[Mapping[str, Any]],
+) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            list(rows),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _lifecycle_state_count(
+    rows: Sequence[Mapping[str, Any]],
+    state: str,
+) -> int:
+    return sum(row.get("terminalState") == state for row in rows)
 
 
 def _utc(value: str, *, field: str) -> datetime:
@@ -209,20 +298,64 @@ def _validate_official_status(
     terminal_no_data = _integer(
         status.get("noPredictionDataCount"), field="status_terminal_no_data_count"
     )
+    quarantine_count = _integer(
+        status.get("missedLockValidPrelockQuarantineCount", 0),
+        field="status_missed_lock_valid_prelock_quarantine_count",
+    )
     locked_statuses = _integer(
         status.get("lockedStatusCount"), field="status_locked_status_count"
     )
-    if locked_statuses != locked_predictions + terminal_no_data:
+    if (
+        locked_statuses
+        != locked_predictions + terminal_no_data + quarantine_count
+    ):
         raise ReconciliationError("official_status_terminal_counts_inconsistent")
     if game_count and locked_statuses != game_count:
         raise ReconciliationError("official_status_terminal_coverage_incomplete")
     if game_count and status.get("lockStatusComplete") is not True:
         raise ReconciliationError("official_status_not_complete")
+    lifecycle_games = _validated_lifecycle_games(
+        status.get("perGameStatus", []),
+        expected_count=game_count,
+        source="official_status",
+        require_identity=True,
+    )
+    observed_counts = {
+        "LOCKED_CANONICAL": locked_predictions,
+        "LOCKED_NO_PREDICTION_DATA": terminal_no_data,
+        "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED": (
+            quarantine_count
+        ),
+    }
+    if any(
+        _lifecycle_state_count(lifecycle_games, state) != expected
+        for state, expected in observed_counts.items()
+    ):
+        raise ReconciliationError(
+            "official_status_lifecycle_counts_mismatch"
+        )
+    provider_manifest_fingerprint = str(
+        status.get("providerManifestFingerprint") or ""
+    )
+    if provider_manifest_fingerprint and re.fullmatch(
+        r"[0-9a-f]{64}",
+        provider_manifest_fingerprint,
+    ) is None:
+        raise ReconciliationError(
+            "official_status_provider_manifest_fingerprint_invalid"
+        )
     return {
         "gameCount": game_count,
         "lockedPredictionCount": locked_predictions,
         "terminalNoPredictionCount": terminal_no_data,
+        "missedLockValidPrelockQuarantineCount": quarantine_count,
+        "terminalExcludedCount": terminal_no_data + quarantine_count,
         "lockedStatusCount": locked_statuses,
+        "lifecycleGames": lifecycle_games,
+        "lifecycleGameSetFingerprint": (
+            _lifecycle_game_set_fingerprint(lifecycle_games)
+        ),
+        "providerManifestFingerprint": provider_manifest_fingerprint,
     }
 
 
@@ -258,10 +391,30 @@ def validate_lock_result(
             "manifestGameCount": 0,
             "canonicalPredictionCount": 0,
             "terminalNoPredictionCount": 0,
+            "missedLockValidPrelockQuarantineCount": 0,
+            "terminalExcludedCount": 0,
             "lockOutcomeCount": 0,
             "offDay": True,
             "officialStatusReadBound": True,
+            "lifecycleGames": [],
+            "lifecycleGameSetFingerprint": (
+                _lifecycle_game_set_fingerprint([])
+            ),
+            "providerManifestFingerprint": status_counts[
+                "providerManifestFingerprint"
+            ],
         }
+
+    mutation_lifecycle_games = _validated_lifecycle_games(
+        games,
+        expected_count=manifest_count,
+        source="mutation_progress",
+        require_identity=True,
+    )
+    if mutation_lifecycle_games != status_counts["lifecycleGames"]:
+        raise ReconciliationError(
+            "mutation_and_official_lifecycle_game_set_mismatch"
+        )
 
     canonical_count = _integer(
         progress.get("canonicalCount"), field="canonical_count"
@@ -273,6 +426,10 @@ def validate_lock_result(
         ),
         field="terminal_no_prediction_count",
     )
+    quarantine_count = _integer(
+        progress.get("missedLockValidPrelockQuarantineCount", 0),
+        field="missed_lock_valid_prelock_quarantine_count",
+    )
     lock_outcome_count = _integer(
         progress.get("lockOutcomeCount"), field="lock_outcome_count"
     )
@@ -282,24 +439,160 @@ def validate_lock_result(
         raise ReconciliationError("prospective_slate_still_unresolved")
     if lock_outcome_count != manifest_count:
         raise ReconciliationError("prospective_slate_terminal_coverage_incomplete")
-    if canonical_count + terminal_count != lock_outcome_count:
+    if (
+        canonical_count + terminal_count + quarantine_count
+        != lock_outcome_count
+    ):
         raise ReconciliationError("prospective_slate_terminal_counts_inconsistent")
     if canonical_count != status_counts["lockedPredictionCount"]:
         raise ReconciliationError("mutation_and_status_prediction_count_mismatch")
     if terminal_count != status_counts["terminalNoPredictionCount"]:
         raise ReconciliationError("mutation_and_status_terminal_count_mismatch")
+    if quarantine_count != status_counts[
+        "missedLockValidPrelockQuarantineCount"
+    ]:
+        raise ReconciliationError(
+            "mutation_and_status_quarantine_count_mismatch"
+        )
     return {
         "slateDateEt": slate_date,
         "manifestGameCount": manifest_count,
         "canonicalPredictionCount": canonical_count,
         "terminalNoPredictionCount": terminal_count,
+        "missedLockValidPrelockQuarantineCount": quarantine_count,
+        "terminalExcludedCount": terminal_count + quarantine_count,
         "lockOutcomeCount": lock_outcome_count,
         "offDay": False,
         "officialStatusReadBound": True,
+        "lifecycleGames": mutation_lifecycle_games,
+        "lifecycleGameSetFingerprint": (
+            _lifecycle_game_set_fingerprint(
+                mutation_lifecycle_games
+            )
+        ),
+        "providerManifestFingerprint": status_counts[
+            "providerManifestFingerprint"
+        ],
     }
 
 
-def validate_settlement_result(payload: Mapping[str, Any], slate_date: str) -> Dict[str, Any]:
+
+def _validated_settlement_lifecycle_games(
+    payload: Mapping[str, Any],
+    *,
+    official_count: int,
+    canonical_count: int,
+    terminal_no_data_count: int,
+    quarantine_count: int,
+) -> List[Dict[str, Any]]:
+    label_writes = payload.get("labelWrites")
+    terminal_exclusions = payload.get("terminalExclusions")
+    if (
+        not isinstance(label_writes, list)
+        or len(label_writes) != canonical_count
+        or not isinstance(terminal_exclusions, list)
+        or len(terminal_exclusions)
+        != terminal_no_data_count + quarantine_count
+    ):
+        raise ReconciliationError(
+            "prospective_settlement_lifecycle_games_invalid"
+        )
+    rows: List[Dict[str, Any]] = []
+    for label in label_writes:
+        if (
+            not isinstance(label, Mapping)
+            or label.get("ok") is not True
+            or str(label.get("status") or "")
+            not in {
+                "CREATED",
+                "IDEMPOTENT_EXISTING",
+                "IDEMPOTENT_EXISTING_POLICY_DRIFT",
+                "WOULD_CREATE",
+            }
+        ):
+            raise ReconciliationError(
+                "prospective_settlement_label_write_invalid"
+            )
+        rows.append(
+            {
+                "officialGamePk": label.get("officialGamePk"),
+                "gameIdentity": "",
+                "terminalState": "LOCKED_CANONICAL",
+            }
+        )
+    for terminal in terminal_exclusions:
+        if (
+            not isinstance(terminal, Mapping)
+            or terminal.get("accuracyEligible") is not False
+            or terminal.get("trainingEligible") is not False
+            or terminal.get("predictionAdopted") is not False
+        ):
+            raise ReconciliationError(
+                "prospective_settlement_terminal_exclusion_invalid"
+            )
+        state = str(terminal.get("status") or "")
+        if state not in {
+            "LOCKED_NO_PREDICTION_DATA",
+            "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED",
+        }:
+            raise ReconciliationError(
+                "prospective_settlement_terminal_exclusion_invalid"
+            )
+        rows.append(
+            {
+                "officialGamePk": terminal.get("officialGamePk"),
+                "gameIdentity": "",
+                "terminalState": state,
+            }
+        )
+    normalized = _validated_lifecycle_games(
+        rows,
+        expected_count=official_count,
+        source="prospective_settlement",
+        require_identity=False,
+    )
+    expected_counts = {
+        "LOCKED_CANONICAL": canonical_count,
+        "LOCKED_NO_PREDICTION_DATA": terminal_no_data_count,
+        "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED": (
+            quarantine_count
+        ),
+    }
+    if any(
+        _lifecycle_state_count(normalized, state) != expected
+        for state, expected in expected_counts.items()
+    ):
+        raise ReconciliationError(
+            "prospective_settlement_lifecycle_counts_mismatch"
+        )
+    return normalized
+
+def validate_settlement_result(
+    payload: Mapping[str, Any],
+    slate_date: str,
+) -> Dict[str, Any]:
+    def count(field: str) -> int:
+        value = payload.get(field)
+        if isinstance(value, bool):
+            raise ReconciliationError(
+                f"prospective_settlement_{field}_invalid"
+            )
+        try:
+            numeric = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise ReconciliationError(
+                f"prospective_settlement_{field}_invalid"
+            ) from exc
+        if (
+            not numeric.is_finite()
+            or numeric < 0
+            or numeric != numeric.to_integral_value()
+        ):
+            raise ReconciliationError(
+                f"prospective_settlement_{field}_invalid"
+            )
+        return int(numeric)
+
     if payload.get("ok") is not True:
         raise ReconciliationError("prospective_settlement_unhealthy")
     returned_date = str(
@@ -308,17 +601,120 @@ def validate_settlement_result(payload: Mapping[str, Any], slate_date: str) -> D
         or payload.get("date")
         or ""
     )
-    if returned_date and returned_date != slate_date:
+    if returned_date != slate_date:
         raise ReconciliationError("prospective_settlement_slate_mismatch")
+
+    official = count("officialGameCount")
+    final = count("officialFinalCount")
+    canonical = count("canonicalLockCount")
+    no_data = count("terminalNoPredictionCount")
+    quarantine = count(
+        "missedLockValidPrelockQuarantineCount"
+    )
+    terminal_outcomes = count("terminalOutcomeCount")
+    terminal_excluded = count("terminalExcludedCount")
+    label_writes = count("labelWriteCount")
+    rejected_locks = count("rejectedCanonicalLockCount")
+    lock_terminal_conflicts = count("lockTerminalConflictCount")
+    skipped = count("skippedNotFinalCount")
+    missing = count("missingCanonicalLockCount")
+    identity_rejections = count("identityRejectionCount")
+    label_conflicts = count("labelConflictCount")
+    terminal_rejections = payload.get("rejectedTerminalOutcomes")
+    lifecycle_games = _validated_settlement_lifecycle_games(
+        payload,
+        official_count=official,
+        canonical_count=canonical,
+        terminal_no_data_count=no_data,
+        quarantine_count=quarantine,
+    )
+    if (
+        final != official
+        or canonical + no_data + quarantine != official
+        or terminal_outcomes != no_data + quarantine
+        or terminal_excluded != terminal_outcomes
+        or label_writes != canonical
+        or rejected_locks != 0
+        or lock_terminal_conflicts != 0
+        or skipped != 0
+        or missing != 0
+        or identity_rejections != 0
+        or label_conflicts != 0
+        or terminal_rejections != []
+        or payload.get("authoritativeSettlement") is not True
+        or payload.get("legacySettlementAuthority") is not False
+        or str(payload.get("status") or "")
+        != "CANONICAL_FINAL_LABELS_COMPLETE"
+        or payload.get("immutablePregameRowsMutated") is not False
+        or payload.get("immutablePregameReadbackErrors") != []
+    ):
+        raise ReconciliationError(
+            "prospective_settlement_terminal_coverage_invalid"
+        )
     return {
         "slateDateEt": slate_date,
         "ok": True,
-        "finalized": payload.get("slateFinalized"),
-        "settledLabelCount": payload.get(
-            "settledLabelCount", payload.get("labelCount")
+        "finalized": True,
+        "status": "CANONICAL_FINAL_LABELS_COMPLETE",
+        "authoritativeSettlement": True,
+        "officialGameCount": official,
+        "officialFinalCount": final,
+        "canonicalLockCount": canonical,
+        "terminalNoPredictionCount": no_data,
+        "missedLockValidPrelockQuarantineCount": quarantine,
+        "terminalOutcomeCount": terminal_outcomes,
+        "terminalExcludedCount": terminal_excluded,
+        "labelWriteCount": label_writes,
+        "settledLabelCount": label_writes,
+        "rejectedCanonicalLockCount": 0,
+        "rejectedTerminalOutcomeCount": 0,
+        "lockTerminalConflictCount": 0,
+        "missingCanonicalLockCount": 0,
+        "identityRejectionCount": 0,
+        "labelConflictCount": 0,
+        "immutablePregameRowsMutated": False,
+        "lifecycleGames": lifecycle_games,
+        "lifecycleGameSetFingerprint": (
+            _lifecycle_game_set_fingerprint(lifecycle_games)
         ),
     }
 
+
+def validate_settlement_lock_binding(
+    lock_evidence: Mapping[str, Any],
+    settlement: Mapping[str, Any],
+) -> None:
+    bindings = (
+        ("manifestGameCount", "officialGameCount"),
+        ("canonicalPredictionCount", "canonicalLockCount"),
+        ("terminalNoPredictionCount", "terminalNoPredictionCount"),
+        (
+            "missedLockValidPrelockQuarantineCount",
+            "missedLockValidPrelockQuarantineCount",
+        ),
+        ("terminalExcludedCount", "terminalExcludedCount"),
+        ("terminalExcludedCount", "terminalOutcomeCount"),
+    )
+    if any(
+        lock_evidence.get(lock_field)
+        != settlement.get(settlement_field)
+        for lock_field, settlement_field in bindings
+    ):
+        raise ReconciliationError(
+            "prospective_settlement_lock_evidence_mismatch"
+        )
+    lock_games = lock_evidence.get("lifecycleGames")
+    settlement_games = settlement.get("lifecycleGames")
+    if not isinstance(lock_games, list) or not isinstance(
+        settlement_games, list
+    ):
+        raise ReconciliationError(
+            "prospective_settlement_lock_lifecycle_evidence_missing"
+        )
+    if lock_games != settlement_games:
+        raise ReconciliationError(
+            "prospective_settlement_lock_lifecycle_game_set_mismatch"
+        )
 
 def reconcile(
     cloudformation: Any,
@@ -374,6 +770,10 @@ def reconcile(
         settlement_evidence = validate_settlement_result(
             settlement_payload,
             slate_date,
+        )
+        validate_settlement_lock_binding(
+            lock_evidence,
+            settlement_evidence,
         )
         rows.append(
             {

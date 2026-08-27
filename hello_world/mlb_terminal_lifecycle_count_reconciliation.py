@@ -8,13 +8,17 @@ import mlb_prospective_row_repair as prospective_row_repair
 import mlb_terminal_identity_resolution_patch as terminal_identity_resolution
 
 
-VERSION = "MLB-TERMINAL-LIFECYCLE-COUNT-RECONCILIATION-v1-row-derived"
+VERSION = "MLB-TERMINAL-LIFECYCLE-COUNT-RECONCILIATION-v2-split-quarantine"
 # These states are terminal without an immutable winner. They may prove that a
 # game's T-minus-45 lifecycle is accounted for, but they never become a pick,
 # training row, promotion artifact, or wagering authority.
+MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED = (
+    "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+)
 TERMINAL_NO_WINNER_STATUSES = frozenset(
     {
         "LOCKED_NO_PREDICTION_DATA",
+        MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED,
         "MISSED_NOT_BACKFILLED",
         "MISSED_LOCK",
         "POSTPONED",
@@ -69,9 +73,12 @@ def _update_summary(
     *,
     game_count: int,
     locked_predictions: int,
-    terminal_no_winner: int,
+    no_prediction_data: int,
+    quarantine_count: int,
 ) -> None:
-    locked_statuses = locked_predictions + terminal_no_winner
+    locked_statuses = (
+        locked_predictions + no_prediction_data + quarantine_count
+    )
     status_complete = bool(game_count and locked_statuses == game_count)
     canonical_complete = bool(game_count and locked_predictions == game_count)
     summary.update(
@@ -80,7 +87,11 @@ def _update_summary(
             "canonicalPredictionCount": locked_predictions,
             "lockedStatusCount": locked_statuses,
             "lockOutcomeCount": locked_statuses,
-            "noPredictionDataCount": terminal_no_winner,
+            "noPredictionDataCount": no_prediction_data,
+            "missedLockValidPrelockQuarantineCount": quarantine_count,
+            "terminalExcludedCount": (
+                no_prediction_data + quarantine_count
+            ),
             "lockStatusComplete": status_complete,
             "canonicalPredictionComplete": canonical_complete,
             "pendingCanonicalGameCount": max(game_count - locked_predictions, 0),
@@ -116,7 +127,8 @@ def reconcile_payload(
 
     game_count = len(rows)
     locked_predictions = 0
-    terminal_no_winner = 0
+    no_prediction_data = 0
+    quarantine_count = 0
     missed_count = 0
     for row in rows:
         winner_present = row.get("predictedWinner") not in (None, "")
@@ -125,12 +137,37 @@ def reconcile_payload(
         if locked_prediction and winner_present:
             locked_predictions += 1
             continue
-        if not winner_present and status in TERMINAL_NO_WINNER_STATUSES:
-            terminal_no_winner += 1
-            if status in {"MISSED_NOT_BACKFILLED", "MISSED_LOCK"}:
-                missed_count += 1
+        if (
+            not winner_present
+            and status
+            in {
+                "LOCKED_NO_PREDICTION_DATA",
+                "POSTPONED",
+                "CANCELLED",
+                "CANCELED",
+            }
+        ):
+            # Resolved no-winner schedule outcomes retain their historical
+            # lifecycle coverage semantics.  Only the explicit valid-prelock
+            # missed-lock state is counted as quarantine.
+            no_prediction_data += 1
+        elif (
+            not winner_present
+            and status
+            == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+        ):
+            quarantine_count += 1
+        elif (
+            not winner_present
+            and status in {"MISSED_NOT_BACKFILLED", "MISSED_LOCK"}
+        ):
+            # Legacy unresolved misses remain visible but cannot masquerade as
+            # either a proven no-data outcome or the explicit quarantine.
+            missed_count += 1
 
-    locked_statuses = locked_predictions + terminal_no_winner
+    locked_statuses = (
+        locked_predictions + no_prediction_data + quarantine_count
+    )
     status_complete = bool(game_count and locked_statuses == game_count)
     canonical_complete = bool(game_count and locked_predictions == game_count)
 
@@ -140,13 +177,18 @@ def reconcile_payload(
             "lockedPredictionCount": locked_predictions,
             "lockedStatusCount": locked_statuses,
             "lockOutcomeCount": locked_statuses,
-            "noPredictionDataCount": terminal_no_winner,
+            "noPredictionDataCount": no_prediction_data,
+            "missedLockValidPrelockQuarantineCount": quarantine_count,
+            "terminalExcludedCount": (
+                no_prediction_data + quarantine_count
+            ),
             "lockStatusComplete": status_complete,
             "canonicalPredictionComplete": canonical_complete,
             "allGamesPredicted": canonical_complete,
             "lockedAny": locked_predictions > 0,
             "partiallyLocked": bool(0 < locked_predictions < game_count),
-            "predictionDataUnavailable": terminal_no_winner > 0,
+            "predictionDataUnavailable": no_prediction_data > 0,
+            "missedLockOperationalDefect": quarantine_count > 0,
             "lockOutcomeCoveragePct": round(
                 locked_statuses / game_count * 100.0, 2
             ),
@@ -178,7 +220,11 @@ def reconcile_payload(
         out["dailyCardComplete"] = status_complete
     if "slateLockStatus" in out and status_complete:
         out["slateLockStatus"] = (
-            "COMPLETE" if canonical_complete else "COMPLETE_WITH_NO_PREDICTION_DATA"
+            "COMPLETE"
+            if canonical_complete
+            else "COMPLETE_WITH_MISSED_LOCK_QUARANTINE"
+            if quarantine_count
+            else "COMPLETE_WITH_NO_PREDICTION_DATA"
         )
 
     for key in (
@@ -194,7 +240,8 @@ def reconcile_payload(
                 summary,
                 game_count=game_count,
                 locked_predictions=locked_predictions,
-                terminal_no_winner=terminal_no_winner,
+                no_prediction_data=no_prediction_data,
+                quarantine_count=quarantine_count,
             )
             out[key] = summary
 

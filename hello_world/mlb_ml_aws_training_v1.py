@@ -1414,6 +1414,7 @@ def _contiguous_finalized_slate_prefix(
     zero_game_dates: List[str] = []
     processed: List[str] = []
     finalized_slate_authorities: Dict[str, Dict[str, Any]] = {}
+    finalized_slate_diagnostics: Dict[str, Dict[str, Any]] = {}
     skipped_unresolved_slate_dates: List[str] = []
     unresolved_slate_errors: Dict[str, str] = {}
     blocked_date: Optional[str] = None
@@ -1494,6 +1495,33 @@ def _contiguous_finalized_slate_prefix(
                 f"OFFICIAL_SLATE_UNRESOLVED:{type(exc).__name__}:{exc}"
             )
             continue
+        finalized_slate_diagnostics[slate_date] = {
+            "slateFinalized": True,
+            "officialGameCount": count,
+            "canonicalLockCount": date_diagnostic.get(
+                "canonicalLockCount"
+            ),
+            "terminalNoPredictionCount": date_diagnostic.get(
+                "terminalNoPredictionCount"
+            ),
+            "missedLockValidPrelockQuarantineCount": (
+                date_diagnostic.get(
+                    "missedLockValidPrelockQuarantineCount"
+                )
+            ),
+            "terminalExcludedCount": date_diagnostic.get(
+                "terminalExcludedCount"
+            ),
+            "emittedTrainingRowCount": int(
+                finalized.get("rowCount") or 0
+            ),
+            "quarantinedRowsAdmittedToTraining": date_diagnostic.get(
+                "quarantinedRowsAdmittedToTraining"
+            ),
+            "trainingCleanSlate": date_diagnostic.get(
+                "trainingCleanSlate"
+            ),
+        }
         finalized_slate_authorities[slate_date] = (
             experiment.build_official_finalized_slate_authority(
                 slate_date_et=slate_date,
@@ -1512,6 +1540,7 @@ def _contiguous_finalized_slate_prefix(
         "provenZeroGameSlateDates": zero_game_dates,
         "finalizedGameSlateDates": game_dates,
         "finalizedSlateAuthorities": finalized_slate_authorities,
+        "finalizedSlateDiagnostics": finalized_slate_diagnostics,
         "skippedUnresolvedSlateDates": skipped_unresolved_slate_dates,
         "unresolvedSlateErrors": unresolved_slate_errors,
         "blockedSlateDate": blocked_date,

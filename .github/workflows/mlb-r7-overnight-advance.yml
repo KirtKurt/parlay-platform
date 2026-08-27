@@ -5,7 +5,7 @@ run-name: "MLB R7 queue control ${{ github.event_name }} #${{ github.run_number 
   workflow_dispatch:
     inputs:
       force:
-        description: Dispatch even after the 33-row recovery has succeeded
+        description: Dispatch even after terminal lifecycle recovery has succeeded
         required: false
         default: false
         type: boolean
@@ -24,7 +24,8 @@ concurrency:
 env:
   RECOVERY_EPOCH_UTC: '2026-08-26T23:45:00Z'
   RECOVERY_TARGET_SLATE_DATE: '2026-08-25'
-  RECOVERY_MIN_ACCEPTED_ROWS: '33'
+  RECOVERY_TERMINAL_GAME_COUNT: '15'
+  RECOVERY_CANONICAL_ROW_COUNT: '0'
 
 jobs:
   queue-canonical-recovery:
@@ -150,7 +151,8 @@ jobs:
             const requestId = [
               'mlb-r7-overnight',
               process.env.RECOVERY_TARGET_SLATE_DATE.replaceAll('-', ''),
-              `min${process.env.RECOVERY_MIN_ACCEPTED_ROWS}`,
+              `terminal${process.env.RECOVERY_TERMINAL_GAME_COUNT}`,
+              `canonical${process.env.RECOVERY_CANONICAL_ROW_COUNT}`,
               stamp,
               context.runId,
             ].join('-');
@@ -187,7 +189,8 @@ jobs:
               force,
               requestId,
               targetSlateDate: process.env.RECOVERY_TARGET_SLATE_DATE,
-              minimumAcceptedRows: Number(process.env.RECOVERY_MIN_ACCEPTED_ROWS),
+              recoveryTerminalGameCount: Number(process.env.RECOVERY_TERMINAL_GAME_COUNT),
+              recoveryCanonicalRowCount: Number(process.env.RECOVERY_CANONICAL_ROW_COUNT),
               canonicalRecoveryRunId: observedRun.id,
               canonicalRecoveryRunUrl: observedRun.html_url,
               automaticTrainerOwner: 'eventbridge_schedule',
@@ -204,7 +207,8 @@ jobs:
                 [{data: 'Field', header: true}, {data: 'Value', header: true}],
                 ['Request', requestId],
                 ['Target slate', process.env.RECOVERY_TARGET_SLATE_DATE],
-                ['Minimum accepted rows', process.env.RECOVERY_MIN_ACCEPTED_ROWS],
+                ['Terminal lifecycle rows', process.env.RECOVERY_TERMINAL_GAME_COUNT],
+                ['Canonical rows from target', process.env.RECOVERY_CANONICAL_ROW_COUNT],
                 ['Recovery run', observedRun.html_url],
                 ['Automatic trainer owner', 'eventbridge_schedule'],
               ])

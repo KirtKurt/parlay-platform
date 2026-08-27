@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sys
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -25,7 +26,13 @@ import mlb_ml_experiment_v2 as experiment
 import mlb_rolling_24h_audit as rolling_audit
 
 
-NOW = datetime(2026, 7, 23, 3, 0, tzinfo=timezone.utc)
+RELEASE_CUTOFF = datetime.fromisoformat(
+    experiment.PRODUCTION_RELEASE_CUTOFF_UTC
+).astimezone(timezone.utc)
+SLATE_DATE = RELEASE_CUTOFF.astimezone(
+    ZoneInfo("America/New_York")
+).date().isoformat()
+NOW = RELEASE_CUTOFF + timedelta(hours=20)
 
 
 def _settlement_rows(summary, *, quarantine_all=False):
@@ -68,7 +75,7 @@ def _settlement_rows(summary, *, quarantine_all=False):
             "id": game_id,
             "gameId": game_id,
             "officialGamePk": official_pk,
-            "slateDateEt": "2026-07-22",
+            "slateDateEt": SLATE_DATE,
             "commenceTime": commence,
             "awayTeam": "Away Club",
             "homeTeam": "Home Club",
@@ -97,7 +104,7 @@ def _settlement_rows(summary, *, quarantine_all=False):
                 "exactLockVectorValidated": is_graded,
                 "legacyOrDailyCardFallbackUsed": False,
                 "sourcePk": (
-                    "GAME_WINNERS#mlb#2026-07-22" if is_graded else None
+                    f"GAME_WINNERS#mlb#{SLATE_DATE}" if is_graded else None
                 ),
                 "sourceSk": (
                     f"LOCKED#GAME#{commence}#{game_id}" if is_graded else None
@@ -135,7 +142,7 @@ def _acceptance_report(summary, *, quarantine_all=False):
 
     def loader(slate_date):
         games = []
-        if slate_date == "2026-07-22":
+        if slate_date == SLATE_DATE:
             for row in rows:
                 game = {
                     "officialGamePk": row["officialGamePk"],
@@ -190,7 +197,7 @@ def _replace_canonical_slate_authority(payload, official_game_pks):
 
     def loader(slate_date):
         games = []
-        if slate_date == "2026-07-22":
+        if slate_date == SLATE_DATE:
             for index, official_pk in enumerate(official_game_pks):
                 row = next(
                     (
@@ -206,8 +213,7 @@ def _replace_canonical_slate_authority(payload, official_game_pks):
                     "officialDate": slate_date,
                     "gameDate": row.get("commenceTime")
                     or (
-                        datetime(2026, 7, 22, 6, 0, tzinfo=timezone.utc)
-                        + timedelta(minutes=index)
+                        RELEASE_CUTOFF + timedelta(hours=2, minutes=index)
                     ).isoformat(),
                     "awayTeam": row.get("awayTeam") or "Away Club",
                     "homeTeam": row.get("homeTeam") or "Home Club",
@@ -412,7 +418,7 @@ def test_first_clean_slate_milestone_comes_from_trainer_proof_not_infrastructure
     milestones = {
         "firstFullCleanSlateProof": {
             "achieved": True,
-            "qualifyingSlateDate": "2026-07-22",
+            "qualifyingSlateDate": SLATE_DATE,
         }
     }
     payload["mlTrainingV2"]["milestones"] = milestones
