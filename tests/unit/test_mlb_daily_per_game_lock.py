@@ -708,6 +708,7 @@ def test_no_prediction_terminal_persists_fingerprint_bound_official_game_pk():
     assert item["officialGamePk"] == "991555"
     assert item["lock_outcome_fingerprint"] == expected
     assert item["locked_prediction"] is False
+    assert item["canonical"] is False
     assert item["canonical_prediction"] is False
     assert item["official_prediction"] is False
     assert item["playable"] is False

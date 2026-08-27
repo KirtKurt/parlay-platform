@@ -473,6 +473,7 @@ def _terminal_outcome_errors(item: Dict[str, Any], slate_date: str) -> List[str]
         "lock_outcome_recorded": True,
         "locked_prediction": False,
         "canonical": False,
+        "canonical_prediction": False,
         "official_prediction": False,
         "playable": False,
         "blocked": True,
@@ -500,6 +501,7 @@ def _terminal_outcome_errors(item: Dict[str, Any], slate_date: str) -> List[str]
         exact = {
             "locked_prediction": False,
             "canonical": False,
+            "canonical_prediction": False,
             "official_prediction": False,
             "playable": False,
             "training_eligible": False,

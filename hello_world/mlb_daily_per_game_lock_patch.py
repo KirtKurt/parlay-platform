@@ -1675,6 +1675,7 @@ def _put_no_prediction_outcome(
         "lock_outcome_recorded": True,
         "locked_prediction": False,
         "canonical": False,
+        "canonical_prediction": False,
         "official_prediction": False,
         "playable": False,
         "blocked": True,
@@ -2127,6 +2128,7 @@ def _put_valid_prelock_missed_lock_quarantine(
         "lock_outcome_recorded": True,
         "locked_prediction": False,
         "canonical": False,
+        "canonical_prediction": False,
         "official_prediction": False,
         "playable": False,
         "blocked": True,
@@ -6642,6 +6644,7 @@ def _progress(
             "locked": locked_prediction,
             "lockedPrediction": locked_prediction,
             "canonical": locked_prediction,
+            "canonicalPrediction": locked_prediction,
             "officialPrediction": locked_prediction,
             "accuracyEligible": (
                 stage_row.get("accuracyEligible") is not False

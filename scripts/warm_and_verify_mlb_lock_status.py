@@ -124,6 +124,7 @@ def validate(payload: Mapping[str, Any]) -> None:
             row.get("predictedWinner") not in (None, "")
             or row.get("predictedSide") not in (None, "")
             or row.get("lockedPrediction") is not False
+            or row.get("canonicalPrediction") is not False
             or row.get("officialPrediction") is not False
             or row.get("playable") is not False
             or row.get("trainingEligible") is not False

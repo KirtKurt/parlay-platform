@@ -239,6 +239,7 @@ def _terminal_outcome_item(game, *, reasons=None):
         "lock_outcome_recorded": True,
         "locked_prediction": False,
         "canonical": False,
+        "canonical_prediction": False,
         "official_prediction": False,
         "playable": False,
         "blocked": True,
@@ -1029,6 +1030,7 @@ def test_terminal_no_prediction_status_displays_without_current_prediction_row(m
     assert terminal_row["lockStatus"] == "LOCKED_NO_PREDICTION_DATA"
     assert terminal_row["lockOutcomeRecorded"] is True
     assert terminal_row["lockedPrediction"] is False
+    assert terminal_row["canonicalPrediction"] is False
     assert terminal_row["officialPrediction"] is False
     assert terminal_row["predictedWinner"] is None
     assert terminal_row["predictedSide"] is None
