@@ -25,64 +25,84 @@ SLATE = "2026-08-27"
 
 
 def _canonical_public_overlay(row):
-    out = copy.deepcopy(row)
-    public_lock = dict(out.get("slatePredictionLock") or {})
+    # Exercise the exact production helpers and constants rather than
+    # hand-building a lookalike marker set.
+    public_lock = dict(row.get("slatePredictionLock") or {})
     public_lock.update(
         {
             "authorityVersion": coverage.AUTHORITY_VERSION,
             "canonicalReadOperational": True,
             "perGameLock": True,
             "slateWideLock": False,
-            # Public display state is intentionally not the raw immutable
-            # stage payload.
             "lockStatus": "PARTIAL_PER_GAME_CANONICAL",
             "pendingCanonicalGameCount": 5,
         }
     )
-    out.update(
+    out = coverage._official_row(row, public_lock)
+    out = coverage._overlay_playability(
+        out,
         {
-            "canonical": True,
-            "locked": True,
-            "lockedPrediction": True,
-            "lockStatus": "LOCKED_CANONICAL",
-            "officialPrediction": True,
-            "officialPick": True,
-            "officialPredictionStatus": "OFFICIAL_LOCKED_PREDICTION",
-            "officialPredictionReason": (
-                "validated_immutable_canonical_per_game_lock"
-            ),
-            "selectionFingerprint": out.get(
-                "lastPrelockSelectionFingerprint"
-            ),
-            "slatePredictionLock": public_lock,
-            "perGameCanonicalLock": {
-                "authorityVersion": coverage.AUTHORITY_VERSION,
-                "status": "OFFICIAL_LOCKED_PREDICTION",
-                "lockAtUtc": out.get("lockedAtUtc"),
-                "canonical": True,
-            },
-            "slateCoverageVersion": coverage.VERSION,
             "playable": False,
-            "playabilityStatus": "BLOCKED",
-            "playabilityBlockReasons": ["NEGATIVE_EV_GUARD"],
-            "readiness": {
+            "status": "BLOCKED",
+            "reasons": ["NEGATIVE_EV_GUARD"],
+            "validationErrors": [],
+            "historicalValidationErrors": [],
+            "assessment": None,
+            "requiredCheckpoint": None,
+            "requiredCheckpointDue": False,
+            "eventPendingRequired": False,
+        },
+    )
+    out = coverage._overlay_readiness(
+        out,
+        {
+            "checkpoints": {
                 "tMinus50": {
                     "recorded": True,
                     "status": "READY",
                 }
             },
-        }
+            "requiredCheckpoint": None,
+            "requiredCheckpointDue": False,
+            "validationErrors": [],
+        },
     )
-    out["tags"] = sorted(
-        {
-            *(str(value) for value in (out.get("tags") or [])),
-            "FINAL_LOCKED",
-            "OFFICIAL_LOCKED_PREDICTION",
-            "CANONICAL_PER_GAME_LOCK",
-            "NOT_PLAYABLE",
-        }
-    )
+    out["slateCoverageVersion"] = coverage.VERSION
     return out
+
+
+def _assert_live_overlay_markers(row):
+    authority = row["canonicalPerGameStageAuthority"]
+    per_game = row["perGameCanonicalLock"]
+    public_lock = row["slatePredictionLock"]
+    assert row["officialPredictionReason"] == (
+        "validated_immutable_canonical_per_game_lock"
+    )
+    assert row["slateCoverageVersion"] == coverage.VERSION
+    assert row["immutablePerGameStage"] is True
+    assert row["immutableLockedStorage"] is True
+    assert row["immutableLockedStorageKeyspace"] == "LOCKED#GAME"
+    assert row["immutableLockedStorageVersion"] == immutable_storage.VERSION
+    assert row["canonical"] is True
+    assert row["lockedPrediction"] is True
+    assert row["lockStatus"] == "LOCKED_CANONICAL"
+    assert row["officialPredictionStatus"] == (
+        "OFFICIAL_LOCKED_PREDICTION"
+    )
+    assert authority["version"] == immutable_storage.AUTHORITY_VERSION
+    assert authority["verified"] is True
+    assert authority["consistentRead"] is True
+    assert per_game == {
+        "authorityVersion": coverage.AUTHORITY_VERSION,
+        "status": "OFFICIAL_LOCKED_PREDICTION",
+        "lockAtUtc": row["lockedAtUtc"],
+        "canonical": True,
+    }
+    assert public_lock["authorityVersion"] == coverage.AUTHORITY_VERSION
+    assert public_lock["canonicalReadOperational"] is True
+    assert public_lock["perGameLock"] is True
+    assert public_lock["slateWideLock"] is False
+    assert immutable_storage._canonical_read_overlay(row) is True
 
 
 def _module_with_existing_canonical_rows(count):
@@ -138,6 +158,8 @@ def test_mixed_slate_two_existing_canonical_and_five_future_rows_is_healthy():
         _canonical_public_overlay(row)
         for row in canonical_rows
     ]
+    for overlay in overlays:
+        _assert_live_overlay_markers(overlay)
     future_rows = [
         {
             "slate_date": SLATE,
@@ -205,27 +227,89 @@ def test_mixed_slate_two_existing_canonical_and_five_future_rows_is_healthy():
     )
 
 
-def test_existing_overlay_tamper_or_missing_locked_row_still_fails_closed():
-    module, canonical_rows, _ = _module_with_existing_canonical_rows(1)
-    overlay = _canonical_public_overlay(canonical_rows[0])
-    before = copy.deepcopy(module.history.PULLS.items)
-
-    tampered = copy.deepcopy(overlay)
-    tampered["predictedWinner"] = "Away Team"
-    tampered["predictedSide"] = "away"
-    rejected = module._store_prediction(tampered)
-
+def _assert_rejected_without_write(module, row, before):
+    rejected = module._store_prediction(row)
     assert rejected["ok"] is False
     assert rejected["canonicalWriteAttempted"] is False
     assert rejected["canonicalReadOverlayVerified"] is False
+    assert module.history.PULLS.items == before
+    return rejected
+
+
+def test_existing_overlay_immutable_tampering_still_fails_closed():
+    module, canonical_rows, _ = _module_with_existing_canonical_rows(1)
+    overlay = _canonical_public_overlay(canonical_rows[0])
+    _assert_live_overlay_markers(overlay)
+    before = copy.deepcopy(module.history.PULLS.items)
+
+    wrong_side = copy.deepcopy(overlay)
+    wrong_side["predictedWinner"] = "Away Team"
+    wrong_side["predictedSide"] = "away"
+    rejected_side = _assert_rejected_without_write(
+        module,
+        wrong_side,
+        before,
+    )
     assert (
         "canonical_overlay_immutable_projection_mismatch"
-        in rejected["authorityErrors"]
+        in rejected_side["authorityErrors"]
     )
-    assert module.history.PULLS.items == before
 
+    wrong_stage = copy.deepcopy(overlay)
+    wrong_stage["canonicalPerGameStageAuthority"][
+        "stageFingerprint"
+    ] = "tampered-stage-fingerprint"
+    rejected_stage = _assert_rejected_without_write(
+        module,
+        wrong_stage,
+        before,
+    )
+    assert (
+        "canonical_overlay_immutable_projection_mismatch"
+        in rejected_stage["authorityErrors"]
+    )
+
+    wrong_vector = copy.deepcopy(overlay)
+    wrong_vector["frozenFeatureVector"]["fingerprint"] = (
+        "tampered-vector-fingerprint"
+    )
+    rejected_vector = _assert_rejected_without_write(
+        module,
+        wrong_vector,
+        before,
+    )
+    assert any(
+        "vector" in error
+        for error in rejected_vector["authorityErrors"]
+    )
+
+
+def test_existing_overlay_missing_item_or_read_failure_still_fails_closed():
+    module, canonical_rows, _ = _module_with_existing_canonical_rows(1)
+    overlay = _canonical_public_overlay(canonical_rows[0])
+    before = copy.deepcopy(module.history.PULLS.items)
+    table = module.history.PULLS
+    original_get_item = table.get_item
+
+    def fail_read(*args, **kwargs):
+        raise RuntimeError("injected consistent-read failure")
+
+    table.get_item = fail_read
+    read_failure = _assert_rejected_without_write(
+        module,
+        overlay,
+        before,
+    )
+    assert any(
+        error.startswith(
+            "canonical_overlay_consistent_read_failed:RuntimeError:"
+        )
+        for error in read_failure["authorityErrors"]
+    )
+
+    table.get_item = original_get_item
     key = immutable_storage._locked_key(overlay)
-    module.history.PULLS.items.pop((key["PK"], key["SK"]))
+    table.items.pop((key["PK"], key["SK"]))
     missing = module._store_prediction(overlay)
 
     assert missing["ok"] is False
