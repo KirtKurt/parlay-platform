@@ -331,16 +331,34 @@ def _fingerprint(row: Dict[str, Any]) -> str:
 
 
 def _vector_identity(row: Dict[str, Any]) -> Dict[str, Any]:
-    vector = row.get("frozenFeatureVector") or {}
+    """Bind the complete frozen vector, not only its self-reported digest."""
+
     return {
-        "version": vector.get("version"),
-        "fingerprint": vector.get("fingerprint"),
-        "gameId": vector.get("gameId"),
-        "lockAtUtc": vector.get("lockAtUtc"),
-        "sourcePullAtUtc": vector.get("sourcePullAtUtc"),
-        "predictedWinner": vector.get("predictedWinner"),
-        "predictedSide": vector.get("predictedSide"),
-        "labels": vector.get("labels") or {},
+        "frozenFeatureVector": copy.deepcopy(
+            row.get("frozenFeatureVector") or {}
+        ),
+        "frozenFeatureVectorVersion": row.get(
+            "frozenFeatureVectorVersion"
+        ),
+        "featureVectorFrozenAtLock": row.get(
+            "featureVectorFrozenAtLock"
+        ),
+        "frozenOutcomeFeatures": copy.deepcopy(
+            row.get("frozenOutcomeFeatures")
+        ),
+        "frozenReliabilityFeatures": copy.deepcopy(
+            row.get("frozenReliabilityFeatures")
+        ),
+        "mlFeatureFreeze": copy.deepcopy(
+            row.get("mlFeatureFreeze") or {}
+        ),
+        "exactVectorVerified": row.get("exactVectorVerified"),
+        "exactVectorValidationErrors": list(
+            row.get("exactVectorValidationErrors") or []
+        ),
+        "selectionTrainingSeparationVersion": row.get(
+            "selectionTrainingSeparationVersion"
+        ),
     }
 
 
@@ -392,6 +410,20 @@ def _canonical_read_overlay(row: Dict[str, Any]) -> bool:
         and public_locked is True
         and _parse_dt(public_lock.get("lockAtUtc")) == row_lock_at
     )
+    required_tags = {
+        "FINAL_LOCKED",
+        "OFFICIAL_PREDICTION",
+        "OFFICIAL_LOCKED_PREDICTION",
+        "CANONICAL_PER_GAME_LOCK",
+    }
+    conflicting_tags = {
+        "PRE_LOCK_PREDICTION",
+        "PER_GAME_CANONICAL_LOCK_PENDING",
+        "LOCKED_NO_PREDICTION_DATA",
+        "MISSED_LOCK",
+        "SLATE_WIDE_45_MIN_LOCK_POLICY",
+    }
+    tags = _tags(row)
     return bool(
         row.get("slateCoverageVersion") == coverage.VERSION
         and row.get("officialPredictionReason")
@@ -406,6 +438,7 @@ def _canonical_read_overlay(row: Dict[str, Any]) -> bool:
         and row.get("officialPrediction") is True
         and row.get("officialPick") is True
         and row.get("isOfficialDisplayPick") is True
+        and row.get("lockOutcomeRecorded") is True
         and row.get("lockStatus") == "LOCKED_CANONICAL"
         and row.get("officialPredictionStatus")
         == "OFFICIAL_LOCKED_PREDICTION"
@@ -413,19 +446,28 @@ def _canonical_read_overlay(row: Dict[str, Any]) -> bool:
         == row.get("lastPrelockSelectionFingerprint")
         and bool(row.get("lastPrelockSelectionFingerprint"))
         and row_lock_at is not None
+        and _parse_dt(row.get("scheduledLockAtUtc")) == row_lock_at
+        and required_tags.issubset(tags)
+        and not conflicting_tags.intersection(tags)
         and per_game_lock_at == row_lock_at
         and gate_lock_at == row_lock_at
         and isinstance(per_game, dict)
-        and per_game.get("authorityVersion") == coverage.AUTHORITY_VERSION
-        and per_game.get("status") == "OFFICIAL_LOCKED_PREDICTION"
-        and per_game.get("canonical") is True
+        and per_game
+        == {
+            "authorityVersion": coverage.AUTHORITY_VERSION,
+            "status": "OFFICIAL_LOCKED_PREDICTION",
+            "lockAtUtc": row.get("lockedAtUtc"),
+            "canonical": True,
+        }
         and isinstance(final_gate, dict)
         and final_gate.get("policyVersion") == coverage.AUTHORITY_VERSION
         and final_gate.get("phase") == "FINAL_LOCKED"
+        and final_gate.get("finalWindowActive") is False
         and final_gate.get("finalLocked") is True
         and final_gate.get("perGameLock") is True
         and final_gate.get("slateWideLock") is False
         and isinstance(public_lock, dict)
+        and public_lock.get("policyVersion") == coverage.AUTHORITY_VERSION
         and public_lock.get("authorityVersion") == coverage.AUTHORITY_VERSION
         and public_lock.get("canonicalReadOperational") is True
         and public_lock.get("perGameLock") is True
@@ -436,6 +478,60 @@ def _canonical_read_overlay(row: Dict[str, Any]) -> bool:
         and authority.get("verified") is True
         and authority.get("consistentRead") is True
     )
+
+
+_CANONICAL_OVERLAY_PUBLIC_FIELDS = frozenset(
+    {
+        "actionablePick",
+        "blocked",
+        "canonical",
+        "eventPlayabilityAssessmentRequired",
+        "historicalPlayabilityAssessmentValidationErrors",
+        "isOfficialDisplayPick",
+        "lastPossiblePredictionGate",
+        "lockOutcomeRecorded",
+        "locked",
+        "lockedPrediction",
+        "lockStatus",
+        "officialPick",
+        "officialPrediction",
+        "officialPredictionReason",
+        "officialPredictionStatus",
+        "perGameCanonicalLock",
+        "playabilityAssessment",
+        "playabilityAssessmentValidationErrors",
+        "playabilityBlockReasons",
+        "playabilityStatus",
+        "playable",
+        "playablePick",
+        "readiness",
+        "readinessValidationErrors",
+        "releaseBlockReasons",
+        "releaseBlocked",
+        "requiredPlayabilityCheckpoint",
+        "requiredPlayabilityCheckpointDue",
+        "requiredReadinessCheckpoint",
+        "requiredReadinessCheckpointDue",
+        "scheduledLockAtUtc",
+        "selectionFingerprint",
+        "slateCoverageVersion",
+        "slatePredictionLock",
+        "tags",
+        "trainingEligibilityStatus",
+        "trainingEligible",
+        "trainingExclusionReasons",
+        "wagerReleaseBlocked",
+    }
+)
+
+
+def _immutable_overlay_base(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Strip only fields that the canonical public renderer owns."""
+
+    out = copy.deepcopy(row)
+    for field in _CANONICAL_OVERLAY_PUBLIC_FIELDS:
+        out.pop(field, None)
+    return out
 
 
 def _canonical_overlay_projection(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -451,11 +547,27 @@ def _canonical_overlay_projection(row: Dict[str, Any]) -> Dict[str, Any]:
         or (row.get("slatePredictionLock") or {}).get("lockAtUtc")
     )
     selection_material = per_game._selection_material(row)
+    final_gate = copy.deepcopy(
+        row.get("lastPossiblePredictionGate") or {}
+    )
+    for field in (
+        "policyVersion",
+        "phase",
+        "finalWindowActive",
+        "finalLocked",
+        "slateWideLock",
+        "perGameLock",
+        "lockAtUtc",
+    ):
+        final_gate.pop(field, None)
     return {
+        "immutableStoredRow": _immutable_overlay_base(row),
         "slate": _slate(row),
         "canonicalGameIdentity": _canonical_identity(row),
         "storageGameIdentity": _identity(row),
         "commenceTime": _commence(row),
+        "gameId": row.get("gameId") or row.get("game_id"),
+        "gameKey": row.get("gameKey"),
         "officialGamePk": row.get("officialGamePk"),
         "officialGameId": row.get("officialGameId"),
         "sourcePredictionGameId": row.get("sourcePredictionGameId"),
@@ -466,6 +578,17 @@ def _canonical_overlay_projection(row: Dict[str, Any]) -> Dict[str, Any]:
         "awayTeam": row.get("awayTeam") or row.get("away_team"),
         "predictedWinner": row.get("predictedWinner"),
         "predictedSide": row.get("predictedSide"),
+        "confidenceTier": row.get("confidenceTier"),
+        "promotionStatus": row.get("promotionStatus"),
+        "promoted": row.get("promoted"),
+        "score": row.get("score"),
+        "winProbability": row.get("winProbability"),
+        "edgeVsBook": row.get("edgeVsBook"),
+        "expectedValue": row.get("expectedValue"),
+        "createdAt": row.get("createdAt") or row.get("created_at"),
+        "lastPrelockPromotionVersion": row.get(
+            "lastPrelockPromotionVersion"
+        ),
         "lastPrelockSelectionFingerprint": row.get(
             "lastPrelockSelectionFingerprint"
         ),
@@ -481,6 +604,27 @@ def _canonical_overlay_projection(row: Dict[str, Any]) -> Dict[str, Any]:
             else None
         ),
         "predictionSourcePullId": row.get("predictionSourcePullId"),
+        "sourceLockLatestScoringPullAt": (
+            _parse_dt(
+                (row.get("slatePredictionLock") or {}).get(
+                    "latestScoringPullAt"
+                )
+            ).isoformat()
+            if _parse_dt(
+                (row.get("slatePredictionLock") or {}).get(
+                    "latestScoringPullAt"
+                )
+            )
+            else None
+        ),
+        "finalGateImmutableBase": final_gate,
+        "publicTrainingEligible": row.get("trainingEligible"),
+        "publicTrainingEligibilityStatus": row.get(
+            "trainingEligibilityStatus"
+        ),
+        "publicTrainingExclusionReasons": list(
+            row.get("trainingExclusionReasons") or []
+        ),
         "modelOrSignalRecomputedAtLock": row.get(
             "modelOrSignalRecomputedAtLock"
         ),
@@ -523,6 +667,13 @@ def _read_existing_canonical_stage_direct(
             "canonical_overlay_existing_stage_authority_proof_missing"
         )
         proof = {}
+    if set(proof) != set(expected):
+        missing = sorted(set(expected) - set(proof))
+        extra = sorted(set(proof) - set(expected))
+        errors.append(
+            "canonical_overlay_existing_stage_authority_keyset_mismatch:"
+            f"missing={','.join(missing)};extra={','.join(extra)}"
+        )
     for field, value in expected.items():
         if proof.get(field) != value:
             errors.append(
@@ -548,6 +699,15 @@ def _existing_envelope_binding_errors(
         return [
             "canonical_overlay_existing_envelope_rebuild_failed:"
             f"{type(exc).__name__}:{exc}"
+        ]
+    expected_keys = set(expected)
+    actual_keys = set(existing)
+    if actual_keys != expected_keys:
+        missing = sorted(expected_keys - actual_keys)
+        extra = sorted(actual_keys - expected_keys)
+        return [
+            "canonical_overlay_existing_envelope_keyset_mismatch:"
+            f"missing={','.join(missing)};extra={','.join(extra)}"
         ]
     expected_envelope = {
         key: copy.deepcopy(value)
