@@ -201,7 +201,6 @@ jobs:
           set -euo pipefail
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git pull --rebase origin main
           git add runtime_reports/soccer_lambda_role_dlq_recovery_latest.json
           git commit -m 'runtime: publish isolated Soccer DLQ recovery proof [skip ci]' || exit 0
           for attempt in 1 2 3 4 5; do
