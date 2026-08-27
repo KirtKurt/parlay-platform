@@ -163,7 +163,7 @@ def test_same_source_order_with_different_identity_fails_closed():
         ok=False,
     )
     conflict = proof(
-        run_id=999,
+        run_id=101,
         run_attempt=1,
         run_number=11,
         deployed_sha="c" * 40,
@@ -302,3 +302,31 @@ def test_partially_provenance_bound_existing_pointer_cannot_be_downgraded_to_leg
 
     with pytest.raises(ValueError, match="sourceDeployWorkflowPath"):
         selection_reason(candidate, corrupt_current)
+
+
+def test_later_rerun_of_older_run_number_is_the_newer_deployment_source():
+    current = proof(
+        run_id=200,
+        run_attempt=1,
+        run_number=20,
+        deployed_sha="d" * 40,
+        source_created_at="2026-08-27T21:00:00Z",
+        sourceDeploySamCompletedAtUtc="2026-08-27T22:00:00Z",
+        created_at="2026-08-27T22:15:00Z",
+        ok=True,
+    )
+    rerun_older_workflow = proof(
+        run_id=100,
+        run_attempt=2,
+        run_number=10,
+        deployed_sha="e" * 40,
+        source_created_at="2026-08-27T20:00:00Z",
+        sourceDeploySamCompletedAtUtc="2026-08-27T23:00:00Z",
+        created_at="2026-08-27T23:15:00Z",
+        ok=False,
+    )
+
+    assert selection_reason(rerun_older_workflow, current) == (
+        True,
+        "newer_deployed_source",
+    )
