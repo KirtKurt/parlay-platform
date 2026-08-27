@@ -171,6 +171,9 @@ jobs:
             --return-consumed-capacity NONE \
             --region "$AWS_REGION" \
             --output json > /tmp/r7-global-lease.json
+          if [ ! -s /tmp/r7-global-lease.json ]; then
+            printf '{}\n' > /tmp/r7-global-lease.json
+          fi
           FUNCTION_NAME="$FUNCTION_NAME" RULE_NAME="$RULE_NAME" \
           WINDOW_START="$WINDOW_START" WINDOW_END="$WINDOW_END" python - <<'PY'
           import hashlib
