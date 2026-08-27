@@ -16,6 +16,8 @@ def _copy_contract(tmp_path: Path) -> Path:
         ".github/workflows/mlb-production-source-contract.yml",
         ".github/workflows/mlb-production-acceptance.yml",
         ".github/workflows/deploy.yml",
+        ".github/workflows/mlb-post-deploy-fix-verification.yml",
+        "scripts/publish_mlb_postdeploy_proof.py",
         "template.yaml",
         "hello_world/api.py",
         "hello_world/mlb_date_signal_api.py",
@@ -777,4 +779,103 @@ def test_rejects_terminal_rollback_as_updateable(tmp_path: Path) -> None:
     assert (
         "canonical_deploy_treats_terminal_rollback_as_updateable"
         in authority.verify_repository(root)
+    )
+
+
+def test_rejects_sam_deployment_without_exact_success_outputs(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace(
+            'echo "deployment_succeeded=true" >> "$GITHUB_OUTPUT"',
+            'echo "deployment_succeeded=false" >> "$GITHUB_OUTPUT"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        "postdeploy_contract:sam_outputs_not_after_successful_deploy"
+        in authority.verify_repository(root)
+    )
+
+
+def test_rejects_dispatcher_that_depends_on_whole_job_success(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace(
+            "always() && needs.deploy.outputs.deployment_succeeded == 'true'",
+            "needs.deploy.result == 'success'",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert any(
+        error.startswith("postdeploy_contract:dispatcher_binding_missing:")
+        for error in authority.verify_repository(root)
+    )
+
+
+def test_rejects_postdeploy_source_without_exact_run_attempt_jobs(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    workflow = root / ".github/workflows/mlb-post-deploy-fix-verification.yml"
+    text = workflow.read_text(encoding="utf-8")
+    workflow.write_text(
+        text.replace(
+            "actions/runs/$run_id/attempts/$run_attempt/jobs?per_page=100",
+            "actions/runs/$run_id/jobs?per_page=100",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert any(
+        error.startswith("postdeploy_contract:source_attestation_missing:")
+        for error in authority.verify_repository(root)
+    )
+
+
+def test_rejects_per_source_or_canceling_publication_concurrency(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    workflow = root / ".github/workflows/mlb-post-deploy-fix-verification.yml"
+    text = workflow.read_text(encoding="utf-8")
+    workflow.write_text(
+        text.replace(
+            "group: mlb-postdeploy-proof-publication\n"
+            "      cancel-in-progress: false",
+            "group: mlb-postdeploy-proof-publication-${{ github.sha }}\n"
+            "      cancel-in-progress: true",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    errors = authority.verify_repository(root)
+    assert any(
+        error.startswith("postdeploy_contract:global_publication_missing:")
+        for error in errors
+    )
+
+
+def test_rejects_postdeploy_workflow_without_latest_successful_sam_resolution(
+    tmp_path: Path,
+) -> None:
+    root = _copy_contract(tmp_path)
+    workflow = root / ".github/workflows/mlb-post-deploy-fix-verification.yml"
+    text = workflow.read_text(encoding="utf-8")
+    workflow.write_text(
+        text.replace(
+            "find_latest_successful_sam_source",
+            "find_latest_completed_workflow",
+        ),
+        encoding="utf-8",
+    )
+
+    assert any(
+        error.startswith("postdeploy_contract:source_attestation_missing:")
+        for error in authority.verify_repository(root)
     )
