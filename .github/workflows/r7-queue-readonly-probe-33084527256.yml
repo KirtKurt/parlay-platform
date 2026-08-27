@@ -126,6 +126,9 @@ jobs:
             --output json > /tmp/r7-lock-concurrency.json 2>/tmp/r7-lock-concurrency.err; then
             printf '{}\n' > /tmp/r7-lock-concurrency.json
           fi
+          if [ ! -s /tmp/r7-lock-concurrency.json ]; then
+            printf '{}\n' > /tmp/r7-lock-concurrency.json
+          fi
           for METRIC in Invocations Errors Throttles ConcurrentExecutions Duration; do
             STAT=Sum
             if [ "$METRIC" = ConcurrentExecutions ] || [ "$METRIC" = Duration ]; then
