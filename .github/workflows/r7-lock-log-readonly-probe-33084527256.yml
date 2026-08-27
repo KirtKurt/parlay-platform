@@ -185,6 +185,11 @@ jobs:
                   match = error_type_re.search(message)
                   if match:
                       entry['reportErrorType'] = match.group(1)
+                  if entry.get('reportStatus') == 'TIMEOUT':
+                      entry['timedOut'] = True
+                      entry['timeoutSeconds'] = float(
+                          entry.get('durationMs') or 0
+                      ) / 1000
               elif 'END RequestId:' in message:
                   platform_event = 'END'
                   entry['endUtc'] = timestamp
