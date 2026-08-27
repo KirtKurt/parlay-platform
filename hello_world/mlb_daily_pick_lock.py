@@ -410,5 +410,18 @@ def handle(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return _resp(500, {"ok": False, "sport": "mlb", "modelVersion": MODEL_VERSION, "error": str(exc)})
 
 
+def _ensure_durable_status_route() -> None:
+    # Site customization can import this module before usercustomize runs.
+    # Install the public status cache at invocation time, after every earlier
+    # lock patch has finished, so the route wrapper cannot be lost to import
+    # ordering or a disabled user-site customization hook.
+    import sys
+
+    import mlb_daily_lock_status_route_patch
+
+    mlb_daily_lock_status_route_patch.apply(sys.modules[__name__])
+
+
 def lambda_handler(event, context):
+    _ensure_durable_status_route()
     return handle(event, context)

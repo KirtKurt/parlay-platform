@@ -9,7 +9,7 @@ from importlib import import_module
 from typing import Any, Dict, Optional
 
 
-CACHE_VERSION = "MLB-LOCK-STATUS-CACHE-v1-durable-summary"
+CACHE_VERSION = "MLB-LOCK-STATUS-CACHE-v2-explicit-http-api-v2"
 CACHE_RECORD_TYPE = "mlb_lock_status_summary_cache_v1"
 CACHE_SK = "SUMMARY"
 DEFAULT_CACHE_MAX_AGE_SECONDS = 20 * 60
@@ -53,6 +53,18 @@ def _explicit_bool(value: Any, *, default: bool) -> bool:
 def _lock_status_path(path: Any) -> bool:
     normalized = "/" + str(path or "").strip().strip("/")
     return any(normalized.endswith(suffix) for suffix in _LOCK_STATUS_SUFFIXES)
+
+
+def _event_method(event: Dict[str, Any]) -> str:
+    event = event or {}
+    request_context = event.get("requestContext") or {}
+    http_context = request_context.get("http") or {}
+    return str(
+        event.get("httpMethod")
+        or http_context.get("method")
+        or request_context.get("httpMethod")
+        or ""
+    ).strip().upper()
 
 
 def _parse_utc(value: Any) -> Optional[datetime]:
@@ -304,7 +316,7 @@ def apply(module: Any) -> Any:
 
     def handle(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         event = event or {}
-        method = str(event.get("httpMethod") or "").upper()
+        method = _event_method(event)
         path = event.get("path") or event.get("rawPath") or ""
         if method in {"GET", "POST"} and _lock_status_path(path):
             payload = module._payload(event)
