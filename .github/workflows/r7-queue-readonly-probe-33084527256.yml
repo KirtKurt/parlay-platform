@@ -822,6 +822,135 @@ jobs:
               )
           )
 
+          proof_map = proof if isinstance(proof, dict) else {}
+          source_pull_id = str(
+              proof_map.get('predictionSourcePullId')
+              or (candidate or {}).get('predictionSourcePullId')
+              or ''
+          )
+          source_pull_at_text = str(
+              proof_map.get('predictionSourcePullAtUtc')
+              or (candidate or {}).get('predictionSourcePullAt')
+              or ''
+          )
+          source_pull_at = patch._parse_iso(source_pull_at_text)
+          source_slot = patch.history_contract.pull_slot_start(
+              source_pull_at_text
+          )
+          canonical_full_pulls = (
+              patch.history_contract.canonicalize_pull_slots(
+                  pulls,
+                  sport='mlb',
+              )
+          )
+          slot_representatives = [
+              pull
+              for pull in canonical_full_pulls
+              if (
+                  patch.history_contract.pull_slot_start(
+                      pull.get('pulled_at')
+                  )
+                  == source_slot
+              )
+          ]
+          canonical_source_matches = [
+              pull
+              for pull in slot_representatives
+              if (
+                  str(pull.get('pull_id') or '') == source_pull_id
+                  and patch._pull_at(module, pull) == source_pull_at
+              )
+          ]
+          raw_source_matches = []
+          for representative in slot_representatives:
+              for raw_pull in (
+                  representative.get('_canonicalSlotRawPulls') or []
+              ):
+                  if not isinstance(raw_pull, dict):
+                      continue
+                  if (
+                      str(raw_pull.get('pull_id') or '')
+                      == source_pull_id
+                      and patch._pull_at(module, raw_pull)
+                      == source_pull_at
+                  ):
+                      raw_source_matches.append(raw_pull)
+          representative = (
+              slot_representatives[0]
+              if len(slot_representatives) == 1
+              else {}
+          )
+          slot_metadata = (
+              representative.get('canonicalPullSlot') or {}
+              if isinstance(representative, dict)
+              else {}
+          )
+          source_binding = {
+              'predictionSourcePullId': source_pull_id or None,
+              'predictionSourcePullAtUtc': (
+                  source_pull_at.isoformat()
+                  if source_pull_at is not None
+                  else None
+              ),
+              'canonicalSlotStartUtc': (
+                  source_slot.isoformat()
+                  if source_slot is not None
+                  else None
+              ),
+              'canonicalSlotRepresentativeCount': len(
+                  slot_representatives
+              ),
+              'canonicalSlotRepresentativePullId': (
+                  str(representative.get('pull_id') or '')
+                  if isinstance(representative, dict)
+                  else None
+              ),
+              'canonicalSlotMetadataPullId': (
+                  slot_metadata.get('canonicalPullId')
+              ),
+              'sourceIsCanonicalSlotRepresentative': (
+                  len(canonical_source_matches) == 1
+              ),
+              'sourceRawVariantMatchCount': len(raw_source_matches),
+              'sourceIsOnlyLegacyRawVariant': bool(
+                  raw_source_matches
+                  and not canonical_source_matches
+              ),
+              'slotRawPullCount': slot_metadata.get('rawPullCount'),
+              'slotDuplicatePullCount': slot_metadata.get(
+                  'duplicatePullCount'
+              ),
+              'slotContaminated': slot_metadata.get(
+                  'contaminated'
+              ),
+          }
+          target_identity = {
+              'manifestPrimaryIdentity': identities[game_index],
+              'manifestIdentityOptions': identity_options[game_index],
+              'manifestRawGameId': (
+                  game.get('game_id')
+                  or game.get('gameId')
+                  or game.get('id')
+              ),
+              'manifestProviderEventId': (
+                  game.get('provider_event_id')
+                  or game.get('providerEventId')
+              ),
+              'manifestOfficialGamePk': (
+                  game.get('official_game_pk')
+                  or game.get('officialGamePk')
+              ),
+              'candidateGameIdentity': proof_map.get(
+                  'candidateGameIdentity'
+              ),
+              'stageGameIdentity': proof_map.get(
+                  'stageGameIdentity'
+              ),
+              'identityBindingMode': proof_map.get(
+                  'identityBindingMode'
+              ),
+          }
+
           proof_summary = None
           if isinstance(proof, dict):
               proof_summary = {
@@ -842,7 +971,11 @@ jobs:
                       'persistenceProofType',
                       'predictionPayloadFingerprintVersion',
                       'candidateSnapshotFingerprint',
+                      'predictionSourcePullId',
                       'predictionSourcePullAtUtc',
+                      'predictionSourceCanonicalSlotStartUtc',
+                      'predictionSourcePullStoragePk',
+                      'predictionSourcePullStorageSk',
                       'predictionSourcePullFingerprint',
                       'sourceAgeAtCutoffMinutes',
                       'evaluationCutoffAtUtc',
@@ -980,6 +1113,8 @@ jobs:
                   'candidatePayloadRedacted': True,
                   'candidateIdentityRedacted': True,
                   'proofSummary': proof_summary,
+                  'sourceBinding': source_binding,
+                  'targetIdentity': target_identity,
               },
               'safety': {
                   'postStartPredictionCreationAllowed': False,
