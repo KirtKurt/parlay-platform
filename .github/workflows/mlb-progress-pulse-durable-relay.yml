@@ -26,6 +26,11 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/mlb-progress-pulse-durable-relay.yml'
+      # Independent event-driven seeds already proven to arrive while MLB cron
+      # admissions were missing. These only refresh the finite relay lease.
+      - 'runtime/tennis_autonomy_status.json'
+      - 'runtime_reports/nfl_stack_probe_latest.json'
+      - 'runtime_reports/mlb_*.json'
 
 permissions:
   actions: write
