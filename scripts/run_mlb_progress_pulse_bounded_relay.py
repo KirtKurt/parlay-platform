@@ -94,6 +94,7 @@ def filter_successor_run_ids(
     current_run_id: Any,
     current_created_at: Any,
     expected_remaining_segments: int,
+    expected_repository: str,
 ) -> list[int]:
     """Return only a chain-bound, noncompleted main dispatch successor."""
 
@@ -118,6 +119,12 @@ def filter_successor_run_ids(
         if not (is_exact_decrement or is_explicit_renewal):
             continue
         if str(run.get("head_branch") or "") != "main":
+            continue
+        head_repository = run.get("head_repository")
+        if (
+            not isinstance(head_repository, Mapping)
+            or str(head_repository.get("full_name") or "") != expected_repository
+        ):
             continue
         if str(run.get("status") or "") not in ACTIVE_RUN_STATUSES:
             continue
@@ -180,6 +187,7 @@ class CommandRelayClient:
             current_run_id=self.current_run_id,
             current_created_at=self._get_current_created_at(),
             expected_remaining_segments=expected_remaining_segments,
+            expected_repository=self.repository,
         )
 
     def dispatch_successor(self, remaining_segments: int) -> None:
