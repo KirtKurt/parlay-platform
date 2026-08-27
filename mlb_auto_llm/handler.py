@@ -129,6 +129,19 @@ def _team_name(container: Any) -> str:
 
 
 # MLB_AUTO_PACKET_STORAGE_GZIP_CHUNKED_V1
+def _packet_item_too_large(exc: BaseException) -> bool:
+    """Recognize only the real DynamoDB oversized-item failure."""
+    response = getattr(exc, "response", {}) or {}
+    error = response.get("Error", {}) or {}
+    code = str(error.get("Code", ""))
+    message = " ".join(str(error.get("Message", "")).lower().split())
+    status = int((response.get("ResponseMetadata", {}) or {}).get("HTTPStatusCode") or 0)
+    return status == 413 or (
+        code == "ValidationException"
+        and "item size has exceeded the maximum allowed size" in message
+    )
+
+
 def _put(pk: str, sk: str, data: Dict[str, Any], *, condition: Optional[str] = None) -> bool:
     if TABLE is None:
         raise RuntimeError("MLB_AUTO_TABLE_NOT_CONFIGURED")
@@ -140,10 +153,9 @@ def _put(pk: str, sk: str, data: Dict[str, Any], *, condition: Optional[str] = N
         return True
     except Exception as exc:
         code = str((getattr(exc, "response", {}) or {}).get("Error", {}).get("Code", ""))
-        status = int(((getattr(exc, "response", {}) or {}).get("ResponseMetadata", {}) or {}).get("HTTPStatusCode") or 0)
         if code == "ConditionalCheckFailedException":
             return False
-        if not str(pk).startswith("PACKET#") or status != 413:
+        if not str(pk).startswith("PACKET#") or not _packet_item_too_large(exc):
             raise
 
         # DynamoDB has a hard 400 KB item limit. Full expanded provider packets can
