@@ -21,6 +21,16 @@ PROOF_TYPE = "MLB_SCORING_FIX_POST_DEPLOY_ACCEPTANCE"
 WORKFLOW_NAME = "Deploy SAM to AWS"
 WORKFLOW_PATH = ".github/workflows/deploy.yml"
 SAM_STEP_NAME = "Deploy exact canonical source"
+PROVENANCE_MARKERS = (
+    "deploymentSucceeded",
+    "sourceDeployRunId",
+    "sourceDeployRunAttempt",
+    "sourceDeployRunNumber",
+    "sourceDeployWorkflowId",
+    "sourceDeployWorkflowPath",
+    "sourceDeployHeadSha",
+    "sourceDeploySamCompletedAtUtc",
+)
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -68,6 +78,12 @@ def validate_provenance(value: Mapping[str, Any]) -> dict[str, Any]:
     source_created_at = _time(
         value.get("sourceDeployCreatedAtUtc"), "sourceDeployCreatedAtUtc"
     )
+    sam_completed_at = _time(
+        value.get("sourceDeploySamCompletedAtUtc"),
+        "sourceDeploySamCompletedAtUtc",
+    )
+    if sam_completed_at < source_created_at:
+        raise ValueError("SAM completion cannot precede source run creation")
     run_id = _positive_int(value.get("sourceDeployRunId"), "sourceDeployRunId")
     run_attempt = _positive_int(
         value.get("sourceDeployRunAttempt"), "sourceDeployRunAttempt"
@@ -97,6 +113,7 @@ def validate_provenance(value: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "created_at": created_at,
         "source_created_at": source_created_at,
+        "sam_completed_at": sam_completed_at,
         "source_key": (run_number, run_attempt),
         "identity": (
             run_id,
@@ -106,6 +123,7 @@ def validate_provenance(value: Mapping[str, Any]) -> dict[str, Any]:
             WORKFLOW_PATH,
             "main",
             head_sha,
+            sam_completed_at,
         ),
         "deployed_commit": deployed_commit,
         "ok": value.get("ok") is True,
@@ -134,12 +152,14 @@ def selection_reason(
     try:
         current_meta = validate_provenance(current)
     except ValueError:
+        if any(field in current for field in PROVENANCE_MARKERS):
+            raise
         legacy = _legacy_metadata(current)
         same_commit = (
             candidate_meta["deployed_commit"] == legacy["deployed_commit"]
         )
         source_is_definitively_newer = (
-            candidate_meta["source_created_at"] > legacy["created_at"]
+            candidate_meta["sam_completed_at"] > legacy["created_at"]
         )
         if not same_commit and not source_is_definitively_newer:
             return False, "legacy_pointer_cannot_be_replaced_by_older_source"
