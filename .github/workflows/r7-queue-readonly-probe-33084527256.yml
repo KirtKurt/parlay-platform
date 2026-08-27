@@ -358,7 +358,7 @@ jobs:
                           )
                       ]
                       terminal_exceptions = list(re.finditer(
-                          r'(?:^|\n)([A-Za-z_][A-Za-z0-9_.]*'
+                          r'\b([A-Za-z_][A-Za-z0-9_.]*'
                           r'(?:Error|Exception|Unavailable|Conflict)):\s*'
                           r'([^\n]*)',
                           message,
@@ -375,12 +375,56 @@ jobs:
                           candidate = message[
                               prefix_index + len(prefix):
                           ].lstrip()
+                          regex_fields = {}
+                          for field in (
+                              'reason',
+                              'ok',
+                              'locked',
+                              'failClosed',
+                              'scheduledInvocation',
+                              'dailyCardComplete',
+                              'lockStatusComplete',
+                              'canonicalPredictionComplete',
+                              'manifestGameCount',
+                              'stagedCount',
+                              'canonicalCount',
+                              'lockedPredictionCount',
+                              'lockOutcomeCount',
+                              'noPredictionDataCount',
+                              'pendingCount',
+                              'stabilizingCount',
+                              'dueMissingCount',
+                              'missedCount',
+                              'state',
+                              'status',
+                          ):
+                              values = []
+                              pattern = (
+                                  r'"' + re.escape(field)
+                                  + r'"\s*:\s*'
+                                  + r'(true|false|null|-?[0-9]+(?:\.[0-9]+)?'
+                                  + r'|"[A-Za-z0-9_.:-]{1,160}")'
+                              )
+                              for match in re.finditer(pattern, candidate):
+                                  raw_value = match.group(1)
+                                  try:
+                                      value = json.loads(raw_value)
+                                  except Exception:
+                                      continue
+                                  if value not in values:
+                                      values.append(value)
+                              if values:
+                                  regex_fields[field] = values[:40]
                           try:
                               payload, _ = json.JSONDecoder().raw_decode(
                                   candidate
                               )
                           except Exception:
                               payload = None
+                          scheduled_summary = {
+                              'regexFields': regex_fields,
+                              'rawPayloadRedacted': True,
+                          }
                           if isinstance(payload, dict):
                               safe_scalar_fields = (
                                   'ok',
@@ -423,6 +467,7 @@ jobs:
                                   else []
                               )
                               scheduled_summary = {
+                                  'regexFields': regex_fields,
                                   'payload': {
                                       key: payload.get(key)
                                       for key in safe_scalar_fields
