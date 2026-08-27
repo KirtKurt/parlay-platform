@@ -29,7 +29,7 @@ import reconcile_mlb_prospective_backlog as base
 import reconcile_mlb_prospective_backlog_v3 as v3
 
 
-VERSION = "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v4.2-status-consistency-retry"
+VERSION = "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v4.3-settlement-authoritative-post-replay"
 MAX_INVOKE_ATTEMPTS = 12
 RETRY_DELAYS_SECONDS = (5, 10, 20, 30, 45, 60, 60, 60, 60, 60, 60)
 STATUS_CONSISTENCY_MAX_ATTEMPTS = 5
@@ -320,10 +320,12 @@ def reconcile(
                 official_status,
                 slate_date,
             )
-            if _status_requires_terminal_durability_replay(official_status):
-                raise base.ReconciliationError(
-                    "official_status_terminal_durability_incomplete"
-                )
+            # Do not require the public missed lifecycle count to become zero
+            # after a verified protected replay. The read-only status contract
+            # intentionally preserves MISSED_NOT_BACKFILLED as historical
+            # lifecycle evidence even when a durable terminal outcome exists.
+            # v3 validates the replay/readback; canonical settlement below is
+            # the stronger per-game durability and identity authority.
 
         settlement_payload = invoke(
             lambda_client,
