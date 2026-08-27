@@ -113,6 +113,13 @@ COOPERATIVE_REPLAY_MIN_REMAINING_SECONDS = (
     COOPERATIVE_REPLAY_EXECUTION_BUDGET_SECONDS
     + LOCK_EXECUTION_TIMEOUT_SAFETY_MARGIN_SECONDS
 )
+COOPERATIVE_CURRENT_SLATE_PROOF_VERSION = (
+    "MLB-COOPERATIVE-CURRENT-SLATE-PROOF-v1-request-bound"
+)
+# EventBridge invokes once per minute and drops events older than one minute.
+# Three schedule periods admit normal delivery jitter while ensuring a replay
+# can never rely on a stale current-slate success.
+COOPERATIVE_CURRENT_SLATE_PROOF_MAX_AGE_SECONDS = 180
 try:
     LOCK_EXECUTION_LEASE_SECONDS = int(
         os.environ.get("MLB_LOCK_EXECUTION_LEASE_SECONDS", "960")
@@ -290,6 +297,11 @@ PER_GAME_LOCK_STATUS = {
         "queueScope": "one_exact_historical_mlb_slate",
         "automaticExecutionOwner": "eventbridge_daily_lock_schedule",
         "currentSlateRunsFirst": True,
+        "freshPriorOwnerProofMayCarryAcrossInvocation": True,
+        "currentSlateProofVersion": COOPERATIVE_CURRENT_SLATE_PROOF_VERSION,
+        "currentSlateProofMaxAgeSeconds": (
+            COOPERATIVE_CURRENT_SLATE_PROOF_MAX_AGE_SECONDS
+        ),
         "minimumRemainingSeconds": COOPERATIVE_REPLAY_MIN_REMAINING_SECONDS,
         "activeLeaseMutationAllowed": False,
         "postStartPredictionCreationAllowed": False,
@@ -529,6 +541,10 @@ def _cooperative_public_state(item: Dict[str, Any]) -> Dict[str, Any]:
         "slateDateEt": str(item.get("slate_date_et") or ""),
         "automaticExecutionOwner": "eventbridge_daily_lock_schedule",
         "currentSlateRunsFirst": True,
+        "freshPriorOwnerProofMayCarryAcrossInvocation": True,
+        "currentSlateSuccessProofPresent": isinstance(
+            item.get("current_slate_success_proof"), dict
+        ),
         "activeLeaseMutationAllowed": False,
         "postStartPredictionCreationAllowed": False,
         "immutablePredictionRewriteAllowed": False,
@@ -939,19 +955,169 @@ def _is_eventbridge_daily_lock_owner(event: Dict[str, Any]) -> bool:
     )
 
 
+def _current_slate_success_proof_is_fresh(
+    item: Dict[str, Any],
+    *,
+    expected_current_slate_date: str,
+) -> bool:
+    proof = item.get("current_slate_success_proof")
+    if not isinstance(proof, dict):
+        return False
+    try:
+        request_epoch = int(item.get("requested_at_epoch"))
+        proof_request_epoch = int(proof.get("requestEpoch"))
+        processed_epoch = int(proof.get("processedAtEpoch"))
+    except (TypeError, ValueError):
+        return False
+    now_epoch = int(_utc_now().timestamp())
+    age_seconds = now_epoch - processed_epoch
+    return bool(
+        proof.get("version") == COOPERATIVE_CURRENT_SLATE_PROOF_VERSION
+        and str(proof.get("currentSlateDateEt") or "")
+        == expected_current_slate_date
+        and str(proof.get("requestSlateDateEt") or "")
+        == str(item.get("slate_date_et") or "")
+        and proof_request_epoch == request_epoch
+        and processed_epoch >= request_epoch
+        and 0 <= age_seconds
+        <= COOPERATIVE_CURRENT_SLATE_PROOF_MAX_AGE_SECONDS
+        and proof.get("postStartPredictionCreationAllowed") is False
+        and proof.get("immutablePredictionRewriteAllowed") is False
+    )
+
+
+def _persist_current_slate_success_proof(
+    *,
+    current_slate_response: Any,
+    expected_current_slate_date: str,
+    remaining_seconds: int,
+) -> Dict[str, Any]:
+    item = _read_cooperative_replay()
+    if not item:
+        return {
+            "version": COOPERATIVE_TERMINAL_REPLAY_VERSION,
+            "state": "NO_PENDING_REQUEST",
+            "currentSlateRanFirst": True,
+            "remainingSeconds": remaining_seconds,
+            "queueReadAttempted": True,
+            "activeLeaseMutationAllowed": False,
+        }
+    historical_slate_date = str(item.get("slate_date_et") or "")
+    item = _cooperative_record(item, historical_slate_date)
+    state = str(item.get("state") or "")
+    if state in {
+        COOPERATIVE_REPLAY_COMPLETED,
+        COOPERATIVE_REPLAY_ACKNOWLEDGED,
+    }:
+        return {
+            **_cooperative_public_state(item),
+            "currentSlateRanFirst": True,
+            "remainingSeconds": remaining_seconds,
+            "queueReadAttempted": True,
+        }
+    _assert_current_slate_processed_before_handoff(
+        current_slate_response,
+        expected_slate_date=expected_current_slate_date,
+    )
+
+    now = _utc_now()
+    now_epoch = int(now.timestamp())
+    try:
+        request_epoch = int(item.get("requested_at_epoch"))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_REPLAY_REQUEST_EPOCH_INVALID"
+        ) from exc
+    if request_epoch > now_epoch:
+        raise RuntimeError("MLB_COOPERATIVE_REPLAY_REQUEST_EPOCH_IN_FUTURE")
+    proof = {
+        "version": COOPERATIVE_CURRENT_SLATE_PROOF_VERSION,
+        "currentSlateDateEt": expected_current_slate_date,
+        "requestSlateDateEt": historical_slate_date,
+        "requestEpoch": request_epoch,
+        "processedAtEpoch": now_epoch,
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+    }
+    table = _cooperative_replay_table()
+    try:
+        updated = table.update_item(
+            Key=_cooperative_replay_key(),
+            ConditionExpression=(
+                "record_type = :record_type AND "
+                "coordination_version = :version AND "
+                "slate_date_et = :slate_date AND "
+                "requested_at_epoch = :request_epoch AND "
+                "(#state = :queued OR "
+                "(#state = :claimed AND claim_expires_at_epoch <= :now_epoch))"
+            ),
+            UpdateExpression="SET current_slate_success_proof = :proof",
+            ExpressionAttributeNames={"#state": "state"},
+            ExpressionAttributeValues={
+                ":record_type": COOPERATIVE_TERMINAL_REPLAY_RECORD_TYPE,
+                ":version": COOPERATIVE_TERMINAL_REPLAY_VERSION,
+                ":slate_date": historical_slate_date,
+                ":request_epoch": request_epoch,
+                ":queued": COOPERATIVE_REPLAY_QUEUED,
+                ":claimed": COOPERATIVE_REPLAY_CLAIMED,
+                ":now_epoch": now_epoch,
+                ":proof": proof,
+            },
+            ReturnValues="ALL_NEW",
+        ).get("Attributes")
+    except BaseException as exc:
+        observed = _cooperative_record(
+            _read_cooperative_replay(),
+            historical_slate_date,
+        )
+        if observed.get("current_slate_success_proof") == proof:
+            updated = observed
+        elif _error_code(exc) == "ConditionalCheckFailedException":
+            return {
+                **_cooperative_public_state(observed),
+                "currentSlateRanFirst": True,
+                "remainingSeconds": remaining_seconds,
+                "queueReadAttempted": True,
+                "currentSlateSuccessProofPersisted": False,
+                "proofWriteLostToStateTransition": True,
+            }
+        else:
+            raise
+    proven = _cooperative_record(dict(updated or {}), historical_slate_date)
+    if proven.get("current_slate_success_proof") != proof:
+        raise RuntimeError("MLB_COOPERATIVE_CURRENT_SLATE_PROOF_WRITE_INVALID")
+    return {
+        **_cooperative_public_state(proven),
+        "state": "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+        "currentSlateRanFirst": True,
+        "remainingSeconds": remaining_seconds,
+        "minimumRemainingSeconds": COOPERATIVE_REPLAY_MIN_REMAINING_SECONDS,
+        "queueReadAttempted": True,
+        "currentSlateSuccessProofPersisted": True,
+        "activeLeaseMutationAllowed": False,
+    }
+
+
 def _claim_cooperative_replay(
     *,
     owner: str,
     context: Any,
     current_slate_response: Any,
     expected_slate_date: str,
+    allow_fresh_prior_current_slate_proof: bool = False,
 ) -> tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
     remaining = _remaining_seconds(context)
     if remaining < COOPERATIVE_REPLAY_MIN_REMAINING_SECONDS:
+        if current_slate_response is not None:
+            return None, _persist_current_slate_success_proof(
+                current_slate_response=current_slate_response,
+                expected_current_slate_date=expected_slate_date,
+                remaining_seconds=remaining,
+            )
         return None, {
             "version": COOPERATIVE_TERMINAL_REPLAY_VERSION,
             "state": "DEFERRED_INSUFFICIENT_REMAINING_TIME",
-            "currentSlateRanFirst": True,
+            "currentSlateRanFirst": False,
             "remainingSeconds": remaining,
             "minimumRemainingSeconds": COOPERATIVE_REPLAY_MIN_REMAINING_SECONDS,
             "queueReadAttempted": False,
@@ -1005,10 +1171,27 @@ def _claim_cooperative_replay(
             "staleClaimReclaimable": False,
         }
 
-    _assert_current_slate_processed_before_handoff(
-        current_slate_response,
-        expected_slate_date=expected_slate_date,
-    )
+    current_slate_proof_carried = False
+    if allow_fresh_prior_current_slate_proof:
+        current_slate_proof_carried = _current_slate_success_proof_is_fresh(
+            item,
+            expected_current_slate_date=expected_slate_date,
+        )
+        if not current_slate_proof_carried:
+            return None, {
+                **_cooperative_public_state(item),
+                "state": "CURRENT_SLATE_SUCCESS_PROOF_REQUIRED",
+                "currentSlateRanFirst": False,
+                "queueReadAttempted": True,
+                "remainingSeconds": remaining,
+                "currentSlateSuccessProofFresh": False,
+                "activeLeaseMutationAllowed": False,
+            }
+    else:
+        _assert_current_slate_processed_before_handoff(
+            current_slate_response,
+            expected_slate_date=expected_slate_date,
+        )
     claim_expires = now + timedelta(
         seconds=min(
             LOCK_EXECUTION_LEASE_SECONDS,
@@ -1066,6 +1249,9 @@ def _claim_cooperative_replay(
         "queueReadAttempted": True,
         "remainingSeconds": remaining,
         "claimOwnerIsCurrentLeaseOwner": True,
+        "currentSlateSuccessProofCarriedAcrossInvocation": (
+            current_slate_proof_carried
+        ),
     }
 
 
@@ -1231,7 +1417,8 @@ def _complete_cooperative_replay(
             UpdateExpression=(
                 "SET #state = :completed, completed_at_utc = :now_utc, "
                 "completed_at_epoch = :now_epoch, replay_receipt = :receipt "
-                "REMOVE claim_owner, claim_acquired_at_utc, "
+                "REMOVE current_slate_success_proof, claim_owner, "
+                "claim_acquired_at_utc, "
                 "claim_acquired_at_epoch, claim_expires_at_utc, "
                 "claim_expires_at_epoch"
             ),
@@ -1281,7 +1468,8 @@ def _requeue_cooperative_replay(item: Dict[str, Any], owner: str) -> bool:
             UpdateExpression=(
                 "SET #state = :queued, last_failure_at_utc = :now_utc, "
                 "last_failure_at_epoch = :now_epoch "
-                "REMOVE claim_owner, claim_acquired_at_utc, "
+                "REMOVE current_slate_success_proof, claim_owner, "
+                "claim_acquired_at_utc, "
                 "claim_acquired_at_epoch, claim_expires_at_utc, "
                 "claim_expires_at_epoch"
             ),
@@ -1576,66 +1764,104 @@ def lambda_handler(event, context):
     primary_error: Optional[BaseException] = None
     release_error: Optional[BaseException] = None
     try:
-        # Production current-slate work is always first and must succeed before
-        # this owner even reads or claims a historical handoff.
-        response = mlb_daily_pick_lock.lambda_handler(event, context)
-        _raise_scheduled_delegate_failure(event, response)
-        if _is_eventbridge_daily_lock_owner(event):
+        # A fresh, request-bound proof may carry a successful current-slate run
+        # across exactly one short EventBridge handoff.  This prevents a long
+        # current run from starving the historical replay of its own bounded
+        # execution budget.  Without that durable proof, current-slate work
+        # still runs and succeeds before any historical claim.
+        claimed: Optional[Dict[str, Any]] = None
+        current_slate_proof_carried = False
+        canonical_eventbridge_owner = _is_eventbridge_daily_lock_owner(event)
+        if canonical_eventbridge_owner:
             claimed, cooperative_owner_status = _claim_cooperative_replay(
                 owner=owner,
                 context=context,
-                current_slate_response=response,
+                current_slate_response=None,
                 expected_slate_date=slate_date_et,
+                allow_fresh_prior_current_slate_proof=True,
             )
-            if claimed is not None:
-                replay_event = {
+            current_slate_proof_carried = claimed is not None
+
+        if claimed is None:
+            response = mlb_daily_pick_lock.lambda_handler(event, context)
+            _raise_scheduled_delegate_failure(event, response)
+            if canonical_eventbridge_owner:
+                claimed, cooperative_owner_status = _claim_cooperative_replay(
+                    owner=owner,
+                    context=context,
+                    current_slate_response=response,
+                    expected_slate_date=slate_date_et,
+                )
+        else:
+            response = _resp(
+                200,
+                {
+                    "ok": True,
                     "sport": "mlb",
-                    "run": COOPERATIVE_TERMINAL_REPLAY_RUN,
-                    "slateDateEt": str(claimed.get("slate_date_et") or ""),
-                    "force": True,
-                    "cooperativeEventBridgeOwner": True,
+                    "slateDateEt": slate_date_et,
+                    "status": (
+                        "CURRENT_SLATE_PROVEN_BY_PRIOR_EVENTBRIDGE_OWNER"
+                    ),
+                    "scheduledInvocation": True,
+                    "currentSlateProcessedByPriorEventBridgeOwner": True,
+                    "postStartPredictionCreationAllowed": False,
+                    "immutablePredictionRewriteAllowed": False,
+                    "productionAuthorityChanged": False,
+                },
+            )
+
+        if claimed is not None:
+            replay_event = {
+                "sport": "mlb",
+                "run": COOPERATIVE_TERMINAL_REPLAY_RUN,
+                "slateDateEt": str(claimed.get("slate_date_et") or ""),
+                "force": True,
+                "cooperativeEventBridgeOwner": True,
+            }
+            try:
+                replay_response = mlb_daily_pick_lock.lambda_handler(
+                    replay_event,
+                    context,
+                )
+                _raise_scheduled_delegate_failure(
+                    replay_event,
+                    replay_response,
+                )
+                completed = _complete_cooperative_replay(
+                    item=claimed,
+                    owner=owner,
+                    response=replay_response,
+                )
+                cooperative_owner_status = {
+                    **completed,
+                    "currentSlateRanFirst": True,
+                    "currentSlateSuccessProofCarriedAcrossInvocation": (
+                        current_slate_proof_carried
+                    ),
+                    "historicalReplayAttempted": True,
+                    "historicalReplayCompleted": True,
+                    "claimOwnerIsCurrentLeaseOwner": True,
                 }
-                try:
-                    replay_response = mlb_daily_pick_lock.lambda_handler(
-                        replay_event,
-                        context,
+            except BaseException:
+                requeued = _requeue_cooperative_replay(claimed, owner)
+                print(
+                    json.dumps(
+                        {
+                            "event": (
+                                "MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_"
+                                "RETAINED_FAIL_CLOSED"
+                            ),
+                            "slateDateEt": str(
+                                claimed.get("slate_date_et") or ""
+                            ),
+                            "requestRequeued": requeued,
+                            "staleClaimReclaimable": not requeued,
+                            "activeLeaseMutationAllowed": False,
+                        },
+                        sort_keys=True,
                     )
-                    _raise_scheduled_delegate_failure(
-                        replay_event,
-                        replay_response,
-                    )
-                    completed = _complete_cooperative_replay(
-                        item=claimed,
-                        owner=owner,
-                        response=replay_response,
-                    )
-                    cooperative_owner_status = {
-                        **completed,
-                        "currentSlateRanFirst": True,
-                        "historicalReplayAttempted": True,
-                        "historicalReplayCompleted": True,
-                        "claimOwnerIsCurrentLeaseOwner": True,
-                    }
-                except BaseException:
-                    requeued = _requeue_cooperative_replay(claimed, owner)
-                    print(
-                        json.dumps(
-                            {
-                                "event": (
-                                    "MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_"
-                                    "RETAINED_FAIL_CLOSED"
-                                ),
-                                "slateDateEt": str(
-                                    claimed.get("slate_date_et") or ""
-                                ),
-                                "requestRequeued": requeued,
-                                "staleClaimReclaimable": not requeued,
-                                "activeLeaseMutationAllowed": False,
-                            },
-                            sort_keys=True,
-                        )
-                    )
-                    raise
+                )
+                raise
     except BaseException as exc:
         primary_error = exc
     finally:

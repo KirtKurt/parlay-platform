@@ -80,6 +80,17 @@ def _resource_block(template: str, resource_name: str) -> str:
 def test_public_read_api_ignores_store_query_parameter(monkeypatch):
     calls = []
     api = _load_read_api(monkeypatch, calls)
+    qualified_r7 = {
+        "ok": True,
+        "publicationClosed": False,
+        "productionSelectionAllowed": True,
+        "model_version": "test-r7-qualified-champion",
+        "primaryAlgorithm": "test-r7-qualified-champion",
+        "primaryAlgorithmActive": True,
+        "qualifiedChampionPresent": True,
+        "r7ChampionQualified": True,
+    }
+    monkeypatch.setattr(api, "_model_body", lambda: qualified_r7)
 
     response = api.lambda_handler(
         {

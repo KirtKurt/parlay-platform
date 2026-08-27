@@ -267,12 +267,16 @@ def daily_accuracy(
 ) -> Dict[str, Any]:
     rows = [row for row in settled_picks or [] if isinstance(row, dict)]
     denominator = int(official_game_count) if official_game_count is not None else len(rows)
-    correct = sum(
-        1
-        for row in rows
-        if row.get("correct") is True
-        or _team(row.get("predictedWinner")) == _team(row.get("actualWinner"))
-    )
+    def row_is_correct(row: Dict[str, Any]) -> bool:
+        if row.get("correct") is True:
+            return True
+        if row.get("correct") is False:
+            return False
+        predicted = _team(row.get("predictedWinner"))
+        actual = _team(row.get("actualWinner"))
+        return bool(predicted and actual and predicted == actual)
+
+    correct = sum(1 for row in rows if row_is_correct(row))
     settled = sum(
         1
         for row in rows

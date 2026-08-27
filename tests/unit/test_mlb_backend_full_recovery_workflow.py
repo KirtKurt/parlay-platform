@@ -40,11 +40,12 @@ def test_backend_recovery_preserves_manifest_in_durable_proof():
     )
 
 
-def test_manifest_contract_changes_trigger_backend_recovery():
+def test_backend_recovery_is_manual_only_and_serialized_with_learning():
     source = WORKFLOW.read_text(encoding='utf-8')
+    trigger = source.split('"on":', 1)[1].split('\npermissions:', 1)[0]
 
-    for path in (
-        'scripts/create_mlb_lambda_build_manifest.py',
-        'scripts/mlb_lambda_artifact_identity.py',
-    ):
-        assert source.count(f"- '{path}'") == 2
+    assert 'workflow_dispatch:' in trigger
+    assert 'push:' not in trigger
+    assert 'pull_request:' not in trigger
+    assert 'group: unified-mlb-learning' in source
+    assert 'cancel-in-progress: false' in source

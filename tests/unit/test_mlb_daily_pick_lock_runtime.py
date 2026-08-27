@@ -175,7 +175,23 @@ class FakeLeaseTable:
             and current.get("coordination_version") == values.get(":version")
             and current.get("slate_date_et") == values.get(":slate_date")
         )
-        if ":acknowledged" in values:
+        proof_write = ":proof" in values
+        if proof_write:
+            allowed = bool(
+                valid_identity
+                and current.get("requested_at_epoch")
+                == values.get(":request_epoch")
+                and (
+                    current.get("state") == values.get(":queued")
+                    or (
+                        current.get("state") == values.get(":claimed")
+                        and int(current.get("claim_expires_at_epoch") or 0)
+                        <= int(values.get(":now_epoch") or 0)
+                    )
+                )
+            )
+            next_state = current.get("state")
+        elif ":acknowledged" in values:
             allowed = valid_identity and current.get("state") == values.get(
                 ":completed"
             )
@@ -212,7 +228,11 @@ class FakeLeaseTable:
 
         updated = copy.deepcopy(current)
         updated["state"] = next_state
-        if next_state == values.get(":claimed"):
+        if proof_write:
+            updated["current_slate_success_proof"] = copy.deepcopy(
+                values[":proof"]
+            )
+        elif next_state == values.get(":claimed"):
             updated.update(
                 {
                     "claim_owner": values[":owner"],
@@ -244,7 +264,12 @@ class FakeLeaseTable:
                     "last_failure_at_epoch": values[":now_epoch"],
                 }
             )
-        if next_state != values.get(":claimed"):
+        if (
+            "REMOVE current_slate_success_proof"
+            in str(kwargs.get("UpdateExpression") or "")
+        ):
+            updated.pop("current_slate_success_proof", None)
+        if not proof_write and next_state != values.get(":claimed"):
             for field in (
                 "claim_owner",
                 "claim_acquired_at_utc",
@@ -949,23 +974,226 @@ def test_completed_receipt_survives_acknowledgement_replacement_race():
         assert table.queue_item["slate_date_et"] == "2026-07-19"
 
 
-def test_insufficient_remaining_time_defers_without_claim_after_current_slate():
+def test_insufficient_time_persists_current_proof_then_next_owner_replays():
     table = FakeLeaseTable()
-    with _load_handler(lease_table=table) as (handler, _, delegate_calls):
+    now = datetime(2026, 7, 21, 22, 10, tzinfo=timezone.utc)
+
+    def payload_for(event, context):
+        del context
+        if event.get("run") == "daily_lock_check":
+            return _successful_current_slate_payload()
+        return _successful_terminal_replay_payload()
+
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=payload_for,
+    ) as (handler, _, delegate_calls):
+        handler._utc_now = lambda: now
         handler.lambda_handler(_cooperative_event(), FakeContext())
-        response = handler.lambda_handler(
+
+        first = handler.lambda_handler(
             _scheduled_event(),
             FakeContext(request_id="short-owner", remaining_millis=659_000),
         )
-        payload = _body(response)
+        first_payload = _body(first)
+        first_status = first_payload[
+            "cooperativeTerminalReplayOwnerExecution"
+        ]
 
-        assert [call[0]["run"] for call in delegate_calls] == ["daily_lock_check"]
-        status = payload["cooperativeTerminalReplayOwnerExecution"]
-        assert status["state"] == "DEFERRED_INSUFFICIENT_REMAINING_TIME"
-        assert status["currentSlateRanFirst"] is True
-        assert status["queueReadAttempted"] is False
+        assert [call[0]["run"] for call in delegate_calls] == [
+            "daily_lock_check"
+        ]
+        assert first_status["state"] == (
+            "DEFERRED_INSUFFICIENT_REMAINING_TIME"
+        )
+        assert first_status["currentSlateRanFirst"] is True
+        assert first_status["queueReadAttempted"] is True
+        assert first_status["currentSlateSuccessProofPersisted"] is True
         assert table.queue_item["state"] == "QUEUED"
-        assert table.update_calls == []
+        proof = table.queue_item["current_slate_success_proof"]
+        assert proof == {
+            "version": handler.COOPERATIVE_CURRENT_SLATE_PROOF_VERSION,
+            "currentSlateDateEt": "2026-07-21",
+            "requestSlateDateEt": "2026-07-20",
+            "requestEpoch": int(now.timestamp()),
+            "processedAtEpoch": int(now.timestamp()),
+            "postStartPredictionCreationAllowed": False,
+            "immutablePredictionRewriteAllowed": False,
+        }
+        assert "owner" not in json.dumps(proof).lower()
+        assert table.item is None
+
+        second = handler.lambda_handler(
+            _scheduled_event(),
+            FakeContext(request_id="fresh-owner", remaining_millis=900_000),
+        )
+        second_payload = _body(second)
+        second_status = second_payload[
+            "cooperativeTerminalReplayOwnerExecution"
+        ]
+
+        # The second EventBridge owner consumes the fresh durable proof instead
+        # of repeating the long current run, preserving a full replay budget.
+        assert [call[0]["run"] for call in delegate_calls] == [
+            "daily_lock_check",
+            "prospective_terminal_backlog_reconciliation_v5",
+        ]
+        assert second_payload["status"] == (
+            "CURRENT_SLATE_PROVEN_BY_PRIOR_EVENTBRIDGE_OWNER"
+        )
+        assert second_status["state"] == "COMPLETED"
+        assert second_status["currentSlateRanFirst"] is True
+        assert second_status[
+            "currentSlateSuccessProofCarriedAcrossInvocation"
+        ] is True
+        assert second_status["historicalReplayCompleted"] is True
+        assert table.queue_item["state"] == "COMPLETED"
+        assert "current_slate_success_proof" not in table.queue_item
+        assert table.item is None
+
+
+@pytest.mark.parametrize(
+    "invalid_proof",
+    (
+        "wrong_current_slate",
+        "wrong_request_epoch",
+        "pre_request",
+        "stale",
+        "future",
+        "wrong_version",
+    ),
+)
+def test_invalid_carried_proof_never_substitutes_for_current_slate(
+    invalid_proof,
+):
+    table = FakeLeaseTable()
+    request_now = datetime(2026, 7, 21, 22, 0, tzinfo=timezone.utc)
+    owner_now = request_now + timedelta(seconds=300)
+    invalid_current = {
+        "ok": True,
+        "sport": "soccer",
+        "slateDateEt": "2026-07-21",
+    }
+
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=invalid_current,
+    ) as (handler, _, delegate_calls):
+        handler._utc_now = lambda: request_now
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        request_epoch = int(request_now.timestamp())
+        proof = {
+            "version": handler.COOPERATIVE_CURRENT_SLATE_PROOF_VERSION,
+            "currentSlateDateEt": "2026-07-21",
+            "requestSlateDateEt": "2026-07-20",
+            "requestEpoch": request_epoch,
+            "processedAtEpoch": int(owner_now.timestamp()),
+            "postStartPredictionCreationAllowed": False,
+            "immutablePredictionRewriteAllowed": False,
+        }
+        if invalid_proof == "wrong_current_slate":
+            proof["currentSlateDateEt"] = "2026-07-20"
+        elif invalid_proof == "wrong_request_epoch":
+            proof["requestEpoch"] = request_epoch + 1
+        elif invalid_proof == "pre_request":
+            proof["processedAtEpoch"] = request_epoch - 1
+        elif invalid_proof == "stale":
+            proof["processedAtEpoch"] = (
+                int(owner_now.timestamp())
+                - handler.COOPERATIVE_CURRENT_SLATE_PROOF_MAX_AGE_SECONDS
+                - 1
+            )
+        elif invalid_proof == "future":
+            proof["processedAtEpoch"] = int(owner_now.timestamp()) + 1
+        elif invalid_proof == "wrong_version":
+            proof["version"] = "wrong-proof-version"
+        table.queue_item["current_slate_success_proof"] = proof
+        handler._utc_now = lambda: owner_now
+
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                _scheduled_event(),
+                FakeContext(
+                    request_id=f"invalid-proof-{invalid_proof}",
+                    remaining_millis=900_000,
+                ),
+            ),
+            "MLB_CURRENT_SLATE_LOCK_NOT_PROCESSED_BEFORE_COOPERATIVE_REPLAY",
+        )
+
+        # Invalid proof falls back to a fresh current run.  That deliberately
+        # invalid current response then fails closed before historical work.
+        assert [call[0]["run"] for call in delegate_calls] == [
+            "daily_lock_check"
+        ]
+        assert table.queue_item["state"] == "QUEUED"
+        assert table.item is None
+
+
+def test_replay_failure_clears_carried_proof_before_retrying_current():
+    table = FakeLeaseTable()
+    now = datetime(2026, 7, 21, 22, 10, tzinfo=timezone.utc)
+    state = {"current_ok": True}
+
+    def payload_for(event, context):
+        del context
+        if event.get("run") == "daily_lock_check":
+            if state["current_ok"]:
+                return _successful_current_slate_payload()
+            return {
+                "ok": True,
+                "sport": "soccer",
+                "slateDateEt": "2026-07-21",
+            }
+        return {
+            "ok": False,
+            "sport": "mlb",
+            "slateDateEt": "2026-07-20",
+            "reason": "PROTECTED_REPLAY_FAILED_CLOSED",
+        }
+
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=payload_for,
+    ) as (handler, _, delegate_calls):
+        handler._utc_now = lambda: now
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        handler.lambda_handler(
+            _scheduled_event(),
+            FakeContext(request_id="proof-owner", remaining_millis=659_000),
+        )
+        assert "current_slate_success_proof" in table.queue_item
+
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                _scheduled_event(),
+                FakeContext(
+                    request_id="failed-replay-owner",
+                    remaining_millis=900_000,
+                ),
+            ),
+            "MLB_SCHEDULED_LOCK_FAILED",
+        )
+        assert table.queue_item["state"] == "QUEUED"
+        assert "current_slate_success_proof" not in table.queue_item
+
+        state["current_ok"] = False
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                _scheduled_event(),
+                FakeContext(
+                    request_id="must-refresh-current",
+                    remaining_millis=900_000,
+                ),
+            ),
+            "MLB_CURRENT_SLATE_LOCK_NOT_PROCESSED_BEFORE_COOPERATIVE_REPLAY",
+        )
+        assert [call[0]["run"] for call in delegate_calls] == [
+            "daily_lock_check",
+            "prospective_terminal_backlog_reconciliation_v5",
+            "daily_lock_check",
+        ]
+        assert table.queue_item["state"] == "QUEUED"
         assert table.item is None
 
 

@@ -39,6 +39,8 @@ except ImportError:  # pragma: no cover - direct script execution
 
 VERSION = "MLB-POSTDEPLOY-SCHEDULED-PULL-OBSERVER-v1-no-manual-pull"
 ET = ZoneInfo("America/New_York")
+PREDICTION_RECORD_TYPE = "mlb_single_game_moneyline_prediction"
+STORAGE_EVIDENCE_SOURCE = "DYNAMODB_STRONGLY_CONSISTENT_GAME_ROWS"
 REPORT_RE = re.compile(r"^REPORT RequestId:\s*([A-Za-z0-9-]+)")
 START_RE = re.compile(r"^START RequestId:\s*([A-Za-z0-9-]+)")
 FAILURE_TOKENS = (
@@ -81,7 +83,13 @@ def slot_time(item: Mapping[str, Any]) -> Optional[datetime]:
 
 
 def row_identity(row: Mapping[str, Any]) -> str:
-    return str(row.get("gameId") or row.get("gameIdentity") or "")
+    return str(
+        row.get("gameId")
+        or row.get("gameIdentity")
+        or row.get("game_id")
+        or row.get("game_identity")
+        or ""
+    )
 
 
 def row_status(row: Mapping[str, Any]) -> str:
@@ -196,13 +204,31 @@ def classify_dispositions(
     *,
     now: datetime,
 ) -> Dict[str, Any]:
-    status_by_id = {row_identity(row): dict(row) for row in status_rows}
-    prediction_by_id = {row_identity(row): dict(row) for row in prediction_rows}
+    status_ids = [row_identity(row) for row in status_rows]
+    prediction_ids = [row_identity(row) for row in prediction_rows]
+    status_by_id = {
+        identity: dict(row)
+        for identity, row in zip(status_ids, status_rows)
+        if identity
+    }
+    prediction_by_id = {
+        identity: dict(row)
+        for identity, row in zip(prediction_ids, prediction_rows)
+        if identity
+    }
     errors: List[str] = []
     game_count = len(status_rows)
-    if "" in status_by_id or len(status_by_id) != game_count:
+    if (
+        any(not identity for identity in status_ids)
+        or len(status_by_id) != game_count
+    ):
         errors.append("status_identity_missing_or_duplicate")
-    if "" in prediction_by_id or set(status_by_id) != set(prediction_by_id):
+    if (
+        any(not identity for identity in prediction_ids)
+        or len(prediction_by_id) != len(prediction_rows)
+    ):
+        errors.append("prediction_identity_missing_or_duplicate")
+    if set(prediction_by_id) - set(status_by_id):
         errors.append("prediction_status_identity_mismatch")
 
     candidate_count = 0
@@ -219,6 +245,8 @@ def classify_dispositions(
             continue
         cutoff = start - timedelta(minutes=45)
         winner = prediction_entry.get("predictedWinner")
+        if winner in (None, ""):
+            winner = prediction_entry.get("predicted_winner")
         status_value = row_status(status_entry)
         if now < cutoff:
             candidate_count += 1
@@ -272,6 +300,151 @@ def _query_pull_items(table: Any, pk: str) -> List[Dict[str, Any]]:
         start_key = response.get("LastEvaluatedKey")
         if not start_key:
             return rows
+
+
+def _normalise_prediction_item(item: Mapping[str, Any]) -> Dict[str, Any]:
+    nested = item.get("data")
+    merged = dict(item)
+    if isinstance(nested, Mapping):
+        merged.update(dict(nested))
+    identity = (
+        merged.get("gameId")
+        or merged.get("gameIdentity")
+        or merged.get("game_id")
+        or merged.get("game_identity")
+        or ""
+    )
+    winner = merged.get("predictedWinner")
+    if winner in (None, ""):
+        winner = merged.get("predicted_winner")
+    merged["gameId"] = str(identity)
+    merged["gameIdentity"] = str(identity)
+    merged["predictedWinner"] = winner
+    return _plain(merged)
+
+
+def _query_live_prediction_items(table: Any, pk: str) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    start_key = None
+    while True:
+        kwargs: Dict[str, Any] = {
+            "KeyConditionExpression": (
+                Key("PK").eq(pk) & Key("SK").begins_with("GAME#")
+            ),
+            "ConsistentRead": True,
+            "ScanIndexForward": True,
+        }
+        if start_key:
+            kwargs["ExclusiveStartKey"] = start_key
+        response = table.query(**kwargs)
+        values = response.get("Items") or []
+        if not isinstance(values, list):
+            raise RuntimeError("live_prediction_query_items_invalid")
+        rows.extend(
+            _normalise_prediction_item(value)
+            for value in values
+            if isinstance(value, Mapping)
+            and value.get("record_type") == PREDICTION_RECORD_TYPE
+        )
+        start_key = response.get("LastEvaluatedKey")
+        if not start_key:
+            return rows
+
+
+def _identity_tokens(row: Mapping[str, Any]) -> set[str]:
+    nested = row.get("data")
+    merged = dict(row)
+    if isinstance(nested, Mapping):
+        merged.update(dict(nested))
+    tokens: set[str] = set()
+    for field in (
+        "gameId",
+        "gameIdentity",
+        "game_id",
+        "game_identity",
+        "providerEventId",
+        "provider_event_id",
+    ):
+        value = str(merged.get(field) or "").strip()
+        if value:
+            tokens.add(f"id:{value}")
+            if value.startswith("provider:"):
+                tokens.add(f"id:{value[len('provider:'):]}")
+    for field in ("officialGamePk", "official_game_pk"):
+        value = str(merged.get(field) or "").strip()
+        if value:
+            tokens.add(f"official:{value}")
+    for field in ("gameKey", "game_key"):
+        value = str(merged.get(field) or "").strip()
+        if value:
+            tokens.add(f"key:{value}")
+    return tokens
+
+
+def _storage_disposition_rows(
+    status_rows: Sequence[Mapping[str, Any]],
+    persisted_rows: Sequence[Mapping[str, Any]],
+) -> Dict[str, Any]:
+    persisted_tokens = [_identity_tokens(row) for row in persisted_rows]
+    if any(not tokens for tokens in persisted_tokens):
+        raise RuntimeError("persisted_prediction_identity_missing_or_duplicate")
+    evidence_rows: List[Dict[str, Any]] = []
+    matched_indexes: set[int] = set()
+    for status_row in status_rows:
+        status_identity = row_identity(status_row)
+        status_tokens = _identity_tokens(status_row)
+        if not status_identity or not status_tokens:
+            lifecycle_only = dict(status_row)
+            lifecycle_only.pop("predictedWinner", None)
+            lifecycle_only.pop("predicted_winner", None)
+            evidence_rows.append(lifecycle_only)
+            continue
+        status_time = parse_utc(
+            status_row.get("commenceTime") or status_row.get("commence_time")
+        )
+        matches = [
+            index
+            for index, tokens in enumerate(persisted_tokens)
+            if status_tokens & tokens
+            and status_time is not None
+            and parse_utc(
+                persisted_rows[index].get("commenceTime")
+                or persisted_rows[index].get("commence_time")
+            )
+            == status_time
+        ]
+        if len(matches) > 1:
+            raise RuntimeError(
+                f"live_prediction_storage_identity_ambiguous:{status_identity}"
+            )
+        if matches:
+            index = matches[0]
+            if index in matched_indexes:
+                raise RuntimeError(
+                    f"live_prediction_storage_identity_reused:{status_identity}"
+                )
+            matched_indexes.add(index)
+            direct = dict(persisted_rows[index])
+            direct["gameId"] = status_identity
+            direct["gameIdentity"] = status_identity
+            evidence_rows.append(direct)
+            continue
+        lifecycle_only = dict(status_row)
+        lifecycle_only.pop("predictedWinner", None)
+        lifecycle_only.pop("predicted_winner", None)
+        evidence_rows.append(lifecycle_only)
+    unmatched = [
+        row_identity(persisted_rows[index])
+        for index in range(len(persisted_rows))
+        if index not in matched_indexes
+    ]
+    return {
+        "rows": evidence_rows,
+        "queryCount": len(persisted_rows),
+        "matchedCount": len(matched_indexes),
+        "unmatchedIdentities": sorted(value for value in unmatched if value),
+        "unmatchedCount": len(persisted_rows) - len(matched_indexes),
+    }
 
 
 def _log_events(
@@ -447,13 +620,16 @@ def observe(
         )
     except ValueError as exc:
         raise RuntimeError(str(exc)) from exc
-    predictions = public_reconciliation["lifecyclePayload"]
+    public_lifecycle = public_reconciliation["lifecyclePayload"]
     historical_projection = bool(
         public_reconciliation["historicalStatusProjectionUsed"]
     )
-    prediction_rows = [
-        row for row in (predictions.get("predictions") or []) if isinstance(row, dict)
-    ]
+    persisted_rows = _query_live_prediction_items(
+        table,
+        f"GAME_WINNERS#mlb#{slate_date}",
+    )
+    storage_evidence = _storage_disposition_rows(status_rows, persisted_rows)
+    prediction_rows = storage_evidence["rows"]
     dispositions = classify_dispositions(status_rows, prediction_rows, now=now)
     if not dispositions["complete"]:
         raise RuntimeError(
@@ -467,6 +643,11 @@ def observe(
             "ok": True,
             "gameCount": game_count,
             "predictionCount": len(prediction_rows),
+            "storageEvidenceSource": STORAGE_EVIDENCE_SOURCE,
+            "stronglyConsistentStorageEvidence": True,
+            "persistedPredictionRowCount": storage_evidence["queryCount"],
+            "matchedPersistedPredictionRowCount": storage_evidence["matchedCount"],
+            "unmatchedPersistedPredictionRowCount": storage_evidence["unmatchedCount"],
             "allGamesPredicted": all(
                 row.get("predictedWinner") not in (None, "")
                 for row in prediction_rows
@@ -493,7 +674,7 @@ def observe(
             "statusProjectionPersisted": False,
             "operationalDefect": bool(
                 status.get("operationalDefect")
-                or predictions.get("operationalDefect")
+                or public_lifecycle.get("operationalDefect")
             ),
         }
     ]
@@ -540,18 +721,53 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         default="/tmp/mlb-post-deploy-invocation.json",
     )
     args = parser.parse_args(argv)
-    if not args.target_deploy_sha:
-        raise SystemExit("target deploy SHA is required")
-    result = observe(
-        target_deploy_sha=args.target_deploy_sha,
-        region=args.region,
-        stack_name=args.stack_name,
-        snapshots_table=args.snapshots_table,
-        max_wait_seconds=max(args.max_wait_seconds, 60),
-        poll_seconds=max(args.poll_seconds, 1),
-    )
     path = Path(args.output)
     path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if not args.target_deploy_sha:
+            raise RuntimeError("target_deploy_sha_missing")
+        result = observe(
+            target_deploy_sha=args.target_deploy_sha,
+            region=args.region,
+            stack_name=args.stack_name,
+            snapshots_table=args.snapshots_table,
+            max_wait_seconds=max(args.max_wait_seconds, 60),
+            poll_seconds=max(args.poll_seconds, 1),
+        )
+    except Exception as exc:
+        message = str(exc)[:4000]
+        result = {
+            "ok": False,
+            "status": "OBSERVATION_FAILED",
+            "version": VERSION,
+            "readOnly": True,
+            "targetDeploySha": args.target_deploy_sha,
+            "manualPullInvoked": False,
+            "winnerResults": [],
+            "failure": {
+                "type": type(exc).__name__,
+                "code": (message.split(":", 1)[0] or type(exc).__name__),
+                "message": message,
+            },
+            "secretExposed": False,
+        }
+        path.write_text(
+            json.dumps(result, indent=2, sort_keys=True, default=str) + "\n",
+            encoding="utf-8",
+        )
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "status": result["status"],
+                    "failure": result["failure"],
+                    "output": str(path),
+                },
+                indent=2,
+            )
+        )
+        return 1
+
     path.write_text(
         json.dumps(result, indent=2, sort_keys=True, default=str) + "\n",
         encoding="utf-8",
