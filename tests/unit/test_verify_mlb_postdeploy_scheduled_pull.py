@@ -519,9 +519,11 @@ def test_postdeploy_workflow_serializes_and_arbitrates_fallback():
         ".github/workflows/mlb-post-deploy-fix-verification.yml"
     ).read_text(encoding="utf-8")
     assert "cancel-in-progress: false" in source
+    assert "queue: max" in source
     assert "actions/runs/$source/jobs?per_page=100" in source
     assert "event=workflow_dispatch&per_page=100" in source
     assert "select(.display_title == $title)" in source
+    assert '"$direct_status" == "completed"' in source
     assert '"$direct_conclusion" != "success"' in source
     assert "needs.resolve.outputs.should_verify == 'true'" in source
 

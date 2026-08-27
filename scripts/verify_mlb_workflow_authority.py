@@ -263,12 +263,14 @@ def verify_repository(root: Path = ROOT) -> List[str]:
                 )
         for token in (
             "cancel-in-progress: false",
+            "queue: max",
             "actions: read\n      contents: read",
             "needs.resolve.outputs.should_verify == 'true'",
             "TARGET_DEPLOY_SHA: ${{ needs.resolve.outputs.target_deploy_sha }}",
             "actions/runs/$source/jobs?per_page=100",
             "event=workflow_dispatch&per_page=100",
             "select(.display_title == $title)",
+            '"$direct_status" == "completed"',
             '"$direct_conclusion" != "success"',
         ):
             if token not in postdeploy:
