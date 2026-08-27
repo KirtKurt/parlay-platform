@@ -739,3 +739,196 @@ def test_inexact_public_overlay_marker_never_uses_idempotent_path(
     assert rejected["ok"] is False
     assert table.items == before
     assert write_calls == []
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda row: row.update({"score": 999.0}),
+        lambda row: row.update({"winProbability": 0.99}),
+        lambda row: row.update({"confidenceTier": "TAMPERED"}),
+        lambda row: row.update({"createdAt": "2026-08-27T00:00:00+00:00"}),
+        lambda row: row.update(
+            {"predictionSourcePullAt": "2026-08-27T00:00:00+00:00"}
+        ),
+        lambda row: row.update(
+            {"lastPrelockPromotionVersion": "tampered-promotion"}
+        ),
+        lambda row: row["mlFeatureFreeze"].update(
+            {"completeSlateCoverage": False}
+        ),
+    ],
+)
+def test_incoming_immutable_model_or_stage_field_tamper_fails_closed(
+    mutation,
+):
+    module, canonical_rows, _ = _module_with_existing_canonical_rows(1)
+    overlay = _canonical_public_overlay(canonical_rows[0])
+    mutation(overlay)
+    assert immutable_storage._canonical_read_overlay(overlay) is True
+    table = module.history.PULLS
+    before = copy.deepcopy(table.items)
+    write_calls = _arm_zero_write_guard(table)
+
+    rejected = _assert_rejected_without_write(
+        module,
+        overlay,
+        before,
+        write_calls,
+    )
+
+    assert (
+        "canonical_overlay_immutable_projection_mismatch"
+        in rejected["authorityErrors"]
+    )
+
+
+def test_equal_invalid_vector_errors_do_not_hide_feature_tamper():
+    module, canonical_rows, _ = _module_with_existing_canonical_rows(
+        1,
+        vector_excluded=True,
+    )
+    overlay = _canonical_public_overlay(canonical_rows[0])
+    tampered = copy.deepcopy(overlay)
+    tampered["frozenFeatureVector"][
+        "unvalidatedPayload"
+    ] = "tampered"
+    tampered = vector_contract.apply_exact_vector_training_status(
+        tampered
+    )
+    existing_errors = immutable_storage._require_vector_status(
+        canonical_rows[0],
+        context="test_existing",
+    )
+    incoming_errors = immutable_storage._require_vector_status(
+        tampered,
+        context="test_incoming",
+    )
+    assert existing_errors
+    assert incoming_errors == existing_errors
+    table = module.history.PULLS
+    before = copy.deepcopy(table.items)
+    write_calls = _arm_zero_write_guard(table)
+
+    rejected = _assert_rejected_without_write(
+        module,
+        tampered,
+        before,
+        write_calls,
+    )
+
+    assert (
+        "canonical_overlay_immutable_projection_mismatch"
+        in rejected["authorityErrors"]
+    )
+
+
+def test_existing_locked_envelope_extra_field_fails_closed():
+    module, canonical_rows, _ = _module_with_existing_canonical_rows(1)
+    overlay = _canonical_public_overlay(canonical_rows[0])
+    table = module.history.PULLS
+    key = immutable_storage._locked_key(overlay)
+    table.items[(key["PK"], key["SK"])][
+        "unexpected_outer_authority"
+    ] = True
+    before = copy.deepcopy(table.items)
+    write_calls = _arm_zero_write_guard(table)
+
+    rejected = _assert_rejected_without_write(
+        module,
+        overlay,
+        before,
+        write_calls,
+    )
+
+    assert any(
+        error.startswith(
+            "canonical_overlay_existing_envelope_keyset_mismatch:"
+        )
+        and "unexpected_outer_authority" in error
+        for error in rejected["authorityErrors"]
+    )
+
+
+def test_existing_stage_authority_extra_field_fails_closed():
+    module, canonical_rows, _ = _module_with_existing_canonical_rows(1)
+    overlay = _canonical_public_overlay(canonical_rows[0])
+    table = module.history.PULLS
+    key = immutable_storage._locked_key(overlay)
+    stored_row = table.items[(key["PK"], key["SK"])]["data"]
+    stored_row["canonicalPerGameStageAuthority"][
+        "unexpectedAuthority"
+    ] = "tampered"
+    before = copy.deepcopy(table.items)
+    write_calls = _arm_zero_write_guard(table)
+
+    rejected = _assert_rejected_without_write(
+        module,
+        overlay,
+        before,
+        write_calls,
+    )
+
+    assert any(
+        error.startswith(
+            "canonical_overlay_existing_stage_authority_keyset_mismatch:"
+        )
+        and "unexpectedAuthority" in error
+        for error in rejected["authorityErrors"]
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda row: row.update(
+            {"scheduledLockAtUtc": "2026-08-27T00:00:00+00:00"}
+        ),
+        lambda row: row.update({"lockOutcomeRecorded": False}),
+        lambda row: row["lastPossiblePredictionGate"].update(
+            {"finalWindowActive": True}
+        ),
+        lambda row: row["slatePredictionLock"].update(
+            {"policyVersion": "tampered-policy"}
+        ),
+        lambda row: row["tags"].append("PRE_LOCK_PREDICTION"),
+    ],
+)
+def test_contradictory_public_lock_marker_never_uses_idempotent_path(
+    mutation,
+):
+    module, canonical_rows, _ = _module_with_existing_canonical_rows(1)
+    overlay = _canonical_public_overlay(canonical_rows[0])
+    mutation(overlay)
+    assert immutable_storage._canonical_read_overlay(overlay) is False
+    table = module.history.PULLS
+    before = copy.deepcopy(table.items)
+    write_calls = _arm_zero_write_guard(table)
+
+    rejected = module._store_prediction(overlay)
+
+    assert rejected["ok"] is False
+    assert table.items == before
+    assert write_calls == []
+
+
+def test_incoming_extra_label_field_is_rejected_without_write():
+    module, canonical_rows, _ = _module_with_existing_canonical_rows(1)
+    overlay = _canonical_public_overlay(canonical_rows[0])
+    overlay["correct"] = True
+    assert immutable_storage._canonical_read_overlay(overlay) is True
+    table = module.history.PULLS
+    before = copy.deepcopy(table.items)
+    write_calls = _arm_zero_write_guard(table)
+
+    rejected = _assert_rejected_without_write(
+        module,
+        overlay,
+        before,
+        write_calls,
+    )
+
+    assert (
+        "canonical_overlay_immutable_projection_mismatch"
+        in rejected["authorityErrors"]
+    )
+
