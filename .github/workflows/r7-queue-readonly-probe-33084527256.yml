@@ -42,6 +42,422 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Read-only EventBridge Lambda and global lease liveness
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          export AWS_PAGER=""
+          STACK_NAME=parlay-platform-dev
+          WINDOW_START=2026-08-27T22:15:00Z
+          WINDOW_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBDailyPickLockFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$FUNCTION_NAME"
+          test "$FUNCTION_NAME" != None
+          aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION" \
+            --output json > /tmp/r7-lock-function.json
+          aws lambda get-policy \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION" \
+            --output json > /tmp/r7-lock-policy.json
+          RULE_ARN=$(python - <<'PY'
+          import json
+
+          with open('/tmp/r7-lock-policy.json', encoding='utf-8') as stream:
+              outer = json.load(stream)
+          policy = json.loads(outer.get('Policy') or '{}')
+          arns = []
+          for statement in policy.get('Statement') or []:
+              principal = statement.get('Principal')
+              service = (
+                  principal.get('Service')
+                  if isinstance(principal, dict)
+                  else None
+              )
+              condition = statement.get('Condition') or {}
+              source_arn = (
+                  (condition.get('ArnLike') or {}).get('AWS:SourceArn')
+                  or (condition.get('ArnEquals') or {}).get('AWS:SourceArn')
+              )
+              if (
+                  service == 'events.amazonaws.com'
+                  and isinstance(source_arn, str)
+                  and source_arn
+              ):
+                  arns.append(source_arn)
+          preferred = [
+              arn for arn in arns
+              if 'MLBDailyPickLockEveryMinute' in arn
+          ]
+          selected = preferred[0] if len(preferred) == 1 else (
+              arns[0] if len(arns) == 1 else ''
+          )
+          if not selected:
+              raise SystemExit(
+                  'Exact EventBridge schedule source ARN was not unique'
+              )
+          print(selected)
+          PY
+          )
+          RULE_NAME=$(printf '%s\n' "$RULE_ARN" | awk -F/ '{print $NF}')
+          test -n "$RULE_NAME"
+          aws events describe-rule \
+            --name "$RULE_NAME" \
+            --region "$AWS_REGION" \
+            --output json > /tmp/r7-lock-rule.json
+          aws events list-targets-by-rule \
+            --rule "$RULE_NAME" \
+            --region "$AWS_REGION" \
+            --output json > /tmp/r7-lock-targets.json
+          aws lambda get-function-event-invoke-config \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION" \
+            --output json > /tmp/r7-lock-event-config.json
+          if ! aws lambda get-function-concurrency \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION" \
+            --output json > /tmp/r7-lock-concurrency.json 2>/tmp/r7-lock-concurrency.err; then
+            printf '{}\n' > /tmp/r7-lock-concurrency.json
+          fi
+          for METRIC in Invocations Errors Throttles ConcurrentExecutions Duration; do
+            STAT=Sum
+            if [ "$METRIC" = ConcurrentExecutions ] || [ "$METRIC" = Duration ]; then
+              STAT=Maximum
+            fi
+            aws cloudwatch get-metric-statistics \
+              --namespace AWS/Lambda \
+              --metric-name "$METRIC" \
+              --dimensions Name=FunctionName,Value="$FUNCTION_NAME" \
+              --start-time "$WINDOW_START" \
+              --end-time "$WINDOW_END" \
+              --period 60 \
+              --statistics "$STAT" \
+              --region "$AWS_REGION" \
+              --output json > "/tmp/r7-lambda-$METRIC.json"
+          done
+          for METRIC in Invocations FailedInvocations TriggeredRules MatchedEvents; do
+            aws cloudwatch get-metric-statistics \
+              --namespace AWS/Events \
+              --metric-name "$METRIC" \
+              --dimensions Name=RuleName,Value="$RULE_NAME" \
+              --start-time "$WINDOW_START" \
+              --end-time "$WINDOW_END" \
+              --period 60 \
+              --statistics Sum \
+              --region "$AWS_REGION" \
+              --output json > "/tmp/r7-events-$METRIC.json"
+          done
+          START_MS=$(date -u -d "$WINDOW_START" +%s000)
+          aws logs filter-log-events \
+            --log-group-name "/aws/lambda/$FUNCTION_NAME" \
+            --start-time "$START_MS" \
+            --region "$AWS_REGION" \
+            --limit 10000 \
+            --output json > /tmp/r7-lock-logs.json
+          aws dynamodb get-item \
+            --table-name "$SNAPSHOTS_TABLE" \
+            --key '{"PK":{"S":"MLB_LOCK_EXECUTION#V1"},"SK":{"S":"LEASE"}}' \
+            --consistent-read \
+            --return-consumed-capacity NONE \
+            --region "$AWS_REGION" \
+            --output json > /tmp/r7-global-lease.json
+          FUNCTION_NAME="$FUNCTION_NAME" RULE_NAME="$RULE_NAME" \
+          WINDOW_START="$WINDOW_START" WINDOW_END="$WINDOW_END" python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def read(path):
+              with open(path, encoding='utf-8') as stream:
+                  return json.load(stream)
+
+          def decode(value):
+              if not isinstance(value, dict) or len(value) != 1:
+                  return None
+              kind, raw = next(iter(value.items()))
+              if kind == 'S':
+                  return raw
+              if kind == 'N':
+                  text = str(raw)
+                  try:
+                      return int(text)
+                  except ValueError:
+                      try:
+                          return float(text)
+                      except ValueError:
+                          return text
+              if kind == 'BOOL':
+                  return bool(raw)
+              if kind == 'NULL':
+                  return None
+              if kind == 'M':
+                  return {key: decode(entry) for key, entry in raw.items()}
+              if kind == 'L':
+                  return [decode(entry) for entry in raw]
+              return '[REDACTED_BINARY_OR_UNKNOWN]'
+
+          def metric(path, statistic):
+              data = read(path)
+              points = sorted(
+                  data.get('Datapoints') or [],
+                  key=lambda point: point.get('Timestamp') or '',
+              )
+              return {
+                  'statistic': statistic,
+                  'pointCount': len(points),
+                  'totalOrMaximum': (
+                      sum(float(point.get(statistic) or 0) for point in points)
+                      if statistic == 'Sum'
+                      else max(
+                          [
+                              float(point.get(statistic) or 0)
+                              for point in points
+                          ],
+                          default=0.0,
+                      )
+                  ),
+                  'nonzeroPoints': [
+                      {
+                          'timestamp': point.get('Timestamp'),
+                          'value': point.get(statistic),
+                          'unit': point.get('Unit'),
+                      }
+                      for point in points
+                      if float(point.get(statistic) or 0) != 0
+                  ],
+              }
+
+          function = read('/tmp/r7-lock-function.json')
+          rule = read('/tmp/r7-lock-rule.json')
+          targets = read('/tmp/r7-lock-targets.json').get('Targets') or []
+          event_config = read('/tmp/r7-lock-event-config.json')
+          concurrency = read('/tmp/r7-lock-concurrency.json')
+          logs = read('/tmp/r7-lock-logs.json').get('events') or []
+          starts = []
+          ends = []
+          reports = []
+          request_ids = set()
+          marker_names = (
+              'Task timed out',
+              '[ERROR]',
+              'Traceback',
+              'Runtime.ExitError',
+              'MLB_LOCK_EXECUTION_ALREADY_RUNNING',
+              'SKIPPED_OVERLAPPING_LOCK_EXECUTION',
+              'PRELOCK_CANDIDATE_REQUIRES_REVIEW',
+              'DEFERRED_INSUFFICIENT_REMAINING_TIME',
+              'CURRENT_SLATE_SUCCESS_PROOF_REQUIRED',
+          )
+          marker_counts = {name: 0 for name in marker_names}
+          for event in logs:
+              message = str(event.get('message') or '')
+              timestamp = event.get('timestamp')
+              start = re.search(r'\bSTART RequestId:\s*([A-Za-z0-9-]+)', message)
+              end = re.search(r'\bEND RequestId:\s*([A-Za-z0-9-]+)', message)
+              report = re.search(
+                  r'\bREPORT RequestId:\s*([A-Za-z0-9-]+)', message
+              )
+              if start:
+                  request_ids.add(start.group(1))
+                  starts.append({
+                      'atUtc': datetime.fromtimestamp(
+                          timestamp / 1000, tz=timezone.utc
+                      ).isoformat().replace('+00:00', 'Z'),
+                      'requestIdHash': hashlib.sha256(
+                          start.group(1).encode('utf-8')
+                      ).hexdigest()[:12],
+                  })
+              if end:
+                  request_ids.add(end.group(1))
+                  ends.append(timestamp)
+              if report:
+                  request_ids.add(report.group(1))
+                  duration = re.search(
+                      r'Duration:\s*([0-9.]+)\s*ms', message
+                  )
+                  status = re.search(r'Status:\s*([A-Za-z0-9_-]+)', message)
+                  error_type = re.search(
+                      r'Error Type:\s*([A-Za-z0-9_.-]+)', message
+                  )
+                  reports.append({
+                      'atUtc': datetime.fromtimestamp(
+                          timestamp / 1000, tz=timezone.utc
+                      ).isoformat().replace('+00:00', 'Z'),
+                      'requestIdHash': hashlib.sha256(
+                          report.group(1).encode('utf-8')
+                      ).hexdigest()[:12],
+                      'durationMs': (
+                          float(duration.group(1)) if duration else None
+                      ),
+                      'status': status.group(1) if status else None,
+                      'errorType': (
+                          error_type.group(1) if error_type else None
+                      ),
+                  })
+              for marker in marker_names:
+                  if marker in message:
+                      marker_counts[marker] += 1
+          starts.sort(key=lambda entry: entry['atUtc'])
+          gaps = []
+          for previous, current in zip(starts, starts[1:]):
+              before = datetime.fromisoformat(
+                  previous['atUtc'].replace('Z', '+00:00')
+              )
+              after = datetime.fromisoformat(
+                  current['atUtc'].replace('Z', '+00:00')
+              )
+              seconds = int((after - before).total_seconds())
+              if seconds > 90:
+                  gaps.append({
+                      'fromUtc': previous['atUtc'],
+                      'toUtc': current['atUtc'],
+                      'seconds': seconds,
+                  })
+          raw_lease = read('/tmp/r7-global-lease.json').get('Item') or {}
+          lease = {key: decode(value) for key, value in raw_lease.items()}
+          now_epoch = int(datetime.now(timezone.utc).timestamp())
+          try:
+              lease_expiry = int(lease.get('lease_expires_at_epoch'))
+          except (TypeError, ValueError):
+              lease_expiry = None
+          safe_lease = {
+              'present': bool(lease),
+              'rawFieldNames': sorted(lease),
+              'recordType': lease.get('record_type'),
+              'version': lease.get('lease_version'),
+              'executionMode': lease.get('execution_mode'),
+              'slateDateEt': lease.get('slate_date_et'),
+              'acquiredAtUtc': lease.get('lease_acquired_at_utc'),
+              'expiresAtUtc': lease.get('lease_expires_at_utc'),
+              'expiresAtEpoch': lease_expiry,
+              'activeAtProbe': (
+                  lease_expiry > now_epoch
+                  if lease_expiry is not None
+                  else None
+              ),
+              'ownerPresent': bool(lease.get('lease_owner')),
+              'ownerRedacted': True,
+          }
+          lambda_metrics = {}
+          for name in (
+              'Invocations',
+              'Errors',
+              'Throttles',
+              'ConcurrentExecutions',
+              'Duration',
+          ):
+              statistic = (
+                  'Maximum'
+                  if name in {'ConcurrentExecutions', 'Duration'}
+                  else 'Sum'
+              )
+              lambda_metrics[name] = metric(
+                  f'/tmp/r7-lambda-{name}.json', statistic
+              )
+          event_metrics = {
+              name: metric(f'/tmp/r7-events-{name}.json', 'Sum')
+              for name in (
+                  'Invocations',
+                  'FailedInvocations',
+                  'TriggeredRules',
+                  'MatchedEvents',
+              )
+          }
+          target_summary = [
+              {
+                  'id': target.get('Id'),
+                  'arnMatchesFunction': (
+                      str(target.get('Arn') or '')
+                      == str(function.get('FunctionArn') or '')
+                  ),
+                  'inputPresent': bool(target.get('Input')),
+                  'inputSha256': (
+                      hashlib.sha256(
+                          str(target.get('Input') or '').encode('utf-8')
+                      ).hexdigest()
+                      if target.get('Input')
+                      else None
+                  ),
+                  'deadLetterConfigured': isinstance(
+                      target.get('DeadLetterConfig'), dict
+                  ),
+                  'retryPolicy': target.get('RetryPolicy'),
+              }
+              for target in targets
+          ]
+          result = {
+              'ok': True,
+              'proofType': 'R7_EVENTBRIDGE_LAMBDA_LEASE_EXACT_READ_ONLY',
+              'observedAtUtc': datetime.now(
+                  timezone.utc
+              ).isoformat().replace('+00:00', 'Z'),
+              'window': {
+                  'startUtc': os.environ['WINDOW_START'],
+                  'endUtc': os.environ['WINDOW_END'],
+              },
+              'eventBridge': {
+                  'ruleName': os.environ['RULE_NAME'],
+                  'state': rule.get('State'),
+                  'scheduleExpression': rule.get('ScheduleExpression'),
+                  'managedBy': rule.get('ManagedBy'),
+                  'targetCount': len(targets),
+                  'targets': target_summary,
+                  'metrics': event_metrics,
+              },
+              'lambda': {
+                  'functionName': os.environ['FUNCTION_NAME'],
+                  'state': function.get('State'),
+                  'lastUpdateStatus': function.get('LastUpdateStatus'),
+                  'lastModified': function.get('LastModified'),
+                  'runtime': function.get('Runtime'),
+                  'handler': function.get('Handler'),
+                  'timeoutSeconds': function.get('Timeout'),
+                  'memorySizeMb': function.get('MemorySize'),
+                  'reservedConcurrentExecutions': concurrency.get(
+                      'ReservedConcurrentExecutions'
+                  ),
+                  'eventInvokeConfig': {
+                      'maximumEventAgeInSeconds': event_config.get(
+                          'MaximumEventAgeInSeconds'
+                      ),
+                      'maximumRetryAttempts': event_config.get(
+                          'MaximumRetryAttempts'
+                      ),
+                  },
+                  'metrics': lambda_metrics,
+                  'logEvidence': {
+                      'rawEventCount': len(logs),
+                      'uniqueRequestIdCount': len(request_ids),
+                      'startCount': len(starts),
+                      'endCount': len(ends),
+                      'reportCount': len(reports),
+                      'starts': starts,
+                      'reports': reports,
+                      'gapsOver90Seconds': gaps,
+                      'markerCounts': marker_counts,
+                      'rawMessagesRedacted': True,
+                  },
+              },
+              'globalLease': safe_lease,
+              'tableWritesAttempted': 0,
+              'lambdaInvocationsAttempted': 0,
+              'eventBridgeMutationsAttempted': 0,
+              'leaseMutationsAttempted': 0,
+              'readOnly': True,
+          }
+          print(json.dumps(result, indent=2, sort_keys=True, default=str))
+          PY
+
       - name: Strong-read exact cooperative queue item and print bounded proof
         shell: bash
         run: |
