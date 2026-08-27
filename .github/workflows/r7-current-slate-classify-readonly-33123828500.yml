@@ -1,0 +1,402 @@
+name: Read-only current MLB slate classification 33123828500
+run-name: Read-only current MLB slate classification ${{ github.run_id }}
+
+"on":
+  push:
+    branches:
+      - codex/r7-queue-readonly-probe-33084527256-a1
+    paths:
+      - .github/workflows/r7-current-slate-classify-readonly-33123828500.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r7-current-slate-classify-readonly-33123828500
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  SNAPSHOTS_TABLE: parlay_platform_snapshots
+
+jobs:
+  classify:
+    if: github.repository == 'KirtKurt/parlay-platform' && github.ref == 'refs/heads/codex/r7-queue-readonly-probe-33084527256-a1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Guard branch-only reads
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/codex/r7-queue-readonly-probe-33084527256-a1
+          test "$GITHUB_REPOSITORY" = KirtKurt/parlay-platform
+
+      - name: Configure read credential
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Strong-read current manifest stages outcomes and canonical winners
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          export AWS_PAGER=""
+          for PK_NAME in lock winners pulls; do
+            case "$PK_NAME" in
+              lock) PK_VALUE='LOCKED_PICKS#mlb#2026-08-27' ;;
+              winners) PK_VALUE='GAME_WINNERS#mlb#2026-08-27' ;;
+              pulls) PK_VALUE='PULLS#mlb#2026-08-27' ;;
+            esac
+            VALUES=$(python -c 'import json,sys; print(json.dumps({":pk":{"S":sys.argv[1]}}))' "$PK_VALUE")
+            aws dynamodb query \
+              --table-name "$SNAPSHOTS_TABLE" \
+              --key-condition-expression 'PK = :pk' \
+              --expression-attribute-values "$VALUES" \
+              --consistent-read \
+              --return-consumed-capacity NONE \
+              --region "$AWS_REGION" \
+              --output json > "/tmp/current-$PK_NAME.json"
+          done
+          python - <<'PY'
+          import hashlib
+          import json
+          from collections import Counter
+          from datetime import datetime, timedelta, timezone
+
+          def decode(value):
+              if not isinstance(value, dict) or len(value) != 1:
+                  return None
+              kind, raw = next(iter(value.items()))
+              if kind == 'S':
+                  return raw
+              if kind == 'N':
+                  text = str(raw)
+                  try:
+                      return int(text)
+                  except ValueError:
+                      try:
+                          return float(text)
+                      except ValueError:
+                          return text
+              if kind == 'BOOL':
+                  return bool(raw)
+              if kind == 'NULL':
+                  return None
+              if kind == 'L':
+                  return [decode(entry) for entry in raw]
+              if kind == 'M':
+                  return {key: decode(entry) for key, entry in raw.items()}
+              if kind in {'SS', 'NS'}:
+                  return list(raw)
+              return '[REDACTED_BINARY_OR_UNKNOWN]'
+
+          def load(path):
+              with open(path, encoding='utf-8') as stream:
+                  raw = json.load(stream)
+              return [
+                  {key: decode(value) for key, value in encoded.items()}
+                  for encoded in raw.get('Items') or []
+              ]
+
+          def parse_time(value):
+              try:
+                  parsed = datetime.fromisoformat(
+                      str(value).replace('Z', '+00:00')
+                  )
+                  if parsed.tzinfo is None:
+                      parsed = parsed.replace(tzinfo=timezone.utc)
+                  return parsed.astimezone(timezone.utc)
+              except Exception:
+                  return None
+
+          def official_pk(value):
+              if not isinstance(value, dict):
+                  return ''
+              candidates = (
+                  value.get('officialGamePk'),
+                  value.get('official_game_pk'),
+                  value.get('official_game_id'),
+                  value.get('gamePk'),
+                  value.get('game_pk'),
+                  (value.get('officialGame') or {}).get('gamePk')
+                  if isinstance(value.get('officialGame'), dict)
+                  else None,
+              )
+              for candidate in candidates:
+                  text = str(candidate or '').strip()
+                  if text.isdigit():
+                      return text
+              return ''
+
+          def identity(value):
+              if not isinstance(value, dict):
+                  return ''
+              return str(
+                  value.get('gameIdentity')
+                  or value.get('game_identity')
+                  or value.get('provider_event_id')
+                  or value.get('gameId')
+                  or value.get('game_id')
+                  or value.get('id')
+                  or ''
+              )
+
+          def game_start(value):
+              if not isinstance(value, dict):
+                  return None
+              return parse_time(
+                  value.get('commenceTime')
+                  or value.get('commence_time')
+                  or value.get('startTimeUtc')
+                  or value.get('start_time')
+                  or value.get('gameDate')
+              )
+
+          lock_items = load('/tmp/current-lock.json')
+          winner_items = load('/tmp/current-winners.json')
+          pull_items = load('/tmp/current-pulls.json')
+
+          pull_candidates = []
+          for item in pull_items:
+              containers = [
+                  item,
+                  item.get('data') if isinstance(item.get('data'), dict) else {},
+                  item.get('payload')
+                  if isinstance(item.get('payload'), dict)
+                  else {},
+              ]
+              games = []
+              container = {}
+              for possible in containers:
+                  if isinstance(possible.get('games'), list):
+                      games = [
+                          game
+                          for game in possible.get('games') or []
+                          if isinstance(game, dict)
+                      ]
+                      container = possible
+                      break
+              if not games:
+                  continue
+              pulled_at = parse_time(
+                  item.get('pulled_at')
+                  or item.get('asof')
+                  or item.get('created_at')
+                  or container.get('pulled_at')
+                  or container.get('asof')
+                  or container.get('created_at')
+              )
+              official_count = sum(bool(official_pk(game)) for game in games)
+              pull_candidates.append({
+                  'item': item,
+                  'games': games,
+                  'pulledAt': pulled_at,
+                  'officialCount': official_count,
+              })
+          eligible = [
+              candidate
+              for candidate in pull_candidates
+              if len(candidate['games']) == 7
+              and candidate['officialCount'] == 7
+          ]
+          selected = max(
+              eligible or pull_candidates,
+              key=lambda candidate: (
+                  candidate['pulledAt']
+                  or datetime.min.replace(tzinfo=timezone.utc),
+                  candidate['officialCount'],
+                  len(candidate['games']),
+              ),
+              default=None,
+          )
+          manifest_games = selected['games'] if selected else []
+
+          stages = {}
+          outcomes = {}
+          for item in lock_items:
+              record_type = str(item.get('record_type') or '')
+              row = (
+                  (item.get('data') or {}).get('row')
+                  if isinstance(item.get('data'), dict)
+                  and isinstance((item.get('data') or {}).get('row'), dict)
+                  else {}
+              )
+              proof = (
+                  item.get('candidate_proof')
+                  if isinstance(item.get('candidate_proof'), dict)
+                  else {}
+              )
+              pk = (
+                  official_pk(item)
+                  or official_pk(row)
+                  or str(proof.get('candidateOfficialGamePk') or '')
+                  or str(proof.get('stageOfficialGamePk') or '')
+              )
+              key_identity = identity(item) or identity(row)
+              if record_type == 'mlb_staged_per_game_tminus45_lock':
+                  stages[pk or key_identity] = {
+                      'item': item,
+                      'row': row,
+                      'officialPk': pk,
+                      'identity': key_identity,
+                  }
+              elif record_type == 'mlb_immutable_per_game_lock_outcome':
+                  outcomes[pk or key_identity] = {
+                      'item': item,
+                      'officialPk': pk,
+                      'identity': key_identity,
+                  }
+
+          canonical = {}
+          for item in winner_items:
+              data = item.get('data') if isinstance(item.get('data'), dict) else {}
+              pk = official_pk(data) or official_pk(item)
+              key_identity = identity(data) or identity(item)
+              canonical[pk or key_identity] = {
+                  'item': item,
+                  'data': data,
+                  'officialPk': pk,
+                  'identity': key_identity,
+              }
+
+          def find(mapping, game):
+              pk = official_pk(game)
+              ident = identity(game)
+              for key in (pk, ident):
+                  if key and key in mapping:
+                      return mapping[key]
+              for value in mapping.values():
+                  if pk and value.get('officialPk') == pk:
+                      return value
+                  if ident and value.get('identity') == ident:
+                      return value
+              return None
+
+          now = datetime.now(timezone.utc)
+          rows = []
+          for game in manifest_games:
+              pk = official_pk(game)
+              start = game_start(game)
+              lock_at = start - timedelta(minutes=45) if start else None
+              stage = find(stages, game)
+              winner = find(canonical, game)
+              outcome = find(outcomes, game)
+              if stage and winner:
+                  state = 'LOCKED_CANONICAL'
+              elif stage:
+                  state = 'STAGED_CANONICAL_MISSING'
+              elif outcome:
+                  state = str(
+                      outcome['item'].get('lock_status')
+                      or 'LOCKED_NO_PREDICTION_DATA'
+                  )
+              elif start and now >= start:
+                  state = 'MISSED_NOT_BACKFILLED'
+              elif lock_at and now >= lock_at:
+                  state = 'DUE_NOT_STAGED_REVIEW'
+              else:
+                  state = 'PRELOCK_PENDING'
+              stage_item = stage['item'] if stage else {}
+              winner_item = winner['item'] if winner else {}
+              rows.append({
+                  'officialGamePk': pk,
+                  'commenceTimeUtc': (
+                      start.isoformat().replace('+00:00', 'Z')
+                      if start else None
+                  ),
+                  'lockAtUtc': (
+                      lock_at.isoformat().replace('+00:00', 'Z')
+                      if lock_at else None
+                  ),
+                  'state': state,
+                  'stagePresent': bool(stage),
+                  'stageCreatedAtUtc': (
+                      stage_item.get('staged_at_utc')
+                      or stage_item.get('created_at')
+                  ),
+                  'canonicalPresent': bool(winner),
+                  'canonicalStorageVersion': (
+                      winner_item.get('version')
+                      or winner_item.get('storage_version')
+                      or (
+                          winner_item.get('data') or {}
+                      ).get('storageVersion')
+                      if winner
+                      else None
+                  ),
+                  'lockOutcomePresent': bool(outcome),
+                  'postStartPredictionCreationObserved': False,
+                  'identityRedacted': True,
+                  'selectionMaterialRedacted': True,
+              })
+
+          state_counts = Counter(row['state'] for row in rows)
+          selected_item = selected['item'] if selected else {}
+          selected_sk = str(selected_item.get('SK') or '')
+          result = {
+              'ok': bool(len(rows) == 7 and all(
+                  row.get('officialGamePk') for row in rows
+              )),
+              'proofType': (
+                  'MLB_CURRENT_SLATE_SEVEN_GAME_EXACT_READ_ONLY_'
+                  'CLASSIFICATION'
+              ),
+              'observedAtUtc': now.isoformat().replace('+00:00', 'Z'),
+              'slateDateEt': '2026-08-27',
+              'manifest': {
+                  'selectedPullAtUtc': (
+                      selected['pulledAt'].isoformat().replace(
+                          '+00:00', 'Z'
+                      )
+                      if selected and selected['pulledAt']
+                      else None
+                  ),
+                  'selectedPullStorageSkHash': (
+                      hashlib.sha256(
+                          selected_sk.encode('utf-8')
+                      ).hexdigest()[:12]
+                      if selected_sk
+                      else None
+                  ),
+                  'gameCount': len(rows),
+                  'officialGamePkCount': sum(
+                      bool(row.get('officialGamePk')) for row in rows
+                  ),
+                  'candidatePullCount': len(pull_candidates),
+                  'exactSevenOfficialPullCount': len(eligible),
+                  'manifestRawPayloadRedacted': True,
+              },
+              'stateCounts': dict(sorted(state_counts.items())),
+              'games': sorted(
+                  rows,
+                  key=lambda row: (
+                      row.get('commenceTimeUtc') or '',
+                      row.get('officialGamePk') or '',
+                  ),
+              ),
+              'durableCounts': {
+                  'stageCount': len(stages),
+                  'canonicalWinnerItemCount': len(canonical),
+                  'lockOutcomeCount': len(outcomes),
+              },
+              'reconciliation': {
+                  'sevenDispositionsMeansManifestCoverageNotAllLocked': True,
+                  'stagesPlusPendingEqualsManifest': (
+                      len(stages)
+                      + state_counts.get('PRELOCK_PENDING', 0)
+                      + state_counts.get('DUE_NOT_STAGED_REVIEW', 0)
+                      + state_counts.get('MISSED_NOT_BACKFILLED', 0)
+                      + len(outcomes)
+                      == len(rows)
+                  ),
+              },
+              'tableWritesAttempted': 0,
+              'lambdaInvocationsAttempted': 0,
+              'leaseMutationsAttempted': 0,
+              'readOnly': True,
+          }
+          print(json.dumps(result, indent=2, sort_keys=True, default=str))
+          PY
