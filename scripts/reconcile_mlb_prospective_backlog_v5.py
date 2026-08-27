@@ -25,8 +25,8 @@ import reconcile_mlb_prospective_backlog_v3 as v3
 import reconcile_mlb_prospective_backlog_v4 as v4
 
 VERSION = (
-    "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5.6-"
-    "dephased-lease-retry-exact-slate-terminal-identity"
+    "MLB-PROSPECTIVE-BACKLOG-RECONCILIATION-v5.7-"
+    "settlement-authoritative-persistent-missed-boundary"
 )
 STATUS_PATH = "/v1/mlb/locks/status"
 SETTLEMENT_RUN = "prospective_backlog_settlement_v4"
@@ -526,6 +526,11 @@ def reconcile(*args: Any, **kwargs: Any) -> Dict[str, Any]:
     cloudformation, lambda_client = args[0], args[1]
     max_replays = int(kwargs.get("max_slate_days") or base.DEFAULT_MAX_SLATE_DAYS)
     repaired: Dict[str, Dict[str, Any]] = {}
+    # V5 alone may defer a complete read-only status that preserves historical
+    # MISSED_NOT_BACKFILLED telemetry to canonical settlement. Standalone V4
+    # retains its default protected-replay gate. Settlement remains fail closed:
+    # only the exact conflict-free 409 shape can trigger the validated replay.
+    kwargs["settlement_authoritative_persistent_missed"] = True
 
     for _ in range(max_replays + 1):
         try:
@@ -555,6 +560,7 @@ def reconcile(*args: Any, **kwargs: Any) -> Dict[str, Any]:
     value["mutatingFailureDiagnosticsWhitelisted"] = True
     value["lambdaFunctionErrorsRedacted"] = True
     value["lambdaFunctionErrorRequestPayloadIncluded"] = False
+    value["settlementAuthoritativePersistentMissed"] = True
     value["settlementTriggeredProtectedTerminalReplayCount"] = len(repaired)
     value["settlementTriggeredProtectedTerminalReplays"] = list(repaired.values())
     value["settlement409TreatedAsSuccess"] = False
