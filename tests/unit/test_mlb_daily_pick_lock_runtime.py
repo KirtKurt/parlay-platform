@@ -3240,6 +3240,34 @@ def test_dynamodb_decimal_game_index_serializes_after_execution_lease_release():
             "stage": "PROCESS_CHECKPOINT_READY",
             "atUtc": "2026-07-21T22:10:00+00:00",
             "phase": "VERIFY",
+            "gameIndex": True,
+        },
+        {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
+            "gameIndex": -1,
+        },
+        {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
+            "gameIndex": Decimal("NaN"),
+        },
+        {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
+            "gameIndex": Decimal("Infinity"),
+        },
+        {
+            "status": "TERMINAL_CHECKPOINT_READY",
+            "stage": "PROCESS_CHECKPOINT_READY",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
             "gameIndex": 0.0,
         },
         {
@@ -3348,10 +3376,14 @@ def test_cooperative_public_progress_fails_closed_on_corrupt_last_attempt(
     ("field", "value"),
     (
         ("manifestGameCount", Decimal("1.5")),
+        ("manifestGameCount", True),
+        ("manifestGameCount", -1),
         ("manifestGameCount", 1.0),
         ("manifestGameCount", "1"),
         ("manifestGameCount", Decimal("16")),
         ("nextGameIndex", Decimal("0.5")),
+        ("attemptCount", Decimal("NaN")),
+        ("attemptCount", Decimal("Infinity")),
         ("attemptCount", Decimal("1e100000")),
     ),
 )
@@ -3419,6 +3451,174 @@ def test_cooperative_public_progress_rejects_impossible_relational_state(
             "valid": False,
             "failClosed": True,
         }
+
+
+def test_cooperative_public_progress_rejects_reconciled_canonical_count():
+    with _load_handler() as (handler, _, _):
+        progress = _complete_terminal_checkpoint(
+            slate_date="2026-07-20",
+            game_count=1,
+        )
+        progress["canonicalCount"] = 1
+        progress["noPredictionDataCount"] = 0
+        progress["reconciledCount"] = 1
+
+        public = handler._cooperative_terminal_progress_public(
+            {
+                "slate_date_et": "2026-07-20",
+                "terminal_replay_progress": progress,
+            }
+        )
+
+        assert public == {
+            "version": handler.COOPERATIVE_TERMINAL_CHUNK_VERSION,
+            "valid": False,
+            "failClosed": True,
+        }
+
+
+@pytest.mark.parametrize(
+    ("status", "stage", "error_code"),
+    (
+        (
+            "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+            "ATOMIC_COMPLETION_PROOF",
+            None,
+        ),
+        (
+            "DEFERRED_MUTATION_LEASE_CONTENDED",
+            "MUTATION_LEASE_CONTENDED",
+            "WRITER_LEASE_CONTENDED",
+        ),
+        (
+            "FAILED_CLOSED",
+            "ATOMIC_COMPLETION_PROOF",
+            "ATOMIC_DURABLE_PROOF_INVALID",
+        ),
+        (
+            "FAILED_CLOSED",
+            "RELEASE_MUTATION_LEASE",
+            "MUTATION_LEASE_RELEASE_FAILED",
+        ),
+    ),
+)
+def test_cooperative_public_progress_accepts_exact_completion_cursor(
+    status,
+    stage,
+    error_code,
+):
+    with _load_handler() as (handler, _, _):
+        progress = _complete_terminal_checkpoint(
+            slate_date="2026-07-20",
+            game_count=1,
+        )
+        last_attempt = {
+            "status": status,
+            "stage": stage,
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
+            "gameIndex": Decimal("1"),
+        }
+        if error_code is not None:
+            last_attempt["errorCode"] = error_code
+        progress["lastAttempt"] = last_attempt
+
+        public = handler._cooperative_terminal_progress_public(
+            {
+                "slate_date_et": "2026-07-20",
+                "terminal_replay_progress": progress,
+            }
+        )
+
+        assert public["valid"] is True
+        assert public["lastAttempt"]["gameIndex"] == 1
+        assert type(public["lastAttempt"]["gameIndex"]) is int
+        json.dumps(public, sort_keys=True)
+
+
+@pytest.mark.parametrize(
+    ("verification_index", "verification_complete", "game_index"),
+    (
+        (0, False, Decimal("1")),
+        (1, True, Decimal("0")),
+    ),
+)
+def test_cooperative_public_progress_rejects_inexact_completion_cursor(
+    verification_index,
+    verification_complete,
+    game_index,
+):
+    with _load_handler() as (handler, _, _):
+        progress = _complete_terminal_checkpoint(
+            slate_date="2026-07-20",
+            game_count=1,
+        )
+        progress["verificationIndex"] = verification_index
+        progress["verifiedGameCount"] = verification_index
+        progress["verificationComplete"] = verification_complete
+        progress["lastAttempt"] = {
+            "status": "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+            "stage": "ATOMIC_COMPLETION_PROOF",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
+            "gameIndex": game_index,
+        }
+
+        public = handler._cooperative_terminal_progress_public(
+            {
+                "slate_date_et": "2026-07-20",
+                "terminal_replay_progress": progress,
+            }
+        )
+
+        assert public == {
+            "version": handler.COOPERATIVE_TERMINAL_CHUNK_VERSION,
+            "valid": False,
+            "failClosed": True,
+        }
+
+
+def test_cooperative_public_progress_accepts_bind_authority_failure_stage():
+    with _load_handler() as (handler, _, _):
+        progress = _complete_terminal_checkpoint(
+            slate_date="2026-07-20",
+            game_count=1,
+        )
+        progress.update(
+            {
+                "phase": "PROCESS",
+                "nextGameIndex": 0,
+                "processedGameCount": 0,
+                "terminalCount": 0,
+                "canonicalCount": 0,
+                "noPredictionDataCount": 0,
+                "reconciledCount": 0,
+                "verificationIndex": 0,
+                "verifiedGameCount": 0,
+                "verificationComplete": False,
+                "attemptCount": 1,
+                "lastAttempt": {
+                    "status": "FAILED_CLOSED",
+                    "stage": "BIND_MANIFEST_AUTHORITY",
+                    "atUtc": "2026-07-21T22:10:00+00:00",
+                    "phase": "PROCESS",
+                    "gameIndex": Decimal("0"),
+                    "gameIdentity": "provider:game-1",
+                    "errorCode": "MANIFEST_AUTHORITY_EVIDENCE_INVALID",
+                },
+            }
+        )
+
+        public = handler._cooperative_terminal_progress_public(
+            {
+                "slate_date_et": "2026-07-20",
+                "terminal_replay_progress": progress,
+            }
+        )
+
+        assert public["valid"] is True
+        assert public["lastAttempt"]["stage"] == "BIND_MANIFEST_AUTHORITY"
+        json.dumps(public, sort_keys=True)
 
 
 def test_cooperative_public_progress_projects_only_integral_ddb_decimals():
