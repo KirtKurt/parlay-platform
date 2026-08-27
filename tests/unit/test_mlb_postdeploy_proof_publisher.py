@@ -33,6 +33,7 @@ def proof(
         "sourceDeployHeadBranch": "main",
         "sourceDeployHeadSha": deployed_sha,
         "sourceDeployCreatedAtUtc": source_created_at,
+        "sourceDeploySamCompletedAtUtc": source_created_at,
         "sourceDeployRunUrl": f"https://github.com/example/repo/actions/runs/{run_id}",
         "sourceDeploySamStepName": "Deploy exact canonical source",
         "sourceDeploySamStepConclusion": "success",
@@ -276,3 +277,28 @@ def test_publish_replaces_atomically_and_preserves_rejected_current(tmp_path):
     assert result["published"] is False
     assert json.loads(current_path.read_text()) == current
     assert not list(tmp_path.glob(".latest.json.*.tmp"))
+
+
+def test_partially_provenance_bound_existing_pointer_cannot_be_downgraded_to_legacy():
+    corrupt_current = proof(
+        run_id=101,
+        run_attempt=1,
+        run_number=11,
+        deployed_sha="b" * 40,
+        source_created_at="2026-08-27T21:00:00Z",
+        created_at="2026-08-27T21:15:00Z",
+        ok=True,
+        sourceDeployWorkflowPath=".github/workflows/corrupt.yml",
+    )
+    candidate = proof(
+        run_id=102,
+        run_attempt=1,
+        run_number=12,
+        deployed_sha="c" * 40,
+        source_created_at="2026-08-27T22:00:00Z",
+        created_at="2026-08-27T22:15:00Z",
+        ok=True,
+    )
+
+    with pytest.raises(ValueError, match="sourceDeployWorkflowPath"):
+        selection_reason(candidate, corrupt_current)
