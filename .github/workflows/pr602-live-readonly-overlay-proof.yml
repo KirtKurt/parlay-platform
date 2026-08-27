@@ -159,23 +159,7 @@ jobs:
                   expected,
                   [row.get("gameId") for row in public_rows],
               )
-              assert storage._canonical_read_overlay(public) is True, {
-                  "gameId": expected["gameId"],
-                  "keys": sorted(public),
-                  "tags": public.get("tags"),
-                  "lockOutcomeRecorded": public.get("lockOutcomeRecorded"),
-                  "scheduledLockAtUtc": public.get("scheduledLockAtUtc"),
-                  "lockedAtUtc": public.get("lockedAtUtc"),
-                  "officialPredictionReason": public.get("officialPredictionReason"),
-                  "canonicalPerGameStageAuthority": public.get(
-                      "canonicalPerGameStageAuthority"
-                  ),
-                  "perGameCanonicalLock": public.get("perGameCanonicalLock"),
-                  "slatePredictionLock": public.get("slatePredictionLock"),
-                  "lastPossiblePredictionGate": public.get(
-                      "lastPossiblePredictionGate"
-                  ),
-              }
+              predicate = storage._canonical_read_overlay(public)
 
               key = {
                   "PK": f"GAME_WINNERS#mlb#{SLATE}",
@@ -243,7 +227,7 @@ jobs:
               }
               row_result = {
                   "identity": expected,
-                  "canonicalReadOverlayPredicate": True,
+                  "canonicalReadOverlayPredicate": predicate,
                   "publicMarkers": {
                       "slateCoverageVersion": public.get(
                           "slateCoverageVersion"
@@ -467,4 +451,8 @@ jobs:
           assert report["aggregate"]["canonicalLockedCount"] == 2
           assert report["aggregate"]["preLockCount"] == 5
           print(json.dumps(normalized(report), indent=2, sort_keys=True))
+          assert all(
+              row["canonicalReadOverlayPredicate"] is True
+              for row in rows
+          ), rows
           PY
