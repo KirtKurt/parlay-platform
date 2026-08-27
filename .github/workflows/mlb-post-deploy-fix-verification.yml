@@ -190,7 +190,6 @@ jobs:
       - name: Build immutable cutoff-aware post-deploy acceptance proof
         id: acceptance
         continue-on-error: true
-        env:
         run: |
           set -euo pipefail
           python - <<'PY'
