@@ -74,8 +74,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "$GITHUB_REF" != 'refs/heads/main' ]; then
-            echo "::error::Bounded relay is restricted to refs/heads/main."
+          if [ "$GITHUB_EVENT_NAME" != 'workflow_run' ] &&
+             [ "$GITHUB_REF" != 'refs/heads/main' ]; then
+            echo "::error::Bounded relay is restricted to trusted main events."
             exit 78
           fi
 
@@ -85,6 +86,7 @@ jobs:
             remaining_segments="$RELAY_MAX_SEGMENTS"
           fi
           if ! [[ "$remaining_segments" =~ ^[1-9][0-9]*$ ]] ||
+             [ "${#remaining_segments}" -gt 2 ] ||
              [ "$remaining_segments" -gt "$RELAY_MAX_SEGMENTS" ]; then
             echo "::error::remaining_segments must be an integer from 1 through $RELAY_MAX_SEGMENTS."
             exit 78
@@ -114,7 +116,7 @@ jobs:
             if [ "$NEXT_SEGMENTS" = '0' ] || [ "$successor_queued" = 'true' ]; then
               return 0
             fi
-            if gh workflow run mlb-progress-pulse-bounded-runner-relay.yml               --repo "$GITHUB_REPOSITORY"               --ref main               --field remaining_segments="$NEXT_SEGMENTS"; then
+            if timeout 60s gh workflow run mlb-progress-pulse-bounded-runner-relay.yml               --repo "$GITHUB_REPOSITORY"               --ref main               --field remaining_segments="$NEXT_SEGMENTS"; then
               successor_queued=true
               echo "Queued finite successor with $NEXT_SEGMENTS segments remaining."
               return 0
@@ -139,7 +141,7 @@ jobs:
               reason="$(sed -n 's/^reason=//p' "$decision_file" | tail -n 1)"
               case "$dispatch_required" in
                 true)
-                  if gh workflow run mlb-30m-progress-pulse.yml                     --repo "$GITHUB_REPOSITORY"                     --ref main                     --field force=false; then
+                  if timeout 60s gh workflow run mlb-30m-progress-pulse.yml                     --repo "$GITHUB_REPOSITORY"                     --ref main                     --field force=false; then
                     reporter_dispatches=$((reporter_dispatches + 1))
                     echo "Poll $poll_index dispatched the stale-gated reporter ($reason)."
                   else
