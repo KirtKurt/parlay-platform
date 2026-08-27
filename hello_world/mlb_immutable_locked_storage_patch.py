@@ -12,6 +12,9 @@ SELECTION_TRAINING_SEPARATION_VERSION = "MLB-SELECTION-TRAINING-SEPARATION-v1"
 AUTHORITY_VERSION = "MLB-CANONICAL-PER-GAME-STAGE-AUTHORITY-v2-persisted-chain"
 UNAUTHORIZED_LOCKED_WRITE = "LOCKED_WRITE_REQUIRES_VERIFIED_IMMUTABLE_PER_GAME_STAGE"
 REQUIRED_LOCK_MINUTES = 45
+CANONICAL_READ_OVERLAY_IDEMPOTENCY_VERSION = (
+    "MLB-CANONICAL-READ-OVERLAY-IDEMPOTENCY-v1"
+)
 
 
 def _tags(row: Dict[str, Any]) -> set[str]:
@@ -341,6 +344,293 @@ def _vector_identity(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _locked_key(row: Dict[str, Any]) -> Dict[str, str]:
+    return {
+        "PK": f"GAME_WINNERS#mlb#{_slate(row)}",
+        "SK": f"LOCKED#GAME#{_commence(row)}#{_identity(row)}",
+    }
+
+
+def _canonical_read_overlay(row: Dict[str, Any]) -> bool:
+    """Recognize only the validated public view of an existing canonical row."""
+
+    try:
+        import mlb_slate_coverage_patch as coverage
+    except Exception:
+        return False
+
+    per_game = row.get("perGameCanonicalLock") or {}
+    public_lock = row.get("slatePredictionLock") or {}
+    authority = row.get("canonicalPerGameStageAuthority") or {}
+    return bool(
+        row.get("slateCoverageVersion") == coverage.VERSION
+        and row.get("officialPredictionReason")
+        == "validated_immutable_canonical_per_game_lock"
+        and row.get("immutablePerGameStage") is True
+        and row.get("immutableLockedStorage") is True
+        and row.get("immutableLockedStorageKeyspace") == "LOCKED#GAME"
+        and row.get("immutableLockedStorageVersion") == VERSION
+        and row.get("canonical") is True
+        and row.get("lockedPrediction") is True
+        and row.get("lockStatus") == "LOCKED_CANONICAL"
+        and row.get("officialPredictionStatus")
+        == "OFFICIAL_LOCKED_PREDICTION"
+        and isinstance(per_game, dict)
+        and per_game.get("authorityVersion") == coverage.AUTHORITY_VERSION
+        and per_game.get("status") == "OFFICIAL_LOCKED_PREDICTION"
+        and per_game.get("canonical") is True
+        and isinstance(public_lock, dict)
+        and public_lock.get("authorityVersion") == coverage.AUTHORITY_VERSION
+        and public_lock.get("canonicalReadOperational") is True
+        and public_lock.get("perGameLock") is True
+        and public_lock.get("slateWideLock") is False
+        and isinstance(authority, dict)
+        and authority.get("version") == AUTHORITY_VERSION
+        and authority.get("verified") is True
+        and authority.get("consistentRead") is True
+    )
+
+
+def _canonical_overlay_projection(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Return immutable selection/stage material unaffected by public overlays."""
+
+    import mlb_daily_per_game_lock_patch as per_game
+
+    vector = row.get("frozenFeatureVector") or {}
+    authority = row.get("canonicalPerGameStageAuthority") or {}
+    lock_at = (
+        row.get("lockedAtUtc")
+        or vector.get("lockAtUtc")
+        or (row.get("slatePredictionLock") or {}).get("lockAtUtc")
+    )
+    selection_material = per_game._selection_material(row)
+    return {
+        "slate": _slate(row),
+        "canonicalGameIdentity": _canonical_identity(row),
+        "storageGameIdentity": _identity(row),
+        "commenceTime": _commence(row),
+        "officialGamePk": row.get("officialGamePk"),
+        "officialGameId": row.get("officialGameId"),
+        "sourcePredictionGameId": row.get("sourcePredictionGameId"),
+        "sourcePredictionGameIdentity": row.get(
+            "sourcePredictionGameIdentity"
+        ),
+        "homeTeam": row.get("homeTeam") or row.get("home_team"),
+        "awayTeam": row.get("awayTeam") or row.get("away_team"),
+        "predictedWinner": row.get("predictedWinner"),
+        "predictedSide": row.get("predictedSide"),
+        "lastPrelockSelectionFingerprint": row.get(
+            "lastPrelockSelectionFingerprint"
+        ),
+        "recomputedSelectionFingerprint": _payload_fingerprint(
+            selection_material
+        ),
+        "lockedAtUtc": (
+            _parse_dt(lock_at).isoformat() if _parse_dt(lock_at) else None
+        ),
+        "predictionSourcePullAt": (
+            _parse_dt(row.get("predictionSourcePullAt")).isoformat()
+            if _parse_dt(row.get("predictionSourcePullAt"))
+            else None
+        ),
+        "predictionSourcePullId": row.get("predictionSourcePullId"),
+        "modelOrSignalRecomputedAtLock": row.get(
+            "modelOrSignalRecomputedAtLock"
+        ),
+        "canonicalPerGameStageAuthority": copy.deepcopy(authority),
+        "frozenFeatureVectorIdentity": _vector_identity(row),
+    }
+
+
+def _canonical_overlay_rejection(
+    key: Dict[str, str],
+    errors: List[str],
+) -> Dict[str, Any]:
+    return {
+        "ok": False,
+        "stored": False,
+        "suppressed": True,
+        "error": "LOCKED_CANONICAL_READ_OVERLAY_EXISTING_VERIFICATION_FAILED",
+        "authorityErrors": sorted(set(errors)),
+        "pk": key["PK"],
+        "sk": key["SK"],
+        "storageClass": "LOCKED_REJECTED",
+        "canonicalWriteAuthorized": False,
+        "canonicalWriteAttempted": False,
+        "canonicalReadOverlayVerified": False,
+        "requiredAuthority": (
+            "strongly verified existing immutable LOCKED#GAME row "
+            "with exact stage and immutable selection binding"
+        ),
+        "idempotencyVersion": (
+            CANONICAL_READ_OVERLAY_IDEMPOTENCY_VERSION
+        ),
+        "version": VERSION,
+    }
+
+
+def _verify_existing_canonical_overlay(
+    module: Any,
+    row: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Strong-read an existing canonical overlay without attempting a rewrite."""
+
+    table = module.history.PULLS
+    key = _locked_key(row)
+    try:
+        existing = table.get_item(
+            Key=key,
+            ConsistentRead=True,
+        ).get("Item")
+    except Exception as exc:
+        return _canonical_overlay_rejection(
+            key,
+            [
+                "canonical_overlay_consistent_read_failed:"
+                f"{type(exc).__name__}:{exc}"
+            ],
+        )
+
+    errors: List[str] = []
+    if not isinstance(existing, dict):
+        return _canonical_overlay_rejection(
+            key,
+            ["canonical_overlay_existing_locked_item_missing"],
+        )
+    if existing.get("PK") != key["PK"] or existing.get("SK") != key["SK"]:
+        errors.append("canonical_overlay_existing_key_mismatch")
+    if existing.get("record_type") != (
+        "mlb_immutable_locked_single_game_prediction"
+    ):
+        errors.append("canonical_overlay_existing_record_type_mismatch")
+    if existing.get("immutable_locked") is not True:
+        errors.append("canonical_overlay_existing_immutable_flag_missing")
+    if existing.get("stage_authority_verified") is not True:
+        errors.append(
+            "canonical_overlay_existing_stage_authority_flag_missing"
+        )
+    if existing.get("stage_authority_version") != AUTHORITY_VERSION:
+        errors.append(
+            "canonical_overlay_existing_stage_authority_version_mismatch"
+        )
+    if existing.get("immutable_locked_storage_version") != VERSION:
+        errors.append(
+            "canonical_overlay_existing_storage_version_mismatch"
+        )
+    if existing.get("selection_lock_verified") is not True:
+        errors.append(
+            "canonical_overlay_existing_selection_verification_missing"
+        )
+
+    existing_row = _stored_row(existing)
+    if not existing_row:
+        errors.append("canonical_overlay_existing_data_missing")
+    else:
+        if existing_row.get("immutablePerGameStage") is not True:
+            errors.append(
+                "canonical_overlay_existing_stage_marker_missing"
+            )
+        if existing_row.get("immutableLockedStorage") is not True:
+            errors.append(
+                "canonical_overlay_existing_locked_storage_marker_missing"
+            )
+        if existing_row.get("immutableLockedStorageKeyspace") != (
+            "LOCKED#GAME"
+        ):
+            errors.append(
+                "canonical_overlay_existing_locked_keyspace_mismatch"
+            )
+        if existing_row.get("immutableLockedStorageVersion") != VERSION:
+            errors.append(
+                "canonical_overlay_existing_row_storage_version_mismatch"
+            )
+        try:
+            errors.extend(
+                f"canonical_overlay_existing_{value}"
+                for value in validate_canonical_stage_authority(
+                    table,
+                    existing_row,
+                )
+            )
+        except Exception as exc:
+            errors.append(
+                "canonical_overlay_existing_stage_validation_failed:"
+                f"{type(exc).__name__}:{exc}"
+            )
+        try:
+            existing_vector_errors = _require_vector_status(
+                existing_row,
+                context="existing_canonical_overlay",
+            )
+        except Exception as exc:
+            existing_vector_errors = []
+            errors.append(
+                "canonical_overlay_existing_vector_status_invalid:"
+                f"{type(exc).__name__}:{exc}"
+            )
+        try:
+            incoming_vector_errors = _require_vector_status(
+                row,
+                context="canonical_read_overlay",
+            )
+        except Exception as exc:
+            incoming_vector_errors = []
+            errors.append(
+                "canonical_overlay_vector_status_invalid:"
+                f"{type(exc).__name__}:{exc}"
+            )
+        try:
+            if _payload_fingerprint(
+                _canonical_overlay_projection(row)
+            ) != _payload_fingerprint(
+                _canonical_overlay_projection(existing_row)
+            ):
+                errors.append(
+                    "canonical_overlay_immutable_projection_mismatch"
+                )
+        except Exception as exc:
+            errors.append(
+                "canonical_overlay_projection_validation_failed:"
+                f"{type(exc).__name__}:{exc}"
+            )
+
+    if errors:
+        return _canonical_overlay_rejection(key, errors)
+
+    existing_training = existing_row.get("mlFeatureFreeze") or {}
+    authority = existing_row.get("canonicalPerGameStageAuthority") or {}
+    return {
+        "ok": True,
+        "pk": key["PK"],
+        "sk": key["SK"],
+        "storageClass": "LOCKED_IMMUTABLE",
+        "writeOnce": True,
+        "created": False,
+        "immutableExisting": True,
+        "idempotentExistingVerified": True,
+        "canonicalWriteAttempted": False,
+        "canonicalReadOverlayVerified": True,
+        "selectionLockVerified": True,
+        "exactVectorVerified": not existing_vector_errors,
+        "exactVectorValidationErrors": existing_vector_errors,
+        "incomingExactVectorValidationErrors": incoming_vector_errors,
+        "trainingEligible": bool(
+            existing_training.get("trainingEligible")
+        ),
+        "trainingExclusionReasons": list(
+            existing_training.get("trainingExclusionReasons") or []
+        ),
+        "stageAuthorityVerified": True,
+        "stageAuthorityVersion": AUTHORITY_VERSION,
+        "stageFingerprint": authority.get("stageFingerprint"),
+        "frozenFeatureVectorFingerprint": _fingerprint(existing_row),
+        "idempotencyVersion": (
+            CANONICAL_READ_OVERLAY_IDEMPOTENCY_VERSION
+        ),
+        "version": VERSION,
+    }
+
+
 def apply(module: Any):
     if getattr(module, "_INQSI_MLB_IMMUTABLE_LOCKED_STORAGE_APPLIED", False):
         return module
@@ -377,6 +667,13 @@ def apply(module: Any):
 
         if module.history.PULLS is None:
             return {"ok": False, "error": "SNAPSHOTS_TABLE not configured", "storageClass": "LOCKED_IMMUTABLE"}
+
+        # The public coverage authority may return a display-enriched view of
+        # a canonical row that is already durable.  It is not the exact raw
+        # T-minus-45 stage and must never be rewritten.  Verify the existing
+        # LOCKED#GAME record and its immutable projection instead.
+        if _canonical_read_overlay(row):
+            return _verify_existing_canonical_overlay(module, row)
 
         stage, stage_errors = _read_verified_stage(module.history.PULLS, row, canonical_row=False)
         if not stage or stage_errors:
@@ -472,5 +769,8 @@ def apply(module: Any):
 
     module._store_prediction = store_prediction
     module.IMMUTABLE_LOCKED_STORAGE_VERSION = VERSION
+    module.MLB_CANONICAL_READ_OVERLAY_IDEMPOTENCY_VERSION = (
+        CANONICAL_READ_OVERLAY_IDEMPOTENCY_VERSION
+    )
     module._INQSI_MLB_IMMUTABLE_LOCKED_STORAGE_APPLIED = True
     return module
