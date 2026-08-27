@@ -2240,6 +2240,7 @@ def _cooperative_terminal_observed_exact_state(
     manifest: List[Dict[str, Any]],
     game_index: int,
     durable_identity: str,
+    selected_manifest_authority: Dict[str, Any],
     manifest_authority: Dict[str, Any],
 ) -> tuple[Optional[str], Optional[Dict[str, Any]], Optional[str]]:
     original_identity = getattr(patch, "game_identity", None)
@@ -2313,7 +2314,7 @@ def _cooperative_terminal_observed_exact_state(
                 return None, None, error
             if not _cooperative_terminal_authority_matches_selected(
                 outcome,
-                manifest_authority,
+                selected_manifest_authority,
             ):
                 return (
                     None,
@@ -2364,7 +2365,7 @@ def _cooperative_terminal_observed_exact_state(
             return None, None, "IMMUTABLE_CANONICAL_READBACK_MISSING"
         if not _cooperative_terminal_authority_matches_selected(
             stored_stage,
-            manifest_authority,
+            selected_manifest_authority,
         ):
             return (
                 None,
@@ -2402,6 +2403,7 @@ def _cooperative_terminal_observed_state(
     manifest: List[Dict[str, Any]],
     game_index: int,
     identity_options: List[str],
+    selected_manifest_authority: Dict[str, Any],
     manifest_authority: Dict[str, Any],
 ) -> tuple[
     Optional[str],
@@ -2422,6 +2424,7 @@ def _cooperative_terminal_observed_state(
                 manifest=manifest,
                 game_index=game_index,
                 durable_identity=durable_identity,
+                selected_manifest_authority=selected_manifest_authority,
                 manifest_authority=manifest_authority,
             )
         )
@@ -2532,6 +2535,7 @@ def _execute_cooperative_terminal_target(
     slate: str,
     pulls: List[Dict[str, Any]],
     manifest: List[Dict[str, Any]],
+    selected_manifest_authority: Dict[str, Any],
     manifest_authority: Dict[str, Any],
     identities: List[str],
     identity_options: List[List[str]],
@@ -2576,6 +2580,7 @@ def _execute_cooperative_terminal_target(
                 manifest=manifest,
                 game_index=game_index,
                 identity_options=identity_options[game_index],
+                selected_manifest_authority=selected_manifest_authority,
                 manifest_authority=manifest_authority,
             )
         if terminal_error:
@@ -2694,7 +2699,7 @@ def _execute_cooperative_terminal_target(
                 )
 
             stage = "BIND_MANIFEST_AUTHORITY"
-            authority = copy.deepcopy(manifest_authority)
+            authority = copy.deepcopy(selected_manifest_authority)
             remaining = _cooperative_chunk_remaining_seconds(context)
             if (
                 remaining
@@ -2754,6 +2759,7 @@ def _execute_cooperative_terminal_target(
                 manifest=manifest,
                 game_index=game_index,
                 identity_options=identity_options[game_index],
+                selected_manifest_authority=selected_manifest_authority,
                 manifest_authority=manifest_authority,
             )
             if (
@@ -3316,7 +3322,8 @@ def _run_cooperative_terminal_chunk_impl(
                 slate=slate,
                 pulls=pulls,
                 manifest=manifest,
-                manifest_authority=selected_manifest_authority,
+                selected_manifest_authority=selected_manifest_authority,
+                manifest_authority=manifest_authority,
                 identities=identities,
                 identity_options=identity_options,
                 checkpoint=current_checkpoint,

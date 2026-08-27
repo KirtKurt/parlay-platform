@@ -129,6 +129,7 @@ class ChunkModule:
         self.outcome_reads = []
         self.stage_reads = []
         self.terminal_writes = []
+        self.writer_authorities = []
         self.lease_acquires = []
         self.lease_releases = []
         self.atomic_calls = []
@@ -351,6 +352,7 @@ class ChunkPatch:
         assert slate == SLATE
         assert now >= datetime.fromisoformat(game["commence_time"])
         assert authority["fingerprint"] == "a" * 64
+        module.writer_authorities.append(copy.deepcopy(authority))
         identity = self.game_identity(game)
         if identity not in module.outcomes:
             module.terminal_writes.append(identity)
@@ -687,6 +689,24 @@ def test_chunk_processes_and_verifies_one_target_per_owner_then_atomic_completes
 
     assert len(results) == 4
     assert module.terminal_writes == ["provider:game-0", "provider:game-1"]
+    assert len(module.writer_authorities) == 2
+    assert all(
+        "atomicItems" not in authority
+        and "authorityEvidenceFingerprint" not in authority
+        for authority in module.writer_authorities
+    )
+    manifest_authority_fingerprint = checkpoint["manifestAuthority"][
+        "authorityEvidenceFingerprint"
+    ]
+    assert len(manifest_authority_fingerprint) == 64
+    assert checkpoint["manifestAuthority"]["atomicItems"]
+    assert all(
+        entry["durableEvidence"][
+            "manifestAuthorityEvidenceFingerprint"
+        ]
+        == manifest_authority_fingerprint
+        for entry in checkpoint["processedGames"]
+    )
     assert len(module.lease_acquires) == 4
     assert len(module.lease_releases) == 4
     assert all(
@@ -880,6 +900,9 @@ def test_new_outcome_uses_manifest_primary_and_passes_real_manifest_validator():
         "official_game_pk": "991777",
         "official_game_id": "mlb_statsapi:991777",
         "official_commence_time": game["commence_time"],
+        "provider_commence_time": game["commence_time"],
+        "provider_start_drift_seconds": 0,
+        "canonical_start_time_source": "MLB_STATS_API_EXACT_DATE",
         "official_game_type": "R",
         "official_game_number": 1,
         "official_double_header": "N",
@@ -889,6 +912,13 @@ def test_new_outcome_uses_manifest_primary_and_passes_real_manifest_validator():
         "2026-07-13T16:00:00+00:00",
         [game],
         "cooperative-real-validator",
+    )
+    assert (
+        real_lock_fixtures.history_contract.validate_provider_schedule_manifest(
+            source,
+            real_lock_fixtures.SLATE,
+        )
+        == []
     )
     module = real_lock_fixtures.build_module(
         [source],
@@ -1163,16 +1193,12 @@ def test_checkpoint_is_bound_to_request_and_full_manifest_authority():
     assert changed_manifest["checkpointWriteAllowed"] is False
 
 
-@pytest.mark.parametrize("mutation", ["commence", "order"])
-def test_checkpoint_rejects_changed_schedule_detail_or_order(mutation):
+def test_checkpoint_rejects_changed_schedule_detail():
     module = _install(ChunkModule(game_count=2))
     first = _invoke(module)
-    if mutation == "commence":
-        module.games[0]["commence_time"] = (
-            "2026-08-05T18:30:00+00:00"
-        )
-    else:
-        module.games = list(reversed(module.games))
+    module.games[0]["commence_time"] = (
+        "2026-08-05T17:30:00+00:00"
+    )
 
     result = _invoke(module, first["checkpoint"])
 
@@ -1182,6 +1208,44 @@ def test_checkpoint_rejects_changed_schedule_detail_or_order(mutation):
         "RESOLVE_MANIFEST",
         "BIND_MANIFEST_AUTHORITY",
     }
+
+
+def test_raw_manifest_list_order_is_nonsemantic():
+    module = _install(ChunkModule(game_count=2))
+    first = _invoke(module)
+    assert first["ok"] is True
+    module.games = list(reversed(module.games))
+
+    second = _invoke(module, first["checkpoint"])
+
+    assert second["ok"] is True
+    assert second["checkpoint"]["nextGameIndex"] == 2
+    assert [
+        entry["gameIdentity"]
+        for entry in second["checkpoint"]["processedGames"]
+    ] == ["provider:game-0", "provider:game-1"]
+
+
+def test_checkpoint_rejects_forged_processed_game_order():
+    module = _install(ChunkModule(game_count=2))
+    first = _invoke(module)
+    assert first["ok"] is True
+    second = _invoke(module, first["checkpoint"])
+    assert second["ok"] is True
+    forged = copy.deepcopy(second["checkpoint"])
+    forged["processedGames"] = list(
+        reversed(forged["processedGames"])
+    )
+    forged["checkpointFingerprint"] = (
+        repair._cooperative_terminal_checkpoint_fingerprint(forged)
+    )
+
+    result = _invoke(module, forged)
+
+    assert result["ok"] is False
+    assert result["checkpointWriteAllowed"] is False
+    assert result["stage"] == "BIND_MANIFEST_AUTHORITY"
+
 
 
 def test_forged_counts_fail_even_with_recomputed_checkpoint_fingerprint():
