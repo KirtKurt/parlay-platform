@@ -912,6 +912,7 @@ def _acquire_lock_execution_lease(
         "acquired": True,
         "owner": owner,
         "expiresAtUtc": expires_at_utc,
+        "expiresAtEpoch": expires_epoch,
         "ownedKeys": acquired_keys,
     }
 
@@ -1693,29 +1694,74 @@ def _put_no_prediction_outcome(
     return _put_write_once_record(module, item, fingerprint_field="lock_outcome_fingerprint")
 
 
-def _get_lock_outcome(module: Any, slate: str, game: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    item = _get_record(module, _lock_outcome_key(module, slate, game))
-    if not item:
-        return None
+def _cooperative_terminal_lock_outcome_observation(
+    module: Any,
+    slate: str,
+    game: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Strongly distinguish an absent outcome from present invalid authority."""
+
+    key = _lock_outcome_key(module, slate, game)
+    item, read_error = _consistent_item_result(module.TABLE, key)
+    if read_error is not None:
+        raise read_error
+    if not isinstance(item, dict):
+        return {
+            "exists": False,
+            "valid": False,
+            "item": None,
+            "errors": [],
+            "key": copy.deepcopy(key),
+        }
     material = {
-        str(key): value
-        for key, value in _plain(item).items()
-        if key != "lock_outcome_fingerprint"
+        str(field): value
+        for field, value in _plain(item).items()
+        if field != "lock_outcome_fingerprint"
     }
     fingerprint = hashlib.sha256(
-        json.dumps(material, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+        json.dumps(
+            material,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
     ).hexdigest()
     errors: List[str] = []
-    if item.get("record_type") != LOCK_OUTCOME_RECORD_TYPE or item.get("version") != LOCK_OUTCOME_VERSION:
+    if (
+        item.get("record_type") != LOCK_OUTCOME_RECORD_TYPE
+        or item.get("version") != LOCK_OUTCOME_VERSION
+    ):
         errors.append("lock_outcome_contract_mismatch")
-    if str(item.get("slate_date") or "") != slate or str(item.get("game_identity") or "") != game_identity(game):
+    if (
+        str(item.get("slate_date") or "") != slate
+        or str(item.get("game_identity") or "") != game_identity(game)
+    ):
         errors.append("lock_outcome_identity_mismatch")
     if item.get("lock_outcome_fingerprint") != fingerprint:
         errors.append("lock_outcome_fingerprint_mismatch")
     errors.extend(_provider_manifest_authority_errors(module.TABLE, item))
-    if errors:
-        return None
-    return item
+    errors = sorted(set(errors))
+    return {
+        "exists": True,
+        "valid": not errors,
+        "item": copy.deepcopy(item),
+        "errors": errors,
+        "key": copy.deepcopy(key),
+    }
+
+
+def _get_lock_outcome(module: Any, slate: str, game: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    observation = _cooperative_terminal_lock_outcome_observation(
+        module,
+        slate,
+        game,
+    )
+    return (
+        copy.deepcopy(observation["item"])
+        if observation["exists"] is True
+        and observation["valid"] is True
+        else None
+    )
 
 
 def _is_no_prediction_candidate_failure(errors: Iterable[str]) -> bool:
@@ -5147,6 +5193,74 @@ def _cooperative_terminal_evidence_fingerprint(
     ).hexdigest()
 
 
+COOPERATIVE_TERMINAL_EVIDENCE_MAX_ITEMS_PER_GAME = 4
+
+
+def _cooperative_terminal_dependency_keys(
+    item: Dict[str, Any],
+    *,
+    terminal_state: str,
+) -> List[Dict[str, str]]:
+    del terminal_state
+    keys: List[Dict[str, str]] = []
+
+    def add(pk: Any, sk: Any) -> None:
+        key = {
+            "PK": str(pk or "").strip(),
+            "SK": str(sk or "").strip(),
+        }
+        if not key["PK"] or not key["SK"]:
+            raise RuntimeError(
+                "COOPERATIVE_TERMINAL_DEPENDENCY_KEY_MISSING"
+            )
+        if key not in keys:
+            keys.append(key)
+
+    authority = item.get("provider_manifest_authority") or {}
+    if not isinstance(authority, dict):
+        raise RuntimeError(
+            "COOPERATIVE_TERMINAL_MANIFEST_DEPENDENCY_INVALID"
+        )
+    add(authority.get("pk"), authority.get("sk"))
+    schedule = authority.get("scheduleRevisionAuthority")
+    if isinstance(schedule, dict) and schedule:
+        add(schedule.get("pk"), schedule.get("sk"))
+    if len(keys) > 2:
+        raise RuntimeError(
+            "COOPERATIVE_TERMINAL_DEPENDENCY_SET_TOO_LARGE"
+        )
+    return keys
+
+
+def _cooperative_terminal_dependency_evidence(
+    module: Any,
+    keys: List[Dict[str, str]],
+) -> List[Dict[str, Any]]:
+    evidence: List[Dict[str, Any]] = []
+    for key in keys:
+        item, read_error = _consistent_item_result(
+            module.history.PULLS,
+            key,
+        )
+        if read_error is not None:
+            raise read_error
+        if not isinstance(item, dict):
+            raise RuntimeError(
+                "COOPERATIVE_TERMINAL_DEPENDENCY_READBACK_MISSING"
+            )
+        evidence.append(
+            {
+                "tableRole": "PULLS_TABLE",
+                "PK": key["PK"],
+                "SK": key["SK"],
+                "itemFingerprint": (
+                    _cooperative_terminal_item_fingerprint(item)
+                ),
+            }
+        )
+    return evidence
+
+
 def _cooperative_terminal_authority_evidence(
     module: Any,
     *,
@@ -5188,6 +5302,24 @@ def _cooperative_terminal_authority_evidence(
                     or (
                         outcome.get("provider_manifest_authority") or {}
                     ).get("fingerprint")
+                    or ""
+                ),
+                "providerManifestGameCount": int(
+                    (
+                        outcome.get("provider_manifest_authority") or {}
+                    ).get("gameCount")
+                    or 0
+                ),
+                "providerManifestPk": str(
+                    (
+                        outcome.get("provider_manifest_authority") or {}
+                    ).get("pk")
+                    or ""
+                ),
+                "providerManifestSk": str(
+                    (
+                        outcome.get("provider_manifest_authority") or {}
+                    ).get("sk")
                     or ""
                 ),
             }
@@ -5264,6 +5396,27 @@ def _cooperative_terminal_authority_evidence(
                     ).get("fingerprint")
                     or ""
                 ),
+                "providerManifestGameCount": int(
+                    (
+                        stored_stage.get("provider_manifest_authority")
+                        or {}
+                    ).get("gameCount")
+                    or 0
+                ),
+                "providerManifestPk": str(
+                    (
+                        stored_stage.get("provider_manifest_authority")
+                        or {}
+                    ).get("pk")
+                    or ""
+                ),
+                "providerManifestSk": str(
+                    (
+                        stored_stage.get("provider_manifest_authority")
+                        or {}
+                    ).get("sk")
+                    or ""
+                ),
                 "vectorFingerprint": str(
                     (stage_row.get("frozenFeatureVector") or {}).get(
                         "fingerprint"
@@ -5283,6 +5436,40 @@ def _cooperative_terminal_authority_evidence(
         raise RuntimeError(
             "COOPERATIVE_TERMINAL_EVIDENCE_STATE_INVALID"
         )
+
+    authority_item = outcome if terminal_state == "LOCKED_NO_PREDICTION_DATA" else stored_stage
+    dependency_keys = _cooperative_terminal_dependency_keys(
+        authority_item or {},
+        terminal_state=terminal_state,
+    )
+    dependencies = _cooperative_terminal_dependency_evidence(
+        module,
+        dependency_keys,
+    )
+    primary_keys = {
+        (
+            str(item.get("tableRole") or ""),
+            str(item.get("PK") or ""),
+            str(item.get("SK") or ""),
+        )
+        for item in items
+    }
+    items.extend(
+        dependency
+        for dependency in dependencies
+        if (
+            str(dependency.get("tableRole") or ""),
+            str(dependency.get("PK") or ""),
+            str(dependency.get("SK") or ""),
+        )
+        not in primary_keys
+    )
+    evidence["authorityItemCount"] = (
+        1 if terminal_state == "LOCKED_NO_PREDICTION_DATA" else 2
+    )
+    evidence["dependencyItemCount"] = (
+        len(items) - evidence["authorityItemCount"]
+    )
 
     if (
         not items
@@ -5306,10 +5493,22 @@ def _cooperative_terminal_authority_evidence(
 def _cooperative_terminal_atomic_verify(
     module: Any,
     processed_games: List[Dict[str, Any]],
+    manifest_authority: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Atomically reread every exact terminal dependency before completion."""
 
-    requests: List[Dict[str, Any]] = []
+    requests_by_key: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    for item in (manifest_authority or {}).get("atomicItems") or []:
+        if not isinstance(item, dict):
+            raise RuntimeError(
+                "COOPERATIVE_TERMINAL_ATOMIC_EVIDENCE_INVALID"
+            )
+        key = (
+            str(item.get("tableRole") or ""),
+            str(item.get("PK") or ""),
+            str(item.get("SK") or ""),
+        )
+        requests_by_key[key] = copy.deepcopy(item)
     for entry in processed_games:
         evidence = entry.get("durableEvidence")
         if (
@@ -5325,11 +5524,36 @@ def _cooperative_terminal_atomic_verify(
                 raise RuntimeError(
                     "COOPERATIVE_TERMINAL_ATOMIC_EVIDENCE_INVALID"
                 )
-            requests.append(item)
-    if not requests or len(requests) > 100:
+            key = (
+                str(item.get("tableRole") or ""),
+                str(item.get("PK") or ""),
+                str(item.get("SK") or ""),
+            )
+            prior = requests_by_key.get(key)
+            if (
+                prior is not None
+                and prior.get("itemFingerprint")
+                != item.get("itemFingerprint")
+            ):
+                raise RuntimeError(
+                    "COOPERATIVE_TERMINAL_ATOMIC_EVIDENCE_CONFLICT"
+                )
+            requests_by_key[key] = copy.deepcopy(item)
+    requests = [
+        requests_by_key[key] for key in sorted(requests_by_key)
+    ]
+    if not requests or len(requests) > 32:
         raise RuntimeError(
             "COOPERATIVE_TERMINAL_ATOMIC_READ_SET_OUT_OF_RANGE"
         )
+    read_set_fingerprint = hashlib.sha256(
+        json.dumps(
+            requests,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
 
     serializer = TypeSerializer()
     deserializer = TypeDeserializer()
@@ -5394,7 +5618,8 @@ def _cooperative_terminal_atomic_verify(
         "ok": True,
         "atomicSnapshot": True,
         "itemCount": len(requests),
-        "maxItemCount": 100,
+        "maxItemCount": 32,
+        "readSetFingerprint": read_set_fingerprint,
         "postStartPredictionCreationAllowed": False,
     }
 

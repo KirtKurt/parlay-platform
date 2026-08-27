@@ -7,6 +7,7 @@ import sys
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -52,6 +53,26 @@ def _game(index: int, *, official_pk: str | None = None) -> dict:
     }
 
 
+def _manifest_authority(game_count: int) -> dict:
+    return {
+        "version": "test-provider-manifest-v1",
+        "recordType": "test-immutable-provider-manifest",
+        "pk": "PULL#manifest",
+        "sk": "FULL#2026-08-05",
+        "fingerprint": "a" * 64,
+        "gameCount": game_count,
+        "canonicalGameIdentities": [
+            f"provider:game-{index}" for index in range(game_count)
+        ],
+        "immutable": True,
+        "writeOnce": True,
+        "fullProviderSchedule": True,
+        "consistentReadVerified": True,
+        "officialScheduleAuthorityVersion": "test-official-v1",
+        "officialScheduleAuthorityFingerprint": "b" * 64,
+    }
+
+
 class BudgetContext:
     def __init__(self, *remaining_millis: int):
         assert remaining_millis
@@ -64,9 +85,44 @@ class BudgetContext:
         return value
 
 
+class EvidenceTable:
+    name = "test-lock-table"
+
+    def __init__(self):
+        self.items = {}
+        self.meta = SimpleNamespace(
+            client=SimpleNamespace(region_name="us-east-1")
+        )
+
+    def get_item(self, Key, ConsistentRead=False):
+        del ConsistentRead
+        item = self.items.get((Key["PK"], Key["SK"]))
+        return {"Item": copy.deepcopy(item)} if item is not None else {}
+
+
 class ChunkModule:
     def __init__(self, game_count: int = 2):
         self.games = [_game(index) for index in range(game_count)]
+        self.TABLE = EvidenceTable()
+        self.manifest_item = {
+            "PK": "PULL#manifest",
+            "SK": "FULL#2026-08-05",
+            "record_type": "test-immutable-provider-manifest",
+            "manifest_fingerprint": "a" * 64,
+            "write_once": True,
+            "data": {
+                "slateDate": SLATE,
+                "fingerprint": "a" * 64,
+                "games": copy.deepcopy(self.games),
+            },
+        }
+        self.TABLE.items[
+            (self.manifest_item["PK"], self.manifest_item["SK"])
+        ] = copy.deepcopy(self.manifest_item)
+        self.history = SimpleNamespace(
+            PULLS=self.TABLE,
+            ddb_safe=copy.deepcopy,
+        )
         self.outcomes = {}
         self.stages = {}
         self.canonicals = {}
@@ -112,6 +168,25 @@ class ChunkPatch:
     LOCK_EXECUTION_LEASE_VERSION = (
         "MLB-LOCK-EXECUTION-LEASE-v2-global-all-mutating"
     )
+    LOCK_EXECUTION_LEASE_RECORD_TYPE = "test-global-lease"
+    LEGACY_SCHEDULED_SINGLE_FLIGHT_VERSION = "test-bridge-v1"
+    LEGACY_SCHEDULED_SINGLE_FLIGHT_RECORD_TYPE = "test-bridge-lease"
+
+    @staticmethod
+    def _lock_execution_lease_key():
+        return {"PK": "MLB_LOCK_EXECUTION#V2", "SK": "LEASE"}
+
+    @staticmethod
+    def _legacy_rollout_bridge_slates(slate):
+        base = datetime.fromisoformat(f"{slate}T00:00:00+00:00")
+        return [
+            (base + timedelta(days=offset)).date().isoformat()
+            for offset in (-1, 0, 1)
+        ]
+
+    @staticmethod
+    def _legacy_scheduled_single_flight_key(slate):
+        return {"PK": f"MLB_LOCK_RUNTIME#{slate}", "SK": "SCHEDULED"}
 
     def __init__(self):
         self._STATUS_READ_CACHE = ContextVar(
@@ -122,6 +197,10 @@ class ChunkPatch:
             f"test_cooperative_terminal_alias_limit_{id(self)}",
             default=None,
         )
+
+    @staticmethod
+    def _cooperative_terminal_item_fingerprint(item):
+        return _fingerprint(item)
 
     def game_identity(self, game):
         return game["game_id"]
@@ -146,14 +225,51 @@ class ChunkPatch:
         module.stage_reads.append(identity)
         return copy.deepcopy(module.stages.get(identity))
 
-    def _get_lock_outcome(self, module, slate, game):
+    def _cooperative_terminal_lock_outcome_observation(
+        self, module, slate, game
+    ):
         assert slate == SLATE
         request_cache = self._STATUS_READ_CACHE.get()
         assert isinstance(request_cache, dict)
         assert set(request_cache) == {"canonicalPulls"}
         identity = self.game_identity(game)
         module.outcome_reads.append(identity)
-        return copy.deepcopy(module.outcomes.get(identity))
+        item = copy.deepcopy(module.outcomes.get(identity))
+        if item is None:
+            return {
+                "exists": False,
+                "valid": False,
+                "item": None,
+                "errors": [],
+            }
+        valid = bool(
+            item.get("game_identity") == identity
+            and item.get("lock_status") == "LOCKED_NO_PREDICTION_DATA"
+            and item.get("lock_outcome_recorded") is True
+            and item.get("write_once") is True
+            and item.get("lock_outcome_fingerprint")
+            == _fingerprint({
+                key: value
+                for key, value in item.items()
+                if key != "lock_outcome_fingerprint"
+            })
+        )
+        return {
+            "exists": True,
+            "valid": valid,
+            "item": item,
+            "errors": [] if valid else ["injected_invalid_outcome"],
+        }
+
+    def _get_lock_outcome(self, module, slate, game):
+        observation = self._cooperative_terminal_lock_outcome_observation(
+            module, slate, game
+        )
+        return (
+            copy.deepcopy(observation["item"])
+            if observation["valid"] is True
+            else None
+        )
 
     def _scoring_pulls(self, module, pulls, game):
         del module, pulls, game
@@ -187,22 +303,8 @@ class ChunkPatch:
         del module
         assert pulls
         assert slate == SLATE
-        return {
-            "version": "test-provider-manifest-v1",
-            "recordType": "test-immutable-provider-manifest",
-            "pk": "PULL#manifest",
-            "sk": "FULL#2026-08-05",
-            "fingerprint": "verified-manifest",
-            "gameCount": len(manifest),
-            "canonicalGameIdentities": [
-                game["game_id"] for game in manifest
-            ],
-            "immutable": True,
-            "writeOnce": True,
-            "consistentReadVerified": True,
-            "officialScheduleAuthorityVersion": "test-official-v1",
-            "officialScheduleAuthorityFingerprint": "official-fingerprint",
-        }
+        self._manifest_game_count = len(manifest)
+        return _manifest_authority(len(manifest))
 
     def _strict_outcome(self, identity, reasons):
         item = {
@@ -223,7 +325,10 @@ class ChunkPatch:
                 "missing_immutable_prediction"
             ],
             "reasons": list(reasons) or ["proven_absence"],
-            "provider_manifest_fingerprint": "verified-manifest",
+            "provider_manifest_fingerprint": "a" * 64,
+            "provider_manifest_authority": _manifest_authority(
+                getattr(self, "_manifest_game_count", 1)
+            ),
             "write_once": True,
         }
         material = {
@@ -245,7 +350,7 @@ class ChunkPatch:
     ):
         assert slate == SLATE
         assert now >= datetime.fromisoformat(game["commence_time"])
-        assert authority["fingerprint"] == "verified-manifest"
+        assert authority["fingerprint"] == "a" * 64
         identity = self.game_identity(game)
         if identity not in module.outcomes:
             module.terminal_writes.append(identity)
@@ -330,13 +435,30 @@ class ChunkPatch:
                 "candidateSelectionFingerprint": _fingerprint(
                     stored_stage.get("candidate_proof") or {}
                 ),
-                "providerManifestFingerprint": "verified-manifest",
+                "providerManifestFingerprint": "a" * 64,
                 "vectorFingerprint": "vector-fingerprint",
                 "promotionPolicyVersion": "test-promotion",
                 "lockPolicy": "test-lock-policy",
                 "modelVersion": "test-model",
                 "items": items,
             }
+        manifest_dependency = {
+            "tableRole": "PULLS_TABLE",
+            "PK": module.manifest_item["PK"],
+            "SK": module.manifest_item["SK"],
+            "itemFingerprint": _fingerprint(module.manifest_item),
+        }
+        if manifest_dependency not in items:
+            items.append(manifest_dependency)
+        evidence["authorityItemCount"] = (
+            1 if terminal_state == "LOCKED_NO_PREDICTION_DATA" else 2
+        )
+        evidence["dependencyItemCount"] = (
+            len(items) - evidence["authorityItemCount"]
+        )
+        evidence["providerManifestGameCount"] = len(module.games)
+        evidence["providerManifestPk"] = module.manifest_item["PK"]
+        evidence["providerManifestSk"] = module.manifest_item["SK"]
         evidence["evidenceFingerprint"] = (
             repair._cooperative_terminal_evidence_fingerprint(evidence)
         )
@@ -350,19 +472,60 @@ class ChunkPatch:
                 "acquired": False,
                 "contentionScope": "legacy_rollout_bridge",
             }
+        owner = f"lease-owner-{len(module.lease_acquires)}"
+        expires_epoch = int(now.timestamp()) + 960
+        specs = [
+            {
+                "key": self._lock_execution_lease_key(),
+                "recordType": self.LOCK_EXECUTION_LEASE_RECORD_TYPE,
+                "version": self.LOCK_EXECUTION_LEASE_VERSION,
+            },
+            *[
+                {
+                    "key": self._legacy_scheduled_single_flight_key(
+                        bridge_slate
+                    ),
+                    "recordType": (
+                        self.LEGACY_SCHEDULED_SINGLE_FLIGHT_RECORD_TYPE
+                    ),
+                    "version": (
+                        self.LEGACY_SCHEDULED_SINGLE_FLIGHT_VERSION
+                    ),
+                }
+                for bridge_slate in self._legacy_rollout_bridge_slates(slate)
+            ],
+        ]
+        if any(
+            (
+                spec["key"]["PK"],
+                spec["key"]["SK"],
+            )
+            in module.TABLE.items
+            for spec in specs
+        ):
+            return {
+                "acquired": False,
+                "contentionScope": "global",
+            }
+        for spec in specs:
+            module.TABLE.items[
+                (spec["key"]["PK"], spec["key"]["SK"])
+            ] = {
+                **spec["key"],
+                "record_type": spec["recordType"],
+                "version": spec["version"],
+                "lease_owner": owner,
+                "lease_expires_at_epoch": expires_epoch,
+            }
         return {
             "acquired": True,
-            "owner": f"lease-owner-{len(module.lease_acquires)}",
-            "ownedKeys": [
-                {"scope": "global", "key": "MLB_LOCK_EXECUTION#V2"},
-                *[
-                    {
-                        "scope": "legacy_rollout_bridge",
-                        "key": f"MLB_LOCK_RUNTIME#{offset}",
-                    }
-                    for offset in (-1, 0, 1)
-                ],
-            ],
+            "owner": owner,
+            "expiresAtUtc": datetime.fromtimestamp(
+                expires_epoch,
+                tz=timezone.utc,
+            ).isoformat(),
+            "expiresAtEpoch": expires_epoch,
+            "ownedKeys": specs,
         }
 
     def _release_lock_execution_lease(self, module, lease):
@@ -371,16 +534,43 @@ class ChunkPatch:
             raise RuntimeError("simulated release transport error")
         if module.release_mode == "ambiguous":
             return False
+        for owned in reversed(lease.get("ownedKeys") or []):
+            key = owned["key"]
+            item = module.TABLE.items.get((key["PK"], key["SK"]))
+            if item and item.get("lease_owner") == lease.get("owner"):
+                module.TABLE.items.pop((key["PK"], key["SK"]), None)
         return True
 
     def _cooperative_terminal_atomic_verify(
-        self, module, processed_games
+        self, module, processed_games, manifest_authority=None
     ):
         module.atomic_calls.append(copy.deepcopy(processed_games))
-        item_count = 0
+        by_key = {}
+        for expected in (manifest_authority or {}).get("atomicItems") or []:
+            by_key[(
+                expected["tableRole"],
+                expected["PK"],
+                expected["SK"],
+            )] = copy.deepcopy(expected)
         for entry in processed_games:
             for expected in entry["durableEvidence"]["items"]:
-                item_count += 1
+                key = (
+                    expected["tableRole"],
+                    expected["PK"],
+                    expected["SK"],
+                )
+                prior = by_key.get(key)
+                if (
+                    prior is not None
+                    and prior["itemFingerprint"]
+                    != expected["itemFingerprint"]
+                ):
+                    raise RuntimeError(
+                        "COOPERATIVE_TERMINAL_ATOMIC_EVIDENCE_CONFLICT"
+                    )
+                by_key[key] = copy.deepcopy(expected)
+        requests = [by_key[key] for key in sorted(by_key)]
+        for expected in requests:
                 observed = None
                 if expected["tableRole"] == "LOCK_TABLE":
                     values = [
@@ -388,7 +578,15 @@ class ChunkPatch:
                         *module.stages.values(),
                     ]
                 else:
-                    values = list(module.canonicals.values())
+                    values = [
+                        *module.canonicals.values(),
+                        *[
+                            item
+                            for item in module.TABLE.items.values()
+                            if item.get("record_type")
+                            == "test-immutable-provider-manifest"
+                        ],
+                    ]
                 for candidate in values:
                     if (
                         candidate.get("PK") == expected["PK"]
@@ -407,8 +605,9 @@ class ChunkPatch:
         return {
             "ok": True,
             "atomicSnapshot": True,
-            "itemCount": item_count,
-            "maxItemCount": 100,
+            "itemCount": len(requests),
+            "maxItemCount": 32,
+            "readSetFingerprint": _fingerprint(requests),
             "postStartPredictionCreationAllowed": False,
         }
 
@@ -419,6 +618,7 @@ def _canonical_rows(identity: str) -> tuple[dict, dict]:
         "SK": f"STAGE#{_fingerprint(identity)[:16]}",
         "stage_fingerprint": f"stage-fingerprint-{identity}",
         "candidate_proof": {"selectionFingerprint": "candidate"},
+        "provider_manifest_authority": _manifest_authority(1),
         "data": {"row": {"gameIdentity": identity}},
     }
     canonical = {
@@ -499,24 +699,36 @@ def test_chunk_processes_and_verifies_one_target_per_owner_then_atomic_completes
     assert final["ok"] is True
     assert final["complete"] is True
     assert final["stage"] == "COMPLETE"
-    assert final["atomicCompletionProof"] == {
-        "atomicSnapshot": True,
-        "itemCount": 2,
-        "maxItemCount": 100,
-        "applicationAppendOnlyAuthorityRequired": True,
-    }
+    assert final["atomicCompletionProof"]["atomicSnapshot"] is True
+    assert final["atomicCompletionProof"]["itemCount"] == 3
+    assert final["atomicCompletionProof"]["maxItemCount"] == 32
+    assert final["atomicCompletionProof"][
+        "completionMutationLeaseHeld"
+    ] is True
+    assert final["atomicCompletionProof"]["ownerExposed"] is False
+    assert len(final["atomicCompletionProof"]["readSetFingerprint"]) == 64
+    assert "_completionLease" in final
+    assert "_atomicCompletionProof" in final
     assert len(module.atomic_calls) == 1
     assert len(module.lease_acquires) == 5
-    assert len(module.lease_releases) == 5
+    # The final V2 + bridge lease is intentionally retained until the queue
+    # COMPLETE CAS, rather than released after the atomic read.
+    assert len(module.lease_releases) == 4
     response = final["terminalReplayResponse"]
     assert response["durableTerminalVerificationComplete"] is True
     assert response["atomicDurableProofRequired"] is True
-    assert response["atomicDurableItemCount"] == 2
+    assert response["atomicDurableItemCount"] == 3
     assert response["verificationIndex"] == 2
     assert response["processedGameCount"] == 2
     assert response["missedGameCount"] == 0
     assert response["postStartPredictionCreationAllowed"] is False
     assert response["immutablePredictionRewriteAllowed"] is False
+    released = module.release_cooperative_terminal_completion_lease(
+        slate_date=SLATE,
+        lease=final["_completionLease"],
+    )
+    assert released["released"] is True
+    assert len(module.lease_releases) == 5
     assert response["productionAuthorityChanged"] is False
 
 
@@ -528,7 +740,7 @@ def test_deleted_prefix_after_first_verification_fails_atomic_completion():
     verify_first = _invoke(module, second["checkpoint"])
     assert verify_first["checkpoint"]["verificationIndex"] == 1
 
-    del module.outcomes["official:822865"]
+    del module.outcomes["provider:game-0"]
 
     verify_second = _invoke(module, verify_first["checkpoint"])
     assert verify_second["ok"] is True
@@ -542,10 +754,60 @@ def test_deleted_prefix_after_first_verification_fails_atomic_completion():
     assert len(module.atomic_calls) == 1
 
 
+def test_deleted_manifest_dependency_after_verify_blocks_completion():
+    module = _install(ChunkModule(game_count=1))
+    checkpoint, _ = _process_then_verify_all(module)
+    module.TABLE.items.pop(
+        (module.manifest_item["PK"], module.manifest_item["SK"])
+    )
+
+    final = _invoke(module, checkpoint)
+
+    assert final["ok"] is False
+    assert final["complete"] is False
+    assert final["stage"] == "BIND_MANIFEST_AUTHORITY"
+
+
+def test_final_atomic_proof_retains_writer_barrier_for_completion_cas():
+    class BarrierPatch(ChunkPatch):
+        def __init__(self):
+            super().__init__()
+            self.overlap_result = None
+
+        def _cooperative_terminal_atomic_verify(
+            self, module, processed_games, manifest_authority=None
+        ):
+            self.overlap_result = self._acquire_lock_execution_lease(
+                module,
+                SLATE,
+                module._now_utc(),
+            )
+            return super()._cooperative_terminal_atomic_verify(
+                module,
+                processed_games,
+                manifest_authority,
+            )
+
+    patch = BarrierPatch()
+    module = _install(ChunkModule(game_count=1), patch)
+    checkpoint, _ = _process_then_verify_all(module)
+
+    final = _invoke(module, checkpoint)
+
+    assert final["ok"] is True
+    assert final["complete"] is True
+    assert patch.overlap_result["acquired"] is False
+    assert final["_completionLease"]["acquired"] is True
+    module.release_cooperative_terminal_completion_lease(
+        slate_date=SLATE,
+        lease=final["_completionLease"],
+    )
+
+
 def test_mutated_verified_row_fails_atomic_completion():
     module = _install(ChunkModule(game_count=1))
     checkpoint, _ = _process_then_verify_all(module)
-    module.outcomes["official:822865"]["reasons"].append("corruption")
+    module.outcomes["provider:game-0"]["reasons"].append("corruption")
 
     final = _invoke(module, checkpoint)
 
@@ -664,9 +926,68 @@ def test_new_outcome_uses_manifest_primary_and_passes_real_manifest_validator():
         real_lock_fixtures.SLATE,
         manifest_game,
     ) == outcomes[0]
+    progress = real_patch._progress(
+        module,
+        real_lock_fixtures.SLATE,
+        pulls,
+        [manifest_game],
+        module._now_utc(),
+        ensure_canonical=False,
+    )
+    assert progress["lockOutcomeCount"] == 1
+    assert progress["noPredictionDataCount"] == 1
+    assert progress["missedCount"] == 0
 
 
-def test_existing_official_keyed_outcome_is_used_without_duplicate_write():
+@pytest.mark.parametrize(
+    ("corrupt_identity", "valid_identity"),
+    [
+        ("provider:game-0", "official:822865"),
+        ("official:822865", "provider:game-0"),
+    ],
+)
+def test_present_invalid_outcome_alias_blocks_valid_counterpart_and_write(
+    corrupt_identity,
+    valid_identity,
+):
+    module = ChunkModule(game_count=1)
+    patch = ChunkPatch()
+    corrupt = patch._strict_outcome(corrupt_identity, ["corrupt"])
+    corrupt["lock_outcome_fingerprint"] = "0" * 64
+    module.outcomes[corrupt_identity] = corrupt
+    module.outcomes[valid_identity] = patch._strict_outcome(
+        valid_identity, ["valid-counterpart"]
+    )
+    module = _install(module, patch)
+
+    result = _invoke(module)
+
+    assert result["ok"] is False
+    assert result["errorCode"] == (
+        "IMMUTABLE_LOCK_OUTCOME_AUTHORITY_INVALID"
+    )
+    assert module.terminal_writes == []
+
+
+def test_present_invalid_official_alias_blocks_new_provider_write():
+    module = ChunkModule(game_count=1)
+    patch = ChunkPatch()
+    corrupt = patch._strict_outcome("official:822865", ["corrupt"])
+    corrupt["write_once"] = False
+    module.outcomes["official:822865"] = corrupt
+    module = _install(module, patch)
+
+    result = _invoke(module)
+
+    assert result["ok"] is False
+    assert result["errorCode"] == (
+        "IMMUTABLE_LOCK_OUTCOME_AUTHORITY_INVALID"
+    )
+    assert module.terminal_writes == []
+    assert "provider:game-0" not in module.outcomes
+
+
+def test_existing_official_keyed_outcome_blocks_duplicate_and_requires_review():
     module = ChunkModule(game_count=1)
     patch = ChunkPatch()
     module.outcomes["official:822865"] = patch._strict_outcome(
@@ -676,17 +997,14 @@ def test_existing_official_keyed_outcome_is_used_without_duplicate_write():
 
     result = _invoke(module)
 
-    assert result["ok"] is True
-    assert result["checkpoint"]["processedGames"][0][
-        "durableIdentity"
-    ] == "official:822865"
-    assert result["checkpoint"]["processedGames"][0][
-        "terminalState"
-    ] == "LOCKED_NO_PREDICTION_DATA"
+    assert result["ok"] is False
+    assert result["errorCode"] == (
+        "NONCANONICAL_TERMINAL_ALIAS_REQUIRES_REVIEW"
+    )
     assert module.terminal_writes == []
 
 
-def test_existing_official_keyed_canonical_is_used_without_terminal_write():
+def test_existing_official_keyed_canonical_requires_review_without_terminal_write():
     module = ChunkModule(game_count=1)
     stage, canonical = _canonical_rows("official:822865")
     module.stages["official:822865"] = stage
@@ -695,11 +1013,39 @@ def test_existing_official_keyed_canonical_is_used_without_terminal_write():
 
     result = _invoke(module)
 
-    entry = result["checkpoint"]["processedGames"][0]
-    assert result["ok"] is True
-    assert entry["durableIdentity"] == "official:822865"
-    assert entry["terminalState"] == "LOCKED_CANONICAL"
-    assert len(entry["durableEvidence"]["items"]) == 2
+    assert result["ok"] is False
+    assert result["errorCode"] == (
+        "NONCANONICAL_TERMINAL_ALIAS_REQUIRES_REVIEW"
+    )
+    assert module.terminal_writes == []
+
+
+def test_immutable_outcome_from_different_manifest_revision_fails_closed():
+    module = ChunkModule(game_count=1)
+    patch = ChunkPatch()
+    outcome = patch._strict_outcome(
+        "provider:game-0", ["existing-other-revision"]
+    )
+    outcome["provider_manifest_authority"]["fingerprint"] = (
+        "different-manifest-revision"
+    )
+    outcome["provider_manifest_fingerprint"] = (
+        "different-manifest-revision"
+    )
+    outcome["lock_outcome_fingerprint"] = _fingerprint({
+        key: value
+        for key, value in outcome.items()
+        if key != "lock_outcome_fingerprint"
+    })
+    module.outcomes["provider:game-0"] = outcome
+    module = _install(module, patch)
+
+    result = _invoke(module)
+
+    assert result["ok"] is False
+    assert result["errorCode"] == (
+        "DURABLE_TERMINAL_MANIFEST_AUTHORITY_MISMATCH"
+    )
     assert module.terminal_writes == []
 
 
@@ -815,6 +1161,27 @@ def test_checkpoint_is_bound_to_request_and_full_manifest_authority():
     changed_manifest = _invoke(module, first["checkpoint"])
     assert changed_manifest["ok"] is False
     assert changed_manifest["checkpointWriteAllowed"] is False
+
+
+@pytest.mark.parametrize("mutation", ["commence", "order"])
+def test_checkpoint_rejects_changed_schedule_detail_or_order(mutation):
+    module = _install(ChunkModule(game_count=2))
+    first = _invoke(module)
+    if mutation == "commence":
+        module.games[0]["commence_time"] = (
+            "2026-08-05T18:30:00+00:00"
+        )
+    else:
+        module.games = list(reversed(module.games))
+
+    result = _invoke(module, first["checkpoint"])
+
+    assert result["ok"] is False
+    assert result["checkpointWriteAllowed"] is False
+    assert result["stage"] in {
+        "RESOLVE_MANIFEST",
+        "BIND_MANIFEST_AUTHORITY",
+    }
 
 
 def test_forged_counts_fail_even_with_recomputed_checkpoint_fingerprint():
@@ -936,3 +1303,309 @@ def test_outer_context_values_are_restored_on_success_and_failure(
             alias_token
         )
         patch._STATUS_READ_CACHE.reset(cache_token)
+
+
+
+class AtomicReadClient:
+    def __init__(self, items):
+        self.items = copy.deepcopy(items)
+        self.calls = []
+        self.mode = "ok"
+
+    def transact_get_items(self, *, TransactItems, ReturnConsumedCapacity):
+        assert ReturnConsumedCapacity == "NONE"
+        self.calls.append(copy.deepcopy(TransactItems))
+        deserializer = real_patch.TypeDeserializer()
+        serializer = real_patch.TypeSerializer()
+        responses = []
+        for index, request in enumerate(TransactItems):
+            get = request["Get"]
+            key = {
+                name: deserializer.deserialize(value)
+                for name, value in get["Key"].items()
+            }
+            item = copy.deepcopy(
+                self.items.get(
+                    (get["TableName"], key["PK"], key["SK"])
+                )
+            )
+            if self.mode == "missing" and index == 0:
+                item = None
+            if self.mode == "mutated" and index == 0 and item:
+                item["tampered"] = True
+            responses.append(
+                {
+                    "Item": {
+                        name: serializer.serialize(value)
+                        for name, value in item.items()
+                    }
+                }
+                if item
+                else {}
+            )
+        if self.mode == "short":
+            responses = responses[:-1]
+        return {"Responses": responses}
+
+
+def _real_atomic_fixture():
+    lock_name = "lock-authority-table"
+    pulls_name = "pull-authority-table"
+    outcome = {
+        "PK": "LOCK#2026-08-05",
+        "SK": "OUTCOME#provider-0",
+        "record_type": "outcome",
+        "write_once": True,
+    }
+    stage = {
+        "PK": "LOCK#2026-08-05",
+        "SK": "STAGE#provider-1",
+        "record_type": "stage",
+        "write_once": True,
+    }
+    canonical = {
+        "PK": "PULLS#mlb#2026-08-05",
+        "SK": "LOCKED#provider-1",
+        "record_type": "canonical",
+        "write_once": True,
+    }
+    manifest = {
+        "PK": "PULLS#mlb#2026-08-05",
+        "SK": "MANIFEST#membership",
+        "record_type": "manifest",
+        "write_once": True,
+    }
+    items = {
+        (lock_name, outcome["PK"], outcome["SK"]): outcome,
+        (lock_name, stage["PK"], stage["SK"]): stage,
+        (pulls_name, canonical["PK"], canonical["SK"]): canonical,
+        (pulls_name, manifest["PK"], manifest["SK"]): manifest,
+    }
+    client = AtomicReadClient(items)
+    lock_table = SimpleNamespace(
+        name=lock_name,
+        meta=SimpleNamespace(client=client),
+    )
+    pulls_table = SimpleNamespace(
+        name=pulls_name,
+        meta=SimpleNamespace(client=client),
+    )
+    module = SimpleNamespace(
+        TABLE=lock_table,
+        history=SimpleNamespace(PULLS=pulls_table),
+    )
+    manifest_item = {
+        "tableRole": "PULLS_TABLE",
+        "PK": manifest["PK"],
+        "SK": manifest["SK"],
+        "itemFingerprint": (
+            real_patch._cooperative_terminal_item_fingerprint(manifest)
+        ),
+    }
+
+    def evidence(identity, state, primary_items):
+        value = {
+            "durableIdentity": identity,
+            "terminalState": state,
+            "items": [*primary_items, manifest_item],
+        }
+        value["evidenceFingerprint"] = (
+            real_patch._cooperative_terminal_evidence_fingerprint(value)
+        )
+        return value
+
+    outcome_item = {
+        "tableRole": "LOCK_TABLE",
+        "PK": outcome["PK"],
+        "SK": outcome["SK"],
+        "itemFingerprint": (
+            real_patch._cooperative_terminal_item_fingerprint(outcome)
+        ),
+    }
+    stage_item = {
+        "tableRole": "LOCK_TABLE",
+        "PK": stage["PK"],
+        "SK": stage["SK"],
+        "itemFingerprint": (
+            real_patch._cooperative_terminal_item_fingerprint(stage)
+        ),
+    }
+    canonical_item = {
+        "tableRole": "PULLS_TABLE",
+        "PK": canonical["PK"],
+        "SK": canonical["SK"],
+        "itemFingerprint": (
+            real_patch._cooperative_terminal_item_fingerprint(canonical)
+        ),
+    }
+    processed = [
+        {
+            "durableEvidence": evidence(
+                "provider:0",
+                "LOCKED_NO_PREDICTION_DATA",
+                [outcome_item],
+            )
+        },
+        {
+            "durableEvidence": evidence(
+                "provider:1",
+                "LOCKED_CANONICAL",
+                [stage_item, canonical_item],
+            )
+        },
+    ]
+    authority = {"atomicItems": [manifest_item]}
+    return module, client, processed, authority
+
+
+def test_real_atomic_verify_dedupes_mixed_authority_and_uses_exact_tables():
+    module, client, processed, authority = _real_atomic_fixture()
+
+    result = real_patch._cooperative_terminal_atomic_verify(
+        module,
+        processed,
+        authority,
+    )
+
+    assert result["ok"] is True
+    assert result["atomicSnapshot"] is True
+    assert result["itemCount"] == 4
+    assert result["maxItemCount"] == 32
+    assert len(result["readSetFingerprint"]) == 64
+    assert len(client.calls) == 1
+    table_names = [
+        request["Get"]["TableName"]
+        for request in client.calls[0]
+    ]
+    assert table_names.count("lock-authority-table") == 2
+    assert table_names.count("pull-authority-table") == 2
+
+
+@pytest.mark.parametrize(
+    ("mode", "error"),
+    [
+        ("missing", "COOPERATIVE_TERMINAL_ATOMIC_ITEM_MISSING"),
+        ("mutated", "COOPERATIVE_TERMINAL_ATOMIC_ITEM_MISMATCH"),
+        ("short", "COOPERATIVE_TERMINAL_ATOMIC_RESPONSE_COUNT_MISMATCH"),
+    ],
+)
+def test_real_atomic_verify_fails_closed_on_snapshot_anomaly(mode, error):
+    module, client, processed, authority = _real_atomic_fixture()
+    client.mode = mode
+
+    with pytest.raises(RuntimeError, match=error):
+        real_patch._cooperative_terminal_atomic_verify(
+            module,
+            processed,
+            authority,
+        )
+
+
+
+def _synthetic_terminal_evidence(
+    index,
+    state,
+    manifest_items,
+):
+    identity = f"provider:synthetic-{index}"
+    if state == "LOCKED_NO_PREDICTION_DATA":
+        primary = [
+            {
+                "tableRole": "LOCK_TABLE",
+                "PK": "LOCK#synthetic",
+                "SK": f"OUTCOME#{index}",
+                "itemFingerprint": _fingerprint(["outcome", index]),
+            }
+        ]
+    else:
+        primary = [
+            {
+                "tableRole": "LOCK_TABLE",
+                "PK": "LOCK#synthetic",
+                "SK": f"STAGE#{index}",
+                "itemFingerprint": _fingerprint(["stage", index]),
+            },
+            {
+                "tableRole": "PULLS_TABLE",
+                "PK": "PULLS#synthetic",
+                "SK": f"CANONICAL#{index}",
+                "itemFingerprint": _fingerprint(["canonical", index]),
+            },
+        ]
+    evidence = {
+        "durableIdentity": identity,
+        "terminalState": state,
+        "authorityItemCount": len(primary),
+        "dependencyItemCount": len(manifest_items),
+        "manifestAuthorityEvidenceFingerprint": "a" * 64,
+        "items": [*primary, *copy.deepcopy(manifest_items)],
+    }
+    evidence["evidenceFingerprint"] = (
+        repair._cooperative_terminal_evidence_fingerprint(evidence)
+    )
+    return {
+        "gameIdentity": identity,
+        "durableIdentity": identity,
+        "terminalState": state,
+        "reconciled": False,
+        "durableEvidence": evidence,
+    }
+
+
+@pytest.mark.parametrize(("manifest_root_count", "expected"), [(1, 16), (2, 17)])
+def test_fifteen_no_prediction_roots_dedupe_to_bounded_read_set(
+    manifest_root_count,
+    expected,
+):
+    roots = [
+        {
+            "tableRole": "PULLS_TABLE",
+            "PK": "PULLS#manifest",
+            "SK": f"MANIFEST#{index}",
+            "itemFingerprint": _fingerprint(["manifest", index]),
+        }
+        for index in range(manifest_root_count)
+    ]
+    processed = [
+        _synthetic_terminal_evidence(
+            index,
+            "LOCKED_NO_PREDICTION_DATA",
+            roots,
+        )
+        for index in range(15)
+    ]
+
+    requests, fingerprint = repair._cooperative_terminal_atomic_read_set(
+        processed,
+        {"atomicItems": roots},
+    )
+
+    assert len(requests) == expected
+    assert len(fingerprint) == 64
+
+
+def test_fifteen_canonical_games_plus_two_manifest_roots_hit_exact_max32():
+    roots = [
+        {
+            "tableRole": "PULLS_TABLE",
+            "PK": "PULLS#manifest",
+            "SK": f"MANIFEST#{index}",
+            "itemFingerprint": _fingerprint(["manifest", index]),
+        }
+        for index in range(2)
+    ]
+    processed = [
+        _synthetic_terminal_evidence(
+            index,
+            "LOCKED_CANONICAL",
+            roots,
+        )
+        for index in range(15)
+    ]
+
+    requests, _ = repair._cooperative_terminal_atomic_read_set(
+        processed,
+        {"atomicItems": roots},
+    )
+
+    assert len(requests) == repair.COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS == 32

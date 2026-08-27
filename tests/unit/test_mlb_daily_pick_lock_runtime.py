@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
 import json
 import math
@@ -18,6 +19,14 @@ from botocore.exceptions import ClientError
 
 ROOT = Path(__file__).resolve().parents[2]
 HANDLER = ROOT / "hello_world" / "mlb_daily_pick_lock_protected.py"
+COOPERATIVE_REPAIR_PATH = ROOT / "hello_world" / "mlb_prospective_row_repair.py"
+_COOPERATIVE_REPAIR_SPEC = importlib.util.spec_from_file_location(
+    "_test_mlb_prospective_row_repair", COOPERATIVE_REPAIR_PATH
+)
+assert _COOPERATIVE_REPAIR_SPEC is not None
+assert _COOPERATIVE_REPAIR_SPEC.loader is not None
+COOPERATIVE_REPAIR = importlib.util.module_from_spec(_COOPERATIVE_REPAIR_SPEC)
+_COOPERATIVE_REPAIR_SPEC.loader.exec_module(COOPERATIVE_REPAIR)
 RUNTIME_VERSION = "MLB-ML-RUNTIME-INSTALL-v3-test"
 REQUIRED_RUNTIME_STEPS = {
     "accuracyTargetsSeparated",
@@ -77,6 +86,8 @@ class FakeLeaseTable:
         self.delete_error = None
         self.get_error = None
         self.update_error = None
+        self.update_commits_then_error = None
+        self.update_after_commit = None
 
     def put_item(self, **kwargs):
         if kwargs["Item"].get("SK") == "COOPERATIVE_TERMINAL_REPLAY#V1":
@@ -328,6 +339,10 @@ class FakeLeaseTable:
             ):
                 updated.pop(field, None)
         self.queue_item = updated
+        if callable(self.update_after_commit):
+            self.update_after_commit(self, copy.deepcopy(kwargs))
+        if self.update_commits_then_error is not None:
+            raise self.update_commits_then_error
         result = {}
         if kwargs.get("ReturnValues") == "ALL_NEW":
             # Preserve an object alias only in this fixture so the injected
@@ -382,65 +397,257 @@ def _cooperative_event(
     return event
 
 
+def _fixture_hash(value) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _complete_terminal_checkpoint(
+    *,
+    slate_date: str = "2026-07-20",
+    request_epoch: int = 1_700_000_000,
+    request_id: str = "fixture-request",
+    game_count: int = 15,
+) -> dict:
+    manifest_item = {
+        "tableRole": "PULLS_TABLE",
+        "PK": f"MLB_PROVIDER_MANIFEST#{slate_date}",
+        "SK": "FULL_SLATE#V1",
+        "itemFingerprint": _fixture_hash(
+            {"kind": "manifest", "slate": slate_date, "count": game_count}
+        ),
+    }
+    manifest_authority = {
+        "version": "fixture-provider-manifest-v1",
+        "recordType": "fixture_provider_manifest",
+        "pk": manifest_item["PK"],
+        "sk": manifest_item["SK"],
+        "fingerprint": _fixture_hash(
+            {"kind": "manifest-semantic", "slate": slate_date}
+        ),
+        "gameCount": game_count,
+        "immutable": True,
+        "writeOnce": True,
+        "consistentReadVerified": True,
+        "officialScheduleAuthorityVersion": "fixture-schedule-v1",
+        "officialScheduleAuthorityFingerprint": _fixture_hash(
+            {"kind": "schedule", "slate": slate_date}
+        ),
+        "atomicItems": [copy.deepcopy(manifest_item)],
+    }
+    manifest_authority["authorityEvidenceFingerprint"] = _fixture_hash(
+        manifest_authority
+    )
+
+    processed_games = []
+    for index in range(game_count):
+        identity = f"provider:game-{index + 1}"
+        outcome_item = {
+            "tableRole": "LOCK_TABLE",
+            "PK": f"MLB_LOCK_OUTCOME#{slate_date}",
+            "SK": identity,
+            "itemFingerprint": _fixture_hash(
+                {
+                    "kind": "outcome",
+                    "slate": slate_date,
+                    "identity": identity,
+                }
+            ),
+        }
+        evidence = {
+            "durableIdentity": identity,
+            "terminalState": "LOCKED_NO_PREDICTION_DATA",
+            "authorityItemCount": 1,
+            "dependencyItemCount": 1,
+            "manifestAuthorityEvidenceFingerprint": (
+                manifest_authority["authorityEvidenceFingerprint"]
+            ),
+            "items": [outcome_item, copy.deepcopy(manifest_item)],
+        }
+        evidence["evidenceFingerprint"] = (
+            COOPERATIVE_REPAIR._cooperative_terminal_evidence_fingerprint(
+                evidence
+            )
+        )
+        processed_games.append(
+            {
+                "gameIdentity": identity,
+                "durableIdentity": identity,
+                "terminalState": "LOCKED_NO_PREDICTION_DATA",
+                "reconciled": True,
+                "durableEvidence": evidence,
+            }
+        )
+
+    checkpoint = {
+        "version": COOPERATIVE_REPAIR.COOPERATIVE_TERMINAL_CHUNK_VERSION,
+        "slateDateEt": slate_date,
+        "requestEpoch": int(request_epoch),
+        "requestId": str(request_id),
+        "manifestFingerprint": _fixture_hash(
+            {
+                "slate": slate_date,
+                "orderedIdentities": [
+                    entry["gameIdentity"] for entry in processed_games
+                ],
+            }
+        ),
+        "manifestBindingVersion": (
+            COOPERATIVE_REPAIR.COOPERATIVE_TERMINAL_MANIFEST_BINDING_VERSION
+        ),
+        "manifestAuthority": manifest_authority,
+        "manifestGameCount": game_count,
+        "phase": "VERIFY",
+        "nextGameIndex": game_count,
+        "processedGameCount": game_count,
+        "terminalCount": game_count,
+        "canonicalCount": 0,
+        "noPredictionDataCount": game_count,
+        "reconciledCount": game_count,
+        "processedGames": processed_games,
+        "verificationIndex": game_count,
+        "verifiedGameCount": game_count,
+        "verificationComplete": True,
+        "attemptCount": 2 * game_count,
+        "lastAttempt": {
+            "status": "ATOMIC_DURABLE_PROOF_VERIFIED",
+            "stage": "COMPLETE",
+            "atUtc": "2026-07-21T22:10:00+00:00",
+            "phase": "VERIFY",
+        },
+        "identityResolutionVersion": (
+            COOPERATIVE_REPAIR.COOPERATIVE_TERMINAL_IDENTITY_RESOLUTION_VERSION
+        ),
+        "identityAliasLimit": (
+            COOPERATIVE_REPAIR.COOPERATIVE_TERMINAL_IDENTITY_ALIAS_LIMIT
+        ),
+        "candidateAliasQueryLimit": (
+            COOPERATIVE_REPAIR.COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_QUERY_LIMIT
+        ),
+        "writerLeaseVersion": (
+            COOPERATIVE_REPAIR.COOPERATIVE_TERMINAL_WRITER_LEASE_VERSION
+        ),
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "productionAuthorityChanged": False,
+    }
+    checkpoint["checkpointFingerprint"] = (
+        COOPERATIVE_REPAIR._cooperative_terminal_checkpoint_fingerprint(
+            checkpoint
+        )
+    )
+    COOPERATIVE_REPAIR._validated_cooperative_terminal_complete_checkpoint(
+        checkpoint
+    )
+    return checkpoint
+
+
 def _successful_terminal_replay_payload(
     slate_date: str = "2026-07-20",
     game_count: int = 15,
+    *,
+    checkpoint: dict | None = None,
 ) -> dict:
-    chunk_version = (
-        "MLB-COOPERATIVE-TERMINAL-CHUNK-v2-"
-        "bounded-process-and-verify"
+    complete_checkpoint = (
+        copy.deepcopy(checkpoint)
+        if checkpoint is not None
+        else _complete_terminal_checkpoint(
+            slate_date=slate_date,
+            game_count=game_count,
+        )
     )
-    progress = {
-        "manifestGameCount": game_count,
-        "processedGameCount": game_count,
-        "verifiedGameCount": game_count,
-        "verificationIndex": game_count,
-        "verificationComplete": True,
-        "atomicDurableItemCount": game_count,
-        "atomicDurableProofRequired": True,
-        "canonicalCount": 0,
-        "noPredictionDataCount": game_count,
-        "lockOutcomeCount": game_count,
-        "missedCount": 0,
-        "dueMissingCount": 0,
+    return COOPERATIVE_REPAIR._cooperative_terminal_completion_response(
+        complete_checkpoint
+    )
+
+
+def _fixture_completion_chunk_result(
+    *,
+    module,
+    patch,
+    slate_date: str,
+    request_epoch: int,
+    request_id: str,
+    context,
+    game_count: int = 15,
+    checkpoint: dict | None = None,
+) -> dict:
+    complete_checkpoint = (
+        copy.deepcopy(checkpoint)
+        if checkpoint is not None
+        else _complete_terminal_checkpoint(
+            slate_date=slate_date,
+            request_epoch=request_epoch,
+            request_id=request_id,
+            game_count=game_count,
+        )
+    )
+    complete_checkpoint, atomic_requests, read_set_fingerprint = (
+        COOPERATIVE_REPAIR._validated_cooperative_terminal_complete_checkpoint(
+            complete_checkpoint
+        )
+    )
+    owner = f"fixture-v2-owner:{context.aws_request_id}"
+    lease = {
+        "handoffVersion": (
+            COOPERATIVE_REPAIR.COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION
+        ),
+        "acquired": True,
+        "slateDateEt": slate_date,
+        "owner": owner,
+        "expiresAtEpoch": 2_000_000_000,
+        "expiresAtUtc": "2033-05-18T03:33:20+00:00",
+        "ownedKeys": (
+            COOPERATIVE_REPAIR._cooperative_terminal_expected_lease_specs(
+                patch, slate_date
+            )
+        ),
     }
+    replay_payload = (
+        COOPERATIVE_REPAIR._cooperative_terminal_completion_response(
+            complete_checkpoint
+        )
+    )
     return {
         "ok": True,
-        "sport": "mlb",
-        "slateDateEt": slate_date,
-        "reason": "PROVEN_NO_PREDICTION_TERMINALS_RECONCILED",
-        "terminalChunkVersion": chunk_version,
-        "verificationPhase": "VERIFY",
-        "durableTerminalVerificationComplete": True,
-        "atomicDurableProofRequired": True,
-        "atomicDurableItemCount": game_count,
-        "applicationAppendOnlyAuthorityRequired": True,
-        "lockStatusComplete": True,
+        "complete": True,
+        "deferred": False,
+        "stage": "COMPLETE",
+        "remainingSeconds": 840,
+        "checkpointWriteAllowed": False,
+        "checkpoint": copy.deepcopy(complete_checkpoint),
+        "terminalReplayResponse": replay_payload,
+        "terminalChunkVersion": (
+            COOPERATIVE_REPAIR.COOPERATIVE_TERMINAL_CHUNK_VERSION
+        ),
+        "_completionLease": lease,
+        "_atomicCompletionProof": {
+            "handoffVersion": (
+                COOPERATIVE_REPAIR.COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION
+            ),
+            "slateDateEt": slate_date,
+            "requestEpoch": int(request_epoch),
+            "requestId": str(request_id),
+            "checkpointFingerprint": complete_checkpoint[
+                "checkpointFingerprint"
+            ],
+            "leaseOwnerFingerprint": hashlib.sha256(
+                owner.encode("utf-8")
+            ).hexdigest(),
+            "readSetFingerprint": read_set_fingerprint,
+            "itemCount": len(atomic_requests),
+            "verifiedAtEpoch": 1_785_000_000,
+        },
         "postStartPredictionCreationAllowed": False,
         "immutablePredictionRewriteAllowed": False,
-        "directWorkflowTableWrite": False,
         "productionAuthorityChanged": False,
-        "perGameLockProgress": progress,
-        "missedLockTerminalReconciliation": {
-            "ok": True,
-            "version": chunk_version,
-            "slateDateEt": slate_date,
-            "manifestGameCount": game_count,
-            "processedGameCount": game_count,
-            "verifiedGameCount": game_count,
-            "verificationIndex": game_count,
-            "durableTerminalVerificationComplete": True,
-            "atomicDurableProofRequired": True,
-            "atomicDurableItemCount": game_count,
-            "applicationAppendOnlyAuthorityRequired": True,
-            "reconciledCount": game_count,
-            "remainingMissedCount": 0,
-            "unresolved": [],
-            "progressAfter": progress,
-            "postStartPredictionCreationAllowed": False,
-        },
     }
-
 
 def _successful_current_slate_payload(slate_date: str = "2026-07-21") -> dict:
     return {
@@ -536,8 +743,8 @@ def _load_handler(
 
     daily_lock.lambda_handler = delegate
     daily_lock.MLB_COOPERATIVE_TERMINAL_CHUNK_VERSION = (
-        "MLB-COOPERATIVE-TERMINAL-CHUNK-v2-"
-        "bounded-process-and-verify"
+        "MLB-COOPERATIVE-TERMINAL-CHUNK-v3-"
+        "bounded-proof-lease-handoff"
     )
 
     def default_chunk_runner(
@@ -548,6 +755,7 @@ def _load_handler(
         checkpoint,
         context,
     ):
+        del checkpoint
         replay_event = {
             "sport": "mlb",
             "run": "prospective_terminal_backlog_reconciliation_v5",
@@ -565,60 +773,19 @@ def _load_handler(
                 "MLB_SCHEDULED_LOCK_FAILED:"
                 + str(replay_payload.get("reason") or "UNKNOWN")
             )
-        complete_progress = {
-            "version": (
-                daily_lock.MLB_COOPERATIVE_TERMINAL_CHUNK_VERSION
-            ),
-            "slateDateEt": slate_date,
-            "requestEpoch": int(request_epoch),
-            "requestId": str(request_id),
-            "manifestFingerprint": "fixture-manifest",
-            "manifestGameCount": 15,
-            "phase": "VERIFY",
-            "nextGameIndex": 15,
-            "processedGameCount": 15,
-            "terminalCount": 15,
-            "canonicalCount": 0,
-            "noPredictionDataCount": 15,
-            "reconciledCount": 15,
-            "processedGames": [],
-            "verificationIndex": 15,
-            "verifiedGameCount": 15,
-            "verificationComplete": True,
-            "attemptCount": 1,
-            "lastAttempt": {
-                "status": "ATOMIC_DURABLE_PROOF_VERIFIED",
-                "stage": "COMPLETE",
-                "atUtc": "2026-07-21T22:10:00+00:00",
-                "phase": "VERIFY",
-            },
-            "postStartPredictionCreationAllowed": False,
-            "immutablePredictionRewriteAllowed": False,
-            "productionAuthorityChanged": False,
-        }
-        # The fixture's claim update returns its in-memory record by reference,
-        # allowing this injected adapter to emulate an already-checkpointed
-        # final owner without weakening the production completion precondition.
+        result = _fixture_completion_chunk_result(
+            module=daily_lock,
+            patch=per_game,
+            slate_date=slate_date,
+            request_epoch=request_epoch,
+            request_id=request_id,
+            context=context,
+        )
         if isinstance(daily_lock.TABLE.queue_item, dict):
             daily_lock.TABLE.queue_item[
                 "terminal_replay_progress"
-            ] = complete_progress
-        return {
-            "ok": True,
-            "complete": True,
-            "deferred": False,
-            "stage": "COMPLETE",
-            "remainingSeconds": 840,
-            "checkpointWriteAllowed": False,
-            "checkpoint": copy.deepcopy(complete_progress),
-            "terminalReplayResponse": replay_payload,
-            "terminalChunkVersion": (
-                daily_lock.MLB_COOPERATIVE_TERMINAL_CHUNK_VERSION
-            ),
-            "postStartPredictionCreationAllowed": False,
-            "immutablePredictionRewriteAllowed": False,
-            "productionAuthorityChanged": False,
-        }
+            ] = copy.deepcopy(result["checkpoint"])
+        return result
 
     daily_lock.run_cooperative_terminal_chunk = default_chunk_runner
 
@@ -656,6 +823,78 @@ def _load_handler(
     per_game.RELEASE_ASSESSMENT_VERSION = "test-playability-version"
     per_game.LOCK_EXECUTION_LEASE_VERSION = (
         "MLB-LOCK-EXECUTION-LEASE-v2-global-all-mutating"
+    )
+    per_game.LOCK_EXECUTION_LEASE_RECORD_TYPE = (
+        "mlb_lock_execution_lease_v2"
+    )
+    per_game.LEGACY_SCHEDULED_SINGLE_FLIGHT_VERSION = (
+        "MLB-LOCK-RUNTIME-v4-legacy-rollout-bridge"
+    )
+    per_game.LEGACY_SCHEDULED_SINGLE_FLIGHT_RECORD_TYPE = (
+        "mlb_lock_runtime_v4"
+    )
+    per_game._lock_execution_lease_key = lambda: {
+        "PK": "MLB_LOCK_EXECUTION#V2",
+        "SK": "LEASE",
+    }
+
+    def fixture_bridge_slates(slate):
+        center = datetime.strptime(str(slate), "%Y-%m-%d")
+        return [
+            (center + timedelta(days=offset)).strftime("%Y-%m-%d")
+            for offset in (-1, 0, 1)
+        ]
+
+    per_game._legacy_rollout_bridge_slates = fixture_bridge_slates
+    per_game._legacy_scheduled_single_flight_key = lambda slate: {
+        "PK": f"MLB_LOCK_RUNTIME#{slate}",
+        "SK": "SCHEDULED_SINGLE_FLIGHT#V1",
+    }
+    daily_lock._now_utc = lambda: datetime(
+        2026, 7, 21, 22, 10, tzinfo=timezone.utc
+    )
+    daily_lock.MLB_COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION = (
+        COOPERATIVE_REPAIR.COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION
+    )
+    daily_lock.validate_cooperative_terminal_completion_checkpoint = (
+        COOPERATIVE_REPAIR._validated_cooperative_terminal_complete_checkpoint
+    )
+    daily_lock.validate_cooperative_terminal_completion_handoff = (
+        lambda **kwargs: (
+            COOPERATIVE_REPAIR._validate_cooperative_terminal_completion_handoff(
+                daily_lock,
+                per_game,
+                **kwargs,
+            )
+        )
+    )
+    daily_lock._completion_release_calls = []
+
+    def fixture_completion_release(*, slate_date, lease):
+        validated = (
+            COOPERATIVE_REPAIR._validated_cooperative_terminal_completion_lease(
+                per_game,
+                slate=str(slate_date),
+                lease=lease,
+                now_epoch=int(daily_lock._now_utc().timestamp()),
+                require_live=False,
+            )
+        )
+        daily_lock._completion_release_calls.append(
+            {
+                "slateDateEt": str(slate_date),
+                "lease": copy.deepcopy(validated),
+            }
+        )
+        return {
+            "ok": True,
+            "released": True,
+            "ownedKeyCount": len(validated["ownedKeys"]),
+            "ownerExposed": False,
+        }
+
+    daily_lock.release_cooperative_terminal_completion_lease = (
+        fixture_completion_release
     )
 
     def apply_per_game(module):
@@ -2141,8 +2380,7 @@ def test_eventbridge_owner_checkpoints_process_then_verify_then_completes():
     table = FakeLeaseTable()
     runner_calls = []
     chunk_version = (
-        "MLB-COOPERATIVE-TERMINAL-CHUNK-v2-"
-        "bounded-process-and-verify"
+        COOPERATIVE_REPAIR.COOPERATIVE_TERMINAL_CHUNK_VERSION
     )
 
     def payload_for(event, context):
@@ -2154,63 +2392,39 @@ def test_eventbridge_owner_checkpoints_process_then_verify_then_completes():
         lease_table=table,
         delegate_payload=payload_for,
     ) as (handler, _, delegate_calls):
-        def progress(
+        def checkpoint_for(
             *,
             slate_date,
             request_epoch,
             request_id,
-            verification_index,
+            verification_complete,
         ):
-            complete = verification_index == 1
-            return {
-                "version": chunk_version,
-                "slateDateEt": slate_date,
-                "requestEpoch": int(request_epoch),
-                "requestId": str(request_id),
-                "manifestFingerprint": "manifest-fingerprint",
-                "manifestGameCount": 1,
-                "phase": "VERIFY",
-                "nextGameIndex": 1,
-                "processedGameCount": 1,
-                "terminalCount": 1,
-                "canonicalCount": 0,
-                "noPredictionDataCount": 1,
-                "reconciledCount": 1,
-                "processedGames": [
-                    {
-                        "gameIdentity": "provider:game-1",
-                        "durableIdentity": "official:1",
-                        "terminalState": (
-                            "LOCKED_NO_PREDICTION_DATA"
-                        ),
-                        "reconciled": True,
-                    }
-                ],
-                "verificationIndex": verification_index,
-                "verifiedGameCount": verification_index,
-                "verificationComplete": complete,
-                "attemptCount": 1 + verification_index,
-                "lastAttempt": {
-                    "status": (
-                        "DURABLE_TERMINAL_VERIFIED"
-                        if complete
-                        else "TERMINAL_CHECKPOINT_READY"
-                    ),
-                    "stage": (
-                        "COMPLETE_READY"
-                        if complete
-                        else "PROCESS_CHECKPOINT_READY"
-                    ),
+            progress = _complete_terminal_checkpoint(
+                slate_date=slate_date,
+                request_epoch=request_epoch,
+                request_id=request_id,
+                game_count=1,
+            )
+            if not verification_complete:
+                progress["verificationIndex"] = 0
+                progress["verifiedGameCount"] = 0
+                progress["verificationComplete"] = False
+                progress["attemptCount"] = 1
+                progress["lastAttempt"] = {
+                    "status": "TERMINAL_CHECKPOINT_READY",
+                    "stage": "PROCESS_CHECKPOINT_READY",
                     "atUtc": "2026-07-21T22:10:00+00:00",
                     "phase": "VERIFY",
                     "gameIndex": 0,
                     "gameIdentity": "provider:game-1",
-                    "durableIdentity": "official:1",
-                },
-                "postStartPredictionCreationAllowed": False,
-                "immutablePredictionRewriteAllowed": False,
-                "productionAuthorityChanged": False,
-            }
+                    "durableIdentity": "provider:game-1",
+                }
+                progress["checkpointFingerprint"] = (
+                    COOPERATIVE_REPAIR._cooperative_terminal_checkpoint_fingerprint(
+                        progress
+                    )
+                )
+            return progress
 
         def chunk_runner(
             *,
@@ -2230,11 +2444,11 @@ def test_eventbridge_owner_checkpoints_process_then_verify_then_completes():
                 )
             )
             if checkpoint is None:
-                next_progress = progress(
+                next_progress = checkpoint_for(
                     slate_date=slate_date,
                     request_epoch=request_epoch,
                     request_id=request_id,
-                    verification_index=0,
+                    verification_complete=False,
                 )
                 return {
                     "ok": True,
@@ -2251,11 +2465,11 @@ def test_eventbridge_owner_checkpoints_process_then_verify_then_completes():
                     "productionAuthorityChanged": False,
                 }
             if checkpoint["verificationComplete"] is not True:
-                next_progress = progress(
+                next_progress = checkpoint_for(
                     slate_date=slate_date,
                     request_epoch=request_epoch,
                     request_id=request_id,
-                    verification_index=1,
+                    verification_complete=True,
                 )
                 return {
                     "ok": True,
@@ -2271,25 +2485,16 @@ def test_eventbridge_owner_checkpoints_process_then_verify_then_completes():
                     "immutablePredictionRewriteAllowed": False,
                     "productionAuthorityChanged": False,
                 }
-            return {
-                "ok": True,
-                "complete": True,
-                "deferred": False,
-                "stage": "COMPLETE",
-                "remainingSeconds": 840,
-                "checkpointWriteAllowed": False,
-                "checkpoint": copy.deepcopy(checkpoint),
-                "terminalReplayResponse": (
-                    _successful_terminal_replay_payload(
-                        slate_date,
-                        game_count=1,
-                    )
-                ),
-                "terminalChunkVersion": chunk_version,
-                "postStartPredictionCreationAllowed": False,
-                "immutablePredictionRewriteAllowed": False,
-                "productionAuthorityChanged": False,
-            }
+            return _fixture_completion_chunk_result(
+                module=handler.mlb_daily_pick_lock,
+                patch=handler.mlb_daily_per_game_lock_patch,
+                slate_date=slate_date,
+                request_epoch=request_epoch,
+                request_id=request_id,
+                context=context,
+                game_count=1,
+                checkpoint=checkpoint,
+            )
 
         handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk = (
             chunk_runner
@@ -2343,13 +2548,18 @@ def test_eventbridge_owner_checkpoints_process_then_verify_then_completes():
         assert third_status["state"] == "COMPLETED"
         assert third_status["historicalReplayChunked"] is True
         assert third_status["historicalReplayCompleted"] is True
+        assert third_status[
+            "completionMutationLeaseHeldThroughQueueCas"
+        ] is True
         assert table.queue_item["state"] == "COMPLETED"
         receipt = table.queue_item["replay_receipt"]
         assert receipt["durableTerminalVerificationComplete"] is True
         assert receipt["atomicDurableProofRequired"] is True
-        assert receipt["atomicDurableItemCount"] == 15
+        assert receipt["atomicDurableItemCount"] == 2
+        assert len(receipt["checkpointFingerprint"]) == 64
+        assert len(receipt["manifestFingerprint"]) == 64
         reconciliation = receipt["missedLockTerminalReconciliation"]
-        assert reconciliation["verifiedGameCount"] == 15
+        assert reconciliation["verifiedGameCount"] == 1
         assert reconciliation["remainingMissedCount"] == 0
         assert reconciliation["unresolved"] == []
         assert [call[0]["run"] for call in delegate_calls] == [
@@ -2361,13 +2571,22 @@ def test_eventbridge_owner_checkpoints_process_then_verify_then_completes():
         assert runner_calls[0][3] is None
         assert runner_calls[1][3]["verificationIndex"] == 0
         assert runner_calls[2][3]["verificationComplete"] is True
+        release_calls = (
+            handler.mlb_daily_pick_lock._completion_release_calls
+        )
+        assert len(release_calls) == 1
+        assert release_calls[0]["slateDateEt"] == "2026-07-20"
+        serialized = json.dumps(third, sort_keys=True)
+        assert "_completionLease" not in serialized
+        assert "_atomicCompletionProof" not in serialized
+        assert "fixture-v2-owner:atomic-completer" not in serialized
 
 
 def test_failed_chunk_persists_redacted_stage_and_requeues_before_raising(capsys):
     table = FakeLeaseTable()
     chunk_version = (
-        "MLB-COOPERATIVE-TERMINAL-CHUNK-v2-"
-        "bounded-process-and-verify"
+        "MLB-COOPERATIVE-TERMINAL-CHUNK-v3-"
+        "bounded-proof-lease-handoff"
     )
     checkpoint = {
         "version": chunk_version,
@@ -2519,6 +2738,15 @@ def test_production_source_has_no_whole_slate_chunk_fallback():
         lambda payload: payload.__setitem__(
             "atomicDurableProofRequired", False
         ),
+        lambda payload: payload.__setitem__(
+            "completionMutationLeaseRequired", False
+        ),
+        lambda payload: payload[
+            "missedLockTerminalReconciliation"
+        ].__setitem__("completionMutationLeaseRequired", False),
+        lambda payload: payload.__setitem__(
+            "checkpointFingerprint", "forged"
+        ),
     ],
 )
 def test_terminal_receipt_rejects_inconsistent_verification_contract(
@@ -2593,3 +2821,273 @@ def test_checkpoint_cas_rejects_same_slate_replacement_request():
                 progress=progress,
                 failed=True,
             )
+
+
+def test_requeue_cas_rejects_same_slate_replacement_request():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        claimed, _ = handler._claim_cooperative_replay(
+            owner="stale-requeue-owner",
+            context=FakeContext(remaining_millis=900_000),
+            current_slate_response={
+                "statusCode": 200,
+                "body": json.dumps(_successful_current_slate_payload()),
+            },
+            expected_slate_date="2026-07-21",
+        )
+        assert claimed is not None
+        table.queue_item["requested_at_epoch"] += 1
+        table.queue_item["request_id"] = "replacement-request"
+
+        assert handler._requeue_cooperative_replay(
+            claimed, "stale-requeue-owner"
+        ) is False
+        assert table.queue_item["state"] == "CLAIMED"
+        assert table.queue_item["request_id"] == "replacement-request"
+
+
+def _claimed_completion_fixture(handler, table, *, owner="completion-owner"):
+    handler.lambda_handler(_cooperative_event(), FakeContext())
+    claimed, _ = handler._claim_cooperative_replay(
+        owner=owner,
+        context=FakeContext(remaining_millis=900_000),
+        current_slate_response={
+            "statusCode": 200,
+            "body": json.dumps(_successful_current_slate_payload()),
+        },
+        expected_slate_date="2026-07-21",
+    )
+    assert claimed is not None
+    checkpoint = _complete_terminal_checkpoint(
+        slate_date="2026-07-20",
+        request_epoch=claimed["requested_at_epoch"],
+        request_id=claimed["request_id"],
+        game_count=1,
+    )
+    claimed["terminal_replay_progress"] = copy.deepcopy(checkpoint)
+    table.queue_item["terminal_replay_progress"] = copy.deepcopy(
+        checkpoint
+    )
+    response = {
+        "statusCode": 200,
+        "body": json.dumps(
+            _successful_terminal_replay_payload(
+                "2026-07-20",
+                game_count=1,
+                checkpoint=checkpoint,
+            )
+        ),
+    }
+    return claimed, checkpoint, response
+
+
+def test_completion_ambiguity_accepts_only_exact_committed_ack():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        claimed, checkpoint, response = _claimed_completion_fixture(
+            handler, table
+        )
+
+        def committed_then_error(table_, kwargs):
+            del table_
+            values = kwargs.get("ExpressionAttributeValues") or {}
+            if ":receipt" in values:
+                raise _client_error("InternalServerError", "UpdateItem")
+
+        table.update_after_commit = committed_then_error
+        completed = handler._complete_cooperative_replay(
+            item=claimed,
+            owner="completion-owner",
+            response=response,
+        )
+
+        assert completed["state"] == "COMPLETED"
+        assert table.queue_item["terminal_replay_progress"] == checkpoint
+        assert table.queue_item["request_id"] == claimed["request_id"]
+        receipt = table.queue_item["replay_receipt"]
+        assert receipt["ok"] is True
+        assert receipt["checkpointFingerprint"] == (
+            checkpoint["checkpointFingerprint"]
+        )
+        assert receipt["manifestFingerprint"] == (
+            checkpoint["manifestFingerprint"]
+        )
+
+
+def test_completion_ambiguity_rejects_same_slate_replacement_completed_row():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        claimed, _, response = _claimed_completion_fixture(
+            handler, table
+        )
+
+        def replace_after_commit(table_, kwargs):
+            values = kwargs.get("ExpressionAttributeValues") or {}
+            if ":receipt" not in values:
+                return
+            replacement = copy.deepcopy(table_.queue_item)
+            replacement["requested_at_epoch"] = (
+                int(replacement["requested_at_epoch"]) + 1
+            )
+            replacement["request_id"] = "replacement-request"
+            replacement["terminal_replay_progress"] = {
+                "version": handler.COOPERATIVE_TERMINAL_CHUNK_VERSION,
+                "replacement": True,
+            }
+            replacement["replay_receipt"] = {
+                "ok": True,
+                "replacement": True,
+            }
+            table_.queue_item = replacement
+            raise _client_error("InternalServerError", "UpdateItem")
+
+        table.update_after_commit = replace_after_commit
+        with pytest.raises(
+            RuntimeError,
+            match="MLB_COOPERATIVE_REPLAY_COMPLETE_FAILED",
+        ):
+            handler._complete_cooperative_replay(
+                item=claimed,
+                owner="completion-owner",
+                response=response,
+            )
+
+        assert table.queue_item["state"] == "COMPLETED"
+        assert table.queue_item["request_id"] == "replacement-request"
+        assert table.queue_item["replay_receipt"]["replacement"] is True
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda progress: progress.__setitem__("phase", "PROCESS"),
+        lambda progress: progress.__setitem__("processedGames", []),
+        lambda progress: progress["processedGames"][0].__setitem__(
+            "durableIdentity", "official:1"
+        ),
+        lambda progress: progress.__setitem__("verifiedGameCount", 0),
+    ],
+)
+def test_completion_boundary_rejects_structurally_forged_checkpoint(mutate):
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        claimed, checkpoint, response = _claimed_completion_fixture(
+            handler, table
+        )
+        mutate(checkpoint)
+        checkpoint["checkpointFingerprint"] = (
+            COOPERATIVE_REPAIR._cooperative_terminal_checkpoint_fingerprint(checkpoint)
+        )
+        claimed["terminal_replay_progress"] = copy.deepcopy(checkpoint)
+        table.queue_item["terminal_replay_progress"] = copy.deepcopy(
+            checkpoint
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match="MLB_COOPERATIVE_REPLAY_COMPLETE_PROGRESS_INVALID",
+        ):
+            handler._complete_cooperative_replay(
+                item=claimed,
+                owner="completion-owner",
+                response=response,
+            )
+
+        assert table.queue_item["state"] == "CLAIMED"
+        assert "replay_receipt" not in table.queue_item
+
+
+def test_completion_cas_failure_releases_handoff_before_outer_lease():
+    table = FakeLeaseTable()
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=_successful_current_slate_payload(),
+    ) as (handler, _, _):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+
+        def undo_completion_and_raise(table_, kwargs):
+            values = kwargs.get("ExpressionAttributeValues") or {}
+            if ":receipt" not in values:
+                return
+            queue = table_.queue_item
+            queue["state"] = values[":claimed"]
+            queue["claim_owner"] = values[":owner"]
+            queue["terminal_replay_progress"] = copy.deepcopy(
+                values[":expected_progress"]
+            )
+            queue.pop("replay_receipt", None)
+            raise _client_error("InternalServerError", "UpdateItem")
+
+        table.update_after_commit = undo_completion_and_raise
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                _scheduled_event(),
+                FakeContext(
+                    request_id="completion-cas-failure",
+                    remaining_millis=900_000,
+                ),
+            ),
+            "MLB_COOPERATIVE_REPLAY_COMPLETE_FAILED",
+        )
+
+        assert table.queue_item["state"] == "QUEUED"
+        assert (
+            len(
+                handler.mlb_daily_pick_lock._completion_release_calls
+            )
+            == 1
+        )
+        assert table.item is None
+
+
+@pytest.mark.parametrize(
+    ("mode", "release_count"),
+    [("missing", 0), ("expired", 1)],
+)
+def test_invalid_completion_handoff_blocks_queue_completion_and_cleans_up(
+    mode,
+    release_count,
+):
+    table = FakeLeaseTable()
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=_successful_current_slate_payload(),
+    ) as (handler, _, _):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        original_runner = (
+            handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk
+        )
+
+        def invalid_runner(**kwargs):
+            result = original_runner(**kwargs)
+            if mode == "missing":
+                result.pop("_completionLease", None)
+            else:
+                result["_completionLease"]["expiresAtEpoch"] = 1
+            return result
+
+        handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk = (
+            invalid_runner
+        )
+        expected = (
+            "MLB_COOPERATIVE_TERMINAL_CHUNK_COMPLETE_UNHEALTHY"
+            if mode == "missing"
+            else "COOPERATIVE_TERMINAL_COMPLETION_LEASE_INVALID"
+        )
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                _scheduled_event(),
+                FakeContext(
+                    request_id=f"invalid-handoff-{mode}",
+                    remaining_millis=900_000,
+                ),
+            ),
+            expected,
+        )
+
+        assert table.queue_item["state"] == "QUEUED"
+        assert len(
+            handler.mlb_daily_pick_lock._completion_release_calls
+        ) == release_count
+        assert table.item is None

@@ -110,8 +110,12 @@ COOPERATIVE_REPLAY_ACKNOWLEDGED = "ACKNOWLEDGED"
 # budget plus the same one-minute release margin used by the global lease.
 COOPERATIVE_REPLAY_EXECUTION_BUDGET_SECONDS = 600
 COOPERATIVE_TERMINAL_CHUNK_VERSION = (
-    "MLB-COOPERATIVE-TERMINAL-CHUNK-v2-bounded-process-and-verify"
+    "MLB-COOPERATIVE-TERMINAL-CHUNK-v3-bounded-proof-lease-handoff"
 )
+COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION = (
+    "MLB-COOPERATIVE-TERMINAL-COMPLETION-HANDOFF-v1"
+)
+COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS = 32
 COOPERATIVE_REPLAY_MIN_REMAINING_SECONDS = (
     COOPERATIVE_REPLAY_EXECUTION_BUDGET_SECONDS
     + LOCK_EXECUTION_TIMEOUT_SAFETY_MARGIN_SECONDS
@@ -1455,7 +1459,7 @@ def _terminal_replay_receipt(
         or payload.get("verificationPhase") != "VERIFY"
         or payload.get("durableTerminalVerificationComplete") is not True
         or payload.get("atomicDurableProofRequired") is not True
-        or payload.get("applicationAppendOnlyAuthorityRequired") is not True
+        or payload.get("completionMutationLeaseRequired") is not True
         or payload.get("postStartPredictionCreationAllowed") is not False
         or payload.get("immutablePredictionRewriteAllowed") is not False
         or payload.get("directWorkflowTableWrite") is not False
@@ -1463,6 +1467,20 @@ def _terminal_replay_receipt(
         or payload.get("lockStatusComplete") is not True
     ):
         raise RuntimeError("MLB_COOPERATIVE_REPLAY_RESULT_UNHEALTHY")
+
+    checkpoint_fingerprint = str(
+        payload.get("checkpointFingerprint") or ""
+    )
+    manifest_fingerprint = str(
+        payload.get("manifestFingerprint") or ""
+    )
+    if (
+        len(checkpoint_fingerprint) != 64
+        or len(manifest_fingerprint) != 64
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_REPLAY_COMPLETION_FINGERPRINT_MISSING"
+        )
 
     repair = payload.get("missedLockTerminalReconciliation")
     if not isinstance(repair, dict):
@@ -1526,14 +1544,14 @@ def _terminal_replay_receipt(
         or canonical_count + no_prediction_count != manifest_count
         or lock_outcome_count != manifest_count
         or atomic_item_count < manifest_count
-        or atomic_item_count > manifest_count * 2
+        or atomic_item_count > COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS
         or progress.get("verificationComplete") is not True
         or progress.get("atomicDurableProofRequired") is not True
         or repair.get("ok") is not True
         or repair.get("version") != COOPERATIVE_TERMINAL_CHUNK_VERSION
         or repair.get("durableTerminalVerificationComplete") is not True
         or repair.get("atomicDurableProofRequired") is not True
-        or repair.get("applicationAppendOnlyAuthorityRequired") is not True
+        or repair.get("completionMutationLeaseRequired") is not True
         or repair.get("postStartPredictionCreationAllowed") is not False
         or remaining
         or missed
@@ -1569,7 +1587,7 @@ def _terminal_replay_receipt(
         "durableTerminalVerificationComplete": True,
         "atomicDurableProofRequired": True,
         "atomicDurableItemCount": atomic_item_count,
-        "applicationAppendOnlyAuthorityRequired": True,
+        "completionMutationLeaseRequired": True,
         "reconciledCount": reconciled,
         "remainingMissedCount": 0,
         "unresolved": [],
@@ -1583,11 +1601,13 @@ def _terminal_replay_receipt(
         "slateDateEt": slate_date,
         "reason": str(payload.get("reason") or "")[:160],
         "terminalChunkVersion": COOPERATIVE_TERMINAL_CHUNK_VERSION,
+        "checkpointFingerprint": checkpoint_fingerprint,
+        "manifestFingerprint": manifest_fingerprint,
         "verificationPhase": "VERIFY",
         "durableTerminalVerificationComplete": True,
         "atomicDurableProofRequired": True,
         "atomicDurableItemCount": atomic_item_count,
-        "applicationAppendOnlyAuthorityRequired": True,
+        "completionMutationLeaseRequired": True,
         "perGameLockProgress": safe_progress,
         "missedLockTerminalReconciliation": safe_repair,
         "postStartPredictionCreationAllowed": False,
@@ -1650,6 +1670,38 @@ def _complete_cooperative_replay(
         raise RuntimeError(
             "MLB_COOPERATIVE_REPLAY_COMPLETE_PROGRESS_INVALID"
         )
+    checkpoint_validator = getattr(
+        mlb_daily_pick_lock,
+        "validate_cooperative_terminal_completion_checkpoint",
+        None,
+    )
+    if (
+        not callable(checkpoint_validator)
+        or getattr(
+            mlb_daily_pick_lock,
+            "MLB_COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION",
+            None,
+        )
+        != COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_REPLAY_COMPLETE_VALIDATOR_NOT_READY"
+        )
+    try:
+        validated_progress = checkpoint_validator(expected_progress)
+    except BaseException as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_REPLAY_COMPLETE_PROGRESS_INVALID"
+        ) from exc
+    if (
+        not isinstance(validated_progress, tuple)
+        or len(validated_progress) != 3
+        or validated_progress[0] != expected_progress
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_REPLAY_COMPLETE_PROGRESS_INVALID"
+        )
+
     receipt = _terminal_replay_receipt(response, slate_date)
     receipt_progress = receipt["perGameLockProgress"]
     expected_fields = {
@@ -1661,7 +1713,12 @@ def _complete_cooperative_replay(
         "noPredictionDataCount": "noPredictionDataCount",
         "lockOutcomeCount": "terminalCount",
     }
-    if any(
+    if (
+        receipt.get("checkpointFingerprint")
+        != expected_progress.get("checkpointFingerprint")
+        or receipt.get("manifestFingerprint")
+        != expected_progress.get("manifestFingerprint")
+        or any(
         _nonnegative_receipt_integer(
             receipt_progress.get(receipt_field),
             f"receipt_{receipt_field}",
@@ -1671,6 +1728,7 @@ def _complete_cooperative_replay(
             f"progress_{progress_field}",
         )
         for receipt_field, progress_field in expected_fields.items()
+        )
     ):
         raise RuntimeError(
             "MLB_COOPERATIVE_REPLAY_RECEIPT_CHECKPOINT_MISMATCH"
@@ -1719,14 +1777,38 @@ def _complete_cooperative_replay(
         # read accepts only the exact completed receipt; otherwise the stale
         # claim remains safely reclaimable after its deadline.
         observed = _cooperative_record(_read_cooperative_replay(), slate_date)
-        if observed.get("state") == COOPERATIVE_REPLAY_COMPLETED:
+        if (
+            observed.get("record_type")
+            == COOPERATIVE_TERMINAL_REPLAY_RECORD_TYPE
+            and observed.get("coordination_version")
+            == COOPERATIVE_TERMINAL_REPLAY_VERSION
+            and observed.get("state") == COOPERATIVE_REPLAY_COMPLETED
+            and str(observed.get("slate_date_et") or "") == slate_date
+            and observed.get("requested_at_epoch") == request_epoch
+            and str(observed.get("request_id") or "") == request_id
+            and observed.get("terminal_replay_progress")
+            == expected_progress
+            and observed.get("replay_receipt") == receipt
+        ):
             updated = observed
         else:
             raise RuntimeError(
                 "MLB_COOPERATIVE_REPLAY_COMPLETE_FAILED"
             ) from exc
     completed = _cooperative_record(dict(updated or {}), slate_date)
-    if completed.get("state") != COOPERATIVE_REPLAY_COMPLETED:
+    if (
+        completed.get("record_type")
+        != COOPERATIVE_TERMINAL_REPLAY_RECORD_TYPE
+        or completed.get("coordination_version")
+        != COOPERATIVE_TERMINAL_REPLAY_VERSION
+        or completed.get("state") != COOPERATIVE_REPLAY_COMPLETED
+        or str(completed.get("slate_date_et") or "") != slate_date
+        or completed.get("requested_at_epoch") != request_epoch
+        or str(completed.get("request_id") or "") != request_id
+        or completed.get("terminal_replay_progress")
+        != expected_progress
+        or completed.get("replay_receipt") != receipt
+    ):
         raise RuntimeError("MLB_COOPERATIVE_REPLAY_COMPLETE_STATE_INVALID")
     return _cooperative_public_state(completed)
 
@@ -1838,7 +1920,14 @@ def _checkpoint_cooperative_replay(
             slate_date,
         )
         if (
-            observed.get("state") == COOPERATIVE_REPLAY_QUEUED
+            observed.get("record_type")
+            == COOPERATIVE_TERMINAL_REPLAY_RECORD_TYPE
+            and observed.get("coordination_version")
+            == COOPERATIVE_TERMINAL_REPLAY_VERSION
+            and observed.get("state") == COOPERATIVE_REPLAY_QUEUED
+            and str(observed.get("slate_date_et") or "") == slate_date
+            and observed.get("requested_at_epoch") == request_epoch
+            and str(observed.get("request_id") or "") == request_id
             and observed.get("terminal_replay_progress") == progress
         ):
             updated = observed
@@ -1848,7 +1937,14 @@ def _checkpoint_cooperative_replay(
             ) from exc
     checkpointed = _cooperative_record(dict(updated or {}), slate_date)
     if (
-        checkpointed.get("state") != COOPERATIVE_REPLAY_QUEUED
+        checkpointed.get("record_type")
+        != COOPERATIVE_TERMINAL_REPLAY_RECORD_TYPE
+        or checkpointed.get("coordination_version")
+        != COOPERATIVE_TERMINAL_REPLAY_VERSION
+        or checkpointed.get("state") != COOPERATIVE_REPLAY_QUEUED
+        or str(checkpointed.get("slate_date_et") or "") != slate_date
+        or checkpointed.get("requested_at_epoch") != request_epoch
+        or str(checkpointed.get("request_id") or "") != request_id
         or checkpointed.get("terminal_replay_progress") != progress
     ):
         raise RuntimeError(
@@ -1858,6 +1954,15 @@ def _checkpoint_cooperative_replay(
 
 def _requeue_cooperative_replay(item: Dict[str, Any], owner: str) -> bool:
     slate_date = str(item.get("slate_date_et") or "")
+    request_id = str(item.get("request_id") or "")
+    try:
+        request_epoch = _nonnegative_receipt_integer(
+            item.get("requested_at_epoch"), "request_epoch"
+        )
+    except RuntimeError:
+        return False
+    if not slate_date or not request_id or request_epoch <= 0:
+        return False
     now = _utc_now()
     try:
         _cooperative_replay_table().update_item(
@@ -1865,8 +1970,10 @@ def _requeue_cooperative_replay(item: Dict[str, Any], owner: str) -> bool:
             ConditionExpression=(
                 "record_type = :record_type AND "
                 "coordination_version = :version AND "
-                "slate_date_et = :slate_date AND #state = :claimed AND "
-                "claim_owner = :owner"
+                "slate_date_et = :slate_date AND "
+                "requested_at_epoch = :request_epoch AND "
+                "request_id = :request_id AND "
+                "#state = :claimed AND claim_owner = :owner"
             ),
             UpdateExpression=(
                 "SET #state = :queued, last_failure_at_utc = :now_utc, "
@@ -1881,6 +1988,8 @@ def _requeue_cooperative_replay(item: Dict[str, Any], owner: str) -> bool:
                 ":record_type": COOPERATIVE_TERMINAL_REPLAY_RECORD_TYPE,
                 ":version": COOPERATIVE_TERMINAL_REPLAY_VERSION,
                 ":slate_date": slate_date,
+                ":request_epoch": request_epoch,
+                ":request_id": request_id,
                 ":claimed": COOPERATIVE_REPLAY_CLAIMED,
                 ":queued": COOPERATIVE_REPLAY_QUEUED,
                 ":owner": owner,
@@ -2166,6 +2275,8 @@ def lambda_handler(event, context):
     cooperative_owner_status: Optional[Dict[str, Any]] = None
     primary_error: Optional[BaseException] = None
     release_error: Optional[BaseException] = None
+    retained_completion_lease: Optional[Dict[str, Any]] = None
+    completion_lease_release_error: Optional[BaseException] = None
     try:
         # A fresh, request-bound proof may carry a successful current-slate run
         # across exactly one short EventBridge handoff.  This prevents a long
@@ -2275,6 +2386,20 @@ def lambda_handler(event, context):
                         raise RuntimeError(
                             "MLB_COOPERATIVE_TERMINAL_CHUNK_RESULT_INVALID"
                         )
+                    if "_completionLease" in chunk_result:
+                        candidate_completion_lease = chunk_result.get(
+                            "_completionLease"
+                        )
+                        if not isinstance(
+                            candidate_completion_lease, dict
+                        ):
+                            raise RuntimeError(
+                                "MLB_COOPERATIVE_TERMINAL_"
+                                "COMPLETION_LEASE_INVALID"
+                            )
+                        retained_completion_lease = (
+                            candidate_completion_lease
+                        )
                     chunk_stage = str(chunk_result.get("stage") or "")[:160]
                     chunk_error_code = str(
                         chunk_result.get("errorCode") or ""
@@ -2298,10 +2423,114 @@ def lambda_handler(event, context):
                         )
 
                     if chunk_result.get("complete") is True:
-                        if chunk_result.get("ok") is not True:
+                        if (
+                            chunk_result.get("ok") is not True
+                            or retained_completion_lease is None
+                        ):
                             raise RuntimeError(
                                 "MLB_COOPERATIVE_TERMINAL_CHUNK_COMPLETE_UNHEALTHY"
                             )
+                        validator = getattr(
+                            mlb_daily_pick_lock,
+                            "validate_cooperative_terminal_completion_handoff",
+                            None,
+                        )
+                        releaser = getattr(
+                            mlb_daily_pick_lock,
+                            "release_cooperative_terminal_completion_lease",
+                            None,
+                        )
+                        if (
+                            not callable(validator)
+                            or not callable(releaser)
+                            or getattr(
+                                mlb_daily_pick_lock,
+                                "MLB_COOPERATIVE_TERMINAL_"
+                                "COMPLETION_HANDOFF_VERSION",
+                                None,
+                            )
+                            != COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION
+                        ):
+                            raise RuntimeError(
+                                "MLB_COOPERATIVE_TERMINAL_"
+                                "COMPLETION_HANDOFF_NOT_READY"
+                            )
+
+                        completion_item = claimed
+                        expected_completion_progress = (
+                            completion_item.get("terminal_replay_progress")
+                        )
+                        if not isinstance(
+                            expected_completion_progress, dict
+                        ):
+                            observed_completion_item = _cooperative_record(
+                                _read_cooperative_replay(),
+                                str(
+                                    claimed.get("slate_date_et") or ""
+                                ),
+                            )
+                            if (
+                                observed_completion_item.get("state")
+                                != COOPERATIVE_REPLAY_CLAIMED
+                                or observed_completion_item.get(
+                                    "claim_owner"
+                                )
+                                != owner
+                                or observed_completion_item.get(
+                                    "requested_at_epoch"
+                                )
+                                != claimed.get("requested_at_epoch")
+                                or observed_completion_item.get("request_id")
+                                != claimed.get("request_id")
+                                or not isinstance(
+                                    observed_completion_item.get(
+                                        "terminal_replay_progress"
+                                    ),
+                                    dict,
+                                )
+                            ):
+                                raise RuntimeError(
+                                    "MLB_COOPERATIVE_TERMINAL_"
+                                    "COMPLETION_PROGRESS_NOT_CURRENT"
+                                )
+                            completion_item = observed_completion_item
+                            expected_completion_progress = (
+                                completion_item[
+                                    "terminal_replay_progress"
+                                ]
+                            )
+                        if (
+                            chunk_result.get("checkpoint")
+                            != expected_completion_progress
+                        ):
+                            raise RuntimeError(
+                                "MLB_COOPERATIVE_TERMINAL_"
+                                "COMPLETION_CHECKPOINT_MISMATCH"
+                            )
+                        handoff = validator(
+                            slate_date=str(
+                                completion_item.get("slate_date_et") or ""
+                            ),
+                            request_epoch=completion_item.get(
+                                "requested_at_epoch"
+                            ),
+                            request_id=completion_item.get("request_id"),
+                            checkpoint=expected_completion_progress,
+                            chunk_result=chunk_result,
+                        )
+                        if (
+                            not isinstance(handoff, dict)
+                            or handoff.get("ok") is not True
+                            or handoff.get("lease")
+                            != retained_completion_lease
+                            or handoff.get("ownerExposed") is not False
+                        ):
+                            raise RuntimeError(
+                                "MLB_COOPERATIVE_TERMINAL_"
+                                "COMPLETION_HANDOFF_INVALID"
+                            )
+                        retained_completion_lease = handoff["lease"]
+
                         terminal_payload = chunk_result.get(
                             "terminalReplayResponse"
                         )
@@ -2310,12 +2539,12 @@ def lambda_handler(event, context):
                                 "MLB_COOPERATIVE_TERMINAL_CHUNK_"
                                 "COMPLETION_RESPONSE_INVALID"
                             )
-                        # The receipt validator consumes the Lambda HTTP
-                        # response contract.  The internal chunk runner returns
-                        # an application payload so wrap it exactly once here.
+                        # Validate and owner-fence the queue transition while
+                        # the same V2 + legacy bridge mutation lease that
+                        # guarded the atomic read remains live.
                         replay_response = _resp(200, terminal_payload)
                         completed = _complete_cooperative_replay(
-                            item=claimed,
+                            item=completion_item,
                             owner=owner,
                             response=replay_response,
                         )
@@ -2334,6 +2563,7 @@ def lambda_handler(event, context):
                                 COOPERATIVE_TERMINAL_CHUNK_VERSION
                             ),
                             "terminalChunkStage": chunk_stage,
+                            "completionMutationLeaseHeldThroughQueueCas": True,
                             "historicalReplayStartedWithRemainingSeconds": (
                                 replay_remaining_seconds
                             ),
@@ -2445,6 +2675,54 @@ def lambda_handler(event, context):
     except BaseException as exc:
         primary_error = exc
     finally:
+        if retained_completion_lease is not None:
+            try:
+                completion_releaser = getattr(
+                    mlb_daily_pick_lock,
+                    "release_cooperative_terminal_completion_lease",
+                    None,
+                )
+                if not callable(completion_releaser):
+                    raise RuntimeError(
+                        "MLB_COOPERATIVE_TERMINAL_"
+                        "COMPLETION_LEASE_RELEASE_NOT_READY"
+                    )
+                completion_release = completion_releaser(
+                    slate_date=str(
+                        retained_completion_lease.get("slateDateEt") or ""
+                    ),
+                    lease=retained_completion_lease,
+                )
+                if (
+                    not isinstance(completion_release, dict)
+                    or completion_release.get("released") is not True
+                    or completion_release.get("ownerExposed") is not False
+                ):
+                    raise RuntimeError(
+                        "MLB_COOPERATIVE_TERMINAL_"
+                        "COMPLETION_LEASE_RELEASE_INVALID"
+                    )
+                retained_completion_lease = None
+            except BaseException as exc:
+                completion_lease_release_error = exc
+                print(
+                    json.dumps(
+                        {
+                            "event": (
+                                "MLB_COOPERATIVE_TERMINAL_"
+                                "COMPLETION_LEASE_RELEASE_FAILED"
+                            ),
+                            "errorCode": _error_code(exc),
+                            "ownerExposed": False,
+                        },
+                        sort_keys=True,
+                    )
+                )
+                if primary_error is None:
+                    primary_error = RuntimeError(
+                        "MLB_COOPERATIVE_TERMINAL_"
+                        "COMPLETION_LEASE_RELEASE_FAILED"
+                    )
         try:
             _release_execution_lease(owner)
         except BaseException as exc:

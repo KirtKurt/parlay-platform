@@ -93,19 +93,35 @@ PROTECTED_REPLAY_SCHEDULE_PERIOD_SECONDS = 60
 PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS = (
     PROTECTED_REPLAY_SCHEDULE_PERIOD_SECONDS
 )
-MAX_PROTECTED_REPLAY_ATTEMPTS = 70
+MAX_PROTECTED_REPLAY_ATTEMPTS = 90
 PROTECTED_REPLAY_EXECUTION_BUDGET_SECONDS = 600
+PROTECTED_REPLAY_MAX_MANIFEST_GAMES = 15
+PROTECTED_REPLAY_MAX_EVENTBRIDGE_TICKS_PER_TARGET = 2
+PROTECTED_REPLAY_TWO_PHASE_TARGET_COUNT = (
+    PROTECTED_REPLAY_MAX_MANIFEST_GAMES * 2
+)
+PROTECTED_REPLAY_WORST_CASE_HANDOFF_SECONDS = (
+    (
+        PROTECTED_REPLAY_TWO_PHASE_TARGET_COUNT
+        * PROTECTED_REPLAY_MAX_EVENTBRIDGE_TICKS_PER_TARGET
+        + 1
+    )
+    * PROTECTED_REPLAY_SCHEDULE_PERIOD_SECONDS
+    + PROTECTED_REPLAY_LEASE_SECONDS
+    + PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS
+)
 PROTECTED_REPLAY_COOPERATIVE_BOUND_SECONDS = (
     PROTECTED_REPLAY_LEASE_SECONDS
     + PROTECTED_REPLAY_SCHEDULING_MARGIN_SECONDS
     + PROTECTED_REPLAY_EXECUTION_BUDGET_SECONDS
 )
 # The first owner-handoff poll is quick. Subsequent 61-second polls cannot
-# phase-lock to the one-minute schedule. Seventy attempts provide about
-# 69 minutes for a 15-game PROCESS + VERIFY handoff (plus contention) without
-# granting the poller ownership or any write/retry authority. The timeout
-# remains finite and fail closed.
-PROTECTED_REPLAY_RETRY_DELAYS_SECONDS = (20,) + (61,) * 68
+# phase-lock to the one-minute schedule. Ninety attempts provide about
+# 90 minutes, exceeding the derived 15-game PROCESS + VERIFY bound when each
+# target needs two EventBridge ticks, the completion tick, and one full extant
+# writer lease/alignment interval. The poller gains no ownership or write
+# authority; the timeout remains finite and fail closed.
+PROTECTED_REPLAY_RETRY_DELAYS_SECONDS = (20,) + (61,) * 88
 PROTECTED_REPLAY_RETRY_HORIZON_SECONDS = sum(
     PROTECTED_REPLAY_RETRY_DELAYS_SECONDS
 )
@@ -119,6 +135,8 @@ if (
     != MAX_PROTECTED_REPLAY_ATTEMPTS - 1
     or PROTECTED_REPLAY_RETRY_HORIZON_SECONDS
     < PROTECTED_REPLAY_COOPERATIVE_BOUND_SECONDS
+    or PROTECTED_REPLAY_RETRY_HORIZON_SECONDS
+    < PROTECTED_REPLAY_WORST_CASE_HANDOFF_SECONDS
 ):
     raise RuntimeError("protected_terminal_replay_retry_horizon_invalid")
 if (
