@@ -11,9 +11,9 @@ def test_durable_relay_is_non_billable_bounded_and_fail_closed() -> None:
     relay = RELAY.read_text(encoding="utf-8")
 
     assert "name: MLB progress pulse durable relay" in relay
-    assert "name: mlb-pulse-31m-delay" in relay
+    assert "name: mlb-pulse-30m-delay" in relay
     assert "deployment: false" in relay
-    assert "REQUIRED_WAIT_MINUTES: '31'" in relay
+    assert "REQUIRED_WAIT_MINUTES: '30'" in relay
     assert "MAX_RELAY_HOPS: '96'" in relay
     assert "wait_timer_count" in relay
     assert "incompatible_rule_count" in relay
