@@ -1,0 +1,342 @@
+name: Read-only R7 protected-lock log probe 33084527256
+run-name: Read-only R7 lock log probe ${{ github.run_id }}
+
+"on":
+  push:
+    branches:
+      - codex/r7-lock-log-readonly-probe-33084527256-a1
+    paths:
+      - .github/workflows/r7-lock-log-readonly-probe-33084527256.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r7-lock-log-readonly-probe-33084527256
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  ROOT_STACK: parlay-platform-dev
+  LOCK_LOGICAL_ID: MLBDailyPickLockFunction
+  WINDOW_START_MS: '1787844020000'
+  WINDOW_END_MS: '1787844980000'
+  CLAIM_ACQUIRED_UTC: '2026-08-27T15:20:24.536172Z'
+  CLAIM_EXPIRES_UTC: '2026-08-27T15:36:15.536172Z'
+  CLAIM_SLATE_DATE_ET: '2026-08-04'
+
+jobs:
+  probe:
+    if: github.repository == 'KirtKurt/parlay-platform' && github.ref == 'refs/heads/codex/r7-lock-log-readonly-probe-33084527256-a1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Guard isolated branch-only execution
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/codex/r7-lock-log-readonly-probe-33084527256-a1'
+          test "$GITHUB_REPOSITORY" = 'KirtKurt/parlay-platform'
+
+      - name: Configure read credential
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Read exact protected-lock claim-window logs and emit redacted timeline
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          RAW_PATH="/tmp/r7-protected-lock-logs-${GITHUB_RUN_ID}.json"
+          LOCK_FN="$(aws cloudformation describe-stack-resource \
+            --stack-name "$ROOT_STACK" \
+            --logical-resource-id "$LOCK_LOGICAL_ID" \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)"
+          test -n "$LOCK_FN"
+          test "$LOCK_FN" != 'None'
+          LOG_GROUP="/aws/lambda/${LOCK_FN}"
+          aws logs filter-log-events \
+            --log-group-name "$LOG_GROUP" \
+            --start-time "$WINDOW_START_MS" \
+            --end-time "$WINDOW_END_MS" \
+            --interleaved \
+            --region "$AWS_REGION" \
+            --output json > "$RAW_PATH"
+          RAW_PATH="$RAW_PATH" python - <<'PY'
+          import json
+          import os
+          import re
+          from collections import Counter, defaultdict
+          from datetime import datetime, timezone
+          from pathlib import PurePosixPath
+
+          def iso_ms(value):
+              return datetime.fromtimestamp(
+                  int(value) / 1000, tz=timezone.utc
+              ).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+
+          with open(os.environ['RAW_PATH'], encoding='utf-8') as stream:
+              payload = json.load(stream)
+          raw_events = sorted(
+              payload.get('events') or [],
+              key=lambda event: (int(event.get('timestamp') or 0), str(event.get('eventId') or '')),
+          )
+
+          request_re = re.compile(
+              r'(?:RequestId:\s*|requestId["=:\s]+)'
+              r'([0-9a-fA-F-]{20,})'
+          )
+          duration_re = re.compile(r'Duration:\s*([0-9.]+)\s*ms', re.I)
+          billed_re = re.compile(r'Billed Duration:\s*([0-9.]+)\s*ms', re.I)
+          memory_re = re.compile(r'Memory Size:\s*(\d+)\s*MB', re.I)
+          max_memory_re = re.compile(r'Max Memory Used:\s*(\d+)\s*MB', re.I)
+          timeout_re = re.compile(r'Task timed out after\s*([0-9.]+)\s*seconds', re.I)
+          status_re = re.compile(r'(?:Status|status):\s*([A-Za-z_]+)')
+          error_type_re = re.compile(r'Error Type:\s*([A-Za-z_][A-Za-z0-9_.-]*)', re.I)
+          frame_re = re.compile(
+              r'File\s+["\']([^"\']+)["\'],\s*line\s*(\d+),\s*in\s*([A-Za-z_][A-Za-z0-9_]*)'
+          )
+          mlb_error_re = re.compile(r'\bMLB_[A-Z0-9_]+\b')
+          exception_re = re.compile(
+              r'\b(RuntimeError|TimeoutError|ConnectionError|ClientError|ValueError|KeyError|AssertionError):'
+          )
+          date_re = re.compile(r'\b20\d{2}-\d{2}-\d{2}\b')
+          count_re = re.compile(
+              r'["\']?([A-Za-z][A-Za-z0-9_]*(?:Count|Rows|Games))["\']?\s*[:=]\s*(\d+)',
+              re.I,
+          )
+
+          request_ordinals = {}
+          stream_current = {}
+          invocations = {}
+          safe_events = []
+          next_ordinal = 1
+
+          def request_ordinal(request_id, stream, create=False):
+              nonlocal_placeholder = None
+              return nonlocal_placeholder
+
+          def ensure_ordinal(request_id, stream):
+              global next_ordinal
+              if request_id and request_id in request_ordinals:
+                  ordinal = request_ordinals[request_id]
+              else:
+                  ordinal = next_ordinal
+                  next_ordinal += 1
+                  if request_id:
+                      request_ordinals[request_id] = ordinal
+              if stream:
+                  stream_current[stream] = ordinal
+              invocations.setdefault(ordinal, {
+                  'invocationOrdinal': ordinal,
+                  'stages': set(),
+                  'slateDates': set(),
+                  'counts': {},
+                  'errorReasons': set(),
+                  'applicationEvents': set(),
+                  'timedOut': False,
+              })
+              return ordinal
+
+          for raw in raw_events:
+              message = str(raw.get('message') or '')
+              stream = str(raw.get('logStreamName') or '')
+              timestamp = iso_ms(raw.get('timestamp') or 0)
+              request_match = request_re.search(message)
+              request_id = request_match.group(1) if request_match else None
+              is_start = 'START RequestId:' in message
+              if is_start:
+                  ordinal = ensure_ordinal(request_id, stream)
+              elif request_id and request_id in request_ordinals:
+                  ordinal = request_ordinals[request_id]
+                  stream_current[stream] = ordinal
+              elif stream in stream_current:
+                  ordinal = stream_current[stream]
+              else:
+                  ordinal = ensure_ordinal(request_id, stream)
+              entry = invocations[ordinal]
+
+              platform_event = None
+              if is_start:
+                  platform_event = 'START'
+                  entry['startUtc'] = timestamp
+              elif 'REPORT RequestId:' in message:
+                  platform_event = 'REPORT'
+                  entry['reportUtc'] = timestamp
+                  match = duration_re.search(message)
+                  if match:
+                      entry['durationMs'] = float(match.group(1))
+                  match = billed_re.search(message)
+                  if match:
+                      entry['billedDurationMs'] = float(match.group(1))
+                  match = memory_re.search(message)
+                  if match:
+                      entry['memorySizeMb'] = int(match.group(1))
+                  match = max_memory_re.search(message)
+                  if match:
+                      entry['maxMemoryUsedMb'] = int(match.group(1))
+                  match = status_re.search(message)
+                  if match:
+                      entry['reportStatus'] = match.group(1).upper()
+                  match = error_type_re.search(message)
+                  if match:
+                      entry['reportErrorType'] = match.group(1)
+              elif 'END RequestId:' in message:
+                  platform_event = 'END'
+                  entry['endUtc'] = timestamp
+              timeout_match = timeout_re.search(message)
+              if timeout_match:
+                  platform_event = 'TIMEOUT'
+                  entry['timedOut'] = True
+                  entry['timeoutSeconds'] = float(timeout_match.group(1))
+                  entry['timeoutUtc'] = timestamp
+
+              app_event = None
+              stripped = message.strip()
+              if stripped.startswith('{') and stripped.endswith('}'):
+                  try:
+                      app = json.loads(stripped)
+                  except (TypeError, ValueError):
+                      app = None
+                  if isinstance(app, dict):
+                      candidate = str(app.get('event') or '')
+                      if re.fullmatch(r'[A-Z0-9_]{1,180}', candidate):
+                          app_event = candidate
+                          entry['applicationEvents'].add(candidate)
+                          safe_app = {
+                              'event': candidate,
+                              'slateDateEt': app.get('slateDateEt'),
+                              'requestRequeued': app.get('requestRequeued'),
+                              'staleClaimReclaimable': app.get('staleClaimReclaimable'),
+                              'activeLeaseMutationAllowed': app.get('activeLeaseMutationAllowed'),
+                              'releaseErrorCode': app.get('releaseErrorCode'),
+                          }
+                          safe_events.append({
+                              'timestampUtc': timestamp,
+                              'invocationOrdinal': ordinal,
+                              'type': 'APPLICATION_EVENT',
+                              'detail': {k: v for k, v in safe_app.items() if v is not None},
+                          })
+
+              for path, line, function in frame_re.findall(message):
+                  basename = PurePosixPath(path).name
+                  if basename.startswith(('mlb_', 'inqsi_')) and basename.endswith('.py'):
+                      entry['stages'].add(f'{basename}:{function}:line-{line}')
+              entry['slateDates'].update(date_re.findall(message))
+              for name, value in count_re.findall(message):
+                  entry['counts'][name] = int(value)
+              entry['errorReasons'].update(mlb_error_re.findall(message))
+              exception_match = exception_re.search(message)
+              if exception_match:
+                  entry['errorReasons'].add(exception_match.group(1))
+
+              if platform_event:
+                  detail = {}
+                  for key in (
+                      'durationMs', 'billedDurationMs', 'memorySizeMb',
+                      'maxMemoryUsedMb', 'reportStatus', 'reportErrorType',
+                      'timeoutSeconds',
+                  ):
+                      if key in entry:
+                          detail[key] = entry[key]
+                  safe_events.append({
+                      'timestampUtc': timestamp,
+                      'invocationOrdinal': ordinal,
+                      'type': platform_event,
+                      'detail': detail,
+                  })
+
+          safe_invocations = []
+          for ordinal in sorted(invocations):
+              entry = invocations[ordinal]
+              safe = {
+                  key: value for key, value in entry.items()
+                  if key not in {
+                      'stages', 'slateDates', 'counts',
+                      'errorReasons', 'applicationEvents',
+                  }
+              }
+              safe['stages'] = sorted(entry['stages'])
+              safe['slateDates'] = sorted(entry['slateDates'])
+              safe['counts'] = dict(sorted(entry['counts'].items()))
+              safe['errorReasons'] = sorted(entry['errorReasons'])
+              safe['applicationEvents'] = sorted(entry['applicationEvents'])
+              safe_invocations.append(safe)
+
+          timed_out = [row for row in safe_invocations if row.get('timedOut')]
+          near_limit = [
+              row for row in safe_invocations
+              if float(row.get('durationMs') or 0) >= 899000
+          ]
+          failure_event = 'MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED'
+          failure_events = [
+              row for row in safe_invocations
+              if failure_event in row.get('applicationEvents', [])
+          ]
+          exact_inner_stages = sorted({
+              stage
+              for row in safe_invocations
+              for stage in row.get('stages', [])
+          })
+          event_counts = Counter(event['type'] for event in safe_events)
+          result = {
+              'ok': True,
+              'proofType': 'R7_PROTECTED_LOCK_CLAIM_WINDOW_LOGS_READ_ONLY',
+              'observedAtUtc': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+              'sourceRunId': os.environ.get('GITHUB_RUN_ID'),
+              'sourceBranch': os.environ.get('GITHUB_REF_NAME'),
+              'readOnly': True,
+              'awsOperations': [
+                  'cloudformation:DescribeStackResource',
+                  'logs:FilterLogEvents',
+              ],
+              'lambdaInvocationsAttempted': 0,
+              'tableWritesAttempted': 0,
+              'leaseMutationsAttempted': 0,
+              'functionLogicalId': os.environ['LOCK_LOGICAL_ID'],
+              'physicalFunctionIdentifierRedacted': True,
+              'logGroupIdentifierRedacted': True,
+              'window': {
+                  'startUtc': iso_ms(os.environ['WINDOW_START_MS']),
+                  'endUtc': iso_ms(os.environ['WINDOW_END_MS']),
+              },
+              'queueClaimAnchor': {
+                  'slateDateEt': os.environ['CLAIM_SLATE_DATE_ET'],
+                  'claimAcquiredAtUtc': os.environ['CLAIM_ACQUIRED_UTC'],
+                  'claimExpiresAtUtc': os.environ['CLAIM_EXPIRES_UTC'],
+              },
+              'rawLogEventCountRead': len(raw_events),
+              'invocationCount': len(safe_invocations),
+              'eventTypeCounts': dict(sorted(event_counts.items())),
+              'timedOutInvocationOrdinals': [row['invocationOrdinal'] for row in timed_out],
+              'near900SecondInvocationOrdinals': [row['invocationOrdinal'] for row in near_limit],
+              'replayFailureEventInvocationOrdinals': [row['invocationOrdinal'] for row in failure_events],
+              'invocations': safe_invocations,
+              'safeTimeline': safe_events,
+              'aug4HistoricalReplayLocalization': {
+                  'claimAnchored': True,
+                  'claimSlateDateEt': os.environ['CLAIM_SLATE_DATE_ET'],
+                  'timeoutObserved': bool(timed_out),
+                  'near900SecondReportObserved': bool(near_limit),
+                  'caughtReplayFailureEventObserved': bool(failure_events),
+                  'innerStageTelemetryObserved': bool(exact_inner_stages),
+                  'observedInnerStages': exact_inner_stages,
+                  'boundedCodeStage': (
+                      'after cooperative claim and inside historical replay delegate; '
+                      'before completion/requeue'
+                  ),
+                  'exactInnerSubstage': (
+                      'SEE_OBSERVED_INNER_STAGES'
+                      if exact_inner_stages
+                      else 'UNOBSERVABLE_NO_STAGE_TELEMETRY'
+                  ),
+              },
+              'requestOwnerIdentifiersRedacted': True,
+              'secretsEmitted': False,
+          }
+          print(json.dumps(result, indent=2, sort_keys=True))
+          PY
