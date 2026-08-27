@@ -214,6 +214,20 @@ jobs:
                   context="read_only_live_probe_public",
               )
 
+              expected_full_item = storage._locked_item(
+                  engine,
+                  copy.deepcopy(existing_row),
+              )
+              actual_outer_keys = sorted(str(key) for key in existing)
+              expected_outer_keys = sorted(
+                  str(key) for key in expected_full_item
+              )
+              extra_outer_keys = sorted(
+                  set(actual_outer_keys) - set(expected_outer_keys)
+              )
+              missing_outer_keys = sorted(
+                  set(expected_outer_keys) - set(actual_outer_keys)
+              )
               envelope_without_data = {
                   key_name: copy.deepcopy(value)
                   for key_name, value in existing.items()
@@ -301,6 +315,13 @@ jobs:
                       "envelopeFingerprint": storage._payload_fingerprint(
                           envelope_without_data
                       ),
+                      "actualOuterKeys": actual_outer_keys,
+                      "expectedOuterKeys": expected_outer_keys,
+                      "extraOuterKeys": extra_outer_keys,
+                      "missingOuterKeys": missing_outer_keys,
+                      "exactFullKeySet": (
+                          actual_outer_keys == expected_outer_keys
+                      ),
                       "rebuildErrors": envelope_errors,
                       "rebuildExact": not envelope_errors,
                   },
@@ -363,6 +384,9 @@ jobs:
               }
 
               assert row_result["outerEnvelope"]["rebuildExact"] is True
+              assert row_result["outerEnvelope"]["exactFullKeySet"] is True
+              assert row_result["outerEnvelope"]["extraOuterKeys"] == []
+              assert row_result["outerEnvelope"]["missingOuterKeys"] == []
               assert row_result["outerEnvelope"][
                   "immutable_locked_storage_version"
               ] == storage.VERSION
