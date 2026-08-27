@@ -299,24 +299,28 @@ def test_pending_loss_is_requeued_with_decremented_input() -> None:
     assert set(client.successor_expectations) == {8}
 
 
-def test_three_consecutive_staleness_failures_fail_current_segment() -> None:
+def test_third_staleness_failure_still_requeues_successor_before_exit() -> None:
     client = FakeClient(
+        # The exact successor disappears on the fatal third decision poll.
+        successor_snapshots=[[201], [201], [], [202]],
         decisions=[
             RuntimeError("decision one"),
             RuntimeError("decision two"),
             RuntimeError("decision three"),
-        ]
+        ],
     )
 
     with pytest.raises(relay.RelayFailure, match="staleness_decision failure 3/3"):
         _machine(client, poll_count=3).run()
 
-    assert client.successor_list_calls == 3
+    assert client.successor_list_calls == 4
+    assert client.successor_dispatches == [9]
     assert client.reporter_dispatches == 0
 
 
-def test_three_consecutive_reporter_dispatch_failures_escalate() -> None:
+def test_third_reporter_failure_still_requeues_successor_before_exit() -> None:
     client = FakeClient(
+        successor_snapshots=[[201], [201], [], [202]],
         decisions=[
             relay.Decision(True, "VISIBLE_PULSE_STALE"),
             relay.Decision(True, "VISIBLE_PULSE_STALE"),
@@ -329,6 +333,34 @@ def test_three_consecutive_reporter_dispatch_failures_escalate() -> None:
         _machine(client, poll_count=3).run()
 
     assert client.reporter_dispatches == 3
+    assert client.successor_list_calls == 4
+    assert client.successor_dispatches == [9]
+
+
+def test_staleness_and_reporter_run_before_successor_maintenance() -> None:
+    order: list[str] = []
+
+    class OrderedClient(FakeClient):
+        def evaluate_staleness(self):
+            order.append("staleness")
+            return super().evaluate_staleness()
+
+        def dispatch_reporter(self) -> None:
+            order.append("reporter")
+            super().dispatch_reporter()
+
+        def list_successor_run_ids(self, expected_remaining_segments: int):
+            order.append("successor")
+            return super().list_successor_run_ids(expected_remaining_segments)
+
+    client = OrderedClient(
+        successor_snapshots=[[201]],
+        decisions=[relay.Decision(True, "VISIBLE_PULSE_STALE")],
+    )
+    _machine(client).run()
+
+    # The second successor call is the independent final-liveness assertion.
+    assert order == ["staleness", "reporter", "successor", "successor"]
 
 
 def test_successful_probe_resets_consecutive_decision_failures() -> None:
@@ -466,6 +498,7 @@ def test_workflow_invokes_state_machine_with_exact_finite_geometry() -> None:
     # Strictly-over-28 staleness can wait at most one fixed two-minute phase.
     # Include the checker's outer timeout, dispatch API budget, and the observed
     # one-minute reporter runtime; this is objective margin, not a platform SLA.
+    # Successor maintenance is post-report and therefore outside this path.
     maximum_detection_age_seconds = 28 * 60 + 2 * 60
     checker_budget_seconds = 130
     dispatch_api_budget_seconds = 60
