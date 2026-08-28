@@ -1,0 +1,107 @@
+name: Diagnose PR601 R7 legacy terminal v2 now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-pr601-r7-legacy-terminal-v2-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: diagnose-pr601-r7-legacy-terminal-v2-now
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/mlb-valid-prelock-quarantine-v4-567
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Diagnose exact terminal classifications
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+          python - <<'PY'
+          import importlib.util
+          import json
+          from pathlib import Path
+
+          path = Path('tests/unit/test_mlb_daily_per_game_lock.py')
+          spec = importlib.util.spec_from_file_location('lock_test', path)
+          t = importlib.util.module_from_spec(spec)
+          assert spec.loader is not None
+          spec.loader.exec_module(t)
+
+          def dump(label, value):
+              print(label, json.dumps(value, sort_keys=True, indent=2, default=str))
+
+          def inspect(label, module):
+              pulls = module._pulls_for_date(t.SLATE)
+              manifest = module._latest_games_for_date(t.SLATE, pulls)
+              dump(label + '_PULL_COUNT', len(pulls))
+              dump(label + '_MANIFEST_COUNT', len(manifest))
+              if manifest:
+                  scoring = t.patch._scoring_pulls(module, pulls, manifest[0])
+                  dump(label + '_SCORING_COUNT', len(scoring))
+                  candidate = t.patch._last_prelock_candidate(module, t.SLATE, manifest[0], scoring)
+                  dump(label + '_CANDIDATE_PRESENT', candidate[0] is not None)
+                  dump(label + '_CANDIDATE_ERRORS', candidate[3])
+              dump(label + '_RUN', module.run_lock(t.SLATE))
+
+          source = t.pull('2026-07-13T17:15:00+00:00', [t.G1], 'source-only')
+          missing = t.build_module([source], '2026-07-13T17:17:00+00:00', seed=False)
+          inspect('MISSING', missing)
+
+          after = t.pull('2026-07-13T17:15:01+00:00', [t.G1], 'after-cutoff')
+          post = t.build_module([source, after], '2026-07-13T17:17:00+00:00', seed=False)
+          t.persist_candidate(post, t.G1, after)
+          inspect('POST', post)
+
+          back_source = t.pull('2026-07-13T17:14:00+00:00', [t.G1], 'backdated-source')
+          back = t.build_module([back_source], '2026-07-13T17:17:00+00:00', seed=False)
+          t.persist_candidate(back, t.G1, back_source, persisted_at='2026-07-13T17:15:01+00:00')
+          inspect('BACK', back)
+
+          scheduled_source = t.pull('2026-07-13T17:15:00+00:00', [t.G1], 'source-only-scheduled')
+          scheduled = t.build_module([scheduled_source], '2026-07-13T17:15:00+00:00', seed=False)
+          dump('SCHEDULED_FIRST', scheduled.run_lock(t.SLATE))
+          scheduled.now = t.dt('2026-07-13T17:16:00+00:00')
+          dump('SCHEDULED_SECOND', scheduled.run_lock(t.SLATE, scheduled=True))
+          PY
+
+      - name: Remove one-shot diagnostic workflow from main
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git worktree add /tmp/r7-diag-cleanup origin/main
+          cd /tmp/r7-diag-cleanup
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if test -f .github/workflows/diagnose-pr601-r7-legacy-terminal-v2-now.yml; then
+            git rm .github/workflows/diagnose-pr601-r7-legacy-terminal-v2-now.yml
+            git commit -m 'Remove completed PR601 R7 terminal v2 diagnostic [skip ci]'
+            for attempt in 1 2 3 4 5; do
+              if git push origin HEAD:main; then exit 0; fi
+              git fetch origin main
+              git rebase origin/main
+              sleep $((attempt * 2))
+            done
+            exit 1
+          fi
