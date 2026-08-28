@@ -4574,6 +4574,31 @@ def _raw_game_identity(game: Dict[str, Any]) -> str:
     return identity.replace("provider:", "", 1) if identity.startswith("provider:") else identity
 
 
+def _candidate_snapshot_aliases(
+    game: Dict[str, Any],
+    scoring: Optional[Iterable[Dict[str, Any]]] = None,
+) -> List[str]:
+    """Return trusted immutable identities that may name this game.
+
+    The official Stats API game PK remains stable when a provider event ID
+    arrives later. Alias lookup is read-only discovery; downstream validation
+    still requires official-PK/team/time/source/fingerprint agreement.
+    """
+    aliases = {_raw_game_identity(game)}
+    official_pk = _official_game_pk(game)
+    if official_pk:
+        aliases.add(f"mlb_statsapi:{official_pk}")
+    for pull in scoring or []:
+        for candidate_game in pull.get("games") or []:
+            if not _same_game(game, candidate_game):
+                continue
+            aliases.add(_raw_game_identity(candidate_game))
+            candidate_pk = _official_game_pk(candidate_game)
+            if candidate_pk:
+                aliases.add(f"mlb_statsapi:{candidate_pk}")
+    return sorted(alias for alias in aliases if alias)
+
+
 _PREGAME_CANDIDATE_QUERY_PAGE_SIZE = 500
 _PREGAME_CANDIDATE_QUERY_MAX_PAGES = 20
 
@@ -4794,12 +4819,7 @@ def _candidate_items(
     # Stats API fallback ID. If the provider later adds it, query both immutable
     # identities and bind them through official_game_pk rather than orphaning
     # the valid provider-ID prediction snapshots.
-    aliases = {_raw_game_identity(game)}
-    for pull in scoring or []:
-        for candidate in pull.get("games") or []:
-            if _same_game(game, candidate):
-                aliases.add(_raw_game_identity(candidate))
-    bounded_aliases = sorted(alias for alias in aliases if alias)
+    bounded_aliases = _candidate_snapshot_aliases(game, scoring)
     cooperative_limit = _COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.get()
     if cooperative_limit is not None:
         if (
@@ -4995,11 +5015,7 @@ def _last_prelock_candidate(
         else lock_at
     )
     expected_identity = game_identity(game)
-    candidate_aliases = {_raw_game_identity(game)}
-    for pull in scoring:
-        for candidate_game in pull.get("games") or []:
-            if _same_game(game, candidate_game):
-                candidate_aliases.add(_raw_game_identity(candidate_game))
+    candidate_aliases = set(_candidate_snapshot_aliases(game, scoring))
     expected_home = _norm(game.get("home_team") or game.get("homeTeam"))
     expected_away = _norm(game.get("away_team") or game.get("awayTeam"))
     eligible: List[Tuple[datetime, datetime, datetime, Dict[str, Any], Dict[str, Any]]] = []

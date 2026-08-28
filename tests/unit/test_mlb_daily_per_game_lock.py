@@ -525,6 +525,48 @@ def game(game_id: str, start: str):
     }
 
 
+def official_game(game_id: str, start: str, official_pk: str):
+    """Build one production-shaped row through exact-date MLB authority."""
+    provider = game(game_id, start)
+    raw_schedule = {
+        "totalGames": 1,
+        "dates": [{
+            "date": SLATE,
+            "games": [{
+                "gamePk": int(official_pk),
+                "gameDate": start,
+                "gameType": "R",
+                "gameNumber": 1,
+                "doubleHeader": "N",
+                "status": {"abstractGameState": "Preview"},
+                "teams": {
+                    "home": {"team": {"name": provider["home_team"]}},
+                    "away": {"team": {"name": provider["away_team"]}},
+                },
+            }],
+        }],
+    }
+    schedule = official_schedule.validate_exact_date_schedule(raw_schedule, SLATE)
+    rows, proof = official_schedule.reconcile_official_schedule(
+        schedule,
+        [{
+            "id": game_id,
+            "game_id": game_id,
+            "game_key": provider["game_key"],
+            "commence_time": start,
+            "home_team": provider["home_team"],
+            "away_team": provider["away_team"],
+            "bookmakers": [],
+        }],
+        observed_at_utc=start,
+    )
+    assert official_schedule.validate_authority_proof(proof, rows) == []
+    assert len(rows) == 1
+    row = rows[0]
+    row["books"] = copy.deepcopy(provider["books"])
+    return row
+
+
 G1 = game("g1", "2026-07-13T18:00:00+00:00")
 G2 = game("g2", "2026-07-13T20:00:00+00:00")
 G3 = game("g3", "2026-07-13T22:00:00+00:00")
@@ -739,20 +781,14 @@ def test_real_quarantine_writer_is_idempotent_and_recovery_strict(
     identity_binding_mode,
     canonical_source_key,
 ):
-    target = game(
+    target = official_game(
         (
             "mlb_statsapi:991556"
             if identity_binding_mode == "exact_identity"
             else "provider-event-991556"
         ),
         "2026-07-13T18:00:00+00:00",
-    )
-    target.update(
-        {
-            "official_game_pk": "991556",
-            "official_commence_time": target["commence_time"],
-            "official_status": {"abstractGameState": "Preview"},
-        }
+        "991556",
     )
     candidate_game = copy.deepcopy(target)
     if identity_binding_mode == "official_game_pk":
@@ -774,7 +810,16 @@ def test_real_quarantine_writer_is_idempotent_and_recovery_strict(
         "2026-07-13T20:00:00+00:00",
         seed=False,
     )
-    persist_candidate(module, candidate_game, source)
+    def bind_official_identity(row):
+        row["officialGamePk"] = "991556"
+        row["officialGameId"] = "mlb_statsapi:991556"
+
+    persist_candidate(
+        module,
+        candidate_game,
+        source,
+        mutate=bind_official_identity,
+    )
     pulls = module._pulls_for_date(SLATE)
     manifest = module._latest_games_for_date(SLATE, pulls)
     scoring = patch._scoring_pulls(module, pulls, manifest[0])
@@ -1276,7 +1321,8 @@ def test_scheduled_completed_daily_card_uses_one_progress_snapshot(monkeypatch):
 
 
 def test_scheduled_terminal_no_prediction_slate_does_not_repeat_full_path(monkeypatch):
-    source = pull("2026-07-13T17:15:00+00:00", [G1], "source-only-scheduled")
+    target = official_game("g1", "2026-07-13T18:00:00+00:00", "991555")
+    source = pull("2026-07-13T17:15:00+00:00", [target], "source-only-scheduled")
     module = build_module(
         [source],
         "2026-07-13T17:15:00+00:00",
@@ -2042,7 +2088,8 @@ def test_v3_unversioned_candidate_with_matching_legacy_hash_fails_closed():
 
 
 def test_missing_or_post_cutoff_candidate_records_terminal_no_prediction_status():
-    source = pull("2026-07-13T17:15:00+00:00", [G1], "source-only")
+    target = official_game("g1", "2026-07-13T18:00:00+00:00", "991555")
+    source = pull("2026-07-13T17:15:00+00:00", [target], "source-only")
     missing = build_module([source], "2026-07-13T17:17:00+00:00", seed=False)
 
     missing_result = missing.run_lock(SLATE)
@@ -2054,7 +2101,7 @@ def test_missing_or_post_cutoff_candidate_records_terminal_no_prediction_status(
     assert lock_outcome_items(missing)[0]["lock_status"] == "LOCKED_NO_PREDICTION_DATA"
     assert not staged_items(missing)
 
-    after = pull("2026-07-13T17:15:01+00:00", [G1], "after-cutoff")
+    after = pull("2026-07-13T17:15:01+00:00", [target], "after-cutoff")
     post_cutoff = build_module(
         [source, after],
         "2026-07-13T17:17:00+00:00",
@@ -2072,7 +2119,8 @@ def test_missing_or_post_cutoff_candidate_records_terminal_no_prediction_status(
 
 
 def test_backdated_prediction_persisted_after_cutoff_is_not_authoritative():
-    source = pull("2026-07-13T17:14:00+00:00", [G1], "backdated-source")
+    target = official_game("g1", "2026-07-13T18:00:00+00:00", "991555")
+    source = pull("2026-07-13T17:14:00+00:00", [target], "backdated-source")
     module = build_module(
         [source],
         "2026-07-13T17:17:00+00:00",
