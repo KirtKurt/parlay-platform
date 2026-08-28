@@ -37,3 +37,7 @@ Required outcome: AWS's empty OnSuccess/OnFailure response shape is treated as n
 Deployment request UTC: 2026-08-28T15:50:00Z
 Purpose: deploy the exact Results API route-absence proof repair discovered by the live post-deploy verifier.
 Required outcome: the independently attested GET+OPTIONS-only stage accepts API Gateway's 403 or 404 absent-method response, while every success, redirect, other 4xx, or 5xx response remains fail-closed.
+
+Deployment request UTC: 2026-08-28T16:07:00Z
+Purpose: deploy the live Results API read-contract repair after the exact post-deploy verifier reproduced an API Gateway 504 on the public proof route.
+Required outcome: hostile public proof and settlement queries cannot enable official-score fetching, scheduled ingestion remains unchanged, gateway failures retain exact diagnostics, absent POST bodies need not be JSON, and late CloudWatch metric publication receives a separate fail-closed stabilization window.

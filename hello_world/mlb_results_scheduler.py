@@ -312,7 +312,10 @@ def lambda_handler(event, context):
         if method == "GET" and path in {"/v1/results/mlb/proof", "/v1/mlb/settlement/proof_report"}:
             proof_args = {
                 **args,
-                "fetch_scores": _bool(payload.get("fetch_scores"), False),
+                # Public proof is a stored-evidence read.  A hostile query must
+                # not turn it into an official-score pull (which can also
+                # outlive API Gateway's integration deadline).
+                "fetch_scores": False,
             }
             canonical = canonical_settlement.settlement_proof_report(**proof_args)
             report = _canonical_with_legacy_diagnostic(
@@ -324,13 +327,14 @@ def lambda_handler(event, context):
             return _resp(200 if canonical.get("ok") else 409, report)
 
         if method == "GET" and path in {"/v1/results/mlb/settlement", "/v1/mlb/settlement/slate"}:
+            read_args = {**args, "fetch_scores": False}
             canonical = canonical_settlement.settle_mlb_slate(
-                **args,
+                **read_args,
                 store=False,
             )
             report = _canonical_with_legacy_diagnostic(
                 canonical,
-                args,
+                read_args,
                 enabled=False,
             )
             return _resp(200 if canonical.get("ok") else 409, report)
