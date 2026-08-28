@@ -218,16 +218,216 @@ def test_reporting_cadence_breaches_immediately_after_35m_boundary() -> None:
     assert result["previousPulseAgeMinutes"] > result["staleAfterMinutes"]
 
 
+def _bot_user() -> dict:
+    return {
+        "login": reporter.PULSE_AUTHOR_LOGIN,
+        "id": reporter.PULSE_AUTHOR_ID,
+        "type": reporter.PULSE_AUTHOR_TYPE,
+    }
+
+
+def _workflow_run(
+    workflow: str,
+    *,
+    run_id: int,
+    created: str,
+    event: str,
+    status: str = "completed",
+    title: str | None = None,
+    repository: str = reporter.EXPECTED_REPOSITORY,
+) -> dict:
+    return {
+        "id": run_id,
+        "path": f".github/workflows/{workflow}",
+        "head_branch": "main",
+        "head_repository": {"full_name": repository},
+        "created_at": created,
+        "event": event,
+        "status": status,
+        "conclusion": "success" if status == "completed" else None,
+        "display_title": title or workflow,
+        "html_url": f"https://github.example/runs/{run_id}",
+    }
+
+
+def _valid_environment() -> dict:
+    return {
+        "name": reporter.RELAY_ENVIRONMENT,
+        "valid": True,
+        "waitTimerMinutes": reporter.DURABLE_RELAY_INTERVAL_MINUTES,
+        "protectionRuleTypes": ["wait_timer"],
+        "branchPolicy": None,
+        "validatedAtUtc": "2026-08-26T22:00:00+00:00",
+        "error": None,
+    }
+
+
 def test_latest_visible_pulse_ignores_non_pulse_comments() -> None:
     state = {"generatedAtUtc": "2026-08-26T20:41:00Z"}
     encoded = base64.b64encode(json.dumps(state).encode()).decode()
     result = reporter._latest_visible_pulse(
         [
-            {"body": f"<!-- {reporter.STATE_MARKER}:{encoded} -->", "id": 1},
-            {"body": "ordinary comment", "id": 2},
+            {
+                "body": f"<!-- {reporter.STATE_MARKER}:{encoded} -->",
+                "id": 1,
+                "user": _bot_user(),
+            },
+            {"body": "ordinary comment", "id": 2, "user": _bot_user()},
         ]
     )
 
     assert result is not None
     assert result["commentId"] == 1
     assert result["state"] == state
+
+
+def test_latest_visible_pulse_ignores_spoofed_state_marker() -> None:
+    state = {"generatedAtUtc": "2026-08-26T20:41:00Z"}
+    encoded = base64.b64encode(json.dumps(state).encode()).decode()
+    result = reporter._latest_visible_pulse(
+        [
+            {
+                "body": f"<!-- {reporter.STATE_MARKER}:{encoded} -->",
+                "id": 1,
+                "user": {"login": "attacker", "id": 7, "type": "User"},
+            }
+        ]
+    )
+
+    assert result is None
+
+
+def test_control_plane_reports_bounded_driver_and_native_scheduler_outage(
+    monkeypatch,
+) -> None:
+    primary_schedule = _workflow_run(
+        reporter.PRIMARY_PROGRESS_WORKFLOW,
+        run_id=1,
+        created="2026-08-26T21:00:00Z",
+        event="schedule",
+    )
+    watchdog_schedule = _workflow_run(
+        reporter.WATCHDOG_PROGRESS_WORKFLOW,
+        run_id=2,
+        created="2026-08-26T20:50:00Z",
+        event="schedule",
+    )
+    reporter_run = _workflow_run(
+        reporter.PRIMARY_PROGRESS_WORKFLOW,
+        run_id=3,
+        created="2026-08-26T21:30:00Z",
+        event="workflow_dispatch",
+        status="in_progress",
+    )
+    bounded = _workflow_run(
+        reporter.BOUNDED_PROGRESS_WORKFLOW,
+        run_id=4,
+        created="2026-08-26T20:30:00Z",
+        event="workflow_dispatch",
+        status="in_progress",
+        title="MLB pulse relay segment 2",
+    )
+
+    def fake_runs(workflow, *, event=None, per_page=20):
+        del per_page
+        rows = {
+            reporter.PRIMARY_PROGRESS_WORKFLOW: [reporter_run, primary_schedule],
+            reporter.WATCHDOG_PROGRESS_WORKFLOW: [watchdog_schedule],
+            reporter.BOUNDED_PROGRESS_WORKFLOW: [bounded],
+            reporter.DURABLE_PROGRESS_WORKFLOW: [],
+        }[workflow]
+        return [row for row in rows if event is None or row["event"] == event]
+
+    monkeypatch.setattr(reporter, "_progress_workflow_runs", fake_runs)
+    monkeypatch.setattr(reporter, "_progress_environment", _valid_environment)
+
+    control = reporter._progress_control_plane(
+        now=datetime(2026, 8, 26, 22, 0, tzinfo=timezone.utc)
+    )
+
+    assert control["relayMode"] == "bounded_runner"
+    assert control["nativeSchedulerHealthy"] is False
+    assert control["boundedRelay"]["activeRunIds"] == [4]
+    assert control["currentRemainingHops"] == 2
+    assert control["renewalWarning"] is True
+    assert control["terminalHop"] is False
+    assert control["mutualExclusionHealthy"] is True
+    assert control["lastReporterDispatch"]["runId"] == 3
+
+
+def test_control_plane_exposes_terminal_durable_wait_and_overlap(
+    monkeypatch,
+) -> None:
+    bounded = _workflow_run(
+        reporter.BOUNDED_PROGRESS_WORKFLOW,
+        run_id=10,
+        created="2026-08-26T21:00:00Z",
+        event="workflow_dispatch",
+        status="in_progress",
+        title="MLB pulse relay segment 1",
+    )
+    durable = _workflow_run(
+        reporter.DURABLE_PROGRESS_WORKFLOW,
+        run_id=11,
+        created="2026-08-26T21:29:00Z",
+        event="workflow_dispatch",
+        status="in_progress",
+        title="MLB durable pulse relay hop 1",
+    )
+    fork = {
+        **durable,
+        "id": 12,
+        "head_repository": {"full_name": "fork/project"},
+    }
+
+    def fake_runs(workflow, *, event=None, per_page=20):
+        del event, per_page
+        return {
+            reporter.PRIMARY_PROGRESS_WORKFLOW: [],
+            reporter.WATCHDOG_PROGRESS_WORKFLOW: [],
+            reporter.BOUNDED_PROGRESS_WORKFLOW: [bounded],
+            reporter.DURABLE_PROGRESS_WORKFLOW: [fork, durable],
+        }[workflow]
+
+    monkeypatch.setattr(reporter, "_progress_workflow_runs", fake_runs)
+    monkeypatch.setattr(reporter, "_progress_environment", _valid_environment)
+
+    control = reporter._progress_control_plane(
+        now=datetime(2026, 8, 26, 22, 0, tzinfo=timezone.utc)
+    )
+
+    assert control["relayMode"] == "bounded_runner"
+    assert control["boundedRelay"]["terminalHop"] is True
+    assert control["durableRelay"]["activeRunIds"] == [11]
+    assert control["relayOverlapPresent"] is True
+    assert control["mutualExclusionHealthy"] is False
+    assert control["terminalHop"] is True
+
+
+def test_comment_makes_terminal_relay_warning_visible() -> None:
+    state = _state(audit=None, autonomy=_trailing())
+    state["reporting"] = {
+        "previousVisiblePulseAtUtc": "2026-08-26T21:30:00Z",
+        "previousPulseAgeMinutes": 30,
+        "targetCadenceMinutes": 30,
+        "cadenceGraceMinutes": 5,
+        "staleAfterMinutes": 35,
+        "cadenceBreach": False,
+        "controlPlane": {
+            "relayMode": "durable_environment_timer",
+            "nativeSchedulerHealthy": False,
+            "currentRemainingHops": 1,
+            "nominalLeaseEndUtc": "2026-08-26T22:30:00+00:00",
+            "environment": {"valid": True, "waitTimerMinutes": 30},
+            "actualWaitMinutes": 31,
+            "mutualExclusionHealthy": True,
+            "terminalHop": True,
+            "renewalWarning": True,
+        },
+    }
+
+    body = reporter._comment(state, None)
+
+    assert "**Reporting control plane:**" in body
+    assert "durable_environment_timer" in body
+    assert "active progress relay is on its terminal hop" in body
