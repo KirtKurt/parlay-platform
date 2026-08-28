@@ -1291,6 +1291,26 @@ def test_async_config_normalization_is_used_for_initial_and_reread_identity() ->
     assert verifier.count("_normalized_async_invoke_config(") == 3
 
 
+@pytest.mark.parametrize("status", [403, 404])
+def test_absent_public_post_accepts_api_gateway_forbidden_or_not_found(status) -> None:
+    subject.verify_absent_public_post_response(
+        "/v1/results/mlb/final-scores",
+        {"status": status, "headers": {}, "bodyBytes": 0},
+    )
+
+
+@pytest.mark.parametrize(
+    "status",
+    [200, 201, 204, 301, 302, 307, 308, 400, 401, 405, 429, 500],
+)
+def test_absent_public_post_rejects_dangerous_or_ambiguous_responses(status) -> None:
+    with pytest.raises(subject.VerificationError, match="Public POST route exists"):
+        subject.verify_absent_public_post_response(
+            "/v1/results/mlb/final-scores",
+            {"status": status, "headers": {}, "bodyBytes": 0},
+        )
+
+
 def test_scheduled_advance_evidence_does_not_claim_settlement_or_other_producer_health():
     verifier = (
         ROOT / "scripts" / "verify_mlb_results_api_postdeploy.py"

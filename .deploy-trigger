@@ -33,3 +33,7 @@ Required safety: no winner override, no historical reconstruction, no immutable 
 Deployment request UTC: 2026-08-28T15:34:00Z
 Purpose: deploy the fail-closed Results Lambda async-destination normalization required by the exact-source MLB post-deploy verifier.
 Required outcome: AWS's empty OnSuccess/OnFailure response shape is treated as no destination, while every configured destination, unexpected key, or malformed shape still fails verification.
+
+Deployment request UTC: 2026-08-28T15:50:00Z
+Purpose: deploy the exact Results API route-absence proof repair discovered by the live post-deploy verifier.
+Required outcome: the independently attested GET+OPTIONS-only stage accepts API Gateway's 403 or 404 absent-method response, while every success, redirect, other 4xx, or 5xx response remains fail-closed.
