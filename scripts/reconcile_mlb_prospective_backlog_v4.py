@@ -176,7 +176,15 @@ def _status_event(slate_date: str) -> Dict[str, Any]:
     return {
         "httpMethod": "GET",
         "path": "/v1/mlb/locks/status",
-        "queryStringParameters": {"date": slate_date},
+        # The public summary is durably cached for up to twenty minutes.  A
+        # reconciliation read must observe the strongly consistent lock and
+        # terminal-outcome records written by the immediately preceding
+        # protected replay.  The deployed route's existing FULL-status switch
+        # is read-only and explicitly bypasses both cache load and cache store.
+        "queryStringParameters": {
+            "date": slate_date,
+            "includeAttemptDiagnostics": "true",
+        },
     }
 
 
@@ -314,6 +322,33 @@ def reconcile(
         except base.ReconciliationError as exc:
             if not _incomplete_status_error(exc):
                 raise
+            if settlement_authoritative_persistent_missed:
+                # V5 admits historical terminal repair only after the Results
+                # authority returns its exact, conflict-free 409 gap.  Do not
+                # run V4's monolithic force replay first: a full historical
+                # slate can exceed one Lambda owner's safe execution budget.
+                # Under V5's response adapter the recognized 409 raises the
+                # owner-fenced DurableTerminalReplayRequired signal; every
+                # other non-success shape remains fail closed.  A surprising
+                # successful settlement cannot substitute for fresh official
+                # lock status, so it also fails closed explicitly.
+                authoritative_settlement = invoke(
+                    lambda_client,
+                    functions.results,
+                    {
+                        "sport": "mlb",
+                        "run": "prospective_backlog_settlement_v4",
+                        "slate_date": slate_date,
+                        "days_from": 0,
+                    },
+                )
+                base.validate_settlement_result(
+                    authoritative_settlement,
+                    slate_date,
+                )
+                raise base.ReconciliationError(
+                    "official_status_incomplete_after_authoritative_settlement"
+                )
             mutation_executed = True
             mutation_payload = invoke(
                 lambda_client,

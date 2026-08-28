@@ -542,6 +542,133 @@ def test_real_v4_retry_preserves_lifecycle_binding_for_v5_receipt(monkeypatch):
     assert result["automaticWagerAllowed"] is False
 
 
+def test_incomplete_status_uses_settlement_authority_then_cooperative_owner(
+    monkeypatch,
+):
+    slate_date = "2026-08-04"
+    incomplete = official_terminal_status(slate_date)
+    incomplete.update(
+        {
+            "lockedPredictionCount": 0,
+            "noPredictionDataCount": 0,
+            "missedLockValidPrelockQuarantineCount": 0,
+            "lockedStatusCount": 0,
+            "lockStatusComplete": False,
+            "providerManifestFingerprint": "",
+            "perGameStatus": [],
+        }
+    )
+    complete = official_terminal_status(slate_date)
+    completion = cooperative_completion_receipt()
+    calls = []
+    settlement_attempts = 0
+    replay_completed = False
+
+    class RoutedLambda:
+        def invoke(
+            self,
+            *,
+            FunctionName,
+            InvocationType,
+            Payload,
+            LogType="None",
+        ):
+            nonlocal replay_completed, settlement_attempts
+            assert InvocationType == "RequestResponse"
+            assert LogType in {"None", "Tail"}
+            event = json.loads(Payload.decode("utf-8"))
+            calls.append((FunctionName, event))
+            if event.get("httpMethod") == "GET":
+                response = api_gateway(
+                    200,
+                    complete if replay_completed else incomplete,
+                )
+            elif FunctionName == "results":
+                settlement_attempts += 1
+                response = (
+                    api_gateway(409, settlement_gap(slate_date))
+                    if not replay_completed
+                    else api_gateway(
+                        200,
+                        completed_terminal_settlement(slate_date),
+                    )
+                )
+            elif event.get("acknowledgeCooperativeCompletion") is True:
+                response = api_gateway(
+                    200,
+                    {
+                        "ok": True,
+                        "sport": "mlb",
+                        "slateDateEt": slate_date,
+                        "cooperativeTerminalReplayAcknowledged": True,
+                        "cooperativeTerminalReplay": (
+                            cooperative_public_state("ACKNOWLEDGED")
+                        ),
+                    },
+                )
+            else:
+                assert event.get("run") == subject.TERMINAL_REPLAY_RUN
+                replay_completed = True
+                response = api_gateway(200, completion)
+            return {
+                "StatusCode": 200,
+                "Payload": ResponseStream(
+                    json.dumps(response).encode("utf-8")
+                ),
+            }
+
+    monkeypatch.setattr(
+        base,
+        "resolve_stack_functions",
+        lambda *args: base.StackFunctions("lock", "results", "trainer"),
+    )
+    monkeypatch.setattr(
+        base,
+        "release_cutoff",
+        lambda *args, **kwargs: "2026-08-03T04:00:00+00:00",
+    )
+    monkeypatch.setattr(
+        base,
+        "prospective_slate_dates",
+        lambda *args, **kwargs: [slate_date],
+    )
+
+    result = subject.reconcile(
+        object(),
+        RoutedLambda(),
+        stack_name="stack",
+        max_slate_days=31,
+        target_slate_date=slate_date,
+    )
+
+    assert settlement_attempts == 2
+    assert result["settlementTriggeredProtectedTerminalReplayCount"] == 1
+    assert result["slates"][0]["lockOutcomeCount"] == 15
+    assert not any(
+        event.get("run") == "prospective_terminal_backlog_reconciliation_v4"
+        for _, event in calls
+    )
+    assert any(
+        event.get("run") == subject.TERMINAL_REPLAY_RUN
+        for _, event in calls
+    )
+    status_calls = [
+        event for _, event in calls if event.get("httpMethod") == "GET"
+    ]
+    assert status_calls
+    assert all(
+        event.get("queryStringParameters", {}).get(
+            "includeAttemptDiagnostics"
+        )
+        == "true"
+        for event in status_calls
+    )
+    assert result["directTableWrite"] is False
+    assert result["postStartPredictionCreationAllowed"] is False
+    assert result["immutablePredictionRewriteAllowed"] is False
+    assert result["productionAuthorityChanged"] is False
+
+
 def test_protected_replay_retries_lease_overlap_without_bypassing_owner(monkeypatch):
     monkeypatch.setattr(
         base,
