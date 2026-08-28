@@ -314,6 +314,7 @@ def test_proof_get_cannot_enable_legacy_mutating_diagnostic(monkeypatch, path):
     assert len(calls) == 1
     assert "store" not in calls[0]
     assert calls[0]["fetch_scores"] is False
+    assert body["sport"] == "mlb"
     assert body["legacyDiagnosticCompatibility"] == {
         "ok": True,
         "executed": False,
@@ -356,6 +357,7 @@ def test_settlement_get_forces_canonical_dry_run_and_disables_legacy(
     assert len(calls) == 1
     assert calls[0]["fetch_scores"] is False
     assert calls[0]["store"] is False
+    assert body["sport"] == "mlb"
     assert body["legacyDiagnosticCompatibility"]["executed"] is False
 
 

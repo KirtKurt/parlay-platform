@@ -1238,6 +1238,7 @@ def test_public_settlement_contract_requires_legacy_disabled_and_no_creation():
         "slateDateEt": "2026-08-04",
         "immutablePregameRowsMutated": False,
         "labelCreatedCount": 0,
+        "proofReadMode": "STORED_CANONICAL_LABELS_ONLY",
         "settlementAuthority": "CANONICAL_IMMUTABLE_LOCK_OFFICIAL_GAME_PK",
         "legacyDiagnosticIsAuthoritative": False,
         "legacyDiagnosticCompatibility": {
@@ -1253,6 +1254,26 @@ def test_public_settlement_contract_requires_legacy_disabled_and_no_creation():
         probe_slate_date="2026-08-04",
     )
     assert proof["valid"] is True
+    assert proof["contract"] == "CANONICAL_SETTLEMENT_STORED_READ_ONLY"
+
+    proof_route = subject.verify_public_get_contract(
+        "/v1/results/mlb/proof",
+        _get_response(409, {**body, "readOnlyProof": True}),
+        probe_slate_date="2026-08-04",
+    )
+    assert (
+        proof_route["contract"]
+        == "CANONICAL_SETTLEMENT_STORED_READ_ONLY_PROOF"
+    )
+
+    body["proofReadMode"] = "OFFICIAL_FINAL_DRY_RUN"
+    with pytest.raises(subject.VerificationError, match="stored-canonical-label"):
+        subject.verify_public_get_contract(
+            "/v1/results/mlb/settlement",
+            _get_response(409, body),
+            probe_slate_date="2026-08-04",
+        )
+    body["proofReadMode"] = "STORED_CANONICAL_LABELS_ONLY"
 
     body["legacyDiagnosticCompatibility"]["executed"] = True
     with pytest.raises(subject.VerificationError, match="hard-disable"):

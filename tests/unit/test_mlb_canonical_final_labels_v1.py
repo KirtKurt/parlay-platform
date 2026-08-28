@@ -881,6 +881,7 @@ def test_scheduler_routes_read_only_get_through_canonical_authority(monkeypatch)
         }
     ]
     assert body["authoritativeSettlement"] is True
+    assert body["sport"] == "mlb"
     assert body["settlementAuthority"] == "CANONICAL_IMMUTABLE_LOCK_OFFICIAL_GAME_PK"
     assert body["legacyDiagnosticCompatibility"]["authoritative"] is False
     assert body["legacyDiagnosticCompatibility"]["executed"] is False
