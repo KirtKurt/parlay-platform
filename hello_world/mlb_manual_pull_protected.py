@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
+from zoneinfo import ZoneInfo
 
 mlb_ml_runtime_install_v3 = None
 try:
@@ -40,6 +42,9 @@ _REQUIRED_RUNTIME_STEPS = {
 
 _WINNER_LIFECYCLE_DEFECT_SCOPE_VERSION = (
     "MLB-WINNER-LIFECYCLE-DEFECT-SCOPE-v1-release-separated"
+)
+_WINNER_LIFECYCLE_CONVERGENCE_VERSION = (
+    "MLB-WINNER-LIFECYCLE-CONVERGENCE-v1-exact-cutoff-read-only"
 )
 
 if isinstance(_raw_runtime_status, dict):
@@ -145,6 +150,22 @@ def _is_scheduled(event: Dict[str, Any]) -> bool:
     return not (event.get("httpMethod") or event.get("requestContext"))
 
 
+def _is_exact_audited_scheduled_pull(event: Dict[str, Any]) -> bool:
+    """Identify only the immutable EventBridge input for the natural HOT pull."""
+
+    return bool(
+        set(event) == {"sport", "t", "run", "days_ahead"}
+        and type(event.get("sport")) is str
+        and event.get("sport") == "mlb"
+        and type(event.get("t")) is str
+        and event.get("t") == "HOT"
+        and type(event.get("run")) is str
+        and event.get("run") == "hot_pull_audited"
+        and type(event.get("days_ahead")) is int
+        and event.get("days_ahead") == 0
+    )
+
+
 def _scoped_lifecycle_defects(
     result: Dict[str, Any],
 ) -> Optional[tuple[bool, bool]]:
@@ -200,6 +221,992 @@ def _canonical_locked_storage_failures(
         if stored_count != candidate_count:
             failures.append(f"canonical_locked_storage_count_mismatch:{suffix}")
     return failures
+
+
+_DUE = "LOCK_DUE_CANONICAL_MISSING"
+_OPEN = "OPEN_PRE_LOCK"
+_MISSED = {"MISSED_LOCK", "MISSED_NOT_BACKFILLED"}
+_GRACE = timedelta(minutes=5)
+_EASTERN = ZoneInfo("America/New_York")
+_PROVIDER_MANIFEST_VERSION = "INQSI-PROVIDER-SCHEDULE-MANIFEST-v1"
+_OFFICIAL_SCHEDULE_AUTHORITY_VERSION = (
+    "MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date"
+)
+_CANONICAL_STORAGE_VERSION = (
+    "MLB-LOCKED-PREDICTION-STORAGE-FINALIZER-v6-effective-schedule-lifecycle"
+)
+_CANONICAL_STORAGE_AUTHORITY = (
+    "consistent-read verified immutable T-minus-45 stage"
+)
+_PUBLIC_PER_GAME_AUTHORITY_VERSION = (
+    "MLB-LAST-PRELOCK-PROMOTION-AUTHORITY-v1-canonical-read-overlay"
+)
+
+
+def _exact_count(value: Any) -> Optional[int]:
+    return value if type(value) is int and value >= 0 else None
+
+
+def _nonempty_string(value: Any) -> bool:
+    return type(value) is str and bool(value) and value == value.strip()
+
+
+def _sha256_string(value: Any) -> bool:
+    return bool(
+        _nonempty_string(value)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _date_string(value: Any) -> bool:
+    if not _nonempty_string(value):
+        return False
+    try:
+        return datetime.fromisoformat(value).date().isoformat() == value
+    except Exception:
+        return False
+
+
+def _tags(row: Dict[str, Any]) -> Optional[set[str]]:
+    values = row.get("tags")
+    if (
+        not isinstance(values, list)
+        or any(not _nonempty_string(value) for value in values)
+        or len(values) != len(set(values))
+    ):
+        return None
+    return set(values)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _aware_utc(value: Any) -> Optional[datetime]:
+    if not _nonempty_string(value):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
+def _canonical_identity(value: Any) -> str:
+    if not _nonempty_string(value):
+        return ""
+    if value.startswith(("provider:", "key:", "teams:")):
+        return value
+    return f"provider:{value}"
+
+
+def _row_identity(row: Dict[str, Any]) -> str:
+    # Bound identity fields are authoritative. providerEventId is only a
+    # fallback because it may retain a different source-provider alias.
+    bound = {
+        _canonical_identity(row.get(field))
+        for field in ("gameId", "game_id", "gameIdentity", "game_identity")
+        if row.get(field) not in (None, "")
+    }
+    if len(bound) == 1 and "" not in bound:
+        return next(iter(bound))
+    if bound:
+        return ""
+    return _canonical_identity(
+        row.get("providerEventId") or row.get("provider_event_id")
+    )
+
+
+def _manifest(result: Dict[str, Any]) -> Optional[tuple[str, ...]]:
+    lock = result.get("slatePredictionLock")
+    identities = lock.get("manifestGameIdentities") if isinstance(lock, dict) else None
+    game_date = result.get("game_date_et")
+    slate_date = result.get("slate_date")
+    if (
+        not isinstance(lock, dict)
+        or not _date_string(game_date)
+        or slate_date != game_date
+        or not isinstance(identities, list)
+        or not identities
+        or any(
+            not _nonempty_string(value)
+            or not value.startswith(("provider:", "key:", "teams:"))
+            for value in identities
+        )
+        or len(set(identities)) != len(identities)
+    ):
+        return None
+    observed = _aware_utc(lock.get("providerManifestObservedAtUtc"))
+    pull_id = lock.get("providerManifestPullId")
+    expected_pk = f"PROVIDER_MANIFEST#mlb#{game_date}"
+    expected_sk = (
+        f"OBSERVED#{observed.isoformat()}#PULL#{pull_id}"
+        if observed is not None and _nonempty_string(pull_id)
+        else None
+    )
+    flags = (
+        "providerManifestValidated",
+        "providerManifestImmutable",
+        "providerManifestFullProviderSchedule",
+        "officialScheduleBacked",
+        "officialScheduleAuthoritativeStartTimes",
+        "durableRosterImmutableReadbackVerified",
+    )
+    return (
+        tuple(identities)
+        if lock.get("providerManifestVersion") == _PROVIDER_MANIFEST_VERSION
+        and lock.get("providerManifestPk") == expected_pk
+        and lock.get("providerManifestSk") == expected_sk
+        and _sha256_string(lock.get("providerManifestFingerprint"))
+        and lock.get("officialScheduleAuthorityVersion")
+        == _OFFICIAL_SCHEDULE_AUTHORITY_VERSION
+        and _sha256_string(lock.get("officialScheduleAuthorityFingerprint"))
+        and _exact_count(lock.get("manifestGameCount")) == len(identities)
+        and _exact_count(lock.get("verifiedFullSlateGameCount"))
+        == len(identities)
+        and _exact_count(lock.get("officialScheduleGameCount"))
+        == len(identities)
+        and all(lock.get(field) is True for field in flags)
+        else None
+    )
+
+
+def _manifest_token(result: Dict[str, Any]) -> Optional[tuple[Any, ...]]:
+    identities = _manifest(result)
+    lock = result.get("slatePredictionLock")
+    if identities is None or not isinstance(lock, dict):
+        return None
+    return (
+        identities,
+        lock.get("providerManifestVersion"),
+        lock.get("providerManifestPk"),
+        lock.get("providerManifestSk"),
+        lock.get("providerManifestFingerprint"),
+        lock.get("providerManifestObservedAtUtc"),
+        lock.get("providerManifestPullId"),
+        lock.get("officialScheduleAuthorityVersion"),
+        lock.get("officialScheduleAuthorityFingerprint"),
+    )
+
+
+def _clean_lifecycle(
+    result: Dict[str, Any], *, require_storage: bool = False
+) -> bool:
+    lock = result.get("slatePredictionLock")
+    coverage = result.get("slateCoverage")
+    if not isinstance(lock, dict) or not isinstance(coverage, dict):
+        return False
+    storage_clean = (
+        result.get("preLockStorageErrors") == []
+        and result.get("canonicalLockedStorageErrors") == {}
+        if require_storage
+        else True
+    )
+    checks = (
+        result.get("invalidTerminalLifecycleRows") == {},
+        result.get("invalidPlayabilityReleaseRows") == {},
+        lock.get("canonicalReadError") is None,
+        lock.get("invalidCanonicalRows") == {},
+        lock.get("invalidLifecycleStatusRows") == {},
+        lock.get("invalidTerminalLifecycleRows") == {},
+        lock.get("invalidPlayabilityReleaseRows") == {},
+        coverage.get("canonicalReadError") is None,
+        coverage.get("invalidCanonicalRows") == {},
+        coverage.get("invalidLifecycleStatusRows") == {},
+        coverage.get("invalidPersistedPrelockRows") == {},
+        coverage.get("ambiguousCurrentPredictionIdentities") == [],
+        coverage.get("missingLifecycleDisplayGameIdentities") == [],
+        coverage.get("extraCurrentPredictionIdentities") == [],
+        coverage.get("missingGameIdentities") == [],
+        coverage.get("missingWinnerPredictionGameIdentities") == [],
+    )
+    return storage_clean and all(checks)
+
+
+def _due_contract(
+    result: Dict[str, Any], *, require_storage: bool
+) -> Optional[tuple[str, ...]]:
+    if not isinstance(result, dict):
+        return None
+    required = [
+        "allGamesPredicted",
+        "displayStatusCoverageComplete",
+        "lifecycleCoverageComplete",
+    ]
+    if require_storage:
+        required += [
+            "preLockStorageLifecycleAware",
+            "preLockStorageComplete",
+            "preLockStorageDispositionComplete",
+        ]
+    manifest = _manifest(result)
+    count = _exact_count(result.get("gameCount"))
+    slate = result.get("slate_date")
+    declared_date = result.get("game_date_et")
+    if (
+        result.get("ok") is not True
+        or _scoped_lifecycle_defects(result) != (True, False)
+        or any(result.get(field) is not True for field in required)
+        or not manifest
+        or count != len(manifest)
+        or not _date_string(slate)
+        or declared_date != slate
+        or not _clean_lifecycle(result, require_storage=require_storage)
+    ):
+        return None
+    if require_storage:
+        candidates = _exact_count(result.get("preLockStorageCandidateCount"))
+        if (
+            candidates is None
+            or _exact_count(result.get("preLockStoredCount")) != candidates
+            or _exact_count(result.get("preLockStorageDispositionCount")) != count
+            or _exact_count(result.get("preLockStorageRowCount")) != count
+            or _canonical_locked_storage_failures(
+                result, str(result.get("game_date_et") or "")
+            )
+        ):
+            return None
+    lock = result["slatePredictionLock"]
+    coverage = result["slateCoverage"]
+    pending = lock.get("pendingCanonicalStatuses")
+    if not isinstance(pending, dict) or not pending:
+        return None
+    if any(value not in {_DUE, _OPEN} for value in pending.values()):
+        return None
+    due = tuple(identity for identity, value in pending.items() if value == _DUE)
+    if not due:
+        return None
+    canonical_count = len(manifest) - len(pending)
+    checks = (
+        lock.get("lockStatus") == _DUE,
+        lock.get("canonicalReadOperational") is True,
+        _exact_count(lock.get("lockMinutesBeforeEachGame")) == 45,
+        _exact_count(lock.get("lockDueCanonicalMissingCount")) == len(due),
+        _exact_count(lock.get("missedLockCount")) == 0,
+        coverage.get("canonicalReadOperational") is True,
+        coverage.get("pendingCanonicalStatuses") == pending,
+        _exact_count(coverage.get("lockDueCanonicalMissingCount")) == len(due),
+        _exact_count(coverage.get("missedLockCount")) == 0,
+        set(pending).issubset(manifest),
+        _exact_count(lock.get("canonicalLockedGameCount")) == canonical_count,
+        _exact_count(coverage.get("canonicalLockedGameCount"))
+        == canonical_count,
+        _exact_count(lock.get("pendingCanonicalGameCount")) == len(pending),
+        _exact_count(coverage.get("pendingCanonicalGameCount")) == len(pending),
+        lock.get("canonicalCoverageComplete") is False,
+        coverage.get("canonicalCoverageComplete") is False,
+        lock.get("canonicalPredictionComplete") is False,
+        coverage.get("canonicalPredictionComplete") is False,
+        result.get("canonicalPredictionComplete") is False,
+    )
+    if not all(checks):
+        return None
+    if require_storage:
+        open_count = sum(value == _OPEN for value in pending.values())
+        stored_count = open_count + canonical_count
+        class_counts = (
+            _exact_count(result.get("preLockStorageCandidateCount"))
+            == open_count,
+            _exact_count(result.get("preLockStoredCount")) == open_count,
+            _exact_count(result.get("preLockStorageLifecycleSkippedCount"))
+            == len(due),
+            result.get("preLockStorageLifecycleSkippedStatuses") == [_DUE],
+            _exact_count(result.get("canonicalLockedStorageCandidateCount"))
+            == canonical_count,
+            _exact_count(result.get("canonicalLockedStoredCount"))
+            == canonical_count,
+            result.get("canonicalLockedStorageErrors") == {},
+            result.get("canonicalLockedStorageComplete")
+            is (canonical_count > 0),
+            _exact_count(
+                result.get("canonicalLockedStorageSuppressedUnauthorizedCount")
+            )
+            == 0,
+            result.get("canonicalLockedStorageSuppressedEarlyWrites") is True,
+            result.get("canonicalLockedStorageVersion")
+            == _CANONICAL_STORAGE_VERSION,
+            result.get("canonicalLockedStorageAuthority")
+            == _CANONICAL_STORAGE_AUTHORITY,
+            _exact_count(result.get("storedCount")) == stored_count,
+            result.get("stored") is (stored_count > 0),
+        )
+        if not all(class_counts):
+            return None
+    return due
+
+
+def _row_map(
+    result: Dict[str, Any], field: str, manifest: tuple[str, ...]
+) -> Optional[Dict[str, Dict[str, Any]]]:
+    rows = result.get(field)
+    if not isinstance(rows, list) or len(rows) != len(manifest):
+        return None
+    mapped: Dict[str, Dict[str, Any]] = {}
+    provider_aliases: set[str] = set()
+    for row in rows:
+        identity = _row_identity(row) if isinstance(row, dict) else ""
+        if not identity or identity in mapped:
+            return None
+        raw_aliases = [
+            row.get(alias_field)
+            for alias_field in ("providerEventId", "provider_event_id")
+            if row.get(alias_field) not in (None, "")
+        ]
+        aliases = {_canonical_identity(value) for value in raw_aliases}
+        if "" in aliases or len(aliases) > 1:
+            return None
+        if aliases:
+            alias = next(iter(aliases))
+            if (
+                (alias in manifest and alias != identity)
+                or alias in provider_aliases
+            ):
+                return None
+            provider_aliases.add(alias)
+        mapped[identity] = row
+    return mapped if set(mapped) == set(manifest) else None
+
+
+def _row_timing(
+    result: Dict[str, Any], row: Dict[str, Any]
+) -> Optional[tuple[datetime, datetime]]:
+    per_game = row.get("perGameCanonicalLock")
+    if not isinstance(per_game, dict):
+        return None
+    scheduled = _aware_utc(row.get("scheduledLockAtUtc"))
+    canonical = _aware_utc(per_game.get("lockAtUtc"))
+    start = _aware_utc(row.get("commenceTime"))
+    slate = result.get("game_date_et")
+    if (
+        not _date_string(slate)
+        or result.get("slate_date") != slate
+        or scheduled is None
+        or canonical != scheduled
+        or start is None
+        or start - timedelta(minutes=45) != scheduled
+        or start.astimezone(_EASTERN).date().isoformat() != slate
+    ):
+        return None
+    return scheduled, start
+
+
+def _timing_map(
+    result: Dict[str, Any],
+) -> Optional[Dict[str, tuple[datetime, datetime]]]:
+    manifest = _manifest(result)
+    if not manifest:
+        return None
+    timings: Dict[str, tuple[datetime, datetime]] = {}
+    for field in ("predictions", "perGameStatus"):
+        rows = _row_map(result, field, manifest)
+        if rows is None:
+            return None
+        for identity, row in rows.items():
+            timing = _row_timing(result, row)
+            if not timing or timings.get(identity, timing) != timing:
+                return None
+            timings[identity] = timing
+    return timings if set(timings) == set(manifest) else None
+
+
+def _open_row(
+    result: Dict[str, Any],
+    row: Dict[str, Any],
+    now: datetime,
+    *,
+    display_card: bool = False,
+) -> bool:
+    timing = _row_timing(result, row)
+    per_game = row.get("perGameCanonicalLock") or {}
+    tags = _tags(row)
+    conflicting_tags = {
+        "FINAL_LOCKED",
+        "OFFICIAL_PREDICTION",
+        "OFFICIAL_LOCKED_PREDICTION",
+        "CANONICAL_PER_GAME_LOCK",
+        _DUE,
+        "PER_GAME_CANONICAL_LOCK_MISSING",
+        *_MISSED,
+    }
+    return bool(
+        timing
+        and tags is not None
+        and row.get("lockStatus") == _OPEN
+        and row.get("officialPredictionStatus")
+        == "PRE_LOCK_PLATFORM_PREDICTION"
+        and row.get("recommendationStatus") == "PRE_LOCK_PREDICTION"
+        and per_game.get("status") == _OPEN
+        and per_game.get("canonical") is False
+        and row.get("locked") is False
+        and row.get("lockedPrediction") is False
+        and row.get("lockOutcomeRecorded") is False
+        and row.get("canonical") is False
+        and row.get("officialPrediction") is False
+        and row.get("officialPick") is False
+        and (
+            "isOfficialDisplayPick" not in row
+            if display_card
+            else row.get("isOfficialDisplayPick") is False
+        )
+        and (
+            "displayPrediction" not in row
+            if display_card
+            else row.get("displayPrediction") is True
+        )
+        and {"PRE_LOCK_PREDICTION", "PER_GAME_CANONICAL_LOCK_PENDING"}
+        .issubset(tags)
+        and not conflicting_tags.intersection(tags)
+        and now < timing[0] < timing[1]
+    )
+
+
+def _due_row(
+    result: Dict[str, Any],
+    row: Dict[str, Any],
+    *,
+    display_card: bool = False,
+) -> bool:
+    per_game = row.get("perGameCanonicalLock") or {}
+    tags = _tags(row)
+    conflicting_tags = {
+        "FINAL_LOCKED",
+        "OFFICIAL_PREDICTION",
+        "OFFICIAL_LOCKED_PREDICTION",
+        "CANONICAL_PER_GAME_LOCK",
+        _OPEN,
+        *_MISSED,
+    }
+    return bool(
+        _row_timing(result, row)
+        and tags is not None
+        and row.get("lockStatus") == _DUE
+        and row.get("officialPredictionStatus") == _DUE
+        and row.get("recommendationStatus") == _DUE
+        and per_game.get("status") == _DUE
+        and per_game.get("canonical") is False
+        and row.get("locked") is False
+        and row.get("lockedPrediction") is False
+        and row.get("lockOutcomeRecorded") is False
+        and row.get("canonical") is False
+        and row.get("officialPrediction") is False
+        and row.get("officialPick") is False
+        and (
+            "isOfficialDisplayPick" not in row
+            if display_card
+            else row.get("isOfficialDisplayPick") is False
+        )
+        and (
+            "displayPrediction" not in row
+            if display_card
+            else row.get("displayPrediction") is True
+        )
+        and {_DUE, "PER_GAME_CANONICAL_LOCK_MISSING"}.issubset(tags)
+        and not conflicting_tags.intersection(tags)
+    )
+
+
+def _canonical_row(
+    result: Dict[str, Any],
+    row: Dict[str, Any],
+    *,
+    display_card: bool = False,
+) -> bool:
+    per_game = row.get("perGameCanonicalLock") or {}
+    tags = _tags(row)
+    return bool(
+        _row_timing(result, row)
+        and tags is not None
+        and row.get("lockStatus") == "LOCKED_CANONICAL"
+        and row.get("officialPredictionStatus")
+        == "OFFICIAL_LOCKED_PREDICTION"
+        and per_game.get("status") == "OFFICIAL_LOCKED_PREDICTION"
+        and per_game.get("canonical") is True
+        and row.get("locked") is True
+        and row.get("lockedPrediction") is True
+        and row.get("lockOutcomeRecorded") is True
+        and row.get("canonical") is True
+        and row.get("officialPrediction") is True
+        and row.get("officialPick") is True
+        and (
+            "isOfficialDisplayPick" not in row
+            if display_card
+            else row.get("isOfficialDisplayPick") is True
+        )
+        and {
+            "FINAL_LOCKED",
+            "OFFICIAL_PREDICTION",
+            "OFFICIAL_LOCKED_PREDICTION",
+            "CANONICAL_PER_GAME_LOCK",
+        }.issubset(tags)
+        and not (
+            {_DUE, "PER_GAME_CANONICAL_LOCK_MISSING"} | _MISSED
+        ).intersection(tags)
+    )
+
+
+def _due_cutoff(
+    result: Dict[str, Any], due: tuple[str, ...], now: datetime
+) -> Optional[datetime]:
+    manifest = _manifest(result)
+    if not manifest:
+        return None
+    pending = result["slatePredictionLock"].get("pendingCanonicalStatuses")
+    if (
+        not isinstance(pending, dict)
+        or not set(pending).issubset(manifest)
+        or any(value not in {_DUE, _OPEN} for value in pending.values())
+    ):
+        return None
+    expected_due = set(due)
+    if {key for key, value in pending.items() if value == _DUE} != expected_due:
+        return None
+    cutoff = None
+    observed_timing: Dict[str, tuple[datetime, datetime]] = {}
+    for field in ("predictions", "perGameStatus"):
+        rows = _row_map(result, field, manifest)
+        if rows is None:
+            return None
+        for identity, row in rows.items():
+            timing = _row_timing(result, row)
+            if not timing or observed_timing.get(identity, timing) != timing:
+                return None
+            observed_timing[identity] = timing
+            expected_status = pending.get(identity)
+            if expected_status is None:
+                if (
+                    not _canonical_row(
+                        result,
+                        row,
+                        display_card=field == "perGameStatus",
+                    )
+                    or timing[0] > now
+                ):
+                    return None
+                continue
+            if expected_status == _OPEN:
+                if not _open_row(
+                    result,
+                    row,
+                    now,
+                    display_card=field == "perGameStatus",
+                ):
+                    return None
+                continue
+            if not _due_row(
+                result,
+                row,
+                display_card=field == "perGameStatus",
+            ):
+                return None
+            scheduled, start = timing
+            if (
+                not scheduled <= now <= scheduled + _GRACE
+                or start <= now
+                or cutoff not in (None, scheduled)
+            ):
+                return None
+            cutoff = scheduled
+    return cutoff
+
+
+def _current_observation(
+    payload: Dict[str, Any],
+    initial: Dict[str, Any],
+    game_date: str,
+    cutoff: datetime,
+    now: datetime,
+) -> Optional[datetime]:
+    history = payload.get("canonical_pull_history")
+    if (
+        not isinstance(history, list)
+        or len(history) != 1
+        or not isinstance(history[0], dict)
+        or history[0].get("game_date_et") != game_date
+    ):
+        return None
+    row = history[0]
+    observed = _aware_utc(payload.get("asof"))
+    if observed is None:
+        return None
+    expected_pk = f"PULLS#mlb#{game_date}"
+    count = _exact_count(initial.get("gameCount"))
+    token = _manifest_token(initial)
+    if count is None or token is None:
+        return None
+    (
+        _,
+        manifest_version,
+        manifest_pk,
+        manifest_sk,
+        manifest_fingerprint,
+        manifest_observed_at,
+        manifest_pull_id,
+        official_version,
+        official_fingerprint,
+    ) = token
+    manifests = payload.get("provider_schedule_manifests")
+    if (
+        not isinstance(manifests, list)
+        or len(manifests) != 1
+        or not isinstance(manifests[0], dict)
+        or manifests[0].get("game_date_et") != game_date
+    ):
+        return None
+    manifest = manifests[0]
+    checks = (
+        _exact_count(payload.get("count")) == count,
+        _exact_count(payload.get("days_ahead")) == 0,
+        payload.get("providerScheduleManifestComplete") is True,
+        manifest.get("ok") is True,
+        manifest.get("immutable") is True,
+        manifest.get("fullProviderSchedule") is True,
+        manifest.get("boundToCanonicalPull") is True,
+        manifest.get("officialScheduleBacked") is True,
+        manifest.get("officialScheduleAuthorityBound") is True,
+        _exact_count(manifest.get("gameCount")) == count,
+        _exact_count(manifest.get("officialScheduleGameCount")) == count,
+        manifest.get("version") == manifest_version,
+        manifest.get("pk") == manifest_pk,
+        manifest.get("sk") == manifest_sk,
+        manifest.get("fingerprint") == manifest_fingerprint,
+        manifest.get("officialScheduleAuthorityFingerprint")
+        == official_fingerprint,
+        manifest.get("officialScheduleAuthorityVersion") == official_version,
+        row.get("ok") is True,
+        row.get("error") is None,
+        row.get("providerManifestBound") is True,
+        row.get("providerManifestImmutable") is True,
+        row.get("providerManifestFullSchedule") is True,
+        row.get("providerManifestValidationErrors") == [],
+        row.get("canonicalManifestValidatedAgainstPersistedPull") is True,
+        row.get("retryReturnedExistingCanonicalPull") is False,
+        row.get("sameSlotRetryAuthorityRebound") is False,
+        row.get("officialScheduleAuthorityBound") is True,
+        row.get("officialScheduleBacked") is True,
+        row.get("providerManifestPk") == manifest_pk,
+        row.get("providerManifestSk") == manifest_sk,
+        row.get("providerManifestVersion") == manifest_version,
+        row.get("providerManifestFingerprint") == manifest_fingerprint,
+        row.get("officialScheduleAuthorityVersion") == official_version,
+        row.get("officialScheduleAuthorityFingerprint") == official_fingerprint,
+        _exact_count(row.get("games")) == count,
+        _exact_count(row.get("providerManifestGameCount")) == count,
+        _exact_count(row.get("officialScheduleGameCount")) == count,
+        _aware_utc(row.get("canonicalSlotStartUtc")) == cutoff,
+        row.get("canonicalPullPk") == expected_pk,
+        row.get("pk") == expected_pk,
+        row.get("canonicalPullSk") == f"PULL#SLOT#{cutoff.isoformat()}",
+        _aware_utc(row.get("canonicalPulledAtUtc")) == observed,
+        _aware_utc(manifest_observed_at) == observed,
+        row.get("pull_id") == manifest_pull_id,
+        row.get("canonicalPullId") == manifest_pull_id,
+        manifest_sk
+        == f"OBSERVED#{observed.isoformat()}#PULL#{manifest_pull_id}",
+        cutoff <= observed <= now <= cutoff + _GRACE,
+    )
+    return observed if all(checks) else None
+
+
+def _healthy_read(
+    initial: Dict[str, Any],
+    persisted: Any,
+    due: tuple[str, ...],
+    cutoff: datetime,
+    now: datetime,
+) -> bool:
+    if not isinstance(persisted, dict):
+        return False
+    game_date = initial.get("game_date_et")
+    manifest = _manifest(initial)
+    lock = persisted.get("slatePredictionLock")
+    coverage = persisted.get("slateCoverage")
+    flags = (
+        "allGamesPredicted",
+        "displayStatusCoverageComplete",
+        "lifecycleCoverageComplete",
+    )
+    initial_timing = _timing_map(initial)
+    if (
+        not _date_string(game_date)
+        or persisted.get("ok") is not True
+        or persisted.get("game_date_et") != game_date
+        or persisted.get("slate_date") != game_date
+        or _scoped_lifecycle_defects(persisted) != (False, False)
+        or persisted.get("operationalDefect") is not False
+        or any(persisted.get(field) is not True for field in flags)
+        or not manifest
+        or _manifest_token(persisted) != _manifest_token(initial)
+        or not initial_timing
+        or _timing_map(persisted) != initial_timing
+        or _exact_count(persisted.get("gameCount")) != len(manifest or ())
+        or not isinstance(lock, dict)
+        or lock.get("canonicalReadOperational") is not True
+        or lock.get("canonicalReadError") is not None
+        or _exact_count(lock.get("lockDueCanonicalMissingCount")) != 0
+        or _exact_count(lock.get("missedLockCount")) != 0
+        or not isinstance(coverage, dict)
+        or coverage.get("canonicalReadOperational") is not True
+        or _exact_count(coverage.get("lockDueCanonicalMissingCount")) != 0
+        or _exact_count(coverage.get("missedLockCount")) != 0
+        or not _clean_lifecycle(persisted)
+    ):
+        return False
+    pending = lock.get("pendingCanonicalStatuses")
+    initial_pending = initial["slatePredictionLock"].get(
+        "pendingCanonicalStatuses"
+    )
+    expected_open = {
+        identity: _OPEN
+        for identity, value in (initial_pending or {}).items()
+        if value == _OPEN
+    }
+    if (
+        not isinstance(initial_pending, dict)
+        or not isinstance(pending, dict)
+        or pending != expected_open
+        or not set(pending).issubset(manifest)
+    ):
+        return False
+    if coverage.get("pendingCanonicalStatuses") != pending:
+        return False
+    canonical_count = None
+    observed_timing: Dict[str, tuple[datetime, datetime]] = {}
+    for field in ("predictions", "perGameStatus"):
+        rows = _row_map(persisted, field, manifest)
+        if rows is None:
+            return False
+        field_canonical_count = 0
+        for identity, row in rows.items():
+            timing = _row_timing(persisted, row)
+            if not timing or observed_timing.get(identity, timing) != timing:
+                return False
+            observed_timing[identity] = timing
+            if identity in pending:
+                if not _open_row(
+                    persisted,
+                    row,
+                    now,
+                    display_card=field == "perGameStatus",
+                ):
+                    return False
+                continue
+            field_canonical_count += 1
+            if (
+                not _canonical_row(
+                    persisted,
+                    row,
+                    display_card=field == "perGameStatus",
+                )
+                or timing[0] > now
+                or (
+                    identity in due
+                    and (
+                        timing[0] != cutoff
+                        or timing[1] != cutoff + timedelta(minutes=45)
+                    )
+                )
+            ):
+                return False
+        if canonical_count not in (None, field_canonical_count):
+            return False
+        canonical_count = field_canonical_count
+    if canonical_count is None or any(identity in pending for identity in due):
+        return False
+    complete = not pending
+    expected_lock_status = (
+        "COMPLETE_MANIFEST_ALL_CANONICAL"
+        if complete
+        else "PARTIAL_PER_GAME_CANONICAL"
+    )
+    count_checks = (
+        _exact_count(lock.get("canonicalLockedGameCount")) == canonical_count,
+        _exact_count(coverage.get("canonicalLockedGameCount")) == canonical_count,
+        _exact_count(lock.get("pendingCanonicalGameCount")) == len(pending),
+        _exact_count(coverage.get("pendingCanonicalGameCount")) == len(pending),
+        lock.get("lockStatus") == expected_lock_status,
+        lock.get("canonicalCoverageComplete") is complete,
+        coverage.get("canonicalCoverageComplete") is complete,
+        lock.get("canonicalPredictionComplete") is complete,
+        coverage.get("canonicalPredictionComplete") is complete,
+        persisted.get("canonicalPredictionComplete") is complete,
+    )
+    if not all(count_checks):
+        return False
+    return True
+
+
+def _read_only_attestation(result: Any) -> bool:
+    coverage = result.get("slateCoverage") if isinstance(result, dict) else None
+    return bool(
+        isinstance(coverage, dict)
+        and result.get("readAuthority")
+        == "persisted_prelock_and_canonical_locked_only"
+        and _exact_count(coverage.get("canonicalReadAuthorityWriteCount")) == 0
+        and coverage.get("prelockPredictionAuthority")
+        == "validated_immutable_pregame_snapshot"
+        and coverage.get("publicPrelockRecomputed") is False
+        and coverage.get("storeRequested") is False
+    )
+
+
+_STORAGE_FIELDS = (
+    "stored",
+    "storedCount",
+    "preLockStoredCount",
+    "preLockStorageCandidateCount",
+    "preLockStorageComplete",
+    "preLockStorageErrors",
+    "preLockStorageLifecycleAware",
+    "preLockStorageLifecycleSkippedCount",
+    "preLockStorageLifecycleSkippedStatuses",
+    "preLockStorageDispositionCount",
+    "preLockStorageRowCount",
+    "preLockStorageDispositionComplete",
+    "canonicalLockedStorageCandidateCount",
+    "canonicalLockedStoredCount",
+    "canonicalLockedStorageErrors",
+    "canonicalLockedStorageVersion",
+    "canonicalLockedStorageComplete",
+    "canonicalLockedStorageSuppressedUnauthorizedCount",
+    "canonicalLockedStorageAuthority",
+    "canonicalLockedStorageSuppressedEarlyWrites",
+)
+
+
+def _current_cutoff_convergence_response(
+    event: Dict[str, Any], response: Dict[str, Any], failures: list[str]
+) -> Optional[Dict[str, Any]]:
+    if not _is_exact_audited_scheduled_pull(event):
+        return None
+    try:
+        body = response.get("body")
+        payload = json.loads(body) if isinstance(body, str) else dict(body or {})
+    except Exception:
+        return None
+    if (
+        type(response.get("statusCode")) is not int
+        or not 200 <= response["statusCode"] < 300
+        or payload.get("ok") is not True
+        or payload.get("live_pull_ok") is not True
+        or payload.get("fallback_used") is not False
+        or payload.get("sport") != "mlb"
+        or payload.get("t") != "HOT"
+        or payload.get("run") != "hot_pull_audited"
+    ):
+        return None
+    results = payload.get("game_winner_predictions")
+    if (
+        not isinstance(results, list)
+        or len(results) != 1
+        or not isinstance(results[0], dict)
+    ):
+        return None
+    initial = results[0]
+    game_date = initial.get("game_date_et")
+    if not _date_string(game_date):
+        return None
+    if failures != [f"winner_prediction_failed:{game_date}"]:
+        return None
+    now = _utc_now()
+    if now.tzinfo is None or now.utcoffset() is None:
+        return None
+    now = now.astimezone(timezone.utc)
+    due = _due_contract(initial, require_storage=True)
+    cutoff = _due_cutoff(initial, due, now) if due else None
+    observed = (
+        _current_observation(payload, initial, game_date, cutoff, now)
+        if cutoff
+        else None
+    )
+    if cutoff is None or observed is None:
+        return None
+
+    engine = getattr(mlb_manual_pull, "mlb_game_winner_engine", None)
+    reader = getattr(engine, "read_persisted_predictions", None)
+    if (
+        not callable(reader)
+        or getattr(
+            engine,
+            "_INQSI_MLB_PERSISTED_PRELOCK_PUBLIC_AUTHORITY_ENABLED",
+            False,
+        )
+        is not True
+        or getattr(engine, "MLB_PUBLIC_PER_GAME_AUTHORITY_VERSION", None)
+        != _PUBLIC_PER_GAME_AUTHORITY_VERSION
+    ):
+        return None
+    try:
+        persisted = reader(game_date, store=False, limit=500)
+    except Exception:
+        return None
+    if not _read_only_attestation(persisted):
+        return None
+    now_after = _utc_now()
+    if now_after.tzinfo is None or now_after.utcoffset() is None:
+        return None
+    now_after = now_after.astimezone(timezone.utc)
+    if not observed <= now <= now_after <= cutoff + _GRACE:
+        return None
+    converged = _healthy_read(initial, persisted, due, cutoff, now_after)
+    persisted_due = (
+        _due_contract(persisted, require_storage=False)
+        if not converged and isinstance(persisted, dict)
+        else None
+    )
+    if not converged and (
+        set(persisted_due or ()) != set(due)
+        or _manifest_token(persisted) != _manifest_token(initial)
+        or _timing_map(persisted) != _timing_map(initial)
+        or persisted.get("game_date_et") != game_date
+        or persisted.get("slate_date") != game_date
+        or _due_cutoff(persisted, persisted_due, now_after) != cutoff
+    ):
+        return None
+
+    evidence = {
+        "version": _WINNER_LIFECYCLE_CONVERGENCE_VERSION,
+        "evidenceScope": "SUPPLEMENTAL_PERSISTED_READ",
+        "status": (
+            "CONVERGED_BY_IMMEDIATE_PERSISTED_READ"
+            if converged
+            else "CONVERGENCE_PENDING_CURRENT_CUTOFF"
+        ),
+        "reason": _DUE,
+        "currentCanonicalSlotUtc": cutoff.isoformat(),
+        "payloadObservedAtUtc": observed.isoformat(),
+        "wrapperCheckedAtUtc": now_after.isoformat(),
+        "dueGameIdentities": list(due),
+        "converged": converged,
+        "convergencePending": not converged,
+        "nonfatalForCurrentPull": not converged,
+        "hardFailIfDueOnLaterSlot": True,
+        "storageAndDispositionComplete": True,
+        "initialWinnerLifecycleExecuted": True,
+        "operationalDefectPreserved": not converged,
+        "readOnly": True,
+        "winnerWriterInvoked": False,
+        "externalOddsFetched": False,
+        "candidateWritten": False,
+    }
+    annotated = dict(initial)
+    if converged:
+        annotated.update(persisted)
+        annotated.update(
+            {field: initial[field] for field in _STORAGE_FIELDS if field in initial}
+        )
+        annotated["game_date_et"] = game_date
+    annotated["winnerLifecycleConvergence"] = evidence
+    payload = dict(payload)
+    payload["game_winner_predictions"] = [annotated]
+    payload["winnerLifecycleConvergence"] = evidence
+    out = dict(response)
+    out["body"] = json.dumps(payload, default=str)
+    return _attach_runtime_status(out)
+
+
 
 
 def _winner_lifecycle_health(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -524,6 +1531,12 @@ def lambda_handler(event, context):
             or failure.startswith("provider_schedule_manifest_authority_invalid:")
             for failure in failures
         )
+        if _is_scheduled(event):
+            converged_response = _current_cutoff_convergence_response(
+                event, response, failures
+            )
+            if converged_response is not None:
+                return converged_response
         if not _is_scheduled(event) or not manifest_only_failure:
             raise
         # The canonical writer is intrinsically idempotent by 15-minute slot.
