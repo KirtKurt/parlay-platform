@@ -831,31 +831,51 @@ Resources:
           Properties:
             Path: /v1/results/mlb/final-scores
             Method: GET
+        MLBFinalScoresOptions:
+          Type: Api
+          Properties:
+            Path: /v1/results/mlb/final-scores
+            Method: OPTIONS
         MLBSettlementGet:
           Type: Api
           Properties:
             Path: /v1/results/mlb/settlement
             Method: GET
+        MLBSettlementOptions:
+          Type: Api
+          Properties:
+            Path: /v1/results/mlb/settlement
+            Method: OPTIONS
         MLBSettlementProofGet:
           Type: Api
           Properties:
             Path: /v1/results/mlb/proof
             Method: GET
+        MLBSettlementProofOptions:
+          Type: Api
+          Properties:
+            Path: /v1/results/mlb/proof
+            Method: OPTIONS
         MLBSignalLearningGet:
           Type: Api
           Properties:
             Path: /v1/results/mlb/signal-learning
             Method: GET
+        MLBSignalLearningOptions:
+          Type: Api
+          Properties:
+            Path: /v1/results/mlb/signal-learning
+            Method: OPTIONS
         MLBResultSignalsGet:
           Type: Api
           Properties:
             Path: /v1/results/mlb/result-signals
             Method: GET
-        MLBResultSignalsPost:
+        MLBResultSignalsOptions:
           Type: Api
           Properties:
             Path: /v1/results/mlb/result-signals
-            Method: POST
+            Method: OPTIONS
         MLBResultsEvery6Hours:
           Type: Schedule
           Properties:
