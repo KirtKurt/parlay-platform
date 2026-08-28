@@ -87,9 +87,12 @@ def normalize_results_schedule(current: str) -> str:
         if line.lstrip().startswith("Schedule:"):
             lines[index] = line[: len(line) - len(line.lstrip())] + "Schedule: cron(6/15 * * * ? *)\n"
         elif line.lstrip().startswith("Input:"):
-            lines[index] = (
-                line[: len(line) - len(line.lstrip())]
-                + "Input: '{\"sport\":\"mlb\",\"days_from\":3,\"run\":\"results_pull_15m\"}'\n"
+            # Preserve the native EventBridge id/time/resources envelope so a
+            # persisted summary can be bound to its exact schedule delivery.
+            lines[index] = ""
+        elif line.lstrip().startswith(("InputPath:", "InputTransformer:")):
+            raise RuntimeError(
+                "MLB results schedule must deliver the native EventBridge envelope"
             )
     if not found:
         raise RuntimeError("MLBResultsEvery6Hours marker not found in template.yaml")
@@ -144,8 +147,34 @@ for logical_name, _, _ in RESULTS_API_EVENTS:
 for logical_name, path, method in RESULTS_API_EVENTS:
     ensure_results_event(logical_name, path, method)
 
-if "Schedule: cron(6/15 * * * ? *)" not in text or "results_pull_15m" not in text:
+if "Schedule: cron(6/15 * * * ? *)" not in text:
     raise RuntimeError("MLB results scheduler must run every 15 minutes")
 
+schedule_lines = text.splitlines()
+schedule_start = schedule_lines.index("        MLBResultsEvery6Hours:")
+schedule_end = next(
+    (
+        index
+        for index in range(schedule_start + 1, len(schedule_lines))
+        if schedule_lines[index].strip()
+        and (
+            not schedule_lines[index].startswith("        ")
+            or not schedule_lines[index].startswith("          ")
+        )
+    ),
+    len(schedule_lines),
+)
+results_schedule = "\n".join(schedule_lines[schedule_start:schedule_end])
+if any(
+    token in results_schedule
+    for token in ("\n            Input:", "\n            InputPath:", "\n            InputTransformer:")
+):
+    raise RuntimeError(
+        "MLB results scheduler target must preserve the native EventBridge envelope"
+    )
+
 TEMPLATE.write_text(text)
-print("Patched read-only MLB results routes and normalized settlement to a 15-minute cadence.")
+print(
+    "Patched read-only MLB results routes and normalized native-envelope "
+    "settlement to a 15-minute cadence."
+)

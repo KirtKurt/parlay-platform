@@ -265,8 +265,9 @@ class FakeEvents:
                     ),
                 }
             )
-        if "Input" in self.rules[rule_name]:
-            target["Input"] = self.rules[rule_name]["Input"]
+        for selector in ("Input", "InputPath", "InputTransformer"):
+            if selector in self.rules[rule_name]:
+                target[selector] = self.rules[rule_name][selector]
         return {"Targets": [target]}
 
     def list_rules(self, **kwargs: Any) -> dict[str, Any]:
@@ -480,6 +481,8 @@ def test_verifies_trainer_identity_configuration_schedule_and_bucket(aws) -> Non
         assert result["schedules"][role]["deadLetterQueueAbsent"] is True
         assert result["schedules"][role]["deliveryPolicyMatches"] is True
         assert result["schedules"][role]["invocationInputsMatch"] is True
+    assert result["schedules"]["settlement"]["nativeEventEnvelopeMatches"] is True
+    assert result["schedules"]["ingest"]["nativeEventEnvelopeMatches"] is None
     assert result["schedules"]["verifier"]["expectedSchedules"] == []
     assert result["schedules"]["verifier"]["enabledRules"] == []
     assert result["schedules"]["verifier"]["exactMatch"] is True
@@ -912,6 +915,18 @@ def test_rejects_wrong_nontrainer_schedule_input(aws, role) -> None:
     assert result["ok"] is False
     assert result["schedules"][role]["invocationInputsMatch"] is False
     assert f"EVENTBRIDGE_INVOCATION_INPUT_MISMATCH:{role}" in result["blockers"]
+
+
+@pytest.mark.parametrize("selector", ("InputPath", "InputTransformer"))
+def test_rejects_settlement_native_envelope_suppressor(aws, selector) -> None:
+    rule = aws["events"].rules["rule-settlement"]
+    rule[selector] = "{}"
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["schedules"]["settlement"]["nativeEventEnvelopeMatches"] is False
+    assert "EVENTBRIDGE_INVOCATION_INPUT_MISMATCH:settlement" in result["blockers"]
 
 
 def test_rejects_wrong_nontrainer_lambda_async_retry_policy(aws) -> None:

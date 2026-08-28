@@ -1,4 +1,7 @@
 import json
+import re
+import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 import mlb_canonical_final_labels_v1 as canonical_settlement
@@ -8,7 +11,28 @@ from mlb_audit import (
     settle_mlb_slate as legacy_settle_mlb_slate,
 )
 from mlb_signal_learning import build_signal_learning_report
-from mlb_result_signals import build_result_signals, latest_result_signals
+from mlb_result_signals import (
+    RESULT_SIGNAL_PRODUCER_AUTHORITY,
+    RESULT_SIGNAL_PRODUCER_PROOF_VERSION,
+    build_result_signals,
+    latest_result_signals,
+)
+
+
+_NATIVE_EVENTBRIDGE_KEYS = {
+    "version",
+    "id",
+    "detail-type",
+    "source",
+    "account",
+    "time",
+    "region",
+    "resources",
+    "detail",
+}
+_EVENTBRIDGE_RULE_ARN = re.compile(
+    r"^arn:(?:aws|aws-[a-z-]+):events:([a-z0-9-]+):(\d{12}):rule/(.+)$"
+)
 
 
 def _json_default(value: Any) -> Any:
@@ -21,6 +45,72 @@ def _json_default(value: Any) -> Any:
     except Exception:
         pass
     return str(value)
+
+
+def _native_eventbridge_provenance(
+    event: Dict[str, Any],
+    context: Any,
+) -> Dict[str, str] | None:
+    """Validate provenance for native Schedule events; preserve plain directs."""
+
+    present = _NATIVE_EVENTBRIDGE_KEYS.intersection(event)
+    if not present:
+        return None
+    missing = sorted(_NATIVE_EVENTBRIDGE_KEYS - set(event))
+    if missing:
+        raise ValueError(f"Native EventBridge envelope is incomplete: {missing}")
+    if event.get("version") != "0":
+        raise ValueError("Native EventBridge envelope version mismatch")
+    if event.get("source") != "aws.events":
+        raise ValueError("Native EventBridge envelope source mismatch")
+    if event.get("detail-type") != "Scheduled Event":
+        raise ValueError("Native EventBridge envelope detail-type mismatch")
+    if event.get("detail") != {}:
+        raise ValueError("Native EventBridge scheduled detail must be empty")
+
+    event_id = str(event.get("id") or "").strip()
+    request_id = str(getattr(context, "aws_request_id", "") or "").strip()
+    try:
+        uuid.UUID(event_id)
+        uuid.UUID(request_id)
+    except (ValueError, AttributeError) as exc:
+        raise ValueError("Native EventBridge/Lambda request ID is invalid") from exc
+
+    event_time_raw = str(event.get("time") or "").strip()
+    try:
+        event_time = datetime.fromisoformat(event_time_raw.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("Native EventBridge event time is invalid") from exc
+    if event_time.tzinfo is None:
+        raise ValueError("Native EventBridge event time lacks a timezone")
+    event_time_utc = (
+        event_time.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    )
+
+    resources = event.get("resources")
+    if not isinstance(resources, list) or len(resources) != 1:
+        raise ValueError("Native EventBridge envelope must name exactly one rule")
+    rule_arn = str(resources[0] or "").strip()
+    arn_match = _EVENTBRIDGE_RULE_ARN.fullmatch(rule_arn)
+    if arn_match is None:
+        raise ValueError("Native EventBridge rule ARN is invalid")
+    region = str(event.get("region") or "").strip()
+    account = str(event.get("account") or "").strip()
+    if region != arn_match.group(1) or account != arn_match.group(2):
+        raise ValueError("Native EventBridge rule/account/region binding mismatch")
+
+    return {
+        "schema_version": RESULT_SIGNAL_PRODUCER_PROOF_VERSION,
+        "authority": RESULT_SIGNAL_PRODUCER_AUTHORITY,
+        "lambda_request_id": request_id,
+        "event_id": event_id,
+        "event_time_utc": event_time_utc,
+        "event_source": "aws.events",
+        "detail_type": "Scheduled Event",
+        "rule_arn": rule_arn,
+        "account": account,
+        "region": region,
+    }
 
 
 def _resp(status: int, body: Dict[str, Any]) -> Dict[str, Any]:
@@ -268,6 +358,7 @@ def lambda_handler(event, context):
         # is the only entrypoint that can create canonical labels or result
         # signal rows.
         if not is_http:
+            producer_provenance = _native_eventbridge_provenance(event, context)
             settlement = (
                 canonical_settlement.settle_mlb_slate(**args, store=True)
                 if args.get("slate_date")
@@ -295,6 +386,11 @@ def lambda_handler(event, context):
                     resolved_slate,
                     fetch_scores=False,
                     store=True,
+                    **(
+                        {"producer_provenance": producer_provenance}
+                        if producer_provenance is not None
+                        else {}
+                    ),
                 )
                 if resolved_slate
                 else {

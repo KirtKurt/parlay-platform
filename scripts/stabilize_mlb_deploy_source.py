@@ -36,8 +36,22 @@ def _patch_invariants() -> None:
 """
     checks = anchor + """if "MLB_PULL_START_AT_ET: '01:00'" not in text:
     violations.append('recurring daily 1 AM ET pull gate missing')
-if "Schedule: cron(6/15 * * * ? *)" not in text or "results_pull_15m" not in text:
+if "Schedule: cron(6/15 * * * ? *)" not in text:
     violations.append('MLB result settlement is not scheduled every 15 minutes')
+results_scheduler_resource = _resource_block('MLBResultsSchedulerFunction')
+results_schedule_match = re.search(
+    r'(?ms)^        MLBResultsEvery6Hours:\\s*\\n(.*?)(?=^        \\S|^  \\S|\\Z)',
+    results_scheduler_resource,
+)
+if results_schedule_match is None:
+    violations.append('MLB result settlement schedule block is missing')
+elif any(
+    re.search(rf'(?m)^\\s+{field}:', results_schedule_match.group(1))
+    for field in ('Input', 'InputPath', 'InputTransformer')
+):
+    violations.append(
+        'MLB result settlement must preserve the native EventBridge envelope'
+    )
 for obsolete in ['MLBProductionIngestVerifyDaily435Et', 'MLBProductionLockVerifyDaily556Et']:
     if obsolete in text:
         violations.append(f'obsolete fixed-UTC verifier schedule exists: {obsolete}')
@@ -101,7 +115,7 @@ def _validate_deploy_workflow() -> None:
         "verify_mlb_trainer_deploy_response.py",
         "Verify The Odds API without writing an unscheduled pull",
         "writePerformed",
-        "mlb-deployment-identity-${{ github.run_id }}",
+        "mlb-deployment-identity-${{ github.run_id }}-${{ github.run_attempt }}",
         "Enforce MLB published prediction and immutable lock regressions",
         '"pytest>=8,<9"',
         "test_mlb_published_prediction_authority.py",
