@@ -1557,6 +1557,16 @@ def _post_comment(body: str) -> None:
 
 
 def main() -> int:
+    if os.environ.get("GITHUB_ACTIONS") == "true" and (
+        REPO != EXPECTED_REPOSITORY
+        or os.environ.get("GITHUB_REF") != "refs/heads/main"
+    ):
+        print(
+            "::error::MLB progress reporter requires the canonical repository main ref.",
+            file=sys.stderr,
+        )
+        return 1
+
     discovery_errors: list[str] = []
     trainer_fn, error = _resolve_function(ROOT_STACK, "MLBMLTrainingFunction")
     if error:
@@ -1622,6 +1632,10 @@ def main() -> int:
     state["reporting"]["controlPlane"] = control_plane
     if control_plane.get("nativeSchedulerHealthy") is False:
         state["blockers"].append("NATIVE_PROGRESS_SCHEDULER_NOT_ADMITTING")
+    elif control_plane.get("nativeSchedulerHealthy") is None:
+        state["blockers"].append(
+            "NATIVE_PROGRESS_SCHEDULER_TELEMETRY_UNAVAILABLE"
+        )
     if control_plane.get("mutualExclusionHealthy") is False:
         state["blockers"].append("PROGRESS_RELAY_MUTUAL_EXCLUSION_VIOLATION")
     if control_plane.get("terminalHop") is True:
