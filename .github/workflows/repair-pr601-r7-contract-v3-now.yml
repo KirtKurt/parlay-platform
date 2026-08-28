@@ -1,0 +1,140 @@
+name: Repair PR601 R7 contract v3 now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-pr601-r7-contract-v3-now.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-pr601-r7-contract-v3-now
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/mlb-valid-prelock-quarantine-v4-567
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify exact PR head
+        run: test "$(git rev-parse HEAD)" = "4df94cf3383618b0a990bc41d55e2c955e2e12f2"
+      - name: Apply fail-closed roster repair and scoped fixture corrections
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          labels_path = Path('hello_world/mlb_canonical_final_labels_v1.py')
+          public_test_path = Path('tests/unit/test_mlb_public_per_game_authority.py')
+          alias_test_path = Path('tests/unit/test_mlb_cooperative_terminal_chunk.py')
+
+          labels = labels_path.read_text()
+          public_tests = public_test_path.read_text()
+          alias_tests = alias_test_path.read_text()
+
+          old = '''        if not official_pk:\n            errors.append("terminal_official_game_pk_unresolved")\n        elif official_game_list:\n'''
+          new = '''        if not official_pk:\n            errors.append("terminal_official_game_pk_unresolved")\n            # An exact official roster makes unresolved identity an explicit\n            # roster-binding failure as well. Keep admission fail-closed and\n            # make the ambiguity visible to the final-label contract.\n            if official_game_list:\n                errors.append("terminal_official_manifest_game_ambiguous")\n                errors.append("terminal_manifest_official_roster_binding_unresolved")\n        elif official_game_list:\n'''
+          if labels.count(old) != 1:
+              raise SystemExit('terminal roster binding block mismatch')
+          labels = labels.replace(old, new, 1)
+
+          old = '''    token = real_patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.set(4)\n    try:\n        real_patch._candidate_items(object(), SLATE, game, scoring[:3])\n    finally:\n        real_patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.reset(\n            token\n        )\n    assert len(calls) == 4\n'''
+          new = '''    # root + stable Stats API fallback + three provider aliases = five.\n    # Do not test away the fallback identity needed for snapshots persisted\n    # before a later provider event ID became available.\n    token = real_patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.set(5)\n    try:\n        real_patch._candidate_items(object(), SLATE, game, scoring[:3])\n    finally:\n        real_patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.reset(\n            token\n        )\n    assert len(calls) == 5\n'''
+          if alias_tests.count(old) != 1:
+              raise SystemExit('alias cap fixture block mismatch')
+          alias_tests = alias_tests.replace(old, new, 1)
+
+          helper_anchor = '''def test_terminal_no_prediction_status_displays_without_current_prediction_row(monkeypatch):\n'''
+          helper = '''def _install_exact_public_terminal_manifest_fixture(monkeypatch):\n    games = []\n    for source in (G1, G2):\n        row = copy.deepcopy(source)\n        row["official_game_pk"] = source["officialGamePk"]\n        row["official_game_id"] = f"mlb_statsapi:{source['officialGamePk']}"\n        row["canonical_start_time_source"] = "MLB_STATS_API_EXACT_DATE"\n        games.append(row)\n    authority = _fallback_manifest_authority()\n    authority.update({\n        "verifiedFullSlateGameCount": len(games),\n        "officialScheduleGameCount": len(games),\n    })\n    monkeypatch.setattr(\n        coverage,\n        "_provider_manifest_for_public",\n        lambda module, lock_module, pulls, slate: (\n            copy.deepcopy(games),\n            copy.deepcopy(authority),\n        ),\n    )\n\n\n'''
+          if public_tests.count(helper_anchor) != 1:
+              raise SystemExit('terminal test anchor mismatch')
+          public_tests = public_tests.replace(helper_anchor, helper + helper_anchor, 1)
+
+          d_old = '''    _install(engine)\n    monkeypatch.setattr(\n        coverage,\n        "_now_utc",\n        lambda: datetime(2026, 7, 18, 2, 1, tzinfo=timezone.utc),\n    )\n\n    result = engine.predict_all(SLATE, store=False)\n    by_id = {row["gameId"]: row for row in result["predictions"]}\n    terminal_row = by_id["game-2"]\n'''
+          d_new = '''    _install(engine)\n    # This test isolates terminal lifecycle projection. Manifest-integrity and\n    # legacy-migration behavior are covered separately; use an exact official\n    # roster here so a stale legacy fixture cannot fail before terminal logic.\n    _install_exact_public_terminal_manifest_fixture(monkeypatch)\n    monkeypatch.setattr(\n        coverage,\n        "_now_utc",\n        lambda: datetime(2026, 7, 18, 2, 1, tzinfo=timezone.utc),\n    )\n\n    result = engine.predict_all(SLATE, store=False)\n    by_id = {row["gameId"]: row for row in result["predictions"]}\n    terminal_row = by_id["game-2"]\n'''
+          if public_tests.count(d_old) < 1:
+              raise SystemExit('no-data terminal fixture block mismatch')
+          public_tests = public_tests.replace(d_old, d_new, 1)
+
+          e_anchor = '''def test_valid_quarantine_terminal_is_lifecycle_only_on_public_surface(\n    monkeypatch,\n):\n'''
+          start = public_tests.index(e_anchor)
+          insert_target = '''    _install(engine)\n    monkeypatch.setattr(\n        coverage,\n        "_now_utc",\n        lambda: datetime(2026, 7, 18, 2, 1, tzinfo=timezone.utc),\n    )\n'''
+          pos = public_tests.index(insert_target, start)
+          replacement = '''    _install(engine)\n    # Quarantine projection is tested under exact official roster authority;\n    # it must never recover selection material from the live/current row.\n    _install_exact_public_terminal_manifest_fixture(monkeypatch)\n    monkeypatch.setattr(\n        coverage,\n        "_now_utc",\n        lambda: datetime(2026, 7, 18, 2, 1, tzinfo=timezone.utc),\n    )\n'''
+          public_tests = public_tests[:pos] + public_tests[pos:].replace(insert_target, replacement, 1)
+
+          labels_path.write_text(labels)
+          public_test_path.write_text(public_tests)
+          alias_test_path.write_text(alias_tests)
+          PY
+          git diff --check
+      - name: Install verifier dependencies
+        run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+      - name: Prove exact five formerly failing cases plus swap safety
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          pytest -q \
+            tests/unit/test_mlb_canonical_final_labels_v1.py::test_final_label_validation_rejects_same_count_official_pk_swap \
+            'tests/unit/test_mlb_canonical_final_labels_v1.py::test_final_label_terminal_requires_unique_official_roster_membership[outside_roster]' \
+            tests/unit/test_mlb_cooperative_terminal_chunk.py::test_candidate_alias_queries_are_capped_before_any_query \
+            tests/unit/test_mlb_public_per_game_authority.py::test_terminal_no_prediction_status_displays_without_current_prediction_row \
+            tests/unit/test_mlb_public_per_game_authority.py::test_valid_quarantine_terminal_is_lifecycle_only_on_public_surface \
+            tests/unit/test_mlb_public_per_game_authority.py::test_same_count_terminal_official_pk_swap_is_rejected
+      - name: Prove full affected suites
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          pytest -q \
+            tests/unit/test_mlb_canonical_final_labels_v1.py \
+            tests/unit/test_mlb_cooperative_terminal_chunk.py \
+            tests/unit/test_mlb_public_per_game_authority.py
+      - name: Run comprehensive MLB per-game-lock verifier
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: python scripts/verify_mlb_per_game_lock.py
+      - name: Commit only after all proofs pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            hello_world/mlb_canonical_final_labels_v1.py \
+            tests/unit/test_mlb_public_per_game_authority.py \
+            tests/unit/test_mlb_cooperative_terminal_chunk.py
+          git diff --cached --quiet && exit 1
+          git commit -m 'Harden R7 terminal roster binding and contract fixtures'
+          git push origin HEAD:codex/mlb-valid-prelock-quarantine-v4-567
+      - name: Remove one-shot repair workflow from main
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git worktree add /tmp/r7-v3-cleanup origin/main
+          cd /tmp/r7-v3-cleanup
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/repair-pr601-r7-contract-v3-now.yml
+          git commit -m 'Remove completed PR601 R7 v3 repair [skip ci]'
+          for n in 1 2 3 4 5; do
+            if git push origin HEAD:main; then exit 0; fi
+            git fetch origin main
+            git rebase origin/main
+            sleep $((n*2))
+          done
+          exit 1
