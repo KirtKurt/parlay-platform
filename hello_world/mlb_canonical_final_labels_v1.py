@@ -454,15 +454,76 @@ def _validated_canonical_locks(
 
 
 def _terminal_outcome_errors(item: Dict[str, Any], slate_date: str) -> List[str]:
-    errors: List[str] = []
+    errors: List[str] = list(
+        slate_coverage._terminal_outcome_forbidden_fields(item)
+    )
     if item.get("record_type") != per_game_lock.LOCK_OUTCOME_RECORD_TYPE:
         errors.append("terminal_record_type_mismatch")
     if item.get("version") != per_game_lock.LOCK_OUTCOME_VERSION:
         errors.append("terminal_version_mismatch")
     if str(item.get("slate_date") or "") != slate_date:
         errors.append("terminal_slate_mismatch")
-    if item.get("lock_status") != "LOCKED_NO_PREDICTION_DATA":
+    terminal_status = str(item.get("lock_status") or "")
+    if terminal_status not in {
+        "LOCKED_NO_PREDICTION_DATA",
+        per_game_lock.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED,
+    }:
         errors.append("terminal_status_mismatch")
+    terminal_base_exact = {
+        "lock_outcome_recorded": True,
+        "locked_prediction": False,
+        "canonical": False,
+        "canonical_prediction": False,
+        "official_prediction": False,
+        "playable": False,
+        "blocked": True,
+        "training_eligible": False,
+        "accuracy_eligible": False,
+        "wager_allowed": False,
+        "prediction_adopted": False,
+        "canonical_prediction_complete": False,
+        "post_start_prediction_creation_allowed": False,
+        "immutable_prediction_rewrite_allowed": False,
+        "write_once": True,
+    }
+    if any(
+        item.get(field) != value
+        for field, value in terminal_base_exact.items()
+    ):
+        errors.append("terminal_base_flags_invalid")
+    if terminal_status == "LOCKED_NO_PREDICTION_DATA":
+        if item.get("operational_defect") is not False:
+            errors.append("terminal_no_data_flags_invalid")
+    if (
+        terminal_status
+        == per_game_lock.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+    ):
+        exact = {
+            "locked_prediction": False,
+            "canonical": False,
+            "canonical_prediction": False,
+            "official_prediction": False,
+            "playable": False,
+            "training_eligible": False,
+            "accuracy_eligible": False,
+            "wager_allowed": False,
+            "prediction_adopted": False,
+            "operational_defect": True,
+            "canonical_prediction_complete": False,
+            "post_start_prediction_creation_allowed": False,
+            "immutable_prediction_rewrite_allowed": False,
+            "write_once": True,
+        }
+        if any(item.get(field) != value for field, value in exact.items()):
+            errors.append("terminal_quarantine_flags_invalid")
+        authority_errors = (
+            slate_coverage._valid_prelock_quarantine_authority_errors(
+                item
+            )
+        )
+        if authority_errors:
+            errors.append("terminal_quarantine_authority_invalid")
+            errors.extend(authority_errors)
     if item.get("lock_outcome_recorded") is not True or item.get("write_once") is not True:
         errors.append("terminal_write_once_proof_missing")
     if item.get("locked_prediction") is not False or item.get("training_eligible") is not False:
@@ -538,6 +599,17 @@ def _validated_terminal_outcomes(
         "PER_GAME_LOCK_OUTCOME#TMINUS45#",
     )
     crosswalk = rolling_audit._verified_provider_alias_crosswalk(slate_date)
+    official_game_list = [
+        copy.deepcopy(game)
+        for game in (official_games or [])
+        if isinstance(game, dict)
+    ]
+    official_games_by_pk: Dict[str, List[Dict[str, Any]]] = {}
+    for game in official_game_list:
+        official_games_by_pk.setdefault(
+            str(game.get("officialGamePk") or ""),
+            [],
+        ).append(game)
     grouped: Dict[str, List[Dict[str, Any]]] = {}
     rejected: List[Dict[str, Any]] = []
     for item in items:
@@ -545,10 +617,31 @@ def _validated_terminal_outcomes(
         official_pk = _terminal_official_game_pk(
             item,
             crosswalk,
-            official_games,
+            official_game_list,
         )
         if not official_pk:
             errors.append("terminal_official_game_pk_unresolved")
+            # Exact official-roster admission is impossible when a terminal
+            # row cannot be uniquely bound to one official roster member.
+            # Keep the row rejected and expose the binding failure explicitly.
+            if official_game_list:
+                errors.append("terminal_official_manifest_game_ambiguous")
+                errors.append("terminal_manifest_official_roster_binding_unresolved")
+        elif official_game_list:
+            matching_official_games = official_games_by_pk.get(
+                str(official_pk),
+                [],
+            )
+            if len(matching_official_games) != 1:
+                errors.append("terminal_official_manifest_game_ambiguous")
+            else:
+                errors.extend(
+                    slate_coverage._terminal_outcome_manifest_game_errors(
+                        item,
+                        slate_date,
+                        matching_official_games[0],
+                    )
+                )
         if errors:
             rejected.append(
                 {
@@ -573,6 +666,16 @@ def _validated_terminal_outcomes(
             continue
         valid[official_pk] = candidates[0]
     return valid, rejected
+
+
+def _terminal_status_count(
+    outcomes: Dict[str, Dict[str, Any]],
+    status: str,
+) -> int:
+    return sum(
+        str(item.get("lock_status") or "") == status
+        for item in outcomes.values()
+    )
 
 
 def _lock_index(
@@ -989,6 +1092,8 @@ def _proof_from_stored(
     slate_date: str,
     current_locks: Dict[str, Dict[str, Any]],
     terminal_outcomes: Dict[str, Dict[str, Any]],
+    *,
+    expected_official_game_pks: Optional[Iterable[str]] = None,
 ) -> Dict[str, Any]:
     labels = _labels_for_slate(slate_date)
     invalid: List[Dict[str, Any]] = []
@@ -1036,9 +1141,36 @@ def _proof_from_stored(
             )
         else:
             valid.append(item)
-    verification_complete = bool(valid) and not invalid
+    expected_label_pks = set(current_locks)
+    valid_label_pks = {
+        str(item.get("official_game_pk") or "") for item in valid
+    }
+    official_roster = (
+        {
+            str(value)
+            for value in expected_official_game_pks
+            if str(value)
+        }
+        if expected_official_game_pks is not None
+        else None
+    )
+    terminal_only_proof = bool(
+        not current_locks
+        and terminal_outcomes
+        and not invalid
+        and not labels
+        and official_roster
+        and set(terminal_outcomes) == official_roster
+    )
+    verification_complete = bool(
+        not invalid
+        and valid_label_pks == expected_label_pks
+        and (expected_label_pks or terminal_only_proof)
+    )
     status = (
-        "VERIFIED"
+        "VERIFIED_TERMINAL_ONLY_EMPTY_LABEL_SET"
+        if verification_complete and terminal_only_proof
+        else "VERIFIED"
         if verification_complete
         else "WAITING_FOR_FIRST_CANONICAL_FINAL_LABEL"
         if not labels
@@ -1052,6 +1184,9 @@ def _proof_from_stored(
         "status": status,
         "verificationComplete": verification_complete,
         "storedCanonicalLabelCount": len(valid),
+        "expectedCanonicalLabelCount": len(expected_label_pks),
+        "terminalOnlyEmptyLabelProof": terminal_only_proof,
+        "terminalOutcomeCount": len(terminal_outcomes),
         "invalidStoredCanonicalLabelCount": len(invalid),
         "invalidStoredCanonicalLabels": invalid,
         "labels": [_plain(item) for item in valid],
@@ -1163,13 +1298,18 @@ def load_canonical_training_rows(
                 slate,
                 official_games,
             )
-            proof = _proof_from_stored(slate, lock_by_pk, terminal_by_pk)
+            official_pks = {
+                str(game.get("officialGamePk") or "") for game in official_games
+            }
+            proof = _proof_from_stored(
+                slate,
+                lock_by_pk,
+                terminal_by_pk,
+                expected_official_game_pks=official_pks,
+            )
             labels = {
                 str(label.get("official_game_pk") or ""): label
                 for label in proof.get("labels") or []
-            }
-            official_pks = {
-                str(game.get("officialGamePk") or "") for game in official_games
             }
             final_pks = {
                 str(game.get("officialGamePk") or "")
@@ -1183,6 +1323,10 @@ def load_canonical_training_rows(
             lock_terminal_conflicts = set(lock_by_pk) & set(terminal_by_pk)
             coverage_complete = official_pks == (set(lock_by_pk) | set(terminal_by_pk))
             labels_complete = set(labels) == (final_pks & set(lock_by_pk))
+            quarantine_count = _terminal_status_count(
+                terminal_by_pk,
+                per_game_lock.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED,
+            )
             finalized = bool(
                 all_official_terminal
                 and coverage_complete
@@ -1211,7 +1355,16 @@ def load_canonical_training_rows(
                     "officialGameCount": len(official_pks),
                     "officialFinalCount": len(final_pks),
                     "canonicalLockCount": len(lock_by_pk),
-                    "terminalNoPredictionCount": len(terminal_by_pk),
+                    "terminalNoPredictionCount": _terminal_status_count(
+                        terminal_by_pk,
+                        "LOCKED_NO_PREDICTION_DATA",
+                    ),
+                    "missedLockValidPrelockQuarantineCount": (
+                        quarantine_count
+                    ),
+                    "terminalExcludedCount": len(terminal_by_pk),
+                    "trainingCleanSlate": quarantine_count == 0,
+                    "quarantinedRowsAdmittedToTraining": 0,
                     "validLabelCount": len(labels),
                     "coverageComplete": coverage_complete,
                     "labelsComplete": labels_complete,
@@ -1352,7 +1505,17 @@ def settle_mlb_slate(
                 "proofReadMode": "STORED_CANONICAL_LABELS_ONLY",
                 "canonicalLockCount": len(lock_by_pk),
                 "rejectedCanonicalLocks": rejected_locks,
-                "terminalNoPredictionCount": len(terminal_by_pk),
+                "terminalNoPredictionCount": _terminal_status_count(
+                    terminal_by_pk,
+                    "LOCKED_NO_PREDICTION_DATA",
+                ),
+                "missedLockValidPrelockQuarantineCount": (
+                    _terminal_status_count(
+                        terminal_by_pk,
+                        per_game_lock.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED,
+                    )
+                ),
+                "terminalExcludedCount": len(terminal_by_pk),
                 "lockTerminalConflictCount": len(lock_terminal_conflicts),
                 "lockTerminalConflictOfficialGamePks": lock_terminal_conflicts,
                 "rejectedTerminalOutcomes": rejected_terminal,
@@ -1389,12 +1552,20 @@ def settle_mlb_slate(
             if not locked:
                 terminal = terminal_by_pk.get(official_pk)
                 if terminal:
+                    terminal_status = str(
+                        terminal.get("lock_status") or ""
+                    )
                     terminal_exclusions.append(
                         {
                             "officialGamePk": official_pk,
-                            "status": "LOCKED_NO_PREDICTION_DATA",
+                            "status": terminal_status,
                             "accuracyEligible": False,
                             "trainingEligible": False,
+                            "predictionAdopted": False,
+                            "operationalDefect": (
+                                terminal_status
+                                == per_game_lock.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+                            ),
                             "sourcePk": terminal.get("PK"),
                             "sourceSk": terminal.get("SK"),
                         }
@@ -1478,11 +1649,35 @@ def settle_mlb_slate(
             "canonicalLockCount": len(lock_by_pk),
             "rejectedCanonicalLockCount": len(rejected_locks),
             "rejectedCanonicalLocks": rejected_locks,
-            "terminalNoPredictionCount": len(terminal_by_pk),
+            "terminalNoPredictionCount": _terminal_status_count(
+                terminal_by_pk,
+                "LOCKED_NO_PREDICTION_DATA",
+            ),
+            "missedLockValidPrelockQuarantineCount": (
+                _terminal_status_count(
+                    terminal_by_pk,
+                    per_game_lock.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED,
+                )
+            ),
+            "terminalOutcomeCount": len(terminal_by_pk),
             "lockTerminalConflictCount": len(lock_terminal_conflicts),
             "lockTerminalConflictOfficialGamePks": lock_terminal_conflicts,
-            "terminalNoPredictionExcludedCount": len(terminal_exclusions),
-            "terminalNoPredictionExclusions": terminal_exclusions,
+            "terminalNoPredictionExcludedCount": sum(
+                row.get("status") == "LOCKED_NO_PREDICTION_DATA"
+                for row in terminal_exclusions
+            ),
+            "missedLockValidPrelockQuarantineExcludedCount": sum(
+                row.get("status")
+                == per_game_lock.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+                for row in terminal_exclusions
+            ),
+            "terminalExcludedCount": len(terminal_exclusions),
+            "terminalExclusions": terminal_exclusions,
+            "terminalNoPredictionExclusions": [
+                row
+                for row in terminal_exclusions
+                if row.get("status") == "LOCKED_NO_PREDICTION_DATA"
+            ],
             "rejectedTerminalOutcomes": rejected_terminal,
             "skippedNotFinalCount": len(skipped_not_final),
             "skippedNotFinal": skipped_not_final,
@@ -1513,6 +1708,9 @@ def settle_mlb_slate(
             ),
             "terminalNoPredictionPolicy": (
                 "LOCKED_NO_PREDICTION_DATA is a terminal lifecycle outcome excluded from accuracy and ML training."
+            ),
+            "validPrelockMissedLockQuarantinePolicy": (
+                "A valid OPEN_PRE_LOCK snapshot whose T-minus-45 lock was missed is never adopted retrospectively; its explicit terminal is excluded from labels, accuracy, training, promotion, and wagering."
             ),
         }
     except Exception as exc:

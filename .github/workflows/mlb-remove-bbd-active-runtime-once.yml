@@ -1,41 +1,10 @@
 name: MLB Remove Retired BBD Runtime Once
 
 "on":
-  push:
-    branches:
-      - agent/mlb-remove-bbd-and-fix-blockers-20260802
-    paths:
-      - '.github/workflows/mlb-remove-bbd-active-runtime-once.yml'
-      - 'scripts/remove_mlb_bbd_active_runtime.py'
-      - 'scripts/verify_mlb_no_bbd_runtime.py'
-      - 'scripts/verify_mlb_workflow_authority.py'
-      - 'tests/unit/test_verify_mlb_no_bbd_runtime.py'
-      - 'template.yaml'
-      - '.github/workflows/deploy.yml'
-      - '.github/workflows/deploy-mlb-ranked-v15-10.yml'
-      - '.github/workflows/mlb-backend-full-recovery.yml'
-      - '.github/workflows/mlb-historical-optimizer.yml'
-      - '.github/workflows/mlb-odds-pattern-v7-deploy.yml'
-      - '.github/workflows/mlb-v8-fundamentals-deploy.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - '.github/workflows/mlb-remove-bbd-active-runtime-once.yml'
-      - 'scripts/remove_mlb_bbd_active_runtime.py'
-      - 'scripts/verify_mlb_no_bbd_runtime.py'
-      - 'scripts/verify_mlb_workflow_authority.py'
-      - 'tests/unit/test_verify_mlb_no_bbd_runtime.py'
-      - 'template.yaml'
-      - '.github/workflows/deploy.yml'
-      - '.github/workflows/deploy-mlb-ranked-v15-10.yml'
-      - '.github/workflows/mlb-backend-full-recovery.yml'
-      - '.github/workflows/mlb-historical-optimizer.yml'
-      - '.github/workflows/mlb-odds-pattern-v7-deploy.yml'
-      - '.github/workflows/mlb-v8-fundamentals-deploy.yml'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: mlb-remove-retired-bbd-runtime-once-${{ github.run_id }}
@@ -48,6 +17,8 @@ jobs:
     if: >-
       github.event_name != 'pull_request' ||
       github.head_ref == 'agent/mlb-remove-bbd-and-fix-blockers-20260802'
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

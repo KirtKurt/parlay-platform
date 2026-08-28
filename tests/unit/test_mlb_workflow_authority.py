@@ -16,6 +16,8 @@ def _copy_contract(tmp_path: Path) -> Path:
         ".github/workflows/mlb-production-source-contract.yml",
         ".github/workflows/mlb-production-acceptance.yml",
         ".github/workflows/deploy.yml",
+        ".github/workflows/mlb-post-deploy-fix-verification.yml",
+        "scripts/publish_mlb_postdeploy_proof.py",
         "template.yaml",
         "hello_world/api.py",
         "hello_world/mlb_date_signal_api.py",
@@ -36,6 +38,24 @@ def _copy_contract(tmp_path: Path) -> Path:
 
 def test_repository_workflow_authority_is_hardened() -> None:
     assert authority.verify_repository(ROOT) == []
+
+
+def test_postdeploy_source_is_bound_to_exact_successful_sam_step() -> None:
+    workflow = (
+        ROOT / ".github/workflows/mlb-post-deploy-fix-verification.yml"
+    ).read_text(encoding="utf-8")
+    assert "actions/runs/$run_id/attempts/$run_attempt/jobs?per_page=100" in workflow
+    assert '.conclusion == "success"' in workflow
+    assert 'git merge-base --is-ancestor "$TARGET_DEPLOY_SHA" origin/main' in workflow
+
+
+def test_postdeploy_publication_is_globally_serial_and_source_monotonic() -> None:
+    workflow = (
+        ROOT / ".github/workflows/mlb-post-deploy-fix-verification.yml"
+    ).read_text(encoding="utf-8")
+    assert "group: mlb-postdeploy-proof-publication" in workflow
+    assert "cancel-in-progress: false" in workflow
+    assert "python scripts/publish_mlb_postdeploy_proof.py" in workflow
 
 
 def test_pull_request_contract_installs_and_validates_sam() -> None:

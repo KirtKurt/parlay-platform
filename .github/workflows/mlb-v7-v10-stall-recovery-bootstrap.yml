@@ -17,7 +17,7 @@ name: MLB V7-V10 Stall Recovery Bootstrap
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 # A unique one-shot group bypasses pre-fix V8/V10 jobs without changing the
 # normal recurring groups or the shared production CloudFormation deploy lock.
@@ -60,6 +60,8 @@ jobs:
   compact-v9-latest:
     if: github.event_name != 'pull_request'
     needs: validate
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -115,6 +117,8 @@ jobs:
   refresh-v10-evidence:
     if: github.event_name != 'pull_request'
     needs: validate
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -196,6 +200,8 @@ jobs:
   advance-v8-official-context:
     if: github.event_name != 'pull_request'
     needs: validate
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:

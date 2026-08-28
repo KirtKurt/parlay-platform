@@ -12,7 +12,7 @@ def test_bootstrap_marks_feature_aware_v8_entrypoint_as_already_migrated(
         + "\n"
         + fixer.NEW_TEST_PATCH
         + "\n"
-        + fixer.OLD_V8_ENTRYPOINT_PATCH
+        + fixer.LEGACY_V8_ENTRYPOINT_PATCH
         + "        'legacy', 'replacement'\n    )\n",
         encoding="utf-8",
     )

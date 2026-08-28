@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from pathlib import Path
 
 import pytest
 
@@ -107,6 +108,76 @@ def test_active_rematerialization_lag_advances_before_optimization():
         )
         == catchup.ADVANCE_ACTIVE_PIPELINE
     )
+
+
+def test_active_rematerialization_lag_remains_bounded_and_fail_closed():
+    active = state(phase="BACKFILLING", eligible=4405, target=4405)
+    active["featureRematerializationComplete"] = False
+    active["featureRematerializedSlateCount"] = 335
+    active["featureRematerializationTotalSlateCount"] = 335
+
+    with pytest.raises(ValueError, match="feature_rematerialization_incomplete"):
+        catchup.classify_state(active, expected_ceiling=CEILING)
+
+
+def test_active_rematerialization_lag_does_not_bypass_common_safety_checks():
+    active = state(phase="BACKFILLING", eligible=4405, target=4405)
+    active["featureRematerializationComplete"] = False
+    active["featureRematerializedSlateCount"] = 336
+    active["featureRematerializationTotalSlateCount"] = 336
+    active["lastError"] = "provider_failed"
+
+    with pytest.raises(ValueError, match="optimizer_persisted_error:provider_failed"):
+        catchup.classify_state(active, expected_ceiling=CEILING)
+
+
+def test_run_allows_one_slate_active_lag_through_transition(monkeypatch):
+    baseline = state(phase="BACKFILLING", eligible=4405, target=4405)
+    baseline["currentDate"] = "2026-08-09"
+    baseline["featureRematerializationComplete"] = False
+    baseline["featureRematerializedSlateCount"] = 336
+    baseline["featureRematerializationTotalSlateCount"] = 336
+    after = copy.deepcopy(baseline)
+    after["currentSlotIndex"] = 1
+
+    responses = iter(
+        (
+            {"state": baseline, "productionAuthority": "unchanged"},
+            {"state": after, "productionAuthority": "unchanged"},
+        )
+    )
+    monkeypatch.setattr(
+        catchup,
+        "_runtime",
+        lambda **_kwargs: (
+            object(),
+            "historical-optimizer",
+            CEILING,
+            {"checks": {"all": True}},
+        ),
+    )
+    monkeypatch.setattr(watchdog, "_status", lambda *_args: next(responses))
+    monkeypatch.setattr(
+        watchdog,
+        "_invoke",
+        lambda *_args, **_kwargs: {"ok": True, "status": "ADVANCED"},
+    )
+    monkeypatch.setattr(catchup.time, "sleep", lambda _seconds: None)
+
+    result = catchup.run(
+        region="us-east-1",
+        stack_name="historical",
+        expected_handler="handler",
+        expected_max_credits="1",
+        template=Path("unused-template.yaml"),
+        max_attempts=1,
+    )
+
+    assert result["ok"] is True
+    assert result["initialAction"] == catchup.ADVANCE_ACTIVE_PIPELINE
+    assert result["finalAction"] == catchup.ADVANCE_ACTIVE_PIPELINE
+    assert result["movement"]["completeSlates"] == 0
+    assert result["productionAuthorityChanged"] is False
 
 
 def test_rejected_candidate_below_target_waits_for_more_evidence():

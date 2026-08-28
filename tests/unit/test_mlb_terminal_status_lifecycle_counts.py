@@ -23,13 +23,14 @@ def _row(game_id: str, status: str, *, winner=None, locked=False):
     }
 
 
-def test_all_missed_rows_are_complete_terminal_lifecycle_without_winners():
+def test_unresolved_missed_rows_remain_incomplete_without_absence_proof():
     payload = {
         "sport": "mlb",
         "gameCount": 2,
         "lockedPredictionCount": 0,
         "lockedStatusCount": 0,
         "noPredictionDataCount": 0,
+        "missedGameCount": 0,
         "lockStatusComplete": False,
         "canonicalPredictionComplete": False,
         "operationalDefect": True,
@@ -42,16 +43,17 @@ def test_all_missed_rows_are_complete_terminal_lifecycle_without_winners():
     result = lifecycle.reconcile_payload(payload, row_field="perGameStatus")
 
     assert result["lockedPredictionCount"] == 0
-    assert result["lockedStatusCount"] == 2
-    assert result["noPredictionDataCount"] == 2
-    assert result["lockStatusComplete"] is True
+    assert result["lockedStatusCount"] == 0
+    assert result["noPredictionDataCount"] == 0
+    assert result["missedGameCount"] == 2
+    assert result["lockStatusComplete"] is False
     assert result["canonicalPredictionComplete"] is False
     assert result["operationalDefect"] is True
     assert result["perGameStatus"] == payload["perGameStatus"]
     assert result["terminalLifecycleCountsDerivedFromRows"] is True
 
 
-def test_mixed_canonical_no_data_and_missed_rows_reconcile_exactly():
+def test_mixed_slate_does_not_hide_unresolved_missed_row():
     payload = {
         "gameCount": 3,
         "officialPredictionCount": 0,
@@ -71,9 +73,9 @@ def test_mixed_canonical_no_data_and_missed_rows_reconcile_exactly():
 
     assert result["lockedPredictionCount"] == 1
     assert result["officialPredictionCount"] == 1
-    assert result["lockedStatusCount"] == 3
-    assert result["noPredictionDataCount"] == 2
-    assert result["lockStatusComplete"] is True
+    assert result["lockedStatusCount"] == 2
+    assert result["noPredictionDataCount"] == 1
+    assert result["lockStatusComplete"] is False
     assert result["canonicalPredictionComplete"] is False
     for key in (
         "slateCoverage",
@@ -81,9 +83,38 @@ def test_mixed_canonical_no_data_and_missed_rows_reconcile_exactly():
         "lastPossiblePredictionGate",
     ):
         assert result[key]["lockedPredictionCount"] == 1
-        assert result[key]["lockedStatusCount"] == 3
-        assert result[key]["noPredictionDataCount"] == 2
-        assert result[key]["lockStatusComplete"] is True
+        assert result[key]["lockedStatusCount"] == 2
+        assert result[key]["noPredictionDataCount"] == 1
+        assert result[key]["lockStatusComplete"] is False
+
+
+def test_explicit_valid_prelock_quarantine_is_terminal_without_a_pick():
+    payload = {
+        "gameCount": 1,
+        "lockedStatusCount": 0,
+        "noPredictionDataCount": 0,
+        "missedLockValidPrelockQuarantineCount": 0,
+        "perGameStatus": [
+            _row(
+                "g1",
+                lifecycle.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED,
+            )
+        ],
+    }
+
+    result = lifecycle.reconcile_payload(
+        payload,
+        row_field="perGameStatus",
+    )
+
+    assert result["lockedPredictionCount"] == 0
+    assert result["lockedStatusCount"] == 1
+    assert result["noPredictionDataCount"] == 0
+    assert result["missedLockValidPrelockQuarantineCount"] == 1
+    assert result["terminalExcludedCount"] == 1
+    assert result["lockStatusComplete"] is True
+    assert result["canonicalPredictionComplete"] is False
+    assert result["missedLockOperationalDefect"] is True
 
 
 def test_open_or_due_rows_are_not_promoted_to_terminal_status():
@@ -152,9 +183,9 @@ def test_http_response_reconciliation_preserves_transport_and_defect_state():
 
     assert result["statusCode"] == 200
     assert result["headers"] == response["headers"]
-    assert body["lockedStatusCount"] == 1
-    assert body["noPredictionDataCount"] == 1
-    assert body["lockStatusComplete"] is True
+    assert body["lockedStatusCount"] == 0
+    assert body["noPredictionDataCount"] == 0
+    assert body["lockStatusComplete"] is False
     assert body["canonicalPredictionComplete"] is False
     assert body["operationalDefect"] is True
 
