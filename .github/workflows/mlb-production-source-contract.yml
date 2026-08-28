@@ -16,6 +16,7 @@ on:
       - 'tests/unit/test_mlb_*.py'
       - 'tests/unit/test_verify_mlb_postdeploy_scheduled_pull.py'
       - 'tests/unit/test_run_mlb_ml_v3_audit_report.py'
+      - 'tests/unit/test_report_mlb_30m_progress.py'
       - 'tests/unit/test_mlb_sportsdataio_sam_wiring.py'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/enable-sportsdataio.yml'
@@ -54,6 +55,7 @@ on:
       - 'tests/unit/test_mlb_*.py'
       - 'tests/unit/test_verify_mlb_postdeploy_scheduled_pull.py'
       - 'tests/unit/test_run_mlb_ml_v3_audit_report.py'
+      - 'tests/unit/test_report_mlb_30m_progress.py'
       - 'tests/unit/test_mlb_sportsdataio_sam_wiring.py'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/enable-sportsdataio.yml'
@@ -206,6 +208,7 @@ jobs:
             tests/unit/test_mlb_progress_pulse_watchdog.py \
             tests/unit/test_mlb_progress_pulse_bounded_runner_relay.py \
             tests/unit/test_mlb_progress_pulse_durable_relay.py \
+            tests/unit/test_report_mlb_30m_progress.py \
             tests/unit/test_run_mlb_ml_v3_audit_report.py
 
       - name: Compile deployment and acceptance tooling
@@ -222,6 +225,7 @@ jobs:
           python -m py_compile scripts/verify_mlb_workflow_authority.py
           python -m py_compile scripts/run_mlb_progress_pulse_bounded_relay.py
           python -m py_compile scripts/run_mlb_progress_pulse_durable_relay.py
+          python -m py_compile scripts/report_mlb_30m_progress.py
           python -m py_compile scripts/enforce_mlb_production_acceptance.py
           python -m py_compile scripts/remove_mlb_bbd_active_runtime.py
           python -m py_compile scripts/verify_mlb_no_bbd_runtime.py
