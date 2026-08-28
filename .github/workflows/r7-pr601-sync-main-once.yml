@@ -20,13 +20,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Merge current main preserving repaired R7 semantics
+      - name: Merge current main preserving current production semantics
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git fetch origin main
-          git merge --no-ff --no-edit -X ours origin/main
+          # The prior -X ours strategy preserved stale PR conflict hunks over
+          # current production contracts. Prefer current main only for true
+          # textual conflicts; non-conflicting quarantine changes remain in the
+          # merged tree and must still pass both PR and current-main contracts.
+          git merge --no-ff --no-edit -X theirs origin/main
           git show ORIG_HEAD:tests/unit/test_mlb_daily_pick_lock_runtime.py > tests/unit/_pr601_pr_runtime_snapshot.py
           git show origin/main:tests/unit/test_mlb_daily_pick_lock_runtime.py > tests/unit/_pr601_main_runtime_snapshot.py
           python - <<'PY'
