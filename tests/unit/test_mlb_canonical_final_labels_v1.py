@@ -876,7 +876,7 @@ def test_scheduler_routes_read_only_get_through_canonical_authority(monkeypatch)
         {
             "slate_date": SLATE,
             "days_from": 3,
-            "fetch_scores": True,
+            "fetch_scores": False,
             "store": False,
         }
     ]

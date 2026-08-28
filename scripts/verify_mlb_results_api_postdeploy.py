@@ -960,6 +960,7 @@ def _http_request(
     *,
     body: Optional[bytes] = None,
     timeout: int = 60,
+    parse_json: bool = True,
 ) -> Dict[str, Any]:
     request = urllib.request.Request(
         url,
@@ -987,13 +988,56 @@ def _http_request(
         "bodyBytes": len(body),
         "bodySha256": hashlib.sha256(body).hexdigest(),
         "finalUrlMatchesRequest": True,
-        "json": _parse_json_object(body, label=f"{method} {url} response"),
+        "json": (
+            _parse_json_object(body, label=f"{method} {url} response")
+            if parse_json
+            else None
+        ),
     }
 
 
 def _cors_methods(headers: Mapping[str, str]) -> Tuple[str, ...]:
     value = str(headers.get("access-control-allow-methods") or "")
     return tuple(sorted(part.strip().upper() for part in value.split(",") if part.strip()))
+
+
+def verify_public_get_envelope(
+    path: str,
+    response: Mapping[str, Any],
+) -> Tuple[str, ...]:
+    """Fail closed while preserving the real live failure in diagnostics."""
+    methods = _cors_methods(response.get("headers") or {})
+    mutating = tuple(
+        method
+        for method in methods
+        if method in {"POST", "PUT", "PATCH", "DELETE", "CONNECT", "TRACE"}
+    )
+    status = response.get("status")
+    body_sha256 = response.get("bodySha256")
+    if isinstance(status, bool) or not isinstance(status, int):
+        raise VerificationError(
+            f"GET {path} returned a malformed status: status={status!r} "
+            f"corsMethods={methods} bodySha256={body_sha256}"
+        )
+    if status not in {200, 409}:
+        raise VerificationError(
+            f"GET {path} failed before its read contract: status={status} "
+            f"corsMethods={methods} bodySha256={body_sha256}"
+        )
+    if mutating:
+        raise VerificationError(
+            f"GET {path} advertised mutating methods {mutating}: "
+            f"status={status} corsMethods={methods} bodySha256={body_sha256}"
+        )
+    if methods != ("GET", "OPTIONS"):
+        raise VerificationError(
+            f"GET {path} CORS methods mismatch: status={status} "
+            f"corsMethods={methods} bodySha256={body_sha256}"
+        )
+    headers = response.get("headers") or {}
+    if headers.get("access-control-allow-origin") != "*":
+        raise VerificationError(f"GET {path} lacks exact CORS origin")
+    return methods
 
 
 def verify_public_get_contract(
@@ -1146,10 +1190,7 @@ def invoke_public_surface(
         )
 
         get = _http_request(base + path + "?" + query, "GET")
-        if _cors_methods(get["headers"]) != ("GET", "OPTIONS"):
-            raise VerificationError(f"GET {path} advertised a mutating method")
-        if get["headers"].get("access-control-allow-origin") != "*":
-            raise VerificationError(f"GET {path} lacks exact CORS origin")
+        get_methods = verify_public_get_envelope(path, get)
         contract = verify_public_get_contract(
             path,
             get,
@@ -1160,7 +1201,7 @@ def invoke_public_surface(
                 "path": path,
                 "method": "GET",
                 "status": get["status"],
-                "corsMethods": _cors_methods(get["headers"]),
+                "corsMethods": get_methods,
                 "bodyBytes": get["bodyBytes"],
                 "bodySha256": get["bodySha256"],
                 "ok": get["json"].get("ok"),
@@ -1169,7 +1210,12 @@ def invoke_public_surface(
             }
         )
 
-        post = _http_request(base + path, "POST", body=hostile_body)
+        post = _http_request(
+            base + path,
+            "POST",
+            body=hostile_body,
+            parse_json=False,
+        )
         verify_absent_public_post_response(path, post)
         rows.append(
             {
@@ -1684,8 +1730,9 @@ def wait_for_schedule_metrics(
     timeout_seconds: int = 5 * 60,
     publication_settle_seconds: int = 120,
 ) -> Dict[str, Any]:
-    deadline = time.monotonic() + timeout_seconds
+    visibility_deadline = time.monotonic() + timeout_seconds
     visible_at: Optional[float] = None
+    settle_deadline: Optional[float] = None
     while True:
         metric_start = start
         # CloudWatch EndTime is exclusive.  Keep the occurrence fixed even if
@@ -1736,8 +1783,15 @@ def wait_for_schedule_metrics(
             )
         if rule_invocations == 1 and visible_at is None:
             visible_at = time.monotonic()
+            settle_deadline = visible_at + publication_settle_seconds
+        elif rule_invocations != 1 and visible_at is not None:
+            raise VerificationError(
+                "CloudWatch EventBridge delivery metric disappeared during "
+                "the publication settle window"
+            )
         settled = bool(
-            visible_at is not None
+            rule_invocations == 1
+            and visible_at is not None
             and time.monotonic() - visible_at >= publication_settle_seconds
         )
         if settled:
@@ -1761,10 +1815,21 @@ def wait_for_schedule_metrics(
                 "clean": True,
                 "cleanScope": "EVENTBRIDGE_DELIVERY_ONLY",
             }
-        remaining = deadline - time.monotonic()
+        active_deadline = (
+            settle_deadline
+            if settle_deadline is not None
+            else visibility_deadline
+        )
+        remaining = active_deadline - time.monotonic()
         if remaining <= 0:
+            if visible_at is None:
+                raise VerificationError(
+                    "CloudWatch did not expose one EventBridge delivery metric "
+                    "before the visibility deadline"
+                )
             raise VerificationError(
-                "CloudWatch did not expose one settled EventBridge delivery metric"
+                "CloudWatch EventBridge delivery metric did not remain stable "
+                "for the independent publication settle window"
             )
         time.sleep(min(20, remaining))
 

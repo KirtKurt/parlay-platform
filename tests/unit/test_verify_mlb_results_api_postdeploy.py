@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from email.message import Message
 from io import BytesIO
 import json
+import urllib.error
 from urllib.parse import quote
 from pathlib import Path
 from zipfile import ZipFile
@@ -988,6 +990,75 @@ def test_prior_minute_http_probes_do_not_contaminate_schedule_metrics_or_logs(
     assert platform_log["unrelatedRequestsGateVerification"] is False
 
 
+def test_late_metric_publication_gets_an_independent_settle_window(monkeypatch):
+    window_start = datetime(2026, 8, 28, 1, 6, tzinfo=timezone.utc)
+    clock = {"now": 0.0}
+
+    class MetricClient:
+        def get_metric_statistics(self, **kwargs):
+            value = 0.0
+            if (
+                kwargs["Namespace"] == "AWS/Events"
+                and kwargs["MetricName"] == "Invocations"
+                and clock["now"] >= 100.0
+            ):
+                value = 1.0
+            return {"Datapoints": [{"Sum": value}] if value else []}
+
+    monkeypatch.setattr(subject.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(
+        subject.time,
+        "sleep",
+        lambda seconds: clock.__setitem__("now", clock["now"] + seconds),
+    )
+
+    proof = subject.wait_for_schedule_metrics(
+        MetricClient(),
+        function_name="results",
+        rule_name="results-rule",
+        start=window_start,
+        timeout_seconds=100,
+        publication_settle_seconds=20,
+    )
+
+    assert clock["now"] == 120.0
+    assert proof["eventBridgeInvocations"] == 1.0
+    assert proof["publicationSettleSeconds"] == 20
+
+
+def test_metric_visibility_must_remain_exactly_one_during_settle(monkeypatch):
+    window_start = datetime(2026, 8, 28, 1, 6, tzinfo=timezone.utc)
+    clock = {"now": 0.0}
+
+    class MetricClient:
+        def get_metric_statistics(self, **kwargs):
+            visible = (
+                kwargs["Namespace"] == "AWS/Events"
+                and kwargs["MetricName"] == "Invocations"
+                and clock["now"] == 100.0
+            )
+            return {"Datapoints": [{"Sum": 1.0}] if visible else []}
+
+    monkeypatch.setattr(subject.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(
+        subject.time,
+        "sleep",
+        lambda seconds: clock.__setitem__("now", clock["now"] + seconds),
+    )
+
+    with pytest.raises(subject.VerificationError, match="disappeared during"):
+        subject.wait_for_schedule_metrics(
+            MetricClient(),
+            function_name="results",
+            rule_name="results-rule",
+            start=window_start,
+            timeout_seconds=100,
+            publication_settle_seconds=20,
+        )
+
+    assert clock["now"] == 120.0
+
+
 def test_request_bound_timeout_report_cannot_pass_as_clean():
     window_start = datetime(2026, 8, 28, 1, 6, tzinfo=timezone.utc)
     request_id = "11111111-1111-4111-8111-111111111111"
@@ -1289,6 +1360,92 @@ def test_async_config_normalization_is_used_for_initial_and_reread_identity() ->
         ROOT / "scripts" / "verify_mlb_results_api_postdeploy.py"
     ).read_text(encoding="utf-8")
     assert verifier.count("_normalized_async_invoke_config(") == 3
+
+
+@pytest.mark.parametrize("status,body", [(403, b""), (404, b"not-json")])
+def test_absent_post_http_request_does_not_require_a_json_body(
+    monkeypatch,
+    status,
+    body,
+) -> None:
+    url = "https://example.invalid/Prod/v1/results/mlb/proof"
+    headers = Message()
+    headers.add_header("content-type", "text/plain")
+
+    class ErrorOpener:
+        def open(self, _request, timeout):
+            assert timeout == 60
+            raise urllib.error.HTTPError(
+                url,
+                status,
+                "absent method",
+                headers,
+                BytesIO(body),
+            )
+
+    monkeypatch.setattr(subject, "_HTTP_OPENER", ErrorOpener())
+    response = subject._http_request(
+        url,
+        "POST",
+        body=b"{}",
+        parse_json=False,
+    )
+
+    assert response["status"] == status
+    assert response["json"] is None
+    assert response["bodyBytes"] == len(body)
+    subject.verify_absent_public_post_response(
+        "/v1/results/mlb/proof",
+        response,
+    )
+
+
+def test_gateway_timeout_is_not_misreported_as_mutating_cors() -> None:
+    with pytest.raises(
+        subject.VerificationError,
+        match=r"failed before its read contract: status=504 corsMethods=\(\)",
+    ):
+        subject.verify_public_get_envelope(
+            "/v1/results/mlb/proof",
+            {
+                "status": 504,
+                "headers": {"content-type": "application/json"},
+                "bodySha256": "a" * 64,
+            },
+        )
+
+
+def test_gateway_timeout_precedes_generic_mutating_gateway_cors() -> None:
+    with pytest.raises(
+        subject.VerificationError,
+        match=r"failed before its read contract: status=504",
+    ):
+        subject.verify_public_get_envelope(
+            "/v1/results/mlb/proof",
+            {
+                "status": 504,
+                "headers": {
+                    "access-control-allow-methods": "GET,POST,OPTIONS",
+                    "access-control-allow-origin": "*",
+                },
+                "bodySha256": "c" * 64,
+            },
+        )
+
+
+def test_public_get_envelope_rejects_an_actually_mutating_cors_method() -> None:
+    with pytest.raises(subject.VerificationError, match="advertised mutating methods"):
+        subject.verify_public_get_envelope(
+            "/v1/results/mlb/proof",
+            {
+                "status": 200,
+                "headers": {
+                    "access-control-allow-methods": "GET,POST,OPTIONS",
+                    "access-control-allow-origin": "*",
+                },
+                "bodySha256": "b" * 64,
+            },
+        )
 
 
 @pytest.mark.parametrize("status", [403, 404])
