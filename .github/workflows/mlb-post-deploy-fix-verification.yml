@@ -1,35 +1,143 @@
 name: Verify MLB Scoring Fix After Deploy
+run-name: "Verify MLB scoring deploy ${{ inputs.target_deploy_sha || github.event.workflow_run.head_sha || github.sha }} (source ${{ inputs.source_deploy_run_id || github.event.workflow_run.id || 'manual' }})"
 
 on:
   workflow_run:
     workflows: ["Deploy SAM to AWS"]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      target_deploy_sha:
+        description: Exact successful deploy commit to verify; blank uses the selected main ref
+        required: false
+        type: string
+      source_deploy_run_id:
+        description: Canonical deploy workflow run ID; blank denotes a manual fallback
+        required: false
+        type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: mlb-post-deploy-fix-verification
-  cancel-in-progress: true
+  group: mlb-post-deploy-fix-verification-${{ inputs.target_deploy_sha || github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: false
+  queue: max
 
 env:
   REPORT_PATH: runtime_reports/mlb_scoring_fix_post_deploy_latest.json
   CANDIDATE_PATH: /tmp/mlb-scoring-fix-post-deploy-candidate.json
 
 jobs:
-  verify:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'main')
+  resolve:
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      target_deploy_sha: ${{ steps.resolve.outputs.target_deploy_sha }}
+      should_verify: ${{ steps.resolve.outputs.should_verify }}
     steps:
-      - name: Checkout deployed main source
+      - name: Resolve exact deploy and direct-dispatch outcome
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TARGET_DEPLOY_SHA: ${{ inputs.target_deploy_sha }}
+          INPUT_SOURCE_DEPLOY_RUN_ID: ${{ inputs.source_deploy_run_id }}
+          FALLBACK_TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+          FALLBACK_SOURCE_DEPLOY_RUN_ID: ${{ github.event.workflow_run.id }}
+          FALLBACK_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          FALLBACK_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          should_verify=false
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            target="${INPUT_TARGET_DEPLOY_SHA:-$GITHUB_SHA}"
+            source="${INPUT_SOURCE_DEPLOY_RUN_ID:-manual}"
+            should_verify=true
+          elif [[ "$EVENT_NAME" == "workflow_run" ]]; then
+            target="$FALLBACK_TARGET_DEPLOY_SHA"
+            source="$FALLBACK_SOURCE_DEPLOY_RUN_ID"
+            if [[ "$FALLBACK_HEAD_BRANCH" != "main" ]]; then
+              echo "target_deploy_sha=$target" >> "$GITHUB_OUTPUT"
+              echo "should_verify=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            deploy_conclusion="$FALLBACK_CONCLUSION"
+            if [[ "$deploy_conclusion" != "success" ]]; then
+              deploy_conclusion="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$source/jobs?per_page=100" \
+                --jq '.jobs[] | select(.name == "deploy") | .conclusion' | sed -n '1p')"
+            fi
+            if [[ "$deploy_conclusion" != "success" ]]; then
+              echo "target_deploy_sha=$target" >> "$GITHUB_OUTPUT"
+              echo "should_verify=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            expected_title="Verify MLB scoring deploy $target (source $source)"
+            direct_state=""
+            for attempt in 1 2 3 4 5; do
+              direct_state="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/mlb-post-deploy-fix-verification.yml/runs?event=workflow_dispatch&per_page=100" |
+                jq -r --arg title "$expected_title" \
+                  '[.workflow_runs[] | select(.display_title == $title)][0] | if . == null then "" else ([.status, (.conclusion // "")] | @tsv) end')" || direct_state=""
+              [[ -n "$direct_state" ]] && break
+              sleep $((attempt * 2))
+            done
+            direct_status=""
+            direct_conclusion=""
+            if [[ -n "$direct_state" ]]; then
+              IFS=$'\t' read -r direct_status direct_conclusion <<< "$direct_state" || true
+            fi
+            if [[ -z "$direct_status" ||
+                  ( "$direct_status" == "completed" && "$direct_conclusion" != "success" ) ]]; then
+              should_verify=true
+            fi
+          else
+            echo "::error::Unsupported post-deploy event: $EVENT_NAME"
+            exit 1
+          fi
+
+          [[ "$target" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::target_deploy_sha must be a full lowercase Git commit SHA"
+            exit 1
+          }
+          [[ "$source" == "manual" || "$source" =~ ^[0-9]+$ ]] || {
+            echo "::error::source_deploy_run_id must be numeric when provided"
+            exit 1
+          }
+          echo "target_deploy_sha=$target" >> "$GITHUB_OUTPUT"
+          echo "should_verify=$should_verify" >> "$GITHUB_OUTPUT"
+
+  verify:
+    needs: resolve
+    if: ${{ needs.resolve.outputs.should_verify == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TARGET_DEPLOY_SHA: ${{ needs.resolve.outputs.target_deploy_sha }}
+    steps:
+      - name: Checkout trusted verifier source
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
+
+      - name: Validate exact deployed commit input
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::target_deploy_sha must be a full lowercase Git commit SHA"
+            exit 1
+          }
+          git fetch --no-tags origin main
+          git cat-file -e "${TARGET_DEPLOY_SHA}^{commit}"
+          git merge-base --is-ancestor "$TARGET_DEPLOY_SHA" origin/main || {
+            echo "::error::target_deploy_sha is not an ancestor of current main"
+            exit 1
+          }
 
       - uses: actions/setup-python@v5
         with:
@@ -50,7 +158,6 @@ jobs:
         continue-on-error: true
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
-          TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
           SNAPSHOTS_TABLE: parlay_platform_snapshots
           SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
           PREDICTIONS_TABLE: parlay_platform_predictions
@@ -95,8 +202,6 @@ jobs:
       - name: Build immutable cutoff-aware post-deploy acceptance proof
         id: acceptance
         continue-on-error: true
-        env:
-          TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -241,7 +346,6 @@ jobs:
       - name: Ensure durable post-deploy evidence
         if: always()
         env:
-          TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
           OBSERVE_OUTCOME: ${{ steps.observe.outcome }}
           SCORING_OUTCOME: ${{ steps.scoring.outcome }}
           RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}
