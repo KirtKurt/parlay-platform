@@ -49,6 +49,16 @@ def client_error(code="TooManyRequestsException", retry_after="7"):
     )
 
 
+def test_status_event_is_read_only_and_bypasses_durable_summary_cache():
+    assert subject._status_event("2026-08-04") == {
+        "httpMethod": "GET",
+        "path": "/v1/mlb/locks/status",
+        "queryStringParameters": {
+            "date": "2026-08-04",
+            "includeAttemptDiagnostics": "true",
+        },
+    }
+
 
 def lifecycle_rows(*, games=15, canonical=10, quarantine=0):
     no_data = games - canonical - quarantine
