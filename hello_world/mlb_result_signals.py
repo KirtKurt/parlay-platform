@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
@@ -17,6 +19,8 @@ PREDICTIONS_TABLE = os.environ.get("PREDICTIONS_TABLE", "")
 OUTCOMES_TABLE = os.environ.get("OUTCOMES_TABLE", "")
 
 RESULT_SIGNAL_VERSION = "MLB-RESULT-SIGNAL-LEARNING-v1"
+RESULT_SIGNAL_PRODUCER_PROOF_VERSION = "MLB-RESULT-SIGNAL-PRODUCER-PROOF-v1"
+RESULT_SIGNAL_PRODUCER_AUTHORITY = "NATIVE_EVENTBRIDGE_SCHEDULE_ENVELOPE"
 
 
 dynamodb = boto3.resource("dynamodb")
@@ -42,6 +46,69 @@ def _ddb_safe(value: Any) -> Any:
     if isinstance(value, list):
         return [_ddb_safe(v) for v in value if v is not None]
     return value
+
+
+def _producer_provenance(value: Optional[Dict[str, Any]]) -> Optional[Dict[str, str]]:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("producer_provenance must be an object")
+    required = {
+        "schema_version",
+        "authority",
+        "lambda_request_id",
+        "event_id",
+        "event_time_utc",
+        "event_source",
+        "detail_type",
+        "rule_arn",
+        "account",
+        "region",
+    }
+    if set(value) != required:
+        raise ValueError(
+            "producer_provenance fields mismatch: "
+            f"expected={sorted(required)} actual={sorted(value)}"
+        )
+    normalized = {key: str(value.get(key) or "").strip() for key in required}
+    if not all(normalized.values()):
+        raise ValueError("producer_provenance contains an empty field")
+    if normalized["schema_version"] != RESULT_SIGNAL_PRODUCER_PROOF_VERSION:
+        raise ValueError("producer_provenance schema version mismatch")
+    if normalized["authority"] != RESULT_SIGNAL_PRODUCER_AUTHORITY:
+        raise ValueError("producer_provenance authority mismatch")
+    if (
+        normalized["event_source"] != "aws.events"
+        or normalized["detail_type"] != "Scheduled Event"
+    ):
+        raise ValueError("producer_provenance EventBridge identity mismatch")
+    try:
+        uuid.UUID(normalized["lambda_request_id"])
+        uuid.UUID(normalized["event_id"])
+    except ValueError as exc:
+        raise ValueError("producer_provenance request/event ID is invalid") from exc
+    try:
+        event_time = datetime.fromisoformat(
+            normalized["event_time_utc"].replace("Z", "+00:00")
+        )
+    except ValueError as exc:
+        raise ValueError("producer_provenance event time is invalid") from exc
+    if event_time.tzinfo is None:
+        raise ValueError("producer_provenance event time lacks timezone")
+    arn = re.fullmatch(
+        r"arn:(?:aws|aws-[a-z-]+):events:([a-z0-9-]+):(\d{12}):rule/.+",
+        normalized["rule_arn"],
+    )
+    if (
+        arn is None
+        or normalized["region"] != arn.group(1)
+        or normalized["account"] != arn.group(2)
+    ):
+        raise ValueError("producer_provenance rule/account/region mismatch")
+    normalized["event_time_utc"] = (
+        event_time.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    )
+    return normalized
 
 
 def _resp(status: int, body: Dict[str, Any]) -> Dict[str, Any]:
@@ -197,7 +264,17 @@ def summarize_result_signals(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def build_result_signals(game_date: str, *, fetch_scores: bool = True, limit: int = 200, store: bool = True) -> Dict[str, Any]:
+def build_result_signals(
+    game_date: str,
+    *,
+    fetch_scores: bool = True,
+    limit: int = 200,
+    store: bool = True,
+    producer_provenance: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    # Provenance is an authority boundary. Validate it before score fetching,
+    # reads, or any per-game/summary mutation can occur.
+    provenance = _producer_provenance(producer_provenance)
     if signal_ledger_tbl is None:
         raise RuntimeError("SIGNAL_LEDGER_TABLE not configured")
     if fetch_scores:
@@ -216,20 +293,48 @@ def build_result_signals(game_date: str, *, fetch_scores: bool = True, limit: in
         if store:
             signal_ledger_tbl.put_item(Item=row)
             stored += 1
+    summary_created_at = _now_iso()
     summary = _ddb_safe({
         "PK": f"RESULT_SIGNAL#mlb#{game_date}",
-        "SK": f"SUMMARY#{_now_iso()}",
+        "SK": f"SUMMARY#{summary_created_at}",
         "entity_type": "MLB_RESULT_SIGNAL_LEARNING_SUMMARY",
         "sport": "mlb",
         "game_date_et": game_date,
         "version": RESULT_SIGNAL_VERSION,
-        "created_at": _now_iso(),
+        "created_at": summary_created_at,
         "stored_rows": stored,
         "summary": summarize_result_signals(rows),
+        **({"producer_provenance": provenance} if provenance is not None else {}),
     })
     if store:
         signal_ledger_tbl.put_item(Item=summary)
-    return {"ok": True, "sport": "mlb", "game_date_et": game_date, "version": RESULT_SIGNAL_VERSION, "stored_rows": stored, "result_signal_rows": rows, "summary": summary.get("summary")}
+        if provenance is not None:
+            print(
+                json.dumps(
+                    {
+                        "event": "MLB_RESULT_SIGNAL_SUMMARY_PERSISTED",
+                        "schema_version": RESULT_SIGNAL_PRODUCER_PROOF_VERSION,
+                        "lambda_request_id": provenance["lambda_request_id"],
+                        "event_id": provenance["event_id"],
+                        "rule_arn": provenance["rule_arn"],
+                        "PK": summary["PK"],
+                        "SK": summary["SK"],
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            )
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "game_date_et": game_date,
+        "version": RESULT_SIGNAL_VERSION,
+        "stored_rows": stored,
+        "result_signal_rows": rows,
+        "summary": summary.get("summary"),
+        "summary_key": {"PK": summary["PK"], "SK": summary["SK"]},
+        **({"producer_provenance": provenance} if provenance is not None else {}),
+    }
 
 
 def latest_result_signals(game_date: str, limit: int = 200) -> Dict[str, Any]:

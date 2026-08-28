@@ -126,6 +126,8 @@ jobs:
             tests/unit/test_mlb_ml_dual_model_v2.py
             tests/unit/test_mlb_ml_promotion_policy_v2.py
             tests/unit/test_mlb_ml_aws_training_v1.py
+            tests/unit/test_mlb_results_scheduler_http_read_only.py
+            tests/unit/test_mlb_result_signals_provenance.py
             tests/unit/test_mlb_deploy_identity.py
             tests/unit/test_mlb_deploy_http_probe.py
             tests/unit/test_mlb_lambda_artifact_identity.py
@@ -903,7 +905,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mlb-deployment-identity-${{ github.run_id }}
+          name: mlb-deployment-identity-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             runtime_reports/mlb_lambda_build_manifest_deploy.json
             runtime_reports/mlb_deploy_identity_latest.json

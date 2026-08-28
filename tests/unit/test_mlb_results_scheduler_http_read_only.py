@@ -73,6 +73,31 @@ EXPECTED_SAM_API_EVENTS = {
     ("MLBResultSignalsOptions", "/v1/results/mlb/result-signals", "OPTIONS"),
 }
 
+RULE_ARN = (
+    "arn:aws:events:us-east-1:123456789012:"
+    "rule/parlay-MLBResultsEvery6Hours-abc"
+)
+EVENT_ID = "11111111-1111-4111-8111-111111111111"
+REQUEST_ID = "22222222-2222-4222-8222-222222222222"
+
+
+class _LambdaContext:
+    aws_request_id = REQUEST_ID
+
+
+def _native_schedule_event():
+    return {
+        "version": "0",
+        "id": EVENT_ID,
+        "detail-type": "Scheduled Event",
+        "source": "aws.events",
+        "account": "123456789012",
+        "time": "2026-08-28T01:06:04Z",
+        "region": "us-east-1",
+        "resources": [RULE_ARN],
+        "detail": {},
+    }
+
 
 def _body(response):
     return json.loads(response["body"])
@@ -416,7 +441,7 @@ def test_methodless_scheduled_event_remains_authoritative_write_path(monkeypatch
         settlement_calls.append(kwargs)
         return {
             "ok": True,
-            "slateDateEt": kwargs["slate_date"],
+            "slateDateEt": "2026-08-04",
             "status": "CANONICAL_FINAL_LABELS_COMPLETE",
         }
 
@@ -429,7 +454,7 @@ def test_methodless_scheduled_event_remains_authoritative_write_path(monkeypatch
 
     monkeypatch.setattr(
         subject.canonical_settlement,
-        "settle_mlb_slate",
+        "settle_recent_mlb_slates",
         canonical_settle,
     )
     monkeypatch.setattr(
@@ -441,26 +466,12 @@ def test_methodless_scheduled_event_remains_authoritative_write_path(monkeypatch
     monkeypatch.setattr(subject, "legacy_settle_mlb_slate", forbidden)
     monkeypatch.setattr(subject, "legacy_settlement_proof_report", forbidden)
 
-    response = subject.lambda_handler(
-        {
-            "source": "aws.events",
-            "detail-type": "Scheduled Event",
-            "sport": "mlb",
-            "run": "results_pull_15m",
-            "slate_date": "2026-08-04",
-            "days_from": 0,
-            "store": False,
-            "build": False,
-            "legacy_diagnostic": True,
-        },
-        None,
-    )
+    response = subject.lambda_handler(_native_schedule_event(), _LambdaContext())
 
     assert response["statusCode"] == 200
     assert settlement_calls == [
         {
-            "slate_date": "2026-08-04",
-            "days_from": 0,
+            "days_from": 3,
             "fetch_scores": True,
             "store": True,
         }
@@ -471,9 +482,32 @@ def test_methodless_scheduled_event_remains_authoritative_write_path(monkeypatch
             {
                 "fetch_scores": False,
                 "store": True,
+                "producer_provenance": {
+                    "schema_version": "MLB-RESULT-SIGNAL-PRODUCER-PROOF-v1",
+                    "authority": "NATIVE_EVENTBRIDGE_SCHEDULE_ENVELOPE",
+                    "lambda_request_id": REQUEST_ID,
+                    "event_id": EVENT_ID,
+                    "event_time_utc": "2026-08-28T01:06:04Z",
+                    "event_source": "aws.events",
+                    "detail_type": "Scheduled Event",
+                    "rule_arn": RULE_ARN,
+                    "account": "123456789012",
+                    "region": "us-east-1",
+                },
             },
         )
     ]
+
+
+def test_incomplete_native_schedule_fails_before_any_dependency(monkeypatch):
+    _forbid_all_dependencies(monkeypatch)
+    event = _native_schedule_event()
+    event.pop("id")
+
+    response = subject.lambda_handler(event, _LambdaContext())
+
+    assert response["statusCode"] == 500
+    assert "Native EventBridge envelope is incomplete" in _body(response)["error"]
 
 
 def test_sam_results_scheduler_exposes_exact_get_and_options_surface():
@@ -501,6 +535,10 @@ def test_sam_results_scheduler_exposes_exact_get_and_options_surface():
     assert block.count("Method: GET") == 5
     assert block.count("Method: OPTIONS") == 5
     assert block.count("Type: Schedule") == 1
+    schedule_block = block.split("        MLBResultsEvery6Hours:", 1)[1]
+    assert "\n            Input:" not in schedule_block
+    assert "\n            InputPath:" not in schedule_block
+    assert "\n            InputTransformer:" not in schedule_block
     assert "Handler: mlb_result_signals.lambda_handler" not in template
 
 

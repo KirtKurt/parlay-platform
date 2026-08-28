@@ -105,16 +105,6 @@ SCHEDULE_EXPECTED_INVOCATIONS = {
         },
     ),
     "trainer": TRAINER_EXPECTED_INVOCATIONS,
-    "settlement": (
-        {
-            "schedule": "cron(6/15 * * * ? *)",
-            "input": {
-                "sport": "mlb",
-                "days_from": 3,
-                "run": "results_pull_15m",
-            },
-        },
-    ),
     "soccer": (
         {
             "schedule": "cron(9/15 * * * ? *)",
@@ -136,6 +126,9 @@ SCHEDULE_EXPECTED_INVOCATIONS = {
         },
     ),
 }
+
+NATIVE_EVENTBRIDGE_ENVELOPE_ROLES = {"settlement"}
+EVENTBRIDGE_TARGET_INPUT_SELECTORS = {"Input", "InputPath", "InputTransformer"}
 
 TRAINER_HANDLER = "mlb_ml_aws_training_v1_compat.lambda_handler"
 TRAINER_TIMEOUT_SECONDS = 900
@@ -1408,7 +1401,22 @@ def verify(
                     else f"EVENTBRIDGE_FAILURE_DESTINATION_PRESENT:{role}"
                 )
         expected_role_invocations = SCHEDULE_EXPECTED_INVOCATIONS.get(role)
-        if expected_role_invocations is not None:
+        native_event_envelope_matches = None
+        if role in NATIVE_EVENTBRIDGE_ENVELOPE_ROLES:
+            native_event_envelope_matches = bool(
+                enabled_rules
+                and all(
+                    all(
+                        not EVENTBRIDGE_TARGET_INPUT_SELECTORS.intersection(target)
+                        for target in rule.get("matchingTargets") or []
+                    )
+                    for rule in enabled_rules
+                )
+            )
+            invocation_inputs_match = native_event_envelope_matches
+            if not native_event_envelope_matches:
+                blockers.append(f"EVENTBRIDGE_INVOCATION_INPUT_MISMATCH:{role}")
+        elif expected_role_invocations is not None:
             expected_invocations = sorted(
                 (
                     str(invocation["schedule"]),
@@ -1456,6 +1464,7 @@ def verify(
                 retry_policy_matches and dead_letter_absent
             ) if expected_retry_policies is not None else None,
             "invocationInputsMatch": invocation_inputs_match,
+            "nativeEventEnvelopeMatches": native_event_envelope_matches,
             "sqsFailureDestinationRequired": False if expected_retry_policies is not None else None,
             "expectedRetryPolicy": expected_retry_policies,
         }

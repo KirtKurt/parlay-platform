@@ -880,7 +880,6 @@ Resources:
           Type: Schedule
           Properties:
             Schedule: cron(6/15 * * * ? *)
-            Input: '{"sport":"mlb","days_from":3,"run":"results_pull_15m"}'
             RetryPolicy:
               MaximumEventAgeInSeconds: 300
               MaximumRetryAttempts: 0
