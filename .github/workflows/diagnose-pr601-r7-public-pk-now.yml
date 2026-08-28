@@ -1,0 +1,76 @@
+name: Diagnose PR601 R7 public pk now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-pr601-r7-public-pk-now.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/mlb-valid-prelock-quarantine-v4-567
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+      - name: Print exact public terminal validation after official fixture alignment
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tests/unit/test_mlb_public_per_game_authority.py')
+          s=p.read_text()
+          s=s.replace('G2["officialGamePk"] = "810002"\nG1["books"]', 'G2["officialGamePk"] = "810002"\nG1["official_game_pk"] = G1["officialGamePk"]\nG2["official_game_pk"] = G2["officialGamePk"]\nG1["books"]', 1)
+          p.write_text(s)
+          PY
+          python - <<'PY'
+          import importlib.util, json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          import pytest
+          path=Path('tests/unit/test_mlb_public_per_game_authority.py').resolve()
+          spec=importlib.util.spec_from_file_location('m', path); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+          for quarantine in (False, True):
+              mp=pytest.MonkeyPatch()
+              try:
+                  mp.setattr(m.exact_contract,'validate_exact_locked_row',lambda row: [])
+                  mp.setattr(m.immutable_storage,'validate_canonical_stage_authority',lambda table,row: [])
+                  canonical=m._canonical_item(m.G1,m.G1['home_team'],'home',71)
+                  terminal=m._quarantine_terminal_outcome_item(m.G2) if quarantine else m._terminal_outcome_item(m.G2)
+                  status=[terminal]
+                  current=[m._live(m.G1,m.G1['away_team'],'away')]
+                  if not quarantine:
+                      status.insert(0,m._playability_item(m.G1,canonical,'T_MINUS_15','2026-07-17T22:45:05+00:00',playable=True))
+                  else:
+                      current.append({**m._live(m.G2,m.G2['home_team'],'home'),'futureNestedModel':{'winner':'Hostile','probability':.99}})
+                  eng=m._engine([canonical],current=current,status_items=status); m._install(eng)
+                  mp.setattr(m.coverage,'_now_utc',lambda: datetime(2026,7,18,2,1,tzinfo=timezone.utc))
+                  print('MANIFEST',json.dumps(m.PULLS[0]['provider_schedule_manifest'],sort_keys=True))
+                  r=eng.predict_all(m.SLATE,store=False)
+                  print(json.dumps({'q':quarantine,'invalid':r.get('invalidTerminalLifecycleRows'),'predictions':r.get('predictions'),'qcount':r.get('missedLockValidPrelockQuarantineCount'),'locked':r.get('lockedStatusCount')},sort_keys=True,default=str))
+              finally: mp.undo()
+          PY
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          git fetch origin main
+          git worktree add /tmp/cleanup origin/main
+          cd /tmp/cleanup
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/diagnose-pr601-r7-public-pk-now.yml
+          git commit -m 'Remove PR601 public pk diagnostic [skip ci]'
+          git push origin HEAD:main
