@@ -1,0 +1,126 @@
+name: Repair PR601 R7 contract now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-pr601-r7-contract-now.yml
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: repair-pr601-r7-contract-now
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact PR601 branch
+        uses: actions/checkout@v4
+        with:
+          ref: codex/mlb-valid-prelock-quarantine-v4-567
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Require exact diagnosed PR head
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          expected="4df94cf3383618b0a990bc41d55e2c955e2e12f2"
+          test "$actual" = "$expected" || {
+            echo "Refusing stale repair: expected $expected got $actual" >&2
+            exit 1
+          }
+
+      - name: Apply narrow fail-closed contract fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          replacements = {
+              "hello_world/mlb_canonical_final_labels_v1.py": [(
+                  '''def _terminal_official_game_pk(\n    item: Dict[str, Any],\n    crosswalk: Dict[str, Dict[str, Any]],\n    official_games: Optional[Iterable[Dict[str, Any]]] = None,\n) -> Optional[str]:\n    values = _official_game_pk_values(item)\n    game_id = str(item.get("game_id") or "").strip()\n''',
+                  '''def _terminal_official_game_pk(\n    item: Dict[str, Any],\n    crosswalk: Dict[str, Dict[str, Any]],\n    official_games: Optional[Iterable[Dict[str, Any]]] = None,\n) -> Optional[str]:\n    # The explicit terminal officialGamePk is the row's declared roster key.\n    # Keep it authoritative for lookup, then require exact official-roster and\n    # manifest identity/team/start agreement below. Conflicting embedded game\n    # ids therefore fail with a precise terminal_manifest_* error instead of\n    # becoming an unresolved identity that cannot be audited.\n    explicit_official_pk = str(\n        item.get("officialGamePk") or item.get("official_game_pk") or ""\n    ).strip()\n    if explicit_official_pk:\n        return explicit_official_pk\n    values = _official_game_pk_values(item)\n    game_id = str(item.get("game_id") or "").strip()\n'''
+              )],
+              "hello_world/mlb_slate_coverage_patch.py": [(
+                  '''    if (\n        not expected_official_pk\n        or str(item.get("officialGamePk") or "") != expected_official_pk\n    ):\n        errors.append("terminal_manifest_official_game_pk_mismatch")\n''',
+                  '''    terminal_official_pk = str(item.get("officialGamePk") or "").strip()\n    if not terminal_official_pk:\n        errors.append("terminal_manifest_official_game_pk_missing")\n    elif (\n        expected_official_pk\n        and terminal_official_pk != expected_official_pk\n    ):\n        errors.append("terminal_manifest_official_game_pk_mismatch")\n'''
+              )],
+              "hello_world/mlb_daily_per_game_lock_patch.py": [(
+                  '''    aliases = {_raw_game_identity(game)}\n    official_pk = _official_game_pk(game)\n    if official_pk:\n        aliases.add(f"mlb_statsapi:{official_pk}")\n''',
+                  '''    official_pk = _official_game_pk(game)\n    # Start from the durable Stats API identity whenever it is available.\n    # Provider aliases are admitted only from bound scoring pulls below. This\n    # avoids double-counting the manifest's transient provider id while still\n    # preserving both the stable fallback and every evidenced provider alias.\n    aliases = (\n        {f"mlb_statsapi:{official_pk}"}\n        if official_pk\n        else {_raw_game_identity(game)}\n    )\n'''
+              )],
+          }
+
+          for filename, edits in replacements.items():
+              path = Path(filename)
+              text = path.read_text()
+              for old, new in edits:
+                  count = text.count(old)
+                  if count != 1:
+                      raise SystemExit(f"{filename}: expected exactly one replacement, found {count}")
+                  text = text.replace(old, new)
+              path.write_text(text)
+
+      - name: Run exact previously failing tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q pytest boto3
+          PYTHONPATH=hello_world pytest -q \
+            tests/unit/test_mlb_canonical_final_labels_v1.py::test_final_label_validation_rejects_same_count_official_pk_swap \
+            'tests/unit/test_mlb_canonical_final_labels_v1.py::test_final_label_terminal_requires_unique_official_roster_membership[outside_roster]' \
+            tests/unit/test_mlb_cooperative_terminal_chunk.py::test_candidate_alias_queries_are_capped_before_any_query \
+            tests/unit/test_mlb_public_per_game_authority.py::test_terminal_no_prediction_status_displays_without_current_prediction_row \
+            tests/unit/test_mlb_public_per_game_authority.py::test_valid_quarantine_terminal_is_lifecycle_only_on_public_surface
+
+      - name: Run focused R7 quarantine regression set
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=hello_world pytest -q \
+            tests/unit/test_mlb_canonical_final_labels_v1.py \
+            tests/unit/test_mlb_cooperative_terminal_chunk.py \
+            tests/unit/test_mlb_public_per_game_authority.py \
+            tests/unit/test_mlb_terminal_lifecycle_count_reconciliation.py
+
+      - name: Commit repair only to PR601 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --short
+          git diff --check
+          git diff --exit-code -- . ':!hello_world/mlb_canonical_final_labels_v1.py' ':!hello_world/mlb_slate_coverage_patch.py' ':!hello_world/mlb_daily_per_game_lock_patch.py'
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            hello_world/mlb_canonical_final_labels_v1.py \
+            hello_world/mlb_slate_coverage_patch.py \
+            hello_world/mlb_daily_per_game_lock_patch.py
+          git commit -m "Fix remaining PR601 R7 contract failures"
+          git push origin HEAD:codex/mlb-valid-prelock-quarantine-v4-567
+
+      - name: Remove one-shot repair workflow from main
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git checkout -B cleanup origin/main
+          if [ -f .github/workflows/repair-pr601-r7-contract-now.yml ]; then
+            git rm .github/workflows/repair-pr601-r7-contract-now.yml
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Remove completed PR601 R7 repair [skip ci]"
+            for attempt in 1 2 3; do
+              if git push origin HEAD:main; then exit 0; fi
+              git fetch origin main
+              git rebase origin/main
+            done
+            exit 1
+          fi
