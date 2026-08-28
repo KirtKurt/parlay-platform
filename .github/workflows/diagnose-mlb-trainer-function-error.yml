@@ -1,70 +1,25 @@
-name: Apply Unique MLB Trainer Handler To Pull Request
+name: Validate Unique MLB Trainer Handler
 
 "on":
-  pull_request:
-    branches: [main]
-    paths:
-      - '.github/workflows/diagnose-mlb-trainer-function-error.yml'
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: apply-unique-mlb-trainer-handler-${{ github.event.pull_request.number }}
+  group: validate-unique-mlb-trainer-handler
   cancel-in-progress: true
 
 jobs:
-  apply-and-validate:
+  validate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install unique trainer handler contract in PR branch
-        run: |
-          set -euo pipefail
-          git fetch origin main
-          python - <<'PY'
-          from pathlib import Path
-
-          old = 'mlb_ml_aws_training_v1.lambda_handler'
-          new = 'mlb_ml_aws_training_v1_compat.lambda_handler'
-          changed=[]
-          for root in (Path('template.yaml'), Path('scripts'), Path('tests')):
-              paths=[root] if root.is_file() else list(root.rglob('*'))
-              for path in paths:
-                  if not path.is_file() or path.suffix not in {'.py','.yaml','.yml'}:
-                      continue
-                  text=path.read_text()
-                  if old in text:
-                      path.write_text(text.replace(old,new))
-                      changed.append(str(path))
-          assert 'template.yaml' in changed, changed
-          assert not any(
-              old in path.read_text()
-              for root in (Path('template.yaml'), Path('scripts'), Path('tests'))
-              for path in ([root] if root.is_file() else list(root.rglob('*')))
-              if path.is_file() and path.suffix in {'.py','.yaml','.yml'}
-          )
-          assert Path('hello_world/mlb_ml_aws_training_v1_compat.py').is_file()
-          package=Path('hello_world/mlb_ml_aws_training_v1')
-          if package.exists():
-              for child in sorted(package.rglob('*'), reverse=True):
-                  if child.is_file() or child.is_symlink(): child.unlink()
-                  elif child.is_dir(): child.rmdir()
-              package.rmdir()
-          Path('tests/unit/test_mlb_trainer_continuity_package_shim_v1.py').unlink(missing_ok=True)
-          PY
-          git show origin/main:.github/workflows/diagnose-mlb-trainer-function-error.yml \
-            > .github/workflows/diagnose-mlb-trainer-function-error.yml
-          git diff --check
 
       - name: Validate unique handler and unchanged trainer safeguards
         run: |
@@ -86,14 +41,3 @@ jobs:
           assert 'Handler: mlb_ml_aws_training_v1.lambda_handler' not in template
           assert not Path('hello_world/mlb_ml_aws_training_v1').exists()
           PY
-
-      - name: Commit source repair to PR branch
-        env:
-          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
-        run: |
-          set -euo pipefail
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -A
-          git commit -m 'Use unique fail-closed MLB trainer compatibility handler'
-          git push origin HEAD:"$HEAD_BRANCH"

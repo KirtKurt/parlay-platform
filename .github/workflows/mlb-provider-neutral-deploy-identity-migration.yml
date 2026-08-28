@@ -20,7 +20,7 @@ name: MLB Provider-Neutral Deploy Identity Migration
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: mlb-provider-neutral-deploy-identity-${{ github.head_ref || github.ref }}
@@ -32,9 +32,6 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
-          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -62,9 +59,34 @@ jobs:
           python scripts/verify_mlb_no_bbd_runtime.py
           git diff --check
 
+  commit-migration:
+    if: github.event_name != 'pull_request'
+    needs: migrate-and-verify
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Reproduce verified provider-neutral identity migration
+        run: |
+          set -euo pipefail
+          python scripts/migrate_mlb_deploy_identity_provider_neutral.py
+          python scripts/migrate_mlb_no_bbd_test_provider_identity.py
+          python scripts/migrate_mlb_deploy_identity_provider_neutral.py --check
+          python scripts/migrate_mlb_no_bbd_test_provider_identity.py --check
+          git diff --check
+
       - name: Commit verified provider-neutral identity source
         env:
-          BRANCH: ${{ github.head_ref || github.ref_name }}
+          BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           if git diff --quiet -- \

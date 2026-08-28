@@ -218,6 +218,13 @@ def _status(*, missed):
         "lockedStatusCount": 1,
         "lockStatusComplete": True,
         "missedGameCount": missed,
+        "perGameStatus": [
+            {
+                "officialGamePk": 999_001,
+                "gameIdentity": GAME["game_id"],
+                "terminalState": "LOCKED_NO_PREDICTION_DATA",
+            }
+        ],
     }
 
 
@@ -249,7 +256,37 @@ def test_complete_projection_with_missed_rows_forces_protected_durability_replay
                 "ok": True,
                 "slateDateEt": SLATE,
                 "slateFinalized": True,
+                "status": "CANONICAL_FINAL_LABELS_COMPLETE",
+                "authoritativeSettlement": True,
+                "legacySettlementAuthority": False,
+                "officialGameCount": 1,
+                "officialFinalCount": 1,
+                "canonicalLockCount": 0,
+                "terminalNoPredictionCount": 1,
+                "missedLockValidPrelockQuarantineCount": 0,
+                "terminalOutcomeCount": 1,
+                "terminalExcludedCount": 1,
+                "labelWriteCount": 0,
                 "settledLabelCount": 0,
+                "rejectedCanonicalLockCount": 0,
+                "lockTerminalConflictCount": 0,
+                "skippedNotFinalCount": 0,
+                "missingCanonicalLockCount": 0,
+                "identityRejectionCount": 0,
+                "labelConflictCount": 0,
+                "rejectedTerminalOutcomes": [],
+                "immutablePregameRowsMutated": False,
+                "immutablePregameReadbackErrors": [],
+                "labelWrites": [],
+                "terminalExclusions": [
+                    {
+                        "officialGamePk": 999_001,
+                        "status": "LOCKED_NO_PREDICTION_DATA",
+                        "accuracyEligible": False,
+                        "trainingEligible": False,
+                        "predictionAdopted": False,
+                    }
+                ],
             }
         raise AssertionError(event)
 

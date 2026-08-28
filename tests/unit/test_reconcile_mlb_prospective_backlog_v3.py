@@ -32,6 +32,22 @@ def mutation(*, manifest=12, canonical=8, terminal=4, missed=0, due=0):
 
 
 def official(*, games=15, canonical=10, terminal=5):
+    lifecycle_games = []
+    for index in range(games):
+        official_game_pk = 900_000 + index
+        lifecycle_games.append(
+            {
+                "officialGamePk": official_game_pk,
+                "gameIdentity": (
+                    f"mlb:2026-08-03:official-game-pk:{official_game_pk}"
+                ),
+                "terminalState": (
+                    "LOCKED_CANONICAL"
+                    if index < canonical
+                    else "LOCKED_NO_PREDICTION_DATA"
+                ),
+            }
+        )
     return {
         "ok": True,
         "sport": "mlb",
@@ -45,6 +61,7 @@ def official(*, games=15, canonical=10, terminal=5):
         "noPredictionDataCount": terminal,
         "lockedStatusCount": canonical + terminal,
         "lockStatusComplete": True,
+        "perGameStatus": lifecycle_games,
     }
 
 

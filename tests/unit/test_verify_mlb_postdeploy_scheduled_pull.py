@@ -493,3 +493,16 @@ def test_postdeploy_workflow_preserves_structured_observer_failure():
     assert "scheduled_pull_observation_failed" in source
     assert "'scheduledPullObservationFailure': invocation.get('failure')" in source
 
+
+def test_postdeploy_workflow_recovers_only_failures_before_bound_success():
+    source = Path(
+        ".github/workflows/mlb-post-deploy-fix-verification.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "invocation.get('scheduledRequestId')" in source
+    assert "invocation.get('scheduledReport')" in source
+    assert "invocation.get('observedScheduledPullAtUtc')" in source
+    assert "stamp <= successful_observation_at" in source
+    assert "recovered_post_deploy_scheduled_failures.append(row)" in source
+    assert "post_deploy_scheduled_failures.append(row)" in source
+    assert "'new_scheduled_scoring_failure_after_deploy'" in source

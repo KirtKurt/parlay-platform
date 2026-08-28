@@ -27,7 +27,7 @@ name: MLB Historical Recovery and Paid Dispatch
 
 permissions:
   contents: read
-  actions: write
+  actions: read
 
 jobs:
   validate:
@@ -64,6 +64,9 @@ jobs:
   recover-and-dispatch:
     if: (github.event_name == 'push' && contains(github.event.head_commit.message, '[authorize-mlb-historical-backfill]') && contains(github.event.head_commit.message, '[destroy-v15.10-after-daily80]')) || (github.event_name == 'workflow_dispatch' && inputs.paid_authorization == 'AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS' && inputs.cutover_confirmation == 'DESTROY_V15_10_PRODUCTION_AUTHORITY_AFTER_80_PERCENT_GATE')
     needs: validate
+    permissions:
+      actions: write
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

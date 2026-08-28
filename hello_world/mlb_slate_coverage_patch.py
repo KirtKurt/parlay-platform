@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -19,6 +20,41 @@ OPERATIONAL_DEFECT_SCOPE_VERSION = (
 CANONICAL_RECORD_TYPE = "mlb_immutable_locked_single_game_prediction"
 LOCK_OUTCOME_RECORD_TYPE = "mlb_immutable_per_game_lock_outcome"
 LOCK_OUTCOME_VERSION = "MLB-LOCK-OUTCOME-v1-explicit-terminal-status"
+MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED = (
+    "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+)
+VALID_PRELOCK_QUARANTINE_AUTHORITY_VERSION = (
+    "MLB-VALID-PRELOCK-MISSED-LOCK-QUARANTINE-v1"
+)
+_VALID_PRELOCK_QUARANTINE_AUTHORITY_KEYS = frozenset(
+    {
+        "version",
+        "candidatePk",
+        "candidateSk",
+        "candidateItemFingerprint",
+        "candidateSnapshotFingerprint",
+        "candidatePayloadFingerprint",
+        "candidatePayloadFingerprintVersion",
+        "candidateRowFingerprint",
+        "candidateSelectionFingerprint",
+        "sourcePullFingerprint",
+        "sourcePullStoragePk",
+        "sourcePullStorageSk",
+        "predictionCreatedAtUtc",
+        "predictionPersistedAtUtc",
+        "predictionSourcePullAtUtc",
+        "evaluationCutoffAtUtc",
+        "identityBindingMode",
+        "candidateGameIdentity",
+        "stageGameIdentity",
+        "candidateOfficialGamePk",
+        "stageOfficialGamePk",
+        "boundScoringPullCount",
+        "rejectedNewerCandidateCount",
+        "modelOrSignalRecomputedAtLock",
+        "predictionAdopted",
+    }
+)
 PLAYABILITY_RECORD_TYPE = "mlb_immutable_playability_assessment"
 PLAYABILITY_VERSION = "MLB-PLAYABILITY-ASSESSMENT-v1-immutable-selection-bound"
 PLAYABILITY_CHECKPOINTS = (
@@ -249,6 +285,554 @@ def _record_fingerprint(item: Dict[str, Any], field: str) -> str:
     ).hexdigest()
 
 
+_TERMINAL_OUTCOME_FORBIDDEN_FIELDS = frozenset(
+    {
+        "prediction",
+        "predictedwinner",
+        "predictedside",
+        "pick",
+        "selection",
+        "selectedwinner",
+        "selectedside",
+        "recommendedwinner",
+        "recommendedside",
+        "model",
+        "modelwinner",
+        "modelside",
+        "explanation",
+        "winner",
+        "correct",
+        "success",
+        "homewon",
+        "pickcorrect",
+        "outcome",
+        "result",
+        "finalscore",
+        "label",
+        "labels",
+        "probability",
+        "winprobability",
+        "winprobabilitypct",
+        "teamwinprobabilitypct",
+        "modelwinprobability",
+        "marketprobability",
+        "score",
+        "confidence",
+        "confidencetier",
+        "edge",
+        "edgevsbook",
+        "expectedvalue",
+        "odds",
+        "americanodds",
+        "lockamericanodds",
+        "lockedamericanodds",
+        "pricebook",
+        "pricesource",
+        "marketside",
+        "fairprobabilitypct",
+        "selectionfingerprint",
+        "signalscore",
+        "pickreliability",
+        "fundamentalssnapshot",
+        "expectedvaluepct",
+        "edgevsbookpct",
+        "homesignal",
+        "awaysignal",
+        "frozenfeaturevector",
+        "featuresnapshot",
+    }
+)
+
+
+def _terminal_outcome_forbidden_fields(
+    item: Dict[str, Any],
+) -> List[str]:
+    """Reject nested selection/result payloads under a bounded traversal."""
+
+    errors: List[str] = []
+    pending: List[Tuple[str, Any, int]] = [("terminal", item, 0)]
+    visited = 0
+    while pending:
+        path, value, depth = pending.pop()
+        visited += 1
+        if visited > 512 or depth > 8:
+            errors.append("terminal_nested_structure_out_of_bounds")
+            break
+        if isinstance(value, dict):
+            for key, child in value.items():
+                normalized = re.sub(
+                    r"[^a-z0-9]",
+                    "",
+                    str(key).lower(),
+                )
+                child_path = f"{path}.{key}"
+                opaque_candidate_selection_digest = bool(
+                    child_path
+                    == (
+                        "terminal.valid_prelock_quarantine_authority."
+                        "candidateSelectionFingerprint"
+                    )
+                    and re.fullmatch(
+                        r"[0-9a-f]{64}",
+                        str(child or ""),
+                    )
+                    is not None
+                )
+                if (
+                    normalized in _TERMINAL_OUTCOME_FORBIDDEN_FIELDS
+                    and not opaque_candidate_selection_digest
+                ):
+                    errors.append(
+                        f"terminal_forbidden_field:{child_path}"
+                    )
+                if isinstance(child, (dict, list, tuple)):
+                    pending.append((child_path, child, depth + 1))
+        elif isinstance(value, (list, tuple)):
+            for index, child in enumerate(value):
+                if isinstance(child, (dict, list, tuple)):
+                    pending.append(
+                        (f"{path}[{index}]", child, depth + 1)
+                    )
+    allowed_top = {
+        "PK", "SK", "record_type", "version", "sport", "slate_date",
+        "game_identity", "game_id", "officialGamePk", "commence_time",
+        "scheduled_lock_at_utc", "recorded_at_utc", "lock_status",
+        "lock_outcome_recorded", "locked_prediction", "canonical",
+        "canonical_prediction", "official_prediction", "playable", "blocked",
+        "playability_block_reasons", "training_eligible",
+        "training_exclusion_reasons", "reasons",
+        "provider_manifest_authority", "provider_manifest_fingerprint",
+        "provider_manifest_pk", "provider_manifest_sk",
+        "manifest_game_count", "data", "write_once", "created_at",
+        "lock_outcome_fingerprint", "accuracy_eligible",
+        "wager_allowed", "prediction_adopted", "operational_defect",
+        "canonical_prediction_complete",
+        "post_start_prediction_creation_allowed",
+        "immutable_prediction_rewrite_allowed",
+        "valid_prelock_quarantine_authority",
+        "valid_prelock_quarantine_authority_fingerprint",
+    }
+    for key in set(item) - allowed_top:
+        errors.append(f"terminal_unrecognized_field:{key}")
+    data = item.get("data")
+    if isinstance(data, dict):
+        for key in set(data) - {"manifestGameIdentities", "row"}:
+            errors.append(f"terminal_data_unrecognized_field:{key}")
+        row = data.get("row")
+        if isinstance(row, dict):
+            for key in set(row) - {"homeTeam", "awayTeam"}:
+                errors.append(
+                    f"terminal_data_row_unrecognized_field:{key}"
+                )
+    authority = item.get("valid_prelock_quarantine_authority")
+    if isinstance(authority, dict):
+        allowed_authority = {
+            "version", "candidatePk", "candidateSk",
+            "candidateItemFingerprint", "candidateSnapshotFingerprint",
+            "candidatePayloadFingerprint",
+            "candidatePayloadFingerprintVersion",
+            "candidateRowFingerprint", "candidateSelectionFingerprint",
+            "sourcePullFingerprint", "sourcePullStoragePk",
+            "sourcePullStorageSk", "predictionCreatedAtUtc",
+            "predictionPersistedAtUtc", "predictionSourcePullAtUtc",
+            "evaluationCutoffAtUtc", "identityBindingMode",
+            "candidateGameIdentity", "stageGameIdentity",
+            "candidateOfficialGamePk", "stageOfficialGamePk",
+            "boundScoringPullCount", "rejectedNewerCandidateCount",
+            "modelOrSignalRecomputedAtLock", "predictionAdopted",
+        }
+        for key in set(authority) - allowed_authority:
+            errors.append(
+                f"terminal_quarantine_authority_unrecognized_field:{key}"
+            )
+    return sorted(set(errors))
+
+def _sanitized_terminal_outcome(
+    outcome: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Expose terminal lifecycle authority, never the candidate payload."""
+
+    allowed = (
+        "record_type",
+        "version",
+        "sport",
+        "slate_date",
+        "game_identity",
+        "game_id",
+        "officialGamePk",
+        "commence_time",
+        "scheduled_lock_at_utc",
+        "recorded_at_utc",
+        "lock_status",
+        "lock_outcome_recorded",
+        "locked_prediction",
+        "canonical",
+        "canonical_prediction",
+        "official_prediction",
+        "playable",
+        "blocked",
+        "playability_block_reasons",
+        "training_eligible",
+        "accuracy_eligible",
+        "wager_allowed",
+        "prediction_adopted",
+        "operational_defect",
+        "canonical_prediction_complete",
+        "training_exclusion_reasons",
+        "reasons",
+        "valid_prelock_quarantine_authority_fingerprint",
+        "provider_manifest_fingerprint",
+        "provider_manifest_pk",
+        "provider_manifest_sk",
+        "manifest_game_count",
+        "post_start_prediction_creation_allowed",
+        "immutable_prediction_rewrite_allowed",
+        "write_once",
+        "created_at",
+        "lock_outcome_fingerprint",
+    )
+    public = {
+        field: copy.deepcopy(outcome.get(field))
+        for field in allowed
+        if field in outcome
+    }
+    authority = outcome.get("valid_prelock_quarantine_authority")
+    if isinstance(authority, dict):
+        authority_allowed = (
+            "version",
+            "candidatePk",
+            "candidateSk",
+            "candidateItemFingerprint",
+            "candidateSnapshotFingerprint",
+            "candidatePayloadFingerprint",
+            "candidatePayloadFingerprintVersion",
+            "candidateRowFingerprint",
+            "sourcePullFingerprint",
+            "sourcePullStoragePk",
+            "sourcePullStorageSk",
+            "predictionCreatedAtUtc",
+            "predictionPersistedAtUtc",
+            "predictionSourcePullAtUtc",
+            "evaluationCutoffAtUtc",
+            "identityBindingMode",
+            "candidateGameIdentity",
+            "stageGameIdentity",
+            "boundScoringPullCount",
+            "rejectedNewerCandidateCount",
+            "modelOrSignalRecomputedAtLock",
+            "predictionAdopted",
+        )
+        public["valid_prelock_quarantine_authority"] = {
+            field: copy.deepcopy(authority.get(field))
+            for field in authority_allowed
+            if field in authority
+        }
+    return public
+
+
+def _quarantine_authority_identity_valid(
+    item: Dict[str, Any],
+    authority: Dict[str, Any],
+) -> bool:
+    mode = str(authority.get("identityBindingMode") or "")
+    candidate = str(authority.get("candidateGameIdentity") or "")
+    stage = str(authority.get("stageGameIdentity") or "")
+    item_identity = str(item.get("game_identity") or "")
+    if item_identity.startswith("provider:"):
+        item_identity = item_identity.replace("provider:", "", 1)
+    if not candidate or not stage or stage != item_identity:
+        return False
+    if mode == "exact_identity":
+        return candidate == stage
+    official = str(item.get("officialGamePk") or "")
+    return bool(
+        mode == "official_game_pk"
+        and candidate != stage
+        and official
+        and str(authority.get("candidateOfficialGamePk") or "")
+        == official
+        and str(authority.get("stageOfficialGamePk") or "")
+        == official
+    )
+
+
+
+def _strict_utc_instant(value: Any) -> Optional[datetime]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        instant = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if instant.tzinfo is None:
+        return None
+    return instant.astimezone(timezone.utc)
+
+
+def _valid_prelock_quarantine_authority_errors(
+    item: Dict[str, Any],
+) -> List[str]:
+    """Validate the exact non-selection quarantine provenance contract."""
+
+    errors: List[str] = []
+    authority = item.get("valid_prelock_quarantine_authority")
+    if not isinstance(authority, dict):
+        return ["quarantine_authority_missing"]
+    if set(authority) != _VALID_PRELOCK_QUARANTINE_AUTHORITY_KEYS:
+        errors.append("quarantine_authority_keyset_invalid")
+    if authority.get("version") != VALID_PRELOCK_QUARANTINE_AUTHORITY_VERSION:
+        errors.append("quarantine_authority_version_invalid")
+
+    digest_fields = (
+        "candidateItemFingerprint",
+        "candidateSnapshotFingerprint",
+        "candidatePayloadFingerprint",
+        "candidateRowFingerprint",
+        "candidateSelectionFingerprint",
+        "sourcePullFingerprint",
+    )
+    for field in digest_fields:
+        if re.fullmatch(r"[0-9a-f]{64}", str(authority.get(field) or "")) is None:
+            errors.append(f"quarantine_authority_{field}_invalid")
+    if (
+        authority.get("candidatePayloadFingerprintVersion")
+        != history_contract.CANONICAL_PAYLOAD_FINGERPRINT_VERSION
+    ):
+        errors.append("quarantine_authority_payload_version_invalid")
+
+    slate = str(item.get("slate_date") or "")
+    candidate_identity = str(authority.get("candidateGameIdentity") or "")
+    stage_identity = str(authority.get("stageGameIdentity") or "")
+    item_identity = str(item.get("game_identity") or "")
+    if item_identity.startswith("provider:"):
+        item_identity = item_identity.replace("provider:", "", 1)
+    official_pk = str(item.get("officialGamePk") or "")
+    try:
+        if _exact_nonnegative_integer(
+            official_pk,
+            error="quarantine_official_game_pk_invalid",
+        ) <= 0:
+            raise ValueError("quarantine_official_game_pk_invalid")
+    except Exception:
+        errors.append("quarantine_official_game_pk_invalid")
+    mode = str(authority.get("identityBindingMode") or "")
+    identity_valid = bool(
+        candidate_identity
+        and stage_identity
+        and stage_identity == item_identity
+        and mode in {"exact_identity", "official_game_pk"}
+        and (
+            (mode == "exact_identity" and candidate_identity == stage_identity)
+            or (
+                mode == "official_game_pk"
+                and candidate_identity != stage_identity
+            )
+        )
+        and str(authority.get("candidateOfficialGamePk") or "")
+        == official_pk
+        and str(authority.get("stageOfficialGamePk") or "")
+        == official_pk
+    )
+    if not identity_valid:
+        errors.append("quarantine_authority_identity_invalid")
+
+    candidate_pk = str(authority.get("candidatePk") or "")
+    candidate_sk = str(authority.get("candidateSk") or "")
+    source_pk = str(authority.get("sourcePullStoragePk") or "")
+    source_sk = str(authority.get("sourcePullStorageSk") or "")
+    if candidate_pk != f"GAME_WINNERS#mlb#{slate}":
+        errors.append("quarantine_authority_candidate_pk_invalid")
+    if (
+        not candidate_identity
+        or not candidate_sk.startswith(
+            f"PREGAME#GAME#{candidate_identity}#"
+        )
+    ):
+        errors.append("quarantine_authority_candidate_sk_invalid")
+    if source_pk != f"PULLS#mlb#{slate}":
+        errors.append("quarantine_authority_source_pk_invalid")
+
+    timestamp_fields = (
+        "predictionSourcePullAtUtc",
+        "predictionCreatedAtUtc",
+        "predictionPersistedAtUtc",
+        "evaluationCutoffAtUtc",
+    )
+    instants = {
+        field: _strict_utc_instant(authority.get(field))
+        for field in timestamp_fields
+    }
+    if any(value is None for value in instants.values()):
+        errors.append("quarantine_authority_timestamp_invalid")
+    else:
+        ordered = [instants[field] for field in timestamp_fields]
+        if ordered != sorted(ordered):
+            errors.append("quarantine_authority_timestamp_order_invalid")
+        source = instants["predictionSourcePullAtUtc"]
+        canonical_slot = source.replace(
+            minute=(source.minute // 15) * 15,
+            second=0,
+            microsecond=0,
+        )
+        canonical_sk = f"PULL#SLOT#{canonical_slot.isoformat()}"
+        legacy_prefix = (
+            "PULL#"
+            + str(authority.get("predictionSourcePullAtUtc") or "")
+            + "#"
+        )
+        if source_sk != canonical_sk and not (
+            source_sk.startswith(legacy_prefix)
+            and len(source_sk) > len(legacy_prefix)
+        ):
+            errors.append("quarantine_authority_source_sk_invalid")
+
+    try:
+        bound_count = _exact_nonnegative_integer(
+            authority.get("boundScoringPullCount"),
+            error="quarantine_bound_scoring_pull_count_invalid",
+        )
+        rejected_count = _exact_nonnegative_integer(
+            authority.get("rejectedNewerCandidateCount"),
+            error="quarantine_rejected_newer_candidate_count_invalid",
+        )
+        if bound_count <= 0:
+            errors.append("quarantine_bound_scoring_pull_count_invalid")
+        if rejected_count != 0:
+            errors.append("quarantine_rejected_newer_candidate_count_invalid")
+    except Exception as exc:
+        errors.append(str(exc))
+    if authority.get("modelOrSignalRecomputedAtLock") is not False:
+        errors.append("quarantine_authority_recomputed_at_lock_invalid")
+    if authority.get("predictionAdopted") is not False:
+        errors.append("quarantine_authority_prediction_adopted_invalid")
+
+    authority_fingerprint = hashlib.sha256(
+        json.dumps(
+            _plain(authority),
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+    if (
+        re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(
+                item.get(
+                    "valid_prelock_quarantine_authority_fingerprint"
+                )
+                or ""
+            ),
+        )
+        is None
+        or str(
+            item.get(
+                "valid_prelock_quarantine_authority_fingerprint"
+            )
+            or ""
+        )
+        != authority_fingerprint
+    ):
+        errors.append("quarantine_authority_fingerprint_invalid")
+    return sorted(set(errors))
+
+
+def _terminal_outcome_manifest_game_errors(
+    item: Dict[str, Any],
+    slate: str,
+    game: Dict[str, Any],
+) -> List[str]:
+    """Bind one immutable terminal row to the exact manifest game."""
+
+    errors: List[str] = []
+    expected_identity = game_identity(game)
+    expected_game_id = str(
+        game.get("game_id")
+        or game.get("gameId")
+        or game.get("id")
+        or ""
+    )
+    expected_official_pk = str(
+        game.get("officialGamePk")
+        or game.get("official_game_pk")
+        or ""
+    )
+    if str(item.get("slate_date") or "") != str(slate):
+        errors.append("terminal_manifest_slate_mismatch")
+    if str(item.get("game_identity") or "") != expected_identity:
+        errors.append("terminal_manifest_game_identity_mismatch")
+    if str(item.get("game_id") or "") != expected_game_id:
+        errors.append("terminal_manifest_game_id_mismatch")
+    if (
+        not expected_official_pk
+        or str(item.get("officialGamePk") or "") != expected_official_pk
+    ):
+        errors.append("terminal_manifest_official_game_pk_mismatch")
+
+    expected_start = _strict_utc_instant(
+        game.get("commence_time")
+        or game.get("commenceTime")
+        or game.get("gameDate")
+    )
+    terminal_start = _strict_utc_instant(item.get("commence_time"))
+    terminal_lock = _strict_utc_instant(
+        item.get("scheduled_lock_at_utc")
+    )
+    if expected_start is None or terminal_start != expected_start:
+        errors.append("terminal_manifest_start_mismatch")
+    if (
+        expected_start is None
+        or terminal_lock
+        != expected_start - timedelta(minutes=45)
+    ):
+        errors.append("terminal_manifest_lock_cutoff_mismatch")
+
+    row = (item.get("data") or {}).get("row")
+    if not isinstance(row, dict):
+        errors.append("terminal_manifest_team_row_missing")
+    else:
+        terminal_away = _norm_team(
+            row.get("awayTeam") or row.get("away_team")
+        )
+        terminal_home = _norm_team(
+            row.get("homeTeam") or row.get("home_team")
+        )
+        expected_away = _norm_team(
+            game.get("away_team") or game.get("awayTeam")
+        )
+        expected_home = _norm_team(
+            game.get("home_team") or game.get("homeTeam")
+        )
+        if (
+            not terminal_away
+            or not terminal_home
+            or (terminal_away, terminal_home)
+            != (expected_away, expected_home)
+        ):
+            errors.append("terminal_manifest_ordered_teams_mismatch")
+    return sorted(set(errors))
+
+
+def _exact_nonnegative_integer(
+    value: Any,
+    *,
+    error: str,
+) -> int:
+    if isinstance(value, bool):
+        raise ValueError(error)
+    try:
+        numeric = Decimal(str(value))
+    except Exception as exc:
+        raise ValueError(error) from exc
+    if (
+        not numeric.is_finite()
+        or numeric < 0
+        or numeric != numeric.to_integral_value()
+    ):
+        raise ValueError(error)
+    return int(numeric)
+
 def _terminal_outcome_for_public(
     module: Any,
     lock_module: Any,
@@ -263,14 +847,79 @@ def _terminal_outcome_for_public(
     if not item:
         return None, []
     errors: List[str] = []
+    errors.extend(_terminal_outcome_forbidden_fields(item))
     if item.get("record_type") != LOCK_OUTCOME_RECORD_TYPE or item.get("version") != LOCK_OUTCOME_VERSION:
         errors.append("lock_outcome_contract_mismatch")
     if str(item.get("slate_date") or "") != slate or str(item.get("game_identity") or "") != game_identity(game):
         errors.append("lock_outcome_identity_mismatch")
+    errors.extend(
+        _terminal_outcome_manifest_game_errors(
+            item,
+            slate,
+            game,
+        )
+    )
     if item.get("lock_outcome_fingerprint") != _record_fingerprint(item, "lock_outcome_fingerprint"):
         errors.append("lock_outcome_fingerprint_mismatch")
-    if item.get("lock_status") != "LOCKED_NO_PREDICTION_DATA":
+    outcome_status = str(item.get("lock_status") or "")
+    if outcome_status not in {
+        "LOCKED_NO_PREDICTION_DATA",
+        MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED,
+    }:
         errors.append("lock_outcome_status_mismatch")
+    terminal_base_exact = {
+        "lock_outcome_recorded": True,
+        "locked_prediction": False,
+        "canonical": False,
+        "canonical_prediction": False,
+        "official_prediction": False,
+        "playable": False,
+        "blocked": True,
+        "training_eligible": False,
+        "accuracy_eligible": False,
+        "wager_allowed": False,
+        "prediction_adopted": False,
+        "canonical_prediction_complete": False,
+        "post_start_prediction_creation_allowed": False,
+        "immutable_prediction_rewrite_allowed": False,
+        "write_once": True,
+    }
+    if any(
+        item.get(field) != value
+        for field, value in terminal_base_exact.items()
+    ):
+        errors.append("lock_outcome_terminal_flags_invalid")
+    if outcome_status == "LOCKED_NO_PREDICTION_DATA":
+        if item.get("operational_defect") is not False:
+            errors.append("lock_outcome_no_data_flags_invalid")
+    if (
+        outcome_status
+        == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+    ):
+        exact = {
+            "locked_prediction": False,
+            "canonical": False,
+            "canonical_prediction": False,
+            "official_prediction": False,
+            "playable": False,
+            "training_eligible": False,
+            "accuracy_eligible": False,
+            "wager_allowed": False,
+            "prediction_adopted": False,
+            "operational_defect": True,
+            "canonical_prediction_complete": False,
+            "post_start_prediction_creation_allowed": False,
+            "immutable_prediction_rewrite_allowed": False,
+            "write_once": True,
+        }
+        if any(item.get(field) != value for field, value in exact.items()):
+            errors.append("lock_outcome_quarantine_flags_invalid")
+        authority_errors = (
+            _valid_prelock_quarantine_authority_errors(item)
+        )
+        if authority_errors:
+            errors.append("lock_outcome_quarantine_authority_invalid")
+            errors.extend(authority_errors)
     if str(item.get("provider_manifest_fingerprint") or "") != str(manifest_authority.get("providerManifestFingerprint") or ""):
         errors.append("lock_outcome_manifest_fingerprint_mismatch")
     if str(item.get("provider_manifest_pk") or "") != str(manifest_authority.get("providerManifestPk") or ""):
@@ -278,8 +927,15 @@ def _terminal_outcome_for_public(
     if str(item.get("provider_manifest_sk") or "") != str(manifest_authority.get("providerManifestSk") or ""):
         errors.append("lock_outcome_manifest_sk_mismatch")
     try:
-        expected_count = int(manifest_authority.get("verifiedFullSlateGameCount"))
-        if int(item.get("manifest_game_count")) != expected_count:
+        expected_count = _exact_nonnegative_integer(
+            manifest_authority.get("verifiedFullSlateGameCount"),
+            error="manifest_authority_game_count_invalid",
+        )
+        item_count = _exact_nonnegative_integer(
+            item.get("manifest_game_count"),
+            error="terminal_manifest_game_count_invalid",
+        )
+        if item_count != expected_count:
             errors.append("lock_outcome_manifest_count_mismatch")
     except Exception:
         errors.append("lock_outcome_manifest_count_invalid")
@@ -648,52 +1304,118 @@ def _overlay_readiness(
     return out
 
 
-def _overlay_terminal_outcome(row: Dict[str, Any], outcome: Dict[str, Any]) -> Dict[str, Any]:
-    out = copy.deepcopy(row)
+def _overlay_terminal_outcome(
+    row: Dict[str, Any],
+    outcome: Dict[str, Any],
+) -> Dict[str, Any]:
+    # Terminal rows are lifecycle-only.  Rebuild from a strict schedule/team
+    # whitelist so an inherited or future candidate field can never survive.
+    safe_identity_fields = (
+        "sport",
+        "slate_date",
+        "slateDateEt",
+        "gameId",
+        "gameIdentity",
+        "gameKey",
+        "officialGamePk",
+        "officialGameId",
+        "providerEventId",
+        "providerCommenceTime",
+        "providerStartDriftSeconds",
+        "canonicalStartTimeSource",
+        "commenceTime",
+        "awayTeam",
+        "homeTeam",
+        "scheduledLockAtUtc",
+    )
+    out = {
+        field: copy.deepcopy(row.get(field))
+        for field in safe_identity_fields
+        if field in row
+    }
     reasons = sorted(set(
         list(outcome.get("playability_block_reasons") or [])
         + list(outcome.get("reasons") or [])
     ))
+    status = str(outcome.get("lock_status") or "")
+    quarantined = (
+        status == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+    )
     out.update({
         "predictedWinner": None,
         "predictedSide": None,
         "opponent": None,
-        "winProbability": None,
-        "winProbabilityPct": None,
-        "teamWinProbabilityPct": None,
-        "confidenceTier": None,
-        "score": None,
+        "prediction": None,
+        "pick": None,
+        "selection": None,
+        "locked": False,
+        "canonical": False,
+        "canonicalPrediction": False,
         "lockedPrediction": False,
         "officialPrediction": False,
         "officialPick": False,
+        "displayPrediction": False,
+        "isOfficialDisplayPick": False,
+        "fullDataFinalPick": False,
         "lockOutcomeRecorded": True,
-        "lockStatus": "LOCKED_NO_PREDICTION_DATA",
-        "officialPredictionStatus": "LOCKED_NO_PREDICTION_DATA",
-        "officialPredictionReason": "no_valid_immutable_pregame_prediction_at_tminus45",
-        "recommendationStatus": "LOCKED_NO_PREDICTION_DATA",
-        "displayGroup": "lock_outcome_no_prediction_data",
+        "lockStatus": status,
+        "officialPredictionStatus": status,
+        "officialPredictionReason": (
+            "valid_prelock_candidate_missed_lock_not_promoted"
+            if quarantined
+            else "no_valid_immutable_pregame_prediction_at_tminus45"
+        ),
+        "recommendationStatus": status,
+        "displayGroup": (
+            "lock_outcome_missed_lock_quarantine"
+            if quarantined
+            else "lock_outcome_no_prediction_data"
+        ),
         "playable": False,
         "playablePick": False,
         "actionablePick": False,
         "blocked": True,
         "releaseBlocked": True,
         "wagerReleaseBlocked": True,
+        "wagerAllowed": False,
+        "accuracyEligible": False,
+        "accuracyTargetEligible": False,
+        "playableAccuracyEligible": False,
+        "officialAccuracyEligible": False,
+        "settlementEligible": False,
         "playabilityStatus": "BLOCKED",
         "playabilityBlockReasons": reasons,
         "trainingEligible": False,
         "trainingEligibilityStatus": "INELIGIBLE",
-        "trainingExclusionReasons": list(outcome.get("training_exclusion_reasons") or []),
-        "terminalLockOutcome": copy.deepcopy(outcome),
-        "accuracyTargetEligible": False,
-        "officialAccuracyEligible": False,
-        "settlementEligible": False,
+        "trainingExclusionReasons": list(
+            outcome.get("training_exclusion_reasons") or []
+        ),
+        "terminalLockOutcome": _sanitized_terminal_outcome(outcome),
+        "predictionAdopted": False,
+        "operationalDefect": quarantined,
+        "canonicalPredictionComplete": False,
+        "perGameCanonicalLock": {
+            "authorityVersion": AUTHORITY_VERSION,
+            "status": status,
+            "lockAtUtc": row.get("scheduledLockAtUtc"),
+            "canonical": False,
+        },
+        "lastPossiblePredictionGate": {
+            "policyVersion": AUTHORITY_VERSION,
+            "phase": status,
+            "finalWindowActive": False,
+            "finalLocked": False,
+            "slateWideLock": False,
+            "perGameLock": True,
+            "lockAtUtc": row.get("scheduledLockAtUtc"),
+        },
+        "tags": sorted({
+            status,
+            "NOT_PLAYABLE",
+            "RELEASE_BLOCKED",
+        }),
     })
-    tags = {str(tag) for tag in (out.get("tags") or [])}
-    tags.update({"LOCKED_NO_PREDICTION_DATA", "NOT_PLAYABLE", "RELEASE_BLOCKED"})
-    tags.difference_update({"FINAL_LOCKED", "OFFICIAL_PREDICTION", "OFFICIAL_LOCKED_PREDICTION", "ACTIONABLE_PICK", "PLAYABLE_PREDICTION"})
-    out["tags"] = sorted(tags)
     return out
-
 
 def _latest_games(lock_module: Any, pulls: List[Dict[str, Any]], slate: str) -> List[Dict[str, Any]]:
     resolver = getattr(history_contract, "verified_full_slate_manifest", None)
@@ -770,7 +1492,60 @@ def _provider_manifest_for_public(
             "MLB_VERIFIED_FULL_SLATE_MANIFEST_INVALID:"
             "resolved_games_membership_mismatch"
         )
-    games = resolved_games
+    # Provider manifests intentionally omit official MLB identifiers.
+    # Recover gamePk only from the same immutable authority pull's raw game
+    # payload, and only through a unique exact provider identity plus ordered
+    # teams. This preserves strict terminal gamePk comparison and rejects
+    # same-count swaps instead of trusting the terminal row to self-identify.
+    raw_full_games = [
+        copy.deepcopy(game)
+        for game in (full_pull.get("games") or [])
+        if isinstance(game, dict)
+    ]
+    raw_by_identity: Dict[str, List[Dict[str, Any]]] = {}
+    for raw_game in raw_full_games:
+        raw_by_identity.setdefault(
+            game_identity(raw_game),
+            [],
+        ).append(raw_game)
+    games = []
+    for resolved_game in resolved_games:
+        enriched = copy.deepcopy(resolved_game)
+        if not _official_game_pk(enriched):
+            candidates = raw_by_identity.get(
+                game_identity(enriched),
+                [],
+            )
+            matching = [
+                candidate
+                for candidate in candidates
+                if (
+                    _norm_team(
+                        candidate.get("away_team")
+                        or candidate.get("awayTeam")
+                    ),
+                    _norm_team(
+                        candidate.get("home_team")
+                        or candidate.get("homeTeam")
+                    ),
+                )
+                == (
+                    _norm_team(
+                        enriched.get("away_team")
+                        or enriched.get("awayTeam")
+                    ),
+                    _norm_team(
+                        enriched.get("home_team")
+                        or enriched.get("homeTeam")
+                    ),
+                )
+                and _official_game_pk(candidate)
+            ]
+            if len(matching) == 1:
+                official_pk = _official_game_pk(matching[0])
+                enriched["officialGamePk"] = official_pk
+                enriched["official_game_pk"] = official_pk
+        games.append(enriched)
 
     manifest = full_pull.get("provider_schedule_manifest")
     binding = full_pull.get("provider_manifest_binding")
@@ -1410,6 +2185,7 @@ def _fail_closed(result: Dict[str, Any], error: str) -> Dict[str, Any]:
     out["lockedStatusCount"] = 0
     out["lockOutcomeCount"] = 0
     out["noPredictionDataCount"] = 0
+    out["missedLockValidPrelockQuarantineCount"] = 0
     out["allGamesPredicted"] = False
     out["predictionCoverageComplete"] = False
     out["displayStatusCoverageComplete"] = False
@@ -1604,12 +2380,28 @@ def apply(lock_module: Any):
             for identity, errors in terminal_lifecycle_validation_errors.items()
             if errors
         }
-        no_prediction_data_count = len(terminal_outcomes)
-        locked_status_count = canonical_count + no_prediction_data_count
+        no_prediction_data_count = sum(
+            str(outcome.get("lock_status") or "")
+            == "LOCKED_NO_PREDICTION_DATA"
+            for outcome in terminal_outcomes.values()
+        )
+        quarantine_count = sum(
+            str(outcome.get("lock_status") or "")
+            == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+            for outcome in terminal_outcomes.values()
+        )
+        locked_status_count = (
+            canonical_count + no_prediction_data_count + quarantine_count
+        )
         lock_status_complete = bool(manifest_ids) and locked_status_count == len(manifest_ids)
         pending_states = {
             game_identity(game): (
-                "LOCKED_NO_PREDICTION_DATA"
+                str(
+                    terminal_outcomes[game_identity(game)].get(
+                        "lock_status"
+                    )
+                    or ""
+                )
                 if game_identity(game) in terminal_outcomes
                 else _pending_status(
                     game,
@@ -1626,7 +2418,10 @@ def apply(lock_module: Any):
         ])
         missed_lock_count = len([
             value for value in pending_states.values()
-            if value == "MISSED_LOCK"
+            if value in {
+                "MISSED_LOCK",
+                MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED,
+            }
         ])
         winner_lifecycle_operational_defect = bool(
             query_error
@@ -1650,6 +2445,8 @@ def apply(lock_module: Any):
         lock_times = [value for value in lock_times if value]
         if all_canonical:
             lock_status = "COMPLETE_MANIFEST_ALL_CANONICAL"
+        elif lock_status_complete and quarantine_count:
+            lock_status = "COMPLETE_WITH_MISSED_LOCK_QUARANTINE"
         elif lock_status_complete:
             lock_status = "COMPLETE_WITH_NO_PREDICTION_DATA"
         elif missed_lock_count:
@@ -1682,6 +2479,7 @@ def apply(lock_module: Any):
             "lockedStatusCount": locked_status_count,
             "lockOutcomeCount": locked_status_count,
             "noPredictionDataCount": no_prediction_data_count,
+            "missedLockValidPrelockQuarantineCount": quarantine_count,
             "lockStatusComplete": lock_status_complete,
             "lockOutcomeCoveragePct": round(
                 locked_status_count / len(manifest_ids) * 100.0, 2
@@ -1797,7 +2595,7 @@ def apply(lock_module: Any):
                 )
             elif identity in terminal_outcomes:
                 cutoff = _per_game_cutoff(lock_module, game)
-                base = current.get(identity) or {
+                base = {
                     "sport": "mlb",
                     "slate_date": slate,
                     "slateDateEt": slate,
@@ -1910,6 +2708,7 @@ def apply(lock_module: Any):
             "lockedStatusCount": locked_status_count,
             "lockOutcomeCount": locked_status_count,
             "noPredictionDataCount": no_prediction_data_count,
+            "missedLockValidPrelockQuarantineCount": quarantine_count,
             "lockStatusComplete": lock_status_complete,
             "pendingCanonicalGameCount": max(len(manifest_ids) - canonical_count, 0),
             "pendingLockStatusGameCount": max(len(manifest_ids) - locked_status_count, 0),
@@ -1966,9 +2765,18 @@ def apply(lock_module: Any):
             row for row in predictions
             if row.get("lockStatus") == "LOCKED_NO_PREDICTION_DATA"
         ]
+        terminal_quarantined = [
+            row for row in predictions
+            if row.get("lockStatus")
+            == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+        ]
         prelock = [
             row for row in predictions
-            if row.get("lockedPrediction") is not True and row not in terminal_no_data
+            if (
+                row.get("lockedPrediction") is not True
+                and row not in terminal_no_data
+                and row not in terminal_quarantined
+            )
         ]
         playable = [row for row in predictions if row.get("playable") is True or row.get("playablePick") is True]
         non_playable_official = [row for row in official if row not in playable]
@@ -1989,6 +2797,7 @@ def apply(lock_module: Any):
             "lockedStatusCount": locked_status_count,
             "lockOutcomeCount": locked_status_count,
             "noPredictionDataCount": no_prediction_data_count,
+            "missedLockValidPrelockQuarantineCount": quarantine_count,
             "gameCount": len(manifest_ids),
             "count": len(predictions),
             "allGamesPredicted": winner_prediction_complete,
@@ -2002,6 +2811,9 @@ def apply(lock_module: Any):
             "vectorTrainingExcludedCount": vector_training_excluded_count,
             "preLockPredictionCount": len(prelock),
             "terminalNoPredictionDataDisplayCount": len(terminal_no_data),
+            "missedLockValidPrelockQuarantineDisplayCount": len(
+                terminal_quarantined
+            ),
             "playablePredictionCount": len(playable),
             "actionablePickCount": len(playable),
             "nonPlayableOfficialPredictionCount": len(non_playable_official),
@@ -2029,6 +2841,7 @@ def apply(lock_module: Any):
                 "canonicalPredictionComplete": all_canonical,
                 "lockedStatusCount": locked_status_count,
                 "noPredictionDataCount": no_prediction_data_count,
+            "missedLockValidPrelockQuarantineCount": quarantine_count,
                 "lockStatusComplete": lock_status_complete,
                 "pendingCanonicalGameCount": max(len(manifest_ids) - canonical_count, 0),
                 "pendingLockStatusGameCount": max(len(manifest_ids) - locked_status_count, 0),
@@ -2056,7 +2869,8 @@ def apply(lock_module: Any):
             "requiredGameLifecycleDisplay": lifecycle_cards,
             "officialPredictionDisplay": official_cards,
             "nonOfficialPredictionDisplay": prelock_cards + [
-                _display_card(row) for row in terminal_no_data
+                _display_card(row)
+                for row in [*terminal_no_data, *terminal_quarantined]
             ],
             "playablePredictionDisplay": playable_cards,
             "nonPlayableOfficialPredictionDisplay": [
@@ -2072,6 +2886,7 @@ def apply(lock_module: Any):
             "finalLockedCount": canonical_count,
             "lockedStatusCount": locked_status_count,
             "noPredictionDataCount": no_prediction_data_count,
+            "missedLockValidPrelockQuarantineCount": quarantine_count,
             "lockStatusComplete": lock_status_complete,
             "pendingCanonicalGameCount": max(len(manifest_ids) - canonical_count, 0),
             "pendingLockStatusGameCount": max(len(manifest_ids) - locked_status_count, 0),

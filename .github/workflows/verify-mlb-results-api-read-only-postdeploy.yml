@@ -34,6 +34,12 @@ jobs:
           fetch-depth: 1
 
       - name: Prove exact checkout and input lineage
+        env:
+          DEPLOY_WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          DEPLOY_WORKFLOW_PATH: ${{ github.event.workflow_run.path }}
+          DEPLOY_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          DEPLOY_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          DEPLOY_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$TARGET_DEPLOY_SHA"
@@ -41,11 +47,11 @@ jobs:
           case "$TARGET_DEPLOY_SHA" in
             *[!0-9a-fA-F]*) exit 1 ;;
           esac
-          test "${{ github.event.workflow_run.name }}" = "Deploy SAM to AWS"
-          test "${{ github.event.workflow_run.path }}" = ".github/workflows/deploy.yml"
-          test "${{ github.event.workflow_run.head_repository.full_name }}" = "$GITHUB_REPOSITORY"
-          test "${{ github.event.workflow_run.head_branch }}" = main
-          test "${{ github.event.workflow_run.conclusion }}" = success
+          test "$DEPLOY_WORKFLOW_NAME" = "Deploy SAM to AWS"
+          test "$DEPLOY_WORKFLOW_PATH" = ".github/workflows/deploy.yml"
+          test "$DEPLOY_HEAD_REPOSITORY" = "$GITHUB_REPOSITORY"
+          test "$DEPLOY_HEAD_BRANCH" = main
+          test "$DEPLOY_CONCLUSION" = success
           git fetch --no-tags --prune --depth=1000 origin main
           git merge-base --is-ancestor "$TARGET_DEPLOY_SHA" origin/main
 

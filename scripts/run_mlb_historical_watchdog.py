@@ -116,7 +116,10 @@ def _progressed_since_published(
 
 
 def validate_common_state(
-    state: Mapping[str, Any], *, expected_ceiling: str
+    state: Mapping[str, Any],
+    *,
+    expected_ceiling: str,
+    allow_active_rematerialization_lag: bool = False,
 ) -> Dict[str, Any]:
     phase = str(state.get("phase") or "")
     allowed = ACTIVE_PHASES | TERMINAL_PHASES | {WAITING_PHASE, "DATA_RANGE_EXHAUSTED"}
@@ -125,18 +128,28 @@ def validate_common_state(
     if phase not in allowed:
         raise ValueError(f"unexpected_historical_phase:{phase}")
 
-    if state.get("featureRematerializationComplete") is not True:
-        raise ValueError("feature_rematerialization_incomplete")
     rematerialized = _int(state.get("featureRematerializedSlateCount"))
     rematerialization_total = _int(
         state.get("featureRematerializationTotalSlateCount")
     )
     completed = _int(state.get("completeSlateCount"))
+    bounded_active_rematerialization_lag = bool(
+        allow_active_rematerialization_lag
+        and phase in ACTIVE_PHASES
+        and state.get("featureRematerializationComplete") is not True
+        and rematerialized == rematerialization_total
+        and completed - rematerialized == 1
+    )
+    if (
+        state.get("featureRematerializationComplete") is not True
+        and not bounded_active_rematerialization_lag
+    ):
+        raise ValueError("feature_rematerialization_incomplete")
     if rematerialized != rematerialization_total:
         raise ValueError("feature_rematerialization_counts_disagree")
     if completed and (
         rematerialized != completed or rematerialization_total != completed
-    ):
+    ) and not bounded_active_rematerialization_lag:
         raise ValueError("feature_rematerialization_does_not_cover_completed_slates")
     if state.get("featureRematerializationErrors"):
         raise ValueError("feature_rematerialization_errors_remain")
@@ -246,9 +259,12 @@ def validate_transition(
     expected_ceiling: str,
     published: Mapping[str, Any] | None = None,
     lease_held: bool = False,
+    allow_active_rematerialization_lag: bool = False,
 ) -> Dict[str, Any]:
     common = validate_common_state(
-        after, expected_ceiling=expected_ceiling
+        after,
+        expected_ceiling=expected_ceiling,
+        allow_active_rematerialization_lag=allow_active_rematerialization_lag,
     )
     phase = common["phase"]
     if phase == WAITING_PHASE:

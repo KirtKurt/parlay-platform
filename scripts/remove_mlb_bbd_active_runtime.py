@@ -221,9 +221,9 @@ jobs:
           LIMIT: ${{ inputs.limit || '25' }}
         run: |
           set -euo pipefail
-          gh workflow run mlb-v8-historical-context-backfill.yml \
-            --repo \"$GITHUB_REPOSITORY\" \
-            --ref main \
+          gh workflow run mlb-v8-historical-context-backfill.yml \\
+            --repo \"$GITHUB_REPOSITORY\" \\
+            --ref main \\
             --field limit=\"$LIMIT\"
           echo \"Dispatched provider-neutral V8 context workflow with limit=$LIMIT\"
 """

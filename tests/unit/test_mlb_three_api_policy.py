@@ -73,8 +73,9 @@ def test_daily_accuracy_uses_full_official_slate_denominator():
     assert result["goalMet"] is True
     assert result["completeOfficialSlateDenominator"] is True
 
+
 def test_daily_accuracy_preserves_explicit_false_and_rejects_empty_name_matches():
-    result = daily_accuracy(
+    result = policy.daily_accuracy(
         [
             {
                 "correct": False,
@@ -98,7 +99,7 @@ def test_daily_accuracy_preserves_explicit_false_and_rejects_empty_name_matches(
 
 
 def test_daily_accuracy_uses_normalized_team_names_without_explicit_label():
-    result = daily_accuracy(
+    result = policy.daily_accuracy(
         [{"predictedWinner": " New York Mets ", "actualWinner": "new york mets"}],
         official_game_count=1,
     )
@@ -108,4 +109,3 @@ def test_daily_accuracy_uses_normalized_team_names_without_explicit_label():
     assert result["dailyAccuracy"] == 1
     assert result["goalMet"] is True
     assert result["completeOfficialSlateDenominator"] is True
-

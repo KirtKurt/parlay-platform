@@ -6,6 +6,15 @@ import re
 from pathlib import Path
 from typing import List
 
+try:
+    from scripts.verify_mlb_postdeploy_workflow_authority import (
+        verify_repository as verify_postdeploy_repository,
+    )
+except ImportError:  # pragma: no cover - direct script execution
+    from verify_mlb_postdeploy_workflow_authority import (
+        verify_repository as verify_postdeploy_repository,
+    )
+
 
 ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN_RETIRED_WORKFLOWS = (
@@ -176,6 +185,7 @@ def _verify_read_only_hot_sides(root: Path) -> List[str]:
 
 def verify_repository(root: Path = ROOT) -> List[str]:
     errors: List[str] = _verify_read_only_hot_sides(root)
+    errors.extend(verify_postdeploy_repository(root))
     for relative in FORBIDDEN_RETIRED_WORKFLOWS:
         if (root / relative).exists():
             errors.append(f"forbidden_retired_workflow_present:{relative}")

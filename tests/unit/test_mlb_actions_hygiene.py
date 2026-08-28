@@ -106,6 +106,7 @@ SCHEDULED_MLB_WORKFLOWS = {
     "mlb-30m-progress-pulse.yml",
     "mlb-daily-yesterday-audit.yml",
     "mlb-fresh-audit-publisher.yml",
+    "mlb-progress-pulse-cadence-watchdog.yml",
     "mlb-scoring-guard.yml",
     "mlb-three-source-runtime-watch-v3.yml",
 }
@@ -240,6 +241,7 @@ def test_only_pulse_and_independent_producers_keep_recurring_mlb_schedules() -> 
         "mlb-30m-progress-pulse.yml": ["11,41 * * * *"],
         "mlb-daily-yesterday-audit.yml": ["0 9 * * *"],
         "mlb-fresh-audit-publisher.yml": ["35 5 * * *", "35 6 * * *"],
+        "mlb-progress-pulse-cadence-watchdog.yml": ["4/5 * * * *"],
         "mlb-scoring-guard.yml": ["7/15 * * * *"],
         "mlb-three-source-runtime-watch-v3.yml": ["*/15 * * * *"],
     }
@@ -247,7 +249,7 @@ def test_only_pulse_and_independent_producers_keep_recurring_mlb_schedules() -> 
         schedule = _triggers(WORKFLOWS / filename)["schedule"]
         assert [entry["cron"] for entry in schedule] == crons
 
-    # 243 MLB-scoped runs/day plus the existing shared official hourly job.
+    # 531 MLB-scoped runs/day plus the existing shared official hourly job.
     assert _triggers(WORKFLOWS / "official-hourly-parlays.yml")["schedule"] == [
         {"cron": "7 * * * *"}
     ]
@@ -260,14 +262,25 @@ def test_pulse_keeps_independent_staleness_gated_fallback_producers() -> None:
         "MLB Canonical Runtime Health Watch",
         "MLB Scoring Guard",
         "Deploy SAM to AWS",
+        "Verify MLB Scoring Fix After Deploy",
         "MLB Production Source Contract",
         "Unified MLB learning recovery once",
+        "MLB Daily Yesterday Audit",
+        "Tennis Autonomy Status Backstop",
+        "Publish Tennis Autonomy Status",
+        "NFL Auto AWS Stack Probe",
     ]
     assert workflow_run["types"] == ["completed"]
+    assert workflow_run["branches"] == ["main"]
     assert pulse["push"]["paths"][-1] == "runtime_reports/mlb_*.json"
 
     source = (WORKFLOWS / "mlb-30m-progress-pulse.yml").read_text(encoding="utf-8")
-    assert '[ "$EVENT_NAME" = "workflow_run" ] || [ "$EVENT_NAME" = "push" ]' in source
+    assert (
+        'if [ "$EVENT_NAME" = "workflow_dispatch" ] '
+        '&& [ "$WORKFLOW_DISPATCH_FORCE" = "true" ]; then'
+    ) in source
+    assert "python scripts/check_mlb_progress_pulse_staleness.py" in source
+    assert '--current-run-id "$GITHUB_RUN_ID"' in source
 
 
 def test_trainer_deploy_diagnostic_is_manual_read_only_status() -> None:

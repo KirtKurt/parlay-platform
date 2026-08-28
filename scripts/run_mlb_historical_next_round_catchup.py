@@ -86,7 +86,11 @@ def summarize_state(state: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def classify_state(state: Mapping[str, Any], *, expected_ceiling: str) -> str:
-    common = watchdog.validate_common_state(state, expected_ceiling=expected_ceiling)
+    common = watchdog.validate_common_state(
+        state,
+        expected_ceiling=expected_ceiling,
+        allow_active_rematerialization_lag=True,
+    )
     phase = str(common.get("phase") or "")
     complete = _int(state.get("completeSlateCount"))
     rematerialized = _int(state.get("featureRematerializedSlateCount"))
@@ -191,7 +195,14 @@ def run(*, region: str, stack_name: str, expected_handler: str, expected_max_cre
                 raise RuntimeError("production_authority_changed_during_catchup")
             current_action = classify_state(current, expected_ceiling=ceiling)
             if str(current.get("phase") or "") in watchdog.ACTIVE_PHASES:
-                watchdog.validate_transition(previous, current, expected_ceiling=ceiling, published=baseline, lease_held=False)
+                watchdog.validate_transition(
+                    previous,
+                    current,
+                    expected_ceiling=ceiling,
+                    published=baseline,
+                    lease_held=False,
+                    allow_active_rematerialization_lag=True,
+                )
             progress.append({"attempt": attempt, "observedAtUtc": datetime.now(timezone.utc).isoformat(), "action": current_action, **summarize_state(current)})
             final = current
             previous = current

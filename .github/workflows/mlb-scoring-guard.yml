@@ -25,7 +25,7 @@ on:
     - cron: '7/15 * * * *'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: mlb-scoring-guard-${{ github.head_ref || github.ref_name }}
@@ -51,6 +51,22 @@ jobs:
             tests/unit/test_mlb_scoring_runtime_capacity.py
           python scripts/verify_mlb_schedule_invariants.py
           python -m py_compile scripts/mlb_scoring_guard_status.py
+
+  live-scoring-proof:
+    if: github.event_name != 'pull_request'
+    needs: scoring-proof
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install read-only guard runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

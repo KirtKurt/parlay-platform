@@ -103,8 +103,9 @@ def validate_lock_result(
     game_count = official["gameCount"]
     canonical = official["lockedPredictionCount"]
     terminal = official["terminalNoPredictionCount"]
+    quarantine = official["missedLockValidPrelockQuarantineCount"]
     locked_statuses = official["lockedStatusCount"]
-    if locked_statuses != canonical + terminal:
+    if locked_statuses != canonical + terminal + quarantine:
         raise base.ReconciliationError("official_status_terminal_counts_inconsistent")
     if game_count and locked_statuses != game_count:
         raise base.ReconciliationError("official_status_terminal_coverage_incomplete")
@@ -112,12 +113,17 @@ def validate_lock_result(
     mutation_manifest = None
     mutation_canonical = None
     mutation_terminal = None
+    mutation_quarantine = None
     mutation_outcomes = None
     if isinstance(progress, Mapping):
         for field, target in (
             ("manifestGameCount", "mutation_manifest"),
             ("canonicalCount", "mutation_canonical"),
             ("noPredictionDataCount", "mutation_terminal"),
+            (
+                "missedLockValidPrelockQuarantineCount",
+                "mutation_quarantine",
+            ),
             ("lockOutcomeCount", "mutation_outcomes"),
         ):
             value = progress.get(field)
@@ -130,6 +136,8 @@ def validate_lock_result(
                 mutation_canonical = parsed
             elif target == "mutation_terminal":
                 mutation_terminal = parsed
+            elif target == "mutation_quarantine":
+                mutation_quarantine = parsed
             else:
                 mutation_outcomes = parsed
 
@@ -138,14 +146,26 @@ def validate_lock_result(
         "manifestGameCount": game_count,
         "canonicalPredictionCount": canonical,
         "terminalNoPredictionCount": terminal,
+        "missedLockValidPrelockQuarantineCount": quarantine,
+        "terminalExcludedCount": terminal + quarantine,
         "lockOutcomeCount": locked_statuses,
         "offDay": game_count == 0,
         "officialStatusReadBound": True,
+        "lifecycleGames": official["lifecycleGames"],
+        "lifecycleGameSetFingerprint": official[
+            "lifecycleGameSetFingerprint"
+        ],
+        "providerManifestFingerprint": official[
+            "providerManifestFingerprint"
+        ],
         "terminalCoverageAuthority": "official_exact_date_read_status",
         "mutationDiagnosticsProviderScoped": True,
         "mutationManifestGameCount": mutation_manifest,
         "mutationCanonicalPredictionCount": mutation_canonical,
         "mutationTerminalNoPredictionCount": mutation_terminal,
+        "mutationMissedLockValidPrelockQuarantineCount": (
+            mutation_quarantine
+        ),
         "mutationLockOutcomeCount": mutation_outcomes,
         "protectedTerminalReconciliationVerified": terminal_repair_complete,
     }

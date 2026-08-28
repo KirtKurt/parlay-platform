@@ -44,6 +44,9 @@ PULSE_TARGET_CADENCE_MINUTES = int(
 PULSE_CADENCE_GRACE_MINUTES = int(
     os.environ.get("MLB_PROGRESS_CADENCE_GRACE_MINUTES", "5")
 )
+AUTO_FINAL_COLLECTION_WINDOW_MINUTES = int(
+    os.environ.get("MLB_AUTO_FINAL_COLLECTION_WINDOW_MINUTES", "20")
+)
 CANONICAL_R7_RECOVERY_WORKFLOW = "unified-mlb-learning-recovery-once.yml"
 LEGACY_R7_REPAIR_WORKFLOW = "repair-mlb-training-continuity-now.yml"
 
@@ -358,6 +361,178 @@ def _first_not_none(*values: Any) -> Any:
     return None
 
 
+def _datetime_utc(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _authority_readiness(
+    *,
+    model_http: Optional[int],
+    model: Mapping[str, Any],
+    today_http: Optional[int],
+    today: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Require explicit authority evidence before calling a card suppressed."""
+    fail_closed_fields = {
+        "publicationClosed": True,
+        "productionSelectionAllowed": False,
+        "qualifiedChampionRequired": True,
+        "qualifiedChampionPresent": False,
+        "r7ChampionQualified": False,
+        "primaryAlgorithmActive": False,
+        "retiredAuthoritySuppressed": True,
+        "retiredV15_10Eligible": False,
+        "legacyFallbackAllowed": False,
+        "automaticLegacyRestoreAllowed": False,
+    }
+    no_champion_claimed = (
+        model_http == 503
+        and model.get("ok") is False
+        and model.get("status") == "NO_QUALIFIED_CHAMPION"
+        and model.get("error") == "NO_QUALIFIED_CHAMPION"
+    )
+    if no_champion_claimed:
+        errors: list[str] = []
+        for source_name, payload in (("MODEL", model), ("TODAY", today)):
+            for field, expected in fail_closed_fields.items():
+                if payload.get(field) is not expected:
+                    errors.append(f"{source_name}_{field}_MISMATCH")
+        if today_http != 503:
+            errors.append("TODAY_HTTP_STATUS_NOT_503")
+        if today.get("ok") is not False:
+            errors.append("TODAY_OK_NOT_FALSE")
+        if today.get("status") != "NO_QUALIFIED_CHAMPION":
+            errors.append("TODAY_STATUS_NOT_NO_QUALIFIED_CHAMPION")
+        if today.get("error") != "NO_QUALIFIED_CHAMPION":
+            errors.append("TODAY_ERROR_NOT_NO_QUALIFIED_CHAMPION")
+        for source_name, payload in (("MODEL", model), ("TODAY", today)):
+            if payload.get("requestedAuthority") != "AWS_ML_PROSPECTIVE_R7":
+                errors.append(f"{source_name}_REQUESTED_AUTHORITY_INVALID")
+            for field in (
+                "model_version",
+                "primaryAlgorithm",
+                "soleProductionAlgorithm",
+                "game_winner_model",
+                "r7DeploymentIdentity",
+            ):
+                if payload.get(field) not in (None, ""):
+                    errors.append(f"{source_name}_{field.upper()}_MUST_BE_EMPTY")
+        if type(today.get("count")) is not int or today.get("count") != 0:
+            errors.append("TODAY_WINNER_PREDICTION_COUNT_NOT_ZERO")
+        for field in ("winner_predictions", "predictions"):
+            if today.get(field) != []:
+                errors.append(f"TODAY_{field.upper()}_NOT_EMPTY")
+        if not errors:
+            return {
+                "state": "NO_QUALIFIED_CHAMPION_SUPPRESSED",
+                "valid": True,
+                "errors": [],
+            }
+        return {
+            "state": "AUTHORITY_READINESS_UNKNOWN",
+            "valid": False,
+            "errors": errors,
+        }
+
+    qualified = (
+        model_http == 200
+        and model.get("ok") is True
+        and today_http == 200
+        and today.get("ok") is True
+        and model.get("publicationClosed") is False
+        and model.get("productionSelectionAllowed") is True
+        and model.get("qualifiedChampionRequired") is True
+        and model.get("qualifiedChampionPresent") is True
+        and model.get("r7ChampionQualified") is True
+        and model.get("primaryAlgorithmActive") is True
+        and model.get("requestedAuthority") == "AWS_ML_PROSPECTIVE_R7"
+        and bool(model.get("model_version"))
+        and bool(model.get("primaryAlgorithm"))
+        and bool(model.get("r7DeploymentIdentity"))
+    )
+    if qualified:
+        return {
+            "state": "QUALIFIED_AUTHORITY_READY",
+            "valid": True,
+            "errors": [],
+        }
+    return {
+        "state": "AUTHORITY_READINESS_UNKNOWN",
+        "valid": False,
+        "errors": ["AUTHORITY_STATE_NOT_EXPLICITLY_FAIL_CLOSED_OR_QUALIFIED"],
+    }
+
+
+def _publication_timing(
+    auto: Mapping[str, Any],
+    *,
+    now: datetime,
+    authority_readiness_state: Optional[str] = None,
+) -> dict[str, Any]:
+    """Classify publication timing without treating a pre-window card as late."""
+    observed_now = now
+    if observed_now.tzinfo is None:
+        observed_now = observed_now.replace(tzinfo=timezone.utc)
+    observed_now = observed_now.astimezone(timezone.utc)
+
+    scheduled_games = _integer(auto.get("scheduledGames")) or 0
+    card_published = auto.get("cardPublished") is True
+    deadline = _first_mapping(auto.get("deadline"))
+    publish_deadline = _datetime_utc(deadline.get("publishDeadlineUtc"))
+    first_game = _datetime_utc(deadline.get("firstGameUtc"))
+    explicit_window = _first_not_none(
+        auto.get("nextFinalWindowAtUtc"),
+        deadline.get("finalWindowStartUtc"),
+    )
+    final_window_start = _datetime_utc(explicit_window)
+    if final_window_start is None and publish_deadline is not None:
+        final_window_start = publish_deadline - timedelta(
+            minutes=AUTO_FINAL_COLLECTION_WINDOW_MINUTES
+        )
+
+    if card_published:
+        phase = "PUBLISHED"
+    elif scheduled_games == 0:
+        phase = "NO_GAMES"
+    elif publish_deadline is None or final_window_start is None:
+        phase = "DEADLINE_UNAVAILABLE"
+    elif observed_now < final_window_start:
+        phase = "COLLECTING_NOT_DUE"
+    elif observed_now <= publish_deadline:
+        phase = "FINAL_WINDOW"
+    elif authority_readiness_state == "NO_QUALIFIED_CHAMPION_SUPPRESSED":
+        phase = "AUTHORITY_READINESS_GATED"
+    else:
+        phase = "DEADLINE_MISSED"
+
+    def minutes_until(value: Optional[datetime]) -> Optional[float]:
+        if value is None:
+            return None
+        return round((value - observed_now).total_seconds() / 60.0, 3)
+
+    return {
+        "publicationPhase": phase,
+        "firstGameUtc": first_game.isoformat() if first_game else None,
+        "finalWindowStartUtc": (
+            final_window_start.isoformat() if final_window_start else None
+        ),
+        "publishDeadlineUtc": (
+            publish_deadline.isoformat() if publish_deadline else None
+        ),
+        "finalCollectionWindowMinutes": AUTO_FINAL_COLLECTION_WINDOW_MINUTES,
+        "minutesUntilFinalWindow": minutes_until(final_window_start),
+        "minutesUntilDeadline": minutes_until(publish_deadline),
+    }
+
+
 def _grading_count(value: Any, field: str, errors: list[str]) -> Optional[int]:
     parsed = _number(value)
     if parsed is None:
@@ -381,6 +556,7 @@ def _grading_cohort(
     graded_field: str,
     correct_field: str,
     accuracy_field: str,
+    target_accuracy: Optional[float],
     recent_days_field: Optional[str] = None,
 ) -> dict[str, Any]:
     """Extract one grading cohort atomically and verify its arithmetic.
@@ -400,6 +576,8 @@ def _grading_cohort(
         "accuracy": None,
         "reportedAccuracy": None,
         "expectedAccuracy": None,
+        "targetAccuracy": target_accuracy,
+        "targetMet": None,
         "recentDays": None,
         "errors": [],
     }
@@ -431,6 +609,15 @@ def _grading_cohort(
             errors.append("ACCURACY_PRESENT_WITH_ZERO_GRADED_PICKS")
 
     valid = not errors
+    target_met: Optional[bool] = None
+    if (
+        valid
+        and graded
+        and reported_accuracy is not None
+        and target_accuracy is not None
+        and 0.0 <= target_accuracy <= 1.0
+    ):
+        target_met = reported_accuracy >= target_accuracy
     result.update(
         {
             "valid": valid,
@@ -439,6 +626,7 @@ def _grading_cohort(
             "accuracy": reported_accuracy if valid and graded else None,
             "reportedAccuracy": reported_accuracy,
             "expectedAccuracy": expected_accuracy,
+            "targetMet": target_met,
             "recentDays": recent_days,
             "errors": errors,
         }
@@ -456,7 +644,12 @@ def _extract_state(
     auto_errors_35m: Optional[float],
     continuity_run: Mapping[str, Any],
     discovery_errors: list[str],
+    now: Optional[datetime] = None,
 ) -> dict[str, Any]:
+    observed_now = now or datetime.now(timezone.utc)
+    if observed_now.tzinfo is None:
+        observed_now = observed_now.replace(tzinfo=timezone.utc)
+    observed_now = observed_now.astimezone(timezone.utc)
     model_http, model = _unwrap_api(model_invocation)
     today_http, today = _unwrap_api(today_invocation)
     auto_http, auto = _unwrap_api(auto_invocation)
@@ -531,6 +724,17 @@ def _extract_state(
     errors = _number(auto_errors_35m)
     error_rate = errors / invocations if invocations and errors is not None else None
     slate_date = str(auto.get("slateDateEt") or "unknown")
+    target_accuracy = _normalise_accuracy(
+        _number(
+            _first_not_none(
+                auto.get("targetDailyAccuracy"),
+                autonomy.get("targetDailyAccuracy"),
+                audit.get("target"),
+            )
+        )
+    )
+    if target_accuracy is not None and not 0.0 <= target_accuracy <= 1.0:
+        target_accuracy = None
     current_slate_grading = _grading_cohort(
         audit,
         available=isinstance(audit_value, Mapping),
@@ -539,6 +743,7 @@ def _extract_state(
         graded_field="graded",
         correct_field="correct",
         accuracy_field="accuracy",
+        target_accuracy=target_accuracy,
     )
     trailing_grading = _grading_cohort(
         autonomy,
@@ -548,6 +753,7 @@ def _extract_state(
         graded_field="recentGradedPicks",
         correct_field="recentCorrectPicks",
         accuracy_field="recentAccuracy",
+        target_accuracy=target_accuracy,
         recent_days_field="recentDays",
     )
     if current_slate_grading["available"]:
@@ -563,8 +769,26 @@ def _extract_state(
             "gradedPicks": None,
             "correctPicks": None,
             "accuracy": None,
+            "targetAccuracy": target_accuracy,
+            "targetMet": None,
             "errors": [],
         }
+
+    authority_readiness = _authority_readiness(
+        model_http=model_http,
+        model=model,
+        today_http=today_http,
+        today=today,
+    )
+    authority_evidence_slate = observed_now.astimezone(ET).date().isoformat()
+    authority_evidence_applies = slate_date == authority_evidence_slate
+    publication_timing = _publication_timing(
+        auto,
+        now=observed_now,
+        authority_readiness_state=(
+            authority_readiness["state"] if authority_evidence_applies else None
+        ),
+    )
 
     training_status = latest.get("status")
     model_trained = bool(
@@ -606,6 +830,16 @@ def _extract_state(
             blockers.append(str(value))
     if model.get("status") == "NO_QUALIFIED_CHAMPION":
         blockers.append("NO_QUALIFIED_CHAMPION")
+    if authority_readiness["valid"] is not True:
+        blockers.append(
+            "MLB_AUTHORITY_READINESS_UNKNOWN:"
+            + ",".join(str(item) for item in authority_readiness["errors"])
+        )
+    if not authority_evidence_applies:
+        blockers.append(
+            f"MLB_AUTO_AUTHORITY_EVIDENCE_SLATE_MISMATCH:"
+            f"{authority_evidence_slate}/{slate_date}"
+        )
     if errors and errors > 0:
         blockers.append(f"MLB_AUTO_LAMBDA_ERRORS_35M:{int(errors)}")
     if authority_counts["UNKNOWN"] > 0:
@@ -629,9 +863,19 @@ def _extract_state(
                 f"MLB_AUTO_{blocker_name}_GRADING_INVALID:"
                 + ",".join(str(item) for item in cohort.get("errors") or [])
             )
+        if cohort.get("targetMet") is False:
+            blockers.append(
+                f"MLB_AUTO_{blocker_name}_ACCURACY_BELOW_TARGET:"
+                f"{cohort.get('correctPicks')}/{cohort.get('gradedPicks')}:"
+                f"{_fmt_pct(cohort.get('accuracy'))}<{_fmt_pct(target_accuracy)}"
+            )
+    if publication_timing["publicationPhase"] == "DEADLINE_MISSED":
+        blockers.append("MLB_AUTO_PUBLICATION_DEADLINE_MISSED")
+    elif publication_timing["publicationPhase"] == "DEADLINE_UNAVAILABLE":
+        blockers.append("MLB_AUTO_PUBLICATION_DEADLINE_UNAVAILABLE")
 
     state = {
-        "generatedAtUtc": datetime.now(timezone.utc).isoformat(),
+        "generatedAtUtc": observed_now.isoformat(),
         "experimentId": R7_EXPERIMENT_ID,
         "mlb": {
             "endpointHttpStatus": model_http,
@@ -646,6 +890,11 @@ def _extract_state(
             "retiredV15_10Eligible": bool(model.get("retiredV15_10Eligible") is True),
             "r7DeploymentIdentity": model.get("r7DeploymentIdentity"),
             "apiRuntimeVersion": model.get("apiRuntimeVersion"),
+            "authorityReadinessState": authority_readiness["state"],
+            "authorityReadinessValid": authority_readiness["valid"],
+            "authorityReadinessErrors": list(authority_readiness["errors"]),
+            "authorityEvidenceSlateDateEt": authority_evidence_slate,
+            "authorityEvidenceAppliesToAutoSlate": authority_evidence_applies,
         },
         "mlbAuto": {
             "httpStatus": auto_http,
@@ -660,25 +909,20 @@ def _extract_state(
             "gradingCohort": primary_grading.get("name"),
             "gradingCohortKey": primary_grading.get("key"),
             "gradingValid": primary_grading.get("valid"),
+            "gradingTargetMet": primary_grading.get("targetMet"),
             "gradingErrors": list(primary_grading.get("errors") or []),
             "gradedPicks": primary_grading.get("gradedPicks"),
             "correctPicks": primary_grading.get("correctPicks"),
             "accuracy": primary_grading.get("accuracy"),
             "currentSlateGrading": current_slate_grading,
             "trailing14DayGrading": trailing_grading,
-            "targetAccuracy": _normalise_accuracy(
-                _number(
-                    _first_not_none(
-                        auto.get("targetDailyAccuracy"),
-                        autonomy.get("targetDailyAccuracy"),
-                    )
-                )
-            ),
+            "targetAccuracy": target_accuracy,
             "invocations35m": invocations,
             "errors35m": errors,
             "errorRate35m": error_rate,
             "functionName": auto_invocation.get("functionName"),
             "serviceVersion": auto.get("version"),
+            **publication_timing,
         },
         "r7": {
             "statusReadOk": bool(r7.get("ok") is True),
@@ -862,6 +1106,21 @@ def _grading_delta(
     return _numeric_delta(state, previous, f"mlbAuto.{metric}")
 
 
+def _slate_delta(
+    state: Mapping[str, Any],
+    previous: Optional[Mapping[str, Any]],
+    metric: str,
+) -> Optional[float]:
+    """Avoid treating the normal daily card reset as a regression."""
+    if previous is None:
+        return None
+    current_slate = _path_value(state, "mlbAuto.slateDateEt")
+    previous_slate = _path_value(previous, "mlbAuto.slateDateEt")
+    if not current_slate or current_slate != previous_slate:
+        return None
+    return _numeric_delta(state, previous, f"mlbAuto.{metric}")
+
+
 def _date_delta(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]], path: str) -> Optional[int]:
     current = _path_value(state, path)
     before = _path_value(previous, path)
@@ -920,6 +1179,31 @@ def _progress(current: int, target: int) -> str:
     return f"{current:,}/{target:,} ({pct:.1%})"
 
 
+def _grading_indicator(cohort: Mapping[str, Any]) -> str:
+    if cohort.get("available") is not True:
+        return "⚪ unavailable"
+    if cohort.get("valid") is not True:
+        return "🔴 telemetry invalid"
+    if cohort.get("targetMet") is True:
+        return "🟢 telemetry valid · 🟢 target met"
+    if cohort.get("targetMet") is False:
+        return "🟢 telemetry valid · 🔴 target missed"
+    return "🟢 telemetry valid · ⚪ target not evaluated"
+
+
+def _publication_indicator(auto: Mapping[str, Any]) -> str:
+    phase = auto.get("publicationPhase")
+    return {
+        "PUBLISHED": "🟢 published",
+        "COLLECTING_NOT_DUE": "⚪ collecting; not due",
+        "FINAL_WINDOW": "🟡 final window",
+        "AUTHORITY_READINESS_GATED": "🟡 authority readiness gated",
+        "DEADLINE_MISSED": "🔴 deadline missed",
+        "DEADLINE_UNAVAILABLE": "🔴 deadline unavailable",
+        "NO_GAMES": "⚪ no games",
+    }.get(str(phase), "⚪ unknown")
+
+
 def _overall_direction(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) -> tuple[str, int, int]:
     positive = 0
     negative = 0
@@ -931,13 +1215,17 @@ def _overall_direction(state: Mapping[str, Any], previous: Optional[Mapping[str,
         "r7.processedSlateCount",
         "r7.finalizedSlateCount",
         "r7.selectionCapturedCount",
-        "mlbAuto.pickCount",
     ):
         delta = _numeric_delta(state, previous, path)
         if delta is not None and delta > 0:
             positive += 1
         elif delta is not None and delta < 0:
             negative += 1
+    pick_delta = _slate_delta(state, previous, "pickCount")
+    if pick_delta is not None and pick_delta > 0:
+        positive += 1
+    elif pick_delta is not None and pick_delta < 0:
+        negative += 1
     for metric in ("gradedPicks", "correctPicks"):
         delta = _grading_delta(state, previous, metric)
         if delta is not None and delta > 0:
@@ -962,7 +1250,16 @@ def _overall_direction(state: Mapping[str, Any], previous: Optional[Mapping[str,
         positive += 1
     elif error_delta is not None and error_delta > 0:
         negative += 1
+    publication_phase = _path_value(state, "mlbAuto.publicationPhase")
+    if publication_phase in {"DEADLINE_MISSED", "DEADLINE_UNAVAILABLE"}:
+        negative += 1
     if previous is None:
+        if publication_phase == "DEADLINE_MISSED":
+            return "🔴 PUBLICATION DEADLINE MISSED", positive, negative
+        if publication_phase == "DEADLINE_UNAVAILABLE":
+            return "🔴 PUBLICATION TIMING UNAVAILABLE", positive, negative
+        if publication_phase == "AUTHORITY_READINESS_GATED":
+            return "🟡 AUTHORITY READINESS GATED", positive, negative
         return "⚪ BASELINE ESTABLISHED", positive, negative
     if positive > 0 and negative == 0:
         return "🟢 MOVING FORWARD", positive, negative
@@ -970,6 +1267,14 @@ def _overall_direction(state: Mapping[str, Any], previous: Optional[Mapping[str,
         return "🟢 NET FORWARD", positive, negative
     if negative > positive:
         return "🔴 REGRESSION DETECTED", positive, negative
+    if publication_phase == "COLLECTING_NOT_DUE":
+        return "🟡 COLLECTING / NOT DUE", positive, negative
+    if publication_phase == "FINAL_WINDOW":
+        return "🟡 FINAL PUBLICATION WINDOW", positive, negative
+    if publication_phase == "AUTHORITY_READINESS_GATED":
+        return "🟡 AUTHORITY READINESS GATED", positive, negative
+    if publication_phase == "NO_GAMES":
+        return "🟡 NO GAMES SCHEDULED", positive, negative
     return "🟡 FLAT / BLOCKED", positive, negative
 
 
@@ -991,7 +1296,7 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
     inv_delta = _numeric_delta(state, previous, "mlbAuto.invocations35m")
     err_delta = _numeric_delta(state, previous, "mlbAuto.errors35m")
     error_rate_delta = _numeric_delta(state, previous, "mlbAuto.errorRate35m")
-    picks_delta = _numeric_delta(state, previous, "mlbAuto.pickCount")
+    picks_delta = _slate_delta(state, previous, "pickCount")
     graded_delta = _grading_delta(state, previous, "gradedPicks")
     pred_delta = _numeric_delta(state, previous, "mlb.winnerPredictionCount")
 
@@ -1046,13 +1351,14 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
         f"| Lambda invocations, last 35m | {_fmt_int(auto.get('invocations35m'))} | {_fmt_delta(inv_delta)} | {_arrow(inv_delta)} |",
         f"| Lambda errors, last 35m | {_fmt_int(auto.get('errors35m'))} | {_fmt_delta(err_delta)} | {_arrow(err_delta, lower_is_better=True)} |",
         f"| Error rate, last 35m | {_fmt_pct(error_rate)} | {_fmt_delta(error_rate_delta, percent=True)} | {_arrow(error_rate_delta, lower_is_better=True)} |",
-        f"| Scheduled games / published picks | {_fmt_int(auto.get('scheduledGames'))} / {_fmt_int(auto.get('pickCount'))} | {_fmt_delta(picks_delta)} picks | {_arrow(picks_delta)} |",
+        f"| Scheduled games / published picks | {_fmt_int(auto.get('scheduledGames'))} / {_fmt_int(auto.get('pickCount'))} | {_fmt_delta(picks_delta)} picks | {_publication_indicator(auto)} |",
         f"| Bedrock / R7 / unknown authority picks | {_fmt_int(auto.get('bedrockPickCount'))} / {_fmt_int(auto.get('r7AuthorityPickCount'))} / {_fmt_int(auto.get('unknownAuthorityPickCount'))} | — | — |",
-        f"| Current-slate graded / correct / accuracy | {_fmt_int(current_grading.get('gradedPicks'))} / {_fmt_int(current_grading.get('correctPicks'))} / {_fmt_pct(current_grading.get('accuracy'))} | — | {'🟢 valid' if current_grading.get('valid') is True else '🔴 invalid' if current_grading.get('valid') is False else '⚪ unavailable'} |",
-        f"| Trailing-14-day graded / correct / accuracy | {_fmt_int(trailing_grading.get('gradedPicks'))} / {_fmt_int(trailing_grading.get('correctPicks'))} / {_fmt_pct(trailing_grading.get('accuracy'))} | — | {'🟢 valid' if trailing_grading.get('valid') is True else '🔴 invalid' if trailing_grading.get('valid') is False else '⚪ unavailable'} |",
+        f"| Current-slate graded / correct / accuracy | {_fmt_int(current_grading.get('gradedPicks'))} / {_fmt_int(current_grading.get('correctPicks'))} / {_fmt_pct(current_grading.get('accuracy'))} | — | {_grading_indicator(current_grading)} |",
+        f"| Trailing-14-day graded / correct / accuracy | {_fmt_int(trailing_grading.get('gradedPicks'))} / {_fmt_int(trailing_grading.get('correctPicks'))} / {_fmt_pct(trailing_grading.get('accuracy'))} | — | {_grading_indicator(trailing_grading)} |",
         f"| Primary grading cohort | `{auto.get('gradingCohort') or 'unavailable'}` | {_fmt_delta(graded_delta)} graded | {_arrow(graded_delta)} |",
         "",
         f"**Slate:** `{auto.get('slateDateEt') or 'n/a'}` · scheduled games **{_fmt_int(auto.get('scheduledGames'))}** · card published **{auto.get('cardPublished')}** · card authority `{auto.get('cardDecisionAuthority') or 'not exposed'}` · target accuracy **{_fmt_pct(auto.get('targetAccuracy'))}**.",
+        f"**Publication timing:** phase `{auto.get('publicationPhase') or 'unknown'}` · final window starts `{auto.get('finalWindowStartUtc') or 'n/a'}` · deadline `{auto.get('publishDeadlineUtc') or 'n/a'}`. Authority counts describe published picks; before the final window, zero decisions are expected. `AUTHORITY_READINESS_GATED` requires explicit fail-closed authority fields and zero winner predictions; it never enables fallback picks.",
         "",
         "### MLB production authority",
         "",
@@ -1062,6 +1368,8 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
         f"| Active model | `{model_id}` | — |",
         f"| Winner predictions | {_fmt_int(mlb.get('winnerPredictionCount'))} | {_fmt_delta(pred_delta)} |",
         f"| Qualified R7 champion | {mlb.get('qualifiedChampionPresent')} | — |",
+        f"| Authority readiness | `{mlb.get('authorityReadinessState') or 'unknown'}` | {'🟢 explicit' if mlb.get('authorityReadinessValid') is True else '🔴 unknown'} |",
+        f"| Authority evidence slate / applies | `{mlb.get('authorityEvidenceSlateDateEt') or 'unknown'}` / {mlb.get('authorityEvidenceAppliesToAutoSlate')} | — |",
         f"| Publication closed | {mlb.get('publicationClosed')} | — |",
         f"| Retired V15.10 suppressed | {authority_icon} {mlb.get('retiredAuthoritySuppressed')} | — |",
         "",

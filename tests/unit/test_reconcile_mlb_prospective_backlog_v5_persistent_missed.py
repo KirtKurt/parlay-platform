@@ -42,6 +42,18 @@ class FakeLambda:
         }
 
 
+
+def terminal_rows():
+    return [
+        {
+            "officialGamePk": str(100000 + index),
+            "gameIdentity": f"provider:game-{index}",
+            "state": "LOCKED_NO_PREDICTION_DATA",
+            "lockStatus": "LOCKED_NO_PREDICTION_DATA",
+        }
+        for index in range(15)
+    ]
+
 def official_status_with_persistent_missed():
     return {
         "ok": True,
@@ -56,6 +68,8 @@ def official_status_with_persistent_missed():
         "noPredictionDataCount": 15,
         "lockedStatusCount": 15,
         "lockStatusComplete": True,
+        "providerManifestFingerprint": "f" * 64,
+        "perGameStatus": terminal_rows(),
         # Historical lifecycle telemetry intentionally remains nonzero after a
         # durable terminal outcome exists for every official game.
         "missedGameCount": 15,
@@ -66,10 +80,38 @@ def successful_settlement():
     return {
         "ok": True,
         "slateDateEt": SLATE,
-        "slateFinalized": True,
-        "settledLabelCount": 0,
+        "status": "CANONICAL_FINAL_LABELS_COMPLETE",
+        "authoritativeSettlement": True,
+        "legacySettlementAuthority": False,
+        "officialGameCount": 15,
+        "officialFinalCount": 15,
+        "canonicalLockCount": 0,
+        "terminalNoPredictionCount": 15,
+        "missedLockValidPrelockQuarantineCount": 0,
+        "terminalOutcomeCount": 15,
+        "terminalExcludedCount": 15,
+        "labelWriteCount": 0,
+        "rejectedCanonicalLockCount": 0,
+        "lockTerminalConflictCount": 0,
+        "skippedNotFinalCount": 0,
+        "missingCanonicalLockCount": 0,
+        "identityRejectionCount": 0,
+        "labelConflictCount": 0,
+        "rejectedTerminalOutcomes": [],
+        "immutablePregameRowsMutated": False,
+        "immutablePregameReadbackErrors": [],
+        "labelWrites": [],
+        "terminalExclusions": [
+            {
+                "officialGamePk": str(100000 + index),
+                "status": "LOCKED_NO_PREDICTION_DATA",
+                "accuracyEligible": False,
+                "trainingEligible": False,
+                "predictionAdopted": False,
+            }
+            for index in range(15)
+        ],
     }
-
 
 def generic_protected_replay_without_exact_terminal_proof():
     return {
@@ -78,6 +120,7 @@ def generic_protected_replay_without_exact_terminal_proof():
         "slateDateEt": SLATE,
         "perGameLockProgress": {
             "manifestGameCount": 15,
+            "games": terminal_rows(),
             "canonicalCount": 0,
             "noPredictionDataCount": 15,
             "lockOutcomeCount": 15,
@@ -87,7 +130,7 @@ def generic_protected_replay_without_exact_terminal_proof():
     }
 
 
-def test_v5_reaches_authoritative_settlement_before_replaying_persistent_count():
+def test_v5_settles_before_exact_target_receipt_refresh(monkeypatch):
     calls = []
 
     def invoke(client, function, event):
@@ -98,6 +141,17 @@ def test_v5_reaches_authoritative_settlement_before_replaying_persistent_count()
         if event.get("run") == v5.SETTLEMENT_RUN:
             return successful_settlement()
         raise AssertionError(f"unexpected pre-settlement mutation: {event}")
+
+    def protected_replay(*args, **kwargs):
+        del args
+        calls.append({"run": "protected_exact_receipt_refresh"})
+        return {"slateDateEt": kwargs["request"].slate_date}
+
+    monkeypatch.setattr(
+        v5,
+        "_execute_protected_terminal_replay",
+        protected_replay,
+    )
 
     result = v5.reconcile(
         FakeCloudFormation(),
@@ -114,9 +168,13 @@ def test_v5_reaches_authoritative_settlement_before_replaying_persistent_count()
     assert result["selectedSlateDates"] == [SLATE]
     assert result["reconciledSlateCount"] == 1
     assert result["settlementAuthoritativePersistentMissed"] is True
-    assert result["settlementTriggeredProtectedTerminalReplayCount"] == 0
+    assert result["settlementTriggeredProtectedTerminalReplayCount"] == 1
     assert not any(event.get("force") is True for event in calls)
-    assert [event.get("run") for event in calls].count(v5.SETTLEMENT_RUN) == 1
+    run_order = [event.get("run") for event in calls]
+    assert run_order.count(v5.SETTLEMENT_RUN) == 2
+    assert run_order.index(v5.SETTLEMENT_RUN) < run_order.index(
+        "protected_exact_receipt_refresh"
+    )
     assert result["directTableWrite"] is False
     assert result["postStartPredictionCreationAllowed"] is False
     assert result["productionAuthorityChanged"] is False

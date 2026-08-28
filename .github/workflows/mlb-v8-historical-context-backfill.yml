@@ -21,7 +21,7 @@ name: MLB V8 Historical Context Compatibility
 
 permissions:
   contents: read
-  actions: write
+  actions: read
 
 concurrency:
   group: mlb-v8-historical-context-compatibility
@@ -53,6 +53,9 @@ jobs:
   delegate-to-autonomous-controller:
     if: github.event_name == 'workflow_dispatch'
     needs: validate-context-contracts
+    permissions:
+      actions: write
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Dispatch single V8 control plane

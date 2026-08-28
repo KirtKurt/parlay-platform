@@ -49,6 +49,28 @@ def client_error(code="TooManyRequestsException", retry_after="7"):
     )
 
 
+
+def lifecycle_rows(*, games=15, canonical=10, quarantine=0):
+    no_data = games - canonical - quarantine
+    rows = []
+    for index in range(games):
+        state = (
+            "LOCKED_CANONICAL"
+            if index < canonical
+            else "LOCKED_NO_PREDICTION_DATA"
+            if index < canonical + no_data
+            else "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+        )
+        rows.append(
+            {
+                "officialGamePk": str(100000 + index),
+                "gameIdentity": f"provider:game-{index}",
+                "state": state,
+                "lockStatus": state,
+            }
+        )
+    return rows
+
 def official_status(slate_date, *, games=15, canonical=10, terminal=5):
     return {
         "ok": True,
@@ -63,6 +85,11 @@ def official_status(slate_date, *, games=15, canonical=10, terminal=5):
         "noPredictionDataCount": terminal,
         "lockedStatusCount": canonical + terminal,
         "lockStatusComplete": canonical + terminal == games,
+        "providerManifestFingerprint": "f" * 64,
+        "perGameStatus": lifecycle_rows(
+            games=games,
+            canonical=canonical,
+        ),
     }
 
 
@@ -70,10 +97,45 @@ def settlement(slate_date):
     return {
         "ok": True,
         "slateDateEt": slate_date,
-        "slateFinalized": True,
-        "settledLabelCount": 10,
+        "status": "CANONICAL_FINAL_LABELS_COMPLETE",
+        "authoritativeSettlement": True,
+        "legacySettlementAuthority": False,
+        "officialGameCount": 15,
+        "officialFinalCount": 15,
+        "canonicalLockCount": 10,
+        "terminalNoPredictionCount": 5,
+        "missedLockValidPrelockQuarantineCount": 0,
+        "terminalOutcomeCount": 5,
+        "terminalExcludedCount": 5,
+        "labelWriteCount": 10,
+        "rejectedCanonicalLockCount": 0,
+        "lockTerminalConflictCount": 0,
+        "skippedNotFinalCount": 0,
+        "missingCanonicalLockCount": 0,
+        "identityRejectionCount": 0,
+        "labelConflictCount": 0,
+        "rejectedTerminalOutcomes": [],
+        "immutablePregameRowsMutated": False,
+        "immutablePregameReadbackErrors": [],
+        "labelWrites": [
+            {
+                "ok": True,
+                "status": "CREATED",
+                "officialGamePk": str(100000 + index),
+            }
+            for index in range(10)
+        ],
+        "terminalExclusions": [
+            {
+                "officialGamePk": str(100000 + index),
+                "status": "LOCKED_NO_PREDICTION_DATA",
+                "accuracyEligible": False,
+                "trainingEligible": False,
+                "predictionAdopted": False,
+            }
+            for index in range(10, 15)
+        ],
     }
-
 
 def mutation(slate_date):
     return {
@@ -82,6 +144,7 @@ def mutation(slate_date):
         "slateDateEt": slate_date,
         "perGameLockProgress": {
             "manifestGameCount": 12,
+            "games": lifecycle_rows(games=12, canonical=8),
             "canonicalCount": 8,
             "noPredictionDataCount": 4,
             "lockOutcomeCount": 12,

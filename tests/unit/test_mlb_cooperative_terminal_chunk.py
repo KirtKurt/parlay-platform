@@ -326,10 +326,18 @@ class ChunkPatch:
             "lock_outcome_recorded": True,
             "locked_prediction": False,
             "canonical": False,
+            "canonical_prediction": False,
             "official_prediction": False,
             "playable": False,
             "blocked": True,
             "training_eligible": False,
+            "accuracy_eligible": False,
+            "wager_allowed": False,
+            "prediction_adopted": False,
+            "operational_defect": False,
+            "canonical_prediction_complete": False,
+            "post_start_prediction_creation_allowed": False,
+            "immutable_prediction_rewrite_allowed": False,
             "training_exclusion_reasons": [
                 "missing_immutable_prediction"
             ],
@@ -628,7 +636,7 @@ class ChunkPatch:
             "ok": True,
             "atomicSnapshot": True,
             "itemCount": len(requests),
-            "maxItemCount": 32,
+            "maxItemCount": 100,
             "readSetFingerprint": _fingerprint(requests),
             "postStartPredictionCreationAllowed": False,
         }
@@ -741,7 +749,7 @@ def test_chunk_processes_and_verifies_one_target_per_owner_then_atomic_completes
     assert final["stage"] == "COMPLETE"
     assert final["atomicCompletionProof"]["atomicSnapshot"] is True
     assert final["atomicCompletionProof"]["itemCount"] == 3
-    assert final["atomicCompletionProof"]["maxItemCount"] == 32
+    assert final["atomicCompletionProof"]["maxItemCount"] == 100
     assert final["atomicCompletionProof"][
         "completionMutationLeaseHeld"
     ] is True
@@ -1566,7 +1574,7 @@ def test_real_atomic_verify_dedupes_mixed_authority_and_uses_exact_tables():
     assert result["ok"] is True
     assert result["atomicSnapshot"] is True
     assert result["itemCount"] == 4
-    assert result["maxItemCount"] == 32
+    assert result["maxItemCount"] == 100
     assert len(result["readSetFingerprint"]) == 64
     assert len(client.calls) == 1
     table_names = [
@@ -1596,6 +1604,199 @@ def test_real_atomic_verify_fails_closed_on_snapshot_anomaly(mode, error):
             authority,
         )
 
+
+
+def _real_all_quarantine_atomic_fixture(
+    game_count=15,
+    manifest_root_count=1,
+):
+    lock_name = "lock-authority-table"
+    pulls_name = "pull-authority-table"
+    manifests = [
+        {
+            "PK": "PULLS#mlb#2026-08-05",
+            "SK": f"MANIFEST#membership#{root}",
+            "record_type": "manifest",
+            "write_once": True,
+        }
+        for root in range(manifest_root_count)
+    ]
+    items = {
+        (pulls_name, manifest["PK"], manifest["SK"]): manifest
+        for manifest in manifests
+    }
+    manifest_items = [
+        {
+            "tableRole": "PULLS_TABLE",
+            "PK": manifest["PK"],
+            "SK": manifest["SK"],
+            "itemFingerprint": (
+                real_patch._cooperative_terminal_item_fingerprint(manifest)
+            ),
+        }
+        for manifest in manifests
+    ]
+    processed = []
+    for index in range(game_count):
+        identity = f"provider:quarantine-{index}"
+        outcome = {
+            "PK": "LOCK#2026-08-05",
+            "SK": f"OUTCOME#{index}",
+            "record_type": "outcome",
+            "write_once": True,
+        }
+        candidate = {
+            "PK": "GAME_WINNERS#mlb#2026-08-05",
+            "SK": f"PREGAME#{index}",
+            "record_type": "candidate",
+            "write_once": True,
+        }
+        source = {
+            "PK": "PULLS#mlb#2026-08-05",
+            "SK": f"PULL#SLOT#{index:02d}",
+            "record_type": "pull_run",
+            "write_once": True,
+        }
+        items.update(
+            {
+                (lock_name, outcome["PK"], outcome["SK"]): outcome,
+                (pulls_name, candidate["PK"], candidate["SK"]): candidate,
+                (pulls_name, source["PK"], source["SK"]): source,
+            }
+        )
+        primary = [
+            {
+                "tableRole": "LOCK_TABLE",
+                "PK": outcome["PK"],
+                "SK": outcome["SK"],
+                "itemFingerprint": (
+                    real_patch._cooperative_terminal_item_fingerprint(
+                        outcome
+                    )
+                ),
+            },
+            {
+                "tableRole": "PULLS_TABLE",
+                "PK": candidate["PK"],
+                "SK": candidate["SK"],
+                "itemFingerprint": (
+                    real_patch._cooperative_terminal_item_fingerprint(
+                        candidate
+                    )
+                ),
+            },
+            {
+                "tableRole": "PULLS_TABLE",
+                "PK": source["PK"],
+                "SK": source["SK"],
+                "itemFingerprint": (
+                    real_patch._cooperative_terminal_item_fingerprint(
+                        source
+                    )
+                ),
+            },
+        ]
+        evidence = {
+            "durableIdentity": identity,
+            "terminalState": (
+                "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+            ),
+            "authorityItemCount": 3,
+            "dependencyItemCount": len(manifest_items),
+            "manifestAuthorityEvidenceFingerprint": "a" * 64,
+            "items": [
+                *primary,
+                *copy.deepcopy(manifest_items),
+            ],
+        }
+        evidence["evidenceFingerprint"] = (
+            real_patch._cooperative_terminal_evidence_fingerprint(
+                evidence
+            )
+        )
+        processed.append({"durableEvidence": evidence})
+
+    client = AtomicReadClient(items)
+    module = SimpleNamespace(
+        TABLE=SimpleNamespace(
+            name=lock_name,
+            meta=SimpleNamespace(client=client),
+        ),
+        history=SimpleNamespace(
+            PULLS=SimpleNamespace(
+                name=pulls_name,
+                meta=SimpleNamespace(client=client),
+            )
+        ),
+    )
+    return module, client, processed, {
+        "atomicItems": manifest_items,
+    }
+
+
+def test_real_atomic_verify_accepts_all_fifteen_quarantines_with_46_reads():
+    module, client, processed, authority = (
+        _real_all_quarantine_atomic_fixture()
+    )
+
+    proof = real_patch._cooperative_terminal_atomic_verify(
+        module,
+        processed,
+        authority,
+    )
+
+    assert proof["ok"] is True
+    assert proof["atomicSnapshot"] is True
+    assert proof["itemCount"] == 46
+    assert proof["maxItemCount"] == 100
+    assert len(proof["readSetFingerprint"]) == 64
+    assert len(client.calls) == 1
+    assert len(client.calls[0]) == 46
+
+
+def test_real_atomic_verify_accepts_two_manifest_roots_and_47_reads():
+    module, client, processed, authority = (
+        _real_all_quarantine_atomic_fixture(
+            manifest_root_count=2,
+        )
+    )
+
+    proof = real_patch._cooperative_terminal_atomic_verify(
+        module,
+        processed,
+        authority,
+    )
+
+    assert proof["ok"] is True
+    assert proof["itemCount"] == 47
+    assert proof["maxItemCount"] == 100
+    assert len(client.calls[0]) == 47
+
+
+@pytest.mark.parametrize(
+    "storage_key",
+    [
+        ("pull-authority-table", "GAME_WINNERS#mlb#2026-08-05", "PREGAME#0"),
+        ("pull-authority-table", "PULLS#mlb#2026-08-05", "PULL#SLOT#00"),
+    ],
+)
+def test_quarantine_candidate_and_source_atomic_mutations_fail_closed(
+    storage_key,
+):
+    module, client, processed, authority = (
+        _real_all_quarantine_atomic_fixture()
+    )
+    client.items[storage_key]["tamperedAfterTerminalWrite"] = True
+
+    with pytest.raises(
+        RuntimeError,
+        match="COOPERATIVE_TERMINAL_ATOMIC_ITEM_MISMATCH",
+    ):
+        real_patch._cooperative_terminal_atomic_verify(
+            module,
+            processed,
+            authority,
+        )
 
 
 def _synthetic_terminal_evidence(
@@ -1680,7 +1881,7 @@ def test_fifteen_no_prediction_roots_dedupe_to_bounded_read_set(
     assert len(fingerprint) == 64
 
 
-def test_fifteen_canonical_games_plus_two_manifest_roots_hit_exact_max32():
+def test_fifteen_canonical_games_plus_two_manifest_roots_fit_under_max100():
     roots = [
         {
             "tableRole": "PULLS_TABLE",
@@ -1704,4 +1905,5 @@ def test_fifteen_canonical_games_plus_two_manifest_roots_hit_exact_max32():
         {"atomicItems": roots},
     )
 
-    assert len(requests) == repair.COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS == 32
+    assert len(requests) == 32
+    assert len(requests) < repair.COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS == 100
