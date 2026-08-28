@@ -161,6 +161,13 @@ def _official_evidence(status: Mapping[str, Any], slate_date: str) -> Dict[str, 
         "lockOutcomeCount": counts["lockedStatusCount"],
         "offDay": counts["gameCount"] == 0,
         "officialStatusReadBound": True,
+        "lifecycleGames": counts["lifecycleGames"],
+        "lifecycleGameSetFingerprint": counts[
+            "lifecycleGameSetFingerprint"
+        ],
+        "providerManifestFingerprint": counts[
+            "providerManifestFingerprint"
+        ],
         "terminalCoverageAuthority": "official_exact_date_read_status",
     }
 

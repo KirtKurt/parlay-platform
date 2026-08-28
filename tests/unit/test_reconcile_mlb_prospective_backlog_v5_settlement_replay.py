@@ -155,6 +155,48 @@ def official_terminal_status(
     }
 
 
+def completed_terminal_settlement(
+    slate_date="2026-08-04",
+    games=15,
+    quarantine=1,
+):
+    return {
+        "ok": True,
+        "slateDateEt": slate_date,
+        "status": "CANONICAL_FINAL_LABELS_COMPLETE",
+        "authoritativeSettlement": True,
+        "legacySettlementAuthority": False,
+        "officialGameCount": games,
+        "officialFinalCount": games,
+        "canonicalLockCount": 0,
+        "terminalNoPredictionCount": games - quarantine,
+        "missedLockValidPrelockQuarantineCount": quarantine,
+        "terminalOutcomeCount": games,
+        "terminalExcludedCount": games,
+        "labelWriteCount": 0,
+        "rejectedCanonicalLockCount": 0,
+        "lockTerminalConflictCount": 0,
+        "skippedNotFinalCount": 0,
+        "missingCanonicalLockCount": 0,
+        "identityRejectionCount": 0,
+        "labelConflictCount": 0,
+        "rejectedTerminalOutcomes": [],
+        "immutablePregameRowsMutated": False,
+        "immutablePregameReadbackErrors": [],
+        "labelWrites": [],
+        "terminalExclusions": [
+            {
+                "officialGamePk": row["officialGamePk"],
+                "status": row["terminalState"],
+                "accuracyEligible": False,
+                "trainingEligible": False,
+                "predictionAdopted": False,
+            }
+            for row in fixture_terminal_games(games, quarantine)
+        ],
+    }
+
+
 
 def cooperative_progress(games=15, quarantine=1):
     return {
@@ -392,6 +434,112 @@ def test_reconcile_replays_then_retries_full_backlog(monkeypatch):
     assert result["settlement409TreatedAsSuccess"] is False
     assert result["directTableWrite"] is False
     assert result["postStartPredictionCreationAllowed"] is False
+
+
+def test_real_v4_retry_preserves_lifecycle_binding_for_v5_receipt(monkeypatch):
+    slate_date = "2026-08-04"
+    status = official_terminal_status(slate_date)
+    completion = cooperative_completion_receipt()
+    settlement_attempts = 0
+    calls = []
+
+    class RoutedLambda:
+        def invoke(
+            self,
+            *,
+            FunctionName,
+            InvocationType,
+            Payload,
+            LogType="None",
+        ):
+            nonlocal settlement_attempts
+            assert InvocationType == "RequestResponse"
+            assert LogType in {"None", "Tail"}
+            event = json.loads(Payload.decode("utf-8"))
+            calls.append((FunctionName, event))
+            if event.get("httpMethod") == "GET":
+                response = api_gateway(200, status)
+            elif FunctionName == "results":
+                settlement_attempts += 1
+                response = (
+                    api_gateway(409, settlement_gap(slate_date))
+                    if settlement_attempts == 1
+                    else api_gateway(
+                        200,
+                        completed_terminal_settlement(slate_date),
+                    )
+                )
+            elif event.get("acknowledgeCooperativeCompletion") is True:
+                response = api_gateway(
+                    200,
+                    {
+                        "ok": True,
+                        "sport": "mlb",
+                        "slateDateEt": slate_date,
+                        "cooperativeTerminalReplayAcknowledged": True,
+                        "cooperativeTerminalReplay": (
+                            cooperative_public_state("ACKNOWLEDGED")
+                        ),
+                    },
+                )
+            else:
+                assert event.get("run") == subject.TERMINAL_REPLAY_RUN
+                response = api_gateway(200, completion)
+            return {
+                "StatusCode": 200,
+                "Payload": ResponseStream(
+                    json.dumps(response).encode("utf-8")
+                ),
+            }
+
+    monkeypatch.setattr(
+        base,
+        "resolve_stack_functions",
+        lambda *args: base.StackFunctions("lock", "results", "trainer"),
+    )
+    monkeypatch.setattr(
+        base,
+        "release_cutoff",
+        lambda *args, **kwargs: "2026-08-03T04:00:00+00:00",
+    )
+    monkeypatch.setattr(
+        base,
+        "prospective_slate_dates",
+        lambda *args, **kwargs: [slate_date],
+    )
+
+    result = subject.reconcile(
+        object(),
+        RoutedLambda(),
+        stack_name="stack",
+        max_slate_days=31,
+        target_slate_date=slate_date,
+    )
+
+    assert settlement_attempts == 2
+    assert result["settlementTriggeredProtectedTerminalReplayCount"] == 1
+    row = result["slates"][0]
+    assert row["lifecycleGames"] == base._validate_official_status(
+        status,
+        slate_date,
+    )["lifecycleGames"]
+    assert row["providerManifestFingerprint"] == "c" * 64
+    assert base._lifecycle_classifications(
+        row["settlement"]["lifecycleGames"]
+    ) == base._lifecycle_classifications(row["lifecycleGames"])
+    replay = result["settlementTriggeredProtectedTerminalReplays"][0]
+    assert replay["protectedLockReplayCooperativeReceiptVerified"] is True
+    assert replay["cooperativeCompletionReceipt"][
+        "providerManifestFingerprint"
+    ] == row["providerManifestFingerprint"]
+    assert any(
+        event.get("acknowledgeCooperativeCompletion") is True
+        for _, event in calls
+    )
+    assert result["postStartPredictionCreationAllowed"] is False
+    assert result["immutablePredictionRewriteAllowed"] is False
+    assert result["productionAuthorityChanged"] is False
+    assert result["automaticWagerAllowed"] is False
 
 
 def test_protected_replay_retries_lease_overlap_without_bypassing_owner(monkeypatch):
