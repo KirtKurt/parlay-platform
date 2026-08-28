@@ -287,6 +287,36 @@ def _parse_json_object(value: Any, *, label: str) -> Dict[str, Any]:
     return value
 
 
+def _normalize_async_destination_config(value: Any) -> Dict[str, Any]:
+    """Normalize only AWS's canonical empty async-destination response shape."""
+    if value is None or value == {}:
+        return {}
+    if not isinstance(value, Mapping):
+        raise VerificationError("Results Lambda async destination config is not an object")
+    unexpected = sorted(str(key) for key in value if key not in {"OnSuccess", "OnFailure"})
+    if unexpected:
+        raise VerificationError(
+            "Results Lambda async destination config has unexpected keys: "
+            + ",".join(unexpected)
+        )
+    for key in ("OnSuccess", "OnFailure"):
+        if key in value and value[key] != {}:
+            raise VerificationError(
+                f"Results Lambda async destination is configured: {key}"
+            )
+    return {}
+
+
+def _normalized_async_invoke_config(value: Mapping[str, Any]) -> Dict[str, Any]:
+    return {
+        "maximumEventAgeInSeconds": value.get("MaximumEventAgeInSeconds"),
+        "maximumRetryAttempts": value.get("MaximumRetryAttempts"),
+        "destinationConfig": _normalize_async_destination_config(
+            value.get("DestinationConfig")
+        ),
+    }
+
+
 def _resource_physical_id(cfn: Any, stack_name: str, logical_id: str) -> str:
     response = cfn.describe_stack_resource(
         StackName=stack_name,
@@ -2101,11 +2131,7 @@ def run(args: argparse.Namespace, evidence: Dict[str, Any]) -> None:
         "maximumRetryAttempts": 0,
         "destinationConfig": {},
     }
-    actual_async_config = {
-        "maximumEventAgeInSeconds": async_config.get("MaximumEventAgeInSeconds"),
-        "maximumRetryAttempts": async_config.get("MaximumRetryAttempts"),
-        "destinationConfig": async_config.get("DestinationConfig") or {},
-    }
+    actual_async_config = _normalized_async_invoke_config(async_config)
     if actual_async_config != expected_async_config:
         raise VerificationError(
             f"Results Lambda async invoke policy mismatch: {actual_async_config}"
@@ -2406,11 +2432,7 @@ def run(args: argparse.Namespace, evidence: Dict[str, Any]) -> None:
     current_async_raw = lambdas.get_function_event_invoke_config(
         FunctionName=function_name
     )
-    current_async_config = {
-        "maximumEventAgeInSeconds": current_async_raw.get("MaximumEventAgeInSeconds"),
-        "maximumRetryAttempts": current_async_raw.get("MaximumRetryAttempts"),
-        "destinationConfig": current_async_raw.get("DestinationConfig") or {},
-    }
+    current_async_config = _normalized_async_invoke_config(current_async_raw)
     current_function_proof = {
         "logicalId": RESULTS_LOGICAL_ID,
         "functionName": function_name,

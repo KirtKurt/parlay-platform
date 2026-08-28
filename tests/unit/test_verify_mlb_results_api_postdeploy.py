@@ -1251,6 +1251,46 @@ def test_postdeploy_workflow_never_synthetically_invokes_the_scheduler():
     assert "scripts/verify_mlb_results_api_postdeploy.py" in workflow
 
 
+def test_async_destination_normalizes_aws_empty_nested_shape() -> None:
+    assert subject._normalized_async_invoke_config(
+        {
+            "MaximumEventAgeInSeconds": 300,
+            "MaximumRetryAttempts": 0,
+            "DestinationConfig": {"OnSuccess": {}, "OnFailure": {}},
+        }
+    ) == {
+        "maximumEventAgeInSeconds": 300,
+        "maximumRetryAttempts": 0,
+        "destinationConfig": {},
+    }
+
+
+@pytest.mark.parametrize(
+    "destination",
+    [
+        {"OnFailure": {"Destination": "arn:aws:sqs:us-east-1:123:dead-letter"}},
+        {"OnSuccess": {"Destination": "arn:aws:sns:us-east-1:123:results"}},
+        {"Unexpected": {}},
+    ],
+)
+def test_async_destination_rejects_nonempty_or_unexpected_config(destination) -> None:
+    with pytest.raises(subject.VerificationError, match="async destination"):
+        subject._normalized_async_invoke_config(
+            {
+                "MaximumEventAgeInSeconds": 300,
+                "MaximumRetryAttempts": 0,
+                "DestinationConfig": destination,
+            }
+        )
+
+
+def test_async_config_normalization_is_used_for_initial_and_reread_identity() -> None:
+    verifier = (
+        ROOT / "scripts" / "verify_mlb_results_api_postdeploy.py"
+    ).read_text(encoding="utf-8")
+    assert verifier.count("_normalized_async_invoke_config(") == 3
+
+
 def test_scheduled_advance_evidence_does_not_claim_settlement_or_other_producer_health():
     verifier = (
         ROOT / "scripts" / "verify_mlb_results_api_postdeploy.py"
