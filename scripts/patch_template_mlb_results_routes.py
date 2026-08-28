@@ -48,16 +48,19 @@ def remove_top_level_resource(current: str, resource_name: str) -> str:
     return "".join(output)
 
 
-def ensure_results_event(logical_name: str, path: str, method: str = "GET") -> None:
+def ensure_results_event(logical_name: str, path: str, method: str) -> None:
     global text
+    normalized_method = str(method).strip().upper()
+    if normalized_method not in {"GET", "OPTIONS"}:
+        raise ValueError(f"Unsupported MLB results HTTP method: {method}")
     if f"        {logical_name}:\n" in text:
-        return
+        raise RuntimeError(f"Managed MLB results event was not normalized: {logical_name}")
     marker = "        MLBResultsEvery6Hours:\n"
     block = f"""        {logical_name}:
           Type: Api
           Properties:
             Path: {path}
-            Method: {method}
+            Method: {normalized_method}
 """
     if marker not in text:
         raise RuntimeError("MLBResultsEvery6Hours marker not found in template.yaml")
@@ -114,18 +117,35 @@ patch_proxy_route()
 
 text = normalize_results_schedule(text)
 
-for alias_event in ["MLBResultSignalsAliasGet", "MLBResultSignalsAliasPost"]:
-    text = remove_indented_event_block(text, alias_event)
+RESULTS_API_EVENTS = [
+    ("MLBFinalScoresGet", "/v1/results/mlb/final-scores", "GET"),
+    ("MLBFinalScoresOptions", "/v1/results/mlb/final-scores", "OPTIONS"),
+    ("MLBSettlementGet", "/v1/results/mlb/settlement", "GET"),
+    ("MLBSettlementOptions", "/v1/results/mlb/settlement", "OPTIONS"),
+    ("MLBSettlementProofGet", "/v1/results/mlb/proof", "GET"),
+    ("MLBSettlementProofOptions", "/v1/results/mlb/proof", "OPTIONS"),
+    ("MLBSignalLearningGet", "/v1/results/mlb/signal-learning", "GET"),
+    ("MLBSignalLearningOptions", "/v1/results/mlb/signal-learning", "OPTIONS"),
+    ("MLBResultSignalsGet", "/v1/results/mlb/result-signals", "GET"),
+    ("MLBResultSignalsOptions", "/v1/results/mlb/result-signals", "OPTIONS"),
+]
 
-ensure_results_event("MLBFinalScoresGet", "/v1/results/mlb/final-scores")
-ensure_results_event("MLBSettlementGet", "/v1/results/mlb/settlement")
-ensure_results_event("MLBSettlementProofGet", "/v1/results/mlb/proof")
-ensure_results_event("MLBSignalLearningGet", "/v1/results/mlb/signal-learning")
-ensure_results_event("MLBResultSignalsGet", "/v1/results/mlb/result-signals")
-ensure_results_event("MLBResultSignalsPost", "/v1/results/mlb/result-signals", "POST")
+for obsolete_event in [
+    "MLBResultSignalsAliasGet",
+    "MLBResultSignalsAliasPost",
+    "MLBResultSignalsPost",
+]:
+    text = remove_indented_event_block(text, obsolete_event)
+
+# Remove and recreate every managed event so wrong paths or methods cannot
+# survive the deployment transform. Re-running the transform is byte-idempotent.
+for logical_name, _, _ in RESULTS_API_EVENTS:
+    text = remove_indented_event_block(text, logical_name)
+for logical_name, path, method in RESULTS_API_EVENTS:
+    ensure_results_event(logical_name, path, method)
 
 if "Schedule: cron(6/15 * * * ? *)" not in text or "results_pull_15m" not in text:
     raise RuntimeError("MLB results scheduler must run every 15 minutes")
 
 TEMPLATE.write_text(text)
-print("Patched MLB results routes and normalized settlement to a 15-minute cadence.")
+print("Patched read-only MLB results routes and normalized settlement to a 15-minute cadence.")
