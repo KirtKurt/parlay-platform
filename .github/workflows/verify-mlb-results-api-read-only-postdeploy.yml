@@ -61,9 +61,34 @@ jobs:
             "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy.yml" \
             --jq '.id')
           test "$DEPLOY_WORKFLOW_ID" = "$expected_workflow_id"
-          gh api --paginate --slurp \
-            "repos/${GITHUB_REPOSITORY}/actions/runs/${DEPLOY_RUN_ID}/attempts/${DEPLOY_RUN_ATTEMPT}/jobs?per_page=100" \
-            --jq '[.[].jobs[]]' > /tmp/mlb-results-deploy-jobs.json
+
+          # Do not combine gh --slurp with --jq. Some hosted-runner gh versions
+          # reject that option pairing before making the API request. Collect
+          # pages explicitly and let jq assemble one stable jobs array instead.
+          : > /tmp/mlb-results-deploy-jobs.ndjson
+          completed_pages=0
+          for page in $(seq 1 20); do
+            page_json="/tmp/mlb-results-deploy-jobs-page-${page}.json"
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${DEPLOY_RUN_ID}/attempts/${DEPLOY_RUN_ATTEMPT}/jobs?per_page=100&page=${page}" \
+              > "$page_json"
+            jq -e '.jobs | type == "array"' "$page_json" >/dev/null
+            jq -c '.jobs[]' "$page_json" >> /tmp/mlb-results-deploy-jobs.ndjson
+            job_count=$(jq '.jobs | length' "$page_json")
+            completed_pages=$page
+            if [ "$job_count" -lt 100 ]; then
+              break
+            fi
+          done
+          test "$completed_pages" -gt 0
+          if [ "$completed_pages" -eq 20 ] && \
+             [ "$(jq '.jobs | length' /tmp/mlb-results-deploy-jobs-page-20.json)" -eq 100 ]; then
+            echo "Deploy job pagination exceeded bounded 20-page collector" >&2
+            exit 1
+          fi
+          jq -s '.' /tmp/mlb-results-deploy-jobs.ndjson \
+            > /tmp/mlb-results-deploy-jobs.json
+
           python - <<'PY'
           import json
           import os
