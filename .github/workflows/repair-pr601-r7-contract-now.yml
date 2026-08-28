@@ -47,13 +47,13 @@ jobs:
                   '''def _terminal_official_game_pk(\n    item: Dict[str, Any],\n    crosswalk: Dict[str, Dict[str, Any]],\n    official_games: Optional[Iterable[Dict[str, Any]]] = None,\n) -> Optional[str]:\n    values = _official_game_pk_values(item)\n    game_id = str(item.get("game_id") or "").strip()\n''',
                   '''def _terminal_official_game_pk(\n    item: Dict[str, Any],\n    crosswalk: Dict[str, Dict[str, Any]],\n    official_games: Optional[Iterable[Dict[str, Any]]] = None,\n) -> Optional[str]:\n    # The explicit terminal officialGamePk is the row's declared roster key.\n    # Keep it authoritative for lookup, then require exact official-roster and\n    # manifest identity/team/start agreement below. Conflicting embedded game\n    # ids therefore fail with a precise terminal_manifest_* error instead of\n    # becoming an unresolved identity that cannot be audited.\n    explicit_official_pk = str(\n        item.get("officialGamePk") or item.get("official_game_pk") or ""\n    ).strip()\n    if explicit_official_pk:\n        return explicit_official_pk\n    values = _official_game_pk_values(item)\n    game_id = str(item.get("game_id") or "").strip()\n'''
               )],
-              "hello_world/mlb_slate_coverage_patch.py": [(
-                  '''    if (\n        not expected_official_pk\n        or str(item.get("officialGamePk") or "") != expected_official_pk\n    ):\n        errors.append("terminal_manifest_official_game_pk_mismatch")\n''',
-                  '''    terminal_official_pk = str(item.get("officialGamePk") or "").strip()\n    if not terminal_official_pk:\n        errors.append("terminal_manifest_official_game_pk_missing")\n    elif (\n        expected_official_pk\n        and terminal_official_pk != expected_official_pk\n    ):\n        errors.append("terminal_manifest_official_game_pk_mismatch")\n'''
-              )],
               "hello_world/mlb_daily_per_game_lock_patch.py": [(
                   '''    aliases = {_raw_game_identity(game)}\n    official_pk = _official_game_pk(game)\n    if official_pk:\n        aliases.add(f"mlb_statsapi:{official_pk}")\n''',
                   '''    official_pk = _official_game_pk(game)\n    # Start from the durable Stats API identity whenever it is available.\n    # Provider aliases are admitted only from bound scoring pulls below. This\n    # avoids double-counting the manifest's transient provider id while still\n    # preserving both the stable fallback and every evidenced provider alias.\n    aliases = (\n        {f"mlb_statsapi:{official_pk}"}\n        if official_pk\n        else {_raw_game_identity(game)}\n    )\n'''
+              )],
+              "hello_world/inqsi_pull_history.py": [(
+                  '''    # Preserve the exact legacy v1 fingerprint material for old manifests.\n    # Official fields are added only to Stats-API-backed MLB rows.\n    if game.get("official_game_pk") not in (None, ""):\n        row.update({\n            field: _legacy_payload_value(game.get(field))\n            for field in official_fields\n            if game.get(field) is not None\n        })\n''',
+                  '''    # Preserve legacy manifests that truly have no Stats API identity, but\n    # normalize either supported official-game-pk spelling into the immutable\n    # manifest material whenever that durable identity is present. This makes\n    # terminal officialGamePk binding fingerprinted instead of trusting an\n    # unbound side field, while leaving provider-only legacy rows unchanged.\n    official_game_pk = game.get("official_game_pk")\n    if official_game_pk in (None, ""):\n        official_game_pk = game.get("officialGamePk")\n    if official_game_pk not in (None, ""):\n        normalized_official = dict(game)\n        normalized_official["official_game_pk"] = official_game_pk\n        row.update({\n            field: _legacy_payload_value(normalized_official.get(field))\n            for field in official_fields\n            if normalized_official.get(field) is not None\n        })\n'''
               )],
           }
 
@@ -77,7 +77,8 @@ jobs:
             'tests/unit/test_mlb_canonical_final_labels_v1.py::test_final_label_terminal_requires_unique_official_roster_membership[outside_roster]' \
             tests/unit/test_mlb_cooperative_terminal_chunk.py::test_candidate_alias_queries_are_capped_before_any_query \
             tests/unit/test_mlb_public_per_game_authority.py::test_terminal_no_prediction_status_displays_without_current_prediction_row \
-            tests/unit/test_mlb_public_per_game_authority.py::test_valid_quarantine_terminal_is_lifecycle_only_on_public_surface
+            tests/unit/test_mlb_public_per_game_authority.py::test_valid_quarantine_terminal_is_lifecycle_only_on_public_surface \
+            tests/unit/test_mlb_public_per_game_authority.py::test_same_count_terminal_official_pk_swap_is_rejected
 
       - name: Run focused R7 quarantine regression set
         shell: bash
@@ -95,13 +96,13 @@ jobs:
           set -euo pipefail
           git status --short
           git diff --check
-          git diff --exit-code -- . ':!hello_world/mlb_canonical_final_labels_v1.py' ':!hello_world/mlb_slate_coverage_patch.py' ':!hello_world/mlb_daily_per_game_lock_patch.py'
+          git diff --exit-code -- . ':!hello_world/mlb_canonical_final_labels_v1.py' ':!hello_world/mlb_daily_per_game_lock_patch.py' ':!hello_world/inqsi_pull_history.py'
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
             hello_world/mlb_canonical_final_labels_v1.py \
-            hello_world/mlb_slate_coverage_patch.py \
-            hello_world/mlb_daily_per_game_lock_patch.py
+            hello_world/mlb_daily_per_game_lock_patch.py \
+            hello_world/inqsi_pull_history.py
           git commit -m "Fix remaining PR601 R7 contract failures"
           git push origin HEAD:codex/mlb-valid-prelock-quarantine-v4-567
 
@@ -110,6 +111,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git reset --hard HEAD
+          git clean -fd
           git fetch origin main
           git checkout -B cleanup origin/main
           if [ -f .github/workflows/repair-pr601-r7-contract-now.yml ]; then
