@@ -4578,24 +4578,19 @@ def _candidate_snapshot_aliases(
     game: Dict[str, Any],
     scoring: Optional[Iterable[Dict[str, Any]]] = None,
 ) -> List[str]:
-    """Return trusted immutable identities that may name this game.
+    """Return persisted identities that may name this game.
 
-    The official Stats API game PK remains stable when a provider event ID
-    arrives later. Alias lookup is read-only discovery; downstream validation
-    still requires official-PK/team/time/source/fingerprint agreement.
+    Query only identities represented by the manifest game or an observed
+    scoring pull. The official game PK still binds every candidate during
+    downstream validation, but it is not synthesized into an extra DynamoDB
+    prefix without evidence that such a snapshot identity was persisted.
     """
     aliases = {_raw_game_identity(game)}
-    official_pk = _official_game_pk(game)
-    if official_pk:
-        aliases.add(f"mlb_statsapi:{official_pk}")
     for pull in scoring or []:
         for candidate_game in pull.get("games") or []:
             if not _same_game(game, candidate_game):
                 continue
             aliases.add(_raw_game_identity(candidate_game))
-            candidate_pk = _official_game_pk(candidate_game)
-            if candidate_pk:
-                aliases.add(f"mlb_statsapi:{candidate_pk}")
     return sorted(alias for alias in aliases if alias)
 
 

@@ -1492,7 +1492,60 @@ def _provider_manifest_for_public(
             "MLB_VERIFIED_FULL_SLATE_MANIFEST_INVALID:"
             "resolved_games_membership_mismatch"
         )
-    games = resolved_games
+    # Provider manifests intentionally omit official MLB identifiers.
+    # Recover gamePk only from the same immutable authority pull's raw game
+    # payload, and only through a unique exact provider identity plus ordered
+    # teams. This preserves strict terminal gamePk comparison and rejects
+    # same-count swaps instead of trusting the terminal row to self-identify.
+    raw_full_games = [
+        copy.deepcopy(game)
+        for game in (full_pull.get("games") or [])
+        if isinstance(game, dict)
+    ]
+    raw_by_identity: Dict[str, List[Dict[str, Any]]] = {}
+    for raw_game in raw_full_games:
+        raw_by_identity.setdefault(
+            game_identity(raw_game),
+            [],
+        ).append(raw_game)
+    games = []
+    for resolved_game in resolved_games:
+        enriched = copy.deepcopy(resolved_game)
+        if not _official_game_pk(enriched):
+            candidates = raw_by_identity.get(
+                game_identity(enriched),
+                [],
+            )
+            matching = [
+                candidate
+                for candidate in candidates
+                if (
+                    _norm_team(
+                        candidate.get("away_team")
+                        or candidate.get("awayTeam")
+                    ),
+                    _norm_team(
+                        candidate.get("home_team")
+                        or candidate.get("homeTeam")
+                    ),
+                )
+                == (
+                    _norm_team(
+                        enriched.get("away_team")
+                        or enriched.get("awayTeam")
+                    ),
+                    _norm_team(
+                        enriched.get("home_team")
+                        or enriched.get("homeTeam")
+                    ),
+                )
+                and _official_game_pk(candidate)
+            ]
+            if len(matching) == 1:
+                official_pk = _official_game_pk(matching[0])
+                enriched["officialGamePk"] = official_pk
+                enriched["official_game_pk"] = official_pk
+        games.append(enriched)
 
     manifest = full_pull.get("provider_schedule_manifest")
     binding = full_pull.get("provider_manifest_binding")
