@@ -1097,13 +1097,17 @@ def verify_public_get_contract(
             raise VerificationError(f"GET {path} reports a pregame mutation")
         if int(body.get("labelCreatedCount") or 0) != 0:
             raise VerificationError(f"GET {path} created a canonical label")
+        if body.get("proofReadMode") != "STORED_CANONICAL_LABELS_ONLY":
+            raise VerificationError(
+                f"GET {path} did not remain in stored-canonical-label read mode"
+            )
         if path.endswith("/proof") and body.get("readOnlyProof") is not True:
             raise VerificationError("Settlement proof GET lacks readOnlyProof=true")
         return {
             "contract": (
-                "CANONICAL_SETTLEMENT_READ_ONLY_PROOF"
+                "CANONICAL_SETTLEMENT_STORED_READ_ONLY_PROOF"
                 if path.endswith("/proof")
-                else "CANONICAL_SETTLEMENT_DRY_RUN"
+                else "CANONICAL_SETTLEMENT_STORED_READ_ONLY"
             ),
             "valid": True,
             "canonicalOk": body.get("ok") is True,

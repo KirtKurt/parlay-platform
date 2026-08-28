@@ -275,6 +275,9 @@ def _canonical_with_legacy_diagnostic(
     enabled: bool = True,
 ) -> Dict[str, Any]:
     out = dict(report)
+    # The canonical label module is MLB-only but its internal proof schema does
+    # not carry an API namespace. Public reads must be explicitly sport-bound.
+    out["sport"] = "mlb"
     out["legacyDiagnosticCompatibility"] = _legacy_diagnostic(
         args,
         proof=proof,
