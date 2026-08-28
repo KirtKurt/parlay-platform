@@ -431,3 +431,42 @@ def test_comment_makes_terminal_relay_warning_visible() -> None:
     assert "**Reporting control plane:**" in body
     assert "durable_environment_timer" in body
     assert "active progress relay is on its terminal hop" in body
+
+
+def test_control_plane_exposes_durable_actual_wait(monkeypatch) -> None:
+    durable = _workflow_run(
+        reporter.DURABLE_PROGRESS_WORKFLOW,
+        run_id=21,
+        created="2026-08-26T21:29:00Z",
+        event="workflow_dispatch",
+        status="in_progress",
+        title="MLB durable pulse relay hop 1",
+    )
+
+    def fake_runs(workflow, *, event=None, per_page=20):
+        del event, per_page
+        return (
+            [durable]
+            if workflow == reporter.DURABLE_PROGRESS_WORKFLOW
+            else []
+        )
+
+    monkeypatch.setattr(reporter, "_progress_workflow_runs", fake_runs)
+    monkeypatch.setattr(reporter, "_progress_environment", _valid_environment)
+
+    control = reporter._progress_control_plane(
+        now=datetime(2026, 8, 26, 22, 0, tzinfo=timezone.utc)
+    )
+
+    assert control["relayMode"] == "durable_environment_timer"
+    assert control["actualWaitMinutes"] == 31.0
+    assert control["terminalHop"] is True
+    assert control["environment"]["valid"] is True
+
+
+def test_reporter_main_rejects_noncanonical_actions_identity(monkeypatch) -> None:
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/main")
+    monkeypatch.setattr(reporter, "REPO", "fork/project")
+
+    assert reporter.main() == 1
