@@ -1346,14 +1346,17 @@ def test_candidate_alias_queries_are_capped_before_any_query(monkeypatch):
         )
     assert calls == []
 
-    token = real_patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.set(4)
+    # root + stable Stats API fallback + three provider aliases = five.
+    # The stable fallback is required to discover snapshots persisted before
+    # a later provider-event identity became available.
+    token = real_patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.set(5)
     try:
         real_patch._candidate_items(object(), SLATE, game, scoring[:3])
     finally:
         real_patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.reset(
             token
         )
-    assert len(calls) == 4
+    assert len(calls) == 5
 
 
 def test_alias_and_canonical_only_contexts_are_always_reset():

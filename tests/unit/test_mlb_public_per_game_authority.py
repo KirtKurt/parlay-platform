@@ -1085,6 +1085,38 @@ def test_missing_latest_due_playability_assessment_fails_release_closed(monkeypa
     assert result["invalidTerminalLifecycleRows"] == {}
 
 
+def _install_exact_public_terminal_manifest_fixture(monkeypatch):
+    games = []
+    for source in (G1, G2):
+        row = copy.deepcopy(source)
+        row["official_game_pk"] = source["officialGamePk"]
+        row["official_game_id"] = f"mlb_statsapi:{source['officialGamePk']}"
+        row["canonical_start_time_source"] = "MLB_STATS_API_EXACT_DATE"
+        games.append(row)
+    # The terminal fixtures were written against the immutable legacy provider
+    # manifest. Keep that exact pointer/fingerprint while independently supplying
+    # the resolved official roster. This tests lifecycle projection without
+    # weakening provider-manifest or official-game-PK validation.
+    manifest = PULLS[0]["provider_schedule_manifest"]
+    binding = PULLS[0]["provider_manifest_binding"]
+    authority = _fallback_manifest_authority()
+    authority.update({
+        "providerManifestFingerprint": manifest["fingerprint"],
+        "providerManifestPk": binding["pk"],
+        "providerManifestSk": binding["sk"],
+        "verifiedFullSlateGameCount": len(games),
+        "officialScheduleGameCount": len(games),
+    })
+    monkeypatch.setattr(
+        coverage,
+        "_provider_manifest_for_public",
+        lambda module, lock_module, pulls, slate: (
+            copy.deepcopy(games),
+            copy.deepcopy(authority),
+        ),
+    )
+
+
 def test_terminal_no_prediction_status_displays_without_current_prediction_row(monkeypatch):
     monkeypatch.setattr(exact_contract, "validate_exact_locked_row", lambda row: [])
     monkeypatch.setattr(immutable_storage, "validate_canonical_stage_authority", lambda table, row: [])
@@ -1103,6 +1135,7 @@ def test_terminal_no_prediction_status_displays_without_current_prediction_row(m
         status_items=[assessment, terminal],
     )
     _install(engine)
+    _install_exact_public_terminal_manifest_fixture(monkeypatch)
     monkeypatch.setattr(
         coverage,
         "_now_utc",
@@ -1485,6 +1518,7 @@ def test_valid_quarantine_terminal_is_lifecycle_only_on_public_surface(
         status_items=[terminal],
     )
     _install(engine)
+    _install_exact_public_terminal_manifest_fixture(monkeypatch)
     monkeypatch.setattr(
         coverage,
         "_now_utc",

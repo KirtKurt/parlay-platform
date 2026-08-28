@@ -621,6 +621,12 @@ def _validated_terminal_outcomes(
         )
         if not official_pk:
             errors.append("terminal_official_game_pk_unresolved")
+            # Exact official-roster admission is impossible when a terminal
+            # row cannot be uniquely bound to one official roster member.
+            # Keep the row rejected and expose the binding failure explicitly.
+            if official_game_list:
+                errors.append("terminal_official_manifest_game_ambiguous")
+                errors.append("terminal_manifest_official_roster_binding_unresolved")
         elif official_game_list:
             matching_official_games = official_games_by_pk.get(
                 str(official_pk),
