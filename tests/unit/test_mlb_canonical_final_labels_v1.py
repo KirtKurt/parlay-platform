@@ -652,35 +652,56 @@ def test_lock_and_no_prediction_terminal_conflict_fails_closed(monkeypatch):
     assert table.items == {}
 
 
-def test_scheduler_routes_settlement_through_canonical_authority(monkeypatch):
+def test_scheduler_routes_read_only_get_through_canonical_authority(monkeypatch):
     import mlb_results_scheduler as scheduler
+
+    canonical_calls = []
+
+    def canonical_settle(**kwargs):
+        canonical_calls.append(kwargs)
+        return {
+            "ok": True,
+            "slateDateEt": SLATE,
+            "authoritativeSettlement": True,
+        }
 
     monkeypatch.setattr(
         scheduler.canonical_settlement,
         "settle_mlb_slate",
-        lambda **kwargs: {
-            "ok": True,
-            "slateDateEt": SLATE,
-            "authoritativeSettlement": True,
-        },
+        canonical_settle,
     )
-    monkeypatch.setattr(
-        scheduler,
-        "legacy_settle_mlb_slate",
-        lambda **kwargs: {"ok": True, "overall_status": "DIAGNOSTIC"},
-    )
+
+    def forbidden_legacy(**kwargs):
+        raise AssertionError("public GET called legacy settlement writer")
+
+    monkeypatch.setattr(scheduler, "legacy_settle_mlb_slate", forbidden_legacy)
 
     response = scheduler.lambda_handler(
         {
-            "httpMethod": "POST",
+            "httpMethod": "GET",
             "path": "/v1/results/mlb/settlement",
-            "body": json.dumps({"date": SLATE, "fetch_scores": True}),
+            "body": json.dumps(
+                {
+                    "date": SLATE,
+                    "fetch_scores": True,
+                    "store": True,
+                    "legacy_diagnostic": True,
+                }
+            ),
         },
         None,
     )
     body = json.loads(response["body"])
 
     assert response["statusCode"] == 200
+    assert canonical_calls == [
+        {
+            "slate_date": SLATE,
+            "days_from": 3,
+            "fetch_scores": True,
+            "store": False,
+        }
+    ]
     assert body["authoritativeSettlement"] is True
     assert body["settlementAuthority"] == "CANONICAL_IMMUTABLE_LOCK_OFFICIAL_GAME_PK"
     assert body["legacyDiagnosticCompatibility"]["authoritative"] is False
