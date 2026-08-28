@@ -377,6 +377,52 @@ def test_terminal_hop_forces_one_visible_diagnostic_without_successor() -> None:
     assert client.reporter_forces == [True]
 
 
+def test_controller_rejects_bypassed_wait_before_any_relay_action() -> None:
+    client = FakeClient(current_hop=12)
+    with pytest.raises(ValueError, match="environment_wait_timer_not_observed"):
+        relay.DurableRelayController(
+            client=client,
+            current_run_id="100",
+            remaining_hops=12,
+            verify_delay_seconds=0,
+            observed_now=datetime(
+                2026,
+                8,
+                27,
+                21,
+                29,
+                59,
+                tzinfo=timezone.utc,
+            ),
+        ).run()
+
+    assert client.dispatched_hops == []
+    assert client.reporter_forces == []
+    assert "bounded" not in client.calls
+
+
+def test_arbitrary_newer_hop_cannot_replace_exact_successor() -> None:
+    client = FakeClient(current_hop=12)
+    client.durable_runs.append(
+        _run(
+            run_id=150,
+            hop=5,
+            created="2026-08-27T21:00:00.500Z",
+        )
+    )
+    result = relay.DurableRelayController(
+        client=client,
+        current_run_id="100",
+        remaining_hops=12,
+        verify_delay_seconds=0,
+        observed_now=AFTER_WAIT,
+    ).run()
+
+    assert client.dispatched_hops == [11]
+    assert result["successorHop"] == 11
+    assert result["successorRunId"] == 101
+
+
 def test_newer_automatic_seed_renews_terminal_hop_without_warning() -> None:
     client = FakeClient(current_hop=1)
     client.durable_runs.append(
