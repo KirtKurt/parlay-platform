@@ -1170,11 +1170,7 @@ def invoke_public_surface(
         )
 
         post = _http_request(base + path, "POST", body=hostile_body)
-        if post["status"] != 403:
-            raise VerificationError(
-                f"Public POST route exists or has unexpected behavior for {path}: "
-                f"status={post['status']}"
-            )
+        verify_absent_public_post_response(path, post)
         rows.append(
             {
                 "path": path,
@@ -1186,6 +1182,25 @@ def invoke_public_surface(
             }
         )
     return rows
+
+
+def verify_absent_public_post_response(
+    path: str, response: Mapping[str, Any]
+) -> None:
+    """Accept only API Gateway responses compatible with an absent POST method.
+
+    The deployed-stage inventory and OpenAPI export are independently checked
+    immediately beforehand for exact GET+OPTIONS methods and integrations. At
+    this live boundary API Gateway can represent the absent method as either
+    403 or 404. Response bodies and headers are deliberately not authoritative:
+    their error rendering can vary without changing the attested route table.
+    """
+    status = response.get("status")
+    if status not in {403, 404}:
+        raise VerificationError(
+            f"Public POST route exists or has unexpected behavior for {path}: "
+            f"status={status}"
+        )
 
 
 def _lambda_payload(response: Mapping[str, Any]) -> Dict[str, Any]:
