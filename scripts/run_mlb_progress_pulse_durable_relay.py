@@ -160,23 +160,11 @@ def validate_environment(payload: Mapping[str, Any]) -> None:
         for row in rules
         if isinstance(row, Mapping) and row.get("type") == "wait_timer"
     ]
-    branch_policies = [
-        row
-        for row in rules
-        if isinstance(row, Mapping) and row.get("type") == "branch_policy"
-    ]
-    incompatible = [
-        row
-        for row in rules
-        if not isinstance(row, Mapping)
-        or row.get("type") not in {"wait_timer", "branch_policy"}
-    ]
     if (
         payload.get("name") != RELAY_ENVIRONMENT
+        or len(rules) != 1
         or len(wait_timers) != 1
         or wait_timers[0].get("wait_timer") != REQUIRED_WAIT_MINUTES
-        or len(branch_policies) > 1
-        or incompatible
         or payload.get("deployment_branch_policy") is not None
     ):
         raise ValueError("environment_wait_timer_contract_invalid")
