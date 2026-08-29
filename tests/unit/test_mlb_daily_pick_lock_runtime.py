@@ -3300,6 +3300,131 @@ def test_first_attempt_review_requires_true_absence_and_exact_zero_work(
             assert table.queue_item["last_chunk_status"] == "FAILED_CLOSED"
 
 
+@pytest.mark.parametrize("prior_progress_present", (False, True))
+def test_precheckpoint_permanent_failure_uses_bound_review_evidence(
+    prior_progress_present,
+):
+    table = FakeLeaseTable()
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=_successful_current_slate_payload(),
+    ) as (handler, _, _):
+        handler._utc_now = lambda: datetime(
+            2026, 7, 21, 22, 9, 30, tzinfo=timezone.utc
+        )
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        prior = None
+        if prior_progress_present:
+            prior, _ = _fresh_review_transition_fixture(handler, table)
+
+        handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk = (
+            lambda **_kwargs: {
+                "ok": False,
+                "complete": False,
+                "deferred": False,
+                "stage": "BIND_MANIFEST_AUTHORITY",
+                "errorCode": (
+                    "COOPERATIVE_TERMINAL_CHUNK_"
+                    "MANIFEST_EVIDENCE_INVALID"
+                ),
+                "remainingSeconds": 700,
+                "checkpointWriteAllowed": False,
+                "checkpoint": None,
+                "terminalChunkVersion": (
+                    handler.COOPERATIVE_TERMINAL_CHUNK_VERSION
+                ),
+                "postStartPredictionCreationAllowed": False,
+                "immutablePredictionRewriteAllowed": False,
+                "productionAuthorityChanged": False,
+            }
+        )
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                _scheduled_event(),
+                FakeContext(
+                    request_id="precheckpoint-review-owner",
+                    remaining_millis=900_000,
+                ),
+            ),
+            "MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED",
+        )
+
+        assert table.queue_item["state"] == "REVIEW_REQUIRED"
+        evidence = table.queue_item[
+            handler.COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_FIELD
+        ]
+        assert handler._validated_cooperative_review_evidence(
+            evidence,
+            table.queue_item,
+        ) == evidence
+        assert evidence["priorProgressPresent"] is prior_progress_present
+        assert evidence["directWorkflowTableWrite"] is False
+        assert table.queue_item["last_chunk_stage"] == (
+            "BIND_MANIFEST_AUTHORITY"
+        )
+        assert table.queue_item["last_chunk_status"] == "FAILED_CLOSED"
+        assert "claim_owner" not in table.queue_item
+        public = handler._cooperative_public_state(table.queue_item)
+        assert public["reviewReason"] == (
+            "COOPERATIVE_TERMINAL_CHUNK_MANIFEST_EVIDENCE_INVALID"
+        )
+        if prior_progress_present:
+            assert table.queue_item["terminal_replay_progress"] == prior
+        else:
+            assert "terminal_replay_progress" not in table.queue_item
+
+
+def test_precheckpoint_review_evidence_rejects_inexact_chunk_contract():
+    table = FakeLeaseTable()
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=_successful_current_slate_payload(),
+    ) as (handler, _, _):
+        handler._utc_now = lambda: datetime(
+            2026, 7, 21, 22, 9, 30, tzinfo=timezone.utc
+        )
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk = (
+            lambda **_kwargs: {
+                "ok": False,
+                "complete": False,
+                "deferred": False,
+                "stage": "BIND_MANIFEST_AUTHORITY",
+                "errorCode": (
+                    "COOPERATIVE_TERMINAL_CHUNK_"
+                    "MANIFEST_EVIDENCE_INVALID"
+                ),
+                "remainingSeconds": 700,
+                "checkpointWriteAllowed": True,
+                "checkpoint": None,
+                "terminalChunkVersion": (
+                    handler.COOPERATIVE_TERMINAL_CHUNK_VERSION
+                ),
+                "postStartPredictionCreationAllowed": False,
+                "immutablePredictionRewriteAllowed": False,
+                "productionAuthorityChanged": False,
+            }
+        )
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                _scheduled_event(),
+                FakeContext(
+                    request_id="invalid-precheckpoint-review-owner",
+                    remaining_millis=900_000,
+                ),
+            ),
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID",
+        )
+
+        assert table.queue_item["state"] == "QUEUED"
+        assert (
+            handler.COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_FIELD
+            not in table.queue_item
+        )
+        assert "terminal_replay_progress" not in table.queue_item
+        assert "claim_owner" not in table.queue_item
+
+
 @pytest.mark.parametrize(
     ("checkpoint_value", "write_allowed"),
     (
