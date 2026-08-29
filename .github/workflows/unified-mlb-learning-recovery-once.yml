@@ -450,7 +450,10 @@ jobs:
           nested_durable_history = replay.get(
               'durableRemediationHistory'
           )
-          if durable_history not in (None, True):
+          if (
+              durable_history is not None
+              and durable_history is not True
+          ):
               raise SystemExit(
                   'Protected remediation durable history receipt invalid'
               )
@@ -831,7 +834,10 @@ jobs:
           if (
               expected_status is None
               or not isinstance(idempotent, bool)
-              or durable_history not in (None, True)
+              or (
+                  durable_history is not None
+                  and durable_history is not True
+              )
               or (
                   durable_history is None
                   and nested_durable_history is not None
