@@ -15,6 +15,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from boto3.dynamodb.types import Binary
 from botocore.exceptions import ClientError
 
 
@@ -3302,7 +3303,17 @@ def test_first_attempt_review_requires_true_absence_and_exact_zero_work(
 
 @pytest.mark.parametrize(
     "prior_mode",
-    ("absent", "dict", "string", "list", "explicit_null"),
+    (
+        "absent",
+        "dict",
+        "string",
+        "list",
+        "string_set",
+        "number_set",
+        "binary",
+        "binary_set",
+        "explicit_null",
+    ),
 )
 def test_precheckpoint_permanent_failure_uses_bound_review_evidence(
     prior_mode,
@@ -3328,15 +3339,39 @@ def test_precheckpoint_permanent_failure_uses_bound_review_evidence(
             table.queue_item["terminal_replay_progress"] = copy.deepcopy(
                 prior
             )
+        elif prior_mode == "string_set":
+            prior = {"zulu", "alpha"}
+            table.queue_item["terminal_replay_progress"] = set(prior)
+        elif prior_mode == "number_set":
+            prior = {Decimal("1.00"), Decimal("2")}
+            table.queue_item["terminal_replay_progress"] = set(prior)
+        elif prior_mode == "binary":
+            prior = Binary(b"\x00\xff")
+            table.queue_item["terminal_replay_progress"] = copy.deepcopy(
+                prior
+            )
+        elif prior_mode == "binary_set":
+            prior = {Binary(b"zulu"), Binary(b"alpha")}
+            table.queue_item["terminal_replay_progress"] = copy.deepcopy(
+                prior
+            )
         elif prior_mode == "explicit_null":
             prior = None
             table.queue_item["terminal_replay_progress"] = None
         else:
             prior = None
 
+        malformed_modes = {
+            "string",
+            "list",
+            "string_set",
+            "number_set",
+            "binary",
+            "binary_set",
+        }
         error_code = (
             "COOPERATIVE_TERMINAL_CHUNK_CHECKPOINT_NOT_OBJECT"
-            if prior_mode in {"string", "list"}
+            if prior_mode in malformed_modes
             else (
                 "COOPERATIVE_TERMINAL_CHUNK_"
                 "MANIFEST_EVIDENCE_INVALID"
@@ -3381,7 +3416,9 @@ def test_precheckpoint_permanent_failure_uses_bound_review_evidence(
         ) == evidence
         assert evidence["priorProgressPresent"] is prior_progress_present
         assert evidence["priorProgressFingerprint"] == (
-            handler._source_pull_rebind_compact_fingerprint(prior)
+            handler._cooperative_review_prior_progress_fingerprint(
+                prior
+            )
             if prior_progress_present
             else None
         )
@@ -3410,6 +3447,60 @@ def test_precheckpoint_permanent_failure_uses_bound_review_evidence(
             )
         else:
             assert "terminal_replay_progress" not in table.queue_item
+
+
+def test_review_prior_progress_fingerprint_is_ddb_canonical_across_loads():
+    first_value = {
+        "strings": {"zulu", "alpha"},
+        "numbers": {Decimal("2"), Decimal("1.00")},
+        "binary": Binary(b"\x00\xff"),
+        "binarySet": {Binary(b"zulu"), Binary(b"alpha")},
+        "list": [None, True, 1, Decimal("1.0"), b"bytes"],
+    }
+    reordered_value = {
+        "list": [None, True, Decimal("1"), 1, b"bytes"],
+        "binarySet": {Binary(b"alpha"), Binary(b"zulu")},
+        "binary": b"\x00\xff",
+        "numbers": {Decimal("1"), Decimal("2.0")},
+        "strings": {"alpha", "zulu"},
+    }
+
+    with _load_handler() as (first_handler, _, _):
+        first = (
+            first_handler._cooperative_review_prior_progress_fingerprint(
+                first_value
+            )
+        )
+        reordered = (
+            first_handler._cooperative_review_prior_progress_fingerprint(
+                reordered_value
+            )
+        )
+        string_set = (
+            first_handler._cooperative_review_prior_progress_fingerprint(
+                {"value": {"1"}}
+            )
+        )
+        number_set = (
+            first_handler._cooperative_review_prior_progress_fingerprint(
+                {"value": {Decimal("1")}}
+            )
+        )
+        list_value = (
+            first_handler._cooperative_review_prior_progress_fingerprint(
+                {"value": ["1"]}
+            )
+        )
+    with _load_handler() as (reloaded_handler, _, _):
+        reloaded = (
+            reloaded_handler._cooperative_review_prior_progress_fingerprint(
+                copy.deepcopy(first_value)
+            )
+        )
+
+    assert first == reordered == reloaded
+    assert string_set != number_set
+    assert string_set != list_value
 
 
 def test_precheckpoint_review_evidence_rejects_inexact_chunk_contract():
