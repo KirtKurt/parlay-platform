@@ -1793,6 +1793,391 @@ def _source_pull_rebind_compact_fingerprint(value: Any) -> str:
     ).hexdigest()
 
 
+def _validated_cooperative_review_evidence(
+    value: Any,
+    item: Dict[str, Any],
+    *,
+    owner: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Validate a review transition that has no writable chunk checkpoint."""
+
+    expected_keys = {
+        "version",
+        "slateDateEt",
+        "requestEpoch",
+        "requestIdFingerprint",
+        "priorProgressPresent",
+        "priorProgressFingerprint",
+        "stage",
+        "errorCode",
+        "status",
+        "chunkVersion",
+        "claimAcquiredAtUtc",
+        "claimAcquiredAtEpoch",
+        "claimOwnerFingerprint",
+        "recordedAtUtc",
+        "recordedAtEpoch",
+        "postStartPredictionCreationAllowed",
+        "immutablePredictionRewriteAllowed",
+        "directWorkflowTableWrite",
+        "productionAuthorityChanged",
+        "evidenceFingerprint",
+    }
+    if not isinstance(value, dict) or set(value) != expected_keys:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+        )
+    prior_present = "terminal_replay_progress" in item
+    prior = item.get("terminal_replay_progress")
+    if prior_present and not isinstance(prior, dict):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+        )
+    request_id = str(item.get("request_id") or "")
+    claim_at_text = str(value.get("claimAcquiredAtUtc") or "")
+    recorded_at_text = str(value.get("recordedAtUtc") or "")
+    try:
+        request_epoch = _nonnegative_receipt_integer(
+            item.get("requested_at_epoch"),
+            "review_evidence_request_epoch",
+        )
+        bound_request_epoch = _nonnegative_receipt_integer(
+            value.get("requestEpoch"),
+            "review_evidence_bound_request_epoch",
+        )
+        claim_epoch = _nonnegative_receipt_integer(
+            value.get("claimAcquiredAtEpoch"),
+            "review_evidence_claim_epoch",
+        )
+        recorded_epoch = _nonnegative_receipt_integer(
+            value.get("recordedAtEpoch"),
+            "review_evidence_recorded_epoch",
+        )
+        claim_at = datetime.fromisoformat(claim_at_text)
+        recorded_at = datetime.fromisoformat(recorded_at_text)
+    except (RuntimeError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+        ) from exc
+
+    stage = str(value.get("stage") or "")
+    error_code = str(value.get("errorCode") or "")
+    expected_prior_fingerprint = (
+        _source_pull_rebind_compact_fingerprint(prior)
+        if isinstance(prior, dict)
+        else None
+    )
+    material = {
+        key: child
+        for key, child in value.items()
+        if key != "evidenceFingerprint"
+    }
+    encoded_size = len(
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    )
+    owner_matches = True
+    if owner is not None:
+        owner_value = str(owner or "")
+        owner_matches = bool(
+            owner_value
+            and str(item.get("claim_owner") or "") == owner_value
+            and value.get("claimOwnerFingerprint")
+            == hashlib.sha256(owner_value.encode("utf-8")).hexdigest()
+            and value.get("claimAcquiredAtUtc")
+            == item.get("claim_acquired_at_utc")
+            and claim_epoch
+            == _nonnegative_receipt_integer(
+                item.get("claim_acquired_at_epoch"),
+                "review_evidence_item_claim_epoch",
+            )
+        )
+    fingerprint_fields = (
+        "requestIdFingerprint",
+        "claimOwnerFingerprint",
+        "evidenceFingerprint",
+    )
+    if (
+        not request_id
+        or request_epoch <= 0
+        or bound_request_epoch != request_epoch
+        or str(value.get("slateDateEt") or "")
+        != str(item.get("slate_date_et") or "")
+        or value.get("requestIdFingerprint")
+        != hashlib.sha256(request_id.encode("utf-8")).hexdigest()
+        or value.get("version")
+        != COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_VERSION
+        or value.get("priorProgressPresent") is not prior_present
+        or value.get("priorProgressFingerprint")
+        != expected_prior_fingerprint
+        or not _cooperative_replay_requires_review(stage, error_code)
+        or value.get("status") != "FAILED_CLOSED"
+        or value.get("chunkVersion")
+        != COOPERATIVE_TERMINAL_CHUNK_VERSION
+        or claim_at.tzinfo is None
+        or claim_at.utcoffset() != timedelta(0)
+        or claim_at.isoformat() != claim_at_text
+        or int(claim_at.timestamp()) != claim_epoch
+        or recorded_at.tzinfo is None
+        or recorded_at.utcoffset() != timedelta(0)
+        or recorded_at.isoformat() != recorded_at_text
+        or int(recorded_at.timestamp()) != recorded_epoch
+        or recorded_at < claim_at
+        or value.get("postStartPredictionCreationAllowed") is not False
+        or value.get("immutablePredictionRewriteAllowed") is not False
+        or value.get("directWorkflowTableWrite") is not False
+        or value.get("productionAuthorityChanged") is not False
+        or not owner_matches
+        or any(
+            re.fullmatch(r"[0-9a-f]{64}", str(value.get(field) or ""))
+            is None
+            for field in fingerprint_fields
+        )
+        or (
+            prior_present
+            and re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(value.get("priorProgressFingerprint") or ""),
+            )
+            is None
+        )
+        or value.get("evidenceFingerprint")
+        != _source_pull_rebind_compact_fingerprint(material)
+        or encoded_size > COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_MAX_BYTES
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+        )
+    return copy.deepcopy(value)
+
+
+def _cooperative_review_evidence_from_claimed_result(
+    item: Dict[str, Any],
+    owner: str,
+    chunk_result: Any,
+) -> Dict[str, Any]:
+    """Bind one in-process permanent failure to the exact claimed row."""
+
+    stage = (
+        str(chunk_result.get("stage") or "")
+        if isinstance(chunk_result, dict)
+        else ""
+    )
+    error_code = (
+        str(chunk_result.get("errorCode") or "")
+        if isinstance(chunk_result, dict)
+        else ""
+    )
+    if (
+        not isinstance(chunk_result, dict)
+        or chunk_result.get("ok") is not False
+        or chunk_result.get("complete") is not False
+        or chunk_result.get("deferred") is not False
+        or chunk_result.get("checkpoint") is not None
+        or chunk_result.get("checkpointWriteAllowed") is not False
+        or chunk_result.get("terminalChunkVersion")
+        != COOPERATIVE_TERMINAL_CHUNK_VERSION
+        or chunk_result.get("postStartPredictionCreationAllowed") is not False
+        or chunk_result.get("immutablePredictionRewriteAllowed") is not False
+        or chunk_result.get("productionAuthorityChanged") is not False
+        or not _cooperative_replay_requires_review(stage, error_code)
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+        )
+    if (
+        item.get("state") != COOPERATIVE_REPLAY_CLAIMED
+        or str(item.get("claim_owner") or "") != str(owner or "")
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+        )
+    prior_present = "terminal_replay_progress" in item
+    prior = item.get("terminal_replay_progress")
+    if prior_present and not isinstance(prior, dict):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+        )
+    request_epoch = _nonnegative_receipt_integer(
+        item.get("requested_at_epoch"),
+        "review_evidence_request_epoch",
+    )
+    claim_epoch = _nonnegative_receipt_integer(
+        item.get("claim_acquired_at_epoch"),
+        "review_evidence_claim_epoch",
+    )
+    request_id = str(item.get("request_id") or "")
+    owner_value = str(owner or "")
+    claim_at_utc = str(item.get("claim_acquired_at_utc") or "")
+    now = _utc_now()
+    evidence = {
+        "version": COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_VERSION,
+        "slateDateEt": str(item.get("slate_date_et") or ""),
+        "requestEpoch": request_epoch,
+        "requestIdFingerprint": hashlib.sha256(
+            request_id.encode("utf-8")
+        ).hexdigest(),
+        "priorProgressPresent": prior_present,
+        "priorProgressFingerprint": (
+            _source_pull_rebind_compact_fingerprint(prior)
+            if isinstance(prior, dict)
+            else None
+        ),
+        "stage": stage,
+        "errorCode": error_code,
+        "status": "FAILED_CLOSED",
+        "chunkVersion": COOPERATIVE_TERMINAL_CHUNK_VERSION,
+        "claimAcquiredAtUtc": claim_at_utc,
+        "claimAcquiredAtEpoch": claim_epoch,
+        "claimOwnerFingerprint": hashlib.sha256(
+            owner_value.encode("utf-8")
+        ).hexdigest(),
+        "recordedAtUtc": now.isoformat(),
+        "recordedAtEpoch": int(now.timestamp()),
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "directWorkflowTableWrite": False,
+        "productionAuthorityChanged": False,
+    }
+    evidence["evidenceFingerprint"] = (
+        _source_pull_rebind_compact_fingerprint(evidence)
+    )
+    return _validated_cooperative_review_evidence(
+        evidence,
+        item,
+        owner=owner_value,
+    )
+
+
+def _review_cooperative_replay_without_checkpoint(
+    *,
+    item: Dict[str, Any],
+    owner: str,
+    chunk_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Persist a request-bound review outcome while preserving prior progress."""
+
+    evidence = _cooperative_review_evidence_from_claimed_result(
+        item,
+        owner,
+        chunk_result,
+    )
+    slate_date = str(item.get("slate_date_et") or "")
+    request_id = str(item.get("request_id") or "")
+    request_epoch = _nonnegative_receipt_integer(
+        item.get("requested_at_epoch"),
+        "review_evidence_request_epoch",
+    )
+    prior_present = "terminal_replay_progress" in item
+    prior = item.get("terminal_replay_progress")
+    expression_values = {
+        ":record_type": COOPERATIVE_TERMINAL_REPLAY_RECORD_TYPE,
+        ":version": COOPERATIVE_TERMINAL_REPLAY_VERSION,
+        ":slate_date": slate_date,
+        ":request_epoch": request_epoch,
+        ":request_id": request_id,
+        ":claimed": COOPERATIVE_REPLAY_CLAIMED,
+        ":review_required": COOPERATIVE_REPLAY_REVIEW_REQUIRED,
+        ":owner": owner,
+        ":evidence": evidence,
+        ":now_utc": evidence["recordedAtUtc"],
+        ":now_epoch": evidence["recordedAtEpoch"],
+        ":chunk_stage": evidence["stage"],
+        ":chunk_status": evidence["status"],
+    }
+    if prior_present:
+        expression_values[":prior_progress"] = prior
+    try:
+        updated = _cooperative_replay_table().update_item(
+            Key=_cooperative_replay_key(),
+            ConditionExpression=(
+                "record_type = :record_type AND "
+                "coordination_version = :version AND "
+                "slate_date_et = :slate_date AND "
+                "requested_at_epoch = :request_epoch AND "
+                "request_id = :request_id AND "
+                + (
+                    "terminal_replay_progress = :prior_progress AND "
+                    if prior_present
+                    else "attribute_not_exists(terminal_replay_progress) AND "
+                )
+                + "#state = :claimed AND claim_owner = :owner AND "
+                "attribute_not_exists(#review_evidence)"
+            ),
+            UpdateExpression=(
+                "SET #state = :review_required, "
+                "#review_evidence = :evidence, "
+                "last_chunk_at_utc = :now_utc, "
+                "last_chunk_at_epoch = :now_epoch, "
+                "last_chunk_stage = :chunk_stage, "
+                "last_chunk_status = :chunk_status, "
+                "last_failure_at_utc = :now_utc, "
+                "last_failure_at_epoch = :now_epoch "
+                "REMOVE current_slate_success_proof, claim_owner, "
+                "claim_acquired_at_utc, claim_acquired_at_epoch, "
+                "claim_expires_at_utc, claim_expires_at_epoch"
+            ),
+            ExpressionAttributeNames={
+                "#state": "state",
+                "#review_evidence": (
+                    COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_FIELD
+                ),
+            },
+            ExpressionAttributeValues=expression_values,
+            ReturnValues="ALL_NEW",
+        ).get("Attributes")
+    except BaseException as exc:
+        observed = _cooperative_record(
+            _read_cooperative_replay(),
+            slate_date,
+        )
+        observed_prior_present = "terminal_replay_progress" in observed
+        if (
+            observed.get("state") == COOPERATIVE_REPLAY_REVIEW_REQUIRED
+            and observed.get("requested_at_epoch") == request_epoch
+            and str(observed.get("request_id") or "") == request_id
+            and observed_prior_present is prior_present
+            and (
+                not prior_present
+                or observed.get("terminal_replay_progress") == prior
+            )
+            and observed.get(
+                COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_FIELD
+            )
+            == evidence
+        ):
+            _validated_cooperative_review_evidence(evidence, observed)
+            updated = observed
+        else:
+            raise RuntimeError(
+                "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_WRITE_FAILED"
+            ) from exc
+
+    reviewed = _cooperative_record(dict(updated or {}), slate_date)
+    reviewed_prior_present = "terminal_replay_progress" in reviewed
+    if (
+        reviewed.get("state") != COOPERATIVE_REPLAY_REVIEW_REQUIRED
+        or reviewed.get("requested_at_epoch") != request_epoch
+        or str(reviewed.get("request_id") or "") != request_id
+        or reviewed_prior_present is not prior_present
+        or (
+            prior_present
+            and reviewed.get("terminal_replay_progress") != prior
+        )
+        or reviewed.get(COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_FIELD)
+        != evidence
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_STATE_INVALID"
+        )
+    _validated_cooperative_review_evidence(evidence, reviewed)
+    return _cooperative_public_state(reviewed)
+
+
 def _validated_source_pull_rebind_remediation_history(
     value: Any,
 ) -> Dict[str, Any]:
