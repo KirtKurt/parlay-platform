@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import math
+from decimal import Decimal
 from itertools import islice
 from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional, Sequence, Tuple
 
@@ -39,6 +40,10 @@ MAX_SIDE_ADJUSTMENT = 3.0
 MAX_SHADOW_LIST_ITEMS = 12
 MAX_SHADOW_TEXT_CHARS = 240
 MAX_SHADOW_COMPONENTS = 12
+EXPECTED_PASSIVE_PROVENANCE_ERROR = (
+    "fundamentals_v2_evidence_not_at_or_before_"
+    "persisted_prediction_and_lock"
+)
 
 
 def _f(value: Any) -> Optional[float]:
@@ -66,6 +71,26 @@ def _bounded_strings(values: Any) -> list[str]:
         str(value)[:MAX_SHADOW_TEXT_CHARS]
         for value in islice(iter(values), MAX_SHADOW_LIST_ITEMS)
     ]
+
+
+def _dynamo_projection(value: Any) -> Any:
+    """Return the exact null/numeric shape written by prediction persistence."""
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, list):
+        return [_dynamo_projection(item) for item in value]
+    if isinstance(value, Mapping):
+        return {
+            key: _dynamo_projection(item)
+            for key, item in value.items()
+            if item is not None
+        }
+    return value
+
+
+def _matches_canonical_persistence_shape(actual: Any, canonical: Any) -> bool:
+    """Accept only the in-memory canonical form or its exact Dynamo projection."""
+    return actual == canonical or actual == _dynamo_projection(canonical)
 
 
 def _snapshot_ref(snapshot: Mapping[str, Any]) -> Dict[str, Any]:
@@ -172,6 +197,32 @@ def _lock_at(row: Mapping[str, Any]) -> Any:
     )
 
 
+def is_expected_passive_provenance_block(
+    shadow: Any,
+    row: Optional[Mapping[str, Any]] = None,
+) -> bool:
+    """Identify the one canonical, non-authoritative pre-persistence block."""
+    if not isinstance(shadow, Mapping):
+        return False
+    row_mapping = row if isinstance(row, Mapping) else {}
+    validation_errors = shadow.get("validationErrors")
+    return bool(
+        shadow.get("evaluated") is False
+        and shadow.get("shadowOnly") is False
+        and shadow.get("wouldApply") is False
+        and shadow.get("liveScoringAuthority") is False
+        and shadow.get("canInfluenceLivePick") is False
+        and shadow.get("evaluationInputIsolatedCopy") is True
+        and shadow.get("liveScoringInputUsedShadowCandidate") is False
+        and shadow.get("evidenceBounded") is True
+        and shadow.get("mode") == "SHADOW_NOT_EVALUATED"
+        and shadow.get("reason") == "snapshot_v2_invalid_or_not_lock_safe"
+        and isinstance(validation_errors, (list, tuple))
+        and list(validation_errors) == [EXPECTED_PASSIVE_PROVENANCE_ERROR]
+        and _prediction_persisted_at(row_mapping) in (None, "")
+    )
+
+
 def install_snapshot_determinism(snapshot_v2_module: Any) -> Any:
     if getattr(
         snapshot_v2_module,
@@ -245,10 +296,7 @@ def _snapshot_for_row(
             prediction_persisted_at=_prediction_persisted_at(row),
             lock_at=_lock_at(row),
         ):
-            errors.append(
-                "fundamentals_v2_evidence_not_at_or_before_"
-                "persisted_prediction_and_lock"
-            )
+            errors.append(EXPECTED_PASSIVE_PROVENANCE_ERROR)
         errors = tuple(errors)
     except Exception as exc:
         errors = (f"fundamentals_v2_validation_error:{type(exc).__name__}",)
@@ -707,6 +755,8 @@ def validate_shadow_attestation(
     if not evaluated and would_apply:
         errors.append("unevaluated_shadow_cannot_apply")
 
+    claimed_persistence = _prediction_persisted_at(row)
+    requires_provenance = evaluated or claimed_persistence not in (None, "")
     snapshot = row.get("fundamentalsSnapshotV2")
     snapshot_mapping = snapshot if isinstance(snapshot, Mapping) else None
     expected_shadow_ref: Dict[str, Any] = {}
@@ -725,9 +775,9 @@ def validate_shadow_attestation(
             snapshot_errors = list(snapshot_contract.validate(dict(snapshot_mapping)))
             if snapshot_errors:
                 errors.append("shadow_current_snapshot_invalid")
-            elif not snapshot_contract.provenance_is_lock_safe(
+            elif requires_provenance and not snapshot_contract.provenance_is_lock_safe(
                 dict(snapshot_mapping),
-                prediction_persisted_at=_prediction_persisted_at(row),
+                prediction_persisted_at=claimed_persistence,
                 lock_at=_lock_at(row),
             ):
                 errors.append("shadow_current_snapshot_provenance_invalid")
@@ -738,7 +788,9 @@ def validate_shadow_attestation(
         current_ref = row.get("fundamentalsSnapshotV2Ref")
         if not isinstance(current_ref, Mapping):
             errors.append("shadow_current_snapshot_ref_invalid")
-        elif dict(current_ref) != expected_row_ref:
+        elif not _matches_canonical_persistence_shape(
+            dict(current_ref), expected_row_ref
+        ):
             errors.append("shadow_current_snapshot_ref_invalid")
 
         expected_shadow_ref = {
@@ -783,7 +835,7 @@ def validate_shadow_attestation(
         canonical_input = copy.deepcopy(dict(row))
         canonical_input.pop(SHADOW_FIELD, None)
         canonical = evaluate_shadow(canonical_input)
-        if dict(shadow) != canonical:
+        if not _matches_canonical_persistence_shape(dict(shadow), canonical):
             errors.append("shadow_canonical_evaluation_mismatch")
     except Exception:
         errors.append("shadow_canonical_evaluation_unavailable")
