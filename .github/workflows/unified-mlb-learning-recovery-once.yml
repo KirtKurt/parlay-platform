@@ -604,6 +604,8 @@ jobs:
 
       - name: Requeue protected prelock review after installed-runtime proof v2
         if: ${{ inputs.requeue_prelock_candidate_review_after_installed_runtime_proof_v2 }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -611,6 +613,7 @@ jobs:
 
           import json
           import os
+          import urllib.request
           from datetime import datetime, timezone
           from pathlib import Path
           from typing import Any, Mapping
