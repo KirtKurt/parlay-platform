@@ -3234,7 +3234,10 @@ def _first_attempt_review_checkpoint(handler, table):
         (
             True,
             "QUEUED",
-            "MLB_COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_CONTRACT_INVALID",
+            (
+                "MLB_COOPERATIVE_TERMINAL_"
+                "NON_OBJECT_CHECKPOINT_RESULT_INVALID"
+            ),
         ),
     ),
 )
