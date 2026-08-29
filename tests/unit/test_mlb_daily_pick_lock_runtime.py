@@ -3490,7 +3490,14 @@ def test_explicit_null_checkpoint_reaches_real_not_object_validator():
             )
 
 
-def test_present_nonobject_checkpoint_rejects_writable_runner_result():
+@pytest.mark.parametrize(
+    ("write_allowed", "include_checkpoint"),
+    ((True, False), (False, True)),
+)
+def test_present_nonobject_checkpoint_rejects_writable_runner_result(
+    write_allowed,
+    include_checkpoint,
+):
     table = FakeLeaseTable()
     with _load_handler(
         lease_table=table,
@@ -3516,8 +3523,12 @@ def test_present_nonobject_checkpoint_rejects_writable_runner_result():
                 "deferred": False,
                 "stage": "PROCESS_CHECKPOINT_READY",
                 "remainingSeconds": 700,
-                "checkpointWriteAllowed": True,
-                "checkpoint": copy.deepcopy(forged_progress),
+                "checkpointWriteAllowed": write_allowed,
+                "checkpoint": (
+                    copy.deepcopy(forged_progress)
+                    if include_checkpoint
+                    else None
+                ),
                 "terminalChunkVersion": (
                     handler.COOPERATIVE_TERMINAL_CHUNK_VERSION
                 ),
