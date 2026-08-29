@@ -14,6 +14,7 @@ UNIFIED_RECOVERY = (
 SOURCE_CONTRACT = (
     ROOT / ".github" / "workflows" / "mlb-production-source-contract.yml"
 )
+DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
 
 
 def test_workflow_runs_bounded_reconciliation_before_training():
@@ -157,6 +158,9 @@ def test_unified_recovery_source_rebind_review_requeue_is_explicit_and_bounded()
 def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
     source = UNIFIED_RECOVERY.read_text(encoding="utf-8")
     workflow = yaml.safe_load(source)
+    deploy_workflow = yaml.safe_load(
+        DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    )
     assert workflow["concurrency"] == {
         "group": "unified-mlb-learning",
         "cancel-in-progress": False,
@@ -166,6 +170,7 @@ def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
         "group": "parlay-platform-deploy",
         "cancel-in-progress": False,
     }
+    assert recovery_job["concurrency"] == deploy_workflow["concurrency"]
     workflow_dispatch = workflow["on"]["workflow_dispatch"]
     input_config = workflow_dispatch["inputs"][
         "requeue_prelock_candidate_review_after_installed_runtime_proof_v2"
@@ -278,9 +283,44 @@ def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
     assert "INQSI_DEPLOY_RUN_ID" in remediation
     assert remediation.count("latest_exact_deploy()") >= 4
     assert remediation.count("require_exact_stack_deployment()") >= 4
+    assert "def exact_deploy_identity(" in remediation
+    assert "type(run_id) is not int" in remediation
+    assert "type(run_attempt) is not int" in remediation
+    assert "get('run_attempt') or 1" not in remediation
     assert "latest_before_invoke_identity" in remediation
     assert "latest_after_invoke_identity" in remediation
     assert "post_invocation_configuration" in remediation
+    invoke_at = remediation.index("invocation = lambda_client.invoke(")
+    pre_configuration_at = remediation.index(
+        "invocation_configuration ="
+    )
+    pre_latest_at = remediation.index("latest_before_invoke =")
+    pre_stack_at = remediation.rindex(
+        "require_exact_stack_deployment()",
+        0,
+        invoke_at,
+    )
+    post_configuration_at = remediation.index(
+        "post_invocation_configuration =",
+        invoke_at,
+    )
+    post_latest_at = remediation.index(
+        "latest_after_invoke =",
+        invoke_at,
+    )
+    post_stack_at = remediation.index(
+        "require_exact_stack_deployment()",
+        post_latest_at,
+    )
+    assert (
+        pre_configuration_at
+        < pre_latest_at
+        < pre_stack_at
+        < invoke_at
+        < post_configuration_at
+        < post_latest_at
+        < post_stack_at
+    )
     assert "type(lambda_status) is not int" in remediation
     assert "type(application_status) is not int" in remediation
     assert "application_status = int(" not in remediation
