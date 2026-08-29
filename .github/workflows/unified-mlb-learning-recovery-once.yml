@@ -765,6 +765,33 @@ jobs:
                   retries={'total_max_attempts': 3, 'mode': 'standard'},
               ),
           )
+          stacks = cloudformation.describe_stacks(
+              StackName=stack_name,
+          ).get('Stacks') or []
+          stack = stacks[0] if len(stacks) == 1 else None
+          parameters = {
+              str(parameter.get('ParameterKey') or ''): str(
+                  parameter.get('ParameterValue') or ''
+              )
+              for parameter in (
+                  stack.get('Parameters') or []
+                  if isinstance(stack, Mapping)
+                  else []
+              )
+              if isinstance(parameter, Mapping)
+          }
+          if (
+              not isinstance(stack, Mapping)
+              or stack.get('StackStatus')
+              not in {'CREATE_COMPLETE', 'UPDATE_COMPLETE'}
+              or parameters.get('DeployGitSha') != commit_sha
+              or parameters.get('DeployRunId')
+              != expected_deploy_run_id
+          ):
+              raise SystemExit(
+                  'Protected v2 stack deployment identity is not exact'
+              )
+
           resource = cloudformation.describe_stack_resource(
               StackName=stack_name,
               LogicalResourceId=LOGICAL_RESOURCE_ID,
