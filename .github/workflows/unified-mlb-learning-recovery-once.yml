@@ -647,6 +647,53 @@ jobs:
               'productionAuthorityChanged',
           )
 
+          repository = os.environ['GITHUB_REPOSITORY']
+          commit_sha = os.environ['GITHUB_SHA']
+          github_ref = os.environ['GITHUB_REF']
+          github_token = os.environ['GH_TOKEN']
+          if github_ref != 'refs/heads/main' or not commit_sha:
+              raise SystemExit(
+                  'Protected v2 requires an exact main-branch commit'
+              )
+          deploy_runs_url = (
+              f'https://api.github.com/repos/{repository}/actions/workflows/'
+              'deploy.yml/runs?branch=main&status=success&per_page=100'
+          )
+          deploy_request = urllib.request.Request(
+              deploy_runs_url,
+              headers={
+                  'Accept': 'application/vnd.github+json',
+                  'Authorization': f'Bearer {github_token}',
+                  'X-GitHub-Api-Version': '2022-11-28',
+              },
+          )
+          try:
+              with urllib.request.urlopen(
+                  deploy_request,
+                  timeout=30,
+              ) as response:
+                  deploy_payload = json.load(response)
+          except Exception as exc:
+              raise SystemExit(
+                  'Protected v2 deploy attestation read failed'
+              ) from exc
+          deploy_runs = deploy_payload.get('workflow_runs') or []
+          same_commit_deploys = [
+              run
+              for run in deploy_runs
+              if (
+                  isinstance(run, Mapping)
+                  and run.get('head_sha') == commit_sha
+                  and run.get('head_branch') == 'main'
+                  and run.get('status') == 'completed'
+                  and run.get('conclusion') == 'success'
+              )
+          ]
+          if not same_commit_deploys:
+              raise SystemExit(
+                  'Protected v2 same-commit main deploy is not successful'
+              )
+
           region = os.environ['AWS_REGION']
           stack_name = os.environ['MLB_ROOT_STACK']
           repair_slate = os.environ['REPAIR_SLATE_DATE']
