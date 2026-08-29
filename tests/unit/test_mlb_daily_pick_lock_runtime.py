@@ -3084,6 +3084,9 @@ def test_failed_chunk_enters_review_only_with_fresh_failure_checkpoint(
         lease_table=table,
         delegate_payload=_successful_current_slate_payload(),
     ) as (handler, _, delegate_calls):
+        handler._utc_now = lambda: datetime(
+            2026, 7, 21, 22, 9, 30, tzinfo=timezone.utc
+        )
         handler.lambda_handler(_cooperative_event(), FakeContext())
         prior, failed = _fresh_review_transition_fixture(
             handler,
@@ -3134,6 +3137,128 @@ def test_failed_chunk_enters_review_only_with_fresh_failure_checkpoint(
         assert "PROVE_PRELOCK_ABSENCE" in logs
         assert "PRELOCK_CANDIDATE_REQUIRES_REVIEW" in logs
         assert "claim_owner" not in logs
+
+
+def _first_attempt_review_checkpoint(handler, table):
+    request_epoch = int(table.queue_item["requested_at_epoch"])
+    request_id = str(table.queue_item["request_id"])
+    failed = _complete_terminal_checkpoint(
+        slate_date="2026-07-20",
+        request_epoch=request_epoch,
+        request_id=request_id,
+        game_count=1,
+    )
+    failed.update(
+        {
+            "phase": "PROCESS",
+            "nextGameIndex": 0,
+            "processedGameCount": 0,
+            "terminalCount": 0,
+            "canonicalCount": 0,
+            "noPredictionDataCount": 0,
+            "missedLockValidPrelockQuarantineCount": 0,
+            "reconciledCount": 0,
+            "processedGames": [],
+            "verificationIndex": 0,
+            "verifiedGameCount": 0,
+            "verificationComplete": False,
+            "attemptCount": 1,
+            "lastAttempt": {
+                "status": "FAILED_CLOSED",
+                "stage": "PROVE_PRELOCK_ABSENCE",
+                "atUtc": "2026-07-21T22:10:00+00:00",
+                "phase": "PROCESS",
+                "gameIndex": 0,
+                "gameIdentity": "provider:game-1",
+                "errorCode": "PRELOCK_CANDIDATE_REQUIRES_REVIEW",
+            },
+            "updatedAtUtc": "2026-07-21T22:10:00+00:00",
+        }
+    )
+    failed["checkpointFingerprint"] = (
+        COOPERATIVE_REPAIR._cooperative_terminal_checkpoint_fingerprint(
+            failed
+        )
+    )
+    return failed
+
+
+@pytest.mark.parametrize(
+    ("explicit_null_prior", "expected_state", "expected_error"),
+    (
+        (
+            False,
+            "REVIEW_REQUIRED",
+            "MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED",
+        ),
+        (
+            True,
+            "QUEUED",
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_CONTRACT_INVALID",
+        ),
+    ),
+)
+def test_first_attempt_review_requires_true_absence_and_exact_zero_work(
+    explicit_null_prior,
+    expected_state,
+    expected_error,
+):
+    table = FakeLeaseTable()
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=_successful_current_slate_payload(),
+    ) as (handler, _, _):
+        handler._utc_now = lambda: datetime(
+            2026, 7, 21, 22, 9, 30, tzinfo=timezone.utc
+        )
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        assert "terminal_replay_progress" not in table.queue_item
+        failed = _first_attempt_review_checkpoint(handler, table)
+        if explicit_null_prior:
+            table.queue_item["terminal_replay_progress"] = None
+
+        handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk = (
+            lambda **_kwargs: {
+                "ok": False,
+                "complete": False,
+                "deferred": False,
+                "stage": "PROVE_PRELOCK_ABSENCE",
+                "errorCode": "PRELOCK_CANDIDATE_REQUIRES_REVIEW",
+                "remainingSeconds": 700,
+                "checkpointWriteAllowed": True,
+                "checkpoint": copy.deepcopy(failed),
+                "terminalChunkVersion": (
+                    handler.COOPERATIVE_TERMINAL_CHUNK_VERSION
+                ),
+                "postStartPredictionCreationAllowed": False,
+                "immutablePredictionRewriteAllowed": False,
+                "productionAuthorityChanged": False,
+            }
+        )
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                _scheduled_event(),
+                FakeContext(
+                    request_id="first-review-owner",
+                    remaining_millis=900_000,
+                ),
+            ),
+            expected_error,
+        )
+
+        assert table.queue_item["state"] == expected_state
+        assert "claim_owner" not in table.queue_item
+        if explicit_null_prior:
+            assert table.queue_item["terminal_replay_progress"] is None
+            assert table.queue_item.get("last_chunk_stage") != (
+                "PROVE_PRELOCK_ABSENCE"
+            )
+        else:
+            assert table.queue_item["terminal_replay_progress"] == failed
+            assert table.queue_item["last_chunk_stage"] == (
+                "PROVE_PRELOCK_ABSENCE"
+            )
+            assert table.queue_item["last_chunk_status"] == "FAILED_CLOSED"
 
 
 @pytest.mark.parametrize(
