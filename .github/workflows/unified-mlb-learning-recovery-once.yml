@@ -748,13 +748,38 @@ jobs:
           configuration = lambda_client.get_function_configuration(
               FunctionName=function_name,
           )
+          pinned_revision_id = str(configuration.get('RevisionId') or '')
+          pinned_code_sha256 = str(configuration.get('CodeSha256') or '')
           if (
               configuration.get('FunctionName') != function_name
               or configuration.get('Handler') != EXPECTED_HANDLER
               or configuration.get('State') != 'Active'
               or configuration.get('LastUpdateStatus') != 'Successful'
+              or not pinned_revision_id
+              or not pinned_code_sha256
           ):
               raise SystemExit('Resolved protected lock Lambda is not ready')
+
+          invocation_configuration = (
+              lambda_client.get_function_configuration(
+                  FunctionName=function_name,
+              )
+          )
+          pinned_fields = {
+              'FunctionName': function_name,
+              'Handler': EXPECTED_HANDLER,
+              'State': 'Active',
+              'LastUpdateStatus': 'Successful',
+              'RevisionId': pinned_revision_id,
+              'CodeSha256': pinned_code_sha256,
+          }
+          if any(
+              invocation_configuration.get(key) != expected_value
+              for key, expected_value in pinned_fields.items()
+          ):
+              raise SystemExit(
+                  'Protected lock Lambda identity changed before invocation'
+              )
 
           invocation = lambda_client.invoke(
               FunctionName=function_name,
