@@ -59,6 +59,9 @@ MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED = (
 VALID_PRELOCK_QUARANTINE_AUTHORITY_VERSION = (
     "MLB-VALID-PRELOCK-MISSED-LOCK-QUARANTINE-v1"
 )
+STATUS_SOURCE_PULL_REBIND_VERSION = (
+    "MLB-STATUS-SOURCE-PULL-REBIND-v1-strong-immutable-row"
+)
 RELEASE_ASSESSMENT_VERSION = "MLB-PLAYABILITY-ASSESSMENT-v1-immutable-selection-bound"
 RELEASE_ASSESSMENT_RECORD_TYPE = "mlb_immutable_playability_assessment"
 READINESS_CHECKPOINT_MINUTES = (60, 50)
@@ -2003,6 +2006,7 @@ def _validated_valid_prelock_quarantine_authority(
     )
     source_pull, rebound_scoring = _source_pull_for_candidate(
         module,
+        slate,
         bound_scoring,
         parsed["predictionSourcePullAtUtc"],
         source_id,
@@ -2026,7 +2030,16 @@ def _validated_valid_prelock_quarantine_authority(
         or not rebound_scoring
         or not isinstance(source_item, dict)
         or source_item.get("record_type") != "pull_run"
+        or str(source_item.get("PK") or "") != source_pk
+        or str(source_item.get("SK") or "") != source_sk
         or not isinstance(source_readback, dict)
+        or bool(
+            history_contract._pull_integrity_errors(
+                source_readback,
+                sport="mlb",
+                slate=slate,
+            )
+        )
         or str(source_readback.get("pull_id") or "") != source_id
         or _parse_iso(source_readback.get("pulled_at"))
         != parsed["predictionSourcePullAtUtc"]
@@ -4843,10 +4856,40 @@ def _candidate_items(
 
 def _source_pull_for_candidate(
     module: Any,
+    slate: str,
     scoring: List[Dict[str, Any]],
     source_at: datetime,
     source_id: str,
 ) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+    expected_sport = history_contract.sport_key("mlb")
+
+    def raw_projection_fingerprint(
+        canonical: Dict[str, Any],
+        raw: Dict[str, Any],
+    ) -> Optional[str]:
+        if (
+            history_contract.sport_key(raw.get("sport"))
+            != expected_sport
+            or str(raw.get("slate_date") or "") != slate
+            or not str(raw.get("pull_id") or "")
+            or not isinstance(raw.get("games"), list)
+            or _pull_at(module, raw) is None
+            or history_contract._pull_integrity_errors(
+                raw,
+                sport="mlb",
+                slate=slate,
+            )
+        ):
+            return None
+        fingerprint = history_contract.pull_payload_fingerprint(raw)
+        slot = canonical.get("canonicalPullSlot") or {}
+        raw_fingerprints = {
+            str(value)
+            for value in (slot.get("rawPullFingerprints") or [])
+            if str(value)
+        }
+        return fingerprint if fingerprint in raw_fingerprints else None
+
     earlier: List[Dict[str, Any]] = []
     same_timestamp: List[Dict[str, Any]] = []
     for pull in scoring:
@@ -4864,14 +4907,165 @@ def _source_pull_for_candidate(
     raw_matches: List[Tuple[int, Dict[str, Any]]] = []
     for index, canonical in enumerate(scoring):
         for raw in canonical.get("_canonicalSlotRawPulls") or []:
+            if not isinstance(raw, dict):
+                continue
             if _pull_at(module, raw) != source_at:
                 continue
             if source_id and str(raw.get("pull_id") or "") != source_id:
+                continue
+            if raw_projection_fingerprint(canonical, raw) is None:
                 continue
             raw_matches.append((index, raw))
     if len(raw_matches) == 1:
         index, matching = raw_matches[0]
         return copy.deepcopy(matching), list(scoring[: index + 1])
+
+    # Read-only status requests deliberately strip full-slate raw variants from
+    # every game-scoped scoring copy.  The request cache still owns exactly one
+    # full canonical pull set and the strongly read immutable source rows that
+    # produced it.  Rebind the candidate through that shared set instead of
+    # treating the one-game projection as the persisted pull payload.
+    request_cache = _STATUS_READ_CACHE.get()
+    canonical_cache = (
+        request_cache.get("canonicalPulls")
+        if isinstance(request_cache, dict)
+        else None
+    )
+    persisted_matches: Dict[
+        Tuple[str, str],
+        Tuple[Tuple[str, str], Dict[str, Any]],
+    ] = {}
+    persisted_match_conflict = False
+    if isinstance(canonical_cache, dict) and source_id:
+        for canonical_pulls in canonical_cache.values():
+            if not isinstance(canonical_pulls, list):
+                continue
+            for canonical in canonical_pulls:
+                if not isinstance(canonical, dict):
+                    continue
+                slot = canonical.get("canonicalPullSlot") or {}
+                slot_identity = (
+                    str(slot.get("slotStartUtc") or ""),
+                    str(slot.get("canonicalPullFingerprint") or ""),
+                )
+                if not all(slot_identity):
+                    continue
+                for raw in canonical.get("_canonicalSlotRawPulls") or []:
+                    if not isinstance(raw, dict):
+                        continue
+                    if _pull_at(module, raw) != source_at:
+                        continue
+                    if str(raw.get("pull_id") or "") != source_id:
+                        continue
+                    raw_fingerprint = raw_projection_fingerprint(
+                        canonical,
+                        raw,
+                    )
+                    if raw_fingerprint is None:
+                        continue
+                    storage = raw.get("canonicalPullStorage") or {}
+                    key = {
+                        "PK": str(storage.get("pk") or ""),
+                        "SK": str(storage.get("sk") or ""),
+                    }
+                    if (
+                        key["PK"] != f"PULLS#mlb#{slate}"
+                        or not key["SK"]
+                    ):
+                        continue
+                    source_item, source_read_error = _consistent_item_result(
+                        module.history.PULLS,
+                        key,
+                    )
+                    if source_read_error is not None:
+                        raise source_read_error
+                    source_readback = (
+                        source_item.get("data")
+                        if isinstance(source_item, dict)
+                        else None
+                    )
+                    if (
+                        not isinstance(source_item, dict)
+                        or source_item.get("record_type") != "pull_run"
+                        or str(source_item.get("PK") or "") != key["PK"]
+                        or str(source_item.get("SK") or "") != key["SK"]
+                        or not isinstance(source_readback, dict)
+                        or str(source_readback.get("pull_id") or "")
+                        != source_id
+                        or _parse_iso(source_readback.get("pulled_at"))
+                        != source_at
+                    ):
+                        raise RuntimeError(
+                            "VALID_PRELOCK_QUARANTINE_SOURCE_PULL_PROOF_MISMATCH"
+                        )
+                    integrity_errors = history_contract._pull_integrity_errors(
+                        source_readback,
+                        sport="mlb",
+                        slate=slate,
+                    )
+                    filter_pull = getattr(
+                        module.history,
+                        "_filter_mlb_model_pull",
+                        None,
+                    )
+                    projected_readback = (
+                        filter_pull(copy.deepcopy(source_readback))
+                        if callable(filter_pull)
+                        else copy.deepcopy(source_readback)
+                    )
+                    if (
+                        integrity_errors
+                        or not isinstance(projected_readback, dict)
+                        or history_contract.pull_payload_fingerprint(
+                            projected_readback
+                        )
+                        != raw_fingerprint
+                    ):
+                        raise RuntimeError(
+                            "VALID_PRELOCK_QUARANTINE_SOURCE_PULL_PROOF_MISMATCH"
+                        )
+                    persisted = copy.deepcopy(source_readback)
+                    persisted["canonicalPullStorage"] = {
+                        "pk": key["PK"],
+                        "sk": key["SK"],
+                        "recordType": "pull_run",
+                    }
+                    persisted_key = (key["PK"], key["SK"])
+                    persisted_match = (
+                        slot_identity,
+                        persisted,
+                    )
+                    prior_match = persisted_matches.get(persisted_key)
+                    if (
+                        prior_match is not None
+                        and prior_match != persisted_match
+                    ):
+                        persisted_match_conflict = True
+                    persisted_matches[persisted_key] = persisted_match
+    if not persisted_match_conflict and len(persisted_matches) == 1:
+        slot_identity, persisted = next(iter(persisted_matches.values()))
+        bound_indices = [
+            index
+            for index, canonical in enumerate(scoring)
+            if (
+                str(
+                    (canonical.get("canonicalPullSlot") or {}).get(
+                        "slotStartUtc"
+                    )
+                    or ""
+                ),
+                str(
+                    (canonical.get("canonicalPullSlot") or {}).get(
+                        "canonicalPullFingerprint"
+                    )
+                    or ""
+                ),
+            )
+            == slot_identity
+        ]
+        if len(bound_indices) == 1:
+            index = bound_indices[0]
+            return persisted, list(scoring[: index + 1])
 
     if source_id:
         exact = [
@@ -5168,7 +5362,13 @@ def _last_prelock_candidate(
             except Exception as exc:
                 errors.append(f"persisted_prelock_probability_contract_unavailable:{exc}")
         source_id = _candidate_source_id(item, row)
-        source_pull, bound_scoring = _source_pull_for_candidate(module, scoring, source_at, source_id)
+        source_pull, bound_scoring = _source_pull_for_candidate(
+            module,
+            slate,
+            scoring,
+            source_at,
+            source_id,
+        )
         if source_pull is None:
             errors.append("persisted_prelock_source_pull_not_found_in_cutoff_history")
         elif not _candidate_price_matches_source(row, source_pull, game):
@@ -5699,6 +5899,7 @@ def _generate_stage(
     candidate_source_id = str(candidate_proof.get("predictionSourcePullId") or "")
     source, rebound_scoring = _source_pull_for_candidate(
         module,
+        slate,
         scoring,
         candidate_source_at,
         candidate_source_id,
@@ -8188,6 +8389,9 @@ def apply(module: Any) -> Any:
     module.MLB_LOCK_OUTCOME_VERSION = LOCK_OUTCOME_VERSION
     module.MLB_PLAYABILITY_ASSESSMENT_VERSION = RELEASE_ASSESSMENT_VERSION
     module.MLB_LOCK_SOURCE_WINDOW_STABILIZATION_SECONDS = CUTOFF_STABILIZATION_SECONDS
+    module.MLB_STATUS_SOURCE_PULL_REBIND_VERSION = (
+        STATUS_SOURCE_PULL_REBIND_VERSION
+    )
     module.MLB_LOCK_EXECUTION_LEASE_VERSION = LOCK_EXECUTION_LEASE_VERSION
     module.MLB_LOCK_EXECUTION_LEASE_SECONDS = LOCK_EXECUTION_LEASE_SECONDS
     module.MLB_LOCK_EXECUTION_LEASE_SCOPE = "global_all_mutating_lock_invocations"

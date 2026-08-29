@@ -26,6 +26,37 @@ STRICT_ENV = "MLB_THREE_API_REQUIRE_ALL_SOURCES"
 MIN_PROBABILITY = 0.5001
 MAX_PROBABILITY = 0.99
 
+# The signed Fundamentals V2 evidence belongs to the immutable training/lock
+# contract. Three-API enrichment lives in its own mutable context envelope and
+# must never traverse a signed snapshot (or one of its references) as ordinary
+# prediction context.
+_THREE_API_CONTEXT_KEYS = (
+    "advancedContext",
+    "advanced_context",
+    "threeApiContext",
+    "three_api_context",
+)
+_SIGNED_FUNDAMENTALS_KEYS = frozenset(
+    {
+        "fundamentalsSnapshotV2",
+        "fundamentals_snapshot_v2",
+        "fundamentalsSnapshotV2Ref",
+        "fundamentals_snapshot_v2_ref",
+        "fundamentalsSnapshotRefV2",
+        "fundamentals_snapshot_ref_v2",
+        "frozenFeatureVector",
+        "frozen_feature_vector",
+        "featureSnapshot",
+        "feature_snapshot",
+        "mlFeatureFreeze",
+        "ml_feature_freeze",
+        "canonicalLockAuthority",
+        "canonical_lock_authority",
+        "slatePredictionLock",
+        "slate_prediction_lock",
+    }
+)
+
 
 class ThreeApiPredictionError(RuntimeError):
     pass
@@ -205,10 +236,7 @@ def original_model_home_probability(row: Mapping[str, Any], home: str, away: str
 
 
 def _context_from_row(row: Mapping[str, Any]) -> Dict[str, Any]:
-    for key in (
-        "advancedContext", "advanced_context", "fundamentalsSnapshotV2",
-        "fundamentals_snapshot_v2", "context", "features", "featureContext",
-    ):
+    for key in _THREE_API_CONTEXT_KEYS:
         value = row.get(key)
         if isinstance(value, dict):
             context = copy.deepcopy(value)
@@ -372,10 +400,9 @@ def apply_prediction_overlay(row: Mapping[str, Any], *, as_of_utc: Optional[str]
     # later audit. Use the same key that was already present when possible.
     target_key = next(
         (
-            key for key in (
-                "advancedContext", "advanced_context", "fundamentalsSnapshotV2",
-                "fundamentals_snapshot_v2", "context",
-            ) if isinstance(current.get(key), dict)
+            key
+            for key in _THREE_API_CONTEXT_KEYS
+            if isinstance(current.get(key), dict)
         ),
         "advancedContext",
     )
@@ -403,6 +430,8 @@ def apply_to_value(value: Any, *, as_of_utc: Optional[str] = None, depth: int = 
             return apply_prediction_overlay(value, as_of_utc=as_of_utc)
         current = copy.deepcopy(value)
         for key, item in list(current.items()):
+            if key in _SIGNED_FUNDAMENTALS_KEYS:
+                continue
             if isinstance(item, (dict, list, tuple)):
                 current[key] = apply_to_value(item, as_of_utc=as_of_utc, depth=depth + 1)
         return current

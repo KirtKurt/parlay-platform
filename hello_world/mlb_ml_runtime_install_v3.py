@@ -17,6 +17,79 @@ HISTORICAL_RUNTIME_EXTENSION_VERSION = (
 )
 
 
+def _fundamentals_shadow_health(engine: Any, scoring_bridge: Any) -> bool:
+    expected_version = str(getattr(scoring_bridge, "VERSION", "") or "")
+    expected_authority_mode = str(
+        getattr(scoring_bridge, "AUTHORITY_MODE", "") or ""
+    )
+    expected_determinism_version = str(
+        getattr(scoring_bridge, "SNAPSHOT_DETERMINISM_VERSION", "") or ""
+    )
+    return bool(
+        expected_version
+        and expected_authority_mode
+        and expected_determinism_version
+        and getattr(
+            engine,
+            "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V1_APPLIED",
+            False,
+        )
+        and getattr(
+            engine,
+            "_INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED",
+            False,
+        )
+        and getattr(
+            engine,
+            "_INQSI_MLB_FUNDAMENTALS_SCORING_SHADOW_V2_INSTALLED",
+            False,
+        )
+        and getattr(
+            engine,
+            "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_SHADOW_V2_INSTALLED",
+            False,
+        )
+        and getattr(
+            engine,
+            "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_V1_INSTALLED",
+            False,
+        )
+        and getattr(
+            engine,
+            "MLB_FUNDAMENTALS_SCORING_BRIDGE_VERSION",
+            None,
+        )
+        == expected_version
+        and getattr(
+            engine,
+            "MLB_FUNDAMENTALS_SCORING_BRIDGE_AUTHORITY_MODE",
+            None,
+        )
+        == expected_authority_mode
+        and getattr(
+            engine,
+            "MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_VERSION",
+            None,
+        )
+        == expected_determinism_version
+        and getattr(
+            engine,
+            "MLB_FUNDAMENTALS_SCORING_BRIDGE_SHADOW_ONLY",
+            False,
+        )
+        and not getattr(
+            engine,
+            "MLB_FUNDAMENTALS_SCORING_BRIDGE_CAN_INFLUENCE_LIVE_PICK",
+            True,
+        )
+        and not getattr(
+            engine,
+            "MLB_FUNDAMENTALS_SCORING_BRIDGE_INSTALL_ERROR",
+            None,
+        )
+    )
+
+
 def install() -> Dict[str, Any]:
     status: Dict[str, Any] = {
         "applied": True,
@@ -48,6 +121,7 @@ def install() -> Dict[str, Any]:
 
     try:
         import mlb_game_winner_engine as engine
+        import mlb_fundamentals_scoring_bridge_v1
         import mlb_fundamentals_snapshot_v1
         import mlb_fundamentals_snapshot_v2
         import mlb_historical_policy_v1
@@ -147,7 +221,21 @@ def install() -> Dict[str, Any]:
 
         exact_vector = getattr(mlb_ml_frozen_features, "_INQSI_MLB_EXACT_LOCK_VECTOR_PATCH_APPLIED", False)
         official_bridge = getattr(mlb_official_prediction_semantics, "_INQSI_MLB_OFFICIAL_FREEZE_BRIDGE_APPLIED_V2", False)
-        status["steps"]["sourceHonestFundamentals"] = hasattr(engine, "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V1_APPLIED")
+        status["steps"]["sourceHonestFundamentals"] = (
+            _fundamentals_shadow_health(
+                engine,
+                mlb_fundamentals_scoring_bridge_v1,
+            )
+        )
+        status["fundamentalsScoringBridgeVersion"] = (
+            mlb_fundamentals_scoring_bridge_v1.VERSION
+        )
+        status["fundamentalsScoringBridgeAuthorityMode"] = (
+            mlb_fundamentals_scoring_bridge_v1.AUTHORITY_MODE
+        )
+        status["fundamentalsSnapshotDeterminismVersion"] = (
+            mlb_fundamentals_scoring_bridge_v1.SNAPSHOT_DETERMINISM_VERSION
+        )
         legacy_runtime_installed = hasattr(
             engine, "_INQSI_MLB_ML_CHAMPION_RUNTIME_V1_APPLIED"
         )
@@ -225,6 +313,7 @@ def install() -> Dict[str, Any]:
             getattr(engine, "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V2_APPLIED", False)
             and getattr(engine, "MLB_FUNDAMENTALS_SNAPSHOT_V2_VERSION", None)
             == mlb_fundamentals_snapshot_v2.VERSION
+            and status["steps"]["sourceHonestFundamentals"]
         )
         status["fundamentalsSnapshotV2Version"] = mlb_fundamentals_snapshot_v2.VERSION
         status["steps"]["lastPrelockPromotionAuthority"] = bool(

@@ -12,6 +12,8 @@ import pytest
 from tests.unit.test_mlb_daily_per_game_lock import (
     build_module,
     game,
+    official_game,
+    persist_candidate,
     persist_latest_prelock_candidates,
     pull,
 )
@@ -411,6 +413,16 @@ def test_full_persisted_prediction_route_has_bounded_large_slate_reads(
     engine = module.mlb_game_winner_engine
     for source_pull in module.history.pulls:
         monkeypatch.setitem(source_pull, "source", "the_odds_api")
+    # Keep the fake query adapter and its immutable strong-read rows identical.
+    # The production cache rebind deliberately rejects a split read, so this
+    # scale fixture must not create one merely to select an accepted provider.
+    for persisted in module.TABLE.items.values():
+        if persisted.get("record_type") == "pull_run":
+            monkeypatch.setitem(
+                persisted["data"],
+                "source",
+                "the_odds_api",
+            )
     monkeypatch.setattr(history_contract, "PULLS", module.TABLE)
 
     coverage_module = importlib.reload(coverage)
@@ -602,6 +614,200 @@ def test_status_scoring_compacts_raw_variants_but_writer_keeps_them(
         status_scoring,
         target_game,
     )
+
+
+def test_cooperative_scoped_quarantine_rebinds_full_immutable_source_pull():
+    target = official_game(
+        "provider-event-991556",
+        "2026-07-13T18:00:00+00:00",
+        "991556",
+    )
+    other = official_game(
+        "provider-event-991557",
+        "2026-07-13T18:10:00+00:00",
+        "991557",
+    )
+    source = pull(
+        "2026-07-13T16:45:00+00:00",
+        [target, other],
+        "status-quarantine-source",
+    )
+    source_key = {
+        "PK": f"PULLS#mlb#{SLATE}",
+        "SK": "PULL#SLOT#2026-07-13T16:45:00+00:00",
+    }
+    source["canonicalPullStorage"] = {
+        "pk": source_key["PK"],
+        "sk": source_key["SK"],
+        "recordType": "pull_run",
+    }
+    module = build_module(
+        [
+            source,
+            pull(
+                "2026-07-13T17:15:00+00:00",
+                [target, other],
+                "status-quarantine-manifest",
+            ),
+        ],
+        "2026-07-13T20:00:00+00:00",
+        seed=False,
+    )
+    persist_candidate(
+        module,
+        target,
+        source,
+        mutate=lambda row: row.update(
+            {
+                "officialGamePk": "991556",
+                "officialGameId": "mlb_statsapi:991556",
+            }
+        ),
+    )
+    pulls = module._pulls_for_date(SLATE)
+    manifest = [
+        candidate
+        for candidate in module._latest_games_for_date(SLATE, pulls)
+        if candidate.get("game_id") == target.get("game_id")
+    ]
+    assert len(manifest) == 1
+
+    # Cooperative terminal repair intentionally shares only canonical pull
+    # material; mutable terminal readbacks must never come from a status cache.
+    status_token = patch._STATUS_READ_CACHE.set({"canonicalPulls": {}})
+    try:
+        scoring = patch._scoring_pulls(module, pulls, manifest[0])
+        assert scoring
+        assert all(
+            "_canonicalSlotRawPulls" not in candidate
+            for candidate in scoring
+        )
+        assert all(len(candidate.get("games") or []) == 1 for candidate in scoring)
+
+        candidate, proof, bound, errors = patch._last_prelock_candidate(
+            module,
+            SLATE,
+            manifest[0],
+            scoring,
+        )
+        assert errors == []
+        assert candidate is not None
+        assert proof is not None
+        assert proof["predictionSourcePullFingerprint"] == (
+            history_contract.pull_payload_fingerprint(source)
+        )
+
+        authority = patch._validated_valid_prelock_quarantine_authority(
+            module,
+            SLATE,
+            manifest[0],
+            candidate,
+            proof,
+            bound,
+        )
+    finally:
+        patch._STATUS_READ_CACHE.reset(status_token)
+
+    assert authority["sourcePullStoragePk"] == source_key["PK"]
+    assert authority["sourcePullStorageSk"] == source_key["SK"]
+    assert authority["predictionAdopted"] is False
+
+
+def test_cooperative_scoped_quarantine_rebinds_exact_contaminated_raw_pull():
+    target = official_game(
+        "provider-event-991556",
+        "2026-07-13T18:00:00+00:00",
+        "991556",
+    )
+    other = official_game(
+        "provider-event-991557",
+        "2026-07-13T18:10:00+00:00",
+        "991557",
+    )
+    canonical = pull(
+        "2026-07-13T16:45:00+00:00",
+        [target, other],
+        "contaminated-canonical",
+    )
+    retry_target = copy.deepcopy(target)
+    retry_target["books"]["fanduel"]["ml"]["home"] = -135
+    retry = pull(
+        "2026-07-13T16:46:00+00:00",
+        [retry_target, other],
+        "contaminated-exact-retry",
+    )
+    for source in (canonical, retry):
+        source["canonicalPullStorage"] = {
+            "pk": f"PULLS#mlb#{SLATE}",
+            "sk": f"PULL#{source['pulled_at']}#{source['pull_id']}",
+            "recordType": "pull_run",
+        }
+    module = build_module(
+        [
+            canonical,
+            retry,
+            pull(
+                "2026-07-13T17:15:00+00:00",
+                [target, other],
+                "contaminated-manifest",
+            ),
+        ],
+        "2026-07-13T20:00:00+00:00",
+        seed=False,
+    )
+    persist_candidate(
+        module,
+        retry_target,
+        retry,
+        mutate=lambda row: row.update(
+            {
+                "officialGamePk": "991556",
+                "officialGameId": "mlb_statsapi:991556",
+            }
+        ),
+    )
+    pulls = module._pulls_for_date(SLATE)
+    manifest = [
+        candidate
+        for candidate in module._latest_games_for_date(SLATE, pulls)
+        if candidate.get("game_id") == target.get("game_id")
+    ]
+    assert len(manifest) == 1
+
+    status_token = patch._STATUS_READ_CACHE.set({"canonicalPulls": {}})
+    try:
+        scoring = patch._scoring_pulls(module, pulls, manifest[0])
+        candidate, proof, bound, errors = patch._last_prelock_candidate(
+            module,
+            SLATE,
+            manifest[0],
+            scoring,
+        )
+        assert errors == []
+        assert candidate is not None
+        assert proof is not None
+        assert proof["predictionSourcePullId"] == retry["pull_id"]
+        assert proof["predictionSourcePullStorageSk"] == (
+            retry["canonicalPullStorage"]["sk"]
+        )
+        assert proof["predictionSourcePullFingerprint"] == (
+            history_contract.pull_payload_fingerprint(retry)
+        )
+        authority = patch._validated_valid_prelock_quarantine_authority(
+            module,
+            SLATE,
+            manifest[0],
+            candidate,
+            proof,
+            bound,
+        )
+    finally:
+        patch._STATUS_READ_CACHE.reset(status_token)
+
+    assert authority["sourcePullStorageSk"] == (
+        retry["canonicalPullStorage"]["sk"]
+    )
+    assert authority["predictionAdopted"] is False
 
 
 def test_status_cache_shares_absence_but_retries_transport_errors():

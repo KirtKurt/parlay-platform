@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import copy
 import importlib
 from pathlib import Path
 from types import SimpleNamespace
 import sys
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -171,38 +174,136 @@ def test_bridge_adjustments_are_bounded_and_symmetric(monkeypatch):
     )
 
 
-def test_winner_stack_install_is_idempotent(monkeypatch):
+def test_winner_stack_install_is_idempotent_and_shadow_only(monkeypatch):
     snapshot = _snapshot()
     monkeypatch.setattr(bridge, "_snapshot_for_row", lambda row: (snapshot, ()))
     calls = []
+    production_results = []
 
     def original(row):
-        calls.append(row)
-        return row
+        calls.append(copy.deepcopy(row))
+        result = dict(row)
+        result.update(
+            {
+                "score": 63.25,
+                "winProbability": 0.6412,
+                "actionablePick": True,
+            }
+        )
+        production_results.append(result)
+        return result
 
     module = SimpleNamespace(enhance_prediction=original)
     bridge.install_winner_stack(module)
     first = module.enhance_prediction
     bridge.install_winner_stack(module)
 
-    result = module.enhance_prediction(_row())
+    input_row = _row()
+    input_row["fundamentalsSnapshotV2"] = copy.deepcopy(snapshot)
+    frozen_input = copy.deepcopy(input_row)
+    result = module.enhance_prediction(input_row)
 
     assert module.enhance_prediction is first
     assert len(calls) == 1
-    assert result["fundamentalsApplied"] is True
+    assert input_row == frozen_input
+    assert calls == [frozen_input]
+    assert "fundamentalsApplied" not in calls[0]
+    assert "fundamentalsAdjustment" not in calls[0]["homeSignal"]
+    assert result is not production_results[0]
+    assert bridge.SHADOW_FIELD not in production_results[0]
+    assert {
+        key: value
+        for key, value in result.items()
+        if key != bridge.SHADOW_FIELD
+    } == production_results[0]
+    shadow = result[bridge.SHADOW_FIELD]
+    assert shadow["evaluated"] is True
+    assert shadow["shadowOnly"] is True
+    assert shadow["liveScoringAuthority"] is False
+    assert shadow["canInfluenceLivePick"] is False
+    assert shadow["liveScoringInputUsedShadowCandidate"] is False
+    assert shadow["wouldApply"] is True
+    assert shadow["boundedHypotheticalAdjustments"]["maxAbsolute"] == (
+        bridge.MAX_SIDE_ADJUSTMENT
+    )
     assert module.MLB_FUNDAMENTALS_SCORING_BRIDGE_VERSION == bridge.VERSION
+    assert module.MLB_FUNDAMENTALS_SCORING_BRIDGE_SHADOW_ONLY is True
+    assert (
+        module.MLB_FUNDAMENTALS_SCORING_BRIDGE_CAN_INFLUENCE_LIVE_PICK is False
+    )
+    assert module._INQSI_MLB_FUNDAMENTALS_SCORING_SHADOW_V2_INSTALLED is True
 
 
-def test_legacy_snapshot_installer_always_installs_live_scoring_bridge():
+def test_shadow_without_attached_snapshot_is_passive_and_never_evaluates(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        bridge,
+        "apply_to_row",
+        lambda row: pytest.fail("missing snapshot must not trigger evaluation"),
+    )
+
+    shadow = bridge.evaluate_shadow(_row())
+
+    assert shadow["evaluated"] is False
+    assert shadow["shadowOnly"] is False
+    assert shadow["wouldApply"] is False
+    assert shadow["reason"] == "snapshot_v2_not_attached_no_live_fetch"
+    assert shadow["liveScoringAuthority"] is False
+
+
+def test_legacy_live_wrapper_is_rejected_instead_of_falsely_attested():
+    module = SimpleNamespace(
+        enhance_prediction=lambda row: row,
+        _INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED=True,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="legacy_live_fundamentals_wrapper_requires_process_restart",
+    ):
+        bridge.install_winner_stack(module)
+
+    assert not hasattr(
+        module,
+        "_INQSI_MLB_FUNDAMENTALS_SCORING_SHADOW_V2_INSTALLED",
+    )
+
+
+def test_snapshot_installer_propagates_shadow_bridge_failure(monkeypatch):
+    def fail_install(module):
+        raise RuntimeError("fixture_shadow_install_failure")
+
+    monkeypatch.setattr(bridge, "install_winner_stack", fail_install)
+    engine = SimpleNamespace(predict_all=lambda: {"predictions": []})
+
+    with pytest.raises(RuntimeError, match="fixture_shadow_install_failure"):
+        snapshot_v1.apply(engine)
+
+    assert not hasattr(engine, "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V1_APPLIED")
+    assert engine._INQSI_MLB_FUNDAMENTALS_SCORING_SHADOW_V2_INSTALLED is False
+    assert engine.MLB_FUNDAMENTALS_SCORING_BRIDGE_INSTALL_ERROR == (
+        "RuntimeError:fixture_shadow_install_failure"
+    )
+
+
+def test_legacy_snapshot_installer_always_installs_shadow_only_bridge():
     reloaded_winner_stack = importlib.reload(winner_stack)
     engine = SimpleNamespace(predict_all=lambda *args, **kwargs: {"predictions": []})
 
     snapshot_v1.apply(engine)
 
     assert engine._INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED is True
+    assert engine._INQSI_MLB_FUNDAMENTALS_SCORING_SHADOW_V2_INSTALLED is True
     assert engine.MLB_FUNDAMENTALS_SCORING_BRIDGE_VERSION == bridge.VERSION
+    assert engine.MLB_FUNDAMENTALS_SCORING_BRIDGE_SHADOW_ONLY is True
+    assert engine.MLB_FUNDAMENTALS_SCORING_BRIDGE_CAN_INFLUENCE_LIVE_PICK is False
     assert (
         reloaded_winner_stack._INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED
+        is True
+    )
+    assert (
+        reloaded_winner_stack._INQSI_MLB_FUNDAMENTALS_SCORING_SHADOW_V2_INSTALLED
         is True
     )
 
@@ -230,6 +331,8 @@ def _real_v2_row():
             "awayTeam": "Away Club",
             "predictionSourcePullAt": "2026-08-10T17:00:00+00:00",
             "predictionSourcePullId": "pull-999",
+            "predictionPersistedAtUtc": "2026-08-10T17:01:00+00:00",
+            "lockedAtUtc": "2026-08-10T17:15:00+00:00",
             "advanced_context": {
                 "confirmed_probable_pitchers": {
                     "source_status": "CONNECTED",
@@ -305,12 +408,22 @@ def _real_v2_row():
     return row
 
 
-def test_real_v2_snapshot_validation_and_live_scoring_bridge_work_together():
+def test_real_v2_snapshot_validation_and_shadow_candidate_work_together():
     row = _real_v2_row()
+    bridge.install_snapshot_shadow_evaluation(snapshot_v2)
     snapshot_v2.enhance_row(row)
 
     assert snapshot_v2.validate(row["fundamentalsSnapshotV2"]) == []
     assert "weather_roof" in row["fundamentalsSnapshotV2"]["missingGroups"]
+    shadow = row[bridge.SHADOW_FIELD]
+    assert shadow["evaluated"] is True
+    assert shadow["snapshotFingerprint"] == row["fundamentalsSnapshotV2"][
+        "fingerprint"
+    ]
+    assert shadow["snapshotRef"]["fingerprint"] == shadow[
+        "snapshotFingerprint"
+    ]
+    assert shadow["liveScoringAuthority"] is False
 
     prepared = bridge.apply_to_row(row)
 
@@ -318,6 +431,24 @@ def test_real_v2_snapshot_validation_and_live_scoring_bridge_work_together():
     assert prepared["winnerOptimizer"]["fundamentalsApplied"] is True
     assert prepared["fundamentalsLayer"]["weatherMissing"] is True
     assert prepared["homeSignal"]["fundamentalsAdjustment"] > 0
+
+
+def test_shadow_refuses_structurally_valid_post_persistence_evidence():
+    row = _real_v2_row()
+    row["predictionPersistedAtUtc"] = "2026-08-10T17:00:05+00:00"
+    snapshot_v2.enhance_row(row)
+
+    shadow = bridge.evaluate_shadow(row)
+
+    assert snapshot_v2.validate(row["fundamentalsSnapshotV2"]) == []
+    assert shadow["evaluated"] is False
+    assert shadow["shadowOnly"] is False
+    assert shadow["wouldApply"] is False
+    assert shadow["reason"] == "snapshot_v2_invalid_or_not_lock_safe"
+    assert (
+        "fundamentals_v2_evidence_not_at_or_before_"
+        "persisted_prediction_and_lock"
+    ) in shadow["validationErrors"]
 
 
 def test_selected_away_side_receives_the_inverse_fundamentals_edge(monkeypatch):

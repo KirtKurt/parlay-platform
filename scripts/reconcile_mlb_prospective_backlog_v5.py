@@ -35,6 +35,26 @@ COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS = 100
 SETTLEMENT_RUN = "prospective_backlog_settlement_v4"
 TERMINAL_REPLAY_RUN = "prospective_terminal_backlog_reconciliation_v5"
 MISSING_LOCK_REASON = "MISSING_VALID_CANONICAL_LOCK_OR_TERMINAL_OUTCOME"
+COOPERATIVE_REPLAY_REVIEW_REQUIRED = "REVIEW_REQUIRED"
+COOPERATIVE_TERMINAL_REPLAY_VERSION = (
+    "MLB-COOPERATIVE-TERMINAL-REPLAY-v1-eventbridge-owner-handoff"
+)
+SOURCE_PULL_REBIND_REMEDIATION_VERSION = (
+    "MLB-COOPERATIVE-SOURCE-PULL-REBIND-REVIEW-REMEDIATION-v1-one-shot"
+)
+SOURCE_PULL_REBIND_VERSION = (
+    "MLB-STATUS-SOURCE-PULL-REBIND-v1-strong-immutable-row"
+)
+COOPERATIVE_REPLAY_REVIEW_FALLBACK_REASON = (
+    "PRELOCK_CANDIDATE_REQUIRES_REVIEW"
+)
+SAFE_COOPERATIVE_REVIEW_REASONS = frozenset(
+    {
+        COOPERATIVE_REPLAY_REVIEW_FALLBACK_REASON,
+        "VALID_PRELOCK_QUARANTINE_SOURCE_PULL_PROOF_MISMATCH",
+    }
+)
+MAX_COOPERATIVE_REVIEW_REASON_LENGTH = 160
 SAFE_APPLICATION_FIELDS = (
     "error",
     "reason",
@@ -163,6 +183,9 @@ _SENSITIVE_ASSIGNMENT_RE = re.compile(
 )
 _BEARER_RE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+")
 _AWS_ACCESS_KEY_RE = re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")
+_SAFE_COOPERATIVE_REVIEW_REASON_RE = re.compile(
+    r"[A-Z0-9_.:-]{1,160}\Z"
+)
 
 
 class DurableTerminalReplayRequired(base.ReconciliationError):
@@ -775,6 +798,65 @@ def _validated_safe_cooperative_completion_receipt(
         "productionAuthorityChanged": False,
     }
 
+def _validated_durable_remediation_history_noop(
+    replay: Mapping[str, Any],
+    cooperative: Mapping[str, Any],
+    slate_date: str,
+) -> bool:
+    """Validate a compact consumed-incident receipt with no queue authority."""
+
+    durable = replay.get(
+        "sourcePullRebindReviewRemediationDurableHistory"
+    )
+    nested_durable = cooperative.get("durableRemediationHistory")
+    if durable is None and nested_durable is None:
+        return False
+    safety_fields = (
+        "activeLeaseMutationAllowed",
+        "postStartPredictionCreationAllowed",
+        "immutablePredictionRewriteAllowed",
+        "directWorkflowTableWrite",
+        "productionAuthorityChanged",
+    )
+    valid = bool(
+        durable is True
+        and nested_durable is True
+        and replay.get("ok") is True
+        and replay.get("sport") == "mlb"
+        and str(replay.get("slateDateEt") or "") == slate_date
+        and replay.get("status") == "ACKNOWLEDGED_COMPLETION"
+        and replay.get("reason") == "ACKNOWLEDGED_COMPLETION"
+        and replay.get("skipped") is True
+        and replay.get("mutatingRunAttempted") is False
+        and replay.get("cooperativeTerminalReplayCompleted") is True
+        and replay.get("sourcePullRebindReviewRemediationApplied") is True
+        and replay.get("sourcePullRebindReviewRemediationIdempotent") is True
+        and replay.get("sourcePullRebindReviewRemediationVersion")
+        == SOURCE_PULL_REBIND_REMEDIATION_VERSION
+        and replay.get("sourcePullRebindVersion")
+        == SOURCE_PULL_REBIND_VERSION
+        and all(replay.get(field) is False for field in safety_fields)
+        and cooperative.get("version")
+        == COOPERATIVE_TERMINAL_REPLAY_VERSION
+        and cooperative.get("state") == "ACKNOWLEDGED"
+        and str(cooperative.get("slateDateEt") or "") == slate_date
+        and cooperative.get("automaticExecutionOwner")
+        == "eventbridge_daily_lock_schedule"
+        and cooperative.get("ownerIdentifierExposed") is False
+        and cooperative.get("failClosed") is True
+        and cooperative.get("terminalChunkProgress") is None
+        and all(
+            cooperative.get(field) is False
+            for field in safety_fields
+        )
+    )
+    if not valid:
+        raise base.ReconciliationError(
+            "protected_terminal_replay_durable_history_contract_invalid"
+        )
+    return True
+
+
 def _execute_protected_terminal_replay(
     cloudformation: Any,
     lambda_client: Any,
@@ -791,6 +873,7 @@ def _execute_protected_terminal_replay(
     cooperative_poll_count = 0
     cooperative_handoff_observed = False
     cooperative_acknowledged = False
+    durable_history_noop = False
     acknowledgement_state: Mapping[str, Any] = {}
     with _status_body_adapter():
         for attempt in range(1, max_attempts + 1):
@@ -814,6 +897,101 @@ def _execute_protected_terminal_replay(
                 if isinstance(cooperative, Mapping)
                 else ""
             )
+            durable_history_noop = (
+                _validated_durable_remediation_history_noop(
+                    replay,
+                    cooperative,
+                    request.slate_date,
+                )
+            )
+            if durable_history_noop:
+                cooperative_handoff_observed = True
+            top_level_state = str(replay.get("status") or "")
+            if (
+                cooperative_state == COOPERATIVE_REPLAY_REVIEW_REQUIRED
+                or top_level_state == COOPERATIVE_REPLAY_REVIEW_REQUIRED
+            ):
+                top_level_review_contract = bool(
+                    str(replay.get("sport") or "") == "mlb"
+                    and str(replay.get("slateDateEt") or "")
+                    == request.slate_date
+                    and replay.get("reviewRequired") is True
+                    and replay.get("skipped") is True
+                    and replay.get("mutatingRunAttempted") is False
+                    and replay.get("cooperativeTerminalReplayCompleted")
+                    is False
+                    and replay.get("activeLeaseMutationAllowed") is False
+                    and replay.get("postStartPredictionCreationAllowed")
+                    is False
+                    and replay.get("immutablePredictionRewriteAllowed")
+                    is False
+                    and replay.get("directWorkflowTableWrite") is False
+                    and replay.get("productionAuthorityChanged") is False
+                )
+                nested_review_contract = bool(
+                    cooperative_state
+                    != COOPERATIVE_REPLAY_REVIEW_REQUIRED
+                    or (
+                        isinstance(cooperative, Mapping)
+                        and str(cooperative.get("slateDateEt") or "")
+                        == request.slate_date
+                        and cooperative.get("reviewRequired") is True
+                        and cooperative.get("failClosed") is True
+                        and cooperative.get("staleClaimReclaimable") is False
+                        and cooperative.get("ownerIdentifierExposed") is False
+                        and cooperative.get("activeLeaseMutationAllowed")
+                        is False
+                        and cooperative.get(
+                            "postStartPredictionCreationAllowed"
+                        )
+                        is False
+                        and cooperative.get(
+                            "immutablePredictionRewriteAllowed"
+                        )
+                        is False
+                        and cooperative.get("directWorkflowTableWrite")
+                        is False
+                    )
+                )
+                if not top_level_review_contract or not nested_review_contract:
+                    raise base.ReconciliationError(
+                        "protected_terminal_replay_cooperative_review_"
+                        "contract_invalid"
+                    )
+                raw_review_reason = cooperative.get("reviewReason")
+                if not isinstance(raw_review_reason, str):
+                    raw_review_reason = replay.get("reason")
+                redacted_review_reason = (
+                    _redacted_bounded_string(raw_review_reason)
+                    if isinstance(raw_review_reason, str)
+                    else ""
+                )
+                review_reason = (
+                    redacted_review_reason
+                    if isinstance(raw_review_reason, str)
+                    and len(raw_review_reason)
+                    <= MAX_COOPERATIVE_REVIEW_REASON_LENGTH
+                    and _SAFE_COOPERATIVE_REVIEW_REASON_RE.fullmatch(
+                        redacted_review_reason
+                    )
+                    is not None
+                    and redacted_review_reason
+                    in SAFE_COOPERATIVE_REVIEW_REASONS
+                    else COOPERATIVE_REPLAY_REVIEW_FALLBACK_REASON
+                )
+                raise base.ReconciliationError(
+                    "protected_terminal_replay_cooperative_review_required:"
+                    + json.dumps(
+                        {
+                            "reason": review_reason,
+                            "retryable": False,
+                            "slateDateEt": request.slate_date,
+                            "state": COOPERATIVE_REPLAY_REVIEW_REQUIRED,
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                )
             cooperative_pending = bool(
                 cooperative_state in {"QUEUED", "CLAIMED"}
                 and replay.get("cooperativeTerminalReplayCompleted") is False
@@ -851,7 +1029,7 @@ def _execute_protected_terminal_replay(
                     and replay.get("mutatingRunAttempted") is False
                 )
             )
-            if overlap:
+            if overlap and not durable_history_noop:
                 overlap_retry_count += 1
                 if attempt >= max_attempts:
                     raise base.ReconciliationError(
@@ -884,7 +1062,10 @@ def _execute_protected_terminal_replay(
                     replay,
                     request.slate_date,
                 )
-                if replay.get("cooperativeTerminalReplayCompleted") is True
+                if (
+                    replay.get("cooperativeTerminalReplayCompleted") is True
+                    and not durable_history_noop
+                )
                 else None
             )
             if completion_receipt is not None:
@@ -957,36 +1138,42 @@ def _execute_protected_terminal_replay(
                     )
             if cooperative_state in {"COMPLETED", "ACKNOWLEDGED"}:
                 cooperative_handoff_observed = True
-                acknowledgement = v4.invoke_json_with_backpressure(
-                    lambda_client,
-                    functions.lock,
-                    {
-                        "sport": "mlb",
-                        "run": TERMINAL_REPLAY_RUN,
-                        "slateDateEt": request.slate_date,
-                        "force": True,
-                        "acknowledgeCooperativeCompletion": True,
-                    },
-                )
-                acknowledgement_state = (
-                    acknowledgement.get("cooperativeTerminalReplay") or {}
-                )
-                if (
-                    acknowledgement.get("ok") is not True
-                    or acknowledgement.get(
-                        "cooperativeTerminalReplayAcknowledged"
+                if durable_history_noop:
+                    # The original ACK is the history proof. Re-acknowledging
+                    # would target the singleton's unrelated current request.
+                    acknowledgement_state = cooperative
+                    cooperative_acknowledged = True
+                else:
+                    acknowledgement = v4.invoke_json_with_backpressure(
+                        lambda_client,
+                        functions.lock,
+                        {
+                            "sport": "mlb",
+                            "run": TERMINAL_REPLAY_RUN,
+                            "slateDateEt": request.slate_date,
+                            "force": True,
+                            "acknowledgeCooperativeCompletion": True,
+                        },
                     )
-                    is not True
-                    or not isinstance(acknowledgement_state, Mapping)
-                    or str(acknowledgement_state.get("state") or "")
-                    != "ACKNOWLEDGED"
-                    or str(acknowledgement.get("slateDateEt") or "")
-                    != request.slate_date
-                ):
-                    raise base.ReconciliationError(
-                        "protected_terminal_replay_cooperative_ack_invalid"
+                    acknowledgement_state = (
+                        acknowledgement.get("cooperativeTerminalReplay") or {}
                     )
-                cooperative_acknowledged = True
+                    if (
+                        acknowledgement.get("ok") is not True
+                        or acknowledgement.get(
+                            "cooperativeTerminalReplayAcknowledged"
+                        )
+                        is not True
+                        or not isinstance(acknowledgement_state, Mapping)
+                        or str(acknowledgement_state.get("state") or "")
+                        != "ACKNOWLEDGED"
+                        or str(acknowledgement.get("slateDateEt") or "")
+                        != request.slate_date
+                    ):
+                        raise base.ReconciliationError(
+                            "protected_terminal_replay_cooperative_ack_invalid"
+                        )
+                    cooperative_acknowledged = True
             break
         else:
             raise base.ReconciliationError(
@@ -1022,16 +1209,20 @@ def _execute_protected_terminal_replay(
         progress_processed_count = -1
         progress_terminal_count = -1
         progress_verified_count = -1
-    cooperative_receipt_verified = bool(
+    durable_history_noop_verified = bool(
+        durable_history_noop
+        and evidence.get("officialStatusReadBound") is True
+        and evidence.get("slateDateEt") == request.slate_date
+        and str(final_cooperative_state.get("state") or "")
+        == "ACKNOWLEDGED"
+    )
+    cooperative_receipt_verified = durable_history_noop_verified or bool(
         replay.get("cooperativeTerminalReplayCompleted") is True
         and isinstance(final_cooperative_state, Mapping)
         and str(final_cooperative_state.get("state") or "")
         in {"COMPLETED", "ACKNOWLEDGED"}
         and final_cooperative_state.get("version")
-        == (
-            "MLB-COOPERATIVE-TERMINAL-REPLAY-"
-            "v1-eventbridge-owner-handoff"
-        )
+        == COOPERATIVE_TERMINAL_REPLAY_VERSION
         and isinstance(terminal_progress, Mapping)
         and terminal_progress.get("valid") is True
         and terminal_progress.get("version")
@@ -1066,6 +1257,9 @@ def _execute_protected_terminal_replay(
         "protectedLockReplayCooperativeAcknowledged": cooperative_acknowledged,
         "protectedLockReplayCooperativeReceiptVerified": (
             cooperative_receipt_verified
+        ),
+        "protectedLockReplayDurableRemediationHistoryNoOp": (
+            durable_history_noop_verified
         ),
         "protectedLockReplayCooperativeReceipt": dict(
             final_cooperative_state

@@ -101,6 +101,9 @@ class FakeLeaseTable:
                 may_replace = self.queue_item is None
             else:
                 values = kwargs.get("ExpressionAttributeValues") or {}
+                names = kwargs.get("ExpressionAttributeNames") or {}
+                history_field = names.get("#history")
+                remediation_field = names.get("#remediation")
                 may_replace = bool(
                     isinstance(self.queue_item, dict)
                     and self.queue_item.get("state") == values.get(":acknowledged")
@@ -110,6 +113,30 @@ class FakeLeaseTable:
                     == values.get(":record_type")
                     and self.queue_item.get("coordination_version")
                     == values.get(":version")
+                    and self.queue_item.get("requested_at_epoch")
+                    == values.get(":previous_request_epoch")
+                    and self.queue_item.get("request_id")
+                    == values.get(":previous_request_id")
+                    and self.queue_item.get("terminal_replay_progress")
+                    == values.get(":previous_progress")
+                    and self.queue_item.get("replay_receipt")
+                    == values.get(":previous_receipt")
+                    and self.queue_item.get("acknowledged_at_utc")
+                    == values.get(":previous_acknowledged_at_utc")
+                    and self.queue_item.get("acknowledged_at_epoch")
+                    == values.get(":previous_acknowledged_at_epoch")
+                    and (
+                        self.queue_item.get(history_field)
+                        == values.get(":previous_history")
+                        if ":previous_history" in values
+                        else history_field not in self.queue_item
+                    )
+                    and (
+                        self.queue_item.get(remediation_field)
+                        == values.get(":previous_remediation")
+                        if ":previous_remediation" in values
+                        else remediation_field not in self.queue_item
+                    )
                 )
             if not may_replace:
                 raise _client_error("ConditionalCheckFailedException", "PutItem")
@@ -203,8 +230,37 @@ class FakeLeaseTable:
             and current.get("slate_date_et") == values.get(":slate_date")
             and request_matches
         )
+        remediation_write = ":remediation" in values
         proof_write = ":proof" in values
-        if proof_write:
+        if remediation_write:
+            progress = (
+                current.get("terminal_replay_progress")
+                if isinstance(current, dict)
+                else None
+            )
+            attempt = (
+                progress.get("lastAttempt")
+                if isinstance(progress, dict)
+                else None
+            )
+            remediation_field = (
+                kwargs.get("ExpressionAttributeNames") or {}
+            ).get("#remediation")
+            allowed = bool(
+                valid_identity
+                and current.get("state")
+                == values.get(":review_required")
+                and progress == values.get(":progress")
+                and progress.get("checkpointFingerprint")
+                == values.get(":checkpoint")
+                and isinstance(attempt, dict)
+                and attempt.get("errorCode") == values.get(":error")
+                and attempt.get("stage") == values.get(":stage")
+                and remediation_field
+                and remediation_field not in current
+            )
+            next_state = values[":queued"]
+        elif proof_write:
             allowed = bool(
                 valid_identity
                 and current.get("requested_at_epoch")
@@ -220,8 +276,13 @@ class FakeLeaseTable:
             )
             next_state = current.get("state")
         elif ":acknowledged" in values:
-            allowed = valid_identity and current.get("state") == values.get(
-                ":completed"
+            allowed = bool(
+                valid_identity
+                and current.get("state") == values.get(":completed")
+                and current.get("terminal_replay_progress")
+                == values.get(":expected_progress")
+                and current.get("replay_receipt")
+                == values.get(":expected_receipt")
             )
             next_state = values[":acknowledged"]
         elif ":receipt" in values:
@@ -277,7 +338,14 @@ class FakeLeaseTable:
         updated["state"] = next_state
         if ":request_id" in values:
             updated["request_id"] = values[":request_id"]
-        if proof_write:
+        if remediation_write:
+            remediation_field = kwargs["ExpressionAttributeNames"][
+                "#remediation"
+            ]
+            updated[remediation_field] = copy.deepcopy(
+                values[":remediation"]
+            )
+        elif proof_write:
             updated["current_slate_success_proof"] = copy.deepcopy(
                 values[":proof"]
             )
@@ -642,6 +710,59 @@ def _complete_terminal_checkpoint(
     return checkpoint
 
 
+def _source_pull_rebind_review_checkpoint(
+    *,
+    slate_date: str,
+    request_epoch: int,
+    request_id: str,
+    attempt_count: int = 1006,
+) -> dict:
+    checkpoint = _complete_terminal_checkpoint(
+        slate_date=slate_date,
+        request_epoch=request_epoch,
+        request_id=request_id,
+        game_count=15,
+    )
+    checkpoint.update(
+        {
+            "phase": "PROCESS",
+            "nextGameIndex": 0,
+            "processedGameCount": 0,
+            "terminalCount": 0,
+            "canonicalCount": 0,
+            "noPredictionDataCount": 0,
+            "missedLockValidPrelockQuarantineCount": 0,
+            "reconciledCount": 0,
+            "processedGames": [],
+            "verificationIndex": 0,
+            "verifiedGameCount": 0,
+            "verificationComplete": False,
+            "attemptCount": attempt_count,
+            "lastAttempt": {
+                "status": "FAILED_CLOSED",
+                "stage": (
+                    "WRITE_VALID_PRELOCK_MISSED_LOCK_QUARANTINE"
+                ),
+                "atUtc": "2026-08-29T05:31:00+00:00",
+                "phase": "PROCESS",
+                "gameIndex": 0,
+                "gameIdentity": "provider:game-1",
+                "durableIdentity": "provider:game-1",
+                "errorCode": (
+                    "VALID_PRELOCK_QUARANTINE_SOURCE_PULL_PROOF_MISMATCH"
+                ),
+            },
+            "updatedAtUtc": "2026-08-29T05:31:00+00:00",
+        }
+    )
+    checkpoint["checkpointFingerprint"] = (
+        COOPERATIVE_REPAIR._cooperative_terminal_checkpoint_fingerprint(
+            checkpoint
+        )
+    )
+    return checkpoint
+
+
 def _successful_terminal_replay_payload(
     slate_date: str = "2026-07-20",
     game_count: int = 15,
@@ -908,6 +1029,9 @@ def _load_handler(
     per_game.ATTEMPT_DIAGNOSTICS_VERSION = "test-diagnostics-version"
     per_game.PROMOTION_POLICY_VERSION = "test-promotion-version"
     per_game.PAYLOAD_FINGERPRINT_VERSION = "test-ddb-canonical-fingerprint-version"
+    per_game.STATUS_SOURCE_PULL_REBIND_VERSION = (
+        "MLB-STATUS-SOURCE-PULL-REBIND-v1-strong-immutable-row"
+    )
     per_game.OFFICIAL_SCHEDULE_AUTHORITY_VERSION = (
         "MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date"
     )
@@ -1001,6 +1125,9 @@ def _load_handler(
         module.MLB_LOCK_OUTCOME_VERSION = "test-lock-outcome-version"
         module.MLB_PLAYABILITY_ASSESSMENT_VERSION = "test-playability-version"
         module.MLB_LOCK_SOURCE_WINDOW_STABILIZATION_SECONDS = 0
+        module.MLB_STATUS_SOURCE_PULL_REBIND_VERSION = (
+            per_game.STATUS_SOURCE_PULL_REBIND_VERSION
+        )
         module.MLB_LOCK_EXECUTION_LEASE_VERSION = (
             per_game.LOCK_EXECUTION_LEASE_VERSION
         )
@@ -1475,6 +1602,153 @@ def test_completed_receipt_survives_acknowledgement_replacement_race():
         ]
         assert table.queue_item["state"] == "QUEUED"
         assert table.queue_item["slate_date_et"] == "2026-07-19"
+
+
+def test_acknowledgement_cas_binds_exact_request_progress_and_receipt():
+    table = FakeLeaseTable()
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=lambda event, context: (
+            _successful_current_slate_payload()
+            if event.get("run") == "daily_lock_check"
+            else _successful_terminal_replay_payload()
+        ),
+    ) as (handler, _, _):
+        slate_date = "2026-07-20"
+        handler.lambda_handler(
+            _cooperative_event(slate_date),
+            FakeContext(),
+        )
+        handler.lambda_handler(
+            _scheduled_event(),
+            FakeContext(
+                request_id="ack-cas-owner",
+                remaining_millis=900_000,
+            ),
+        )
+        completed = copy.deepcopy(table.queue_item)
+
+        response = _body(
+            handler.lambda_handler(
+                _cooperative_event(slate_date, acknowledge=True),
+                FakeContext(),
+            )
+        )
+
+        assert response["cooperativeTerminalReplayAcknowledged"] is True
+        request = table.update_calls[-1]
+        condition = request["ConditionExpression"]
+        values = request["ExpressionAttributeValues"]
+        assert "requested_at_epoch = :request_epoch" in condition
+        assert "request_id = :request_id" in condition
+        assert "#progress = :expected_progress" in condition
+        assert "#receipt = :expected_receipt" in condition
+        assert values[":request_epoch"] == completed["requested_at_epoch"]
+        assert values[":request_id"] == completed["request_id"]
+        assert values[":expected_progress"] == completed[
+            "terminal_replay_progress"
+        ]
+        assert values[":expected_receipt"] == completed["replay_receipt"]
+
+
+@pytest.mark.parametrize("state", ["COMPLETED", "ACKNOWLEDGED"])
+@pytest.mark.parametrize("receipt_mutation", ["missing", "corrupt"])
+def test_acknowledgement_never_trusts_missing_or_corrupt_persisted_receipt(
+    state,
+    receipt_mutation,
+):
+    table = FakeLeaseTable()
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=lambda event, context: (
+            _successful_current_slate_payload()
+            if event.get("run") == "daily_lock_check"
+            else _successful_terminal_replay_payload()
+        ),
+    ) as (handler, _, _):
+        slate_date = "2026-07-20"
+        handler.lambda_handler(
+            _cooperative_event(slate_date),
+            FakeContext(),
+        )
+        handler.lambda_handler(
+            _scheduled_event(),
+            FakeContext(
+                request_id="ack-invalid-receipt-owner",
+                remaining_millis=900_000,
+            ),
+        )
+        table.queue_item["state"] = state
+        if receipt_mutation == "missing":
+            table.queue_item.pop("replay_receipt", None)
+        else:
+            table.queue_item["replay_receipt"] = {
+                "ok": True,
+                "cooperativeReceiptRedacted": True,
+            }
+        queue_before = copy.deepcopy(table.queue_item)
+        updates_before = len(table.update_calls)
+
+        _assert_runtime_error(
+            lambda: handler._acknowledge_cooperative_replay(
+                _cooperative_event(slate_date, acknowledge=True)
+            ),
+            "MLB_COOPERATIVE_REPLAY_",
+        )
+
+        assert table.queue_item == queue_before
+        assert len(table.update_calls) == updates_before
+
+
+def test_acknowledgement_ambiguous_readback_requires_exact_valid_receipt():
+    table = FakeLeaseTable()
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=lambda event, context: (
+            _successful_current_slate_payload()
+            if event.get("run") == "daily_lock_check"
+            else _successful_terminal_replay_payload()
+        ),
+    ) as (handler, _, _):
+        slate_date = "2026-07-20"
+        handler.lambda_handler(
+            _cooperative_event(slate_date),
+            FakeContext(),
+        )
+        handler.lambda_handler(
+            _scheduled_event(),
+            FakeContext(
+                request_id="ack-ambiguous-owner",
+                remaining_millis=900_000,
+            ),
+        )
+
+        def corrupt_committed_receipt(fake_table, request):
+            values = request.get("ExpressionAttributeValues") or {}
+            if ":acknowledged" in values:
+                fake_table.queue_item["replay_receipt"] = {
+                    "ok": True,
+                    "cooperativeReceiptRedacted": True,
+                }
+
+        table.update_after_commit = corrupt_committed_receipt
+        table.update_commits_then_error = _client_error(
+            "InternalServerError",
+            "UpdateItem",
+        )
+
+        _assert_runtime_error(
+            lambda: handler._acknowledge_cooperative_replay(
+                _cooperative_event(slate_date, acknowledge=True)
+            ),
+            "MLB_COOPERATIVE_REPLAY_ACKNOWLEDGE_FAILED",
+        )
+
+        assert table.queue_item["state"] == "ACKNOWLEDGED"
+        assert table.queue_item["replay_receipt"] == {
+            "ok": True,
+            "cooperativeReceiptRedacted": True,
+        }
 
 
 def test_insufficient_time_persists_current_proof_then_next_owner_replays():
@@ -2767,6 +3041,900 @@ def test_failed_chunk_enters_review_required_without_reclaim(capsys):
         assert "PROVE_PRELOCK_ABSENCE" in logs
         assert "PRELOCK_CANDIDATE_REQUIRES_REVIEW" in logs
         assert "claim_owner" not in logs
+
+
+def _seed_source_pull_rebind_review(
+    handler,
+    table,
+    slate_date="2026-08-04",
+):
+    handler.mlb_daily_pick_lock._today_et = lambda: "2026-08-29"
+    handler.lambda_handler(_cooperative_event(slate_date), FakeContext())
+    request_epoch = int(table.queue_item["requested_at_epoch"])
+    request_id = str(table.queue_item["request_id"])
+    progress = _source_pull_rebind_review_checkpoint(
+        slate_date=slate_date,
+        request_epoch=request_epoch,
+        request_id=request_id,
+    )
+    table.queue_item.update(
+        {
+            "state": "REVIEW_REQUIRED",
+            "terminal_replay_progress": copy.deepcopy(progress),
+            "last_chunk_stage": (
+                "WRITE_VALID_PRELOCK_MISSED_LOCK_QUARANTINE"
+            ),
+            "last_chunk_status": "FAILED_CLOSED",
+            "claim_owner": "must-never-be-exposed",
+            "claim_acquired_at_utc": "2026-08-29T05:30:00+00:00",
+            "claim_acquired_at_epoch": 1_777_000_000,
+            "claim_expires_at_utc": "2026-08-29T05:45:00+00:00",
+            "claim_expires_at_epoch": 1_777_000_900,
+            "current_slate_success_proof": {
+                "preservedAcrossOneShotRemediation": True,
+            },
+            "unrelated_audit": {"preserved": True},
+        }
+    )
+    return slate_date, progress, request_epoch, request_id
+
+
+def _source_pull_rebind_review_event(slate_date="2026-08-04"):
+    return {
+        **_cooperative_event(slate_date),
+        "requeueSourcePullProofReviewAfterRebind": True,
+    }
+
+
+def _complete_and_ack_current_queue(handler, table, slate_date):
+    request_epoch = int(table.queue_item["requested_at_epoch"])
+    request_id = str(table.queue_item["request_id"])
+    checkpoint = _complete_terminal_checkpoint(
+        slate_date=slate_date,
+        request_epoch=request_epoch,
+        request_id=request_id,
+        game_count=1,
+        quarantine_count=1,
+    )
+    receipt = handler._terminal_replay_receipt(
+        _successful_terminal_replay_payload(
+            slate_date,
+            game_count=1,
+            checkpoint=checkpoint,
+        ),
+        slate_date,
+    )
+    table.queue_item.update(
+        {
+            "state": "COMPLETED",
+            "terminal_replay_progress": copy.deepcopy(checkpoint),
+            "replay_receipt": copy.deepcopy(receipt),
+        }
+    )
+    acknowledged = _body(
+        handler.lambda_handler(
+            _cooperative_event(slate_date, acknowledge=True),
+            FakeContext(),
+        )
+    )
+    assert acknowledged["cooperativeTerminalReplayAcknowledged"] is True
+    assert table.queue_item["state"] == "ACKNOWLEDGED"
+    return checkpoint, receipt, request_id
+
+
+def test_source_pull_rebind_review_requeue_is_explicit_one_shot_and_request_bound():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, progress, request_epoch, request_id = (
+            _seed_source_pull_rebind_review(handler, table)
+        )
+
+        ordinary_poll = _body(
+            handler.lambda_handler(
+                _cooperative_event(slate_date),
+                FakeContext(),
+            )
+        )
+        assert ordinary_poll["status"] == "REVIEW_REQUIRED"
+        assert ordinary_poll["reviewRequired"] is True
+        assert table.queue_item["state"] == "REVIEW_REQUIRED"
+        updates_before = len(table.update_calls)
+
+        response = _body(
+            handler.lambda_handler(
+                _source_pull_rebind_review_event(slate_date),
+                FakeContext(),
+            )
+        )
+
+        assert response["ok"] is True
+        assert response["status"] == "QUEUED_FOR_EVENTBRIDGE_LOCK_OWNER"
+        assert response["cooperativeTerminalReplay"]["state"] == "QUEUED"
+        assert response["sourcePullRebindReviewRemediationApplied"] is True
+        assert response[
+            "sourcePullRebindReviewRemediationIdempotent"
+        ] is False
+        assert response["sourcePullRebindReviewRemediationVersion"] == (
+            "MLB-COOPERATIVE-SOURCE-PULL-REBIND-REVIEW-"
+            "REMEDIATION-v1-one-shot"
+        )
+        assert response["sourcePullRebindVersion"] == (
+            "MLB-STATUS-SOURCE-PULL-REBIND-v1-strong-immutable-row"
+        )
+        for field in (
+            "activeLeaseMutationAllowed",
+            "postStartPredictionCreationAllowed",
+            "immutablePredictionRewriteAllowed",
+            "directWorkflowTableWrite",
+            "productionAuthorityChanged",
+        ):
+            assert response[field] is False
+
+        assert len(table.update_calls) == updates_before + 1
+        request = table.update_calls[-1]
+        assert "#state = :review_required" in request["ConditionExpression"]
+        assert "#progress.#checkpoint = :checkpoint" in request[
+            "ConditionExpression"
+        ]
+        assert "#progress.#attempt.#error = :error" in request[
+            "ConditionExpression"
+        ]
+        assert "#progress.#attempt.#stage = :stage" in request[
+            "ConditionExpression"
+        ]
+        assert request["ExpressionAttributeValues"][":progress"] == progress
+        assert request["ExpressionAttributeValues"][":request_epoch"] == (
+            request_epoch
+        )
+        assert request["ExpressionAttributeValues"][":request_id"] == (
+            request_id
+        )
+        assert "REMOVE claim_owner" in request["UpdateExpression"]
+        assert "current_slate_success_proof" not in request[
+            "UpdateExpression"
+        ]
+
+        assert table.queue_item["state"] == "QUEUED"
+        assert table.queue_item["terminal_replay_progress"] == progress
+        assert table.queue_item["requested_at_epoch"] == request_epoch
+        assert table.queue_item["request_id"] == request_id
+        assert table.queue_item["current_slate_success_proof"] == {
+            "preservedAcrossOneShotRemediation": True,
+        }
+        assert table.queue_item["unrelated_audit"] == {"preserved": True}
+        assert all(
+            field not in table.queue_item
+            for field in (
+                "claim_owner",
+                "claim_acquired_at_utc",
+                "claim_acquired_at_epoch",
+                "claim_expires_at_utc",
+                "claim_expires_at_epoch",
+            )
+        )
+        marker = table.queue_item[
+            "source_pull_rebind_review_remediation"
+        ]
+        assert marker["oneShot"] is True
+        assert marker["checkpointFingerprint"] == progress[
+            "checkpointFingerprint"
+        ]
+        assert marker["errorCode"] == (
+            "VALID_PRELOCK_QUARANTINE_SOURCE_PULL_PROOF_MISMATCH"
+        )
+        assert marker["stage"] == (
+            "WRITE_VALID_PRELOCK_MISSED_LOCK_QUARANTINE"
+        )
+
+        serialized = json.dumps(response, sort_keys=True)
+        assert request_id not in serialized
+        assert "must-never-be-exposed" not in serialized
+        assert "claim_owner" not in serialized
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_error"),
+    [
+        ("nonliteral_flag", "REVIEW_FLAG_MISSING"),
+        ("wrong_sport", "REPLAY_SPORT_INVALID"),
+        ("wrong_run", "REPLAY_RUN_INVALID"),
+        ("missing_force", "REPLAY_FORCE_PROOF_MISSING"),
+        ("acknowledge", "REVIEW_FLAG_MISSING"),
+        ("extra_key", "REVIEW_FLAG_MISSING"),
+    ],
+)
+def test_source_pull_rebind_review_requeue_requires_exact_special_event(
+    mutation,
+    expected_error,
+):
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, _, _, _ = _seed_source_pull_rebind_review(
+            handler,
+            table,
+        )
+        event = _source_pull_rebind_review_event(slate_date)
+        if mutation == "nonliteral_flag":
+            event["requeueSourcePullProofReviewAfterRebind"] = "true"
+        elif mutation == "wrong_sport":
+            event["sport"] = "baseball"
+        elif mutation == "wrong_run":
+            event["run"] = "daily_lock_check"
+        elif mutation == "missing_force":
+            event["force"] = False
+        elif mutation == "acknowledge":
+            event["acknowledgeCooperativeCompletion"] = True
+        else:
+            event["unexpected"] = "must-fail-closed"
+        updates_before = len(table.update_calls)
+
+        _assert_runtime_error(
+            lambda: handler._requeue_source_pull_proof_review_after_rebind(
+                event
+            ),
+            expected_error,
+        )
+        assert table.queue_item["state"] == "REVIEW_REQUIRED"
+        assert len(table.update_calls) == updates_before
+
+
+def test_source_pull_rebind_review_requeue_requires_literal_incident_date():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        wrong_slate = "2026-08-03"
+        _seed_source_pull_rebind_review(
+            handler,
+            table,
+            slate_date=wrong_slate,
+        )
+        queue_before = copy.deepcopy(table.queue_item)
+        updates_before = len(table.update_calls)
+
+        _assert_runtime_error(
+            lambda: handler._requeue_source_pull_proof_review_after_rebind(
+                _source_pull_rebind_review_event(wrong_slate)
+            ),
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_SLATE_INVALID",
+        )
+
+        assert table.queue_item == queue_before
+        assert len(table.update_calls) == updates_before
+
+
+@pytest.mark.parametrize(
+    ("flag_value", "extra_key"),
+    [
+        (False, False),
+        ("true", False),
+        (True, True),
+    ],
+)
+def test_source_pull_rebind_handler_rejects_inexact_event_without_write(
+    flag_value,
+    extra_key,
+):
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, _, _, _ = _seed_source_pull_rebind_review(
+            handler,
+            table,
+        )
+        event = _source_pull_rebind_review_event(slate_date)
+        event["requeueSourcePullProofReviewAfterRebind"] = flag_value
+        if extra_key:
+            event["unexpected"] = "must-fail-closed"
+        updates_before = len(table.update_calls)
+
+        with pytest.raises(RuntimeError) as raised:
+            handler.lambda_handler(event, FakeContext())
+
+        assert "MLB_SCHEDULED_LOCK_PREREQUISITE_FAILED" in str(
+            raised.value
+        )
+        assert (
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_EVENT_INVALID"
+            in str(raised.value)
+        )
+        assert table.queue_item["state"] == "REVIEW_REQUIRED"
+        assert len(table.update_calls) == updates_before
+
+
+def test_source_pull_rebind_review_requeue_accepts_only_exact_ambiguous_commit():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, progress, _, _ = _seed_source_pull_rebind_review(
+            handler,
+            table,
+        )
+        table.update_commits_then_error = _client_error(
+            "InternalServerError",
+            "UpdateItem",
+        )
+
+        response = _body(
+            handler.lambda_handler(
+                _source_pull_rebind_review_event(slate_date),
+                FakeContext(),
+            )
+        )
+
+        assert response["sourcePullRebindReviewRemediationApplied"] is True
+        assert response[
+            "sourcePullRebindReviewRemediationIdempotent"
+        ] is False
+        assert table.queue_item["state"] == "QUEUED"
+        assert table.queue_item["terminal_replay_progress"] == progress
+        assert (
+            table.queue_item.get("source_pull_rebind_review_remediation")
+            is not None
+        )
+
+    rejected = FakeLeaseTable()
+    with _load_handler(lease_table=rejected) as (handler, _, _):
+        slate_date, _, _, _ = _seed_source_pull_rebind_review(
+            handler,
+            rejected,
+        )
+        rejected.update_error = _client_error(
+            "InternalServerError",
+            "UpdateItem",
+        )
+
+        _assert_runtime_error(
+            lambda: handler._requeue_source_pull_proof_review_after_rebind(
+                _source_pull_rebind_review_event(slate_date)
+            ),
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REQUEUE_FAILED",
+        )
+        assert rejected.queue_item["state"] == "REVIEW_REQUIRED"
+        assert (
+            rejected.queue_item.get(
+                "source_pull_rebind_review_remediation"
+            )
+            is None
+        )
+
+
+@pytest.mark.parametrize("observed_mutation", ["claimed", "forged_marker"])
+def test_source_pull_rebind_review_requeue_rejects_inexact_ambiguous_readback(
+    observed_mutation,
+):
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, _, _, _ = _seed_source_pull_rebind_review(
+            handler,
+            table,
+        )
+
+        def mutate_committed_row(fake_table, _request):
+            if observed_mutation == "claimed":
+                fake_table.queue_item["state"] = "CLAIMED"
+                fake_table.queue_item["claim_owner"] = "concurrent-owner"
+            else:
+                marker = fake_table.queue_item[
+                    "source_pull_rebind_review_remediation"
+                ]
+                marker["checkpointFingerprint"] = "f" * 64
+
+        table.update_after_commit = mutate_committed_row
+        table.update_commits_then_error = _client_error(
+            "InternalServerError",
+            "UpdateItem",
+        )
+
+        _assert_runtime_error(
+            lambda: handler._requeue_source_pull_proof_review_after_rebind(
+                _source_pull_rebind_review_event(slate_date)
+            ),
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REQUEUE_FAILED",
+        )
+
+
+def test_source_pull_rebind_review_requeue_is_idempotent_but_never_retries_second_failure():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, progress, _, _ = _seed_source_pull_rebind_review(
+            handler,
+            table,
+        )
+        event = _source_pull_rebind_review_event(slate_date)
+        first = _body(handler.lambda_handler(event, FakeContext()))
+        updates_after_first = len(table.update_calls)
+        second = _body(handler.lambda_handler(event, FakeContext()))
+
+        assert first[
+            "sourcePullRebindReviewRemediationIdempotent"
+        ] is False
+        assert second[
+            "sourcePullRebindReviewRemediationIdempotent"
+        ] is True
+        assert len(table.update_calls) == updates_after_first
+        marker = copy.deepcopy(
+            table.queue_item["source_pull_rebind_review_remediation"]
+        )
+
+        second_failure = copy.deepcopy(progress)
+        second_failure["attemptCount"] += 1
+        second_failure["lastAttempt"]["atUtc"] = (
+            "2026-08-29T05:32:00+00:00"
+        )
+        second_failure["updatedAtUtc"] = "2026-08-29T05:32:00+00:00"
+        second_failure["checkpointFingerprint"] = (
+            COOPERATIVE_REPAIR._cooperative_terminal_checkpoint_fingerprint(
+                second_failure
+            )
+        )
+        table.queue_item.update(
+            {
+                "state": "REVIEW_REQUIRED",
+                "terminal_replay_progress": second_failure,
+                "last_chunk_stage": (
+                    "WRITE_VALID_PRELOCK_MISSED_LOCK_QUARANTINE"
+                ),
+                "last_chunk_status": "FAILED_CLOSED",
+            }
+        )
+
+        _assert_runtime_error(
+            lambda: handler._requeue_source_pull_proof_review_after_rebind(
+                event
+            ),
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_RETRY_CONSUMED",
+        )
+        assert table.queue_item["state"] == "REVIEW_REQUIRED"
+        assert table.queue_item["source_pull_rebind_review_remediation"] == (
+            marker
+        )
+        assert len(table.update_calls) == updates_after_first
+
+
+@pytest.mark.parametrize(
+    ("state", "expected_status"),
+    [
+        ("COMPLETED", "COMPLETED_BY_EVENTBRIDGE_LOCK_OWNER"),
+        ("ACKNOWLEDGED", "ACKNOWLEDGED_COMPLETION"),
+    ],
+)
+def test_source_pull_rebind_review_idempotent_progressed_state_requires_bound_receipt(
+    state,
+    expected_status,
+):
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, _, request_epoch, request_id = (
+            _seed_source_pull_rebind_review(handler, table)
+        )
+        event = _source_pull_rebind_review_event(slate_date)
+        first = _body(handler.lambda_handler(event, FakeContext()))
+        assert first["status"] == "QUEUED_FOR_EVENTBRIDGE_LOCK_OWNER"
+
+        checkpoint = _complete_terminal_checkpoint(
+            slate_date=slate_date,
+            request_epoch=request_epoch,
+            request_id=request_id,
+            game_count=1,
+            quarantine_count=1,
+        )
+        receipt = handler._terminal_replay_receipt(
+            _successful_terminal_replay_payload(
+                slate_date,
+                game_count=1,
+                checkpoint=checkpoint,
+            ),
+            slate_date,
+        )
+        table.queue_item.update(
+            {
+                "state": state,
+                "terminal_replay_progress": copy.deepcopy(checkpoint),
+                "replay_receipt": copy.deepcopy(receipt),
+            }
+        )
+        updates_before = len(table.update_calls)
+
+        response = _body(handler.lambda_handler(event, FakeContext()))
+
+        assert response["status"] == expected_status
+        assert response["cooperativeTerminalReplayCompleted"] is True
+        assert response[
+            "sourcePullRebindReviewRemediationIdempotent"
+        ] is True
+        assert response["cooperativeTerminalReplay"]["state"] == state
+        assert len(table.update_calls) == updates_before
+        serialized = json.dumps(response, sort_keys=True)
+        assert request_id not in serialized
+        assert "claim_owner" not in serialized
+
+
+@pytest.mark.parametrize("receipt_mutation", ["missing", "corrupt"])
+def test_source_pull_rebind_review_never_overclaims_progressed_state_without_valid_receipt(
+    receipt_mutation,
+):
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, _, request_epoch, request_id = (
+            _seed_source_pull_rebind_review(handler, table)
+        )
+        event = _source_pull_rebind_review_event(slate_date)
+        handler.lambda_handler(event, FakeContext())
+        checkpoint = _complete_terminal_checkpoint(
+            slate_date=slate_date,
+            request_epoch=request_epoch,
+            request_id=request_id,
+            game_count=1,
+            quarantine_count=1,
+        )
+        table.queue_item.update(
+            {
+                "state": "COMPLETED",
+                "terminal_replay_progress": copy.deepcopy(checkpoint),
+            }
+        )
+        if receipt_mutation == "corrupt":
+            table.queue_item["replay_receipt"] = {
+                "ok": True,
+                "cooperativeReceiptRedacted": True,
+            }
+        else:
+            table.queue_item.pop("replay_receipt", None)
+        updates_before = len(table.update_calls)
+
+        _assert_runtime_error(
+            lambda: handler._requeue_source_pull_proof_review_after_rebind(
+                event
+            ),
+            "MLB_COOPERATIVE_REPLAY_",
+        )
+        assert table.queue_item["state"] == "COMPLETED"
+        assert len(table.update_calls) == updates_before
+
+
+def test_source_pull_rebind_history_survives_replacement_and_reruns_as_acknowledged():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, _, _, _ = _seed_source_pull_rebind_review(
+            handler,
+            table,
+        )
+        event = _source_pull_rebind_review_event(slate_date)
+        first = _body(handler.lambda_handler(event, FakeContext()))
+        assert first["status"] == "QUEUED_FOR_EVENTBRIDGE_LOCK_OWNER"
+        _, _, original_request_id = _complete_and_ack_current_queue(
+            handler,
+            table,
+            slate_date,
+        )
+
+        next_slate = "2026-08-25"
+        replacement = _body(
+            handler.lambda_handler(
+                _cooperative_event(next_slate),
+                FakeContext(),
+            )
+        )
+        assert replacement["cooperativeTerminalReplay"]["state"] == "QUEUED"
+        assert table.queue_item["slate_date_et"] == next_slate
+        assert table.queue_item["request_id"] != original_request_id
+        history_field = (
+            handler.COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD
+        )
+        history = copy.deepcopy(table.queue_item[history_field])
+        assert (
+            handler.COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
+            not in table.queue_item
+        )
+        assert handler._validated_source_pull_rebind_remediation_history(
+            history
+        ) == history
+        assert history["slateDateEt"] == slate_date
+        assert history["state"] == "ACKNOWLEDGED"
+        assert len(json.dumps(history, default=str).encode("utf-8")) <= (
+            handler.COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_MAX_BYTES
+        )
+        serialized_history = json.dumps(history, sort_keys=True)
+        assert original_request_id not in serialized_history
+        assert "replay_receipt" not in serialized_history
+        assert "terminal_replay_progress" not in serialized_history
+
+        queue_before = copy.deepcopy(table.queue_item)
+        put_count = len(table.put_calls)
+        update_count = len(table.update_calls)
+        rerun = _body(handler.lambda_handler(event, FakeContext()))
+
+        assert rerun["status"] == "ACKNOWLEDGED_COMPLETION"
+        assert rerun["cooperativeTerminalReplayCompleted"] is True
+        assert rerun[
+            "sourcePullRebindReviewRemediationIdempotent"
+        ] is True
+        assert rerun[
+            "sourcePullRebindReviewRemediationDurableHistory"
+        ] is True
+        assert rerun["cooperativeTerminalReplay"]["state"] == (
+            "ACKNOWLEDGED"
+        )
+        assert rerun["cooperativeTerminalReplay"]["slateDateEt"] == (
+            slate_date
+        )
+        for field in (
+            "activeLeaseMutationAllowed",
+            "postStartPredictionCreationAllowed",
+            "immutablePredictionRewriteAllowed",
+            "directWorkflowTableWrite",
+            "productionAuthorityChanged",
+        ):
+            assert rerun[field] is False
+        assert table.queue_item == queue_before
+        assert len(table.put_calls) == put_count
+        assert len(table.update_calls) == update_count
+        assert original_request_id not in json.dumps(rerun, sort_keys=True)
+
+
+def test_source_pull_rebind_history_returns_normal_noop_without_duplicate_queue():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        repair_slate, _, _, _ = _seed_source_pull_rebind_review(
+            handler,
+            table,
+        )
+        repair_event = _source_pull_rebind_review_event(repair_slate)
+        handler.lambda_handler(repair_event, FakeContext())
+        _complete_and_ack_current_queue(
+            handler,
+            table,
+            repair_slate,
+        )
+
+        later_slate = "2026-08-25"
+        handler.lambda_handler(
+            _cooperative_event(later_slate),
+            FakeContext(),
+        )
+        _complete_and_ack_current_queue(
+            handler,
+            table,
+            later_slate,
+        )
+
+        historical = _body(
+            handler.lambda_handler(repair_event, FakeContext())
+        )
+        assert historical["status"] == "ACKNOWLEDGED_COMPLETION"
+        assert historical[
+            "sourcePullRebindReviewRemediationDurableHistory"
+        ] is True
+        queue_before = copy.deepcopy(table.queue_item)
+        puts_before = len(table.put_calls)
+        updates_before = len(table.update_calls)
+
+        normal_rerun = _body(
+            handler.lambda_handler(
+                _cooperative_event(repair_slate),
+                FakeContext(),
+            )
+        )
+
+        assert normal_rerun["status"] == "ACKNOWLEDGED_COMPLETION"
+        assert normal_rerun["cooperativeTerminalReplayCompleted"] is True
+        assert normal_rerun[
+            "sourcePullRebindReviewRemediationDurableHistory"
+        ] is True
+        assert normal_rerun["mutatingRunAttempted"] is False
+        assert normal_rerun["directWorkflowTableWrite"] is False
+        assert table.queue_item == queue_before
+        assert len(table.put_calls) == puts_before
+        assert len(table.update_calls) == updates_before
+
+
+def test_source_pull_rebind_history_never_masks_active_duplicate_incident():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        repair_slate, _, _, _ = _seed_source_pull_rebind_review(
+            handler,
+            table,
+        )
+        repair_event = _source_pull_rebind_review_event(repair_slate)
+        handler.lambda_handler(repair_event, FakeContext())
+        _complete_and_ack_current_queue(
+            handler,
+            table,
+            repair_slate,
+        )
+        handler.lambda_handler(
+            _cooperative_event("2026-08-25"),
+            FakeContext(),
+        )
+        history_field = (
+            handler.COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD
+        )
+        history = copy.deepcopy(table.queue_item[history_field])
+        table.queue_item.update(
+            {
+                "slate_date_et": repair_slate,
+                "state": "QUEUED",
+                history_field: history,
+            }
+        )
+        queue_before = copy.deepcopy(table.queue_item)
+
+        _assert_runtime_error(
+            lambda: handler._requeue_source_pull_proof_review_after_rebind(
+                repair_event
+            ),
+            "HISTORY_ACTIVE_REQUEST_CONFLICT",
+        )
+
+        assert table.queue_item == queue_before
+
+
+@pytest.mark.parametrize("corruption", ["fingerprint", "semantic"])
+def test_source_pull_rebind_history_corruption_fails_closed_without_write(
+    corruption,
+):
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, _, _, _ = _seed_source_pull_rebind_review(
+            handler,
+            table,
+        )
+        event = _source_pull_rebind_review_event(slate_date)
+        handler.lambda_handler(event, FakeContext())
+        _complete_and_ack_current_queue(handler, table, slate_date)
+        handler.lambda_handler(
+            _cooperative_event("2026-08-25"),
+            FakeContext(),
+        )
+        history_field = (
+            handler.COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD
+        )
+        history = table.queue_item[history_field]
+        if corruption == "fingerprint":
+            history["proofFingerprint"] = "0" * 64
+        else:
+            history["errorCode"] = "DIFFERENT_SELF_CONSISTENT_ERROR"
+            material = {
+                key: value
+                for key, value in history.items()
+                if key != "proofFingerprint"
+            }
+            history["proofFingerprint"] = (
+                handler._source_pull_rebind_compact_fingerprint(material)
+            )
+        queue_before = copy.deepcopy(table.queue_item)
+        put_count = len(table.put_calls)
+        update_count = len(table.update_calls)
+
+        _assert_runtime_error(
+            lambda: handler._requeue_source_pull_proof_review_after_rebind(
+                event
+            ),
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_INVALID",
+        )
+
+        assert table.queue_item == queue_before
+        assert len(table.put_calls) == put_count
+        assert len(table.update_calls) == update_count
+
+
+def test_source_pull_rebind_history_is_carried_across_another_replacement():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        repair_slate, _, _, _ = _seed_source_pull_rebind_review(
+            handler,
+            table,
+        )
+        repair_event = _source_pull_rebind_review_event(repair_slate)
+        handler.lambda_handler(repair_event, FakeContext())
+        _complete_and_ack_current_queue(handler, table, repair_slate)
+
+        first_later_slate = "2026-08-25"
+        handler.lambda_handler(
+            _cooperative_event(first_later_slate),
+            FakeContext(),
+        )
+        history_field = (
+            handler.COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD
+        )
+        original_history = copy.deepcopy(table.queue_item[history_field])
+        _complete_and_ack_current_queue(
+            handler,
+            table,
+            first_later_slate,
+        )
+
+        second_later_slate = "2026-08-26"
+        handler.lambda_handler(
+            _cooperative_event(second_later_slate),
+            FakeContext(),
+        )
+
+        assert table.queue_item["slate_date_et"] == second_later_slate
+        assert table.queue_item[history_field] == original_history
+        second_put = table.put_calls[-1]
+        assert "#history = :previous_history" in second_put[
+            "ConditionExpression"
+        ]
+        assert "attribute_not_exists(#remediation)" in second_put[
+            "ConditionExpression"
+        ]
+        assert second_put["ExpressionAttributeValues"][
+            ":previous_history"
+        ] == original_history
+        assert "terminal_replay_progress = :previous_progress" in (
+            second_put["ConditionExpression"]
+        )
+        assert "replay_receipt = :previous_receipt" in second_put[
+            "ConditionExpression"
+        ]
+
+        queue_before = copy.deepcopy(table.queue_item)
+        rerun = _body(
+            handler.lambda_handler(repair_event, FakeContext())
+        )
+        assert rerun["status"] == "ACKNOWLEDGED_COMPLETION"
+        assert rerun["cooperativeTerminalReplayCompleted"] is True
+        assert table.queue_item == queue_before
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "wrong_error",
+        "wrong_stage",
+        "nonzero_work",
+        "bad_fingerprint",
+        "wrong_request",
+        "source_fix_not_ready",
+    ],
+)
+def test_source_pull_rebind_review_requeue_rejects_inexact_authority(
+    mutation,
+):
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, progress, _, _ = _seed_source_pull_rebind_review(
+            handler,
+            table,
+        )
+        if mutation == "wrong_error":
+            progress["lastAttempt"]["errorCode"] = (
+                "VALID_PRELOCK_QUARANTINE_SNAPSHOT_PROOF_MISMATCH"
+            )
+        elif mutation == "wrong_stage":
+            progress["lastAttempt"]["stage"] = "PROVE_PRELOCK_ABSENCE"
+            table.queue_item["last_chunk_stage"] = "PROVE_PRELOCK_ABSENCE"
+        elif mutation == "nonzero_work":
+            progress["nextGameIndex"] = 1
+        elif mutation == "bad_fingerprint":
+            progress["checkpointFingerprint"] = "0" * 64
+        elif mutation == "wrong_request":
+            progress["requestId"] = "different-request"
+        else:
+            handler._status_source_pull_rebind_ready = False
+        if mutation not in {"bad_fingerprint", "source_fix_not_ready"}:
+            progress["checkpointFingerprint"] = (
+                COOPERATIVE_REPAIR._cooperative_terminal_checkpoint_fingerprint(
+                    progress
+                )
+            )
+        table.queue_item["terminal_replay_progress"] = progress
+
+        _assert_runtime_error(
+            lambda: handler._requeue_source_pull_proof_review_after_rebind(
+                _source_pull_rebind_review_event(slate_date)
+            ),
+            (
+                "MLB_COOPERATIVE_SOURCE_PULL_REBIND_NOT_READY"
+                if mutation == "source_fix_not_ready"
+                else "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_"
+            ),
+        )
+        assert table.queue_item["state"] == "REVIEW_REQUIRED"
+        assert (
+            table.queue_item.get(
+                "source_pull_rebind_review_remediation"
+            )
+            is None
+        )
 
 
 @pytest.mark.parametrize(

@@ -9,6 +9,9 @@ SCRIPT = ROOT / "scripts" / "reconcile_mlb_prospective_backlog.py"
 UNIFIED_RECOVERY = (
     ROOT / ".github" / "workflows" / "unified-mlb-learning-recovery-once.yml"
 )
+SOURCE_CONTRACT = (
+    ROOT / ".github" / "workflows" / "mlb-production-source-contract.yml"
+)
 
 
 def test_workflow_runs_bounded_reconciliation_before_training():
@@ -74,9 +77,85 @@ def test_unified_recovery_is_manual_exact_gap_then_target_only():
     assert "last_slate == target" in source
 
 
+def test_unified_recovery_source_rebind_review_requeue_is_explicit_and_bounded():
+    source = UNIFIED_RECOVERY.read_text(encoding="utf-8")
+    trigger = source.split("permissions:", 1)[0]
+    readiness_at = source.index("Wait for a quiet deploy queue and stable AWS runtime")
+    remediation_at = source.index("Requeue protected source-binding review once")
+    reconcile_at = source.index("Reconcile protected prospective settlement backlog")
+    remediation = source[remediation_at:reconcile_at]
+
+    assert "requeue_source_pull_proof_review_after_rebind:" in trigger
+    assert "        default: false\n" in trigger
+    assert "        type: boolean\n" in trigger
+    assert (
+        "if: ${{ inputs.requeue_source_pull_proof_review_after_rebind }}"
+        in remediation
+    )
+    assert readiness_at < remediation_at < reconcile_at
+    assert "LOGICAL_RESOURCE_ID = 'MLBDailyPickLockFunction'" in remediation
+    assert "describe_stack_resource(" in remediation
+    assert "FunctionName=function_name" in remediation
+    assert (
+        "EXPECTED_HANDLER = 'mlb_daily_pick_lock_protected.lambda_handler'"
+        in remediation
+    )
+    assert "'run': EXPECTED_RUN" in remediation
+    assert "'slateDateEt': repair_slate" in remediation
+    assert "INCIDENT_SLATE_DATE = '2026-08-04'" in remediation
+    assert "repair_slate != INCIDENT_SLATE_DATE" in remediation
+    assert "'force': True" in remediation
+    assert "'requeueSourcePullProofReviewAfterRebind'" in remediation
+    assert "'MLB-STATUS-SOURCE-PULL-REBIND-v1-strong-immutable-row'" in remediation
+    assert "'QUEUED_FOR_EVENTBRIDGE_LOCK_OWNER'" in remediation
+    assert "'CLAIMED': 'CLAIMED_BY_EVENTBRIDGE_LOCK_OWNER'" in remediation
+    assert "'COMPLETED': 'COMPLETED_BY_EVENTBRIDGE_LOCK_OWNER'" in remediation
+    assert "'ACKNOWLEDGED': 'ACKNOWLEDGED_COMPLETION'" in remediation
+    assert "if not remediation_idempotent and replay_state != 'QUEUED':" in remediation
+    assert "durable_history = application.get(" in remediation
+    assert "nested_durable_history = replay.get(" in remediation
+    assert "nested_durable_history is not None" in remediation
+    assert "nested_durable_history is not True" in remediation
+    assert "official-read-bound no-op path" in remediation
+    assert "durably fences every duplicate queue" in remediation
+    assert "expected_completed = replay_state in COMPLETED_STATES" in remediation
+    assert "replay.get('slateDateEt') != event['slateDateEt']" in remediation
+    assert "'rawLambdaPayloadPersisted': False" in remediation
+    assert "'requestIdentifierExposed': False" in remediation
+    assert "'checkpointMaterialExposed': False" in remediation
+    assert "'automaticRequeueAllowed': False" in remediation
+    assert "source-pull-rebind-review-remediation.json" in remediation
+    for field in (
+        "activeLeaseMutationAllowed",
+        "postStartPredictionCreationAllowed",
+        "immutablePredictionRewriteAllowed",
+        "directWorkflowTableWrite",
+        "productionAuthorityChanged",
+    ):
+        assert field in remediation
+    for forbidden in (
+        "boto3.client('dynamodb'",
+        'boto3.client("dynamodb"',
+        ".update_item(",
+        ".put_item(",
+        ".delete_item(",
+        "transact_write_items(",
+        "while ",
+        "for attempt in",
+    ):
+        assert forbidden not in remediation
+
+
 def test_unified_recovery_binds_numeric_proof_to_requested_run_evidence():
     source = UNIFIED_RECOVERY.read_text(encoding="utf-8")
 
+    assert "MIN_ACCEPTED_ROWS: '39'" in source
+    assert "Capture pre-recovery R7 numeric baseline" in source
+    assert "r7-before.json" in source
+    assert "'latest_status_stale'" in source
+    assert "'latest_status_deployment_identity_mismatch'" in source
+    assert "health_errors <= allowed_health_errors" in source
+    assert "deployment_identity_contract_ok" in source
     assert "status.get('requestedRunEvidence')" in source
     assert "training_evidence.get('run')" in source
     assert "selection_evidence.get('run')" in source
@@ -84,6 +163,39 @@ def test_unified_recovery_binds_numeric_proof_to_requested_run_evidence():
     assert "selection_run.get('runId') == selection_run_id" in source
     assert "health.get('latestRun')" not in source
     assert "selection_health.get('latestRun')" not in source
+    assert "accepted > before_accepted" in source
+    assert "train_count > before_train_count" in source
+    assert "repair in finalized" in source
+    assert "repair in processed" in source
+    assert "before.get('champion') == status.get('champion')" in source
+    assert "status.get('champion') in (None, {})" in source
+    assert "training_evidence.get('deploymentIdentityMatches') is True" in source
+    assert "selection_evidence.get('deploymentIdentityMatches') is True" in source
+    for field in (
+        "productionAuthorityChanged",
+        "immutablePredictionRewriteAllowed",
+        "postStartPredictionCreationAllowed",
+        "otherSportChanged",
+    ):
+        assert f"latest.get('{field}')" in source
+        assert f"latest.get('{field}') is False" in source
+
+
+def test_source_contract_triggers_for_non_mlb_prefixed_recovery_tests():
+    source = SOURCE_CONTRACT.read_text(encoding="utf-8")
+    pull_request_paths = source.split("  pull_request:", 1)[1].split(
+        "  push:", 1
+    )[0]
+    push_paths = source.split("  push:", 1)[1].split(
+        "  workflow_dispatch:", 1
+    )[0]
+    required = (
+        "tests/unit/test_reconcile_mlb_prospective_backlog_v5_settlement_replay.py",
+        "tests/unit/test_unified_mlb_learning_ownership.py",
+    )
+    for path in required:
+        assert f"      - '{path}'" in pull_request_paths
+        assert f"      - '{path}'" in push_paths
 
 
 def test_unified_recovery_does_not_confuse_current_slate_maturity_with_integrity():
@@ -119,4 +231,4 @@ def test_unified_recovery_does_not_confuse_current_slate_maturity_with_integrity
     assert '--target-slate-date "$TARGET_SLATE_DATE"' in source
     assert "accepted >= minimum" in source
     assert "train_count >= minimum" in source
-    assert "productionAuthorityChanged') is not True" in source
+    assert "productionAuthorityChanged') is False" in source

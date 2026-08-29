@@ -125,6 +125,8 @@ jobs:
 def test_repository_has_one_automatic_unified_mlb_training_owner():
     result = ownership.verify(Path("."))
     assert result["ok"] is True, result["errors"]
+    assert result["recoveryManualOnly"] is True
+    assert result["productionAuthorityChanged"] is False
     assert result["automaticTrainerOwner"] == "AWS_EVENTBRIDGE_SCHEDULE"
     assert result["deploymentInvokesTraining"] is False
     assert result["githubScheduledRecoveryEnabled"] is False

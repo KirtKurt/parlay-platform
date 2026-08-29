@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import copy
 import math
+from itertools import islice
 from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 
-VERSION = "MLB-FUNDAMENTALS-SCORING-BRIDGE-v1-source-honest-partial-safe"
+VERSION = "MLB-FUNDAMENTALS-SCORING-BRIDGE-v2-source-honest-shadow-only"
+AUTHORITY_MODE = "SHADOW_ONLY_NO_LIVE_SCORING_AUTHORITY"
+SHADOW_FIELD = "fundamentalsScoringShadow"
 SNAPSHOT_DETERMINISM_VERSION = (
     "MLB-FUNDAMENTALS-SNAPSHOT-CAPTURE-TIME-v1-immutable-pregame-source"
 )
@@ -33,6 +36,9 @@ SCORING_GROUPS: Tuple[str, ...] = (
     "injuries_late_scratches",
 )
 MAX_SIDE_ADJUSTMENT = 3.0
+MAX_SHADOW_LIST_ITEMS = 12
+MAX_SHADOW_TEXT_CHARS = 240
+MAX_SHADOW_COMPONENTS = 12
 
 
 def _f(value: Any) -> Optional[float]:
@@ -45,6 +51,35 @@ def _f(value: Any) -> Optional[float]:
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
+
+
+def _bounded_text(value: Any) -> Optional[str]:
+    if value in (None, ""):
+        return None
+    return str(value)[:MAX_SHADOW_TEXT_CHARS]
+
+
+def _bounded_strings(values: Any) -> list[str]:
+    if not isinstance(values, (list, tuple, set)):
+        return []
+    return [
+        str(value)[:MAX_SHADOW_TEXT_CHARS]
+        for value in islice(iter(values), MAX_SHADOW_LIST_ITEMS)
+    ]
+
+
+def _snapshot_ref(snapshot: Mapping[str, Any]) -> Dict[str, Any]:
+    game = snapshot.get("game")
+    game = game if isinstance(game, Mapping) else {}
+    return {
+        "version": _bounded_text(snapshot.get("version")),
+        "schemaCohort": _bounded_text(snapshot.get("schemaCohort")),
+        "gameId": _bounded_text(game.get("gameId")),
+        "sourcePullId": _bounded_text(snapshot.get("sourcePullId")),
+        "evidenceCutoffUtc": _bounded_text(snapshot.get("evidenceCutoffUtc")),
+        "fingerprintVersion": _bounded_text(snapshot.get("fingerprintVersion")),
+        "fingerprint": _bounded_text(snapshot.get("fingerprint")),
+    }
 
 
 def _group(snapshot: Mapping[str, Any], name: str) -> Mapping[str, Any]:
@@ -112,6 +147,31 @@ def deterministic_capture_time(row: Mapping[str, Any]) -> str:
     return DETERMINISTIC_MISSING_CAPTURE_TIME
 
 
+def _vector(row: Mapping[str, Any]) -> Mapping[str, Any]:
+    value = row.get("featureSnapshot") or row.get("frozenFeatureVector") or {}
+    return value if isinstance(value, Mapping) else {}
+
+
+def _prediction_persisted_at(row: Mapping[str, Any]) -> Any:
+    vector = _vector(row)
+    return row.get("predictionPersistedAtUtc") or vector.get(
+        "predictionPersistedAtUtc"
+    )
+
+
+def _lock_at(row: Mapping[str, Any]) -> Any:
+    vector = _vector(row)
+    slate_lock = row.get("slatePredictionLock")
+    slate_lock = slate_lock if isinstance(slate_lock, Mapping) else {}
+    return (
+        vector.get("lockAtUtc")
+        or row.get("lockAtUtc")
+        or row.get("lockedAtUtc")
+        or row.get("lockedAt")
+        or slate_lock.get("lockAtUtc")
+    )
+
+
 def install_snapshot_determinism(snapshot_v2_module: Any) -> Any:
     if getattr(
         snapshot_v2_module,
@@ -138,28 +198,58 @@ def install_snapshot_determinism(snapshot_v2_module: Any) -> Any:
     return snapshot_v2_module
 
 
-def _snapshot_for_row(row: MutableMapping[str, Any]) -> Tuple[Optional[Dict[str, Any]], Sequence[str]]:
+def install_snapshot_shadow_evaluation(snapshot_v2_module: Any) -> Any:
+    """Attach passive shadow evidence after V2 has attached its snapshot."""
+    if getattr(
+        snapshot_v2_module,
+        "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_SHADOW_V2_INSTALLED",
+        False,
+    ):
+        return snapshot_v2_module
+
+    original_enhance_row = snapshot_v2_module.enhance_row
+
+    def shadow_enhance_row(row: Dict[str, Any]) -> Dict[str, Any]:
+        result = original_enhance_row(row)
+        if isinstance(result, dict):
+            result[SHADOW_FIELD] = evaluate_shadow(result)
+        return result
+
+    snapshot_v2_module.enhance_row = shadow_enhance_row
+    snapshot_v2_module.MLB_FUNDAMENTALS_SNAPSHOT_SHADOW_VERSION = VERSION
+    snapshot_v2_module._INQSI_MLB_FUNDAMENTALS_SNAPSHOT_SHADOW_V2_INSTALLED = (
+        True
+    )
+    return snapshot_v2_module
+
+
+def _snapshot_for_row(
+    row: MutableMapping[str, Any],
+) -> Tuple[Optional[Dict[str, Any]], Sequence[str]]:
+    """Read an attached snapshot without fetching or rebuilding live data."""
     existing = row.get("fundamentalsSnapshotV2")
     if isinstance(existing, dict):
         snapshot = existing
     else:
-        try:
-            import mlb_fundamentals_snapshot_v2 as snapshot_v2
-
-            install_snapshot_determinism(snapshot_v2)
-            snapshot_v2.enhance_row(row)
-            candidate = row.get("fundamentalsSnapshotV2")
-            snapshot = candidate if isinstance(candidate, dict) else None
-        except Exception as exc:
-            return None, (f"fundamentals_v2_build_error:{type(exc).__name__}",)
-
-    if not isinstance(snapshot, dict):
-        return None, ("fundamentals_v2_missing",)
+        return None, ("fundamentals_v2_not_attached_shadow_no_fetch",)
 
     try:
-        import mlb_fundamentals_snapshot_v2 as snapshot_v2
+        try:
+            import mlb_fundamentals_snapshot_v2 as snapshot_v2
+        except ImportError:
+            from hello_world import mlb_fundamentals_snapshot_v2 as snapshot_v2
 
-        errors = tuple(snapshot_v2.validate(snapshot))
+        errors = list(snapshot_v2.validate(snapshot))
+        if not errors and not snapshot_v2.provenance_is_lock_safe(
+            snapshot,
+            prediction_persisted_at=_prediction_persisted_at(row),
+            lock_at=_lock_at(row),
+        ):
+            errors.append(
+                "fundamentals_v2_evidence_not_at_or_before_"
+                "persisted_prediction_and_lock"
+            )
+        errors = tuple(errors)
     except Exception as exc:
         errors = (f"fundamentals_v2_validation_error:{type(exc).__name__}",)
     return snapshot, errors
@@ -284,6 +374,7 @@ def _neutral_metadata(
         "reason": reason,
         "snapshotVersion": (snapshot or {}).get("version"),
         "snapshotFingerprint": (snapshot or {}).get("fingerprint"),
+        "snapshotRef": _snapshot_ref(snapshot or {}),
         "connectedGroups": list((snapshot or {}).get("connectedGroups") or []),
         "missingGroups": missing,
         "validationErrors": sorted(set(str(error) for error in errors if str(error))),
@@ -293,14 +384,15 @@ def _neutral_metadata(
 
 
 def apply_to_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Evaluate the source-honest scoring candidate on an isolated copy.
+
+    This function intentionally retains the original candidate calculation for
+    shadow diagnostics and prospective validation.  The live winner-stack
+    installer below never passes this returned candidate into production
+    scoring.
+    """
     out = copy.deepcopy(row or {})
     optimizer = dict(out.get("winnerOptimizer") or {})
-    if (
-        optimizer.get("fundamentalsApplied") is True
-        and optimizer.get("fundamentalsScoringBridgeVersion") == VERSION
-    ):
-        return out
-
     snapshot, validation_errors = _snapshot_for_row(out)
     if snapshot is None or validation_errors:
         metadata = _neutral_metadata(
@@ -374,7 +466,7 @@ def apply_to_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "mode": "TIMESTAMPED_FUNDAMENTALS_V2_PARTIAL_SAFE",
         "snapshotVersion": snapshot.get("version"),
         "snapshotFingerprint": snapshot.get("fingerprint"),
-        "snapshotRef": copy.deepcopy(out.get("fundamentalsSnapshotV2Ref") or {}),
+        "snapshotRef": _snapshot_ref(snapshot),
         "connectedGroups": list(snapshot.get("connectedGroups") or []),
         "missingGroups": missing,
         "missingEssentialGroups": [],
@@ -407,20 +499,345 @@ def apply_to_row(row: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _not_evaluated_shadow(reason: str) -> Dict[str, Any]:
+    return {
+        "evaluated": False,
+        "version": VERSION,
+        "authorityMode": AUTHORITY_MODE,
+        "shadowOnly": False,
+        "liveScoringAuthority": False,
+        "canInfluenceLivePick": False,
+        "evaluationInputIsolatedCopy": True,
+        "liveScoringInputUsedShadowCandidate": False,
+        "wouldApply": False,
+        "mode": "SHADOW_NOT_EVALUATED",
+        "reason": _bounded_text(reason),
+        "snapshotVersion": None,
+        "snapshotFingerprint": None,
+        "snapshotRef": {},
+        "connectedGroups": [],
+        "missingGroups": [],
+        "missingEssentialGroups": [],
+        "availableQualityGroups": [],
+        "validationErrors": [],
+        "componentEdgesHomePerspective": {},
+        "boundedHypotheticalAdjustments": {
+            "home": None,
+            "away": None,
+            "maxAbsolute": MAX_SIDE_ADJUSTMENT,
+        },
+        "missingnessIsFeature": True,
+        "evidenceBounded": True,
+    }
+
+
+def _bounded_snapshot_ref(snapshot: Mapping[str, Any]) -> Dict[str, Any]:
+    return {
+        key: value
+        for key, value in _snapshot_ref(snapshot).items()
+        if value not in (None, "")
+    }
+
+
+def evaluate_shadow(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Evaluate only an attached snapshot; never fetch on the scoring path."""
+    if not isinstance((row or {}).get("fundamentalsSnapshotV2"), dict):
+        return _not_evaluated_shadow("snapshot_v2_not_attached_no_live_fetch")
+    snapshot, source_errors = _snapshot_for_row(dict(row or {}))
+    if snapshot is None:
+        return _not_evaluated_shadow("snapshot_v2_not_attached_no_live_fetch")
+    if source_errors:
+        shadow = _not_evaluated_shadow(
+            "snapshot_v2_invalid_or_not_lock_safe"
+        )
+        shadow.update(
+            {
+                "snapshotVersion": _bounded_text(snapshot.get("version")),
+                "snapshotFingerprint": _bounded_text(
+                    snapshot.get("fingerprint")
+                ),
+                "snapshotRef": _bounded_snapshot_ref(snapshot),
+                "connectedGroups": _bounded_strings(
+                    snapshot.get("connectedGroups")
+                ),
+                "missingGroups": _bounded_strings(
+                    snapshot.get("missingGroups")
+                ),
+                "validationErrors": _bounded_strings(source_errors),
+            }
+        )
+        return shadow
+    try:
+        evaluated = apply_to_row(row)
+    except Exception as exc:
+        return _not_evaluated_shadow(
+            f"shadow_evaluation_error:{type(exc).__name__}"
+        )
+    optimizer = evaluated.get("winnerOptimizer") or {}
+    metadata = (
+        optimizer.get("fundamentals")
+        or evaluated.get("fundamentalsLayer")
+        or {}
+    )
+    applied = bool(
+        optimizer.get("fundamentalsApplied") is True
+        or evaluated.get("fundamentalsApplied") is True
+        or metadata.get("applied") is True
+    )
+    home_adjustment = _f(metadata.get("homeAdjustment")) if applied else None
+    away_adjustment = _f(metadata.get("awayAdjustment")) if applied else None
+    if home_adjustment is not None:
+        home_adjustment = round(
+            _clamp(home_adjustment, -MAX_SIDE_ADJUSTMENT, MAX_SIDE_ADJUSTMENT),
+            6,
+        )
+    if away_adjustment is not None:
+        away_adjustment = round(
+            _clamp(away_adjustment, -MAX_SIDE_ADJUSTMENT, MAX_SIDE_ADJUSTMENT),
+            6,
+        )
+    component_edges = metadata.get("componentEdgesHomePerspective")
+    component_edges = component_edges if isinstance(component_edges, Mapping) else {}
+    bounded_components = {
+        str(name)[:MAX_SHADOW_TEXT_CHARS]: round(
+            _clamp(value, -MAX_SIDE_ADJUSTMENT, MAX_SIDE_ADJUSTMENT),
+            6,
+        )
+        for name, raw_value in islice(
+            component_edges.items(), MAX_SHADOW_COMPONENTS
+        )
+        if (value := _f(raw_value)) is not None
+    }
+    snapshot_ref = metadata.get("snapshotRef")
+    snapshot_ref = snapshot_ref if isinstance(snapshot_ref, Mapping) else {}
+    return {
+        "evaluated": True,
+        "version": VERSION,
+        "authorityMode": AUTHORITY_MODE,
+        "shadowOnly": True,
+        "liveScoringAuthority": False,
+        "canInfluenceLivePick": False,
+        "evaluationInputIsolatedCopy": True,
+        "liveScoringInputUsedShadowCandidate": False,
+        "wouldApply": applied,
+        "mode": _bounded_text(
+            metadata.get("mode") or optimizer.get("fundamentalsMode")
+        ),
+        "reason": _bounded_text(metadata.get("reason")),
+        "snapshotVersion": _bounded_text(metadata.get("snapshotVersion")),
+        "snapshotFingerprint": _bounded_text(
+            metadata.get("snapshotFingerprint")
+        ),
+        "snapshotRef": {
+            key: _bounded_text(snapshot_ref.get(key))
+            for key in (
+                "version",
+                "schemaCohort",
+                "gameId",
+                "sourcePullId",
+                "evidenceCutoffUtc",
+                "fingerprintVersion",
+                "fingerprint",
+            )
+            if snapshot_ref.get(key) not in (None, "")
+        },
+        "connectedGroups": _bounded_strings(metadata.get("connectedGroups")),
+        "missingGroups": _bounded_strings(metadata.get("missingGroups")),
+        "missingEssentialGroups": _bounded_strings(
+            metadata.get("missingEssentialGroups")
+        ),
+        "availableQualityGroups": _bounded_strings(
+            metadata.get("availableQualityGroups")
+        ),
+        "validationErrors": _bounded_strings(metadata.get("validationErrors")),
+        "componentEdgesHomePerspective": bounded_components,
+        "boundedHypotheticalAdjustments": {
+            "home": home_adjustment,
+            "away": away_adjustment,
+            "maxAbsolute": MAX_SIDE_ADJUSTMENT,
+        },
+        "missingnessIsFeature": True,
+        "evidenceBounded": True,
+    }
+
+
+def _strict_finite_number(value: Any) -> Optional[float]:
+    if isinstance(value, bool):
+        return None
+    return _f(value)
+
+
+def validate_shadow_attestation(
+    shadow: Any,
+    row: Optional[Mapping[str, Any]] = None,
+) -> list[str]:
+    """Validate an attached shadow against a fresh canonical recomputation.
+
+    The attestation is diagnostics only, but a malformed or self-authored
+    payload must never be treated as proof that shadow inputs were isolated
+    from live scoring.  This validator is deliberately total over JSON/Dynamo
+    shapes: malformed nested values become bounded reason codes, never errors.
+    """
+    if not shadow:
+        return []
+    if not isinstance(shadow, Mapping):
+        return ["shadow_payload_invalid_type"]
+
+    row = row if isinstance(row, Mapping) else {}
+    errors: list[str] = []
+    if shadow.get("version") != VERSION:
+        errors.append("shadow_version_invalid")
+    if shadow.get("authorityMode") != AUTHORITY_MODE:
+        errors.append("shadow_authority_mode_invalid")
+    if shadow.get("liveScoringAuthority") is not False:
+        errors.append("shadow_live_authority_invalid")
+    if shadow.get("canInfluenceLivePick") is not False:
+        errors.append("shadow_pick_influence_invalid")
+    if shadow.get("evidenceBounded") is not True:
+        errors.append("shadow_bounded_attestation_missing")
+    if shadow.get("evaluationInputIsolatedCopy") is not True:
+        errors.append("shadow_evaluation_input_not_isolated")
+    if shadow.get("liveScoringInputUsedShadowCandidate") is not False:
+        errors.append("shadow_live_scoring_used_candidate")
+
+    evaluated = shadow.get("evaluated") is True
+    would_apply = shadow.get("wouldApply") is True
+    if evaluated and shadow.get("shadowOnly") is not True:
+        errors.append("shadow_only_attestation_invalid")
+    if not evaluated and would_apply:
+        errors.append("unevaluated_shadow_cannot_apply")
+
+    snapshot = row.get("fundamentalsSnapshotV2")
+    snapshot_mapping = snapshot if isinstance(snapshot, Mapping) else None
+    expected_shadow_ref: Dict[str, Any] = {}
+    if snapshot_mapping is None:
+        if evaluated:
+            errors.append("shadow_current_snapshot_missing")
+    else:
+        try:
+            try:
+                import mlb_fundamentals_snapshot_v2 as snapshot_contract
+            except ImportError:
+                from hello_world import (
+                    mlb_fundamentals_snapshot_v2 as snapshot_contract,
+                )
+
+            snapshot_errors = list(snapshot_contract.validate(dict(snapshot_mapping)))
+            if snapshot_errors:
+                errors.append("shadow_current_snapshot_invalid")
+            elif not snapshot_contract.provenance_is_lock_safe(
+                dict(snapshot_mapping),
+                prediction_persisted_at=_prediction_persisted_at(row),
+                lock_at=_lock_at(row),
+            ):
+                errors.append("shadow_current_snapshot_provenance_invalid")
+        except Exception:
+            errors.append("shadow_current_snapshot_validation_unavailable")
+
+        expected_row_ref = _snapshot_ref(snapshot_mapping)
+        current_ref = row.get("fundamentalsSnapshotV2Ref")
+        if not isinstance(current_ref, Mapping):
+            errors.append("shadow_current_snapshot_ref_invalid")
+        elif dict(current_ref) != expected_row_ref:
+            errors.append("shadow_current_snapshot_ref_invalid")
+
+        expected_shadow_ref = {
+            key: value
+            for key, value in expected_row_ref.items()
+            if value not in (None, "")
+        }
+        if shadow.get("snapshotVersion") != snapshot_mapping.get("version"):
+            errors.append("shadow_snapshot_version_binding_invalid")
+        if shadow.get("snapshotFingerprint") != snapshot_mapping.get(
+            "fingerprint"
+        ):
+            errors.append("shadow_current_snapshot_binding_invalid")
+
+    shadow_ref = shadow.get("snapshotRef")
+    if not isinstance(shadow_ref, Mapping):
+        errors.append("shadow_snapshot_ref_invalid_type")
+    elif dict(shadow_ref) != expected_shadow_ref:
+        errors.append("shadow_snapshot_ref_binding_invalid")
+
+    adjustments = shadow.get("boundedHypotheticalAdjustments")
+    if not isinstance(adjustments, Mapping):
+        errors.append("shadow_adjustments_invalid_type")
+    else:
+        maximum = _strict_finite_number(adjustments.get("maxAbsolute"))
+        if maximum != MAX_SIDE_ADJUSTMENT:
+            errors.append("shadow_adjustment_max_contract_invalid")
+        if would_apply:
+            home = _strict_finite_number(adjustments.get("home"))
+            away = _strict_finite_number(adjustments.get("away"))
+            if (
+                home is None
+                or away is None
+                or maximum != MAX_SIDE_ADJUSTMENT
+                or abs(home) > MAX_SIDE_ADJUSTMENT
+                or abs(away) > MAX_SIDE_ADJUSTMENT
+                or abs(home + away) > 1e-6
+            ):
+                errors.append("shadow_adjustment_bounds_invalid")
+
+    try:
+        canonical_input = copy.deepcopy(dict(row))
+        canonical_input.pop(SHADOW_FIELD, None)
+        canonical = evaluate_shadow(canonical_input)
+        if dict(shadow) != canonical:
+            errors.append("shadow_canonical_evaluation_mismatch")
+    except Exception:
+        errors.append("shadow_canonical_evaluation_unavailable")
+
+    return sorted(set(errors))
+
+
 def install_winner_stack(winner_stack_module: Any) -> Any:
+    """Install a shadow evaluator that cannot feed the live winner stack."""
+    if getattr(
+        winner_stack_module,
+        "_INQSI_MLB_FUNDAMENTALS_SCORING_SHADOW_V2_INSTALLED",
+        False,
+    ):
+        return winner_stack_module
     if getattr(
         winner_stack_module,
         "_INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED",
         False,
     ):
-        return winner_stack_module
+        # A v1 wrapper captured its live-scoring delegate in a closure and
+        # cannot be safely unwrapped in place.  Refuse to place a shadow-only
+        # attestation around potentially authoritative legacy behavior.  A
+        # normal deployment starts a fresh process and installs v2 directly.
+        raise RuntimeError(
+            "legacy_live_fundamentals_wrapper_requires_process_restart"
+        )
 
     original = winner_stack_module.enhance_prediction
 
     def patched_enhance_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
-        return original(apply_to_row(row))
+        # The live scorer receives the original row, never the evaluated
+        # candidate.  Only the namespaced, non-authoritative evidence is added
+        # after normal winner-stack scoring has completed.
+        production_result = original(row)
+        if not isinstance(production_result, dict):
+            return production_result
+        shadow = evaluate_shadow(row)
+        # Add the namespaced evidence to a new outer mapping.  Existing
+        # production fields and the object returned by the live scorer remain
+        # untouched, even if the scorer returned the caller's input mapping.
+        annotated_result = dict(production_result)
+        annotated_result[SHADOW_FIELD] = shadow
+        return annotated_result
 
     winner_stack_module.enhance_prediction = patched_enhance_prediction
     winner_stack_module.MLB_FUNDAMENTALS_SCORING_BRIDGE_VERSION = VERSION
+    winner_stack_module.MLB_FUNDAMENTALS_SCORING_BRIDGE_AUTHORITY_MODE = (
+        AUTHORITY_MODE
+    )
+    winner_stack_module.MLB_FUNDAMENTALS_SCORING_BRIDGE_SHADOW_ONLY = True
+    winner_stack_module.MLB_FUNDAMENTALS_SCORING_BRIDGE_CAN_INFLUENCE_LIVE_PICK = (
+        False
+    )
     winner_stack_module._INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED = True
+    winner_stack_module._INQSI_MLB_FUNDAMENTALS_SCORING_SHADOW_V2_INSTALLED = True
     return winner_stack_module

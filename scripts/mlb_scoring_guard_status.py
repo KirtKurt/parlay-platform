@@ -27,6 +27,12 @@ SLATE_TZ = ZoneInfo("America/New_York")
 PULL_RECORD_TYPE = "pull_run"
 PREDICTION_RECORD_TYPE = "mlb_single_game_moneyline_prediction"
 MOVEMENT_ENTITY_TYPE = "HOT_PULL_MOVEMENT_FEATURE"
+FUNDAMENTALS_SHADOW_VERSION = (
+    "MLB-FUNDAMENTALS-SCORING-BRIDGE-v2-source-honest-shadow-only"
+)
+FUNDAMENTALS_SHADOW_AUTHORITY_MODE = (
+    "SHADOW_ONLY_NO_LIVE_SCORING_AUTHORITY"
+)
 
 
 def _plain(value: Any) -> Any:
@@ -243,28 +249,138 @@ def _matching_feature(tokens: Set[str], rows: Sequence[Dict[str, Any]]) -> Optio
     return max(matches, key=lambda row: str(row.get("latest_asof") or row.get("created_at") or row.get("SK") or ""))
 
 
-def _fundamentals_state(prediction: Optional[Dict[str, Any]]) -> str:
+def _shadow_attestation_errors(
+    shadow: Dict[str, Any],
+    row: Optional[Dict[str, Any]] = None,
+) -> List[str]:
+    if not shadow:
+        return []
+    try:
+        try:
+            import mlb_fundamentals_scoring_bridge_v1 as shadow_contract
+        except ImportError:
+            from hello_world import (
+                mlb_fundamentals_scoring_bridge_v1 as shadow_contract,
+            )
+
+        return list(
+            shadow_contract.validate_shadow_attestation(shadow, row or {})
+        )
+    except Exception:
+        return ["shadow_attestation_validator_failed"]
+
+
+def _fundamentals_details(prediction: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not prediction:
-        return "PREDICTION_MISSING"
+        return {
+            "state": "PREDICTION_MISSING",
+            "mode": None,
+            "reason": None,
+            "shadowEvaluated": False,
+            "shadowWouldApply": False,
+            "shadowMode": None,
+            "shadowSourceIncomplete": False,
+            "shadowInvalid": False,
+            "shadowAttestationErrors": [],
+            "upstreamAppliedDetected": False,
+            "connectedGroups": [],
+            "missingGroups": [],
+        }
     data = prediction.get("data") if isinstance(prediction.get("data"), dict) else prediction
     optimizer = data.get("winnerOptimizer") or {}
     layer = data.get("fundamentalsLayer") or {}
+    optimizer_metadata = optimizer.get("fundamentals") or {}
+    winner_stack = data.get("winnerStackV2") or {}
+    stack_fundamentals = (
+        (winner_stack.get("components") or {}).get("fundamentals") or {}
+    )
+    stack_weight = (winner_stack.get("weights") or {}).get("fundamentals")
+    shadow = data.get("fundamentalsScoringShadow") or {}
+    if not isinstance(shadow, dict):
+        shadow = {}
+    shadow_attestation_errors = _shadow_attestation_errors(shadow, data)
+    trusted_shadow_evaluated = bool(
+        shadow.get("evaluated") is True and not shadow_attestation_errors
+    )
     applied = (
         optimizer.get("fundamentalsApplied") is True
         or layer.get("applied") is True
         or data.get("fundamentalsApplied") is True
     )
-    if applied:
-        return "APPLIED"
+    try:
+        stack_weight_applied = float(stack_weight or 0.0) > 0.0
+    except Exception:
+        stack_weight_applied = False
+    upstream_applied = bool(
+        layer.get("upstreamAppliedDetected") is True
+        or stack_fundamentals.get("applied") is True
+        or stack_weight_applied
+    )
     mode = str(
         optimizer.get("fundamentalsMode")
         or layer.get("mode")
         or data.get("fundamentalsMode")
         or ""
     ).upper()
-    if "NEUTRAL" in mode or "MISSING" in mode or "NOT_ENABLED" in mode:
-        return "NEUTRAL_OR_SOURCE_MISSING"
-    return "NOT_APPLIED"
+    if applied:
+        state = "APPLIED"
+    elif upstream_applied:
+        state = "UPSTREAM_APPLIED_DETECTED"
+    elif shadow_attestation_errors:
+        state = "INVALID_SHADOW_ATTESTATION"
+    elif trusted_shadow_evaluated:
+        state = "SHADOW_ONLY"
+    elif "NOT_ACTIVE" in mode:
+        state = "NOT_ACTIVE"
+    elif "SHADOW_ONLY" in mode:
+        state = "SHADOW_ONLY"
+    elif "NEUTRAL" in mode or "MISSING" in mode or "NOT_ENABLED" in mode:
+        state = "NEUTRAL_OR_SOURCE_MISSING"
+    else:
+        state = "NOT_APPLIED"
+
+    shadow_mode = str(shadow.get("mode") or "")
+    shadow_reason = str(shadow.get("reason") or "")
+    source_incomplete = bool(
+        trusted_shadow_evaluated
+        and (
+            "SOURCE_INCOMPLETE" in shadow_mode.upper()
+            or shadow.get("missingEssentialGroups")
+            or shadow_reason
+            in {
+                "essential_groups_incomplete",
+                "quality_group_or_numeric_edge_unavailable",
+            }
+        )
+    )
+    evidence = shadow or optimizer_metadata or layer
+    return {
+        "state": state,
+        "mode": mode or None,
+        "reason": (
+            layer.get("reason")
+            or optimizer_metadata.get("reason")
+            or shadow.get("reason")
+            or layer.get("message")
+        ),
+        "shadowEvaluated": trusted_shadow_evaluated,
+        "shadowWouldApply": bool(
+            trusted_shadow_evaluated and shadow.get("wouldApply") is True
+        ),
+        "shadowMode": shadow.get("mode"),
+        "shadowSourceIncomplete": source_incomplete,
+        "shadowInvalid": bool(
+            shadow.get("validationErrors") or shadow_attestation_errors
+        ),
+        "shadowAttestationErrors": shadow_attestation_errors,
+        "upstreamAppliedDetected": upstream_applied,
+        "connectedGroups": list(evidence.get("connectedGroups") or []),
+        "missingGroups": list(evidence.get("missingGroups") or []),
+    }
+
+
+def _fundamentals_state(prediction: Optional[Dict[str, Any]]) -> str:
+    return str(_fundamentals_details(prediction)["state"])
 
 
 def _predicted_winner(prediction: Optional[Dict[str, Any]]) -> Any:
@@ -328,6 +444,14 @@ def evaluate_slate(
     prediction_matches: Set[str] = set()
     movement_matches: Set[str] = set()
     fundamentals_applied = 0
+    fundamentals_neutral_or_missing = 0
+    fundamentals_shadow_only = 0
+    fundamentals_not_active = 0
+    fundamentals_shadow_evaluated = 0
+    fundamentals_shadow_would_apply = 0
+    fundamentals_source_incomplete = 0
+    fundamentals_shadow_invalid = 0
+    fundamentals_upstream_applied = 0
 
     for game in roster:
         tokens = _object_tokens(game)
@@ -349,9 +473,31 @@ def evaluate_slate(
                 invalid_movement_teams.append(identity)
         elif scoreable:
             missing_movement.append(identity)
-        state = _fundamentals_state(prediction)
+        fundamentals = _fundamentals_details(prediction)
+        state = fundamentals["state"]
         if state == "APPLIED":
             fundamentals_applied += 1
+        elif state == "NEUTRAL_OR_SOURCE_MISSING":
+            fundamentals_neutral_or_missing += 1
+        elif state == "SHADOW_ONLY":
+            fundamentals_shadow_only += 1
+        elif state == "NOT_ACTIVE":
+            fundamentals_not_active += 1
+        fundamentals_shadow_evaluated += int(
+            fundamentals["shadowEvaluated"] is True
+        )
+        fundamentals_shadow_would_apply += int(
+            fundamentals["shadowWouldApply"] is True
+        )
+        fundamentals_source_incomplete += int(
+            fundamentals["shadowSourceIncomplete"] is True
+        )
+        fundamentals_shadow_invalid += int(
+            fundamentals["shadowInvalid"] is True
+        )
+        fundamentals_upstream_applied += int(
+            fundamentals["upstreamAppliedDetected"] is True
+        )
         data = prediction.get("data") if prediction and isinstance(prediction.get("data"), dict) else (prediction or {})
         games.append({
             "gameIdentity": identity,
@@ -372,6 +518,19 @@ def evaluate_slate(
             "predictionScore": data.get("score") or (prediction or {}).get("score"),
             "confidenceTier": data.get("confidenceTier") or (prediction or {}).get("confidence_tier"),
             "fundamentalsState": state,
+            "fundamentalsMode": fundamentals["mode"],
+            "fundamentalsReason": fundamentals["reason"],
+            "fundamentalsShadowEvaluated": fundamentals["shadowEvaluated"],
+            "fundamentalsShadowWouldApply": fundamentals["shadowWouldApply"],
+            "fundamentalsShadowMode": fundamentals["shadowMode"],
+            "fundamentalsShadowAttestationErrors": fundamentals[
+                "shadowAttestationErrors"
+            ],
+            "fundamentalsUpstreamAppliedDetected": fundamentals[
+                "upstreamAppliedDetected"
+            ],
+            "fundamentalsConnectedGroups": fundamentals["connectedGroups"],
+            "fundamentalsMissingGroups": fundamentals["missingGroups"],
         })
 
     official_count = len(roster)
@@ -389,6 +548,10 @@ def evaluate_slate(
         blockers.append("MOVEMENT_FEATURE_COVERAGE_INCOMPLETE")
     if invalid_movement_teams:
         blockers.append("MOVEMENT_TEAM_NOT_IN_MATCHUP")
+    if fundamentals_applied or fundamentals_upstream_applied:
+        blockers.append("FUNDAMENTALS_LIVE_AUTHORITY_VIOLATION")
+    if fundamentals_shadow_invalid:
+        blockers.append("FUNDAMENTALS_SHADOW_ATTESTATION_INVALID")
 
     latest_pull_at = _parse_dt((pulls[-1] if pulls else {}).get("pulled_at"))
     return {
@@ -417,6 +580,19 @@ def evaluate_slate(
             "invalidMovementTeamCount": len(invalid_movement_teams),
             "fundamentalsAppliedCount": fundamentals_applied,
             "fundamentalsNotAppliedOrMissingCount": max(official_count - fundamentals_applied, 0),
+            "fundamentalsNeutralOrSourceMissingCount": fundamentals_neutral_or_missing,
+            "fundamentalsNotActiveCount": fundamentals_not_active,
+            "fundamentalsShadowOnlyCount": fundamentals_shadow_only,
+            "fundamentalsShadowOnlyNotActiveCount": (
+                fundamentals_shadow_only + fundamentals_not_active
+            ),
+            "fundamentalsShadowEvaluatedCount": fundamentals_shadow_evaluated,
+            "fundamentalsShadowWouldApplyCount": fundamentals_shadow_would_apply,
+            "fundamentalsSourceIncompleteCount": fundamentals_source_incomplete,
+            "fundamentalsShadowInvalidCount": fundamentals_shadow_invalid,
+            "fundamentalsUpstreamAppliedDetectedCount": (
+                fundamentals_upstream_applied
+            ),
             "missingMovementCount": len(missing_movement),
             "missingPredictionCount": len(missing_predictions),
         },
