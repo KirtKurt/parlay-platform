@@ -1,0 +1,533 @@
+name: Diagnose MLB August 4 prelock review (read only)
+
+"on":
+  push:
+    branches:
+      - codex/diagnose-mlb-aug4-prelock-review-20260829
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-mlb-aug4-prelock-review-read-only
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  MLB_ROOT_STACK: parlay-platform-dev
+  DIAGNOSTIC_SLATE_DATE: '2026-08-04'
+  DEPLOYED_FIX_SHA: 61400606b4212925722f52e4230a711318769a27
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact diagnostic source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Prove diagnostic source matches deployed selector
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$DEPLOYED_FIX_SHA" HEAD
+          git diff --quiet "$DEPLOYED_FIX_SHA" --             hello_world/mlb_daily_per_game_lock_patch.py             hello_world/mlb_prospective_row_repair.py             hello_world/inqsi_pull_history.py
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install read-only diagnostic dependency
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Strong-read exact prelock predicate matrix
+        env:
+          PYTHONPATH: hello_world
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-prelock-review-diagnostic
+          python - <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import os
+          import sys
+          from datetime import datetime, timezone
+          from decimal import Decimal
+          from pathlib import Path
+
+          import boto3
+
+          SLATE = os.environ["DIAGNOSTIC_SLATE_DATE"]
+          REGION = os.environ["AWS_REGION"]
+          STACK = os.environ["MLB_ROOT_STACK"]
+          LOGICAL_ID = "MLBDailyPickLockFunction"
+          EXPECTED_HANDLER = "mlb_daily_pick_lock_protected.lambda_handler"
+          EXPECTED_STATE = "REVIEW_REQUIRED"
+          EXPECTED_STAGE = "PROVE_PRELOCK_ABSENCE"
+          EXPECTED_ERROR = "PRELOCK_CANDIDATE_REQUIRES_REVIEW"
+
+          def plain(value):
+              if isinstance(value, Decimal):
+                  return int(value) if value == value.to_integral_value() else float(value)
+              if isinstance(value, dict):
+                  return {str(key): plain(item) for key, item in value.items()}
+              if isinstance(value, list):
+                  return [plain(item) for item in value]
+              return value
+
+          def digest(value):
+              return hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
+
+          cloudformation = boto3.client("cloudformation", region_name=REGION)
+          resource = cloudformation.describe_stack_resource(
+              StackName=STACK,
+              LogicalResourceId=LOGICAL_ID,
+          ).get("StackResourceDetail") or {}
+          function_name = str(resource.get("PhysicalResourceId") or "")
+          if (
+              not function_name
+              or resource.get("LogicalResourceId") != LOGICAL_ID
+              or resource.get("ResourceType") != "AWS::Lambda::Function"
+          ):
+              raise SystemExit("Protected lock Lambda resolution failed closed")
+
+          lambda_client = boto3.client("lambda", region_name=REGION)
+          configuration = lambda_client.get_function_configuration(
+              FunctionName=function_name
+          )
+          variables = (
+              (configuration.get("Environment") or {}).get("Variables") or {}
+          )
+          snapshots_table = str(variables.get("SNAPSHOTS_TABLE") or "")
+          if (
+              configuration.get("Handler") != EXPECTED_HANDLER
+              or configuration.get("State") != "Active"
+              or configuration.get("LastUpdateStatus") != "Successful"
+              or not snapshots_table
+          ):
+              raise SystemExit("Protected lock Lambda/configuration is not ready")
+
+          os.environ["SNAPSHOTS_TABLE"] = snapshots_table
+          for key in (
+              "OUTCOMES_TABLE",
+              "MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME",
+              "LOCK_MINUTES_BEFORE_FIRST_GAME",
+              "MLB_REQUIRE_ALL_GAMES_FOR_LOCK",
+              "MLB_MIN_PULLS_PER_GAME_FOR_LOCK",
+              "MLB_MAX_LATEST_PULL_AGE_MINUTES_FOR_LOCK",
+              "INQSI_SLATE_TIMEZONE",
+          ):
+              if key in variables:
+                  os.environ[key] = str(variables[key])
+
+          sys.path.insert(0, "hello_world")
+          import inqsi_pull_history as history_contract
+          import mlb_daily_per_game_lock_patch as patch
+          import mlb_daily_pick_lock as module
+          import mlb_prospective_row_repair as repair
+
+          if (
+              module.TABLE is None
+              or module.history.PULLS is None
+              or str(getattr(module.TABLE, "name", "")) != snapshots_table
+              or str(getattr(module.history.PULLS, "name", "")) != snapshots_table
+          ):
+              raise SystemExit("Exact snapshots table binding failed closed")
+
+          queue_key = {
+              "PK": "MLB_LOCK_EXECUTION#V1",
+              "SK": "COOPERATIVE_TERMINAL_REPLAY#V1",
+          }
+          queue_item = plain(
+              module.TABLE.get_item(
+                  Key=queue_key,
+                  ConsistentRead=True,
+              ).get("Item")
+              or {}
+          )
+          progress = queue_item.get("terminal_replay_progress") or {}
+          attempt = progress.get("lastAttempt") or {}
+          if (
+              queue_item.get("record_type")
+              != "mlb_cooperative_terminal_replay_v1"
+              or queue_item.get("state") != EXPECTED_STATE
+              or queue_item.get("slate_date_et") != SLATE
+              or attempt.get("stage") != EXPECTED_STAGE
+              or attempt.get("errorCode") != EXPECTED_ERROR
+              or attempt.get("status") != "FAILED_CLOSED"
+          ):
+              raise SystemExit("Protected replay review checkpoint changed")
+
+          try:
+              game_index = int(attempt.get("gameIndex"))
+          except (TypeError, ValueError) as exc:
+              raise SystemExit("Protected replay game index missing") from exc
+          checkpoint_identity = str(attempt.get("gameIdentity") or "")
+          if not checkpoint_identity:
+              raise SystemExit("Protected replay game identity missing")
+
+          status_token = patch._STATUS_READ_CACHE.set({"canonicalPulls": {}})
+          alias_token = patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.set(
+              repair.COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_QUERY_LIMIT
+          )
+          try:
+              pulls = sorted(
+                  list(module._pulls_for_date(SLATE) or []),
+                  key=lambda pull: patch._pull_at(module, pull)
+                  or datetime.min.replace(tzinfo=timezone.utc),
+              )
+              manifest = sorted(
+                  list(module._latest_games_for_date(SLATE, pulls) or []),
+                  key=lambda game: (
+                      (
+                          patch._start(module, game)
+                          or datetime.min.replace(tzinfo=timezone.utc)
+                      ).isoformat(),
+                      str(patch.game_identity(game) or ""),
+                  ),
+              )
+              if not pulls or game_index < 0 or game_index >= len(manifest):
+                  raise SystemExit("Historical pull/manifest evidence unavailable")
+              game = manifest[game_index]
+              identity_options = repair._cooperative_terminal_identity_options(
+                  patch, game
+              )
+              if checkpoint_identity not in identity_options:
+                  raise SystemExit("Checkpoint identity is not manifest-bound")
+
+              scoring = patch._scoring_pulls(module, pulls, game)
+              candidate, proof, bound, errors = patch._last_prelock_candidate(
+                  module,
+                  SLATE,
+                  game,
+                  scoring,
+              )
+              candidate = plain(candidate) if isinstance(candidate, dict) else None
+              proof = plain(proof) if isinstance(proof, dict) else None
+              bound = plain(bound) if isinstance(bound, list) else []
+              errors = sorted(set(str(error) for error in (errors or [])))
+
+              proven_absence = bool(
+                  candidate is None
+                  and proof is None
+                  and not bound
+                  and patch._is_no_prediction_candidate_failure(errors)
+              )
+              required_fingerprints = (
+                  "candidateSnapshotFingerprint",
+                  "predictionPayloadFingerprint",
+                  "candidateRowFingerprint",
+                  "candidateSelectionFingerprint",
+                  "predictionSourcePullFingerprint",
+              )
+              fingerprint_lengths = {
+                  field: len(str((proof or {}).get(field) or ""))
+                  for field in required_fingerprints
+              }
+              required_keys = (
+                  "pk",
+                  "sk",
+                  "persistenceWritePk",
+                  "persistenceWriteSk",
+              )
+              missing_required_keys = [
+                  field
+                  for field in required_keys
+                  if not str((proof or {}).get(field) or "")
+              ]
+              rejected = (
+                  (proof or {}).get("rejectedNewerCandidates")
+                  if isinstance((proof or {}).get("rejectedNewerCandidates"), list)
+                  else None
+              )
+              predicate = {
+                  "candidateObject": isinstance(candidate, dict),
+                  "proofObject": isinstance(proof, dict),
+                  "boundScoringNonEmpty": isinstance(bound, list) and bool(bound),
+                  "selectorErrorsEmpty": not errors,
+                  "identityBindingAccepted": (proof or {}).get(
+                      "identityBindingMode"
+                  )
+                  in {"exact_identity", "official_game_pk"},
+                  "createdAtOrBeforeCutoff": (proof or {}).get(
+                      "createdAtOrBeforeCutoff"
+                  )
+                  is True,
+                  "sourceAtOrBeforeCutoff": (proof or {}).get(
+                      "sourceAtOrBeforeCutoff"
+                  )
+                  is True,
+                  "persistedAtOrBeforeCutoff": (proof or {}).get(
+                      "persistedAtOrBeforeCutoff"
+                  )
+                  is True,
+                  "modelOrSignalRecomputedAtLockFalse": (proof or {}).get(
+                      "modelOrSignalRecomputedAtLock"
+                  )
+                  is False,
+                  "persistenceProofTypeExact": (proof or {}).get(
+                      "persistenceProofType"
+                  )
+                  == patch.PREGAME_PERSISTENCE_PROOF_TYPE,
+                  "payloadFingerprintVersionExact": (proof or {}).get(
+                      "predictionPayloadFingerprintVersion"
+                  )
+                  == patch.PAYLOAD_FINGERPRINT_VERSION,
+                  "allFiveFingerprints64": all(
+                      length == 64 for length in fingerprint_lengths.values()
+                  ),
+                  "requiredKeysPresent": not missing_required_keys,
+                  "rejectedNewerCandidateCountZero": (proof or {}).get(
+                      "rejectedNewerCandidateCount"
+                  )
+                  == 0,
+                  "rejectedNewerCandidatesEmpty": rejected == [],
+              }
+              valid_quarantine_candidate = all(predicate.values())
+
+              source_checks = {
+                  "proofSourceKeyPresent": False,
+                  "strongSourceRowPresent": False,
+                  "strongSourceRecordTypeValid": False,
+                  "strongSourceIntegrityValid": False,
+                  "strongSourceIdMatchesProof": False,
+                  "strongSourceTimeMatchesProof": False,
+                  "strongSourceFingerprintMatchesProof": False,
+                  "candidatePriceMatchesStrongSource": False,
+              }
+              source_integrity_errors = []
+              if isinstance(proof, dict):
+                  source_pk = str(
+                      proof.get("predictionSourcePullStoragePk") or ""
+                  )
+                  source_sk = str(
+                      proof.get("predictionSourcePullStorageSk") or ""
+                  )
+                  source_checks["proofSourceKeyPresent"] = bool(
+                      source_pk and source_sk
+                  )
+                  if source_pk and source_sk:
+                      source_item = plain(
+                          module.history.PULLS.get_item(
+                              Key={"PK": source_pk, "SK": source_sk},
+                              ConsistentRead=True,
+                          ).get("Item")
+                          or {}
+                      )
+                      source_row = (
+                          source_item.get("data")
+                          if isinstance(source_item.get("data"), dict)
+                          else None
+                      )
+                      source_checks["strongSourceRowPresent"] = isinstance(
+                          source_row, dict
+                      )
+                      source_checks["strongSourceRecordTypeValid"] = (
+                          source_item.get("record_type") == "pull_run"
+                      )
+                      if isinstance(source_row, dict):
+                          try:
+                              source_integrity_errors = sorted(
+                                  set(
+                                      str(error)
+                                      for error in history_contract._pull_integrity_errors(
+                                          source_row,
+                                          sport="mlb",
+                                          slate=SLATE,
+                                      )
+                                  )
+                              )
+                          except Exception as exc:
+                              source_integrity_errors = [
+                                  "diagnostic_integrity_verifier_error:"
+                                  + type(exc).__name__
+                              ]
+                          source_checks["strongSourceIntegrityValid"] = (
+                              not source_integrity_errors
+                          )
+                          source_checks["strongSourceIdMatchesProof"] = str(
+                              source_row.get("pull_id") or ""
+                          ) == str(proof.get("predictionSourcePullId") or "")
+                          source_checks["strongSourceTimeMatchesProof"] = (
+                              module._parse_dt(source_row.get("pulled_at"))
+                              == module._parse_dt(
+                                  proof.get("predictionSourcePullAtUtc")
+                              )
+                          )
+                          source_checks[
+                              "strongSourceFingerprintMatchesProof"
+                          ] = (
+                              history_contract.pull_payload_fingerprint(
+                                  source_row
+                              )
+                              == str(
+                                  proof.get(
+                                      "predictionSourcePullFingerprint"
+                                  )
+                                  or ""
+                              )
+                          )
+                          if isinstance(candidate, dict):
+                              source_checks[
+                                  "candidatePriceMatchesStrongSource"
+                              ] = patch._candidate_price_matches_source(
+                                  candidate,
+                                  source_row,
+                                  game,
+                              )
+
+              snapshot_checks = {
+                  "proofSnapshotKeyPresent": False,
+                  "strongSnapshotPresent": False,
+                  "strongSnapshotRecordTypeValid": False,
+                  "strongSnapshotRowPresent": False,
+                  "strongSnapshotFingerprintMatchesProof": False,
+                  "strongSnapshotRowFingerprintMatchesProof": False,
+              }
+              if isinstance(proof, dict):
+                  snapshot_pk = str(proof.get("pk") or "")
+                  snapshot_sk = str(proof.get("sk") or "")
+                  snapshot_checks["proofSnapshotKeyPresent"] = bool(
+                      snapshot_pk and snapshot_sk
+                  )
+                  if snapshot_pk and snapshot_sk:
+                      snapshot = plain(
+                          module.history.PULLS.get_item(
+                              Key={"PK": snapshot_pk, "SK": snapshot_sk},
+                              ConsistentRead=True,
+                          ).get("Item")
+                          or {}
+                      )
+                      snapshot_row = (
+                          snapshot.get("data")
+                          if isinstance(snapshot.get("data"), dict)
+                          else None
+                      )
+                      snapshot_checks["strongSnapshotPresent"] = bool(snapshot)
+                      snapshot_checks["strongSnapshotRecordTypeValid"] = (
+                          snapshot.get("record_type")
+                          == patch.PREGAME_SNAPSHOT_RECORD_TYPE
+                      )
+                      snapshot_checks["strongSnapshotRowPresent"] = isinstance(
+                          snapshot_row, dict
+                      )
+                      if snapshot:
+                          snapshot_checks[
+                              "strongSnapshotFingerprintMatchesProof"
+                          ] = (
+                              patch._payload_fingerprint(
+                                  snapshot,
+                                  patch.PAYLOAD_FINGERPRINT_VERSION,
+                              )
+                              == str(
+                                  proof.get("candidateSnapshotFingerprint")
+                                  or ""
+                              )
+                          )
+                      if isinstance(snapshot_row, dict):
+                          snapshot_checks[
+                              "strongSnapshotRowFingerprintMatchesProof"
+                          ] = (
+                              patch._payload_fingerprint(
+                                  snapshot_row,
+                                  patch.PAYLOAD_FINGERPRINT_VERSION,
+                              )
+                              == str(
+                                  proof.get("candidateRowFingerprint")
+                                  or ""
+                              )
+                          )
+
+              rejected_error_codes = sorted(
+                  {
+                      str(error)
+                      for item in (rejected or [])
+                      if isinstance(item, dict)
+                      for error in (item.get("errors") or [])
+                  }
+              )
+              report = {
+                  "ok": True,
+                  "proofType": (
+                      "MLB_AUG4_PRELOCK_REVIEW_READ_ONLY_PREDICATE_MATRIX"
+                  ),
+                  "readOnly": True,
+                  "strongConsistentReads": True,
+                  "slateDateEt": SLATE,
+                  "queueState": queue_item.get("state"),
+                  "checkpointStage": attempt.get("stage"),
+                  "checkpointErrorCode": attempt.get("errorCode"),
+                  "gameIndex": game_index,
+                  "gameIdentityFingerprint": digest(checkpoint_identity),
+                  "manifestIdentityBound": checkpoint_identity
+                  in identity_options,
+                  "pullCount": len(pulls),
+                  "manifestGameCount": len(manifest),
+                  "scoringPullCount": len(scoring),
+                  "candidatePresent": isinstance(candidate, dict),
+                  "proofPresent": isinstance(proof, dict),
+                  "boundScoringPullCount": len(bound),
+                  "selectorErrorCodes": errors,
+                  "provenAbsence": proven_absence,
+                  "identityBindingMode": (
+                      (proof or {}).get("identityBindingMode")
+                  ),
+                  "fingerprintLengths": fingerprint_lengths,
+                  "missingRequiredProofKeys": missing_required_keys,
+                  "rejectedNewerCandidateCount": (
+                      (proof or {}).get("rejectedNewerCandidateCount")
+                  ),
+                  "rejectedNewerCandidateErrorCodes": rejected_error_codes,
+                  "validQuarantinePredicate": predicate,
+                  "validQuarantineCandidate": valid_quarantine_candidate,
+                  "sourceProofChecks": source_checks,
+                  "sourceIntegrityErrorCodes": source_integrity_errors,
+                  "snapshotProofChecks": snapshot_checks,
+                  "postStartPredictionCreationAllowed": False,
+                  "immutablePredictionRewriteAllowed": False,
+                  "productionAuthorityChanged": False,
+                  "directTableWrite": False,
+                  "secretExposed": False,
+              }
+          finally:
+              patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.reset(
+                  alias_token
+              )
+              patch._STATUS_READ_CACHE.reset(status_token)
+
+          output = Path(
+              "/tmp/mlb-prelock-review-diagnostic/predicate-matrix.json"
+          )
+          output.write_text(
+              json.dumps(report, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(report, indent=2, sort_keys=True))
+          if report["provenAbsence"] or report["validQuarantineCandidate"]:
+              raise SystemExit(
+                  "Checkpoint diagnosis no longer reproduces the fail-closed predicate"
+              )
+          PY
+
+      - name: Upload redacted read-only diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-aug4-prelock-review-read-only-${{ github.run_id }}
+          path: /tmp/mlb-prelock-review-diagnostic
+          if-no-files-found: warn
+          retention-days: 30
