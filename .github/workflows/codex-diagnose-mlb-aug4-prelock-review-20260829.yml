@@ -210,12 +210,29 @@ jobs:
               raise SystemExit("Protected replay record identity changed")
 
           try:
-              game_index = int(attempt.get("gameIndex"))
+              game_index = int(progress.get("nextGameIndex"))
           except (TypeError, ValueError) as exc:
-              raise SystemExit("Protected replay game index missing") from exc
-          checkpoint_identity = str(attempt.get("gameIdentity") or "")
+              raise SystemExit(
+                  "Protected replay next game index missing"
+              ) from exc
+          manifest_authority = progress.get("manifestAuthority") or {}
+          checkpoint_roster = manifest_authority.get("gameRoster") or []
+          if (
+              not isinstance(checkpoint_roster, list)
+              or game_index < 0
+              or game_index >= len(checkpoint_roster)
+              or not isinstance(checkpoint_roster[game_index], dict)
+          ):
+              raise SystemExit(
+                  "Protected replay next-game roster binding missing"
+              )
+          checkpoint_identity = str(
+              checkpoint_roster[game_index].get("gameIdentity") or ""
+          )
           if not checkpoint_identity:
-              raise SystemExit("Protected replay game identity missing")
+              raise SystemExit(
+                  "Protected replay next-game identity missing"
+              )
 
           status_token = patch._STATUS_READ_CACHE.set({"canonicalPulls": {}})
           alias_token = patch._COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT.set(
@@ -335,6 +352,21 @@ jobs:
                   "rejectedNewerCandidatesEmpty": rejected == [],
               }
               valid_quarantine_candidate = all(predicate.values())
+              strong_quarantine_validator_passed = False
+              strong_quarantine_validator_error = None
+              if valid_quarantine_candidate:
+                  try:
+                      patch._validated_valid_prelock_quarantine_authority(
+                          module,
+                          SLATE,
+                          game,
+                          candidate,
+                          proof,
+                          bound,
+                      )
+                      strong_quarantine_validator_passed = True
+                  except Exception as exc:
+                      strong_quarantine_validator_error = str(exc)[:160]
 
               source_checks = {
                   "proofSourceKeyPresent": False,
@@ -509,6 +541,8 @@ jobs:
                   "checkpointStage": attempt.get("stage"),
                   "checkpointErrorCode": attempt.get("errorCode"),
                   "gameIndex": game_index,
+                  "checkpointNextGameIndex": progress.get("nextGameIndex"),
+                  "checkpointLastAttemptGameIndex": attempt.get("gameIndex"),
                   "gameIdentityFingerprint": digest(checkpoint_identity),
                   "manifestIdentityBound": checkpoint_identity
                   in identity_options,
@@ -531,6 +565,12 @@ jobs:
                   "rejectedNewerCandidateErrorCodes": rejected_error_codes,
                   "validQuarantinePredicate": predicate,
                   "validQuarantineCandidate": valid_quarantine_candidate,
+                  "strongQuarantineValidatorPassed": (
+                      strong_quarantine_validator_passed
+                  ),
+                  "strongQuarantineValidatorErrorCode": (
+                      strong_quarantine_validator_error
+                  ),
                   "sourceProofChecks": source_checks,
                   "sourceIntegrityErrorCodes": source_integrity_errors,
                   "snapshotProofChecks": snapshot_checks,
@@ -554,10 +594,6 @@ jobs:
               encoding="utf-8",
           )
           print(json.dumps(report, indent=2, sort_keys=True))
-          if report["provenAbsence"] or report["validQuarantineCandidate"]:
-              raise SystemExit(
-                  "Checkpoint diagnosis no longer reproduces the fail-closed predicate"
-              )
           PY
 
       - name: Upload redacted read-only diagnostic
