@@ -222,6 +222,15 @@ def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
     remediation = source[v2_at:reconcile_at]
 
     assert readiness_at < v1_at < v2_at < reconcile_at
+    readiness = source[readiness_at:v1_at]
+    assert "noncompleted_runs = [" in readiness
+    assert "if noncompleted_runs:" in readiness
+    assert (
+        "A deploy run became queued or active while "
+        in readiness
+    )
+    assert "recovery owns the shared deploy lock" in readiness
+    assert "not active_runs" not in readiness
     assert "Reject ambiguous remediation flags" in source
     assert (
         'REQUEUE_SOURCE_PULL_V1" == "true" && '
@@ -272,6 +281,9 @@ def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
     assert "latest_before_invoke_identity" in remediation
     assert "latest_after_invoke_identity" in remediation
     assert "post_invocation_configuration" in remediation
+    assert "type(lambda_status) is not int" in remediation
+    assert "type(application_status) is not int" in remediation
+    assert "application_status = int(" not in remediation
     assert "sameCommitDeploySuccessRequired': True" in remediation
     assert "pinned_revision_id" in remediation
     assert "pinned_code_sha256" in remediation
