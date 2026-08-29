@@ -4438,7 +4438,10 @@ def _prove_cooperative_prelock_candidate_review_v2_impl(
     )
     if (
         not proof["candidateAuthorityVersion"]
-        or any(len(str(proof.get(field) or "")) != 64 for field in fingerprint_fields)
+        or any(
+            len(str(proof.get(field) or "")) != 64
+            for field in fingerprint_fields
+        )
     ):
         raise RuntimeError(
             "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_FINGERPRINT_INVALID"
