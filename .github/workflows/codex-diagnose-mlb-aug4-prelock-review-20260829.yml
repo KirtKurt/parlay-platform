@@ -193,6 +193,27 @@ jobs:
               "slateDateEt": queue_item.get("slate_date_et"),
               "progressPresent": isinstance(progress, dict) and bool(progress),
               "progressVersion": progress.get("version"),
+              "progressCounters": {
+                  field: progress.get(field)
+                  for field in (
+                      "manifestGameCount",
+                      "nextGameIndex",
+                      "processedGameCount",
+                      "terminalCount",
+                      "canonicalCount",
+                      "noPredictionDataCount",
+                      "missedLockValidPrelockQuarantineCount",
+                      "reconciledCount",
+                      "verificationIndex",
+                      "verifiedGameCount",
+                  )
+              },
+              "progressProcessedGameEntries": len(
+                  progress.get("processedGames") or []
+              ),
+              "progressVerificationComplete": progress.get(
+                  "verificationComplete"
+              ),
               "attemptPresent": isinstance(attempt, dict) and bool(attempt),
               "attemptStage": attempt.get("stage"),
               "attemptStatus": attempt.get("status"),
