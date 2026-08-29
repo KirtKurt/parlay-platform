@@ -158,6 +158,9 @@ COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_FIELD = (
     "terminal_replay_review_evidence"
 )
 COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_MAX_BYTES = 2048
+COOPERATIVE_TERMINAL_PRECHECKPOINT_REVIEW_STAGES = frozenset(
+    {"BIND_REQUEST", "RESOLVE_MANIFEST", "BIND_MANIFEST_AUTHORITY"}
+)
 COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_EVENT_FLAG = (
     "requeuePrelockCandidateReviewAfterInstalledRuntimeProofV2"
 )
@@ -1991,6 +1994,7 @@ def _cooperative_review_evidence_from_claimed_result(
         or chunk_result.get("postStartPredictionCreationAllowed") is not False
         or chunk_result.get("immutablePredictionRewriteAllowed") is not False
         or chunk_result.get("productionAuthorityChanged") is not False
+        or stage not in COOPERATIVE_TERMINAL_PRECHECKPOINT_REVIEW_STAGES
         or not _cooperative_replay_requires_review(stage, error_code)
     ):
         raise RuntimeError(
