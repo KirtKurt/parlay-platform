@@ -3,31 +3,31 @@
   "blockers": [
     "scoring_guard_not_ready"
   ],
-  "createdAtUtc": "2026-08-29T20:04:42.782887Z",
-  "deployedCommit": "61400606b4212925722f52e4230a711318769a27",
+  "createdAtUtc": "2026-08-29T22:20:04.875923Z",
+  "deployedCommit": "7b88f570d349f6c1fe3303af931814a47cb65114",
   "deploymentBlockers": [],
   "deploymentHealthy": true,
   "deploymentSucceeded": true,
   "historicalSlateAcceptedWithoutLateBackfill": false,
   "lambdaConfiguration": {
-    "deployedGitSha": "61400606b4212925722f52e4230a711318769a27",
-    "functionLastModified": "2026-08-29T19:48:19.000+0000",
+    "deployedGitSha": "7b88f570d349f6c1fe3303af931814a47cb65114",
+    "functionLastModified": "2026-08-29T22:02:15.000+0000",
     "functionName": "parlay-platform-dev-MLBAuditedPullFunction-xYdYJJKZMe4M",
     "manualPullInvoked": false,
     "memorySizeMb": 2048,
-    "observedScheduledPullAtUtc": "2026-08-29T20:00:27.532327+00:00",
+    "observedScheduledPullAtUtc": "2026-08-29T22:15:26.844037+00:00",
     "observedScheduledPullPk": "PULLS#mlb#2026-08-29",
-    "observedScheduledPullSk": "PULL#SLOT#2026-08-29T20:00:00+00:00",
-    "observedScheduledSlotUtc": "2026-08-29T20:00:00+00:00",
+    "observedScheduledPullSk": "PULL#SLOT#2026-08-29T22:15:00+00:00",
+    "observedScheduledSlotUtc": "2026-08-29T22:15:00+00:00",
     "ok": true,
     "readOnly": true,
-    "scheduledReport": "REPORT RequestId: d35128ae-bc58-433f-ba51-12685e0da500\tDuration: 228821.30 ms\tBilled Duration: 229745 ms\tMemory Size: 2048 MB\tMax Memory Used: 202 MB\tInit Duration: 923.45 ms\t\n",
-    "scheduledRequestId": "d35128ae-bc58-433f-ba51-12685e0da500",
+    "scheduledReport": "REPORT RequestId: ca6f5b62-c5c5-43b0-94fb-bb49f670d99a\tDuration: 248568.65 ms\tBilled Duration: 249585 ms\tMemory Size: 2048 MB\tMax Memory Used: 203 MB\tInit Duration: 1015.35 ms\t\n",
+    "scheduledRequestId": "ca6f5b62-c5c5-43b0-94fb-bb49f670d99a",
     "secretExposed": false,
     "statusCode": 200,
-    "targetDeploySha": "61400606b4212925722f52e4230a711318769a27",
+    "targetDeploySha": "7b88f570d349f6c1fe3303af931814a47cb65114",
     "timeoutSeconds": 600,
-    "verificationStartedAtUtc": "2026-08-29T19:51:18.999237+00:00",
+    "verificationStartedAtUtc": "2026-08-29T22:04:49.338689+00:00",
     "version": "MLB-POSTDEPLOY-SCHEDULED-PULL-OBSERVER-v1-no-manual-pull",
     "winnerResults": [
       {
@@ -74,24 +74,16 @@
   "readinessBlockers": [
     "scoring_guard_not_ready"
   ],
-  "recoveredPostDeployScheduledFailureCount": 1,
-  "recoveredPostDeployScheduledFailures": [
-    {
-      "classifications": [
-        "SCHEDULED_PULL_FAILED"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T19:48:30.904000+00:00"
-    }
-  ],
-  "runId": "33271890767",
+  "recoveredPostDeployScheduledFailureCount": 0,
+  "recoveredPostDeployScheduledFailures": [],
+  "runId": "33277623996",
   "scheduledPullObservationFailure": null,
   "scoringBlockers": [
     "FUNDAMENTALS_SHADOW_ATTESTATION_INVALID"
   ],
   "scoringGuardPassed": false,
   "scoringSummary": {
-    "canonicalPullCount": 61,
+    "canonicalPullCount": 70,
     "fundamentalsAppliedCount": 0,
     "fundamentalsNeutralOrSourceMissingCount": 0,
     "fundamentalsNotActiveCount": 0,
@@ -105,7 +97,7 @@
     "fundamentalsUpstreamAppliedDetectedCount": 0,
     "invalidMovementTeamCount": 0,
     "invalidPredictionTeamCount": 0,
-    "latestCanonicalPullAtUtc": "2026-08-29T20:00:27.532327+00:00",
+    "latestCanonicalPullAtUtc": "2026-08-29T22:15:26.844037+00:00",
     "missingMovementCount": 0,
     "missingPredictionCount": 0,
     "movementFeatureGameCount": 17,
@@ -114,21 +106,21 @@
     "scoreableGameCount": 17
   },
   "secretExposed": false,
-  "sourceDeployCreatedAtUtc": "2026-08-29T19:44:44Z",
+  "sourceDeployCreatedAtUtc": "2026-08-29T21:58:33Z",
   "sourceDeployHeadBranch": "main",
-  "sourceDeployHeadSha": "61400606b4212925722f52e4230a711318769a27",
+  "sourceDeployHeadSha": "7b88f570d349f6c1fe3303af931814a47cb65114",
   "sourceDeployRunAttempt": 1,
-  "sourceDeployRunId": "33271654883",
-  "sourceDeployRunNumber": 2724,
-  "sourceDeployRunUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/33271654883",
-  "sourceDeploySamCompletedAtUtc": "2026-08-29T19:48:34Z",
+  "sourceDeployRunId": "33277403434",
+  "sourceDeployRunNumber": 2725,
+  "sourceDeployRunUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/33277403434",
+  "sourceDeploySamCompletedAtUtc": "2026-08-29T22:02:31Z",
   "sourceDeploySamStepConclusion": "success",
   "sourceDeploySamStepName": "Deploy exact canonical source",
   "sourceDeployWorkflowId": 231636316,
   "sourceDeployWorkflowName": "Deploy SAM to AWS",
   "sourceDeployWorkflowPath": ".github/workflows/deploy.yml",
-  "sourceSha": "61400606b4212925722f52e4230a711318769a27",
+  "sourceSha": "5349871c44696cbf9bcdb96652a0293c9d367df8",
   "status": "DEPLOYMENT_HEALTHY_READINESS_GATED",
-  "successfulScheduledObservationAtUtc": "2026-08-29T20:00:27.532327Z",
+  "successfulScheduledObservationAtUtc": "2026-08-29T22:15:26.844037Z",
   "version": "MLB-SCORING-FIX-POST-DEPLOY-v3-health-readiness-separated"
 }
