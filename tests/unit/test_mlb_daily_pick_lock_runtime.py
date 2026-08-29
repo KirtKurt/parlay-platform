@@ -3975,6 +3975,126 @@ def test_prelock_candidate_review_v2_second_review_is_retry_consumed():
         assert len(table.update_calls) == updates_before
 
 
+
+def test_prelock_candidate_review_v2_history_survives_replacement():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, _, _, _, _ = (
+            _seed_prelock_candidate_review_v2_incident(handler, table)
+        )
+        event = _prelock_candidate_review_v2_event(slate_date)
+        handler.mlb_daily_pick_lock.prove_cooperative_prelock_candidate_review_v2 = (
+            lambda **_kwargs: (
+                _prelock_candidate_review_v2_positive_proof(
+                    handler,
+                    table,
+                )
+            )
+        )
+        first = _body(handler.lambda_handler(event, FakeContext()))
+        assert first["status"] == "QUEUED_FOR_EVENTBRIDGE_LOCK_OWNER"
+        _, _, original_request_id = _complete_and_ack_current_queue(
+            handler,
+            table,
+            slate_date,
+        )
+
+        next_slate = "2026-08-25"
+        replacement = _body(
+            handler.lambda_handler(
+                _cooperative_event(next_slate),
+                FakeContext(),
+            )
+        )
+        assert replacement["cooperativeTerminalReplay"]["state"] == "QUEUED"
+        history_field = (
+            handler.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_FIELD
+        )
+        marker_field = handler.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_FIELD
+        history = copy.deepcopy(table.queue_item[history_field])
+        assert marker_field not in table.queue_item
+        assert handler._validated_prelock_candidate_review_v2_history(
+            history
+        ) == history
+        assert history["slateDateEt"] == slate_date
+        assert history["state"] == "ACKNOWLEDGED"
+        assert len(json.dumps(history, default=str).encode("utf-8")) <= (
+            handler.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_MAX_BYTES
+        )
+        serialized_history = json.dumps(history, sort_keys=True)
+        assert original_request_id not in serialized_history
+        assert "replay_receipt" not in serialized_history
+        assert "terminal_replay_progress" not in serialized_history
+
+        queue_before = copy.deepcopy(table.queue_item)
+        put_count = len(table.put_calls)
+        update_count = len(table.update_calls)
+        rerun = _body(handler.lambda_handler(event, FakeContext()))
+
+        assert rerun["status"] == "ACKNOWLEDGED_COMPLETION"
+        assert rerun["cooperativeTerminalReplayCompleted"] is True
+        assert rerun[
+            "prelockCandidateReviewV2RemediationIdempotent"
+        ] is True
+        assert rerun["prelockCandidateReviewV2DurableHistory"] is True
+        assert rerun["cooperativeTerminalReplay"]["state"] == (
+            "ACKNOWLEDGED"
+        )
+        assert rerun["cooperativeTerminalReplay"][
+            "durableRemediationHistory"
+        ] is True
+        for field in (
+            "activeLeaseMutationAllowed",
+            "postStartPredictionCreationAllowed",
+            "immutablePredictionRewriteAllowed",
+            "directWorkflowTableWrite",
+            "productionAuthorityChanged",
+        ):
+            assert rerun[field] is False
+        assert table.queue_item == queue_before
+        assert len(table.put_calls) == put_count
+        assert len(table.update_calls) == update_count
+        assert original_request_id not in json.dumps(rerun, sort_keys=True)
+
+
+def test_prelock_candidate_review_v2_corrupt_history_fails_without_write():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, _, _, _, _ = (
+            _seed_prelock_candidate_review_v2_incident(handler, table)
+        )
+        event = _prelock_candidate_review_v2_event(slate_date)
+        handler.mlb_daily_pick_lock.prove_cooperative_prelock_candidate_review_v2 = (
+            lambda **_kwargs: (
+                _prelock_candidate_review_v2_positive_proof(
+                    handler,
+                    table,
+                )
+            )
+        )
+        handler.lambda_handler(event, FakeContext())
+        _complete_and_ack_current_queue(handler, table, slate_date)
+        handler.lambda_handler(
+            _cooperative_event("2026-08-25"),
+            FakeContext(),
+        )
+        history_field = (
+            handler.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_FIELD
+        )
+        table.queue_item[history_field]["proofFingerprint"] = "f" * 64
+        before = copy.deepcopy(table.queue_item)
+        put_count = len(table.put_calls)
+        update_count = len(table.update_calls)
+
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(event, FakeContext()),
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_INVALID",
+        )
+
+        assert table.queue_item == before
+        assert len(table.put_calls) == put_count
+        assert len(table.update_calls) == update_count
+
 def test_source_pull_rebind_review_requeue_is_explicit_one_shot_and_request_bound():
     table = FakeLeaseTable()
     with _load_handler(lease_table=table) as (handler, _, _):
