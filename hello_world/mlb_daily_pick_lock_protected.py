@@ -1808,6 +1808,89 @@ def _source_pull_rebind_compact_fingerprint(value: Any) -> str:
     ).hexdigest()
 
 
+def _cooperative_review_prior_progress_fingerprint(
+    value: Any,
+) -> str:
+    """Fingerprint every DynamoDB value with stable type-preserving encoding."""
+
+    def canonical_number(number: Decimal) -> str:
+        if not number.is_finite():
+            raise RuntimeError(
+                "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+            )
+        if number == number.to_integral_value():
+            return str(int(number))
+        rendered = format(number.normalize(), "f")
+        return rendered.rstrip("0").rstrip(".")
+
+    def normalize(child: Any) -> Dict[str, Any]:
+        if child is None:
+            return {"type": "NULL", "value": None}
+        if type(child) is bool:
+            return {"type": "BOOL", "value": child}
+        if isinstance(child, str):
+            return {"type": "S", "value": child}
+        if isinstance(child, Decimal):
+            return {"type": "N", "value": canonical_number(child)}
+        if type(child) is int:
+            return {
+                "type": "N",
+                "value": canonical_number(Decimal(child)),
+            }
+        if isinstance(child, (bytes, bytearray, memoryview)):
+            return {"type": "B", "value": bytes(child).hex()}
+        child_type = type(child)
+        if (
+            child_type.__module__ == "boto3.dynamodb.types"
+            and child_type.__name__ == "Binary"
+        ):
+            try:
+                binary_value = bytes(child)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+                ) from exc
+            return {"type": "B", "value": binary_value.hex()}
+        if isinstance(child, Mapping):
+            if any(not isinstance(key, str) for key in child):
+                raise RuntimeError(
+                    "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+                )
+            return {
+                "type": "M",
+                "value": [
+                    [key, normalize(child[key])]
+                    for key in sorted(child)
+                ],
+            }
+        if isinstance(child, list):
+            return {
+                "type": "L",
+                "value": [normalize(nested) for nested in child],
+            }
+        if isinstance(child, (set, frozenset)):
+            normalized_members = [normalize(nested) for nested in child]
+            normalized_members.sort(
+                key=lambda nested: json.dumps(
+                    nested,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            )
+            return {"type": "SET", "value": normalized_members}
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+        )
+
+    return hashlib.sha256(
+        json.dumps(
+            normalize(value),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
 def _cooperative_terminal_review_evidence_v1_requires_review(
     stage: Any,
     error_code: Any,
@@ -1897,7 +1980,7 @@ def _validated_cooperative_review_evidence(
     stage = str(value.get("stage") or "")
     error_code = str(value.get("errorCode") or "")
     expected_prior_fingerprint = (
-        _source_pull_rebind_compact_fingerprint(prior)
+        _cooperative_review_prior_progress_fingerprint(prior)
         if prior_present
         else None
     )
@@ -2057,7 +2140,7 @@ def _cooperative_review_evidence_from_claimed_result(
         ).hexdigest(),
         "priorProgressPresent": prior_present,
         "priorProgressFingerprint": (
-            _source_pull_rebind_compact_fingerprint(prior)
+            _cooperative_review_prior_progress_fingerprint(prior)
             if prior_present
             else None
         ),
