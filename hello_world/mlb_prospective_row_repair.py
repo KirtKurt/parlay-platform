@@ -41,6 +41,10 @@ COOPERATIVE_TERMINAL_COMPLETION_LEASE_MARGIN_SECONDS = 60
 COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION = (
     "MLB-COOPERATIVE-TERMINAL-COMPLETION-HANDOFF-v1"
 )
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_VERSION = (
+    "MLB-COOPERATIVE-PRELOCK-CANDIDATE-REVIEW-PROOF-"
+    "v1-strong-installed-runtime"
+)
 COOPERATIVE_TERMINAL_IDENTITY_RESOLUTION_VERSION = (
     "MLB-TERMINAL-IDENTITY-RESOLUTION-v1-"
     "unique-official-provider-crosswalk"
@@ -4115,6 +4119,377 @@ def _run_cooperative_terminal_chunk_impl(
         )
 
 
+def _cooperative_prelock_candidate_review_normalized(
+    value: Any,
+) -> Any:
+    """Normalize DynamoDB numbers for deterministic redacted proof hashes."""
+
+    if isinstance(value, Decimal):
+        if value.is_finite() and value == value.to_integral_value():
+            return int(value)
+        return str(value)
+    if isinstance(value, dict):
+        return {
+            str(key): _cooperative_prelock_candidate_review_normalized(child)
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _cooperative_prelock_candidate_review_normalized(child)
+            for child in value
+        ]
+    return value
+
+
+def _cooperative_prelock_candidate_review_fingerprint(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            _cooperative_prelock_candidate_review_normalized(value),
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _prove_cooperative_prelock_candidate_review_v2_impl(
+    module: Any,
+    patch: Any,
+    *,
+    slate_date: str,
+    request_epoch: Any,
+    request_id: Any,
+    checkpoint: Any,
+) -> Dict[str, Any]:
+    """Strong-read one review cursor and return only a hashed positive proof."""
+
+    slate = str(slate_date or "").strip()
+    bound_request_epoch = _strict_chunk_integer(
+        request_epoch,
+        "prelock_candidate_review_request_epoch",
+    )
+    bound_request_id = str(request_id or "").strip()
+    if (
+        bound_request_epoch <= 0
+        or not bound_request_id
+        or not isinstance(checkpoint, dict)
+    ):
+        raise RuntimeError(
+            "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_REQUEST_INVALID"
+        )
+    try:
+        parsed_slate = datetime.strptime(slate, "%Y-%m-%d").date()
+        parsed_today = datetime.strptime(
+            str(module._today_et()),
+            "%Y-%m-%d",
+        ).date()
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_SLATE_INVALID"
+        ) from exc
+    if parsed_slate >= parsed_today:
+        raise RuntimeError(
+            "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_NOT_HISTORICAL"
+        )
+
+    pulls = sorted(
+        list(module._pulls_for_date(slate) or []),
+        key=lambda pull: patch._pull_at(module, pull)
+        or datetime.min.replace(tzinfo=timezone.utc),
+    )
+    if not pulls:
+        raise RuntimeError(
+            "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_PULLS_MISSING"
+        )
+    manifest = sorted(
+        list(module._latest_games_for_date(slate, pulls) or []),
+        key=lambda game: (
+            (
+                patch._start(module, game)
+                or datetime.min.replace(tzinfo=timezone.utc)
+            ).isoformat(),
+            str(patch.game_identity(game) or ""),
+        ),
+    )
+    if (
+        not manifest
+        or len(manifest) > COOPERATIVE_TERMINAL_MAX_MANIFEST_GAMES
+    ):
+        raise RuntimeError(
+            "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_MANIFEST_INVALID"
+        )
+
+    identities: List[str] = []
+    identity_options: List[List[str]] = []
+    identity_owner: Dict[str, int] = {}
+    for index, game in enumerate(manifest):
+        options = _cooperative_terminal_identity_options(patch, game)
+        for option in options:
+            if option in identity_owner:
+                raise RuntimeError(
+                    "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_"
+                    "MANIFEST_AMBIGUOUS"
+                )
+            identity_owner[option] = index
+        identities.append(options[0])
+        identity_options.append(options)
+
+    selected_manifest_authority = (
+        patch._select_provider_manifest_authority(
+            module,
+            pulls,
+            slate,
+            manifest,
+        )
+    )
+    manifest_authority = _cooperative_terminal_manifest_authority_evidence(
+        module,
+        patch,
+        selected_manifest_authority,
+        len(manifest),
+        manifest=manifest,
+        identities=identities,
+        identity_options=identity_options,
+    )
+    manifest_fingerprint = _cooperative_terminal_manifest_fingerprint(
+        module,
+        patch,
+        manifest,
+        identities=identities,
+        identity_options=identity_options,
+        manifest_authority=manifest_authority,
+    )
+    current_checkpoint = _validated_cooperative_terminal_checkpoint(
+        checkpoint,
+        slate=slate,
+        request_epoch=bound_request_epoch,
+        request_id=bound_request_id,
+        manifest_fingerprint=manifest_fingerprint,
+        manifest_authority=manifest_authority,
+        identities=identities,
+        identity_options=identity_options,
+    )
+    if (
+        _cooperative_prelock_candidate_review_normalized(current_checkpoint)
+        != _cooperative_prelock_candidate_review_normalized(checkpoint)
+        or str(current_checkpoint.get("phase") or "") != "PROCESS"
+    ):
+        raise RuntimeError(
+            "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_CHECKPOINT_INVALID"
+        )
+
+    game_index = _strict_chunk_integer(
+        current_checkpoint.get("nextGameIndex"),
+        "prelock_candidate_review_game_index",
+    )
+    if game_index >= len(manifest):
+        raise RuntimeError(
+            "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_CURSOR_INVALID"
+        )
+    game = manifest[game_index]
+    (
+        terminal_state,
+        _durable_identity,
+        _durable_evidence,
+        terminal_error,
+    ) = _cooperative_terminal_observed_state(
+        module,
+        patch,
+        slate=slate,
+        pulls=pulls,
+        manifest=manifest,
+        game_index=game_index,
+        identity_options=identity_options[game_index],
+        selected_manifest_authority=selected_manifest_authority,
+        manifest_authority=manifest_authority,
+    )
+    if terminal_error or terminal_state is not None:
+        raise RuntimeError(
+            "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_TERMINAL_NOT_ABSENT"
+        )
+
+    scoring = patch._scoring_pulls(module, pulls, game)
+    candidate, candidate_proof, bound_scoring, errors = (
+        patch._last_prelock_candidate(
+            module,
+            slate,
+            game,
+            scoring,
+        )
+    )
+    if (
+        errors
+        or not isinstance(candidate, dict)
+        or not isinstance(candidate_proof, dict)
+        or not isinstance(bound_scoring, list)
+        or not bound_scoring
+        or candidate_proof.get("identityBindingMode") != "exact_identity"
+        or candidate_proof.get("rejectedNewerCandidateCount") != 0
+        or candidate_proof.get("rejectedNewerCandidates") != []
+    ):
+        raise RuntimeError(
+            "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_CANDIDATE_INVALID"
+        )
+    candidate_authority = (
+        patch._validated_valid_prelock_quarantine_authority(
+            module,
+            slate,
+            game,
+            candidate,
+            candidate_proof,
+            bound_scoring,
+        )
+    )
+    if (
+        not isinstance(candidate_authority, dict)
+        or not candidate_authority
+        or candidate_authority.get("identityBindingMode")
+        != "exact_identity"
+        or candidate_authority.get("rejectedNewerCandidateCount") != 0
+        or candidate_authority.get("modelOrSignalRecomputedAtLock") is not False
+        or candidate_authority.get("predictionAdopted") is not False
+    ):
+        raise RuntimeError(
+            "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_AUTHORITY_INVALID"
+        )
+
+    proof = {
+        "version": COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_VERSION,
+        "slateDateEt": slate,
+        "requestEpoch": bound_request_epoch,
+        "requestIdFingerprint": hashlib.sha256(
+            bound_request_id.encode("utf-8")
+        ).hexdigest(),
+        "checkpointFingerprint": str(
+            current_checkpoint.get("checkpointFingerprint") or ""
+        ),
+        "progressFingerprint": (
+            _cooperative_prelock_candidate_review_fingerprint(
+                current_checkpoint
+            )
+        ),
+        "manifestFingerprint": manifest_fingerprint,
+        "manifestAuthorityEvidenceFingerprint": str(
+            manifest_authority.get("authorityEvidenceFingerprint") or ""
+        ),
+        "manifestGameCount": len(manifest),
+        "gameIndex": game_index,
+        "gameIdentityFingerprint": hashlib.sha256(
+            identities[game_index].encode("utf-8")
+        ).hexdigest(),
+        "identityBindingMode": "exact_identity",
+        "boundScoringPullCount": len(bound_scoring),
+        "candidateAuthorityVersion": str(
+            candidate_authority.get("version") or ""
+        ),
+        "candidateAuthorityFingerprint": (
+            _cooperative_prelock_candidate_review_fingerprint(
+                candidate_authority
+            )
+        ),
+        "candidateProofFingerprint": (
+            _cooperative_prelock_candidate_review_fingerprint(
+                candidate_proof
+            )
+        ),
+        "candidateSnapshotFingerprint": str(
+            candidate_proof.get("candidateSnapshotFingerprint") or ""
+        ),
+        "candidateRowFingerprint": str(
+            candidate_proof.get("candidateRowFingerprint") or ""
+        ),
+        "candidateSelectionFingerprint": str(
+            candidate_proof.get("candidateSelectionFingerprint") or ""
+        ),
+        "predictionPayloadFingerprint": str(
+            candidate_proof.get("predictionPayloadFingerprint") or ""
+        ),
+        "predictionSourcePullFingerprint": str(
+            candidate_proof.get("predictionSourcePullFingerprint") or ""
+        ),
+        "boundScoringFingerprint": (
+            _cooperative_prelock_candidate_review_fingerprint(
+                bound_scoring
+            )
+        ),
+        "terminalAbsent": True,
+        "rejectedNewerCandidateCount": 0,
+        "modelOrSignalRecomputedAtLock": False,
+        "predictionAdopted": False,
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "productionAuthorityChanged": False,
+    }
+    fingerprint_fields = (
+        "requestIdFingerprint",
+        "checkpointFingerprint",
+        "progressFingerprint",
+        "manifestFingerprint",
+        "manifestAuthorityEvidenceFingerprint",
+        "gameIdentityFingerprint",
+        "candidateAuthorityFingerprint",
+        "candidateProofFingerprint",
+        "candidateSnapshotFingerprint",
+        "candidateRowFingerprint",
+        "candidateSelectionFingerprint",
+        "predictionPayloadFingerprint",
+        "predictionSourcePullFingerprint",
+        "boundScoringFingerprint",
+    )
+    if (
+        not proof["candidateAuthorityVersion"]
+        or any(len(str(proof.get(field) or "")) != 64 for field in fingerprint_fields)
+    ):
+        raise RuntimeError(
+            "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_FINGERPRINT_INVALID"
+        )
+    proof["proofFingerprint"] = (
+        _cooperative_prelock_candidate_review_fingerprint(proof)
+    )
+    return proof
+
+
+def _prove_cooperative_prelock_candidate_review_v2(
+    module: Any,
+    patch: Any,
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    """Run the positive proof in an isolated bounded strong-read context."""
+
+    status_cache = getattr(patch, "_STATUS_READ_CACHE", None)
+    alias_limit = getattr(
+        patch,
+        "_COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_LIMIT",
+        None,
+    )
+    status_token = None
+    alias_token = None
+    if (
+        status_cache is None
+        or not callable(getattr(status_cache, "set", None))
+        or not callable(getattr(status_cache, "reset", None))
+        or alias_limit is None
+        or not callable(getattr(alias_limit, "set", None))
+        or not callable(getattr(alias_limit, "reset", None))
+    ):
+        raise RuntimeError(
+            "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_RUNTIME_NOT_READY"
+        )
+    status_token = status_cache.set({"canonicalPulls": {}})
+    alias_token = alias_limit.set(
+        COOPERATIVE_TERMINAL_CANDIDATE_ALIAS_QUERY_LIMIT
+    )
+    try:
+        return _prove_cooperative_prelock_candidate_review_v2_impl(
+            module,
+            patch,
+            **kwargs,
+        )
+    finally:
+        alias_limit.reset(alias_token)
+        status_cache.reset(status_token)
+
+
 def _run_cooperative_terminal_chunk(
     module: Any,
     patch: Any,
@@ -4227,6 +4602,13 @@ def install_prospective_row_repair(module: Any, patch: Any) -> Any:
         module,
         patch,
     )
+    module.prove_cooperative_prelock_candidate_review_v2 = (
+        functools.partial(
+            _prove_cooperative_prelock_candidate_review_v2,
+            module,
+            patch,
+        )
+    )
     module.validate_cooperative_terminal_completion_checkpoint = (
         _validated_cooperative_terminal_complete_checkpoint
     )
@@ -4246,6 +4628,9 @@ def install_prospective_row_repair(module: Any, patch: Any) -> Any:
     )
     module.MLB_COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION = (
         COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION
+    )
+    module.MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_VERSION = (
+        COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_VERSION
     )
     module.MLB_COOPERATIVE_TERMINAL_CHUNK_VERSION = (
         COOPERATIVE_TERMINAL_CHUNK_VERSION
