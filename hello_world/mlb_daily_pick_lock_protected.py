@@ -6787,6 +6787,15 @@ def lambda_handler(event, context):
                             # transition too; the exception path must not
                             # turn it back into a hot-looping QUEUED state.
                             claim_requeued = True
+                        elif candidate_review_required:
+                            checkpointed = (
+                                _review_cooperative_replay_without_checkpoint(
+                                    item=claimed,
+                                    owner=owner,
+                                    chunk_result=chunk_result,
+                                )
+                            )
+                            claim_requeued = True
                         else:
                             claim_requeued = _requeue_cooperative_replay(
                                 claimed,
