@@ -266,10 +266,20 @@ jobs:
               )
               if not pulls or game_index < 0 or game_index >= len(manifest):
                   raise SystemExit("Historical pull/manifest evidence unavailable")
-              game = manifest[game_index]
-              identity_options = repair._cooperative_terminal_identity_options(
-                  patch, game
+              all_identity_options = [
+                  repair._cooperative_terminal_identity_options(patch, item)
+                  for item in manifest
+              ]
+              selected_manifest_authority = (
+                  patch._select_provider_manifest_authority(
+                      module,
+                      pulls,
+                      SLATE,
+                      manifest,
+                  )
               )
+              game = manifest[game_index]
+              identity_options = all_identity_options[game_index]
               if checkpoint_identity not in identity_options:
                   raise SystemExit("Checkpoint identity is not manifest-bound")
 
@@ -539,6 +549,166 @@ jobs:
                       for error in (item.get("errors") or [])
                   }
               )
+
+              remaining_evidence = []
+              for scan_index in range(game_index, len(manifest)):
+                  scan_game = manifest[scan_index]
+                  (
+                      observed_state,
+                      _observed_identity,
+                      _observed_evidence,
+                      observed_error,
+                  ) = repair._cooperative_terminal_observed_state(
+                      module,
+                      patch,
+                      slate=SLATE,
+                      pulls=pulls,
+                      manifest=manifest,
+                      game_index=scan_index,
+                      identity_options=all_identity_options[scan_index],
+                      selected_manifest_authority=(
+                          selected_manifest_authority
+                      ),
+                      manifest_authority=manifest_authority,
+                  )
+                  entry = {
+                      "gameIndex": scan_index,
+                      "gameIdentityFingerprint": digest(
+                          all_identity_options[scan_index][0]
+                      ),
+                      "observedTerminalState": observed_state,
+                      "observedTerminalErrorCode": observed_error,
+                      "candidatePresent": False,
+                      "proofPresent": False,
+                      "boundScoringPullCount": 0,
+                      "selectorErrorCodes": [],
+                      "provenAbsence": False,
+                      "validQuarantineCandidate": False,
+                      "strongQuarantineValidatorPassed": False,
+                      "strongQuarantineValidatorErrorCode": None,
+                      "safeClassification": False,
+                  }
+                  if observed_error:
+                      remaining_evidence.append(entry)
+                      continue
+                  if observed_state:
+                      entry["safeClassification"] = True
+                      remaining_evidence.append(entry)
+                      continue
+
+                  scan_scoring = patch._scoring_pulls(
+                      module,
+                      pulls,
+                      scan_game,
+                  )
+                  (
+                      scan_candidate,
+                      scan_proof,
+                      scan_bound,
+                      scan_errors,
+                  ) = patch._last_prelock_candidate(
+                      module,
+                      SLATE,
+                      scan_game,
+                      scan_scoring,
+                  )
+                  scan_errors = sorted(
+                      set(str(error) for error in (scan_errors or []))
+                  )
+                  scan_absence = bool(
+                      scan_candidate is None
+                      and scan_proof is None
+                      and not scan_bound
+                      and patch._is_no_prediction_candidate_failure(
+                          scan_errors
+                      )
+                  )
+                  scan_valid = bool(
+                      isinstance(scan_candidate, dict)
+                      and isinstance(scan_proof, dict)
+                      and isinstance(scan_bound, list)
+                      and scan_bound
+                      and not scan_errors
+                      and scan_proof.get("identityBindingMode")
+                      in {"exact_identity", "official_game_pk"}
+                      and scan_proof.get("createdAtOrBeforeCutoff")
+                      is True
+                      and scan_proof.get("sourceAtOrBeforeCutoff")
+                      is True
+                      and scan_proof.get("persistedAtOrBeforeCutoff")
+                      is True
+                      and scan_proof.get(
+                          "modelOrSignalRecomputedAtLock"
+                      )
+                      is False
+                      and scan_proof.get("persistenceProofType")
+                      == patch.PREGAME_PERSISTENCE_PROOF_TYPE
+                      and scan_proof.get(
+                          "predictionPayloadFingerprintVersion"
+                      )
+                      == patch.PAYLOAD_FINGERPRINT_VERSION
+                      and all(
+                          len(str(scan_proof.get(field) or "")) == 64
+                          for field in required_fingerprints
+                      )
+                      and all(
+                          str(scan_proof.get(field) or "")
+                          for field in required_keys
+                      )
+                      and scan_proof.get(
+                          "rejectedNewerCandidateCount"
+                      )
+                      == 0
+                      and scan_proof.get(
+                          "rejectedNewerCandidates"
+                      )
+                      == []
+                  )
+                  scan_strong = False
+                  scan_strong_error = None
+                  if scan_valid:
+                      try:
+                          patch._validated_valid_prelock_quarantine_authority(
+                              module,
+                              SLATE,
+                              scan_game,
+                              scan_candidate,
+                              scan_proof,
+                              scan_bound,
+                          )
+                          scan_strong = True
+                      except Exception as exc:
+                          scan_strong_error = str(exc)[:160]
+                  entry.update(
+                      {
+                          "candidatePresent": isinstance(
+                              scan_candidate, dict
+                          ),
+                          "proofPresent": isinstance(scan_proof, dict),
+                          "boundScoringPullCount": len(scan_bound or []),
+                          "selectorErrorCodes": scan_errors,
+                          "provenAbsence": scan_absence,
+                          "validQuarantineCandidate": scan_valid,
+                          "strongQuarantineValidatorPassed": (
+                              scan_strong
+                          ),
+                          "strongQuarantineValidatorErrorCode": (
+                              scan_strong_error
+                          ),
+                          "safeClassification": bool(
+                              scan_absence or scan_strong
+                          ),
+                      }
+                  )
+                  remaining_evidence.append(entry)
+
+              remaining_all_safe = bool(
+                  remaining_evidence
+                  and all(
+                      item.get("safeClassification") is True
+                      for item in remaining_evidence
+                  )
+              )
               report = {
                   "ok": True,
                   "proofType": (
@@ -584,6 +754,21 @@ jobs:
                   "sourceProofChecks": source_checks,
                   "sourceIntegrityErrorCodes": source_integrity_errors,
                   "snapshotProofChecks": snapshot_checks,
+                  "remainingGameEvidence": remaining_evidence,
+                  "remainingGameCount": len(remaining_evidence),
+                  "remainingAllSafe": remaining_all_safe,
+                  "remainingSafeTerminalCount": sum(
+                      bool(item.get("observedTerminalState"))
+                      for item in remaining_evidence
+                  ),
+                  "remainingStrongQuarantineCount": sum(
+                      item.get("strongQuarantineValidatorPassed") is True
+                      for item in remaining_evidence
+                  ),
+                  "remainingProvenAbsenceCount": sum(
+                      item.get("provenAbsence") is True
+                      for item in remaining_evidence
+                  ),
                   "postStartPredictionCreationAllowed": False,
                   "immutablePredictionRewriteAllowed": False,
                   "productionAuthorityChanged": False,
