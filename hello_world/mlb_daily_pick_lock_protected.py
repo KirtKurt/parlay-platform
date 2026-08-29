@@ -4127,6 +4127,182 @@ def _complete_cooperative_replay(
 
 
 
+def _validated_cooperative_review_checkpoint_transition(
+    item: Dict[str, Any],
+    progress: Any,
+    *,
+    expected_stage: Any,
+    expected_error_code: Any,
+) -> Dict[str, Any]:
+    """Require a fresh producer failure checkpoint before REVIEW_REQUIRED."""
+
+    prior = item.get("terminal_replay_progress")
+    slate_date = str(item.get("slate_date_et") or "")
+    request_id = str(item.get("request_id") or "")
+    try:
+        request_epoch = _nonnegative_receipt_integer(
+            item.get("requested_at_epoch"),
+            "review_request_epoch",
+        )
+        prior_attempt_count = _nonnegative_receipt_integer(
+            prior.get("attemptCount") if isinstance(prior, dict) else None,
+            "prior_review_attempt_count",
+        )
+        attempt_count = _nonnegative_receipt_integer(
+            progress.get("attemptCount")
+            if isinstance(progress, dict)
+            else None,
+            "review_attempt_count",
+        )
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_CONTRACT_INVALID"
+        ) from exc
+    stage = str(expected_stage or "")
+    error_code = str(expected_error_code or "")
+    attempt = (
+        progress.get("lastAttempt")
+        if isinstance(progress, dict)
+        else None
+    )
+    manifest_authority = (
+        progress.get("manifestAuthority")
+        if isinstance(progress, dict)
+        else None
+    )
+    roster = (
+        manifest_authority.get("gameRoster")
+        if isinstance(manifest_authority, Mapping)
+        else None
+    )
+    phase = str(progress.get("phase") or "") if isinstance(progress, dict) else ""
+    try:
+        cursor = _nonnegative_receipt_integer(
+            (
+                progress.get("nextGameIndex")
+                if phase == "PROCESS"
+                else progress.get("verificationIndex")
+            )
+            if isinstance(progress, dict)
+            else None,
+            "review_cursor",
+        )
+        manifest_count = _nonnegative_receipt_integer(
+            progress.get("manifestGameCount")
+            if isinstance(progress, dict)
+            else None,
+            "review_manifest_count",
+        )
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_CONTRACT_INVALID"
+        ) from exc
+
+    expected_identity = ""
+    identity_options: Any = None
+    if (
+        isinstance(roster, list)
+        and 0 <= cursor < len(roster)
+        and isinstance(roster[cursor], Mapping)
+    ):
+        expected_identity = str(
+            roster[cursor].get("gameIdentity") or ""
+        )
+        identity_options = roster[cursor].get("identityOptions")
+
+    at_utc = str(attempt.get("atUtc") or "") if isinstance(attempt, dict) else ""
+    try:
+        parsed_at = datetime.fromisoformat(at_utc)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_CONTRACT_INVALID"
+        ) from exc
+
+    prior_fingerprint = (
+        str(prior.get("checkpointFingerprint") or "")
+        if isinstance(prior, dict)
+        else ""
+    )
+    progress_fingerprint = (
+        str(progress.get("checkpointFingerprint") or "")
+        if isinstance(progress, dict)
+        else ""
+    )
+    valid_cursor_identity = bool(
+        (
+            cursor < manifest_count
+            and isinstance(roster, list)
+            and len(roster) == manifest_count
+            and expected_identity
+            and isinstance(identity_options, list)
+            and identity_options
+            and str(identity_options[0] or "") == expected_identity
+            and isinstance(attempt, dict)
+            and str(attempt.get("gameIdentity") or "")
+            == expected_identity
+            and (
+                "durableIdentity" not in attempt
+                or str(attempt.get("durableIdentity") or "")
+                in {str(value) for value in identity_options}
+            )
+        )
+        or (
+            phase == "VERIFY"
+            and cursor == manifest_count
+            and isinstance(attempt, dict)
+            and "gameIdentity" not in attempt
+            and "durableIdentity" not in attempt
+        )
+    )
+    if (
+        not request_id
+        or request_epoch <= 0
+        or not isinstance(prior, dict)
+        or not isinstance(progress, dict)
+        or progress.get("version") != COOPERATIVE_TERMINAL_CHUNK_VERSION
+        or prior.get("version") != COOPERATIVE_TERMINAL_CHUNK_VERSION
+        or str(progress.get("slateDateEt") or "") != slate_date
+        or str(prior.get("slateDateEt") or "") != slate_date
+        or progress.get("requestEpoch") != request_epoch
+        or prior.get("requestEpoch") != request_epoch
+        or str(progress.get("requestId") or "") != request_id
+        or str(prior.get("requestId") or "") != request_id
+        or phase not in {"PROCESS", "VERIFY"}
+        or phase != str(prior.get("phase") or "")
+        or manifest_count < 1
+        or cursor > manifest_count
+        or not valid_cursor_identity
+        or attempt_count != prior_attempt_count + 1
+        or not isinstance(attempt, dict)
+        or attempt.get("status") != "FAILED_CLOSED"
+        or str(attempt.get("stage") or "") != stage
+        or str(attempt.get("errorCode") or "") != error_code
+        or str(attempt.get("phase") or "") != phase
+        or attempt.get("gameIndex") != cursor
+        or at_utc != str(progress.get("updatedAtUtc") or "")
+        or parsed_at.tzinfo is None
+        or parsed_at.utcoffset() != timedelta(0)
+        or parsed_at.isoformat() != at_utc
+        or progress.get("postStartPredictionCreationAllowed") is not False
+        or progress.get("immutablePredictionRewriteAllowed") is not False
+        or progress.get("productionAuthorityChanged") is not False
+        or re.fullmatch(r"[0-9a-f]{64}", progress_fingerprint) is None
+        or progress_fingerprint != prior_fingerprint
+        or progress_fingerprint
+        != _source_pull_rebind_checkpoint_fingerprint(progress)
+        or prior_fingerprint
+        != _source_pull_rebind_checkpoint_fingerprint(prior)
+        or (
+            stage == "PROVE_PRELOCK_ABSENCE"
+            and "durableIdentity" in attempt
+        )
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_CONTRACT_INVALID"
+        )
+    return copy.deepcopy(progress)
+
+
 def _checkpoint_cooperative_replay(
     *,
     item: Dict[str, Any],
@@ -4134,6 +4310,8 @@ def _checkpoint_cooperative_replay(
     progress: Dict[str, Any],
     failed: bool,
     review_required: bool = False,
+    review_stage: Optional[str] = None,
+    review_error_code: Optional[str] = None,
 ) -> Dict[str, Any]:
     slate_date = str(item.get("slate_date_et") or "")
     request_id = str(item.get("request_id") or "")
@@ -4141,6 +4319,17 @@ def _checkpoint_cooperative_replay(
         item.get("requested_at_epoch"), "request_epoch"
     )
     prior_progress = item.get("terminal_replay_progress")
+    if review_required:
+        if failed is not True:
+            raise RuntimeError(
+                "MLB_COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_CONTRACT_INVALID"
+            )
+        progress = _validated_cooperative_review_checkpoint_transition(
+            item,
+            progress,
+            expected_stage=review_stage,
+            expected_error_code=review_error_code,
+        )
     review_progress = bool(
         review_required
         and isinstance(progress, dict)
@@ -4959,31 +5148,29 @@ def lambda_handler(event, context):
                             )
                         )
                         if (
-                            candidate_review_required
-                            and not isinstance(progress, dict)
-                        ):
-                            progress = claimed.get(
-                                "terminal_replay_progress"
-                            )
-                        if (
                             isinstance(progress, dict)
-                            and (
-                                chunk_result.get(
-                                    "checkpointWriteAllowed"
-                                )
-                                is True
-                                or candidate_review_required
+                            and chunk_result.get(
+                                "checkpointWriteAllowed"
                             )
+                            is True
                         ):
-                            review_required = (
-                                candidate_review_required
-                            )
+                            review_required = candidate_review_required
                             checkpointed = _checkpoint_cooperative_replay(
                                 item=claimed,
                                 owner=owner,
                                 progress=progress,
                                 failed=chunk_result.get("ok") is not True,
                                 review_required=review_required,
+                                review_stage=(
+                                    chunk_stage
+                                    if review_required
+                                    else None
+                                ),
+                                review_error_code=(
+                                    chunk_error_code
+                                    if review_required
+                                    else None
+                                ),
                             )
                             # A REVIEW_REQUIRED CAS is a completed claim
                             # transition too; the exception path must not
