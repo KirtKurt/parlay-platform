@@ -385,7 +385,7 @@ class FakeLeaseTable:
                 )
                 or (
                     ":prior_progress" not in values
-                    and current.get("terminal_replay_progress") is None
+                    and "terminal_replay_progress" not in current
                 )
             )
             allowed = bool(
@@ -3368,6 +3368,7 @@ def test_precheckpoint_permanent_failure_uses_bound_review_evidence(
             "number_set",
             "binary",
             "binary_set",
+            "explicit_null",
         }
         error_code = (
             "COOPERATIVE_TERMINAL_CHUNK_CHECKPOINT_NOT_OBJECT"
@@ -3377,8 +3378,11 @@ def test_precheckpoint_permanent_failure_uses_bound_review_evidence(
                 "MANIFEST_EVIDENCE_INVALID"
             )
         )
-        handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk = (
-            lambda **_kwargs: {
+        chunk_calls = []
+
+        def failed_runner(**kwargs):
+            chunk_calls.append(kwargs)
+            return {
                 "ok": False,
                 "complete": False,
                 "deferred": False,
@@ -3394,6 +3398,9 @@ def test_precheckpoint_permanent_failure_uses_bound_review_evidence(
                 "immutablePredictionRewriteAllowed": False,
                 "productionAuthorityChanged": False,
             }
+
+        handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk = (
+            failed_runner
         )
         _assert_runtime_error(
             lambda: handler.lambda_handler(
@@ -3405,6 +3412,17 @@ def test_precheckpoint_permanent_failure_uses_bound_review_evidence(
             ),
             "MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED",
         )
+
+        assert len(chunk_calls) == 1
+        runner_checkpoint = chunk_calls[0]["checkpoint"]
+        if prior_mode == "absent":
+            assert runner_checkpoint is None
+        elif prior_mode == "explicit_null":
+            assert runner_checkpoint is (
+                handler._COOPERATIVE_TERMINAL_PRESENT_NULL_CHECKPOINT
+            )
+        else:
+            assert runner_checkpoint == prior
 
         assert table.queue_item["state"] == "REVIEW_REQUIRED"
         evidence = table.queue_item[
@@ -3447,6 +3465,29 @@ def test_precheckpoint_permanent_failure_uses_bound_review_evidence(
             )
         else:
             assert "terminal_replay_progress" not in table.queue_item
+
+
+def test_explicit_null_checkpoint_reaches_real_not_object_validator():
+    with _load_handler() as (handler, _, _):
+        sentinel = (
+            handler._COOPERATIVE_TERMINAL_PRESENT_NULL_CHECKPOINT
+        )
+        assert sentinel is not None
+        assert not isinstance(sentinel, dict)
+        with pytest.raises(
+            RuntimeError,
+            match="COOPERATIVE_TERMINAL_CHUNK_CHECKPOINT_NOT_OBJECT",
+        ):
+            COOPERATIVE_REPAIR._validated_cooperative_terminal_checkpoint(
+                sentinel,
+                slate="2026-07-20",
+                request_epoch=1_700_000_000,
+                request_id="explicit-null-request",
+                manifest_fingerprint="f" * 64,
+                manifest_authority={},
+                identities=[],
+                identity_options=[],
+            )
 
 
 def test_review_prior_progress_fingerprint_is_ddb_canonical_across_loads():
