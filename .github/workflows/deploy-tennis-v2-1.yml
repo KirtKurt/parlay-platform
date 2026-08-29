@@ -1,0 +1,70 @@
+name: Deploy isolated Tennis V2.1 MLB-process-flow parity
+
+on:
+  push:
+    branches:
+      - agent/tennis-mlb-process-flow-v2-1
+    paths:
+      - "tennis_release/**"
+      - ".github/workflows/deploy-tennis-v2-1.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parlay-platform-tennis-ml-production
+  cancel-in-progress: false
+
+jobs:
+  deploy-tennis-v2-1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      TENNIS_STACK_NAME: parlay-platform-tennis-ml-prod
+      MLB_STACK_NAME: parlay-platform-dev
+      TENNIS_RELEASE_SHA256: e1d429273b32deabd2eea97dbf1532318f94d41868eabf50758b470edf02deb5
+      TENNIS_ODDS_API_KEY_VALUE: ${{ secrets.TENNIS_ODDS_API_KEY || secrets.ODDS_API_KEY }}
+      TENNIS_CREDENTIAL_SOURCE: ${{ secrets.TENNIS_ODDS_API_KEY != '' && 'dedicated_tennis_secret' || 'existing_provider_account_secret_injected_only_as_tennis' }}
+
+    steps:
+      - name: Checkout exact deployment vehicle
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup AWS SAM
+        uses: aws-actions/setup-sam@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Reconstruct exact deployment driver
+        run: |
+          set -euo pipefail
+          base64 --decode tennis_release/deploy_tennis_v2_1.sh.xz.b64 \
+            | xz --decompress > /tmp/deploy_tennis_v2_1.sh
+          bash -n /tmp/deploy_tennis_v2_1.sh
+
+      - name: Reconstruct, validate, deploy, and prove isolation
+        run: bash /tmp/deploy_tennis_v2_1.sh
+
+      - name: Upload exact Tennis V2.1 deployment evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: tennis-v2-1-process-flow-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 90
+          path: tennis_release/evidence/
