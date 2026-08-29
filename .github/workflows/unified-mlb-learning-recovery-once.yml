@@ -732,20 +732,26 @@ jobs:
                   )
               return dict(latest)
 
+          def exact_deploy_identity(run, error_message):
+              run_id = run.get('id')
+              run_attempt = run.get('run_attempt')
+              if (
+                  type(run_id) is not int
+                  or type(run_attempt) is not int
+                  or run_id <= 0
+                  or run_attempt <= 0
+              ):
+                  raise SystemExit(error_message)
+              return run_id, run_attempt
+
           pinned_deploy = latest_exact_deploy()
-          try:
-              pinned_deploy_id = int(pinned_deploy['id'])
-              pinned_deploy_attempt = int(
-                  pinned_deploy.get('run_attempt') or 1
-              )
-          except (KeyError, TypeError, ValueError) as exc:
-              raise SystemExit(
-                  'Protected v2 deploy run identity is invalid'
-              ) from exc
-          if pinned_deploy_id <= 0 or pinned_deploy_attempt <= 0:
-              raise SystemExit(
-                  'Protected v2 deploy run identity is invalid'
-              )
+          (
+              pinned_deploy_id,
+              pinned_deploy_attempt,
+          ) = exact_deploy_identity(
+              pinned_deploy,
+              'Protected v2 deploy run identity is invalid',
+          )
           expected_deploy_run_id = (
               f'{pinned_deploy_id}-{pinned_deploy_attempt}'
           )
@@ -877,15 +883,10 @@ jobs:
               )
           )
           latest_before_invoke = latest_exact_deploy()
-          try:
-              latest_before_invoke_identity = (
-                  int(latest_before_invoke['id']),
-                  int(latest_before_invoke.get('run_attempt') or 1),
-              )
-          except (KeyError, TypeError, ValueError) as exc:
-              raise SystemExit(
-                  'Protected v2 deploy identity changed before invocation'
-              ) from exc
+          latest_before_invoke_identity = exact_deploy_identity(
+              latest_before_invoke,
+              'Protected v2 deploy identity changed before invocation',
+          )
           if (
               latest_before_invoke_identity
               != (pinned_deploy_id, pinned_deploy_attempt)
@@ -917,15 +918,10 @@ jobs:
               )
           )
           latest_after_invoke = latest_exact_deploy()
-          try:
-              latest_after_invoke_identity = (
-                  int(latest_after_invoke['id']),
-                  int(latest_after_invoke.get('run_attempt') or 1),
-              )
-          except (KeyError, TypeError, ValueError) as exc:
-              raise SystemExit(
-                  'Protected v2 deploy identity changed during invocation'
-              ) from exc
+          latest_after_invoke_identity = exact_deploy_identity(
+              latest_after_invoke,
+              'Protected v2 deploy identity changed during invocation',
+          )
           if (
               latest_after_invoke_identity
               != (pinned_deploy_id, pinned_deploy_attempt)
