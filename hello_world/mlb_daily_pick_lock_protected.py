@@ -220,7 +220,7 @@ COOPERATIVE_TERMINAL_CHUNK_V3_VERSION = (
 COOPERATIVE_TERMINAL_CHUNK_VERSION = (
     "MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine"
 )
-COOPERATIVE_REPLAY_PERMANENT_REVIEW_ERRORS = frozenset(
+COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_V1_PERMANENT_ERRORS = frozenset(
     {
         "PRELOCK_CANDIDATE_REQUIRES_REVIEW",
         "COOPERATIVE_TERMINAL_CHUNK_V3_MIGRATION_NOT_ZERO_WORK",
@@ -345,6 +345,11 @@ COOPERATIVE_REPLAY_PERMANENT_REVIEW_ERRORS = frozenset(
         "COOPERATIVE_TERMINAL_CHUNK_VERIFICATION_INDEX_INVALID",
         "COOPERATIVE_TERMINAL_CHUNK_VERIFIED_GAME_COUNT_INVALID",
     }
+)
+# New runtime classifiers may grow independently. Persisted v1 review
+# evidence always validates against the frozen contract above.
+COOPERATIVE_REPLAY_PERMANENT_REVIEW_ERRORS = (
+    COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_V1_PERMANENT_ERRORS
 )
 COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION = (
     "MLB-COOPERATIVE-TERMINAL-COMPLETION-HANDOFF-v1"
@@ -1803,6 +1808,29 @@ def _source_pull_rebind_compact_fingerprint(value: Any) -> str:
     ).hexdigest()
 
 
+def _cooperative_terminal_review_evidence_v1_requires_review(
+    stage: Any,
+    error_code: Any,
+) -> bool:
+    """Validate persisted v1 evidence against its frozen classifier."""
+
+    stage_value = str(stage or "")
+    code_value = str(error_code or "")
+    if (
+        code_value
+        not in COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_V1_PERMANENT_ERRORS
+    ):
+        return False
+    if code_value == "PRELOCK_CANDIDATE_REQUIRES_REVIEW":
+        return False
+    if (
+        code_value
+        == "COOPERATIVE_TERMINAL_CHUNK_V3_MIGRATION_NOT_ZERO_WORK"
+    ):
+        return stage_value == "BIND_MANIFEST_AUTHORITY"
+    return stage_value in COOPERATIVE_TERMINAL_PRECHECKPOINT_REVIEW_STAGES
+
+
 def _validated_cooperative_review_evidence(
     value: Any,
     item: Dict[str, Any],
@@ -1839,10 +1867,6 @@ def _validated_cooperative_review_evidence(
         )
     prior_present = "terminal_replay_progress" in item
     prior = item.get("terminal_replay_progress")
-    if prior_present and not isinstance(prior, dict):
-        raise RuntimeError(
-            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
-        )
     request_id = str(item.get("request_id") or "")
     claim_at_text = str(value.get("claimAcquiredAtUtc") or "")
     recorded_at_text = str(value.get("recordedAtUtc") or "")
@@ -1874,7 +1898,7 @@ def _validated_cooperative_review_evidence(
     error_code = str(value.get("errorCode") or "")
     expected_prior_fingerprint = (
         _source_pull_rebind_compact_fingerprint(prior)
-        if isinstance(prior, dict)
+        if prior_present
         else None
     )
     material = {
@@ -1924,7 +1948,10 @@ def _validated_cooperative_review_evidence(
         or value.get("priorProgressPresent") is not prior_present
         or value.get("priorProgressFingerprint")
         != expected_prior_fingerprint
-        or not _cooperative_replay_requires_review(stage, error_code)
+        or not _cooperative_terminal_review_evidence_v1_requires_review(
+            stage,
+            error_code,
+        )
         or value.get("status") != "FAILED_CLOSED"
         or value.get("chunkVersion")
         != COOPERATIVE_TERMINAL_CHUNK_VERSION
@@ -2009,10 +2036,6 @@ def _cooperative_review_evidence_from_claimed_result(
         )
     prior_present = "terminal_replay_progress" in item
     prior = item.get("terminal_replay_progress")
-    if prior_present and not isinstance(prior, dict):
-        raise RuntimeError(
-            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
-        )
     request_epoch = _nonnegative_receipt_integer(
         item.get("requested_at_epoch"),
         "review_evidence_request_epoch",
@@ -2035,7 +2058,7 @@ def _cooperative_review_evidence_from_claimed_result(
         "priorProgressPresent": prior_present,
         "priorProgressFingerprint": (
             _source_pull_rebind_compact_fingerprint(prior)
-            if isinstance(prior, dict)
+            if prior_present
             else None
         ),
         "stage": stage,
