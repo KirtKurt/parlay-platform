@@ -246,6 +246,7 @@ class FakeLeaseTable:
         )
         remediation_write = ":remediation" in values
         proof_write = ":proof" in values
+        review_evidence_write = ":evidence" in values
         if remediation_write:
             progress = (
                 current.get("terminal_replay_progress")
@@ -303,6 +304,29 @@ class FakeLeaseTable:
                     and remediation_field not in current
                 )
             next_state = values[":queued"]
+        elif review_evidence_write:
+            names = kwargs.get("ExpressionAttributeNames") or {}
+            evidence_field = names.get("#review_evidence")
+            prior_progress_matches = bool(
+                (
+                    ":prior_progress" in values
+                    and current.get("terminal_replay_progress")
+                    == values.get(":prior_progress")
+                )
+                or (
+                    ":prior_progress" not in values
+                    and "terminal_replay_progress" not in current
+                )
+            )
+            allowed = bool(
+                valid_identity
+                and prior_progress_matches
+                and current.get("state") == values.get(":claimed")
+                and current.get("claim_owner") == values.get(":owner")
+                and evidence_field
+                and evidence_field not in current
+            )
+            next_state = values[":review_required"]
         elif proof_write:
             allowed = bool(
                 valid_identity
@@ -387,6 +411,21 @@ class FakeLeaseTable:
             ]
             updated[remediation_field] = copy.deepcopy(
                 values[":remediation"]
+            )
+        elif review_evidence_write:
+            evidence_field = kwargs["ExpressionAttributeNames"][
+                "#review_evidence"
+            ]
+            updated[evidence_field] = copy.deepcopy(values[":evidence"])
+            updated.update(
+                {
+                    "last_chunk_at_utc": values[":now_utc"],
+                    "last_chunk_at_epoch": values[":now_epoch"],
+                    "last_chunk_stage": values[":chunk_stage"],
+                    "last_chunk_status": values[":chunk_status"],
+                    "last_failure_at_utc": values[":now_utc"],
+                    "last_failure_at_epoch": values[":now_epoch"],
+                }
             )
         elif proof_write:
             updated["current_slate_success_proof"] = copy.deepcopy(
