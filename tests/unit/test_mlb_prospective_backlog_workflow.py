@@ -118,6 +118,12 @@ def test_unified_recovery_source_rebind_review_requeue_is_explicit_and_bounded()
     assert "nested_durable_history = replay.get(" in remediation
     assert "nested_durable_history is not None" in remediation
     assert "nested_durable_history is not True" in remediation
+    assert (
+        "durable_history is not None\n"
+        "              and durable_history is not True"
+        in remediation
+    )
+    assert "durable_history not in (None, True)" not in source
     assert "official-read-bound no-op path" in remediation
     assert "durably fences every duplicate queue" in remediation
     assert "expected_completed = replay_state in COMPLETED_STATES" in remediation
@@ -151,6 +157,10 @@ def test_unified_recovery_source_rebind_review_requeue_is_explicit_and_bounded()
 def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
     source = UNIFIED_RECOVERY.read_text(encoding="utf-8")
     workflow = yaml.safe_load(source)
+    assert workflow["concurrency"] == {
+        "group": "parlay-platform-deploy",
+        "cancel-in-progress": False,
+    }
     workflow_dispatch = workflow["on"]["workflow_dispatch"]
     input_config = workflow_dispatch["inputs"][
         "requeue_prelock_candidate_review_after_installed_runtime_proof_v2"
@@ -237,18 +247,37 @@ def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
     assert "'automaticRequeueAllowed': False" in remediation
     assert "prelock-candidate-review-remediation-v2.json" in remediation
     assert "github_ref != 'refs/heads/main'" in remediation
-    assert "deploy.yml/runs?branch=main&status=success" in remediation
-    assert "run.get('head_sha') == commit_sha" in remediation
+    assert "deploy.yml/runs?branch=main&per_page=100" in remediation
+    assert "status=success" not in remediation
+    assert "main_ref.get('object')" in remediation
+    assert "main_object.get('sha') != commit_sha" in remediation
+    assert "latest.get('head_sha') != commit_sha" in remediation
+    assert "latest.get('status') != 'completed'" in remediation
+    assert "latest.get('conclusion') != 'success'" in remediation
+    assert "parameters.get('DeployGitSha') != commit_sha" in remediation
+    assert (
+        "parameters.get('DeployRunId')\n"
+        "                  != expected_deploy_run_id"
+        in remediation
+    )
+    assert "INQSI_DEPLOY_GIT_SHA" in remediation
+    assert "INQSI_DEPLOY_RUN_ID" in remediation
+    assert remediation.count("latest_exact_deploy()") >= 4
+    assert remediation.count("require_exact_stack_deployment()") >= 4
+    assert "latest_before_invoke_identity" in remediation
+    assert "latest_after_invoke_identity" in remediation
+    assert "post_invocation_configuration" in remediation
     assert "sameCommitDeploySuccessRequired': True" in remediation
     assert "pinned_revision_id" in remediation
     assert "pinned_code_sha256" in remediation
     assert "'RevisionId': pinned_revision_id" in remediation
     assert "'CodeSha256': pinned_code_sha256" in remediation
     assert (
-        "durable_history is None\n"
-        "                  and nested_durable_history is not None"
+        "durable_history is not None\n"
+        "                  and durable_history is not True"
         in remediation
     )
+    assert "durable_history not in (None, True)" not in source
     assert remediation.count("lambda_client.invoke(") == 1
     assert "dynamodb" not in remediation.lower()
     for forbidden in (
