@@ -24,9 +24,7 @@ permissions:
   contents: read
 
 concurrency:
-  # Share the production deploy lock so $LATEST cannot change during the
-  # exact-code one-shot recovery invocation or its subsequent proof run.
-  group: parlay-platform-deploy
+  group: unified-mlb-learning
   cancel-in-progress: false
 
 env:
@@ -40,6 +38,11 @@ env:
 
 jobs:
   recover-and-verify:
+    # The workflow-level group preserves the sole learning owner. This
+    # job-level group also blocks production deploys for the exact-code run.
+    concurrency:
+      group: parlay-platform-deploy
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
