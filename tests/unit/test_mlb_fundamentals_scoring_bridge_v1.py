@@ -14,6 +14,7 @@ HELLO_WORLD = ROOT / "hello_world"
 if str(HELLO_WORLD) not in sys.path:
     sys.path.insert(0, str(HELLO_WORLD))
 
+import inqsi_pull_history as pull_history
 import mlb_fundamentals_scoring_bridge_v1 as bridge
 import mlb_fundamentals_snapshot_v1 as snapshot_v1
 import mlb_fundamentals_snapshot_v2 as snapshot_v2
@@ -465,3 +466,68 @@ def test_selected_away_side_receives_the_inverse_fundamentals_edge(monkeypatch):
     assert prepared["awaySignal"]["fundamentalsAdjustment"] < 0
     assert fundamentals["applied"] is True
     assert fundamentals["edge"] < 0
+
+
+def test_passive_shadow_survives_prediction_persistence_round_trip():
+    row = _real_v2_row()
+    row.pop("predictionPersistedAtUtc")
+    row.pop("lockedAtUtc")
+    snapshot_v2.enhance_row(row)
+    shadow = bridge.evaluate_shadow(row)
+
+    assert shadow["evaluated"] is False
+    assert shadow["wouldApply"] is False
+    assert shadow["validationErrors"] == [
+        bridge.EXPECTED_PASSIVE_PROVENANCE_ERROR
+    ]
+    assert bridge.is_expected_passive_provenance_block(shadow, row) is True
+
+    row[bridge.SHADOW_FIELD] = shadow
+    persisted = pull_history.ddb_safe({"data": row})["data"]
+    persisted_shadow = persisted[bridge.SHADOW_FIELD]
+
+    assert "home" not in persisted_shadow["boundedHypotheticalAdjustments"]
+    assert "away" not in persisted_shadow["boundedHypotheticalAdjustments"]
+    assert bridge.is_expected_passive_provenance_block(
+        persisted_shadow, persisted
+    ) is True
+    assert bridge.validate_shadow_attestation(persisted_shadow, persisted) == []
+
+    extra_null = copy.deepcopy(persisted_shadow)
+    extra_null["untrustedOptional"] = None
+    assert "shadow_canonical_evaluation_mismatch" in (
+        bridge.validate_shadow_attestation(extra_null, persisted)
+    )
+
+
+def test_evaluated_shadow_survives_prediction_persistence_round_trip():
+    row = _real_v2_row()
+    snapshot_v2.enhance_row(row)
+    shadow = bridge.evaluate_shadow(row)
+
+    assert shadow["evaluated"] is True
+    assert shadow["wouldApply"] is True
+
+    row[bridge.SHADOW_FIELD] = shadow
+    persisted = pull_history.ddb_safe({"data": row})["data"]
+    persisted_shadow = persisted[bridge.SHADOW_FIELD]
+
+    assert "reason" not in persisted_shadow
+    assert bridge.validate_shadow_attestation(persisted_shadow, persisted) == []
+
+
+def test_evaluated_shadow_without_durable_boundary_remains_invalid():
+    row = _real_v2_row()
+    row.pop("predictionPersistedAtUtc")
+    row.pop("lockedAtUtc")
+    snapshot_v2.enhance_row(row)
+    shadow = bridge.evaluate_shadow(row)
+    forged = copy.deepcopy(shadow)
+    forged["evaluated"] = True
+    forged["shadowOnly"] = True
+
+    errors = bridge.validate_shadow_attestation(forged, row)
+
+    assert "shadow_current_snapshot_provenance_invalid" in errors
+    assert "shadow_canonical_evaluation_mismatch" in errors
+

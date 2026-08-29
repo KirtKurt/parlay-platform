@@ -270,6 +270,29 @@ def _shadow_attestation_errors(
         return ["shadow_attestation_validator_failed"]
 
 
+def _expected_passive_provenance_block(
+    shadow: Dict[str, Any],
+    row: Optional[Dict[str, Any]] = None,
+) -> bool:
+    if not shadow:
+        return False
+    try:
+        try:
+            import mlb_fundamentals_scoring_bridge_v1 as shadow_contract
+        except ImportError:
+            from hello_world import (
+                mlb_fundamentals_scoring_bridge_v1 as shadow_contract,
+            )
+
+        return bool(
+            shadow_contract.is_expected_passive_provenance_block(
+                shadow, row or {}
+            )
+        )
+    except Exception:
+        return False
+
+
 def _fundamentals_details(prediction: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not prediction:
         return {
@@ -299,8 +322,19 @@ def _fundamentals_details(prediction: Optional[Dict[str, Any]]) -> Dict[str, Any
     if not isinstance(shadow, dict):
         shadow = {}
     shadow_attestation_errors = _shadow_attestation_errors(shadow, data)
+    expected_passive_provenance_block = _expected_passive_provenance_block(
+        shadow, data
+    )
+    shadow_source_validation_errors = shadow.get("validationErrors") or []
+    shadow_invalid = bool(
+        shadow_attestation_errors
+        or (
+            shadow_source_validation_errors
+            and not expected_passive_provenance_block
+        )
+    )
     trusted_shadow_evaluated = bool(
-        shadow.get("evaluated") is True and not shadow_attestation_errors
+        shadow.get("evaluated") is True and not shadow_invalid
     )
     applied = (
         optimizer.get("fundamentalsApplied") is True
@@ -326,8 +360,10 @@ def _fundamentals_details(prediction: Optional[Dict[str, Any]]) -> Dict[str, Any
         state = "APPLIED"
     elif upstream_applied:
         state = "UPSTREAM_APPLIED_DETECTED"
-    elif shadow_attestation_errors:
+    elif shadow_invalid:
         state = "INVALID_SHADOW_ATTESTATION"
+    elif expected_passive_provenance_block:
+        state = "NOT_ACTIVE"
     elif trusted_shadow_evaluated:
         state = "SHADOW_ONLY"
     elif "NOT_ACTIVE" in mode:
@@ -369,9 +405,7 @@ def _fundamentals_details(prediction: Optional[Dict[str, Any]]) -> Dict[str, Any
         ),
         "shadowMode": shadow.get("mode"),
         "shadowSourceIncomplete": source_incomplete,
-        "shadowInvalid": bool(
-            shadow.get("validationErrors") or shadow_attestation_errors
-        ),
+        "shadowInvalid": shadow_invalid,
         "shadowAttestationErrors": shadow_attestation_errors,
         "upstreamAppliedDetected": upstream_applied,
         "connectedGroups": list(evidence.get("connectedGroups") or []),
