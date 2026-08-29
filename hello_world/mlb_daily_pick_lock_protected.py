@@ -3138,19 +3138,50 @@ def _prelock_candidate_review_v2_history_response(
     history: Dict[str, Any],
 ) -> Dict[str, Any]:
     history = _validated_prelock_candidate_review_v2_history(history)
-    item = {
+    slate_date = str(history["slateDateEt"])
+    public = {
+        "version": COOPERATIVE_TERMINAL_REPLAY_VERSION,
         "state": COOPERATIVE_REPLAY_ACKNOWLEDGED,
-        "slate_date_et": history["slateDateEt"],
+        "slateDateEt": slate_date,
+        "automaticExecutionOwner": "eventbridge_daily_lock_schedule",
+        "currentSlateRunsFirst": True,
+        "freshPriorOwnerProofMayCarryAcrossInvocation": True,
+        "currentSlateSuccessProofPresent": False,
+        "activeLeaseMutationAllowed": False,
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "directWorkflowTableWrite": False,
+        "productionAuthorityChanged": False,
+        "ownerIdentifierExposed": False,
+        "terminalChunkProgress": None,
+        "durableRemediationHistory": True,
+        "failClosed": True,
     }
-    response = _prelock_candidate_review_v2_response(
-        item,
-        idempotent=True,
-    )
-    response["prelockCandidateReviewV2DurableHistory"] = True
-    response["cooperativeTerminalReplay"][
-        "durableRemediationHistory"
-    ] = True
-    return response
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "slateDateEt": slate_date,
+        "status": "ACKNOWLEDGED_COMPLETION",
+        "reason": "ACKNOWLEDGED_COMPLETION",
+        "skipped": True,
+        "mutatingRunAttempted": False,
+        "cooperativeTerminalReplayCompleted": True,
+        "cooperativeTerminalReplay": public,
+        "prelockCandidateReviewV2RemediationApplied": True,
+        "prelockCandidateReviewV2RemediationIdempotent": True,
+        "prelockCandidateReviewV2RemediationVersion": (
+            COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_REMEDIATION_VERSION
+        ),
+        "installedRuntimePositiveProofBound": True,
+        "priorSourcePullRebindRemediationValidated": True,
+        "prelockCandidateReviewV2DurableHistory": True,
+        "automaticRetryAllowed": False,
+        "activeLeaseMutationAllowed": False,
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "directWorkflowTableWrite": False,
+        "productionAuthorityChanged": False,
+    }
 
 
 def _requeue_prelock_candidate_review_after_installed_runtime_proof_v2(
