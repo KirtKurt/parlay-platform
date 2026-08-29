@@ -3490,6 +3490,73 @@ def test_explicit_null_checkpoint_reaches_real_not_object_validator():
             )
 
 
+def test_present_nonobject_checkpoint_rejects_writable_runner_result():
+    table = FakeLeaseTable()
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=_successful_current_slate_payload(),
+    ) as (handler, _, _):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        table.queue_item["terminal_replay_progress"] = None
+        request_epoch = int(table.queue_item["requested_at_epoch"])
+        request_id = str(table.queue_item["request_id"])
+        forged_progress = _complete_terminal_checkpoint(
+            slate_date="2026-07-20",
+            request_epoch=request_epoch,
+            request_id=request_id,
+            game_count=1,
+        )
+        chunk_calls = []
+
+        def invalid_runner(**kwargs):
+            chunk_calls.append(kwargs)
+            return {
+                "ok": True,
+                "complete": False,
+                "deferred": False,
+                "stage": "PROCESS_CHECKPOINT_READY",
+                "remainingSeconds": 700,
+                "checkpointWriteAllowed": True,
+                "checkpoint": copy.deepcopy(forged_progress),
+                "terminalChunkVersion": (
+                    handler.COOPERATIVE_TERMINAL_CHUNK_VERSION
+                ),
+                "postStartPredictionCreationAllowed": False,
+                "immutablePredictionRewriteAllowed": False,
+                "productionAuthorityChanged": False,
+            }
+
+        handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk = (
+            invalid_runner
+        )
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                _scheduled_event(),
+                FakeContext(
+                    request_id="explicit-null-invalid-owner",
+                    remaining_millis=900_000,
+                ),
+            ),
+            (
+                "MLB_COOPERATIVE_TERMINAL_"
+                "NON_OBJECT_CHECKPOINT_RESULT_INVALID"
+            ),
+        )
+
+        assert len(chunk_calls) == 1
+        assert chunk_calls[0]["checkpoint"] is (
+            handler._COOPERATIVE_TERMINAL_PRESENT_NULL_CHECKPOINT
+        )
+        assert table.queue_item["state"] == "QUEUED"
+        assert "terminal_replay_progress" in table.queue_item
+        assert table.queue_item["terminal_replay_progress"] is None
+        assert (
+            handler.COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_FIELD
+            not in table.queue_item
+        )
+        assert "claim_owner" not in table.queue_item
+
+
 def test_review_prior_progress_fingerprint_is_ddb_canonical_across_loads():
     first_value = {
         "strings": {"zulu", "alpha"},
