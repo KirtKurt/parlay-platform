@@ -1,0 +1,305 @@
+name: Audit MLB Model Performance History
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/audit-mlb-model-performance-history.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Reconstruct audit and model-version history
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import csv
+          import hashlib
+          import json
+          import re
+          import subprocess
+          from collections import defaultdict
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          REPO = Path.cwd()
+          AUDIT_PATH = 'runtime_reports/mlb_rolling_24h_audit_latest.json'
+          OPT_PATH = 'runtime_reports/mlb_ml_optimization_status_latest.json'
+          VERSION_FILES = {
+              'winnerEngineVersion': 'hello_world/mlb_game_winner_engine.py',
+              'directionalScoreVersion': 'hello_world/mlb_directional_score_v1.py',
+              'signalPolicyVersion': 'hello_world/mlb_signal_policy_v12.py',
+              'legacyChampionRuntimeVersion': 'hello_world/mlb_ml_champion_runtime_v1.py',
+              'awsTrainingVersion': 'hello_world/mlb_ml_aws_training_v1.py',
+              'dualModelVersion': 'hello_world/mlb_ml_dual_model_v2.py',
+          }
+
+          def run(*args: str) -> str:
+              return subprocess.check_output(args, cwd=REPO, text=True, stderr=subprocess.DEVNULL)
+
+          def show(commit: str, path: str) -> str | None:
+              try:
+                  return run('git', 'show', f'{commit}:{path}')
+              except Exception:
+                  return None
+
+          def commits_for(path: str) -> list[tuple[str, int]]:
+              text = run('git', 'log', '--all', '--format=%H\t%ct', '--', path)
+              rows: list[tuple[str, int]] = []
+              seen: set[str] = set()
+              for line in text.splitlines():
+                  if not line.strip():
+                      continue
+                  sha, stamp = line.split('\t', 1)
+                  if sha in seen:
+                      continue
+                  seen.add(sha)
+                  rows.append((sha, int(stamp)))
+              return rows
+
+          def parse_json(text: str | None):
+              if not text:
+                  return None
+              try:
+                  return json.loads(text)
+              except Exception:
+                  return None
+
+          def numeric(value):
+              if isinstance(value, bool) or value in (None, ''):
+                  return None
+              try:
+                  return float(value)
+              except Exception:
+                  return None
+
+          def integer(value):
+              number = numeric(value)
+              return int(number) if number is not None else None
+
+          def first_version(text: str | None) -> str | None:
+              if not text:
+                  return None
+              patterns = [
+                  r'^VERSION\s*=\s*["\']([^"\']+)["\']',
+                  r'^MODEL_VERSION\s*=\s*["\']([^"\']+)["\']',
+                  r'^ENGINE\s*=\s*["\']([^"\']+)["\']',
+              ]
+              for pattern in patterns:
+                  match = re.search(pattern, text, flags=re.MULTILINE)
+                  if match:
+                      return match.group(1)
+              return None
+
+          def record_accuracy(summary: dict) -> tuple[float | None, int | None, str | None]:
+              choices = [
+                  ('rolling24hOfficialCardSlateAccuracyPct', 'officialPredictionCount'),
+                  ('rolling24hOfficialAccuracyPct', 'officialPredictionCount'),
+                  ('allScoredPickAccuracyPct', 'gradedPredictionCount'),
+                  ('rolling24hAllGamesAccuracyPct', 'gradedPredictionCount'),
+              ]
+              for accuracy_key, count_key in choices:
+                  accuracy = numeric(summary.get(accuracy_key))
+                  count = integer(summary.get(count_key))
+                  if accuracy is not None and count is not None:
+                      return accuracy, count, accuracy_key
+              return None, None, None
+
+          records = []
+          seen_payloads: set[str] = set()
+          for sha, commit_ts in commits_for(AUDIT_PATH):
+              raw = show(sha, AUDIT_PATH)
+              payload = parse_json(raw)
+              if not isinstance(payload, dict) or not raw:
+                  continue
+              payload_digest = hashlib.sha256(raw.encode('utf-8')).hexdigest()
+              if payload_digest in seen_payloads:
+                  continue
+              seen_payloads.add(payload_digest)
+              summary = payload.get('summary') or {}
+              if not isinstance(summary, dict):
+                  summary = {}
+              accuracy, sample_count, accuracy_field = record_accuracy(summary)
+              versions = {
+                  key: first_version(show(sha, path))
+                  for key, path in VERSION_FILES.items()
+              }
+              record = {
+                  'commit': sha,
+                  'commitTimestampUtc': datetime.fromtimestamp(commit_ts, tz=timezone.utc).isoformat().replace('+00:00', 'Z'),
+                  'auditCreatedAt': payload.get('createdAt') or payload.get('createdAtUtc'),
+                  'payloadSha256': payload_digest,
+                  'accuracyPct': accuracy,
+                  'accuracyField': accuracy_field,
+                  'sampleCount': sample_count,
+                  'gradedPredictionCount': integer(summary.get('gradedPredictionCount')),
+                  'missingPredictionCount': integer(summary.get('missingPredictionCount')),
+                  'officialPredictionCount': integer(summary.get('officialPredictionCount')),
+                  'officialCorrect': integer(summary.get('officialCorrect')),
+                  'officialWrong': integer(summary.get('officialWrong')),
+                  'playablePredictionCount': integer(summary.get('playablePredictionCount')),
+                  'playableCorrect': integer(summary.get('playableCorrect')),
+                  'playableWrong': integer(summary.get('playableWrong')),
+                  'rolling24hOfficialAccuracyPct': numeric(summary.get('rolling24hOfficialAccuracyPct')),
+                  'rolling24hOfficialCardSlateAccuracyPct': numeric(summary.get('rolling24hOfficialCardSlateAccuracyPct')),
+                  'rolling24hPlayableAccuracyPct': numeric(summary.get('rolling24hPlayableAccuracyPct')),
+                  'allScoredPickAccuracyPct': numeric(summary.get('allScoredPickAccuracyPct')),
+                  'marketFavoriteBaselineAccuracyPct': numeric(summary.get('marketFavoriteBaselineAccuracyPct')),
+                  'modelAccuracyLiftVsMarketPct': numeric(summary.get('modelAccuracyLiftVsMarketPct')),
+                  'officialBrierScore': numeric(summary.get('officialBrierScore')),
+                  'officialLogLoss': numeric(summary.get('officialLogLoss')),
+                  'officialFlatUnitRoiPct': numeric(summary.get('officialFlatUnitRoiPct')),
+                  'targetAccuracyPct': numeric(summary.get('targetAccuracyPct')),
+                  **versions,
+              }
+              records.append(record)
+
+          records.sort(key=lambda row: (row.get('auditCreatedAt') or row['commitTimestampUtc'], row['commit']))
+
+          optimization_records = []
+          seen_opt_payloads: set[str] = set()
+          for sha, commit_ts in commits_for(OPT_PATH):
+              raw = show(sha, OPT_PATH)
+              payload = parse_json(raw)
+              if not isinstance(payload, dict) or not raw:
+                  continue
+              digest = hashlib.sha256(raw.encode('utf-8')).hexdigest()
+              if digest in seen_opt_payloads:
+                  continue
+              seen_opt_payloads.add(digest)
+              gate = payload.get('promotionGate') or {}
+              direction = gate.get('directionChecks') or {}
+              playability = gate.get('playabilityChecks') or {}
+              optimization_records.append({
+                  'commit': sha,
+                  'commitTimestampUtc': datetime.fromtimestamp(commit_ts, tz=timezone.utc).isoformat().replace('+00:00', 'Z'),
+                  'createdAtUtc': payload.get('createdAtUtc'),
+                  'cleanRowCount': integer(payload.get('cleanRowCount')),
+                  'quarantinedRowCount': integer(payload.get('quarantinedRowCount')),
+                  'trainingStatus': payload.get('trainingStatus'),
+                  'promotionDecision': gate.get('promotionDecision'),
+                  'promotionEligible': gate.get('promotionEligible'),
+                  'directionAuthorityEnabled': gate.get('directionAuthorityEnabled'),
+                  'playabilityAuthorityEnabled': gate.get('playabilityAuthorityEnabled'),
+                  'outcomeUntouchedAccuracyPct': numeric(direction.get('outcomeUntouchedAccuracyPct')),
+                  'rolling24hSlateAccuracyPct': numeric(direction.get('rolling24hSlateAccuracyPct')),
+                  'selectedAccuracyPct': numeric(playability.get('selectedAccuracyPct')),
+                  'selectedTestCount': integer(playability.get('selectedExactOddsCoveragePct')),
+              })
+          optimization_records.sort(key=lambda row: (row.get('createdAtUtc') or row['commitTimestampUtc'], row['commit']))
+
+          thresholds = [1, 3, 5, 10, 20, 50, 100]
+          best_by_minimum_sample = {}
+          for minimum in thresholds:
+              candidates = [
+                  row for row in records
+                  if row.get('accuracyPct') is not None and (row.get('sampleCount') or 0) >= minimum
+              ]
+              candidates.sort(key=lambda row: (row['accuracyPct'], row.get('sampleCount') or 0, row.get('auditCreatedAt') or ''), reverse=True)
+              best_by_minimum_sample[str(minimum)] = candidates[0] if candidates else None
+
+          reached_80 = [
+              row for row in records
+              if row.get('accuracyPct') is not None and row['accuracyPct'] >= 79.5
+          ]
+          reached_80.sort(key=lambda row: (row.get('sampleCount') or 0, row['accuracyPct']), reverse=True)
+
+          by_model = defaultdict(lambda: {'snapshots': 0, 'weightedCorrect': 0.0, 'weightedCount': 0, 'maxAccuracyPct': None, 'maxSampleCount': 0})
+          for row in records:
+              model_key = ' | '.join(str(row.get(name) or 'missing') for name in (
+                  'winnerEngineVersion', 'directionalScoreVersion', 'signalPolicyVersion'
+              ))
+              group = by_model[model_key]
+              group['snapshots'] += 1
+              count = row.get('sampleCount') or 0
+              acc = row.get('accuracyPct')
+              if acc is not None and count > 0:
+                  group['weightedCorrect'] += acc * count / 100.0
+                  group['weightedCount'] += count
+                  if group['maxAccuracyPct'] is None or acc > group['maxAccuracyPct']:
+                      group['maxAccuracyPct'] = acc
+                      group['maxSampleCount'] = count
+          model_summary = []
+          for model_key, group in by_model.items():
+              weighted_accuracy = (
+                  100.0 * group['weightedCorrect'] / group['weightedCount']
+                  if group['weightedCount'] else None
+              )
+              model_summary.append({
+                  'modelKey': model_key,
+                  'snapshotCount': group['snapshots'],
+                  'weightedSnapshotAccuracyPct': round(weighted_accuracy, 2) if weighted_accuracy is not None else None,
+                  'weightedSnapshotSampleCount': group['weightedCount'],
+                  'maxAccuracyPct': group['maxAccuracyPct'],
+                  'maxAccuracySampleCount': group['maxSampleCount'],
+              })
+          model_summary.sort(key=lambda row: (row.get('weightedSnapshotSampleCount') or 0, row.get('weightedSnapshotAccuracyPct') or -1), reverse=True)
+
+          report = {
+              'ok': True,
+              'readOnly': True,
+              'proofType': 'MLB_MODEL_PERFORMANCE_GIT_HISTORY_AUDIT',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+              'auditSnapshotCount': len(records),
+              'optimizationSnapshotCount': len(optimization_records),
+              'bestByMinimumSample': best_by_minimum_sample,
+              'eightyPctOrHigherSnapshots': reached_80,
+              'modelVersionSummary': model_summary,
+              'auditHistory': records,
+              'optimizationHistory': optimization_records,
+              'interpretationPolicy': {
+                  'targetsAreNotOutcomes': True,
+                  'repeatedSnapshotsAreNotIndependentGames': True,
+                  'meaningfulPerformanceRequiresSufficientUniqueGradedPredictions': True,
+              },
+          }
+
+          out_dir = Path('/tmp/mlb-model-history')
+          out_dir.mkdir(parents=True, exist_ok=True)
+          (out_dir / 'mlb_model_performance_history.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          fieldnames = sorted({key for row in records for key in row})
+          with (out_dir / 'mlb_model_performance_history.csv').open('w', newline='', encoding='utf-8') as handle:
+              writer = csv.DictWriter(handle, fieldnames=fieldnames)
+              writer.writeheader()
+              writer.writerows(records)
+          print(json.dumps({
+              'auditSnapshotCount': len(records),
+              'optimizationSnapshotCount': len(optimization_records),
+              'eightyPctOrHigherSnapshotCount': len(reached_80),
+              'bestByMinimumSample': {
+                  key: ({
+                      'accuracyPct': value.get('accuracyPct'),
+                      'sampleCount': value.get('sampleCount'),
+                      'auditCreatedAt': value.get('auditCreatedAt'),
+                      'winnerEngineVersion': value.get('winnerEngineVersion'),
+                      'directionalScoreVersion': value.get('directionalScoreVersion'),
+                      'signalPolicyVersion': value.get('signalPolicyVersion'),
+                  } if value else None)
+                  for key, value in best_by_minimum_sample.items()
+              },
+          }, indent=2))
+          PY
+
+      - name: Upload model-history audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-model-performance-history-${{ github.run_id }}
+          path: /tmp/mlb-model-history
+          if-no-files-found: error
