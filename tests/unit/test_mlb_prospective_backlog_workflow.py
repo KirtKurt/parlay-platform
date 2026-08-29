@@ -158,6 +158,11 @@ def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
     source = UNIFIED_RECOVERY.read_text(encoding="utf-8")
     workflow = yaml.safe_load(source)
     assert workflow["concurrency"] == {
+        "group": "unified-mlb-learning",
+        "cancel-in-progress": False,
+    }
+    recovery_job = workflow["jobs"]["recover-and-verify"]
+    assert recovery_job["concurrency"] == {
         "group": "parlay-platform-deploy",
         "cancel-in-progress": False,
     }
