@@ -1,0 +1,217 @@
+name: Verify MLB Authoritative Persistence Live
+
+on:
+  push:
+    branches: [agent/verify-mlb-authoritative-persistence-live-20260723]
+    paths:
+      - '.github/workflows/verify-mlb-authoritative-persistence-live.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-mlb-authoritative-persistence-live
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install verification runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+
+      - name: Require the scoped v2.1 repair in main
+        run: |
+          set -euo pipefail
+          grep -q 'MLB-SCHEDULED-V21-AUTHORITY-COMPAT-v1' hello_world/mlb_manual_pull_protected.py
+          grep -q '_predict_all_with_scheduled_v21_authority(mlb_game_winner_engine)' hello_world/mlb_manual_pull_protected.py
+          test -f tests/unit/test_mlb_scheduled_v21_authority_scope.py
+          PYTHONPATH="$GITHUB_WORKSPACE/hello_world" AWS_DEFAULT_REGION=us-east-1 AWS_EC2_METADATA_DISABLED=true \
+            python -m pytest -q tests/unit/test_mlb_scheduled_v21_authority_scope.py
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Wait for exact main source to be deployed
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          MAIN_SHA=$(git rev-parse HEAD)
+          echo "MAIN_SHA=$MAIN_SHA" >> "$GITHUB_ENV"
+          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id MLBAuditedPullFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          echo "FUNCTION_NAME=$FUNCTION_NAME" >> "$GITHUB_ENV"
+          for attempt in $(seq 1 80); do
+            DEPLOYED_SHA=$(aws lambda get-function-configuration \
+              --function-name "$FUNCTION_NAME" \
+              --region "$AWS_REGION" \
+              --query 'Environment.Variables.INQSI_DEPLOY_GIT_SHA' \
+              --output text)
+            if [ "$DEPLOYED_SHA" = "$MAIN_SHA" ]; then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Exact main was not deployed in time" >&2
+          exit 1
+
+      - name: Observe a natural quarter-hour pull after deployment
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+        run: |
+          set -euo pipefail
+          SLATE_DATE=$(TZ=America/New_York date +%F)
+          echo "SLATE_DATE=$SLATE_DATE" >> "$GITHUB_ENV"
+          DEPLOYED_AT=$(aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION" \
+            --query 'LastModified' \
+            --output text)
+          echo "$DEPLOYED_AT" > /tmp/deployed_at.txt
+          python - <<'PY'
+          import json, os, time
+          from datetime import datetime, timezone
+          import boto3
+          from boto3.dynamodb.conditions import Key
+
+          region=os.environ['AWS_REGION']
+          table=boto3.resource('dynamodb', region_name=region).Table(os.environ['SNAPSHOTS_TABLE'])
+          slate=os.environ['SLATE_DATE']
+          deployed=datetime.fromisoformat(open('/tmp/deployed_at.txt').read().strip().replace('Z','+00:00')).astimezone(timezone.utc)
+          deadline=time.time()+1050
+          while time.time()<deadline:
+              response=table.query(KeyConditionExpression=Key('PK').eq(f'PULLS#mlb#{slate}'), ConsistentRead=True)
+              pulls=[]
+              for item in response.get('Items') or []:
+                  data=item.get('data') or {}
+                  raw=data.get('pulled_at') or item.get('pulled_at')
+                  try:
+                      stamp=datetime.fromisoformat(str(raw).replace('Z','+00:00')).astimezone(timezone.utc)
+                  except Exception:
+                      continue
+                  if stamp >= deployed and item.get('record_type') == 'pull_run':
+                      pulls.append((stamp.isoformat(), str(item.get('SK') or '')))
+              if pulls:
+                  pulls.sort()
+                  open('/tmp/natural_pull.json','w').write(json.dumps({'pulledAtUtc':pulls[-1][0],'sk':pulls[-1][1]},indent=2))
+                  raise SystemExit(0)
+              time.sleep(15)
+          raise SystemExit('No natural scheduled pull appeared after exact deployment')
+          PY
+
+      - name: Build first live scoring proof
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$GITHUB_WORKSPACE/hello_world" python scripts/mlb_scoring_guard_status.py \
+            --slate-date "$SLATE_DATE" \
+            --output /tmp/scoring_before_retry.json || true
+
+      - name: Retry only the existing canonical slot when coverage is incomplete
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          NEED_RETRY=$(python - <<'PY'
+          import json
+          report=json.load(open('/tmp/scoring_before_retry.json'))
+          print('false' if report.get('guardPassed') is True else 'true')
+          PY
+          )
+          echo "NEED_RETRY=$NEED_RETRY" >> "$GITHUB_ENV"
+          if [ "$NEED_RETRY" != "true" ]; then
+            echo 'Natural pull already produced complete authoritative coverage.'
+            exit 0
+          fi
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"sport":"mlb","t":"HOT","run":"hot_pull_audited","retryExistingCanonicalSlot":true}' \
+            /tmp/retry_response.json > /tmp/retry_meta.json
+          sleep 8
+
+      - name: Enforce authoritative prediction and movement coverage
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$GITHUB_WORKSPACE/hello_world" python scripts/mlb_scoring_guard_status.py \
+            --slate-date "$SLATE_DATE" \
+            --output /tmp/scoring_after_retry.json || true
+          python scripts/diagnose_mlb_pull_lambda_runtime.py \
+            --hours 2 \
+            --output /tmp/runtime_after_fix.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          scoring=json.load(open('/tmp/scoring_after_retry.json'))
+          runtime=json.load(open('/tmp/runtime_after_fix.json'))
+          summary=scoring.get('summary') or {}
+          official=int(summary.get('officialGameCount') or 0)
+          persisted=int(summary.get('persistedPredictionGameCount') or 0)
+          movement=int(summary.get('movementFeatureGameCount') or 0)
+          missing_predictions=int(summary.get('missingPredictionCount') or 0)
+          missing_movement=int(summary.get('missingMovementCount') or 0)
+          proof={
+            'ok': bool(official and persisted==official and movement==official and missing_predictions==0 and missing_movement==0 and scoring.get('guardPassed') is True and not (runtime.get('timeouts') or [])),
+            'proofType':'MLB_AUTHORITATIVE_PERSISTENCE_POST_FIX',
+            'deployedCommit':__import__('os').environ['MAIN_SHA'],
+            'slateDateEt':__import__('os').environ['SLATE_DATE'],
+            'naturalPull':json.load(open('/tmp/natural_pull.json')),
+            'retryUsed':__import__('os').environ.get('NEED_RETRY')=='true',
+            'officialGameCount':official,
+            'persistedPredictionGameCount':persisted,
+            'movementFeatureGameCount':movement,
+            'missingPredictionCount':missing_predictions,
+            'missingMovementCount':missing_movement,
+            'scoringGuardPassed':scoring.get('guardPassed') is True,
+            'runtimeTimeoutCount':len(runtime.get('timeouts') or []),
+            'runtimeScheduledFailureCount':len(runtime.get('scheduledFailureDetails') or []),
+            'scoringBlockers':scoring.get('blockers') or [],
+          }
+          Path('/tmp/mlb_authoritative_persistence_proof.json').write_text(json.dumps(proof,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(proof,indent=2,sort_keys=True))
+          if not proof['ok']:
+              raise SystemExit('Authoritative MLB persistence acceptance failed')
+          PY
+
+      - name: Upload exact post-fix proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-authoritative-persistence-${{ github.run_id }}
+          path: |
+            /tmp/mlb_authoritative_persistence_proof.json
+            /tmp/scoring_before_retry.json
+            /tmp/scoring_after_retry.json
+            /tmp/runtime_after_fix.json
+            /tmp/natural_pull.json
+            /tmp/retry_response.json
+          if-no-files-found: warn
