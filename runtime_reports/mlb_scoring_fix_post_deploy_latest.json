@@ -1,265 +1,71 @@
 {
   "allCurrentSlateCutoffsPassed": false,
   "blockers": [
-    "scheduled_pull_observation_failed",
-    "timeout_not_600",
-    "memory_not_2048",
-    "deploy_sha_mismatch",
-    "lifecycle_storage_disposition_incomplete",
-    "new_scheduled_scoring_failure_after_deploy",
     "scoring_guard_not_ready"
   ],
-  "createdAtUtc": "2026-08-29T08:31:17.471275Z",
-  "deployedCommit": "d31ac327f3fb3bc1df070d1fb0274aa341af808f",
-  "deploymentBlockers": [
-    "scheduled_pull_observation_failed",
-    "timeout_not_600",
-    "memory_not_2048",
-    "deploy_sha_mismatch",
-    "lifecycle_storage_disposition_incomplete",
-    "new_scheduled_scoring_failure_after_deploy"
-  ],
-  "deploymentHealthy": false,
+  "createdAtUtc": "2026-08-29T20:04:42.782887Z",
+  "deployedCommit": "61400606b4212925722f52e4230a711318769a27",
+  "deploymentBlockers": [],
+  "deploymentHealthy": true,
   "deploymentSucceeded": true,
   "historicalSlateAcceptedWithoutLateBackfill": false,
   "lambdaConfiguration": {
-    "failure": {
-      "code": "fresh_scheduled_pull_failed",
-      "message": "fresh_scheduled_pull_failed:[ERROR] RuntimeError: MLB_SCHEDULED_PULL_FAILED:{\"asof\": \"2026-08-29T08:30:26.441721+00:00\", \"audit\": [{\"errors\": [], \"feature_version\": \"full_capture_items_1_to_14_v1\", \"game_date_et\": \"2026-08-29\", \"ok\": true, \"stored\": 17}], \"available_book_keys\": [\"betmgm\", \"betonlineag\", \"betrivers\", \"betus\", \"bovada\", \"draftkings\", \"fanatics\", \"fanduel\", \"lowvig\", \"mybookieag\", \"williamhill_us\"], \"bbs_shadow_capture\": [{\"game_date_et\": \"2026-08-29\", \"ok\": true, \"shadowOnly\": true, \"status\": \"DISABLED\"}], \"candidatePersistenceFailures\": [\"winner_prediction_failed:2026-08-29\", \"winner_prediction_coverage_incomplete:2026-08-29\", \"prelock_candidate_count_mismatch:2026-08-29\", \"winner_prediction_manifest_count_mismatch:2026-08-29\"], \"canonical_pull_history\": [{\"canonicalManifestValidatedAgainstPersistedPull\": true, \"canonicalPullId\": \"mlb_v1_2026-08-29_2026_08_29T08_30_26_441721_00_00\", \"canonicalPullPayloadFingerprint\": \"5163135a2a477b1482142c1d92dc6be5abfde14a7aa5e71b18cfd495de0c4cc7\", \"canonicalPullPk\": \"PULLS#mlb#2026-08-29\", \"canonicalPullSk\": \"PULL#SLOT#2026-08-29T08:30:00+00:00\", \"canonicalPulledAtUtc\": \"2026-08-29T08:30:26.441721+00:00\", \"canonicalSlotStartUtc\": \"2026-08-29T08:30:00+00:00\", \"error\": null, \"game_date_et\": \"2026-08-29\", \"games\": 17, \"officialScheduleAuthorityBound\": true, \"officialScheduleAuthorityFingerprint\": \"f1b126754a17d86abce5957ee0f51cd6e9326b5dfa8b479b6729735401f662fb\", \"officialScheduleAuthorityVersion\": \"MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date\", \"officialScheduleBacked\": true, \"officialScheduleGameCount\": 17, \"ok\": true, \"pk\": \"PULLS#mlb#2026-08-29\", \"providerManifestBound\": true, \"providerManifestFingerprint\": \"b57df9f6400b7a36a8b8040b41d8172eb4dd773d6e606f4f1b1baa91711e4918\", \"providerManifestFullSchedule\": true, \"providerManifestGameCount\": 17, \"providerManifestImmutable\": true, \"providerManifestPk\": \"PROVIDER_MANIFEST#mlb#2026-08-29\", \"providerManifestSk\": \"OBSERVED#2026-08-29T08:30:26.441721+00:00#PULL#mlb_v1_2026-08-29_2026_08_29T08_30_26_441721_00_00\", \"providerManifestValidationErrors\": [], \"providerManifestVersion\": \"INQSI-PROVIDER-SCHEDULE-MANIFEST-v1\", \"pull_id\": \"mlb_v1_2026-08-29_2026_08_29T08_30_26_441721_00_00\", \"retryReturnedExistingCanonicalPull\": false, \"sameSlotRetryAuthorityRebound\": false, \"stored\": {\"game_count\": 17, \"pk\": \"PULLS#mlb#2026-08-29\", \"provider_manifest\": {\"created\": true, \"fingerprint\": \"b57df9f6400b7a36a8b8040b41d8172eb4dd773d6e606f4f1b1baa91711e4918\", \"full_provider_schedule\": true, \"game_count\": 17, \"immutable\": true, \"official_schedule_authority_fingerprint\": \"f1b126754a17d86abce5957ee0f51cd6e9326b5dfa8b479b6729735401f662fb\", \"official_schedule_authority_version\": \"MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date\", \"official_schedule_backed\": true, \"official_schedule_game_count\": 17, \"pk\": \"PROVIDER_MANIFEST#mlb#2026-08-29\", \"sk\": \"OBSERVED#2026-08-29T08:30:26.441721+00:00#PULL#mlb_v1_2026-08-29_2026_08_29T08_30_26_441721_00_00\", \"version\": \"INQSI-PROVIDER-SCHEDULE-MANIFEST-v1\"}, \"pull_id\": \"mlb_v1_2026-08-29_2026_08_29T08_30_26_441721_00_00\", \"sk\": \"PULL#SLOT#2026-08-29T08:30:00+00:00\"}}], \"count\": 17, \"data_isolation\": {\"date_partition_pk_pattern\": \"SPORT#mlb#DATE#YYYY-MM-DD\", \"enabled\": true, \"game_key_pattern\": \"mlb|YYYY-MM-DD|away|home\"}, \"date_isolated_stored\": [{\"count\": 17, \"game_date_et\": \"2026-08-29\", \"pk\": \"SPORT#mlb#DATE#2026-08-29\", \"sk\": \"HOT#GAME_DATE#2026-08-29#PULL_DATE#2026-08-29#ASOF#2026-08-29T08:30:26.441721+00:00#SLATE#MLB_DATE_2026-08-29_hot_pull_audited\"}], \"days_ahead\": 0, \"fallback_used\": false, \"game_dates_et\": [\"2026-08-29\"], \"game_winner_predictions\": [{\"error\": \"active ensemble requires a valid two-way MLB moneyline probability pair\", \"game_date_et\": \"2026-08-29\", \"ok\": false, \"sport\": \"mlb\"}], \"hot_movement_features\": [{\"derived\": 14, \"errors\": [], \"feature_version\": \"MLB-MOVEMENT-FEATURE-IDENTITY-v2-official-pregame-only\", \"game_date_et\": \"2026-08-29\", \"immutablePregameOnly\": true, \"labelsWri",
-      "type": "RuntimeError"
-    },
+    "deployedGitSha": "61400606b4212925722f52e4230a711318769a27",
+    "functionLastModified": "2026-08-29T19:48:19.000+0000",
+    "functionName": "parlay-platform-dev-MLBAuditedPullFunction-xYdYJJKZMe4M",
     "manualPullInvoked": false,
-    "ok": false,
+    "memorySizeMb": 2048,
+    "observedScheduledPullAtUtc": "2026-08-29T20:00:27.532327+00:00",
+    "observedScheduledPullPk": "PULLS#mlb#2026-08-29",
+    "observedScheduledPullSk": "PULL#SLOT#2026-08-29T20:00:00+00:00",
+    "observedScheduledSlotUtc": "2026-08-29T20:00:00+00:00",
+    "ok": true,
     "readOnly": true,
+    "scheduledReport": "REPORT RequestId: d35128ae-bc58-433f-ba51-12685e0da500\tDuration: 228821.30 ms\tBilled Duration: 229745 ms\tMemory Size: 2048 MB\tMax Memory Used: 202 MB\tInit Duration: 923.45 ms\t\n",
+    "scheduledRequestId": "d35128ae-bc58-433f-ba51-12685e0da500",
     "secretExposed": false,
-    "status": "OBSERVATION_FAILED",
-    "targetDeploySha": "d31ac327f3fb3bc1df070d1fb0274aa341af808f",
+    "statusCode": 200,
+    "targetDeploySha": "61400606b4212925722f52e4230a711318769a27",
+    "timeoutSeconds": 600,
+    "verificationStartedAtUtc": "2026-08-29T19:51:18.999237+00:00",
     "version": "MLB-POSTDEPLOY-SCHEDULED-PULL-OBSERVER-v1-no-manual-pull",
-    "winnerResults": []
+    "winnerResults": [
+      {
+        "allGamesPredicted": true,
+        "authorityClosedStatusProjectionUsed": true,
+        "canonicalLockedCount": 12,
+        "displayStatusCoverageComplete": true,
+        "gameCount": 17,
+        "gameDateEt": "2026-08-29",
+        "historicalStatusProjectionUsed": false,
+        "lifecycleCoverageComplete": true,
+        "matchedPersistedPredictionRowCount": 17,
+        "ok": true,
+        "operationalDefect": false,
+        "persistedPredictionRowCount": 17,
+        "preLockStorageCandidateCount": 5,
+        "preLockStorageComplete": true,
+        "preLockStorageDispositionComplete": true,
+        "preLockStorageDispositionCount": 17,
+        "preLockStorageLifecycleAware": true,
+        "preLockStorageLifecycleSkippedCount": 0,
+        "preLockStoredCount": 5,
+        "predictionCount": 17,
+        "publicAuthorityState": "NO_QUALIFIED_CHAMPION",
+        "publicWinnerCount": 0,
+        "statusProjectionPersisted": false,
+        "storageEvidenceSource": "DYNAMODB_STRONGLY_CONSISTENT_GAME_ROWS",
+        "stronglyConsistentStorageEvidence": true,
+        "unmatchedPersistedPredictionRowCount": 0
+      }
+    ]
   },
   "lifecycleSkippedCount": 0,
-  "lifecycleStorageDispositionComplete": false,
-  "ok": false,
-  "openPreLockCandidateCount": 0,
-  "postDeployScheduledFailureCount": 24,
-  "postDeployScheduledFailures": [
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T06:31:46.088000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T06:37:35.980000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T06:45:39.524000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T06:46:59.785000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T06:52:36.811000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T07:00:41.148000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T07:01:55.874000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T07:07:37.663000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T07:15:43.063000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T07:17:05.870000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T07:22:40.430000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T07:30:41.258000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T07:31:59.485000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T07:37:38.861000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T07:45:42.887000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T07:46:58.046000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T07:52:40.140000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T08:00:43.728000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T08:01:57.464000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T08:07:41.604000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T08:15:48.008000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T08:17:10.484000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T08:22:43.599000+00:00"
-    },
-    {
-      "classifications": [
-        "PYTHON_TRACEBACK",
-        "SCHEDULED_PULL_FAILED",
-        "WINNER_COVERAGE_INCOMPLETE"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-29T08:30:50.488000+00:00"
-    }
-  ],
+  "lifecycleStorageDispositionComplete": true,
+  "ok": true,
+  "openPreLockCandidateCount": 5,
+  "postDeployScheduledFailureCount": 0,
+  "postDeployScheduledFailures": [],
   "postDeployTimeoutCount": 0,
   "postDeployTimeouts": [],
   "productionAuthorityChanged": false,
@@ -268,26 +74,30 @@
   "readinessBlockers": [
     "scoring_guard_not_ready"
   ],
-  "recoveredPostDeployScheduledFailureCount": 0,
-  "recoveredPostDeployScheduledFailures": [],
-  "runId": "33242825233",
-  "scheduledPullObservationFailure": {
-    "code": "fresh_scheduled_pull_failed",
-    "message": "fresh_scheduled_pull_failed:[ERROR] RuntimeError: MLB_SCHEDULED_PULL_FAILED:{\"asof\": \"2026-08-29T08:30:26.441721+00:00\", \"audit\": [{\"errors\": [], \"feature_version\": \"full_capture_items_1_to_14_v1\", \"game_date_et\": \"2026-08-29\", \"ok\": true, \"stored\": 17}], \"available_book_keys\": [\"betmgm\", \"betonlineag\", \"betrivers\", \"betus\", \"bovada\", \"draftkings\", \"fanatics\", \"fanduel\", \"lowvig\", \"mybookieag\", \"williamhill_us\"], \"bbs_shadow_capture\": [{\"game_date_et\": \"2026-08-29\", \"ok\": true, \"shadowOnly\": true, \"status\": \"DISABLED\"}], \"candidatePersistenceFailures\": [\"winner_prediction_failed:2026-08-29\", \"winner_prediction_coverage_incomplete:2026-08-29\", \"prelock_candidate_count_mismatch:2026-08-29\", \"winner_prediction_manifest_count_mismatch:2026-08-29\"], \"canonical_pull_history\": [{\"canonicalManifestValidatedAgainstPersistedPull\": true, \"canonicalPullId\": \"mlb_v1_2026-08-29_2026_08_29T08_30_26_441721_00_00\", \"canonicalPullPayloadFingerprint\": \"5163135a2a477b1482142c1d92dc6be5abfde14a7aa5e71b18cfd495de0c4cc7\", \"canonicalPullPk\": \"PULLS#mlb#2026-08-29\", \"canonicalPullSk\": \"PULL#SLOT#2026-08-29T08:30:00+00:00\", \"canonicalPulledAtUtc\": \"2026-08-29T08:30:26.441721+00:00\", \"canonicalSlotStartUtc\": \"2026-08-29T08:30:00+00:00\", \"error\": null, \"game_date_et\": \"2026-08-29\", \"games\": 17, \"officialScheduleAuthorityBound\": true, \"officialScheduleAuthorityFingerprint\": \"f1b126754a17d86abce5957ee0f51cd6e9326b5dfa8b479b6729735401f662fb\", \"officialScheduleAuthorityVersion\": \"MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date\", \"officialScheduleBacked\": true, \"officialScheduleGameCount\": 17, \"ok\": true, \"pk\": \"PULLS#mlb#2026-08-29\", \"providerManifestBound\": true, \"providerManifestFingerprint\": \"b57df9f6400b7a36a8b8040b41d8172eb4dd773d6e606f4f1b1baa91711e4918\", \"providerManifestFullSchedule\": true, \"providerManifestGameCount\": 17, \"providerManifestImmutable\": true, \"providerManifestPk\": \"PROVIDER_MANIFEST#mlb#2026-08-29\", \"providerManifestSk\": \"OBSERVED#2026-08-29T08:30:26.441721+00:00#PULL#mlb_v1_2026-08-29_2026_08_29T08_30_26_441721_00_00\", \"providerManifestValidationErrors\": [], \"providerManifestVersion\": \"INQSI-PROVIDER-SCHEDULE-MANIFEST-v1\", \"pull_id\": \"mlb_v1_2026-08-29_2026_08_29T08_30_26_441721_00_00\", \"retryReturnedExistingCanonicalPull\": false, \"sameSlotRetryAuthorityRebound\": false, \"stored\": {\"game_count\": 17, \"pk\": \"PULLS#mlb#2026-08-29\", \"provider_manifest\": {\"created\": true, \"fingerprint\": \"b57df9f6400b7a36a8b8040b41d8172eb4dd773d6e606f4f1b1baa91711e4918\", \"full_provider_schedule\": true, \"game_count\": 17, \"immutable\": true, \"official_schedule_authority_fingerprint\": \"f1b126754a17d86abce5957ee0f51cd6e9326b5dfa8b479b6729735401f662fb\", \"official_schedule_authority_version\": \"MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date\", \"official_schedule_backed\": true, \"official_schedule_game_count\": 17, \"pk\": \"PROVIDER_MANIFEST#mlb#2026-08-29\", \"sk\": \"OBSERVED#2026-08-29T08:30:26.441721+00:00#PULL#mlb_v1_2026-08-29_2026_08_29T08_30_26_441721_00_00\", \"version\": \"INQSI-PROVIDER-SCHEDULE-MANIFEST-v1\"}, \"pull_id\": \"mlb_v1_2026-08-29_2026_08_29T08_30_26_441721_00_00\", \"sk\": \"PULL#SLOT#2026-08-29T08:30:00+00:00\"}}], \"count\": 17, \"data_isolation\": {\"date_partition_pk_pattern\": \"SPORT#mlb#DATE#YYYY-MM-DD\", \"enabled\": true, \"game_key_pattern\": \"mlb|YYYY-MM-DD|away|home\"}, \"date_isolated_stored\": [{\"count\": 17, \"game_date_et\": \"2026-08-29\", \"pk\": \"SPORT#mlb#DATE#2026-08-29\", \"sk\": \"HOT#GAME_DATE#2026-08-29#PULL_DATE#2026-08-29#ASOF#2026-08-29T08:30:26.441721+00:00#SLATE#MLB_DATE_2026-08-29_hot_pull_audited\"}], \"days_ahead\": 0, \"fallback_used\": false, \"game_dates_et\": [\"2026-08-29\"], \"game_winner_predictions\": [{\"error\": \"active ensemble requires a valid two-way MLB moneyline probability pair\", \"game_date_et\": \"2026-08-29\", \"ok\": false, \"sport\": \"mlb\"}], \"hot_movement_features\": [{\"derived\": 14, \"errors\": [], \"feature_version\": \"MLB-MOVEMENT-FEATURE-IDENTITY-v2-official-pregame-only\", \"game_date_et\": \"2026-08-29\", \"immutablePregameOnly\": true, \"labelsWri",
-    "type": "RuntimeError"
-  },
+  "recoveredPostDeployScheduledFailureCount": 1,
+  "recoveredPostDeployScheduledFailures": [
+    {
+      "classifications": [
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-08-29T19:48:30.904000+00:00"
+    }
+  ],
+  "runId": "33271890767",
+  "scheduledPullObservationFailure": null,
   "scoringBlockers": [
-    "PERSISTED_WINNER_PREDICTION_COVERAGE_INCOMPLETE"
+    "FUNDAMENTALS_SHADOW_ATTESTATION_INVALID"
   ],
   "scoringGuardPassed": false,
   "scoringSummary": {
-    "canonicalPullCount": 15,
+    "canonicalPullCount": 61,
     "fundamentalsAppliedCount": 0,
     "fundamentalsNeutralOrSourceMissingCount": 0,
     "fundamentalsNotActiveCount": 0,
     "fundamentalsNotAppliedOrMissingCount": 17,
     "fundamentalsShadowEvaluatedCount": 0,
-    "fundamentalsShadowInvalidCount": 0,
+    "fundamentalsShadowInvalidCount": 17,
     "fundamentalsShadowOnlyCount": 0,
     "fundamentalsShadowOnlyNotActiveCount": 0,
     "fundamentalsShadowWouldApplyCount": 0,
@@ -295,30 +105,30 @@
     "fundamentalsUpstreamAppliedDetectedCount": 0,
     "invalidMovementTeamCount": 0,
     "invalidPredictionTeamCount": 0,
-    "latestCanonicalPullAtUtc": "2026-08-29T08:30:26.441721+00:00",
+    "latestCanonicalPullAtUtc": "2026-08-29T20:00:27.532327+00:00",
     "missingMovementCount": 0,
-    "missingPredictionCount": 17,
-    "movementFeatureGameCount": 14,
+    "missingPredictionCount": 0,
+    "movementFeatureGameCount": 17,
     "officialGameCount": 17,
-    "persistedPredictionGameCount": 0,
-    "scoreableGameCount": 14
+    "persistedPredictionGameCount": 17,
+    "scoreableGameCount": 17
   },
   "secretExposed": false,
-  "sourceDeployCreatedAtUtc": "2026-08-29T08:12:54Z",
+  "sourceDeployCreatedAtUtc": "2026-08-29T19:44:44Z",
   "sourceDeployHeadBranch": "main",
-  "sourceDeployHeadSha": "d31ac327f3fb3bc1df070d1fb0274aa341af808f",
+  "sourceDeployHeadSha": "61400606b4212925722f52e4230a711318769a27",
   "sourceDeployRunAttempt": 1,
-  "sourceDeployRunId": "33242624794",
-  "sourceDeployRunNumber": 2723,
-  "sourceDeployRunUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/33242624794",
-  "sourceDeploySamCompletedAtUtc": "2026-08-29T08:17:29Z",
+  "sourceDeployRunId": "33271654883",
+  "sourceDeployRunNumber": 2724,
+  "sourceDeployRunUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/33271654883",
+  "sourceDeploySamCompletedAtUtc": "2026-08-29T19:48:34Z",
   "sourceDeploySamStepConclusion": "success",
   "sourceDeploySamStepName": "Deploy exact canonical source",
   "sourceDeployWorkflowId": 231636316,
   "sourceDeployWorkflowName": "Deploy SAM to AWS",
   "sourceDeployWorkflowPath": ".github/workflows/deploy.yml",
-  "sourceSha": "d31ac327f3fb3bc1df070d1fb0274aa341af808f",
-  "status": "DEPLOYMENT_UNHEALTHY",
-  "successfulScheduledObservationAtUtc": null,
+  "sourceSha": "61400606b4212925722f52e4230a711318769a27",
+  "status": "DEPLOYMENT_HEALTHY_READINESS_GATED",
+  "successfulScheduledObservationAtUtc": "2026-08-29T20:00:27.532327Z",
   "version": "MLB-SCORING-FIX-POST-DEPLOY-v3-health-readiness-separated"
 }
