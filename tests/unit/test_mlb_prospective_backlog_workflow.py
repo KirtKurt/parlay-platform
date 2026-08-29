@@ -199,6 +199,16 @@ def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
             "requeue_prelock_candidate_review_after_installed_runtime_proof_v2 }}"
         ),
     }
+    remediation_guard = reject_ambiguous["run"]
+    assert (
+        'if [[ "$REQUEUE_SOURCE_PULL_V1" == "true" ]]; then'
+        in remediation_guard
+    )
+    assert (
+        "The v1 source-pull remediation is durably consumed and disabled"
+        in remediation_guard
+    )
+    assert remediation_guard.count("exit 1") == 2
     v2_step = next(
         step
         for step in steps
@@ -214,6 +224,10 @@ def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
     embedded = run.split("python - <<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
     compile(embedded, "<prelock-review-v2-workflow>", "exec")
 
+    remediation_guard_at = source.index(
+        "Reject ambiguous remediation flags"
+    )
+    credentials_at = source.index("Configure AWS credentials")
     readiness_at = source.index(
         "Wait for a quiet deploy queue and stable AWS runtime"
     )
@@ -226,7 +240,14 @@ def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
     )
     remediation = source[v2_at:reconcile_at]
 
-    assert readiness_at < v1_at < v2_at < reconcile_at
+    assert (
+        remediation_guard_at
+        < credentials_at
+        < readiness_at
+        < v1_at
+        < v2_at
+        < reconcile_at
+    )
     readiness = source[readiness_at:v1_at]
     assert "noncompleted_runs = [" in readiness
     assert "if noncompleted_runs:" in readiness
