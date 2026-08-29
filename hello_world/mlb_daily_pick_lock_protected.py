@@ -1448,6 +1448,14 @@ def _cooperative_terminal_progress_public(
 
 
 def _cooperative_review_reason(item: Dict[str, Any]) -> str:
+    evidence = item.get(COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_FIELD)
+    if evidence is not None:
+        validated_evidence = _validated_cooperative_review_evidence(
+            evidence,
+            item,
+        )
+        return str(validated_evidence["errorCode"])
+
     progress = item.get("terminal_replay_progress")
     attempt = (
         progress.get("lastAttempt")
@@ -1489,7 +1497,6 @@ def _cooperative_review_reason(item: Dict[str, Any]) -> str:
         if progress_is_bound and safe_code
         else "PRELOCK_CANDIDATE_REQUIRES_REVIEW"
     )
-
 
 def _cooperative_public_state(item: Dict[str, Any]) -> Dict[str, Any]:
     state = str(item.get("state") or "")
