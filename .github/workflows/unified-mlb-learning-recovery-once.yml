@@ -166,7 +166,7 @@ jobs:
               }
               try:
                   run_payload = github_json(runs_url)
-                  active_runs = [
+                  noncompleted_runs = [
                       {
                           'id': run.get('id'),
                           'headSha': run.get('head_sha'),
@@ -176,9 +176,19 @@ jobs:
                       for run in run_payload.get('workflow_runs', [])
                       if str(run.get('status') or '') != 'completed'
                   ]
-                  state['activeDeployRunCount'] = len(active_runs)
-                  if active_runs:
-                      state['activeDeployRuns'] = active_runs[:5]
+                  state['activeDeployRunCount'] = len(
+                      noncompleted_runs
+                  )
+                  if noncompleted_runs:
+                      state['activeDeployRuns'] = noncompleted_runs[:5]
+                      print(
+                          json.dumps(state, sort_keys=True),
+                          flush=True,
+                      )
+                      raise SystemExit(
+                          'A deploy run became queued or active while '
+                          'recovery owns the shared deploy lock'
+                      )
 
                   stacks = aws_json(
                       'cloudformation',
@@ -229,7 +239,7 @@ jobs:
                   state['trainerTimeout'] = trainer.get('Timeout')
 
                   runtime_ready = (
-                      not active_runs
+                      not noncompleted_runs
                       and stack_status in stable_stack_states
                       and trainer.get('State') == 'Active'
                       and trainer.get('LastUpdateStatus') == 'Successful'
@@ -932,13 +942,21 @@ jobs:
                   'Protected lock Lambda identity changed during invocation'
               )
           require_exact_stack_deployment()
-          lambda_status = int(invocation.get('StatusCode') or 0)
+          lambda_status = invocation.get('StatusCode')
+          if type(lambda_status) is not int:
+              raise SystemExit(
+                  'Protected v2 Lambda transport status was invalid'
+              )
           raw = invocation['Payload'].read()
           if lambda_status != 200 or invocation.get('FunctionError'):
               raise SystemExit('Protected v2 Lambda invocation failed closed')
           try:
               envelope = json.loads(raw.decode('utf-8'))
-              application_status = int(envelope.get('statusCode'))
+              application_status = envelope.get('statusCode')
+              if type(application_status) is not int:
+                  raise TypeError(
+                      'Protected v2 application status was not an integer'
+                  )
               body = envelope.get('body')
               application = (
                   json.loads(body) if isinstance(body, str) else body
