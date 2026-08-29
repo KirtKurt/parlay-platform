@@ -166,16 +166,48 @@ jobs:
           )
           progress = queue_item.get("terminal_replay_progress") or {}
           attempt = progress.get("lastAttempt") or {}
-          if (
+          checkpoint_matches_expected_review = bool(
               queue_item.get("record_type")
+              == "mlb_cooperative_terminal_replay_v1"
+              and queue_item.get("state") == EXPECTED_STATE
+              and queue_item.get("slate_date_et") == SLATE
+              and attempt.get("stage") == EXPECTED_STAGE
+              and attempt.get("errorCode") == EXPECTED_ERROR
+              and attempt.get("status") == "FAILED_CLOSED"
+          )
+          checkpoint_summary = {
+              "recordPresent": bool(queue_item),
+              "recordTypeMatches": queue_item.get("record_type")
+              == "mlb_cooperative_terminal_replay_v1",
+              "queueState": queue_item.get("state"),
+              "slateDateEt": queue_item.get("slate_date_et"),
+              "progressPresent": isinstance(progress, dict) and bool(progress),
+              "progressVersion": progress.get("version"),
+              "attemptPresent": isinstance(attempt, dict) and bool(attempt),
+              "attemptStage": attempt.get("stage"),
+              "attemptStatus": attempt.get("status"),
+              "attemptErrorCode": attempt.get("errorCode"),
+              "topLevelLastChunkStage": queue_item.get("last_chunk_stage"),
+              "topLevelLastChunkStatus": queue_item.get("last_chunk_status"),
+              "matchesExpectedReview": checkpoint_matches_expected_review,
+              "readOnly": True,
+              "directTableWrite": False,
+              "secretExposed": False,
+          }
+          Path(
+              "/tmp/mlb-prelock-review-diagnostic/checkpoint-summary.json"
+          ).write_text(
+              json.dumps(checkpoint_summary, indent=2, sort_keys=True) + "\\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(checkpoint_summary, indent=2, sort_keys=True))
+          if (
+              not queue_item
+              or queue_item.get("record_type")
               != "mlb_cooperative_terminal_replay_v1"
-              or queue_item.get("state") != EXPECTED_STATE
               or queue_item.get("slate_date_et") != SLATE
-              or attempt.get("stage") != EXPECTED_STAGE
-              or attempt.get("errorCode") != EXPECTED_ERROR
-              or attempt.get("status") != "FAILED_CLOSED"
           ):
-              raise SystemExit("Protected replay review checkpoint changed")
+              raise SystemExit("Protected replay record identity changed")
 
           try:
               game_index = int(attempt.get("gameIndex"))
