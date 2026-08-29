@@ -13,6 +13,11 @@ run-name: Unified MLB learning recovery ${{ github.event.inputs.request_id || gi
         required: false
         default: false
         type: boolean
+      requeue_prelock_candidate_review_after_installed_runtime_proof_v2:
+        description: Requeue exact Aug 4 review after strong installed-runtime proof
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -72,6 +77,17 @@ jobs:
           grep -q 'UNIFIED_MLB_LEARNING_OWNER=eventbridge_schedule' .github/workflows/deploy.yml
           ! grep -q 'Run AWS-native MLB trainer and verify fresh split health' .github/workflows/deploy.yml
           mkdir -p /tmp/unified-mlb-recovery
+
+      - name: Reject ambiguous remediation flags
+        env:
+          REQUEUE_SOURCE_PULL_V1: ${{ inputs.requeue_source_pull_proof_review_after_rebind }}
+          REQUEUE_PRELOCK_V2: ${{ inputs.requeue_prelock_candidate_review_after_installed_runtime_proof_v2 }}
+        run: |
+          set -euo pipefail
+          if [[ "$REQUEUE_SOURCE_PULL_V1" == "true" && "$REQUEUE_PRELOCK_V2" == "true" ]]; then
+            echo 'Only one incident remediation flag may be enabled' >&2
+            exit 1
+          fi
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -578,6 +594,301 @@ jobs:
           output = Path(
               '/tmp/unified-mlb-recovery/'
               'source-pull-rebind-review-remediation.json'
+          )
+          output.write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(receipt, indent=2, sort_keys=True))
+          PY
+
+      - name: Requeue protected prelock review after installed-runtime proof v2
+        if: ${{ inputs.requeue_prelock_candidate_review_after_installed_runtime_proof_v2 }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from typing import Any, Mapping
+
+          import boto3
+          from botocore.config import Config
+
+          LOGICAL_RESOURCE_ID = 'MLBDailyPickLockFunction'
+          EXPECTED_HANDLER = 'mlb_daily_pick_lock_protected.lambda_handler'
+          EXPECTED_RUN = 'prospective_terminal_backlog_reconciliation_v5'
+          EVENT_FLAG = (
+              'requeuePrelockCandidateReviewAfterInstalledRuntimeProofV2'
+          )
+          INCIDENT_SLATE_DATE = '2026-08-04'
+          REMEDIATION_VERSION = (
+              'MLB-COOPERATIVE-PRELOCK-CANDIDATE-REVIEW-REMEDIATION-'
+              'v2-one-shot-installed-runtime-proof'
+          )
+          EXPECTED_STATUS_BY_STATE = {
+              'QUEUED': 'QUEUED_FOR_EVENTBRIDGE_LOCK_OWNER',
+              'CLAIMED': 'CLAIMED_BY_EVENTBRIDGE_LOCK_OWNER',
+              'COMPLETED': 'COMPLETED_BY_EVENTBRIDGE_LOCK_OWNER',
+              'ACKNOWLEDGED': 'ACKNOWLEDGED_COMPLETION',
+          }
+          COMPLETED_STATES = {'COMPLETED', 'ACKNOWLEDGED'}
+          SAFETY_FIELDS = (
+              'activeLeaseMutationAllowed',
+              'postStartPredictionCreationAllowed',
+              'immutablePredictionRewriteAllowed',
+              'directWorkflowTableWrite',
+              'productionAuthorityChanged',
+          )
+
+          region = os.environ['AWS_REGION']
+          stack_name = os.environ['MLB_ROOT_STACK']
+          repair_slate = os.environ['REPAIR_SLATE_DATE']
+          if repair_slate != INCIDENT_SLATE_DATE:
+              raise SystemExit('Protected v2 incident slate is not exact')
+          event = {
+              'sport': 'mlb',
+              'run': EXPECTED_RUN,
+              'slateDateEt': repair_slate,
+              'force': True,
+              EVENT_FLAG: True,
+          }
+          if set(event) != {
+              'sport',
+              'run',
+              'slateDateEt',
+              'force',
+              EVENT_FLAG,
+          }:
+              raise SystemExit('Protected v2 event is not exact')
+
+          cloudformation = boto3.client(
+              'cloudformation',
+              region_name=region,
+              config=Config(
+                  connect_timeout=10,
+                  read_timeout=120,
+                  retries={'total_max_attempts': 3, 'mode': 'standard'},
+              ),
+          )
+          resource = cloudformation.describe_stack_resource(
+              StackName=stack_name,
+              LogicalResourceId=LOGICAL_RESOURCE_ID,
+          ).get('StackResourceDetail') or {}
+          function_name = str(resource.get('PhysicalResourceId') or '')
+          if (
+              not function_name
+              or resource.get('LogicalResourceId') != LOGICAL_RESOURCE_ID
+              or resource.get('ResourceType') != 'AWS::Lambda::Function'
+          ):
+              raise SystemExit('Protected lock Lambda resolution failed closed')
+
+          lambda_client = boto3.client(
+              'lambda',
+              region_name=region,
+              config=Config(
+                  connect_timeout=10,
+                  read_timeout=900,
+                  retries={'total_max_attempts': 1, 'mode': 'standard'},
+              ),
+          )
+          configuration = lambda_client.get_function_configuration(
+              FunctionName=function_name,
+          )
+          if (
+              configuration.get('FunctionName') != function_name
+              or configuration.get('Handler') != EXPECTED_HANDLER
+              or configuration.get('State') != 'Active'
+              or configuration.get('LastUpdateStatus') != 'Successful'
+          ):
+              raise SystemExit('Resolved protected lock Lambda is not ready')
+
+          invocation = lambda_client.invoke(
+              FunctionName=function_name,
+              InvocationType='RequestResponse',
+              Payload=json.dumps(
+                  event,
+                  sort_keys=True,
+                  separators=(',', ':'),
+              ).encode('utf-8'),
+          )
+          lambda_status = int(invocation.get('StatusCode') or 0)
+          raw = invocation['Payload'].read()
+          if lambda_status != 200 or invocation.get('FunctionError'):
+              raise SystemExit('Protected v2 Lambda invocation failed closed')
+          try:
+              envelope = json.loads(raw.decode('utf-8'))
+              application_status = int(envelope.get('statusCode'))
+              body = envelope.get('body')
+              application = (
+                  json.loads(body) if isinstance(body, str) else body
+              )
+          except (
+              AttributeError,
+              TypeError,
+              ValueError,
+              UnicodeDecodeError,
+              json.JSONDecodeError,
+          ) as exc:
+              raise SystemExit(
+                  'Protected v2 Lambda response was invalid'
+              ) from exc
+          if application_status != 200 or not isinstance(application, Mapping):
+              raise SystemExit('Protected v2 application failed closed')
+
+          replay = application.get('cooperativeTerminalReplay')
+          if not isinstance(replay, Mapping):
+              raise SystemExit('Protected v2 replay receipt missing')
+          replay_state = str(replay.get('state') or '')
+          expected_status = EXPECTED_STATUS_BY_STATE.get(replay_state)
+          idempotent = application.get(
+              'prelockCandidateReviewV2RemediationIdempotent'
+          )
+          durable_history = application.get(
+              'prelockCandidateReviewV2DurableHistory'
+          )
+          if (
+              expected_status is None
+              or not isinstance(idempotent, bool)
+              or durable_history not in (None, True)
+              or (
+                  durable_history is True
+                  and (
+                      idempotent is not True
+                      or replay_state != 'ACKNOWLEDGED'
+                      or replay.get('durableRemediationHistory') is not True
+                  )
+              )
+              or (not idempotent and replay_state != 'QUEUED')
+          ):
+              raise SystemExit('Protected v2 state receipt invalid')
+
+          expected = {
+              'ok': True,
+              'sport': 'mlb',
+              'slateDateEt': INCIDENT_SLATE_DATE,
+              'status': expected_status,
+              'reason': expected_status,
+              'skipped': True,
+              'mutatingRunAttempted': False,
+              'cooperativeTerminalReplayCompleted': (
+                  replay_state in COMPLETED_STATES
+              ),
+              'prelockCandidateReviewV2RemediationApplied': True,
+              'prelockCandidateReviewV2RemediationVersion': (
+                  REMEDIATION_VERSION
+              ),
+              'installedRuntimePositiveProofBound': True,
+              'priorSourcePullRebindRemediationValidated': True,
+              'automaticRetryAllowed': False,
+          }
+          mismatched = {
+              key: application.get(key)
+              for key, expected_value in expected.items()
+              if (
+                  application.get(key) is not expected_value
+                  if isinstance(expected_value, bool)
+                  else application.get(key) != expected_value
+              )
+          }
+          unsafe = {
+              key: application.get(key)
+              for key in SAFETY_FIELDS
+              if application.get(key) is not False
+          }
+          replay_unsafe = {
+              key: replay.get(key)
+              for key in SAFETY_FIELDS[:-1]
+              if replay.get(key) is not False
+          }
+          if (
+              mismatched
+              or unsafe
+              or replay_unsafe
+              or replay.get('slateDateEt') != INCIDENT_SLATE_DATE
+              or replay.get('automaticExecutionOwner')
+              != 'eventbridge_daily_lock_schedule'
+              or replay.get('ownerIdentifierExposed') is not False
+              or replay.get('failClosed') is not True
+          ):
+              raise SystemExit('Protected v2 authority receipt invalid')
+
+          receipt: dict[str, Any] = {
+              'ok': True,
+              'proofType': (
+                  'MLB_PROTECTED_PRELOCK_CANDIDATE_REVIEW_REMEDIATION_V2'
+              ),
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'logicalResourceId': LOGICAL_RESOURCE_ID,
+              'resolvedFunctionName': function_name,
+              'resolvedFunctionHandler': configuration.get('Handler'),
+              'lambdaStatusCode': lambda_status,
+              'applicationStatusCode': application_status,
+              'request': dict(event),
+              'application': {
+                  **expected,
+                  'prelockCandidateReviewV2RemediationIdempotent': (
+                      idempotent
+                  ),
+                  'prelockCandidateReviewV2DurableHistory': (
+                      durable_history is True
+                  ),
+                  **{key: False for key in SAFETY_FIELDS},
+                  'cooperativeTerminalReplay': {
+                      'state': replay_state,
+                      'slateDateEt': replay.get('slateDateEt'),
+                      'automaticExecutionOwner': replay.get(
+                          'automaticExecutionOwner'
+                      ),
+                      'ownerIdentifierExposed': False,
+                      'activeLeaseMutationAllowed': False,
+                      'postStartPredictionCreationAllowed': False,
+                      'immutablePredictionRewriteAllowed': False,
+                      'directWorkflowTableWrite': False,
+                      'durableRemediationHistory': (
+                          replay.get('durableRemediationHistory') is True
+                      ),
+                      'failClosed': True,
+                  },
+              },
+              'rawLambdaPayloadPersisted': False,
+              'requestIdentifierExposed': False,
+              'checkpointMaterialExposed': False,
+              'positiveProofMaterialExposed': False,
+              'automaticRequeueAllowed': False,
+          }
+          forbidden = {
+              'requestId',
+              'request_id',
+              'requestedAtEpoch',
+              'requested_at_epoch',
+              'checkpointFingerprint',
+              'progressFingerprint',
+              'positiveProof',
+              'terminalChunkProgress',
+              'lastAttempt',
+              'claimOwner',
+              'claim_owner',
+          }
+
+          def keys(value: Any) -> set[str]:
+              if isinstance(value, Mapping):
+                  return {
+                      str(key)
+                      for key in value
+                  } | set().union(*(keys(child) for child in value.values()))
+              if isinstance(value, list):
+                  return set().union(*(keys(child) for child in value))
+              return set()
+
+          if keys(receipt) & forbidden:
+              raise SystemExit('Protected v2 artifact was not redacted')
+          output = Path(
+              '/tmp/unified-mlb-recovery/'
+              'prelock-candidate-review-remediation-v2.json'
           )
           output.write_text(
               json.dumps(receipt, indent=2, sort_keys=True) + '\n',
