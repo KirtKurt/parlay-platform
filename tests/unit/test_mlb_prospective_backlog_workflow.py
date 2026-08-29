@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "mlb-prospective-backlog-reconcile-once.yml"
@@ -148,7 +150,50 @@ def test_unified_recovery_source_rebind_review_requeue_is_explicit_and_bounded()
 
 def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
     source = UNIFIED_RECOVERY.read_text(encoding="utf-8")
-    trigger = source.split("permissions:", 1)[0]
+    workflow = yaml.safe_load(source)
+    workflow_dispatch = workflow["on"]["workflow_dispatch"]
+    input_config = workflow_dispatch["inputs"][
+        "requeue_prelock_candidate_review_after_installed_runtime_proof_v2"
+    ]
+    assert {
+        key: input_config.get(key)
+        for key in ("required", "default", "type")
+    } == {
+        "required": False,
+        "default": False,
+        "type": "boolean",
+    }
+
+    steps = workflow["jobs"]["recover-and-verify"]["steps"]
+    reject_ambiguous = next(
+        step
+        for step in steps
+        if step.get("name") == "Reject ambiguous remediation flags"
+    )
+    assert reject_ambiguous["env"] == {
+        "REQUEUE_SOURCE_PULL_V1": (
+            "${{ inputs.requeue_source_pull_proof_review_after_rebind }}"
+        ),
+        "REQUEUE_PRELOCK_V2": (
+            "${{ inputs."
+            "requeue_prelock_candidate_review_after_installed_runtime_proof_v2 }}"
+        ),
+    }
+    v2_step = next(
+        step
+        for step in steps
+        if step.get("name")
+        == "Requeue protected prelock review after installed-runtime proof v2"
+    )
+    assert v2_step["if"] == (
+        "${{ inputs."
+        "requeue_prelock_candidate_review_after_installed_runtime_proof_v2 }}"
+    )
+    assert v2_step["env"] == {"GH_TOKEN": "${{ github.token }}"}
+    run = v2_step["run"]
+    embedded = run.split("python - <<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+    compile(embedded, "<prelock-review-v2-workflow>", "exec")
+
     readiness_at = source.index(
         "Wait for a quiet deploy queue and stable AWS runtime"
     )
@@ -161,15 +206,6 @@ def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
     )
     remediation = source[v2_at:reconcile_at]
 
-    assert (
-        "requeue_prelock_candidate_review_after_installed_runtime_proof_v2:"
-        in trigger
-    )
-    assert (
-        "if: ${{ inputs."
-        "requeue_prelock_candidate_review_after_installed_runtime_proof_v2 }}"
-        in remediation
-    )
     assert readiness_at < v1_at < v2_at < reconcile_at
     assert "Reject ambiguous remediation flags" in source
     assert (
@@ -200,11 +236,24 @@ def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
     assert "'positiveProofMaterialExposed': False" in remediation
     assert "'automaticRequeueAllowed': False" in remediation
     assert "prelock-candidate-review-remediation-v2.json" in remediation
+    assert "github_ref != 'refs/heads/main'" in remediation
+    assert "deploy.yml/runs?branch=main&status=success" in remediation
+    assert "run.get('head_sha') == commit_sha" in remediation
+    assert "sameCommitDeploySuccessRequired': True" in remediation
+    assert "pinned_revision_id" in remediation
+    assert "pinned_code_sha256" in remediation
+    assert "'RevisionId': pinned_revision_id" in remediation
+    assert "'CodeSha256': pinned_code_sha256" in remediation
+    assert (
+        "durable_history is None\n"
+        "                  and nested_durable_history is not None"
+        in remediation
+    )
+    assert remediation.count("lambda_client.invoke(") == 1
+    assert "dynamodb" not in remediation.lower()
     for forbidden in (
         "candidateSnapshotFingerprint",
         "predictionSourcePullFingerprint",
-        "boto3.client('dynamodb'",
-        'boto3.client("dynamodb"',
         ".update_item(",
         ".put_item(",
         ".delete_item(",
@@ -213,7 +262,6 @@ def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
         "for attempt in",
     ):
         assert forbidden not in remediation
-
 
 def test_unified_recovery_binds_numeric_proof_to_requested_run_evidence():
     source = UNIFIED_RECOVERY.read_text(encoding="utf-8")
