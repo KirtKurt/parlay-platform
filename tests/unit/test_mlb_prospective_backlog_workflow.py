@@ -146,6 +146,75 @@ def test_unified_recovery_source_rebind_review_requeue_is_explicit_and_bounded()
         assert forbidden not in remediation
 
 
+def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
+    source = UNIFIED_RECOVERY.read_text(encoding="utf-8")
+    trigger = source.split("permissions:", 1)[0]
+    readiness_at = source.index(
+        "Wait for a quiet deploy queue and stable AWS runtime"
+    )
+    v1_at = source.index("Requeue protected source-binding review once")
+    v2_at = source.index(
+        "Requeue protected prelock review after installed-runtime proof v2"
+    )
+    reconcile_at = source.index(
+        "Reconcile protected prospective settlement backlog"
+    )
+    remediation = source[v2_at:reconcile_at]
+
+    assert (
+        "requeue_prelock_candidate_review_after_installed_runtime_proof_v2:"
+        in trigger
+    )
+    assert (
+        "if: ${{ inputs."
+        "requeue_prelock_candidate_review_after_installed_runtime_proof_v2 }}"
+        in remediation
+    )
+    assert readiness_at < v1_at < v2_at < reconcile_at
+    assert "Reject ambiguous remediation flags" in source
+    assert (
+        'REQUEUE_SOURCE_PULL_V1" == "true" && '
+        '"$REQUEUE_PRELOCK_V2" == "true"'
+        in source
+    )
+    assert "LOGICAL_RESOURCE_ID = 'MLBDailyPickLockFunction'" in remediation
+    assert (
+        "EXPECTED_HANDLER = 'mlb_daily_pick_lock_protected.lambda_handler'"
+        in remediation
+    )
+    assert "INCIDENT_SLATE_DATE = '2026-08-04'" in remediation
+    assert (
+        "'requeuePrelockCandidateReviewAfterInstalledRuntimeProofV2'"
+        in remediation
+    )
+    assert "'force': True" in remediation
+    assert "'installedRuntimePositiveProofBound': True" in remediation
+    assert (
+        "'priorSourcePullRebindRemediationValidated': True"
+        in remediation
+    )
+    assert "'automaticRetryAllowed': False" in remediation
+    assert "'rawLambdaPayloadPersisted': False" in remediation
+    assert "'requestIdentifierExposed': False" in remediation
+    assert "'checkpointMaterialExposed': False" in remediation
+    assert "'positiveProofMaterialExposed': False" in remediation
+    assert "'automaticRequeueAllowed': False" in remediation
+    assert "prelock-candidate-review-remediation-v2.json" in remediation
+    for forbidden in (
+        "candidateSnapshotFingerprint",
+        "predictionSourcePullFingerprint",
+        "boto3.client('dynamodb'",
+        'boto3.client("dynamodb"',
+        ".update_item(",
+        ".put_item(",
+        ".delete_item(",
+        "transact_write_items(",
+        "while ",
+        "for attempt in",
+    ):
+        assert forbidden not in remediation
+
+
 def test_unified_recovery_binds_numeric_proof_to_requested_run_evidence():
     source = UNIFIED_RECOVERY.read_text(encoding="utf-8")
 
