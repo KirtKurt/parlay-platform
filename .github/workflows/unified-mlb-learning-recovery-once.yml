@@ -24,7 +24,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: unified-mlb-learning
+  # Share the production deploy lock so $LATEST cannot change during the
+  exact-code one-shot recovery invocation or its subsequent proof run.
+  group: parlay-platform-deploy
   cancel-in-progress: false
 
 env:
@@ -765,32 +767,36 @@ jobs:
                   retries={'total_max_attempts': 3, 'mode': 'standard'},
               ),
           )
-          stacks = cloudformation.describe_stacks(
-              StackName=stack_name,
-          ).get('Stacks') or []
-          stack = stacks[0] if len(stacks) == 1 else None
-          parameters = {
-              str(parameter.get('ParameterKey') or ''): str(
-                  parameter.get('ParameterValue') or ''
-              )
-              for parameter in (
-                  stack.get('Parameters') or []
-                  if isinstance(stack, Mapping)
-                  else []
-              )
-              if isinstance(parameter, Mapping)
-          }
-          if (
-              not isinstance(stack, Mapping)
-              or stack.get('StackStatus')
-              not in {'CREATE_COMPLETE', 'UPDATE_COMPLETE'}
-              or parameters.get('DeployGitSha') != commit_sha
-              or parameters.get('DeployRunId')
-              != expected_deploy_run_id
-          ):
-              raise SystemExit(
-                  'Protected v2 stack deployment identity is not exact'
-              )
+          def require_exact_stack_deployment():
+              stacks = cloudformation.describe_stacks(
+                  StackName=stack_name,
+              ).get('Stacks') or []
+              stack = stacks[0] if len(stacks) == 1 else None
+              parameters = {
+                  str(parameter.get('ParameterKey') or ''): str(
+                      parameter.get('ParameterValue') or ''
+                  )
+                  for parameter in (
+                      stack.get('Parameters') or []
+                      if isinstance(stack, Mapping)
+                      else []
+                  )
+                  if isinstance(parameter, Mapping)
+              }
+              if (
+                  not isinstance(stack, Mapping)
+                  or stack.get('StackStatus')
+                  not in {'CREATE_COMPLETE', 'UPDATE_COMPLETE'}
+                  or parameters.get('DeployGitSha') != commit_sha
+                  or parameters.get('DeployRunId')
+                  != expected_deploy_run_id
+              ):
+                  raise SystemExit(
+                      'Protected v2 stack deployment identity is not exact'
+                  )
+              return dict(stack)
+
+          require_exact_stack_deployment()
 
           resource = cloudformation.describe_stack_resource(
               StackName=stack_name,
@@ -813,6 +819,21 @@ jobs:
                   retries={'total_max_attempts': 1, 'mode': 'standard'},
               ),
           )
+
+          def exact_deploy_environment(configuration_value):
+              environment = configuration_value.get('Environment') or {}
+              variables = (
+                  environment.get('Variables') or {}
+                  if isinstance(environment, Mapping)
+                  else {}
+              )
+              return bool(
+                  isinstance(variables, Mapping)
+                  and variables.get('INQSI_DEPLOY_GIT_SHA') == commit_sha
+                  and variables.get('INQSI_DEPLOY_RUN_ID')
+                  == expected_deploy_run_id
+              )
+
           configuration = lambda_client.get_function_configuration(
               FunctionName=function_name,
           )
@@ -825,14 +846,10 @@ jobs:
               or configuration.get('LastUpdateStatus') != 'Successful'
               or not pinned_revision_id
               or not pinned_code_sha256
+              or not exact_deploy_environment(configuration)
           ):
               raise SystemExit('Resolved protected lock Lambda is not ready')
 
-          invocation_configuration = (
-              lambda_client.get_function_configuration(
-                  FunctionName=function_name,
-              )
-          )
           pinned_fields = {
               'FunctionName': function_name,
               'Handler': EXPECTED_HANDLER,
@@ -841,13 +858,36 @@ jobs:
               'RevisionId': pinned_revision_id,
               'CodeSha256': pinned_code_sha256,
           }
-          if any(
-              invocation_configuration.get(key) != expected_value
-              for key, expected_value in pinned_fields.items()
+          invocation_configuration = (
+              lambda_client.get_function_configuration(
+                  FunctionName=function_name,
+              )
+          )
+          latest_before_invoke = latest_exact_deploy()
+          try:
+              latest_before_invoke_identity = (
+                  int(latest_before_invoke['id']),
+                  int(latest_before_invoke.get('run_attempt') or 1),
+              )
+          except (KeyError, TypeError, ValueError) as exc:
+              raise SystemExit(
+                  'Protected v2 deploy identity changed before invocation'
+              ) from exc
+          if (
+              latest_before_invoke_identity
+              != (pinned_deploy_id, pinned_deploy_attempt)
+              or any(
+                  invocation_configuration.get(key) != expected_value
+                  for key, expected_value in pinned_fields.items()
+              )
+              or not exact_deploy_environment(
+                  invocation_configuration
+              )
           ):
               raise SystemExit(
                   'Protected lock Lambda identity changed before invocation'
               )
+          require_exact_stack_deployment()
 
           invocation = lambda_client.invoke(
               FunctionName=function_name,
@@ -858,6 +898,37 @@ jobs:
                   separators=(',', ':'),
               ).encode('utf-8'),
           )
+          post_invocation_configuration = (
+              lambda_client.get_function_configuration(
+                  FunctionName=function_name,
+              )
+          )
+          latest_after_invoke = latest_exact_deploy()
+          try:
+              latest_after_invoke_identity = (
+                  int(latest_after_invoke['id']),
+                  int(latest_after_invoke.get('run_attempt') or 1),
+              )
+          except (KeyError, TypeError, ValueError) as exc:
+              raise SystemExit(
+                  'Protected v2 deploy identity changed during invocation'
+              ) from exc
+          if (
+              latest_after_invoke_identity
+              != (pinned_deploy_id, pinned_deploy_attempt)
+              or any(
+                  post_invocation_configuration.get(key)
+                  != expected_value
+                  for key, expected_value in pinned_fields.items()
+              )
+              or not exact_deploy_environment(
+                  post_invocation_configuration
+              )
+          ):
+              raise SystemExit(
+                  'Protected lock Lambda identity changed during invocation'
+              )
+          require_exact_stack_deployment()
           lambda_status = int(invocation.get('StatusCode') or 0)
           raw = invocation['Payload'].read()
           if lambda_status != 200 or invocation.get('FunctionError'):
