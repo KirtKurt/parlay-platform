@@ -3178,6 +3178,418 @@ def _complete_and_ack_current_queue(handler, table, slate_date):
     return checkpoint, receipt, request_id
 
 
+def _prelock_candidate_review_v2_event(slate_date="2026-08-04"):
+    return {
+        **_cooperative_event(slate_date),
+        "requeuePrelockCandidateReviewAfterInstalledRuntimeProofV2": True,
+    }
+
+
+def _seed_prelock_candidate_review_v2_incident(handler, table):
+    slate_date, _, request_epoch, request_id = (
+        _seed_source_pull_rebind_review(handler, table)
+    )
+    v1 = _body(
+        handler.lambda_handler(
+            _source_pull_rebind_review_event(slate_date),
+            FakeContext(),
+        )
+    )
+    assert v1["sourcePullRebindReviewRemediationApplied"] is True
+    assert table.queue_item["state"] == "QUEUED"
+    prior_marker = copy.deepcopy(
+        table.queue_item["source_pull_rebind_review_remediation"]
+    )
+
+    progress = _complete_terminal_checkpoint(
+        slate_date=slate_date,
+        request_epoch=request_epoch,
+        request_id=request_id,
+        game_count=15,
+        quarantine_count=1,
+    )
+    first = copy.deepcopy(progress["processedGames"][0])
+    progress.update(
+        {
+            "phase": "PROCESS",
+            "nextGameIndex": 1,
+            "processedGameCount": 1,
+            "terminalCount": 1,
+            "canonicalCount": 0,
+            "noPredictionDataCount": 0,
+            "missedLockValidPrelockQuarantineCount": 1,
+            "reconciledCount": 1,
+            "processedGames": [first],
+            "verificationIndex": 0,
+            "verifiedGameCount": 0,
+            "verificationComplete": False,
+            "attemptCount": 1007,
+            "lastAttempt": {
+                "status": "TERMINAL_CHECKPOINT_READY",
+                "stage": "PROCESS_CHECKPOINT_READY",
+                "atUtc": "2026-08-29T19:25:00+00:00",
+                "phase": "PROCESS",
+                "gameIndex": 0,
+                "gameIdentity": first["gameIdentity"],
+                "durableIdentity": first["durableIdentity"],
+            },
+            "updatedAtUtc": "2026-08-29T19:25:00+00:00",
+        }
+    )
+    progress["checkpointFingerprint"] = (
+        COOPERATIVE_REPAIR._cooperative_terminal_checkpoint_fingerprint(
+            progress
+        )
+    )
+    fixture_next_identity = progress["manifestAuthority"][
+        "gameRoster"
+    ][1]["gameIdentity"]
+    handler.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_GAME_IDENTITY_FINGERPRINT = (
+        hashlib.sha256(fixture_next_identity.encode("utf-8")).hexdigest()
+    )
+    table.queue_item.update(
+        {
+            "state": "REVIEW_REQUIRED",
+            "terminal_replay_progress": copy.deepcopy(progress),
+            "last_chunk_stage": "PROCESS_CHECKPOINT_READY",
+            "last_chunk_status": "TERMINAL_CHECKPOINT_READY",
+        }
+    )
+    for field in (
+        "claim_owner",
+        "claim_acquired_at_utc",
+        "claim_acquired_at_epoch",
+        "claim_expires_at_utc",
+        "claim_expires_at_epoch",
+    ):
+        table.queue_item.pop(field, None)
+    public = handler._cooperative_terminal_progress_public(
+        table.queue_item
+    )
+    assert public["valid"] is True
+    assert public["attemptCount"] == 1007
+    assert prior_marker["checkpointFingerprint"] != progress[
+        "checkpointFingerprint"
+    ]
+    return (
+        slate_date,
+        progress,
+        prior_marker,
+        request_epoch,
+        request_id,
+    )
+
+
+def _prelock_candidate_review_v2_positive_proof(
+    handler,
+    table,
+):
+    progress = table.queue_item["terminal_replay_progress"]
+    request_id = str(table.queue_item["request_id"])
+    proof = {
+        "version": (
+            handler.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_PROOF_VERSION
+        ),
+        "slateDateEt": "2026-08-04",
+        "requestEpoch": int(table.queue_item["requested_at_epoch"]),
+        "requestIdFingerprint": hashlib.sha256(
+            request_id.encode("utf-8")
+        ).hexdigest(),
+        "checkpointFingerprint": progress["checkpointFingerprint"],
+        "progressFingerprint": (
+            handler._prelock_candidate_review_v2_progress_fingerprint(
+                progress
+            )
+        ),
+        "manifestFingerprint": progress["manifestFingerprint"],
+        "manifestAuthorityEvidenceFingerprint": progress[
+            "manifestAuthority"
+        ]["authorityEvidenceFingerprint"],
+        "manifestGameCount": 15,
+        "gameIndex": 1,
+        "gameIdentityFingerprint": (
+            handler.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_GAME_IDENTITY_FINGERPRINT
+        ),
+        "identityBindingMode": "exact_identity",
+        "boundScoringPullCount": 68,
+        "candidateAuthorityVersion": (
+            handler.mlb_daily_per_game_lock_patch
+            .VALID_PRELOCK_QUARANTINE_AUTHORITY_VERSION
+        ),
+        "candidateAuthorityFingerprint": _fixture_hash(
+            "candidate-authority"
+        ),
+        "candidateProofFingerprint": _fixture_hash("candidate-proof"),
+        "candidateSnapshotFingerprint": _fixture_hash(
+            "candidate-snapshot"
+        ),
+        "candidateRowFingerprint": _fixture_hash("candidate-row"),
+        "candidateSelectionFingerprint": _fixture_hash(
+            "candidate-selection"
+        ),
+        "predictionPayloadFingerprint": _fixture_hash(
+            "prediction-payload"
+        ),
+        "predictionSourcePullFingerprint": _fixture_hash(
+            "prediction-source"
+        ),
+        "boundScoringFingerprint": _fixture_hash("bound-scoring"),
+        "terminalAbsent": True,
+        "rejectedNewerCandidateCount": 0,
+        "modelOrSignalRecomputedAtLock": False,
+        "predictionAdopted": False,
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "productionAuthorityChanged": False,
+    }
+    proof["proofFingerprint"] = (
+        handler._source_pull_rebind_compact_fingerprint(proof)
+    )
+    return proof
+
+
+def test_prelock_candidate_review_v2_requeues_exact_incident_once():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        (
+            slate_date,
+            progress,
+            prior_marker,
+            request_epoch,
+            request_id,
+        ) = _seed_prelock_candidate_review_v2_incident(handler, table)
+        proof_calls = []
+
+        def prove(**kwargs):
+            proof_calls.append(copy.deepcopy(kwargs))
+            return _prelock_candidate_review_v2_positive_proof(
+                handler,
+                table,
+            )
+
+        handler.mlb_daily_pick_lock.prove_cooperative_prelock_candidate_review_v2 = (
+            prove
+        )
+        updates_before = len(table.update_calls)
+        response = _body(
+            handler.lambda_handler(
+                _prelock_candidate_review_v2_event(slate_date),
+                FakeContext(),
+            )
+        )
+
+        assert response["ok"] is True
+        assert response["status"] == "QUEUED_FOR_EVENTBRIDGE_LOCK_OWNER"
+        assert response["prelockCandidateReviewV2RemediationApplied"] is True
+        assert response[
+            "prelockCandidateReviewV2RemediationIdempotent"
+        ] is False
+        assert response["installedRuntimePositiveProofBound"] is True
+        assert response["priorSourcePullRebindRemediationValidated"] is True
+        assert response["automaticRetryAllowed"] is False
+        assert len(proof_calls) == 1
+        assert proof_calls[0] == {
+            "slate_date": slate_date,
+            "request_epoch": request_epoch,
+            "request_id": request_id,
+            "checkpoint": progress,
+        }
+        assert len(table.update_calls) == updates_before + 1
+        request = table.update_calls[-1]
+        condition = request["ConditionExpression"]
+        assert "#progress = :progress" in condition
+        assert "attribute_not_exists(#progress.#attempt.#error)" in condition
+        assert "#prior = :prior" in condition
+        assert "attribute_not_exists(#remediation)" in condition
+        assert request["ExpressionAttributeValues"][":progress"] == progress
+        assert request["ExpressionAttributeValues"][":prior"] == prior_marker
+        assert table.queue_item["state"] == "QUEUED"
+        assert table.queue_item["terminal_replay_progress"] == progress
+        assert table.queue_item[
+            "source_pull_rebind_review_remediation"
+        ] == prior_marker
+        marker = table.queue_item[
+            "prelock_candidate_review_remediation_v2"
+        ]
+        assert marker["oneShot"] is True
+        assert marker["reviewProgressFingerprint"] == (
+            handler._prelock_candidate_review_v2_progress_fingerprint(
+                progress
+            )
+        )
+        assert marker["positiveProof"]["proofFingerprint"]
+        assert marker["reviewCheckpointGuardVersion"] == (
+            handler.COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_GUARD_VERSION
+        )
+        serialized = json.dumps(response, sort_keys=True)
+        assert request_id not in serialized
+        for forbidden in (
+            "positiveProof",
+            "progressFingerprint",
+            "checkpointFingerprint",
+            "claim_owner",
+        ):
+            assert forbidden not in serialized
+
+        second_updates = len(table.update_calls)
+        second = _body(
+            handler.lambda_handler(
+                _prelock_candidate_review_v2_event(slate_date),
+                FakeContext(),
+            )
+        )
+        assert second[
+            "prelockCandidateReviewV2RemediationIdempotent"
+        ] is True
+        assert len(proof_calls) == 1
+        assert len(table.update_calls) == second_updates
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "attempt_error",
+        "attempt_count",
+        "next_cursor",
+        "top_level_stage",
+        "processed_games",
+    ),
+)
+def test_prelock_candidate_review_v2_rejects_inexact_stale_checkpoint(
+    mutation,
+):
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, _, _, _, _ = (
+            _seed_prelock_candidate_review_v2_incident(handler, table)
+        )
+        progress = table.queue_item["terminal_replay_progress"]
+        if mutation == "attempt_error":
+            progress["lastAttempt"]["errorCode"] = (
+                "PRELOCK_CANDIDATE_REQUIRES_REVIEW"
+            )
+        elif mutation == "attempt_count":
+            progress["attemptCount"] = 1008
+        elif mutation == "next_cursor":
+            progress["nextGameIndex"] = 2
+        elif mutation == "top_level_stage":
+            table.queue_item["last_chunk_stage"] = "PROVE_PRELOCK_ABSENCE"
+        else:
+            progress["processedGames"] = []
+        if mutation in {
+            "attempt_error",
+            "attempt_count",
+            "next_cursor",
+            "processed_games",
+        }:
+            progress["checkpointFingerprint"] = (
+                COOPERATIVE_REPAIR._cooperative_terminal_checkpoint_fingerprint(
+                    progress
+                )
+            )
+        before = copy.deepcopy(table.queue_item)
+        proof_calls = []
+        handler.mlb_daily_pick_lock.prove_cooperative_prelock_candidate_review_v2 = (
+            lambda **kwargs: proof_calls.append(kwargs)
+        )
+
+        _assert_runtime_error(
+            lambda: (
+                handler._requeue_prelock_candidate_review_after_installed_runtime_proof_v2(
+                    _prelock_candidate_review_v2_event(slate_date)
+                )
+            ),
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_CHECKPOINT_INVALID",
+        )
+        assert table.queue_item == before
+        assert proof_calls == []
+
+
+def test_prelock_candidate_review_v2_proof_failure_never_writes():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, _, _, _, _ = (
+            _seed_prelock_candidate_review_v2_incident(handler, table)
+        )
+        before = copy.deepcopy(table.queue_item)
+        updates_before = len(table.update_calls)
+
+        def fail_proof(**_kwargs):
+            raise RuntimeError("STRONG_PROOF_FAILED")
+
+        handler.mlb_daily_pick_lock.prove_cooperative_prelock_candidate_review_v2 = (
+            fail_proof
+        )
+        _assert_runtime_error(
+            lambda: (
+                handler._requeue_prelock_candidate_review_after_installed_runtime_proof_v2(
+                    _prelock_candidate_review_v2_event(slate_date)
+                )
+            ),
+            "STRONG_PROOF_FAILED",
+        )
+        assert table.queue_item == before
+        assert len(table.update_calls) == updates_before
+        assert (
+            "prelock_candidate_review_remediation_v2"
+            not in table.queue_item
+        )
+
+
+def test_prelock_candidate_review_v2_full_progress_fingerprint_covers_attempt_metadata():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        _, progress, _, _, _ = (
+            _seed_prelock_candidate_review_v2_incident(handler, table)
+        )
+        changed = copy.deepcopy(progress)
+        changed["attemptCount"] += 1
+        changed["lastAttempt"]["atUtc"] = "2026-08-29T19:26:00+00:00"
+        changed["updatedAtUtc"] = changed["lastAttempt"]["atUtc"]
+        assert changed["checkpointFingerprint"] == progress[
+            "checkpointFingerprint"
+        ]
+        assert (
+            handler._prelock_candidate_review_v2_progress_fingerprint(
+                changed
+            )
+            != handler._prelock_candidate_review_v2_progress_fingerprint(
+                progress
+            )
+        )
+
+
+def test_prelock_candidate_review_v2_second_review_is_retry_consumed():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, _, _, _, _ = (
+            _seed_prelock_candidate_review_v2_incident(handler, table)
+        )
+        handler.mlb_daily_pick_lock.prove_cooperative_prelock_candidate_review_v2 = (
+            lambda **_kwargs: (
+                _prelock_candidate_review_v2_positive_proof(
+                    handler,
+                    table,
+                )
+            )
+        )
+        handler._requeue_prelock_candidate_review_after_installed_runtime_proof_v2(
+            _prelock_candidate_review_v2_event(slate_date)
+        )
+        table.queue_item["state"] = "REVIEW_REQUIRED"
+        updates_before = len(table.update_calls)
+
+        _assert_runtime_error(
+            lambda: (
+                handler._requeue_prelock_candidate_review_after_installed_runtime_proof_v2(
+                    _prelock_candidate_review_v2_event(slate_date)
+                )
+            ),
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_RETRY_CONSUMED",
+        )
+        assert len(table.update_calls) == updates_before
+
+
 def test_source_pull_rebind_review_requeue_is_explicit_one_shot_and_request_bound():
     table = FakeLeaseTable()
     with _load_handler(lease_table=table) as (handler, _, _):
