@@ -5441,6 +5441,7 @@ def _validated_cooperative_review_checkpoint_transition(
         or progress.get("requestEpoch") != request_epoch
         or str(progress.get("requestId") or "") != request_id
         or phase not in {"PROCESS", "VERIFY"}
+        or not _cooperative_replay_requires_review(stage, error_code)
         or not (initial_review_shape or continuing_review_shape)
         or manifest_count < 1
         or cursor > manifest_count
