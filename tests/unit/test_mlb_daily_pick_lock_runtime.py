@@ -104,6 +104,8 @@ class FakeLeaseTable:
                 names = kwargs.get("ExpressionAttributeNames") or {}
                 history_field = names.get("#history")
                 remediation_field = names.get("#remediation")
+                v2_history_field = names.get("#v2_history")
+                v2_remediation_field = names.get("#v2_remediation")
                 may_replace = bool(
                     isinstance(self.queue_item, dict)
                     and self.queue_item.get("state") == values.get(":acknowledged")
@@ -136,6 +138,18 @@ class FakeLeaseTable:
                         == values.get(":previous_remediation")
                         if ":previous_remediation" in values
                         else remediation_field not in self.queue_item
+                    )
+                    and (
+                        self.queue_item.get(v2_history_field)
+                        == values.get(":previous_v2_history")
+                        if ":previous_v2_history" in values
+                        else v2_history_field not in self.queue_item
+                    )
+                    and (
+                        self.queue_item.get(v2_remediation_field)
+                        == values.get(":previous_v2_remediation")
+                        if ":previous_v2_remediation" in values
+                        else v2_remediation_field not in self.queue_item
                     )
                 )
             if not may_replace:
@@ -243,22 +257,51 @@ class FakeLeaseTable:
                 if isinstance(progress, dict)
                 else None
             )
-            remediation_field = (
-                kwargs.get("ExpressionAttributeNames") or {}
-            ).get("#remediation")
-            allowed = bool(
-                valid_identity
-                and current.get("state")
-                == values.get(":review_required")
-                and progress == values.get(":progress")
-                and progress.get("checkpointFingerprint")
-                == values.get(":checkpoint")
-                and isinstance(attempt, dict)
-                and attempt.get("errorCode") == values.get(":error")
-                and attempt.get("stage") == values.get(":stage")
-                and remediation_field
-                and remediation_field not in current
+            names = kwargs.get("ExpressionAttributeNames") or {}
+            remediation_field = names.get("#remediation")
+            v2_write = (
+                remediation_field
+                == "prelock_candidate_review_remediation_v2"
             )
+            if v2_write:
+                prior_field = names.get("#prior")
+                allowed = bool(
+                    valid_identity
+                    and current.get("state")
+                    == values.get(":review_required")
+                    and progress == values.get(":progress")
+                    and progress.get("checkpointFingerprint")
+                    == values.get(":checkpoint")
+                    and isinstance(attempt, dict)
+                    and "errorCode" not in attempt
+                    and attempt.get("stage")
+                    == values.get(":stale_stage")
+                    and attempt.get("status")
+                    == values.get(":stale_status")
+                    and current.get("last_chunk_stage")
+                    == values.get(":stale_stage")
+                    and current.get("last_chunk_status")
+                    == values.get(":stale_status")
+                    and current.get(prior_field) == values.get(":prior")
+                    and remediation_field not in current
+                    and "claim_owner" not in current
+                    and "claim_acquired_at_epoch" not in current
+                    and "claim_expires_at_epoch" not in current
+                )
+            else:
+                allowed = bool(
+                    valid_identity
+                    and current.get("state")
+                    == values.get(":review_required")
+                    and progress == values.get(":progress")
+                    and progress.get("checkpointFingerprint")
+                    == values.get(":checkpoint")
+                    and isinstance(attempt, dict)
+                    and attempt.get("errorCode") == values.get(":error")
+                    and attempt.get("stage") == values.get(":stage")
+                    and remediation_field
+                    and remediation_field not in current
+                )
             next_state = values[":queued"]
         elif proof_write:
             allowed = bool(
@@ -1029,6 +1072,9 @@ def _load_handler(
     per_game.ATTEMPT_DIAGNOSTICS_VERSION = "test-diagnostics-version"
     per_game.PROMOTION_POLICY_VERSION = "test-promotion-version"
     per_game.PAYLOAD_FINGERPRINT_VERSION = "test-ddb-canonical-fingerprint-version"
+    per_game.VALID_PRELOCK_QUARANTINE_AUTHORITY_VERSION = (
+        "test-valid-prelock-quarantine-authority-v1"
+    )
     per_game.STATUS_SOURCE_PULL_REBIND_VERSION = (
         "MLB-STATUS-SOURCE-PULL-REBIND-v1-strong-immutable-row"
     )
@@ -1072,6 +1118,16 @@ def _load_handler(
     )
     daily_lock.MLB_COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION = (
         COOPERATIVE_REPAIR.COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION
+    )
+    daily_lock.MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_VERSION = (
+        COOPERATIVE_REPAIR.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_VERSION
+    )
+
+    def unconfigured_positive_prover(**_kwargs):
+        raise RuntimeError("TEST_POSITIVE_PROVER_NOT_CONFIGURED")
+
+    daily_lock.prove_cooperative_prelock_candidate_review_v2 = (
+        unconfigured_positive_prover
     )
     daily_lock.validate_cooperative_terminal_completion_checkpoint = (
         COOPERATIVE_REPAIR._validated_cooperative_terminal_complete_checkpoint
