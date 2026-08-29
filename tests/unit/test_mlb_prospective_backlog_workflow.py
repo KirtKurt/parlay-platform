@@ -242,6 +242,14 @@ def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
         '"$REQUEUE_PRELOCK_V2" == "true"'
         in source
     )
+    assert (
+        'if [[ "$REQUEUE_SOURCE_PULL_V1" == "true" ]]; then'
+        in source
+    )
+    assert (
+        "The v1 source-pull remediation is durably consumed and disabled"
+        in source
+    )
     assert "LOGICAL_RESOURCE_ID = 'MLBDailyPickLockFunction'" in remediation
     assert (
         "EXPECTED_HANDLER = 'mlb_daily_pick_lock_protected.lambda_handler'"
