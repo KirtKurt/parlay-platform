@@ -3830,6 +3830,49 @@ def test_prelock_candidate_review_v2_requeues_exact_incident_once():
         assert len(table.update_calls) == second_updates
 
 
+def test_prelock_candidate_review_v2_accepts_exact_ambiguous_commit():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        slate_date, _, _, _, _ = (
+            _seed_prelock_candidate_review_v2_incident(handler, table)
+        )
+        proof_calls = []
+
+        def prove(**kwargs):
+            proof_calls.append(copy.deepcopy(kwargs))
+            return _prelock_candidate_review_v2_positive_proof(
+                handler,
+                table,
+            )
+
+        handler.mlb_daily_pick_lock.prove_cooperative_prelock_candidate_review_v2 = (
+            prove
+        )
+        table.update_commits_then_error = _client_error(
+            "InternalServerError",
+            "UpdateItem",
+        )
+        response = _body(
+            handler.lambda_handler(
+                _prelock_candidate_review_v2_event(slate_date),
+                FakeContext(),
+            )
+        )
+
+        assert response["ok"] is True
+        assert response["status"] == "QUEUED_FOR_EVENTBRIDGE_LOCK_OWNER"
+        assert response[
+            "prelockCandidateReviewV2RemediationIdempotent"
+        ] is True
+        assert len(proof_calls) == 1
+        assert table.queue_item["state"] == "QUEUED"
+        assert (
+            "prelock_candidate_review_remediation_v2"
+            in table.queue_item
+        )
+        assert "claim_owner" not in table.queue_item
+
+
 @pytest.mark.parametrize(
     "mutation",
     (
