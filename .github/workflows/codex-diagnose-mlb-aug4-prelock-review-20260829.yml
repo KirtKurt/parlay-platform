@@ -33,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           git merge-base --is-ancestor "$DEPLOYED_FIX_SHA" HEAD
-          git diff --quiet "$DEPLOYED_FIX_SHA" --             hello_world/mlb_daily_per_game_lock_patch.py             hello_world/mlb_prospective_row_repair.py             hello_world/inqsi_pull_history.py
+          git diff --quiet "$DEPLOYED_FIX_SHA" --             hello_world/mlb_daily_per_game_lock_patch.py             hello_world/mlb_daily_pick_lock_protected.py             hello_world/mlb_ml_runtime_install_v3.py             hello_world/mlb_prospective_row_repair.py             hello_world/inqsi_pull_history.py
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
@@ -136,9 +136,19 @@ jobs:
 
           sys.path.insert(0, "hello_world")
           import inqsi_pull_history as history_contract
-          import mlb_daily_per_game_lock_patch as patch
-          import mlb_daily_pick_lock as module
+          import mlb_daily_pick_lock_protected as protected
           import mlb_prospective_row_repair as repair
+
+          module = protected.mlb_daily_pick_lock
+          patch = protected.mlb_daily_per_game_lock_patch
+          if (
+              protected.ML_RUNTIME_INSTALL_STATUS.get("ok") is not True
+              or protected.ML_VECTOR_PRESERVATION_STATUS.get("ok") is not True
+              or protected.PER_GAME_LOCK_STATUS.get("ok") is not True
+          ):
+              raise SystemExit(
+                  "Exact protected MLB runtime installation failed closed"
+              )
 
           exact_table = boto3.resource(
               "dynamodb", region_name=REGION
