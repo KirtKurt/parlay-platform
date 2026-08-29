@@ -3434,9 +3434,23 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
     replace_acknowledged_date: Optional[str] = None
     replace_acknowledged_item: Optional[Dict[str, Any]] = None
     carried_remediation_history: Optional[Dict[str, Any]] = None
+    carried_prelock_v2_history: Optional[Dict[str, Any]] = None
     if existing:
         existing_date = str(existing.get("slate_date_et") or "")
         validated = _cooperative_record(existing, existing_date)
+        raw_prelock_v2_history = validated.get(
+            COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_FIELD
+        )
+        if raw_prelock_v2_history is not None:
+            prelock_v2_history = (
+                _validated_prelock_candidate_review_v2_history(
+                    raw_prelock_v2_history
+                )
+            )
+            if prelock_v2_history.get("slateDateEt") == slate_date:
+                return _prelock_candidate_review_v2_history_response(
+                    prelock_v2_history
+                )
         raw_history = validated.get(
             COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD
         )
@@ -3482,10 +3496,19 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
         carried_remediation_history = (
             _source_pull_rebind_history_for_replacement(validated)
         )
+        carried_prelock_v2_history = (
+            _prelock_candidate_review_v2_history_for_replacement(
+                validated
+            )
+        )
         if carried_remediation_history is not None:
             item[COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD] = (
                 copy.deepcopy(carried_remediation_history)
             )
+        if carried_prelock_v2_history is not None:
+            item[
+                COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_FIELD
+            ] = copy.deepcopy(carried_prelock_v2_history)
 
     table = _cooperative_replay_table()
     try:
@@ -3507,6 +3530,12 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
             previous_marker = replace_acknowledged_item.get(
                 COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
             )
+            previous_v2_history = replace_acknowledged_item.get(
+                COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_FIELD
+            )
+            previous_v2_marker = replace_acknowledged_item.get(
+                COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_FIELD
+            )
             replacement_condition = (
                 "record_type = :record_type AND "
                 "coordination_version = :version AND "
@@ -3524,9 +3553,19 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
                     else "#history = :previous_history AND "
                 )
                 + (
-                    "attribute_not_exists(#remediation)"
+                    "attribute_not_exists(#remediation) AND "
                     if previous_marker is None
-                    else "#remediation = :previous_remediation"
+                    else "#remediation = :previous_remediation AND "
+                )
+                + (
+                    "attribute_not_exists(#v2_history) AND "
+                    if previous_v2_history is None
+                    else "#v2_history = :previous_v2_history AND "
+                )
+                + (
+                    "attribute_not_exists(#v2_remediation)"
+                    if previous_v2_marker is None
+                    else "#v2_remediation = :previous_v2_remediation"
                 )
             )
             replacement_values = {
@@ -3559,6 +3598,14 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
                 replacement_values[":previous_remediation"] = (
                     previous_marker
                 )
+            if previous_v2_history is not None:
+                replacement_values[":previous_v2_history"] = (
+                    previous_v2_history
+                )
+            if previous_v2_marker is not None:
+                replacement_values[":previous_v2_remediation"] = (
+                    previous_v2_marker
+                )
             table.put_item(
                 Item=item,
                 ConditionExpression=replacement_condition,
@@ -3569,6 +3616,12 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
                     ),
                     "#remediation": (
                         COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
+                    ),
+                    "#v2_history": (
+                        COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_FIELD
+                    ),
+                    "#v2_remediation": (
+                        COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_FIELD
                     ),
                 },
                 ExpressionAttributeValues=replacement_values,
@@ -3584,6 +3637,9 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
                 observed_history = validated.get(
                     COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD
                 )
+                observed_v2_history = validated.get(
+                    COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_FIELD
+                )
                 if (
                     validated.get("requested_at_epoch")
                     != item.get("requested_at_epoch")
@@ -3593,7 +3649,12 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
                         COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
                     )
                     is not None
+                    or validated.get(
+                        COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_FIELD
+                    )
+                    is not None
                     or observed_history != carried_remediation_history
+                    or observed_v2_history != carried_prelock_v2_history
                 ):
                     raise RuntimeError(
                         "MLB_COOPERATIVE_REPLAY_QUEUE_CONFLICT"
@@ -3601,6 +3662,10 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
                 if observed_history is not None:
                     _validated_source_pull_rebind_remediation_history(
                         observed_history
+                    )
+                if observed_v2_history is not None:
+                    _validated_prelock_candidate_review_v2_history(
+                        observed_v2_history
                     )
                 if validated.get("state") == COOPERATIVE_REPLAY_COMPLETED:
                     _acknowledge_cooperative_replay(
@@ -5703,6 +5768,9 @@ def lambda_handler(event, context):
     source_pull_rebind_event_present = (
         COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_EVENT_FLAG in event
     )
+    prelock_candidate_review_v2_event_present = (
+        COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_EVENT_FLAG in event
+    )
     if source_pull_rebind_event_present and (
         event.get(COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_EVENT_FLAG)
         is not True
@@ -5730,13 +5798,47 @@ def lambda_handler(event, context):
             },
         )
 
+    if prelock_candidate_review_v2_event_present and (
+        event.get(COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_EVENT_FLAG)
+        is not True
+        or set(event)
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_EVENT_KEYS
+        or not _is_cooperative_replay_request(event, method)
+    ):
+        return _failure_response(
+            event,
+            500,
+            {
+                "ok": False,
+                "sport": "mlb",
+                "error": (
+                    "MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_CLOSED"
+                ),
+                "errorCode": (
+                    "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_"
+                    "EVENT_INVALID"
+                ),
+                "mutatingRunAttempted": False,
+                "activeLeaseMutationAllowed": False,
+                "postStartPredictionCreationAllowed": False,
+                "immutablePredictionRewriteAllowed": False,
+                "directWorkflowTableWrite": False,
+            },
+        )
+
     # A manually invoked exact historical repair never contests or mutates the
     # active execution lease.  It writes one bounded control-plane request and
     # polls that same record.  Only a normal EventBridge daily owner can claim
     # and execute it later under the existing lease.
     if _is_cooperative_replay_request(event, method):
         try:
-            if source_pull_rebind_event_present:
+            if prelock_candidate_review_v2_event_present:
+                cooperative = (
+                    _requeue_prelock_candidate_review_after_installed_runtime_proof_v2(
+                        event
+                    )
+                )
+            elif source_pull_rebind_event_present:
                 cooperative = (
                     _requeue_source_pull_proof_review_after_rebind(event)
                 )
