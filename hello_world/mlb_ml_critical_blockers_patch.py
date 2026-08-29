@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-VERSION = "MLB-ML-CRITICAL-BLOCKERS-PATCH-v11-aws-v2-shadow-manual-first"
+VERSION = "MLB-ML-CRITICAL-BLOCKERS-PATCH-v12-reversal-shape-evidence-gate"
 AUTHORITATIVE_TRAINER = "MLB-ML-AWS-TRAINING-v1-fixed-prospective-shadow"
 _INSTALLED = False
 
@@ -9,7 +9,7 @@ def install() -> dict:
     """Install safeguards without duplicating the runtime wrapper chain.
 
     Every Lambda entrypoint explicitly executes the same idempotent authoritative
-    runtime installer after its prediction chain is importable.  usercustomize is
+    runtime installer after its prediction chain is importable. usercustomize is
     compatibility-only. This function installs only the module-level safety and
     freeze bridges that must exist before the entrypoint's authoritative call.
     """
@@ -43,6 +43,16 @@ def install() -> dict:
         errors.append(f"runtime_safety:{exc}")
 
     try:
+        import mlb_reversal_shape_runtime_patch
+
+        reversal_policy = mlb_reversal_shape_runtime_patch.install()
+        if reversal_policy.get("ok") is not True:
+            raise RuntimeError(str(reversal_policy.get("errors") or reversal_policy))
+        applied.append("reversal_shape_time_size_similarity_and_validated_evidence_gate")
+    except Exception as exc:
+        errors.append(f"reversal_shape_runtime:{exc}")
+
+    try:
         import mlb_official_prediction_semantics
         import mlb_official_freeze_bridge
         mlb_official_freeze_bridge.apply(mlb_official_prediction_semantics)
@@ -74,6 +84,8 @@ def install() -> dict:
         "v2AwsNativeTraining": True,
         "rolling24hAllGamesAuditTargetPct": 90.0,
         "rolling24hAccuracyDashboardOnly": True,
+        "minimumAccuracyClaimPct": 70.0,
+        "failClosedWithoutValidatedUntouchedEvidence": True,
         "minimumV2CleanRows": 500,
         "minimumV2ProspectiveTestRows": 100,
         "minimumV2SelectedRecommendations": 100,

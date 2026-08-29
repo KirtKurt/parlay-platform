@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-VERSION = "MLB-OFFICIAL-LOCK-QUALITY-v1-60pct-confirmed-direction"
+from mlb_reversal_shape_v1 import VERSION as REVERSAL_SHAPE_VERSION
+from mlb_reversal_shape_v1 import analyze as analyze_reversal_shape
+
+
+VERSION = "MLB-OFFICIAL-LOCK-QUALITY-v2-reversal-shape-confirmed-direction"
 MIN_OFFICIAL_PROBABILITY_PCT = 60.0
 MAX_UNCONFIRMED_REVERSALS = 1
 MAX_UNCONFIRMED_BOOK_DIVERGENCE = 0.035
@@ -83,7 +87,7 @@ def _clean_confirmation(row: Dict[str, Any], selected: Dict[str, Any], tags: set
         "BOOK_AGREEMENT" in tags
         or selected.get("bookAgreement") is True
         or selected.get("book_agreement") is True
-    )
+    ) and "BOOK_DIVERGENCE" not in tags
     steam = bool(
         "STEAM" in tags
         or "STEAM_CONFIRMED" in tags
@@ -105,6 +109,17 @@ def _clean_confirmation(row: Dict[str, Any], selected: Dict[str, Any], tags: set
     }
 
 
+def _shape(row: Dict[str, Any], selected: Dict[str, Any], tags: set[str], confirmation: Dict[str, bool]) -> Dict[str, Any]:
+    enriched_tags = set(tags)
+    if confirmation.get("bookAgreement"):
+        enriched_tags.add("BOOK_AGREEMENT")
+    if confirmation.get("steam"):
+        enriched_tags.add("STEAM_CONFIRMED")
+    if confirmation.get("runLineConfirmation"):
+        enriched_tags.add("RUN_LINE_CONFIRMED")
+    return analyze_reversal_shape(selected, enriched_tags)
+
+
 def evaluate(row: Dict[str, Any], accuracy_module: Any = None) -> Dict[str, Any]:
     selected = _selected_signal(row, accuracy_module)
     tags = _tags(row, selected)
@@ -114,6 +129,7 @@ def evaluate(row: Dict[str, Any], accuracy_module: Any = None) -> Dict[str, Any]
     divergence = _f(selected.get("bookDivergence"), 0.0) or 0.0
     delta = _f(selected.get("delta"))
     confirmation = _clean_confirmation(row, selected, tags)
+    shape = _shape(row, selected, tags, confirmation)
     reasons = []
 
     if probability_pct is None:
@@ -158,6 +174,11 @@ def evaluate(row: Dict[str, Any], accuracy_module: Any = None) -> Dict[str, Any]
     if "late_direction_conflict_without_confirmation" in risk_reasons:
         reasons.append("late_direction_conflict_without_independent_confirmation")
 
+    # The old gate counted reversals but could not distinguish a persistent move
+    # from noisy churn. The shape analyzer adds magnitude, density, path efficiency,
+    # coverage, and cross-horizon timing without using the eventual game result.
+    reasons.extend(shape.get("hardRiskReasons") or [])
+
     reasons = sorted(set(reasons))
     return {
         "applied": True,
@@ -170,11 +191,16 @@ def evaluate(row: Dict[str, Any], accuracy_module: Any = None) -> Dict[str, Any]
         "bookDivergence": round(divergence, 6),
         "lateDirectionConflict": late_conflict,
         **confirmation,
+        "reversalShapeVersion": REVERSAL_SHAPE_VERSION,
+        "reversalShape": shape,
+        "reversalSimilaritySignature": shape.get("similaritySignature"),
+        "reversalPatternTags": shape.get("patternTags") or [],
         "reasons": reasons,
         "policy": (
             "A canonical locked winner remains visible and auditable, but it is official-target eligible only at "
-            "60% or higher with direction integrity. Multiple reversals, late conflict, resistance, compressed "
-            "markets, or high divergence require independent book agreement plus steam or run-line confirmation."
+            "60% or higher with direction integrity. Reversal eligibility also uses movement amplitude, density, "
+            "path efficiency, coverage, and cross-horizon persistence. Unstable profiles require independent book "
+            "agreement plus steam or run-line confirmation."
         ),
     }
 
