@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from hello_world import inqsi_pull_history
 from hello_world import (
     mlb_fundamentals_scoring_bridge_v1 as fundamentals_shadow_bridge,
 )
@@ -153,6 +154,37 @@ def bind_shadow(prediction_item: dict, shadow: dict) -> None:
     if shadow.get("liveScoringAuthority") is True:
         canonical["liveScoringAuthority"] = True
     data["fundamentalsScoringShadow"] = canonical
+
+
+def bind_production_passive_shadow(prediction_item: dict) -> None:
+    data = prediction_item["data"]
+    data["winnerOptimizer"]["fundamentalsMode"] = (
+        "FUNDAMENTALS_V2_NOT_ACTIVE_IN_LIVE_SCORING"
+    )
+    data.update(
+        {
+            "predictionSourcePullAt": "2026-07-22T12:00:00+00:00",
+            "predictionSourcePullId": "pull-shadow-fixture",
+            "advanced_context": shadow_context(complete=True),
+        }
+    )
+    snapshot = fundamentals_snapshot_v2.build(
+        data,
+        captured_at_utc="2026-07-22T12:00:00+00:00",
+    )
+    data["fundamentalsSnapshotV2"] = snapshot
+    fundamentals_snapshot_v2.enhance_row(data)
+    shadow = fundamentals_shadow_bridge.evaluate_shadow(data)
+    assert shadow["evaluated"] is False
+    assert shadow["wouldApply"] is False
+    assert shadow["validationErrors"] == [
+        fundamentals_shadow_bridge.EXPECTED_PASSIVE_PROVENANCE_ERROR
+    ]
+    data["fundamentalsScoringShadow"] = shadow
+
+    persisted = inqsi_pull_history.ddb_safe(prediction_item)
+    prediction_item.clear()
+    prediction_item.update(persisted)
 
 
 def feature(game_key: str, hot_team: str | None = "Home Club", hot_delta: float = 0.01):
@@ -340,6 +372,51 @@ def test_not_active_and_shadow_only_modes_are_classified_without_false_applicati
     assert report["summary"]["fundamentalsShadowEvaluatedCount"] == 0
     assert second["fundamentalsState"] == "NOT_ACTIVE"
     assert second["fundamentalsShadowEvaluated"] is False
+
+
+
+def test_persisted_passive_shadow_is_not_active_and_guard_safe():
+    _, predictions, _ = fixture()
+    for item in predictions:
+        bind_production_passive_shadow(item)
+
+    report = evaluate(predictions=predictions)
+
+    assert report["guardPassed"] is True
+    assert report["summary"]["fundamentalsAppliedCount"] == 0
+    assert report["summary"]["fundamentalsNotActiveCount"] == 2
+    assert report["summary"]["fundamentalsShadowEvaluatedCount"] == 0
+    assert report["summary"]["fundamentalsShadowWouldApplyCount"] == 0
+    assert report["summary"]["fundamentalsShadowInvalidCount"] == 0
+    assert "FUNDAMENTALS_SHADOW_ATTESTATION_INVALID" not in report["blockers"]
+    assert all(
+        row["fundamentalsState"] == "NOT_ACTIVE" for row in report["games"]
+    )
+    assert all(
+        row["fundamentalsShadowAttestationErrors"] == []
+        for row in report["games"]
+    )
+
+
+def test_unexpected_passive_shadow_validation_error_still_fails_closed():
+    _, predictions, _ = fixture()
+    bind_production_passive_shadow(predictions[1])
+    predictions[1]["data"]["fundamentalsScoringShadow"][
+        "validationErrors"
+    ].append("unexpected_passive_error")
+
+    report = evaluate(predictions=predictions)
+
+    second = next(
+        row for row in report["games"] if row["gameIdentity"] == "official:1002"
+    )
+    assert report["guardPassed"] is False
+    assert report["summary"]["fundamentalsShadowInvalidCount"] == 1
+    assert "FUNDAMENTALS_SHADOW_ATTESTATION_INVALID" in report["blockers"]
+    assert second["fundamentalsState"] == "INVALID_SHADOW_ATTESTATION"
+    assert "shadow_canonical_evaluation_mismatch" in second[
+        "fundamentalsShadowAttestationErrors"
+    ]
 
 
 def test_invalid_shadow_attestation_is_never_counted_as_shadow_only():
