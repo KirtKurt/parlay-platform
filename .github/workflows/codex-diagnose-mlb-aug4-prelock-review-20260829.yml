@@ -143,8 +143,16 @@ jobs:
           if (
               module.TABLE is None
               or module.history.PULLS is None
-              or str(getattr(module.TABLE, "name", "")) != snapshots_table
-              or str(getattr(module.history.PULLS, "name", "")) != snapshots_table
+              or str(
+                  getattr(module.TABLE, "name", None)
+                  or getattr(module.TABLE, "table_name", "")
+              )
+              != snapshots_table
+              or str(
+                  getattr(module.history.PULLS, "name", None)
+                  or getattr(module.history.PULLS, "table_name", "")
+              )
+              != snapshots_table
           ):
               raise SystemExit("Exact snapshots table binding failed closed")
 
