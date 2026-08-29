@@ -3189,7 +3189,7 @@ def test_permanent_review_never_relabels_stale_success_checkpoint(
 
         assert table.queue_item["state"] == "QUEUED"
         assert table.queue_item["terminal_replay_progress"] == prior
-        assert table.queue_item["last_chunk_stage"] != (
+        assert table.queue_item.get("last_chunk_stage") != (
             "PROVE_PRELOCK_ABSENCE"
         )
         assert "claim_owner" not in table.queue_item
