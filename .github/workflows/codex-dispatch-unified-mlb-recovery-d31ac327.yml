@@ -1,0 +1,65 @@
+name: Dispatch exact unified MLB recovery
+run-name: "Dispatch exact unified MLB recovery d31ac327"
+
+"on":
+  push:
+    branches:
+      - codex/dispatch-unified-mlb-recovery-d31ac327-20260829
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: codex-dispatch-unified-mlb-recovery-d31ac327
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch recovery exactly once
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const workflowId = 'unified-mlb-learning-recovery-once.yml';
+            const requestId = 'codex-mlb-r7-d31ac327-20260829';
+
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRuns,
+              {
+                owner,
+                repo,
+                workflow_id: workflowId,
+                branch: 'main',
+                per_page: 100,
+              },
+            );
+            const existing = runs.find(
+              (run) =>
+                String(run.display_title || '') ===
+                  `Unified MLB learning recovery ${requestId}` &&
+                String(run.head_branch || '') === 'main',
+            );
+            if (existing) {
+              core.notice(`Exact recovery already exists: ${existing.html_url}`);
+              return;
+            }
+
+            await github.rest.actions.createWorkflowDispatch({
+              owner,
+              repo,
+              workflow_id: workflowId,
+              ref: 'main',
+              inputs: {
+                request_id: requestId,
+                requeue_source_pull_proof_review_after_rebind: 'true',
+              },
+            });
+            core.notice(
+              `Dispatched ${workflowId} on main with request_id=${requestId}`,
+            );
