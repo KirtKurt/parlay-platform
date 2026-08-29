@@ -5243,7 +5243,9 @@ def _validated_cooperative_review_checkpoint_transition(
 ) -> Dict[str, Any]:
     """Require a fresh producer failure checkpoint before REVIEW_REQUIRED."""
 
+    prior_present = "terminal_replay_progress" in item
     prior = item.get("terminal_replay_progress")
+    prior_absent = not prior_present
     slate_date = str(item.get("slate_date_et") or "")
     request_id = str(item.get("request_id") or "")
     try:
@@ -5251,9 +5253,15 @@ def _validated_cooperative_review_checkpoint_transition(
             item.get("requested_at_epoch"),
             "review_request_epoch",
         )
-        prior_attempt_count = _nonnegative_receipt_integer(
-            prior.get("attemptCount") if isinstance(prior, dict) else None,
-            "prior_review_attempt_count",
+        prior_attempt_count = (
+            0
+            if prior_absent
+            else _nonnegative_receipt_integer(
+                prior.get("attemptCount")
+                if isinstance(prior, dict)
+                else None,
+                "prior_review_attempt_count",
+            )
         )
         attempt_count = _nonnegative_receipt_integer(
             progress.get("attemptCount")
@@ -5283,6 +5291,16 @@ def _validated_cooperative_review_checkpoint_transition(
         else None
     )
     phase = str(progress.get("phase") or "") if isinstance(progress, dict) else ""
+    counter_fields = (
+        "processedGameCount",
+        "terminalCount",
+        "canonicalCount",
+        "noPredictionDataCount",
+        "missedLockValidPrelockQuarantineCount",
+        "reconciledCount",
+        "verificationIndex",
+        "verifiedGameCount",
+    )
     try:
         cursor = _nonnegative_receipt_integer(
             (
@@ -5300,6 +5318,21 @@ def _validated_cooperative_review_checkpoint_transition(
             else None,
             "review_manifest_count",
         )
+        attempt_game_index = _nonnegative_receipt_integer(
+            attempt.get("gameIndex")
+            if isinstance(attempt, dict)
+            else None,
+            "review_attempt_game_index",
+        )
+        counters = {
+            field: _nonnegative_receipt_integer(
+                progress.get(field)
+                if isinstance(progress, dict)
+                else None,
+                f"review_{field}",
+            )
+            for field in counter_fields
+        }
     except RuntimeError as exc:
         raise RuntimeError(
             "MLB_COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_CONTRACT_INVALID"
@@ -5318,8 +5351,20 @@ def _validated_cooperative_review_checkpoint_transition(
         identity_options = roster[cursor].get("identityOptions")
 
     at_utc = str(attempt.get("atUtc") or "") if isinstance(attempt, dict) else ""
+    claim_at_utc = str(item.get("claim_acquired_at_utc") or "")
+    prior_updated_at_utc = (
+        str(prior.get("updatedAtUtc") or "")
+        if isinstance(prior, dict)
+        else ""
+    )
     try:
         parsed_at = datetime.fromisoformat(at_utc)
+        parsed_claim_at = datetime.fromisoformat(claim_at_utc)
+        parsed_prior_updated_at = (
+            datetime.fromisoformat(prior_updated_at_utc)
+            if isinstance(prior, dict)
+            else None
+        )
     except (TypeError, ValueError) as exc:
         raise RuntimeError(
             "MLB_COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_CONTRACT_INVALID"
@@ -5334,6 +5379,31 @@ def _validated_cooperative_review_checkpoint_transition(
         str(progress.get("checkpointFingerprint") or "")
         if isinstance(progress, dict)
         else ""
+    )
+    initial_review_shape = bool(
+        prior_absent
+        and phase == "PROCESS"
+        and cursor == 0
+        and attempt_count == 1
+        and all(counters[field] == 0 for field in counter_fields)
+        and progress.get("processedGames") == []
+        and progress.get("verificationComplete") is False
+    )
+    continuing_review_shape = bool(
+        isinstance(prior, dict)
+        and prior.get("version") == COOPERATIVE_TERMINAL_CHUNK_VERSION
+        and str(prior.get("slateDateEt") or "") == slate_date
+        and prior.get("requestEpoch") == request_epoch
+        and str(prior.get("requestId") or "") == request_id
+        and phase == str(prior.get("phase") or "")
+        and progress_fingerprint == prior_fingerprint
+        and prior_fingerprint
+        == _source_pull_rebind_checkpoint_fingerprint(prior)
+        and parsed_prior_updated_at is not None
+        and parsed_prior_updated_at.tzinfo is not None
+        and parsed_prior_updated_at.utcoffset() == timedelta(0)
+        and parsed_prior_updated_at.isoformat() == prior_updated_at_utc
+        and parsed_at > parsed_prior_updated_at
     )
     valid_cursor_identity = bool(
         (
@@ -5364,18 +5434,14 @@ def _validated_cooperative_review_checkpoint_transition(
     if (
         not request_id
         or request_epoch <= 0
-        or not isinstance(prior, dict)
+        or (prior_present and not isinstance(prior, dict))
         or not isinstance(progress, dict)
         or progress.get("version") != COOPERATIVE_TERMINAL_CHUNK_VERSION
-        or prior.get("version") != COOPERATIVE_TERMINAL_CHUNK_VERSION
         or str(progress.get("slateDateEt") or "") != slate_date
-        or str(prior.get("slateDateEt") or "") != slate_date
         or progress.get("requestEpoch") != request_epoch
-        or prior.get("requestEpoch") != request_epoch
         or str(progress.get("requestId") or "") != request_id
-        or str(prior.get("requestId") or "") != request_id
         or phase not in {"PROCESS", "VERIFY"}
-        or phase != str(prior.get("phase") or "")
+        or not (initial_review_shape or continuing_review_shape)
         or manifest_count < 1
         or cursor > manifest_count
         or not valid_cursor_identity
@@ -5385,20 +5451,21 @@ def _validated_cooperative_review_checkpoint_transition(
         or str(attempt.get("stage") or "") != stage
         or str(attempt.get("errorCode") or "") != error_code
         or str(attempt.get("phase") or "") != phase
-        or attempt.get("gameIndex") != cursor
+        or attempt_game_index != cursor
         or at_utc != str(progress.get("updatedAtUtc") or "")
         or parsed_at.tzinfo is None
         or parsed_at.utcoffset() != timedelta(0)
         or parsed_at.isoformat() != at_utc
+        or parsed_claim_at.tzinfo is None
+        or parsed_claim_at.utcoffset() != timedelta(0)
+        or parsed_claim_at.isoformat() != claim_at_utc
+        or parsed_at < parsed_claim_at
         or progress.get("postStartPredictionCreationAllowed") is not False
         or progress.get("immutablePredictionRewriteAllowed") is not False
         or progress.get("productionAuthorityChanged") is not False
         or re.fullmatch(r"[0-9a-f]{64}", progress_fingerprint) is None
-        or progress_fingerprint != prior_fingerprint
         or progress_fingerprint
         != _source_pull_rebind_checkpoint_fingerprint(progress)
-        or prior_fingerprint
-        != _source_pull_rebind_checkpoint_fingerprint(prior)
         or (
             stage == "PROVE_PRELOCK_ABSENCE"
             and "durableIdentity" in attempt
@@ -5408,7 +5475,6 @@ def _validated_cooperative_review_checkpoint_transition(
             "MLB_COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_CONTRACT_INVALID"
         )
     return copy.deepcopy(progress)
-
 
 def _checkpoint_cooperative_replay(
     *,
