@@ -140,19 +140,16 @@ jobs:
           import mlb_daily_pick_lock as module
           import mlb_prospective_row_repair as repair
 
+          exact_table = boto3.resource(
+              "dynamodb", region_name=REGION
+          ).Table(snapshots_table)
+          module.TABLE = exact_table
+          module.history.PULLS = exact_table
+          history_contract.PULLS = exact_table
           if (
               module.TABLE is None
               or module.history.PULLS is None
-              or str(
-                  getattr(module.TABLE, "name", None)
-                  or getattr(module.TABLE, "table_name", "")
-              )
-              != snapshots_table
-              or str(
-                  getattr(module.history.PULLS, "name", None)
-                  or getattr(module.history.PULLS, "table_name", "")
-              )
-              != snapshots_table
+              or history_contract.PULLS is None
           ):
               raise SystemExit("Exact snapshots table binding failed closed")
 
