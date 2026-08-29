@@ -4130,7 +4130,11 @@ def test_prelock_candidate_review_v2_corrupt_history_fails_without_write():
         update_count = len(table.update_calls)
 
         _assert_runtime_error(
-            lambda: handler.lambda_handler(event, FakeContext()),
+            lambda: (
+                handler._requeue_prelock_candidate_review_after_installed_runtime_proof_v2(
+                    event
+                )
+            ),
             "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_INVALID",
         )
 
