@@ -3300,9 +3300,12 @@ def test_first_attempt_review_requires_true_absence_and_exact_zero_work(
             assert table.queue_item["last_chunk_status"] == "FAILED_CLOSED"
 
 
-@pytest.mark.parametrize("prior_progress_present", (False, True))
+@pytest.mark.parametrize(
+    "prior_mode",
+    ("absent", "dict", "string", "list", "explicit_null"),
+)
 def test_precheckpoint_permanent_failure_uses_bound_review_evidence(
-    prior_progress_present,
+    prior_mode,
 ):
     table = FakeLeaseTable()
     with _load_handler(
@@ -3313,20 +3316,39 @@ def test_precheckpoint_permanent_failure_uses_bound_review_evidence(
             2026, 7, 21, 22, 9, 30, tzinfo=timezone.utc
         )
         handler.lambda_handler(_cooperative_event(), FakeContext())
-        prior = None
-        if prior_progress_present:
-            prior, _ = _fresh_review_transition_fixture(handler, table)
 
+        prior_progress_present = prior_mode != "absent"
+        if prior_mode == "dict":
+            prior, _ = _fresh_review_transition_fixture(handler, table)
+        elif prior_mode == "string":
+            prior = "malformed-checkpoint"
+            table.queue_item["terminal_replay_progress"] = prior
+        elif prior_mode == "list":
+            prior = ["malformed-checkpoint"]
+            table.queue_item["terminal_replay_progress"] = copy.deepcopy(
+                prior
+            )
+        elif prior_mode == "explicit_null":
+            prior = None
+            table.queue_item["terminal_replay_progress"] = None
+        else:
+            prior = None
+
+        error_code = (
+            "COOPERATIVE_TERMINAL_CHUNK_CHECKPOINT_NOT_OBJECT"
+            if prior_mode in {"string", "list"}
+            else (
+                "COOPERATIVE_TERMINAL_CHUNK_"
+                "MANIFEST_EVIDENCE_INVALID"
+            )
+        )
         handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk = (
             lambda **_kwargs: {
                 "ok": False,
                 "complete": False,
                 "deferred": False,
                 "stage": "BIND_MANIFEST_AUTHORITY",
-                "errorCode": (
-                    "COOPERATIVE_TERMINAL_CHUNK_"
-                    "MANIFEST_EVIDENCE_INVALID"
-                ),
+                "errorCode": error_code,
                 "remainingSeconds": 700,
                 "checkpointWriteAllowed": False,
                 "checkpoint": None,
@@ -3358,18 +3380,34 @@ def test_precheckpoint_permanent_failure_uses_bound_review_evidence(
             table.queue_item,
         ) == evidence
         assert evidence["priorProgressPresent"] is prior_progress_present
+        assert evidence["priorProgressFingerprint"] == (
+            handler._source_pull_rebind_compact_fingerprint(prior)
+            if prior_progress_present
+            else None
+        )
         assert evidence["directWorkflowTableWrite"] is False
         assert table.queue_item["last_chunk_stage"] == (
             "BIND_MANIFEST_AUTHORITY"
         )
         assert table.queue_item["last_chunk_status"] == "FAILED_CLOSED"
         assert "claim_owner" not in table.queue_item
-        public = handler._cooperative_public_state(table.queue_item)
-        assert public["reviewReason"] == (
-            "COOPERATIVE_TERMINAL_CHUNK_MANIFEST_EVIDENCE_INVALID"
+
+        # Persisted v1 evidence is interpreted by its frozen contract even if
+        # a later runtime changes the live generation classifier.
+        handler._cooperative_replay_requires_review = (
+            lambda _stage, _error_code: False
         )
+        assert handler._validated_cooperative_review_evidence(
+            evidence,
+            table.queue_item,
+        ) == evidence
+        public = handler._cooperative_public_state(table.queue_item)
+        assert public["reviewReason"] == error_code
         if prior_progress_present:
-            assert table.queue_item["terminal_replay_progress"] == prior
+            assert (
+                table.queue_item["terminal_replay_progress"]
+                == prior
+            )
         else:
             assert "terminal_replay_progress" not in table.queue_item
 
