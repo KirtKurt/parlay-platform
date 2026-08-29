@@ -3007,55 +3007,90 @@ def test_eventbridge_owner_checkpoints_process_then_verify_then_completes():
         assert "fixture-v2-owner:atomic-completer" not in serialized
 
 
-def test_failed_chunk_enters_review_required_without_reclaim(capsys):
-    table = FakeLeaseTable()
-    chunk_version = (
-        COOPERATIVE_REPAIR.COOPERATIVE_TERMINAL_CHUNK_VERSION
+def _fresh_review_transition_fixture(
+    handler,
+    table,
+    *,
+    slate_date="2026-07-20",
+):
+    request_epoch = int(table.queue_item["requested_at_epoch"])
+    request_id = str(table.queue_item["request_id"])
+    prior = _complete_terminal_checkpoint(
+        slate_date=slate_date,
+        request_epoch=request_epoch,
+        request_id=request_id,
+        game_count=1,
     )
-    checkpoint = {
-        "version": chunk_version,
-        "requestEpoch": None,
-        "requestId": None,
-        "slateDateEt": "2026-07-20",
-        "manifestFingerprint": "manifest-fingerprint",
-        "manifestGameCount": 1,
+    prior.update(
+        {
+            "phase": "PROCESS",
+            "nextGameIndex": 0,
+            "processedGameCount": 0,
+            "terminalCount": 0,
+            "canonicalCount": 0,
+            "noPredictionDataCount": 0,
+            "missedLockValidPrelockQuarantineCount": 0,
+            "reconciledCount": 0,
+            "processedGames": [],
+            "verificationIndex": 0,
+            "verifiedGameCount": 0,
+            "verificationComplete": False,
+            "attemptCount": 1,
+            "lastAttempt": {
+                "status": "DEFERRED_INSUFFICIENT_REMAINING_TIME",
+                "stage": "GAME_BUDGET",
+                "atUtc": "2026-07-21T22:09:00+00:00",
+                "phase": "PROCESS",
+                "gameIndex": 0,
+                "gameIdentity": "provider:game-1",
+            },
+            "updatedAtUtc": "2026-07-21T22:09:00+00:00",
+        }
+    )
+    prior["checkpointFingerprint"] = (
+        COOPERATIVE_REPAIR._cooperative_terminal_checkpoint_fingerprint(
+            prior
+        )
+    )
+    table.queue_item["terminal_replay_progress"] = copy.deepcopy(prior)
+    failed = copy.deepcopy(prior)
+    failed["attemptCount"] = 2
+    failed["lastAttempt"] = {
+        "status": "FAILED_CLOSED",
+        "stage": "PROVE_PRELOCK_ABSENCE",
+        "atUtc": "2026-07-21T22:10:00+00:00",
         "phase": "PROCESS",
-        "nextGameIndex": 0,
-        "processedGameCount": 0,
-        "terminalCount": 0,
-        "canonicalCount": 0,
-        "noPredictionDataCount": 0,
-        "missedLockValidPrelockQuarantineCount": 0,
-        "reconciledCount": 0,
-        "processedGames": [],
-        "verificationIndex": 0,
-        "verifiedGameCount": 0,
-        "verificationComplete": False,
-        "attemptCount": 1,
-        "lastAttempt": {
-            "status": "FAILED_CLOSED",
-            "stage": "PROVE_PRELOCK_ABSENCE",
-            "atUtc": "2026-07-21T22:10:00+00:00",
-            "gameIndex": 0,
-            "gameIdentity": "provider:game-1",
-            "errorCode": "PRELOCK_CANDIDATE_REQUIRES_REVIEW",
-        },
-        "postStartPredictionCreationAllowed": False,
-        "immutablePredictionRewriteAllowed": False,
-        "productionAuthorityChanged": False,
+        "gameIndex": 0,
+        "gameIdentity": "provider:game-1",
+        "errorCode": "PRELOCK_CANDIDATE_REQUIRES_REVIEW",
     }
+    failed["updatedAtUtc"] = failed["lastAttempt"]["atUtc"]
+    failed["checkpointFingerprint"] = (
+        COOPERATIVE_REPAIR._cooperative_terminal_checkpoint_fingerprint(
+            failed
+        )
+    )
+    assert failed["checkpointFingerprint"] == prior[
+        "checkpointFingerprint"
+    ]
+    return prior, failed
 
+
+def test_failed_chunk_enters_review_only_with_fresh_failure_checkpoint(
+    capsys,
+):
+    table = FakeLeaseTable()
     with _load_handler(
         lease_table=table,
         delegate_payload=_successful_current_slate_payload(),
     ) as (handler, _, delegate_calls):
-        def failed_runner(**kwargs):
-            bound_checkpoint = copy.deepcopy(checkpoint)
-            bound_checkpoint["requestEpoch"] = int(
-                kwargs["request_epoch"]
-            )
-            bound_checkpoint["requestId"] = str(kwargs["request_id"])
-            checkpoint.update(copy.deepcopy(bound_checkpoint))
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        prior, failed = _fresh_review_transition_fixture(
+            handler,
+            table,
+        )
+
+        def failed_runner(**_kwargs):
             return {
                 "ok": False,
                 "complete": False,
@@ -3064,8 +3099,10 @@ def test_failed_chunk_enters_review_required_without_reclaim(capsys):
                 "errorCode": "PRELOCK_CANDIDATE_REQUIRES_REVIEW",
                 "remainingSeconds": 700,
                 "checkpointWriteAllowed": True,
-                "checkpoint": bound_checkpoint,
-                "terminalChunkVersion": chunk_version,
+                "checkpoint": copy.deepcopy(failed),
+                "terminalChunkVersion": (
+                    handler.COOPERATIVE_TERMINAL_CHUNK_VERSION
+                ),
                 "postStartPredictionCreationAllowed": False,
                 "immutablePredictionRewriteAllowed": False,
                 "productionAuthorityChanged": False,
@@ -3074,7 +3111,6 @@ def test_failed_chunk_enters_review_required_without_reclaim(capsys):
         handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk = (
             failed_runner
         )
-        handler.lambda_handler(_cooperative_event(), FakeContext())
         _assert_runtime_error(
             lambda: handler.lambda_handler(
                 _scheduled_event(),
@@ -3090,13 +3126,73 @@ def test_failed_chunk_enters_review_required_without_reclaim(capsys):
             "daily_lock_check"
         ]
         assert table.queue_item["state"] == "REVIEW_REQUIRED"
-        assert table.queue_item["terminal_replay_progress"] == checkpoint
+        assert table.queue_item["terminal_replay_progress"] == failed
+        assert table.queue_item["terminal_replay_progress"] != prior
         assert "claim_owner" not in table.queue_item
         assert table.item is None
         logs = capsys.readouterr().out
         assert "PROVE_PRELOCK_ABSENCE" in logs
         assert "PRELOCK_CANDIDATE_REQUIRES_REVIEW" in logs
         assert "claim_owner" not in logs
+
+
+@pytest.mark.parametrize(
+    ("checkpoint_value", "write_allowed"),
+    (
+        (None, False),
+        ("not-a-checkpoint", True),
+    ),
+)
+def test_permanent_review_never_relabels_stale_success_checkpoint(
+    checkpoint_value,
+    write_allowed,
+):
+    table = FakeLeaseTable()
+    with _load_handler(
+        lease_table=table,
+        delegate_payload=_successful_current_slate_payload(),
+    ) as (handler, _, _):
+        handler.lambda_handler(_cooperative_event(), FakeContext())
+        prior, _ = _fresh_review_transition_fixture(handler, table)
+
+        def failed_runner(**_kwargs):
+            return {
+                "ok": False,
+                "complete": False,
+                "deferred": False,
+                "stage": "PROVE_PRELOCK_ABSENCE",
+                "errorCode": "PRELOCK_CANDIDATE_REQUIRES_REVIEW",
+                "remainingSeconds": 700,
+                "checkpointWriteAllowed": write_allowed,
+                "checkpoint": checkpoint_value,
+                "terminalChunkVersion": (
+                    handler.COOPERATIVE_TERMINAL_CHUNK_VERSION
+                ),
+                "postStartPredictionCreationAllowed": False,
+                "immutablePredictionRewriteAllowed": False,
+                "productionAuthorityChanged": False,
+            }
+
+        handler.mlb_daily_pick_lock.run_cooperative_terminal_chunk = (
+            failed_runner
+        )
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                _scheduled_event(),
+                FakeContext(
+                    request_id="stale-review-owner",
+                    remaining_millis=900_000,
+                ),
+            ),
+            "MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED",
+        )
+
+        assert table.queue_item["state"] == "QUEUED"
+        assert table.queue_item["terminal_replay_progress"] == prior
+        assert table.queue_item["last_chunk_stage"] != (
+            "PROVE_PRELOCK_ABSENCE"
+        )
+        assert "claim_owner" not in table.queue_item
 
 
 def _seed_source_pull_rebind_review(
