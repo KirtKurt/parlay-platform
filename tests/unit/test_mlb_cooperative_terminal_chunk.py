@@ -998,6 +998,202 @@ def test_new_outcome_uses_manifest_primary_and_passes_real_manifest_validator():
     assert progress["missedCount"] == 0
 
 
+def test_real_cooperative_quarantine_rebinds_multigame_immutable_source():
+    target = real_lock_fixtures.official_game(
+        "provider-target",
+        "2026-07-13T18:00:00+00:00",
+        "991556",
+    )
+    sibling = real_lock_fixtures.official_game(
+        "provider-sibling",
+        "2026-07-13T19:00:00+00:00",
+        "991557",
+    )
+    source = real_lock_fixtures.pull(
+        "2026-07-13T16:45:00+00:00",
+        [target, sibling],
+        "cooperative-multigame-source",
+    )
+    module = real_lock_fixtures.build_module(
+        [source],
+        "2026-07-14T12:00:00+00:00",
+        seed=False,
+    )
+    module._today_et = lambda: "2026-07-14"
+    real_lock_fixtures.persist_candidate(
+        module,
+        target,
+        source,
+        mutate=lambda row: row.update(
+            {
+                "officialGamePk": "991556",
+                "officialGameId": "mlb_statsapi:991556",
+            }
+        ),
+    )
+    repair.install_prospective_row_repair(module, real_patch)
+
+    result = module.run_cooperative_terminal_chunk(
+        slate_date=real_lock_fixtures.SLATE,
+        request_epoch=REQUEST_EPOCH,
+        request_id=REQUEST_ID,
+        checkpoint=None,
+        context=BudgetContext(900_000),
+    )
+
+    assert result["ok"] is True
+    assert result["stage"] == "PROCESS_CHECKPOINT_READY"
+    processed = result["checkpoint"]["processedGames"]
+    assert len(processed) == 1
+    assert processed[0]["terminalState"] == (
+        "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+    )
+    outcomes = real_lock_fixtures.lock_outcome_items(module)
+    assert len(outcomes) == 1
+    assert outcomes[0]["canonical_prediction"] is False
+    assert outcomes[0]["training_eligible"] is False
+    assert outcomes[0]["accuracy_eligible"] is False
+    assert outcomes[0]["wager_allowed"] is False
+    assert outcomes[0]["prediction_adopted"] is False
+    authority = outcomes[0]["valid_prelock_quarantine_authority"]
+    assert authority["sourcePullFingerprint"] == (
+        real_lock_fixtures.history_contract.pull_payload_fingerprint(source)
+    )
+    assert authority["predictionAdopted"] is False
+
+
+def test_real_cooperative_quarantine_rejects_retained_invalid_raw_source():
+    target = real_lock_fixtures.official_game(
+        "provider-target",
+        "2026-07-13T18:00:00+00:00",
+        "991556",
+    )
+    sibling = real_lock_fixtures.official_game(
+        "provider-sibling",
+        "2026-07-13T19:00:00+00:00",
+        "991557",
+    )
+    valid = real_lock_fixtures.pull(
+        "2026-07-13T16:45:00+00:00",
+        [target, sibling],
+        "valid-canonical",
+    )
+    invalid = real_lock_fixtures.pull(
+        "2026-07-13T16:46:00+00:00",
+        [target, sibling],
+        "invalid-source",
+    )
+    invalid["sport"] = "nba"
+    assert real_lock_fixtures.history_contract._pull_integrity_errors(
+        invalid,
+        sport="mlb",
+        slate=real_lock_fixtures.SLATE,
+    ) == ["sport_mismatch"]
+    module = real_lock_fixtures.build_module(
+        [valid, invalid],
+        "2026-07-14T12:00:00+00:00",
+        seed=False,
+    )
+    module._today_et = lambda: "2026-07-14"
+    real_lock_fixtures.persist_candidate(
+        module,
+        target,
+        invalid,
+        mutate=lambda row: row.update(
+            {
+                "officialGamePk": "991556",
+                "officialGameId": "mlb_statsapi:991556",
+            }
+        ),
+    )
+    repair.install_prospective_row_repair(module, real_patch)
+
+    result = module.run_cooperative_terminal_chunk(
+        slate_date=real_lock_fixtures.SLATE,
+        request_epoch=REQUEST_EPOCH,
+        request_id=REQUEST_ID,
+        checkpoint=None,
+        context=BudgetContext(900_000),
+    )
+
+    assert result["ok"] is False
+    assert result["errorCode"] == "PRELOCK_CANDIDATE_REQUIRES_REVIEW"
+    assert real_lock_fixtures.lock_outcome_items(module) == []
+
+
+def test_real_cooperative_quarantine_rejects_query_readback_split_brain():
+    target = real_lock_fixtures.official_game(
+        "provider-target",
+        "2026-07-13T18:00:00+00:00",
+        "991556",
+    )
+    sibling = real_lock_fixtures.official_game(
+        "provider-sibling",
+        "2026-07-13T19:00:00+00:00",
+        "991557",
+    )
+    queried = real_lock_fixtures.pull(
+        "2026-07-13T16:45:00+00:00",
+        [target, sibling],
+        "split-read-source",
+    )
+    module = real_lock_fixtures.build_module(
+        [queried],
+        "2026-07-14T12:00:00+00:00",
+        seed=False,
+    )
+    module._today_et = lambda: "2026-07-14"
+    real_lock_fixtures.persist_candidate(
+        module,
+        target,
+        queried,
+        mutate=lambda row: row.update(
+            {
+                "officialGamePk": "991556",
+                "officialGameId": "mlb_statsapi:991556",
+            }
+        ),
+    )
+    changed = copy.deepcopy(queried)
+    changed["games"][0]["books"]["fanduel"]["ml"]["away"] = 999
+    storage = {
+        "pk": f"PULLS#mlb#{real_lock_fixtures.SLATE}",
+        "sk": (
+            f"PULL#{queried['pulled_at']}#{queried['pull_id']}"
+        ),
+        "recordType": "pull_run",
+    }
+    changed["canonicalPullStorage"] = copy.deepcopy(storage)
+    module.TABLE.items[(storage["pk"], storage["sk"])] = {
+        "PK": storage["pk"],
+        "SK": storage["sk"],
+        "record_type": "pull_run",
+        "sport": "mlb",
+        "slate_date": real_lock_fixtures.SLATE,
+        "pulled_at": changed["pulled_at"],
+        "pull_id": changed["pull_id"],
+        "data": copy.deepcopy(changed),
+    }
+    assert real_lock_fixtures.history_contract.pull_payload_fingerprint(
+        queried
+    ) != real_lock_fixtures.history_contract.pull_payload_fingerprint(changed)
+    repair.install_prospective_row_repair(module, real_patch)
+
+    result = module.run_cooperative_terminal_chunk(
+        slate_date=real_lock_fixtures.SLATE,
+        request_epoch=REQUEST_EPOCH,
+        request_id=REQUEST_ID,
+        checkpoint=None,
+        context=BudgetContext(900_000),
+    )
+
+    assert result["ok"] is False
+    assert result["errorCode"] == (
+        "VALID_PRELOCK_QUARANTINE_SOURCE_PULL_PROOF_MISMATCH"
+    )
+    assert real_lock_fixtures.lock_outcome_items(module) == []
+
+
 @pytest.mark.parametrize(
     ("corrupt_identity", "valid_identity"),
     [

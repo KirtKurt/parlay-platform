@@ -33,6 +33,13 @@ MAX_ACTIONABLE_RISK = float(
 )
 PATCH_VERSION = "MLB-PROVIDER-NEUTRAL-CALIBRATION-NO-PICK-v2"
 FUNDAMENTALS_MODE = "FUNDAMENTALS_V2_NOT_ACTIVE_IN_LIVE_SCORING"
+FUNDAMENTALS_SHADOW_MODE = "FUNDAMENTALS_V2_SHADOW_ONLY"
+FUNDAMENTALS_AUTHORITY_MODE = "SHADOW_ONLY_NO_LIVE_SCORING_AUTHORITY"
+FUNDAMENTALS_NOT_ACTIVE_AUTHORITY_MODE = "NOT_ACTIVE_NO_LIVE_SCORING_AUTHORITY"
+FUNDAMENTALS_SHADOW_FIELD = "fundamentalsScoringShadow"
+FUNDAMENTALS_SHADOW_VERSION = (
+    "MLB-FUNDAMENTALS-SCORING-BRIDGE-v2-source-honest-shadow-only"
+)
 UPSTREAM_RELEASE_REASON_FIELDS = (
     "blockedReasons",
     "releaseBlockReasons",
@@ -99,9 +106,78 @@ def _signal(row: Dict[str, Any]) -> Dict[str, Any]:
     return dict(value or {})
 
 
+def _shadow_evidence(row: Dict[str, Any]) -> Dict[str, Any]:
+    value = row.get(FUNDAMENTALS_SHADOW_FIELD)
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _shadow_attestation_errors(
+    shadow: Dict[str, Any],
+    row: Dict[str, Any] | None = None,
+) -> List[str]:
+    if not shadow:
+        return []
+    try:
+        try:
+            import mlb_fundamentals_scoring_bridge_v1 as shadow_contract
+        except ImportError:
+            from hello_world import (
+                mlb_fundamentals_scoring_bridge_v1 as shadow_contract,
+            )
+
+        return list(
+            shadow_contract.validate_shadow_attestation(shadow, row or {})
+        )
+    except Exception:
+        # The actionability layer must be total over persisted JSON/Dynamo
+        # shapes. A validator failure is an invalid attestation, never a reason
+        # to continue with an actionable row or to fail the whole prediction.
+        return ["shadow_attestation_validator_failed"]
+
+
+def _shadow_source_incomplete(shadow: Dict[str, Any]) -> bool:
+    mode = str(shadow.get("mode") or "").upper()
+    reason = str(shadow.get("reason") or "").lower()
+    return bool(
+        "SOURCE_INCOMPLETE" in mode
+        or shadow.get("missingEssentialGroups")
+        or reason in {
+            "essential_groups_incomplete",
+            "quality_group_or_numeric_edge_unavailable",
+        }
+    )
+
+
+def _live_fundamentals_applied(row: Dict[str, Any]) -> bool:
+    optimizer = row.get("winnerOptimizer") or {}
+    layer = row.get("fundamentalsLayer") or {}
+    stack = row.get("winnerStackV2") or {}
+    stack_components = stack.get("components") or {}
+    stack_fundamentals = stack_components.get("fundamentals") or {}
+    stack_weights = stack.get("weights") or {}
+    return bool(
+        optimizer.get("fundamentalsApplied") is True
+        or layer.get("applied") is True
+        or row.get("fundamentalsApplied") is True
+        or stack_fundamentals.get("applied") is True
+        or _num(stack_weights.get("fundamentals"), 0.0) > 0.0
+    )
+
+
 def _annotate_source_honesty(row: Dict[str, Any]) -> Dict[str, Any]:
     """Mark fundamentals unavailable without reading or inventing provider data."""
+    upstream_applied = _live_fundamentals_applied(row or {})
     out = copy.deepcopy(row or {})
+    shadow = _shadow_evidence(out)
+    shadow_attestation_errors = _shadow_attestation_errors(shadow, out)
+    shadow_available = bool(
+        shadow.get("evaluated") is True and not shadow_attestation_errors
+    )
+    authority_mode = (
+        str(shadow.get("authorityMode") or FUNDAMENTALS_AUTHORITY_MODE)
+        if shadow_available
+        else FUNDAMENTALS_NOT_ACTIVE_AUTHORITY_MODE
+    )
     optimizer = dict(out.get("winnerOptimizer") or {})
     optimizer["fundamentalsApplied"] = False
     optimizer["fundamentalsMode"] = FUNDAMENTALS_MODE
@@ -109,14 +185,41 @@ def _annotate_source_honesty(row: Dict[str, Any]) -> Dict[str, Any]:
         "market_signal_plus_multi_window_learning"
     )
     out["winnerOptimizer"] = optimizer
+    out["fundamentalsApplied"] = False
+    out["fundamentalsMode"] = FUNDAMENTALS_MODE
     out["tags"] = sorted(set((out.get("tags") or []) + ["MISSING_FUNDAMENTALS"]))
     out["fundamentalsLayer"] = {
         "available": False,
         "applied": False,
         "mode": FUNDAMENTALS_MODE,
+        "authorityMode": authority_mode,
+        "state": "SHADOW_ONLY" if shadow_available else "NOT_ACTIVE",
+        "shadowOnly": shadow_available,
+        "liveScoringAuthority": False,
+        "canInfluenceLivePick": False,
+        "upstreamAppliedDetected": upstream_applied,
+        "shadowEvaluationAvailable": shadow_available,
+        "shadowAttestationValid": bool(shadow and not shadow_attestation_errors),
+        "shadowAttestationErrors": shadow_attestation_errors,
+        "shadowEvaluationMode": (
+            FUNDAMENTALS_SHADOW_MODE if shadow_available else None
+        ),
+        "shadowWouldApply": bool(
+            shadow_available and shadow.get("wouldApply") is True
+        ),
+        "shadowMode": shadow.get("mode"),
+        "sourceIncomplete": bool(
+            shadow_available and _shadow_source_incomplete(shadow)
+        ),
         "message": (
-            "No validated Fundamentals V2 package is active in live scoring. "
-            "Market signal remains primary."
+            (
+                "Fundamentals V2 was evaluated only as bounded shadow evidence "
+                "and has no live scoring authority."
+                if shadow_available
+                else "Fundamentals V2 is not active and no shadow evaluation "
+                "was attached to this row."
+            )
+            + " Market signal remains primary."
         ),
     }
     return out
@@ -411,6 +514,35 @@ def _no_pick(row: Dict[str, Any]) -> Dict[str, Any]:
         ]
     if contract_validation_errors:
         mandatory_block_reasons.append("probability_contract_invalid")
+    fundamentals_layer = out.get("fundamentalsLayer")
+    fundamentals_layer = (
+        fundamentals_layer if isinstance(fundamentals_layer, dict) else {}
+    )
+    shadow_attestation_errors = sorted(
+        {
+            str(value)
+            for value in (
+                fundamentals_layer.get("shadowAttestationErrors") or []
+            )
+            if str(value)
+        }
+    )
+    if shadow_attestation_errors:
+        mandatory_block_reasons.append(
+            "invalid_fundamentals_shadow_attestation"
+        )
+        if {
+            "shadow_live_authority_invalid",
+            "shadow_pick_influence_invalid",
+            "shadow_live_scoring_used_candidate",
+        } & set(shadow_attestation_errors):
+            mandatory_block_reasons.append(
+                "fundamentals_shadow_live_use_detected"
+            )
+    if fundamentals_layer.get("upstreamAppliedDetected") is True:
+        mandatory_block_reasons.append(
+            "upstream_fundamentals_application_detected"
+        )
     upstream_release_blocked, upstream_block_reasons = _upstream_release_block(out)
     if upstream_release_blocked:
         mandatory_block_reasons.append("upstream_release_blocked")
@@ -441,6 +573,7 @@ def _no_pick(row: Dict[str, Any]) -> Dict[str, Any]:
             "actionable": bool(actionable),
             "level": level,
             "mandatoryBlockReasons": sorted(set(mandatory_block_reasons)),
+            "fundamentalsShadowAttestationErrors": shadow_attestation_errors,
             "upstreamReleaseBlockReasons": upstream_block_reasons,
             "probabilityContractValidationErrors": sorted(
                 set(contract_validation_errors)
@@ -506,6 +639,7 @@ def _no_pick(row: Dict[str, Any]) -> Dict[str, Any]:
         "riskReasons": reasons,
         "noPickReasons": sorted(set(no_pick_reasons)),
         "mandatoryBlockReasons": sorted(set(mandatory_block_reasons)),
+        "fundamentalsShadowAttestationErrors": shadow_attestation_errors,
         "upstreamReleaseBlockReasons": upstream_block_reasons,
         "probabilityContractValidationErrors": sorted(
             set(contract_validation_errors)
@@ -534,8 +668,16 @@ def apply(module: Any) -> Any:
         result = original_predict_all(*args, **kwargs)
         if not isinstance(result, dict):
             return result
+        incoming_predictions = [
+            row
+            for row in (result.get("predictions") or [])
+            if isinstance(row, dict)
+        ]
+        upstream_fundamentals_applied = sum(
+            _live_fundamentals_applied(row) for row in incoming_predictions
+        )
         predictions = [
-            guard_prediction(row) for row in (result.get("predictions") or [])
+            guard_prediction(row) for row in incoming_predictions
         ]
         predictions.sort(
             key=lambda row: (
@@ -549,6 +691,41 @@ def apply(module: Any) -> Any:
             row["rank"] = rank
         result["predictions"] = predictions
         result["count"] = len(predictions)
+        shadow_payloads = [
+            (row, _shadow_evidence(row)) for row in predictions
+        ]
+        shadow_attestation_invalid = sum(
+            bool(_shadow_attestation_errors(shadow, row))
+            for row, shadow in shadow_payloads
+            if shadow
+        )
+        shadow_rows = [
+            shadow
+            for row, shadow in shadow_payloads
+            if shadow.get("evaluated") is True
+            and not _shadow_attestation_errors(shadow, row)
+        ]
+        live_fundamentals_applied = sum(
+            _live_fundamentals_applied(row) for row in predictions
+        )
+        shadow_would_apply = sum(
+            shadow.get("wouldApply") is True for shadow in shadow_rows
+        )
+        shadow_source_incomplete = sum(
+            _shadow_source_incomplete(shadow) for shadow in shadow_rows
+        )
+        shadow_invalid = sum(
+            bool(shadow.get("validationErrors")) for shadow in shadow_rows
+        ) + shadow_attestation_invalid
+        not_active_count = max(len(predictions) - len(shadow_rows), 0)
+        if shadow_attestation_invalid:
+            fundamentals_state = "INVALID_SHADOW_ATTESTATION"
+        elif shadow_rows and not_active_count:
+            fundamentals_state = "MIXED_NOT_ACTIVE_AND_SHADOW_ONLY"
+        elif shadow_rows:
+            fundamentals_state = "SHADOW_ONLY"
+        else:
+            fundamentals_state = "NOT_ACTIVE"
         summary = dict(
             result.get("rolling24hAccuracyTarget")
             or result.get("accuracyTarget")
@@ -558,13 +735,37 @@ def apply(module: Any) -> Any:
             {
                 "fundamentalsEnabled": False,
                 "fundamentalsMode": FUNDAMENTALS_MODE,
-                "fundamentalsAppliedCount": 0,
+                "fundamentalsAuthorityMode": "NO_LIVE_SCORING_AUTHORITY",
+                "fundamentalsState": fundamentals_state,
+                "fundamentalsShadowOnly": bool(shadow_rows),
+                "fundamentalsAppliedCount": live_fundamentals_applied,
+                "fundamentalsAuthorityInactiveCount": max(
+                    len(predictions) - live_fundamentals_applied,
+                    0,
+                ),
+                "fundamentalsUpstreamAppliedDetectedCount": (
+                    upstream_fundamentals_applied
+                ),
+                "fundamentalsUpstreamAppliedSuppressedFlagCount": max(
+                    upstream_fundamentals_applied - live_fundamentals_applied,
+                    0,
+                ),
                 "fundamentalsMissingCount": len(
                     [
                         row
                         for row in predictions
                         if "MISSING_FUNDAMENTALS" in set(row.get("tags") or [])
                     ]
+                ),
+                "fundamentalsShadowEvaluatedCount": len(shadow_rows),
+                "fundamentalsShadowOnlyCount": len(shadow_rows),
+                "fundamentalsNotActiveCount": not_active_count,
+                "fundamentalsShadowWouldApplyCount": shadow_would_apply,
+                "fundamentalsSourceIncompleteCount": shadow_source_incomplete,
+                "fundamentalsSourceMissingCount": shadow_source_incomplete,
+                "fundamentalsShadowInvalidCount": shadow_invalid,
+                "fundamentalsShadowAttestationInvalidCount": (
+                    shadow_attestation_invalid
                 ),
                 "calibrationEnabled": CALIBRATION_ENABLED,
                 "calibratedPredictionCount": len(
@@ -589,6 +790,27 @@ def apply(module: Any) -> Any:
         result["accuracyTarget"] = summary
         result["actionablePickCount"] = summary["actionablePickCount"]
         result["noPickCount"] = summary["noPickCount"]
+        result["fundamentalsScoringPolicy"] = {
+            "mode": FUNDAMENTALS_MODE,
+            "shadowMode": FUNDAMENTALS_SHADOW_MODE,
+            "authorityMode": "NO_LIVE_SCORING_AUTHORITY",
+            "state": fundamentals_state,
+            "shadowOnly": bool(shadow_rows),
+            "liveScoringAuthority": False,
+            "upstreamAppliedDetectedCount": upstream_fundamentals_applied,
+            "upstreamAppliedSuppressedFlagCount": max(
+                upstream_fundamentals_applied - live_fundamentals_applied,
+                0,
+            ),
+            "providerShadowCanInfluenceLivePick": False,
+            "shadowEvaluatedCount": len(shadow_rows),
+            "notActiveCount": not_active_count,
+            "shadowWouldApplyCount": shadow_would_apply,
+            "sourceIncompleteCount": shadow_source_incomplete,
+            "sourceMissingCount": shadow_source_incomplete,
+            "shadowInvalidCount": shadow_invalid,
+            "shadowAttestationInvalidCount": shadow_attestation_invalid,
+        }
         result["calibrationPolicy"] = {
             "enabled": CALIBRATION_ENABLED,
             "method": "market_consensus_score_blend_with_risk_shrinkage",

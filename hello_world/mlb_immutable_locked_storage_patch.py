@@ -594,6 +594,7 @@ _SLATE_LOCK_PUBLIC_OBSERVABILITY_FIELDS = frozenset(
         "minutesUntilFirstGameStart",
         "minutesUntilFirstPerGameLock",
         "missedLockCount",
+        "missedLockValidPrelockQuarantineCount",
         "noPredictionDataCount",
         "officialScheduleAuthoritativeStartTimes",
         "officialScheduleAuthorityFingerprint",

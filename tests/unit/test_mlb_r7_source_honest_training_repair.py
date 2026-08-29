@@ -12,8 +12,10 @@ if str(HELLO_WORLD) not in sys.path:
     sys.path.insert(0, str(HELLO_WORLD))
 
 import mlb_fundamentals_snapshot_v2 as fundamentals
+import mlb_ml_clean_cohort_v1 as cohort
 import mlb_ml_dual_model_v2 as dual_model
 import mlb_ml_experiment_v2 as experiment
+import mlb_prospective_trainer_read_repair as prospective_read_repair
 import mlb_r7_source_honest_training_repair as repair
 
 
@@ -61,6 +63,15 @@ def canonical_authority():
 
 def exact_locked_row():
     snapshot = incomplete_snapshot()
+    snapshot_ref = {
+        "version": snapshot["version"],
+        "schemaCohort": snapshot["schemaCohort"],
+        "gameId": snapshot["game"]["gameId"],
+        "sourcePullId": snapshot["sourcePullId"],
+        "evidenceCutoffUtc": snapshot["evidenceCutoffUtc"],
+        "fingerprintVersion": snapshot["fingerprintVersion"],
+        "fingerprint": snapshot["fingerprint"],
+    }
     features = {
         name: float(index + 1) / 100.0
         for index, name in enumerate(
@@ -83,13 +94,25 @@ def exact_locked_row():
     }
     vector = {
         "version": "MLB-VECTOR-v2",
-        "fingerprint": "r7-source-honest-vector",
+        "fingerprintVersion": cohort.FINGERPRINT_VERSION,
         "gameId": "r7-source-honest-game",
         "officialGamePk": OFFICIAL_GAME_PK,
         "slateDateEt": "2026-08-24",
         "sourcePullAtUtc": SOURCE_AT,
         "lockAtUtc": LOCK_AT,
         "predictionPersistedAtUtc": PERSISTED_AT,
+        "labels": {"homeWon": None, "pickCorrect": None},
+        "fundamentalsSnapshotV2Version": snapshot["version"],
+        "fundamentalsSnapshotV2SchemaCohort": snapshot["schemaCohort"],
+        "fundamentalsSnapshotV2FingerprintVersion": snapshot[
+            "fingerprintVersion"
+        ],
+        "fundamentalsSnapshotV2Fingerprint": snapshot["fingerprint"],
+        "fundamentalsSnapshotV2EvidenceCutoffUtc": snapshot[
+            "evidenceCutoffUtc"
+        ],
+        "fundamentalsSnapshotV2AtOrBeforeLock": True,
+        "fundamentalsSnapshotV2Ref": copy.deepcopy(snapshot_ref),
         "features": features,
         "pullHistoryIntegrity": {
             "version": "INQSI-PULL-HISTORY-INTEGRITY-v1-canonical-quarter-hour",
@@ -113,6 +136,7 @@ def exact_locked_row():
             "contaminated": False,
         },
     }
+    vector["fingerprint"] = cohort.fingerprint_for_vector(vector)
     return {
         "gameId": "r7-source-honest-game",
         "officialGamePk": OFFICIAL_GAME_PK,
@@ -127,10 +151,7 @@ def exact_locked_row():
         "frozenFeatureVector": vector,
         "featureSnapshot": copy.deepcopy(vector),
         "fundamentalsSnapshotV2": snapshot,
-        "fundamentalsSnapshotRefV2": {
-            "version": snapshot["version"],
-            "fingerprint": snapshot["fingerprint"],
-        },
+        "fundamentalsSnapshotRefV2": snapshot_ref,
         "canonicalLockAuthority": canonical_authority(),
     }
 
@@ -147,6 +168,7 @@ def exact_label(locked):
         "canonical_lock_pk": LOCK_PK,
         "canonical_lock_sk": LOCK_SK,
         "canonical_stage_fingerprint": STAGE_FINGERPRINT,
+        "canonical_lock_payload_fingerprint": "locked-payload-1",
         "frozen_feature_vector_fingerprint": vector["fingerprint"],
         "fundamentals_snapshot_v2_version": snapshot["version"],
         "fundamentals_snapshot_v2_fingerprint": snapshot["fingerprint"],
@@ -217,10 +239,33 @@ def test_source_honest_policy_rejects_tamper_and_post_lock_evidence():
 
 
 def fake_labels_module():
+    label_record_validation_calls = []
+
     def training_verdict(row):
         return False, list(
             row["fundamentalsSnapshotV2"]["trainingExclusionReasons"]
         )
+
+    def trusted_label_record_errors(item, slate_date, official_game_pk):
+        """Explicit trusted test stub for the production validation hook."""
+
+        label_record_validation_calls.append(
+            (copy.deepcopy(item), slate_date, official_game_pk)
+        )
+        errors = []
+        if not isinstance(item, dict):
+            return ["canonical_label_record_missing"]
+        if slate_date != "2026-08-24":
+            errors.append("canonical_label_key_mismatch")
+        if str(item.get("official_game_pk") or "") != official_game_pk:
+            errors.append("canonical_label_official_game_pk_mismatch")
+        if item.get("write_once") is not True or item.get("completed") is not True:
+            errors.append("canonical_label_write_once_or_final_flag_missing")
+        if not str(item.get("settlement_fingerprint") or ""):
+            errors.append("canonical_label_settlement_fingerprint_mismatch")
+        if not str(item.get("record_fingerprint") or ""):
+            errors.append("canonical_label_record_fingerprint_mismatch")
+        return sorted(set(errors))
 
     def joined_training_row(slate_date, label, locked, *, slate_finalized):
         vector = copy.deepcopy(locked["frozenFeatureVector"])
@@ -228,9 +273,18 @@ def fake_labels_module():
         return {
             "gameId": locked["gameId"],
             "officialGamePk": label["official_game_pk"],
+            "providerEventId": label.get("provider_event_id"),
             "slateDateEt": slate_date,
             "slateFinalized": slate_finalized,
             "commenceTime": locked["commenceTime"],
+            "homeTeam": locked.get("homeTeam"),
+            "awayTeam": locked.get("awayTeam"),
+            "predictedWinner": locked.get("predictedWinner"),
+            "predictedSide": locked.get("predictedSide"),
+            "lockedAmericanOdds": locked.get(
+                "lockedAmericanOdds",
+                locked.get("americanOdds"),
+            ),
             "predictionPersistedAtUtc": locked["predictionPersistedAtUtc"],
             "featureSnapshot": vector,
             "frozenFeatureVector": copy.deepcopy(vector),
@@ -238,9 +292,23 @@ def fake_labels_module():
             "fundamentalsSnapshotV2Ref": copy.deepcopy(
                 locked["fundamentalsSnapshotRefV2"]
             ),
+            "winner": label.get("winner"),
+            "homeWon": label.get("home_won"),
+            "correct": label.get("correct"),
+            "pickCorrect": label.get("correct"),
             "labelStatus": "FINAL",
             "labelFingerprint": label["settlement_fingerprint"],
             "labelRecordFingerprint": label["record_fingerprint"],
+            "labelSource": label.get("source"),
+            "labelSourcePayloadFingerprint": label.get(
+                "source_payload_fingerprint"
+            ),
+            "labelRetrievedAtUtc": label.get("observed_at_utc"),
+            "canonicalLockPk": label["canonical_lock_pk"],
+            "canonicalLockSk": label["canonical_lock_sk"],
+            "canonicalStageFingerprint": label[
+                "canonical_stage_fingerprint"
+            ],
             "trainingEligible": False,
             "trainingExclusionReasons": sorted(
                 {
@@ -256,6 +324,11 @@ def fake_labels_module():
     return SimpleNamespace(
         _training_verdict=training_verdict,
         _joined_training_row=joined_training_row,
+        _label_record_errors=trusted_label_record_errors,
+        _label_record_validation_calls=label_record_validation_calls,
+        _canonical_lock_payload_fingerprint=(
+            lambda locked: "locked-payload-1"
+        ),
     )
 
 
@@ -281,12 +354,19 @@ def test_label_join_is_repaired_in_memory_only_for_exact_bound_missingness():
     assert joined["r7SourceHonestLabelLockBindingVersion"] == (
         repair.LABEL_LOCK_BINDING_VERSION
     )
+    assert joined["r7SourceHonestJoinedBinding"]["version"] == (
+        repair.JOINED_SNAPSHOT_BINDING_VERSION
+    )
+    assert joined["r7SourceHonestTrustedReceiptId"]
     assert joined["productionPickEligibilityChanged"] is False
     assert repair.row_is_source_honest_training_safe(joined) == (
         True,
         [],
         joined["r7SourceHonestMissingnessMasks"],
     )
+    assert labels._label_record_validation_calls == [
+        (label_before, "2026-08-24", OFFICIAL_GAME_PK)
+    ]
     assert locked == locked_before
     assert label == label_before
 
@@ -306,7 +386,250 @@ def test_label_join_is_repaired_in_memory_only_for_exact_bound_missingness():
         slate_finalized=True,
     )
     assert rejected["trainingEligible"] is False
-    assert "r7SourceHonestTrainingAdmission" not in rejected
+    assert rejected["r7SourceHonestTrainingAdmission"] is False
+    assert "r7_label_canonical_stage_fingerprint_not_bound_to_lock" in (
+        rejected["r7SourceHonestSafetyReasons"]
+    )
+
+
+def test_production_compat_install_order_binds_read_repair_and_advances_r7():
+    labels = fake_labels_module()
+    locked = exact_locked_row()
+    label = exact_label(locked)
+    locked_before = copy.deepcopy(locked)
+    label_before = copy.deepcopy(label)
+
+    # This is the exact trainer compatibility order: the read-only stale-state
+    # repair wraps the canonical join before R7 installs its trusted receipt.
+    prospective_read_repair.install(labels)
+    repair._install_label_patch(labels)
+    repair._install_experiment_patch(experiment)
+
+    joined = labels._joined_training_row(
+        "2026-08-24",
+        label,
+        locked,
+        slate_finalized=True,
+    )
+
+    assert joined["prospectiveTrainerReadRepairVersion"] == (
+        prospective_read_repair.VERSION
+    )
+    assert joined["r7SourceHonestJoinedBinding"][
+        "prospectiveTrainerReadRepairVersion"
+    ] == prospective_read_repair.VERSION
+    assert joined["trainingEligible"] is True
+    assert joined["r7SourceHonestTrainingAdmission"] is True
+    safe, reasons, masks = repair.row_is_source_honest_training_safe(joined)
+    assert safe is True, reasons
+    assert reasons == []
+    assert masks == joined["r7SourceHonestMissingnessMasks"]
+
+    manifest = production_manifest()
+    valid, validation_reasons = experiment.validate_record(joined, manifest)
+    assert valid is True, validation_reasons
+    advanced = experiment.advance_manifest(
+        manifest,
+        [joined],
+        finalized_slate_dates=["2026-08-24"],
+        updated_at_utc="2026-08-25T12:00:00+00:00",
+    )
+    assert advanced["partitions"]["train"]["rowCount"] == 1
+    assert advanced["assignedSlateDates"]["2026-08-24"]["rowCount"] == 1
+    assert locked == locked_before
+    assert label == label_before
+
+    tampered = copy.deepcopy(joined)
+    tampered["prospectiveTrainerReadRepairVersion"] = "tampered-version"
+    tampered["r7SourceHonestJoinedBinding"][
+        "prospectiveTrainerReadRepairVersion"
+    ] = "tampered-version"
+    tamper_safe, tamper_reasons, tamper_masks = (
+        repair.row_is_source_honest_training_safe(tampered)
+    )
+    assert tamper_safe is False
+    assert "r7_joined_trusted_receipt_material_mismatch" in tamper_reasons
+    assert tamper_masks == {}
+
+
+def test_exact_read_repair_annotation_without_installed_wrapper_fails_closed():
+    labels = fake_labels_module()
+    underlying_join = labels._joined_training_row
+
+    def self_annotated_join(*args, **kwargs):
+        row = underlying_join(*args, **kwargs)
+        row["prospectiveTrainerReadRepairVersion"] = (
+            prospective_read_repair.VERSION
+        )
+        return row
+
+    labels._joined_training_row = self_annotated_join
+    repair._install_label_patch(labels)
+    locked = exact_locked_row()
+    joined = labels._joined_training_row(
+        "2026-08-24",
+        exact_label(locked),
+        locked,
+        slate_finalized=True,
+    )
+
+    assert joined["trainingEligible"] is False
+    assert joined["r7SourceHonestTrainingAdmission"] is False
+    assert "r7_untrusted_prospective_read_repair_annotation" in joined[
+        "r7SourceHonestSafetyReasons"
+    ]
+
+
+def test_label_binding_failure_forces_underlying_eligible_join_closed():
+    labels = fake_labels_module()
+    underlying_join = labels._joined_training_row
+
+    def incorrectly_eligible_join(*args, **kwargs):
+        row = underlying_join(*args, **kwargs)
+        row["trainingEligible"] = True
+        row["trainingExclusionReasons"] = []
+        return row
+
+    labels._joined_training_row = incorrectly_eligible_join
+    locked = exact_locked_row()
+    label = exact_label(locked)
+    label["canonical_lock_payload_fingerprint"] = "wrong-lock-payload"
+    repair._install_label_patch(labels)
+
+    rejected = labels._joined_training_row(
+        "2026-08-24",
+        label,
+        locked,
+        slate_finalized=True,
+    )
+
+    assert rejected["trainingEligible"] is False
+    assert rejected["r7SourceHonestTrainingAdmission"] is False
+    assert (
+        "r7_label_canonical_lock_payload_fingerprint_not_bound_to_lock"
+        in rejected["trainingExclusionReasons"]
+    )
+
+
+def test_training_verdict_forces_underlying_eligible_result_closed_when_unsafe():
+    labels = fake_labels_module()
+    labels._training_verdict = lambda _row: (True, [])
+    repair._install_label_patch(labels)
+    unsafe = exact_locked_row()
+    unsafe["exactVectorVerified"] = False
+    unsafe["canonicalLockAuthority"]["exactLockVectorValidated"] = False
+
+    eligible, reasons = labels._training_verdict(unsafe)
+
+    assert eligible is False
+    assert "r7_exact_vector_proof_missing" in reasons
+
+
+def test_joined_row_rejects_full_self_consistent_forgery_without_new_receipt():
+    labels = fake_labels_module()
+    locked = exact_locked_row()
+    repair._install_label_patch(labels)
+    joined = labels._joined_training_row(
+        "2026-08-24",
+        exact_label(locked),
+        locked,
+        slate_finalized=True,
+    )
+
+    forged = copy.deepcopy(joined)
+    snapshot = forged["fundamentalsSnapshotV2"]
+    snapshot["groups"]["starter_quality"]["missingReason"] = (
+        "schema-valid recomputed snapshot"
+    )
+    snapshot["fingerprint"] = fundamentals.fingerprint_for_snapshot(snapshot)
+    reference = forged["fundamentalsSnapshotV2Ref"]
+    reference["fingerprint"] = snapshot["fingerprint"]
+    vector = forged["frozenFeatureVector"]
+    vector["fundamentalsSnapshotV2Fingerprint"] = snapshot["fingerprint"]
+    vector["fundamentalsSnapshotV2Ref"] = copy.deepcopy(reference)
+    vector["fingerprint"] = cohort.fingerprint_for_vector(vector)
+    forged["featureSnapshot"] = copy.deepcopy(vector)
+
+    forged["labelFingerprint"] = "forged-settlement-fingerprint"
+    forged["labelRecordFingerprint"] = "forged-label-record-fingerprint"
+    forged["canonicalStageFingerprint"] = "forged-stage-fingerprint"
+    forged["canonicalLockPayloadFingerprint"] = (
+        "forged-lock-payload-fingerprint"
+    )
+    binding = forged["r7SourceHonestJoinedBinding"]
+    binding.update(
+        {
+            "snapshotFingerprint": snapshot["fingerprint"],
+            "referenceFingerprint": reference["fingerprint"],
+            "vectorSnapshotFingerprint": snapshot["fingerprint"],
+            "vectorFingerprint": vector["fingerprint"],
+            "stageFingerprint": forged["canonicalStageFingerprint"],
+            "lockPayloadFingerprint": forged[
+                "canonicalLockPayloadFingerprint"
+            ],
+            "settlementFingerprint": forged["labelFingerprint"],
+            "recordFingerprint": forged["labelRecordFingerprint"],
+            "labelVectorFingerprint": vector["fingerprint"],
+            "labelSnapshotFingerprint": snapshot["fingerprint"],
+        }
+    )
+    assert fundamentals.validate(snapshot) == []
+    assert vector["fingerprint"] == cohort.fingerprint_for_vector(vector)
+    assert forged["r7SourceHonestTrainingAdmission"] is True
+
+    safe, reasons, _masks = repair.row_is_source_honest_training_safe(forged)
+    assert safe is False
+    assert reasons == ["r7_joined_trusted_receipt_material_mismatch"]
+
+
+def test_joined_row_without_trusted_receipt_fails_closed():
+    labels = fake_labels_module()
+    locked = exact_locked_row()
+    repair._install_label_patch(labels)
+    joined = labels._joined_training_row(
+        "2026-08-24",
+        exact_label(locked),
+        locked,
+        slate_finalized=True,
+    )
+    joined.pop("r7SourceHonestTrustedReceiptId")
+
+    safe, reasons, masks = repair.row_is_source_honest_training_safe(joined)
+
+    assert safe is False
+    assert reasons == ["r7_joined_trusted_receipt_missing_or_evicted"]
+    assert masks == {}
+
+
+def test_v3_install_exposes_joined_binding_and_receipt_versions():
+    labels = fake_labels_module()
+
+    status = repair.install(
+        labels=labels,
+        experiment=experiment,
+        dual_model=dual_model,
+    )
+
+    assert status["version"] == repair.VERSION
+    assert status["joinedSnapshotBindingVersion"] == (
+        repair.JOINED_SNAPSHOT_BINDING_VERSION
+    )
+    assert status["joinedTrustedReceiptVersion"] == (
+        repair.JOINED_TRUSTED_RECEIPT_VERSION
+    )
+    for module in (labels, experiment, dual_model):
+        assert module.MLB_R7_JOINED_SNAPSHOT_BINDING_VERSION == (
+            repair.JOINED_SNAPSHOT_BINDING_VERSION
+        )
+        assert module.MLB_R7_JOINED_TRUSTED_RECEIPT_VERSION == (
+            repair.JOINED_TRUSTED_RECEIPT_VERSION
+        )
+    assert getattr(labels, repair._LABEL_PATCH_FLAG) is True
+    assert getattr(experiment, repair._EXPERIMENT_PATCH_FLAG) is True
+    assert getattr(dual_model, repair._DUAL_PATCH_FLAG) is True
+    assert labels._joined_training_row._mlb_r7_joined_snapshot_binding_version == (
+        repair.JOINED_SNAPSHOT_BINDING_VERSION
+    )
 
 
 def test_production_r7_experiment_accepts_only_prespecified_masked_missingness():

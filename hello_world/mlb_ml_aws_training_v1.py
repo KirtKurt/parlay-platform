@@ -2342,6 +2342,13 @@ class TrainingService:
         )
         result.setdefault("championChanged", False)
         result.setdefault("liveInferenceAuthority", False)
+        # This trainer is an MLB-only shadow learner. Persist exact negative
+        # authority/safety receipts on every run instead of making recovery
+        # acceptance infer safety from absent fields.
+        result.setdefault("productionAuthorityChanged", False)
+        result.setdefault("immutablePredictionRewriteAllowed", False)
+        result.setdefault("postStartPredictionCreationAllowed", False)
+        result.setdefault("otherSportChanged", False)
         result.setdefault(
             "runId",
             _sha256(

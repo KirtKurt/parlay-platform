@@ -18,6 +18,8 @@ on:
       - 'tests/unit/test_verify_mlb_results_api_postdeploy.py'
       - 'tests/unit/test_run_mlb_ml_v3_audit_report.py'
       - 'tests/unit/test_mlb_sportsdataio_sam_wiring.py'
+      - 'tests/unit/test_reconcile_mlb_prospective_backlog_v5_settlement_replay.py'
+      - 'tests/unit/test_unified_mlb_learning_ownership.py'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/enable-sportsdataio.yml'
       - '.github/workflows/mlb-ml-promote-champion.yml'
@@ -35,6 +37,8 @@ on:
       - '.github/workflows/mlb-v1-pull-guard.yml'
       - '.github/workflows/proof-run-1800-et-mlb-all-signals.yml'
       - '.github/workflows/mlb-hot-pull-recovery.yml'
+      - '.github/workflows/mlb-scoring-guard.yml'
+      - '.github/workflows/unified-mlb-learning-recovery-once.yml'
       - '.github/workflows/manual-mlb-force-run.yml'
       - '.github/workflows/diagnose-mlb-live-pull-500.yml'
       - '.github/workflows/proof-run-0400-et.yml'
@@ -57,6 +61,8 @@ on:
       - 'tests/unit/test_verify_mlb_results_api_postdeploy.py'
       - 'tests/unit/test_run_mlb_ml_v3_audit_report.py'
       - 'tests/unit/test_mlb_sportsdataio_sam_wiring.py'
+      - 'tests/unit/test_reconcile_mlb_prospective_backlog_v5_settlement_replay.py'
+      - 'tests/unit/test_unified_mlb_learning_ownership.py'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/enable-sportsdataio.yml'
       - '.github/workflows/mlb-ml-promote-champion.yml'
@@ -74,6 +80,8 @@ on:
       - '.github/workflows/mlb-v1-pull-guard.yml'
       - '.github/workflows/proof-run-1800-et-mlb-all-signals.yml'
       - '.github/workflows/mlb-hot-pull-recovery.yml'
+      - '.github/workflows/mlb-scoring-guard.yml'
+      - '.github/workflows/unified-mlb-learning-recovery-once.yml'
       - '.github/workflows/manual-mlb-force-run.yml'
       - '.github/workflows/diagnose-mlb-live-pull-500.yml'
       - '.github/workflows/proof-run-0400-et.yml'
@@ -182,7 +190,13 @@ jobs:
             tests/unit/test_mlb_production_verifier_authority.py \
             tests/unit/test_mlb_production_verifier_per_game.py \
             tests/unit/test_mlb_advanced_context_travel_rest.py \
+            tests/unit/test_mlb_fundamentals_scoring_bridge_v1.py \
+            tests/unit/test_mlb_fundamentals_snapshot_determinism_bridge_v1.py \
             tests/unit/test_mlb_fundamentals_snapshot_v2.py \
+            tests/unit/test_mlb_three_api_prediction_overlay.py \
+            tests/unit/test_mlb_r7_source_honest_training_repair.py \
+            tests/unit/test_mlb_scoring_guard_status.py \
+            tests/unit/test_mlb_scoring_runtime_capacity.py \
             tests/unit/test_mlb_last_possible_prediction_gate_provider_neutral.py \
             tests/unit/test_mlb_canonical_final_labels_v1.py \
             tests/unit/test_mlb_results_scheduler_date_binding.py \
@@ -193,6 +207,7 @@ jobs:
             tests/unit/test_mlb_ml_dual_model_v2.py \
             tests/unit/test_mlb_ml_promotion_policy_v2.py \
             tests/unit/test_mlb_ml_aws_training_v1.py \
+            tests/unit/test_mlb_ml_runtime_install_explicit.py \
             tests/unit/test_mlb_daily_pick_lock_runtime.py \
             tests/unit/test_mlb_cooperative_terminal_chunk.py \
             tests/unit/test_reconcile_mlb_prospective_backlog_v5_settlement_replay.py \
@@ -212,6 +227,8 @@ jobs:
             tests/unit/test_mlb_postdeploy_proof_publisher.py \
             tests/unit/test_mlb_progress_pulse_watchdog.py \
             tests/unit/test_mlb_progress_pulse_bounded_runner_relay.py \
+            tests/unit/test_mlb_prospective_backlog_workflow.py \
+            tests/unit/test_unified_mlb_learning_ownership.py \
             tests/unit/test_run_mlb_ml_v3_audit_report.py
 
       - name: Compile deployment and acceptance tooling
@@ -236,3 +253,13 @@ jobs:
           python -m py_compile hello_world/mlb_official_lock_quality_gate.py
           python -m py_compile hello_world/pull_dedupe_guard.py
           python -m py_compile hello_world/mlb_probability_actionability_guard.py
+          python -m py_compile hello_world/mlb_daily_per_game_lock_patch.py
+          python -m py_compile hello_world/mlb_daily_pick_lock_protected.py
+          python -m py_compile hello_world/mlb_fundamentals_scoring_bridge_v1.py
+          python -m py_compile hello_world/mlb_fundamentals_snapshot_v1.py
+          python -m py_compile hello_world/mlb_immutable_locked_storage_patch.py
+          python -m py_compile hello_world/mlb_ml_runtime_install_v3.py
+          python -m py_compile hello_world/mlb_three_api_prediction_overlay.py
+          python -m py_compile hello_world/mlb_r7_source_honest_training_repair.py
+          python -m py_compile scripts/mlb_scoring_guard_status.py
+          python -m py_compile scripts/reconcile_mlb_prospective_backlog_v5.py

@@ -158,7 +158,7 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _install_live_scoring_bridge(module: Any) -> None:
-    """Install the deterministic V2-to-winner-stack bridge safely."""
+    """Install deterministic V2 shadow evaluation without scoring authority."""
     try:
         import mlb_fundamentals_scoring_bridge_v1 as scoring_bridge
         import mlb_fundamentals_snapshot_v2 as snapshot_v2
@@ -166,7 +166,25 @@ def _install_live_scoring_bridge(module: Any) -> None:
 
         scoring_bridge.install_snapshot_determinism(snapshot_v2)
         scoring_bridge.install_winner_stack(winner_stack)
+        scoring_bridge.install_snapshot_shadow_evaluation(snapshot_v2)
         module.MLB_FUNDAMENTALS_SCORING_BRIDGE_VERSION = scoring_bridge.VERSION
+        module.MLB_FUNDAMENTALS_SCORING_BRIDGE_AUTHORITY_MODE = (
+            scoring_bridge.AUTHORITY_MODE
+        )
+        module.MLB_FUNDAMENTALS_SCORING_BRIDGE_SHADOW_ONLY = bool(
+            getattr(
+                winner_stack,
+                "MLB_FUNDAMENTALS_SCORING_BRIDGE_SHADOW_ONLY",
+                False,
+            )
+        )
+        module.MLB_FUNDAMENTALS_SCORING_BRIDGE_CAN_INFLUENCE_LIVE_PICK = bool(
+            getattr(
+                winner_stack,
+                "MLB_FUNDAMENTALS_SCORING_BRIDGE_CAN_INFLUENCE_LIVE_PICK",
+                True,
+            )
+        )
         module.MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_VERSION = (
             scoring_bridge.SNAPSHOT_DETERMINISM_VERSION
         )
@@ -177,6 +195,13 @@ def _install_live_scoring_bridge(module: Any) -> None:
                 False,
             )
         )
+        module._INQSI_MLB_FUNDAMENTALS_SCORING_SHADOW_V2_INSTALLED = bool(
+            getattr(
+                winner_stack,
+                "_INQSI_MLB_FUNDAMENTALS_SCORING_SHADOW_V2_INSTALLED",
+                False,
+            )
+        )
         module._INQSI_MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_V1_INSTALLED = bool(
             getattr(
                 snapshot_v2,
@@ -184,13 +209,28 @@ def _install_live_scoring_bridge(module: Any) -> None:
                 False,
             )
         )
+        module._INQSI_MLB_FUNDAMENTALS_SNAPSHOT_SHADOW_V2_INSTALLED = bool(
+            getattr(
+                snapshot_v2,
+                "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_SHADOW_V2_INSTALLED",
+                False,
+            )
+        )
         module.MLB_FUNDAMENTALS_SCORING_BRIDGE_INSTALL_ERROR = None
     except Exception as exc:
         module._INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED = False
+        module._INQSI_MLB_FUNDAMENTALS_SCORING_SHADOW_V2_INSTALLED = False
         module._INQSI_MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_V1_INSTALLED = False
+        module._INQSI_MLB_FUNDAMENTALS_SNAPSHOT_SHADOW_V2_INSTALLED = False
+        module.MLB_FUNDAMENTALS_SCORING_BRIDGE_SHADOW_ONLY = False
+        module.MLB_FUNDAMENTALS_SCORING_BRIDGE_CAN_INFLUENCE_LIVE_PICK = False
         module.MLB_FUNDAMENTALS_SCORING_BRIDGE_INSTALL_ERROR = (
             f"{type(exc).__name__}:{str(exc)[:240]}"
         )
+        # Source-honest runtime health must not pass when the shadow bridge is
+        # missing or ambiguous.  Preserve the bounded diagnostic above, then
+        # propagate so the runtime installer records engineRuntime=false.
+        raise
 
 
 def apply(module: Any):

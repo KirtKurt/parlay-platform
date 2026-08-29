@@ -310,6 +310,51 @@ def cooperative_completion_receipt(games=15, quarantine=1):
         ),
     }
 
+
+def durable_remediation_history_noop(slate_date="2026-08-04"):
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "slateDateEt": slate_date,
+        "status": "ACKNOWLEDGED_COMPLETION",
+        "reason": "ACKNOWLEDGED_COMPLETION",
+        "skipped": True,
+        "mutatingRunAttempted": False,
+        "cooperativeTerminalReplayCompleted": True,
+        "sourcePullRebindReviewRemediationApplied": True,
+        "sourcePullRebindReviewRemediationIdempotent": True,
+        "sourcePullRebindReviewRemediationVersion": (
+            subject.SOURCE_PULL_REBIND_REMEDIATION_VERSION
+        ),
+        "sourcePullRebindVersion": subject.SOURCE_PULL_REBIND_VERSION,
+        "sourcePullRebindReviewRemediationDurableHistory": True,
+        "activeLeaseMutationAllowed": False,
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "directWorkflowTableWrite": False,
+        "productionAuthorityChanged": False,
+        "cooperativeTerminalReplay": {
+            "version": subject.COOPERATIVE_TERMINAL_REPLAY_VERSION,
+            "state": "ACKNOWLEDGED",
+            "slateDateEt": slate_date,
+            "automaticExecutionOwner": (
+                "eventbridge_daily_lock_schedule"
+            ),
+            "currentSlateRunsFirst": True,
+            "freshPriorOwnerProofMayCarryAcrossInvocation": True,
+            "currentSlateSuccessProofPresent": False,
+            "activeLeaseMutationAllowed": False,
+            "postStartPredictionCreationAllowed": False,
+            "immutablePredictionRewriteAllowed": False,
+            "directWorkflowTableWrite": False,
+            "productionAuthorityChanged": False,
+            "ownerIdentifierExposed": False,
+            "terminalChunkProgress": None,
+            "durableRemediationHistory": True,
+            "failClosed": True,
+        },
+    }
+
 def replay_required(slate_date="2026-08-04"):
     detail = subject._terminal_replay_detail(
         409,
@@ -911,6 +956,350 @@ def test_protected_replay_polls_eventbridge_handoff_validates_then_acks(
     assert [
         call for call in calls if call.get("acknowledgeCooperativeCompletion")
     ]
+
+
+def test_durable_history_rerun_is_official_read_bound_noop_without_requeue(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        base,
+        "resolve_stack_functions",
+        lambda *args: base.StackFunctions("lock", "results", "trainer"),
+    )
+    calls = []
+
+    def fake_invoke(client, function, event):
+        del client, function
+        calls.append(dict(event))
+        if event.get("httpMethod") == "GET":
+            return official_terminal_status()
+        assert event == {
+            "sport": "mlb",
+            "run": subject.TERMINAL_REPLAY_RUN,
+            "slateDateEt": "2026-08-04",
+            "force": True,
+        }
+        return durable_remediation_history_noop()
+
+    monkeypatch.setattr(v4, "invoke_json_with_backpressure", fake_invoke)
+    sleeps = []
+
+    result = subject._execute_protected_terminal_replay(
+        object(),
+        object(),
+        stack_name="stack",
+        request=replay_required(),
+        sleep=sleeps.append,
+        max_attempts=2,
+    )
+
+    assert sleeps == []
+    assert len(calls) == 2
+    assert calls[0].get("httpMethod") is None
+    assert calls[1].get("httpMethod") == "GET"
+    assert not any(
+        call.get("acknowledgeCooperativeCompletion") is True
+        for call in calls
+    )
+    assert result["cooperativeCompletionReceipt"] is None
+    assert result[
+        "protectedLockReplayDurableRemediationHistoryNoOp"
+    ] is True
+    assert result["protectedLockReplayCooperativeReceiptVerified"] is True
+    assert result["protectedLockReplayCooperativeAcknowledged"] is True
+    assert result["protectedLockReplayCooperativePollCount"] == 0
+    assert result["protectedLockReplayOverlapRetryCount"] == 0
+    assert result["lockEvidence"]["officialStatusReadBound"] is True
+    assert result["lockEvidence"]["manifestGameCount"] == 15
+    assert result["lockEvidence"][
+        "missedLockValidPrelockQuarantineCount"
+    ] == 1
+    assert result["directWorkflowTableWrite"] is False
+    assert result["activeLeaseMutationAllowed"] is False
+
+
+@pytest.mark.parametrize(
+    ("target", "value"),
+    [
+        ("top", False),
+        ("nested", False),
+        ("state", "QUEUED"),
+        ("progress", {"valid": True}),
+    ],
+)
+def test_durable_history_noop_contract_tampering_fails_before_status_read(
+    monkeypatch,
+    target,
+    value,
+):
+    monkeypatch.setattr(
+        base,
+        "resolve_stack_functions",
+        lambda *args: base.StackFunctions("lock", "results", "trainer"),
+    )
+    calls = []
+    response = durable_remediation_history_noop()
+    if target == "top":
+        response["sourcePullRebindReviewRemediationDurableHistory"] = value
+    elif target == "nested":
+        response["cooperativeTerminalReplay"][
+            "durableRemediationHistory"
+        ] = value
+    elif target == "state":
+        response["cooperativeTerminalReplay"]["state"] = value
+    else:
+        response["cooperativeTerminalReplay"][
+            "terminalChunkProgress"
+        ] = value
+
+    def fake_invoke(client, function, event):
+        del client, function
+        calls.append(dict(event))
+        return response
+
+    monkeypatch.setattr(v4, "invoke_json_with_backpressure", fake_invoke)
+
+    with pytest.raises(
+        base.ReconciliationError,
+        match="durable_history_contract_invalid",
+    ):
+        subject._execute_protected_terminal_replay(
+            object(),
+            object(),
+            stack_name="stack",
+            request=replay_required(),
+            sleep=lambda _seconds: None,
+            max_attempts=2,
+        )
+
+    assert len(calls) == 1
+    assert calls[0].get("httpMethod") is None
+
+
+@pytest.mark.parametrize("nested_state", [True, False])
+def test_protected_replay_review_required_fails_before_overlap_retry(
+    monkeypatch,
+    nested_state,
+):
+    monkeypatch.setattr(
+        base,
+        "resolve_stack_functions",
+        lambda *args: base.StackFunctions("lock", "results", "trainer"),
+    )
+    calls = []
+
+    def review_required(client, function, event):
+        del client, function
+        calls.append(dict(event))
+        response = {
+            "ok": False,
+            "sport": "mlb",
+            "slateDateEt": "2026-08-04",
+            "status": "REVIEW_REQUIRED",
+            "reason": (
+                "VALID_PRELOCK_QUARANTINE_SOURCE_PULL_PROOF_MISMATCH"
+            ),
+            "reviewRequired": True,
+            "skipped": True,
+            "mutatingRunAttempted": False,
+            "cooperativeTerminalReplayCompleted": False,
+            "activeLeaseMutationAllowed": False,
+            "postStartPredictionCreationAllowed": False,
+            "immutablePredictionRewriteAllowed": False,
+            "directWorkflowTableWrite": False,
+            "productionAuthorityChanged": False,
+            "cooperativeTerminalReplay": {
+                "state": "REVIEW_REQUIRED",
+                "slateDateEt": "2026-08-04",
+                "reviewRequired": True,
+                "reviewReason": (
+                    "VALID_PRELOCK_QUARANTINE_SOURCE_PULL_PROOF_MISMATCH"
+                ),
+                "failClosed": True,
+                "staleClaimReclaimable": False,
+                "ownerIdentifierExposed": False,
+                "activeLeaseMutationAllowed": False,
+                "postStartPredictionCreationAllowed": False,
+                "immutablePredictionRewriteAllowed": False,
+                "directWorkflowTableWrite": False,
+            },
+        }
+        if not nested_state:
+            response["cooperativeTerminalReplay"] = {}
+        return response
+
+    monkeypatch.setattr(
+        v4,
+        "invoke_json_with_backpressure",
+        review_required,
+    )
+    sleeps = []
+
+    with pytest.raises(base.ReconciliationError) as raised:
+        subject._execute_protected_terminal_replay(
+            object(),
+            object(),
+            stack_name="stack",
+            request=replay_required(),
+            sleep=sleeps.append,
+        )
+
+    prefix, detail_json = str(raised.value).split(":", 1)
+    assert prefix == "protected_terminal_replay_cooperative_review_required"
+    assert json.loads(detail_json) == {
+        "reason": "VALID_PRELOCK_QUARANTINE_SOURCE_PULL_PROOF_MISMATCH",
+        "retryable": False,
+        "slateDateEt": "2026-08-04",
+        "state": "REVIEW_REQUIRED",
+    }
+    assert len(calls) == 1
+    assert calls[0]["force"] is True
+    assert sleeps == []
+
+
+@pytest.mark.parametrize(
+    "unsafe_reason",
+    [
+        "token=must-not-appear",
+        "A" * 161,
+        "UNRECOGNIZED_ALL_UPPERCASE_REASON",
+    ],
+)
+def test_protected_replay_review_required_reason_is_bounded_and_safe(
+    monkeypatch,
+    unsafe_reason,
+):
+    monkeypatch.setattr(
+        base,
+        "resolve_stack_functions",
+        lambda *args: base.StackFunctions("lock", "results", "trainer"),
+    )
+    calls = 0
+
+    def unsafe_review_required(client, function, event):
+        nonlocal calls
+        del client, function, event
+        calls += 1
+        return {
+            "ok": False,
+            "sport": "mlb",
+            "slateDateEt": "2026-08-04",
+            "status": "REVIEW_REQUIRED",
+            "reason": unsafe_reason,
+            "reviewRequired": True,
+            "skipped": True,
+            "mutatingRunAttempted": False,
+            "cooperativeTerminalReplayCompleted": False,
+            "activeLeaseMutationAllowed": False,
+            "postStartPredictionCreationAllowed": False,
+            "immutablePredictionRewriteAllowed": False,
+            "directWorkflowTableWrite": False,
+            "productionAuthorityChanged": False,
+            "cooperativeTerminalReplay": {
+                "state": "REVIEW_REQUIRED",
+                "slateDateEt": "2026-08-04",
+                "reviewRequired": True,
+                "reviewReason": unsafe_reason,
+                "failClosed": True,
+                "staleClaimReclaimable": False,
+                "ownerIdentifierExposed": False,
+                "activeLeaseMutationAllowed": False,
+                "postStartPredictionCreationAllowed": False,
+                "immutablePredictionRewriteAllowed": False,
+                "directWorkflowTableWrite": False,
+            },
+        }
+
+    monkeypatch.setattr(
+        v4,
+        "invoke_json_with_backpressure",
+        unsafe_review_required,
+    )
+    sleeps = []
+
+    with pytest.raises(base.ReconciliationError) as raised:
+        subject._execute_protected_terminal_replay(
+            object(),
+            object(),
+            stack_name="stack",
+            request=replay_required(),
+            sleep=sleeps.append,
+        )
+
+    message = str(raised.value)
+    detail = json.loads(message.split(":", 1)[1])
+    assert detail["state"] == "REVIEW_REQUIRED"
+    assert detail["reason"] == "PRELOCK_CANDIDATE_REQUIRES_REVIEW"
+    assert detail["retryable"] is False
+    assert unsafe_reason not in message
+    assert len(message) < 320
+    assert calls == 1
+    assert sleeps == []
+
+
+@pytest.mark.parametrize("wrong_nested", [True, False])
+def test_review_required_wrong_slate_fails_contract_before_classification(
+    monkeypatch,
+    wrong_nested,
+):
+    monkeypatch.setattr(
+        base,
+        "resolve_stack_functions",
+        lambda *args: base.StackFunctions("lock", "results", "trainer"),
+    )
+
+    def stale_review(client, function, event):
+        del client, function, event
+        top_slate = "2026-08-04" if wrong_nested else "2026-08-03"
+        nested_slate = "2026-08-03" if wrong_nested else "2026-08-04"
+        return {
+            "ok": False,
+            "sport": "mlb",
+            "slateDateEt": top_slate,
+            "status": "REVIEW_REQUIRED",
+            "reason": subject.COOPERATIVE_REPLAY_REVIEW_FALLBACK_REASON,
+            "reviewRequired": True,
+            "skipped": True,
+            "mutatingRunAttempted": False,
+            "cooperativeTerminalReplayCompleted": False,
+            "activeLeaseMutationAllowed": False,
+            "postStartPredictionCreationAllowed": False,
+            "immutablePredictionRewriteAllowed": False,
+            "directWorkflowTableWrite": False,
+            "productionAuthorityChanged": False,
+            "cooperativeTerminalReplay": {
+                "state": "REVIEW_REQUIRED",
+                "slateDateEt": nested_slate,
+                "reviewRequired": True,
+                "reviewReason": (
+                    subject.COOPERATIVE_REPLAY_REVIEW_FALLBACK_REASON
+                ),
+                "failClosed": True,
+                "staleClaimReclaimable": False,
+                "ownerIdentifierExposed": False,
+                "activeLeaseMutationAllowed": False,
+                "postStartPredictionCreationAllowed": False,
+                "immutablePredictionRewriteAllowed": False,
+                "directWorkflowTableWrite": False,
+            },
+        }
+
+    monkeypatch.setattr(
+        v4,
+        "invoke_json_with_backpressure",
+        stale_review,
+    )
+    with pytest.raises(
+        base.ReconciliationError,
+        match="protected_terminal_replay_cooperative_review_contract_invalid",
+    ):
+        subject._execute_protected_terminal_replay(
+            object(),
+            object(),
+            stack_name="stack",
+            request=replay_required(),
+            sleep=lambda _seconds: None,
+        )
 
 
 def test_cooperative_handoff_exhaustion_is_bounded_and_fails_closed(

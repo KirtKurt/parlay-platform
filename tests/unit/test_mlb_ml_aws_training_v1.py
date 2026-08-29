@@ -565,6 +565,21 @@ def test_accumulation_registers_no_model_or_champion():
     assert store.artifact_calls == 0
 
 
+def test_persisted_training_status_emits_exact_negative_authority_receipts():
+    store = FakeStore()
+    result = service(store, now=ACTIVATION_NOW).run()
+
+    for field in (
+        "productionAuthorityChanged",
+        "immutablePredictionRewriteAllowed",
+        "postStartPredictionCreationAllowed",
+        "otherSportChanged",
+    ):
+        assert field in result
+        assert result[field] is False
+    assert store.statuses[-1] == result
+
+
 @pytest.mark.parametrize(
     "operation",
     ("training", "selection_capture", "manual_review"),

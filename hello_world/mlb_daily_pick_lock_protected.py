@@ -110,6 +110,42 @@ COOPERATIVE_REPLAY_CLAIMED = "CLAIMED"
 COOPERATIVE_REPLAY_COMPLETED = "COMPLETED"
 COOPERATIVE_REPLAY_ACKNOWLEDGED = "ACKNOWLEDGED"
 COOPERATIVE_REPLAY_REVIEW_REQUIRED = "REVIEW_REQUIRED"
+COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_EVENT_FLAG = (
+    "requeueSourcePullProofReviewAfterRebind"
+)
+COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_EVENT_KEYS = frozenset(
+    {
+        "sport",
+        "run",
+        "slateDateEt",
+        "force",
+        COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_EVENT_FLAG,
+    }
+)
+COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_VERSION = (
+    "MLB-COOPERATIVE-SOURCE-PULL-REBIND-REVIEW-REMEDIATION-v1-one-shot"
+)
+COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD = (
+    "source_pull_rebind_review_remediation"
+)
+COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD = (
+    "source_pull_rebind_review_remediation_history"
+)
+COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_VERSION = (
+    "MLB-COOPERATIVE-SOURCE-PULL-REBIND-REVIEW-HISTORY-"
+    "v1-compact-acknowledged"
+)
+COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_MAX_BYTES = 2048
+COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_SLATE_DATE = "2026-08-04"
+COOPERATIVE_SOURCE_PULL_REBIND_REQUIRED_VERSION = (
+    "MLB-STATUS-SOURCE-PULL-REBIND-v1-strong-immutable-row"
+)
+COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_ERROR = (
+    "VALID_PRELOCK_QUARANTINE_SOURCE_PULL_PROOF_MISMATCH"
+)
+COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_STAGE = (
+    "WRITE_VALID_PRELOCK_MISSED_LOCK_QUARANTINE"
+)
 # The normal current-slate run always executes first.  A historical replay is
 # attempted only when Lambda still has a conservative ten-minute execution
 # budget plus the same one-minute release margin used by the global lease.
@@ -341,6 +377,22 @@ _lock_execution_lease_scope = getattr(
     "MLB_LOCK_EXECUTION_LEASE_SCOPE",
     None,
 )
+_expected_status_source_pull_rebind_version = getattr(
+    mlb_daily_per_game_lock_patch,
+    "STATUS_SOURCE_PULL_REBIND_VERSION",
+    None,
+)
+_status_source_pull_rebind_version = getattr(
+    mlb_daily_pick_lock,
+    "MLB_STATUS_SOURCE_PULL_REBIND_VERSION",
+    None,
+)
+_status_source_pull_rebind_ready = bool(
+    _expected_status_source_pull_rebind_version
+    == COOPERATIVE_SOURCE_PULL_REBIND_REQUIRED_VERSION
+    and _status_source_pull_rebind_version
+    == COOPERATIVE_SOURCE_PULL_REBIND_REQUIRED_VERSION
+)
 _lock_execution_lease_ready = bool(
     _expected_lock_execution_lease_version
     and _lock_execution_lease_version == _expected_lock_execution_lease_version
@@ -446,6 +498,32 @@ PER_GAME_LOCK_STATUS = {
             COOPERATIVE_CURRENT_SLATE_PROOF_MAX_AGE_SECONDS
         ),
         "minimumRemainingSeconds": COOPERATIVE_REPLAY_MIN_REMAINING_SECONDS,
+        "activeLeaseMutationAllowed": False,
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "failClosed": True,
+    },
+    "sourcePullRebindReviewRemediation": {
+        "version": (
+            COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_VERSION
+        ),
+        "incidentSlateDate": (
+            COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_SLATE_DATE
+        ),
+        "requiredSourcePullRebindVersion": (
+            COOPERATIVE_SOURCE_PULL_REBIND_REQUIRED_VERSION
+        ),
+        "installedSourcePullRebindVersion": (
+            _status_source_pull_rebind_version
+        ),
+        "ready": _status_source_pull_rebind_ready,
+        "oneShot": True,
+        "durableIncidentHistory": True,
+        "durableIncidentHistoryMaximumEntries": 1,
+        "durableIncidentHistoryMaximumBytes": (
+            COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_MAX_BYTES
+        ),
+        "automaticPollRequeueAllowed": False,
         "activeLeaseMutationAllowed": False,
         "postStartPredictionCreationAllowed": False,
         "immutablePredictionRewriteAllowed": False,
@@ -1510,6 +1588,764 @@ def _read_cooperative_replay() -> Dict[str, Any]:
     )
 
 
+def _source_pull_rebind_checkpoint_fingerprint(
+    checkpoint: Dict[str, Any],
+) -> str:
+    """Recompute the producer's request-bound safety fingerprint exactly."""
+
+    def ddb_number_normalized(value: Any) -> Any:
+        if isinstance(value, Decimal):
+            if value.is_finite() and value == value.to_integral_value():
+                return int(value)
+            return str(value)
+        if isinstance(value, dict):
+            return {
+                str(key): ddb_number_normalized(child)
+                for key, child in value.items()
+            }
+        if isinstance(value, list):
+            return [ddb_number_normalized(child) for child in value]
+        return value
+
+    material = {
+        str(key): ddb_number_normalized(value)
+        for key, value in checkpoint.items()
+        if key
+        not in {
+            "checkpointFingerprint",
+            "attemptCount",
+            "lastAttempt",
+            "updatedAtUtc",
+        }
+    }
+    return hashlib.sha256(
+        json.dumps(
+            material,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _validated_source_pull_rebind_remediation_marker(
+    marker: Any,
+    item: Dict[str, Any],
+) -> Dict[str, Any]:
+    expected_keys = {
+        "version",
+        "sourcePullRebindVersion",
+        "slateDateEt",
+        "requestEpoch",
+        "requestIdFingerprint",
+        "checkpointFingerprint",
+        "errorCode",
+        "stage",
+        "appliedAtUtc",
+        "appliedAtEpoch",
+        "oneShot",
+    }
+    if not isinstance(marker, dict) or set(marker) != expected_keys:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_INVALID"
+        )
+    try:
+        applied_at_text = str(marker.get("appliedAtUtc") or "")
+        applied_at = datetime.fromisoformat(applied_at_text)
+        applied_epoch_number = Decimal(str(marker.get("appliedAtEpoch")))
+        marker_request_epoch_number = Decimal(
+            str(marker.get("requestEpoch"))
+        )
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_INVALID"
+        ) from exc
+    request_epoch = int(item["requested_at_epoch"])
+    request_id = str(item.get("request_id") or "")
+    request_id_fingerprint = hashlib.sha256(
+        request_id.encode("utf-8")
+    ).hexdigest()
+    if (
+        isinstance(marker.get("appliedAtEpoch"), bool)
+        or isinstance(marker.get("requestEpoch"), bool)
+        or not applied_epoch_number.is_finite()
+        or applied_epoch_number <= 0
+        or applied_epoch_number != applied_epoch_number.to_integral_value()
+        or not marker_request_epoch_number.is_finite()
+        or marker_request_epoch_number != request_epoch
+        or marker_request_epoch_number
+        != marker_request_epoch_number.to_integral_value()
+        or applied_at.tzinfo is None
+        or applied_at.utcoffset() != timedelta(0)
+        or applied_at.isoformat() != applied_at_text
+        or marker.get("version")
+        != COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_VERSION
+        or marker.get("sourcePullRebindVersion")
+        != COOPERATIVE_SOURCE_PULL_REBIND_REQUIRED_VERSION
+        or str(marker.get("slateDateEt") or "")
+        != str(item.get("slate_date_et") or "")
+        or not request_id
+        or marker.get("requestIdFingerprint")
+        != request_id_fingerprint
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(marker.get("checkpointFingerprint") or ""),
+        )
+        is None
+        or marker.get("errorCode")
+        != COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_ERROR
+        or marker.get("stage")
+        != COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_STAGE
+        or marker.get("oneShot") is not True
+        or int(applied_at.timestamp()) != int(applied_epoch_number)
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_INVALID"
+        )
+    return copy.deepcopy(marker)
+
+
+def _source_pull_rebind_compact_fingerprint(value: Any) -> str:
+    """Fingerprint compact durable proof material with DDB number parity."""
+
+    def ddb_number_normalized(child: Any) -> Any:
+        if isinstance(child, Decimal):
+            if child.is_finite() and child == child.to_integral_value():
+                return int(child)
+            return str(child)
+        if isinstance(child, dict):
+            return {
+                str(key): ddb_number_normalized(nested)
+                for key, nested in child.items()
+            }
+        if isinstance(child, list):
+            return [ddb_number_normalized(nested) for nested in child]
+        return child
+
+    return hashlib.sha256(
+        json.dumps(
+            ddb_number_normalized(value),
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _validated_source_pull_rebind_remediation_history(
+    value: Any,
+) -> Dict[str, Any]:
+    """Validate the single compact incident proof carried between queue rows."""
+
+    expected_keys = {
+        "version",
+        "remediationVersion",
+        "sourcePullRebindVersion",
+        "slateDateEt",
+        "requestEpoch",
+        "requestIdFingerprint",
+        "reviewCheckpointFingerprint",
+        "completionCheckpointFingerprint",
+        "completionReceiptFingerprint",
+        "errorCode",
+        "stage",
+        "acknowledgedAtUtc",
+        "acknowledgedAtEpoch",
+        "state",
+        "oneShot",
+        "proofFingerprint",
+    }
+    if not isinstance(value, dict) or set(value) != expected_keys:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_INVALID"
+        )
+    try:
+        request_epoch_number = Decimal(str(value.get("requestEpoch")))
+        acknowledged_epoch_number = Decimal(
+            str(value.get("acknowledgedAtEpoch"))
+        )
+        acknowledged_at_text = str(value.get("acknowledgedAtUtc") or "")
+        acknowledged_at = datetime.fromisoformat(acknowledged_at_text)
+        parsed_slate = datetime.strptime(
+            str(value.get("slateDateEt") or ""),
+            "%Y-%m-%d",
+        ).date()
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_INVALID"
+        ) from exc
+
+    fingerprints = (
+        "requestIdFingerprint",
+        "reviewCheckpointFingerprint",
+        "completionCheckpointFingerprint",
+        "completionReceiptFingerprint",
+        "proofFingerprint",
+    )
+    proof_material = {
+        key: child
+        for key, child in value.items()
+        if key != "proofFingerprint"
+    }
+    encoded_size = len(
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    )
+    if (
+        isinstance(value.get("requestEpoch"), bool)
+        or isinstance(value.get("acknowledgedAtEpoch"), bool)
+        or not request_epoch_number.is_finite()
+        or request_epoch_number <= 0
+        or request_epoch_number != request_epoch_number.to_integral_value()
+        or not acknowledged_epoch_number.is_finite()
+        or acknowledged_epoch_number <= 0
+        or acknowledged_epoch_number
+        != acknowledged_epoch_number.to_integral_value()
+        or acknowledged_at.tzinfo is None
+        or acknowledged_at.utcoffset() != timedelta(0)
+        or acknowledged_at.isoformat() != acknowledged_at_text
+        or int(acknowledged_at.timestamp())
+        != int(acknowledged_epoch_number)
+        or parsed_slate.isoformat() != value.get("slateDateEt")
+        or value.get("version")
+        != COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_VERSION
+        or value.get("remediationVersion")
+        != COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_VERSION
+        or value.get("sourcePullRebindVersion")
+        != COOPERATIVE_SOURCE_PULL_REBIND_REQUIRED_VERSION
+        or value.get("errorCode")
+        != COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_ERROR
+        or value.get("stage")
+        != COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_STAGE
+        or value.get("state") != COOPERATIVE_REPLAY_ACKNOWLEDGED
+        or value.get("oneShot") is not True
+        or any(
+            re.fullmatch(r"[0-9a-f]{64}", str(value.get(field) or ""))
+            is None
+            for field in fingerprints
+        )
+        or value.get("proofFingerprint")
+        != _source_pull_rebind_compact_fingerprint(proof_material)
+        or encoded_size
+        > COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_MAX_BYTES
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_INVALID"
+        )
+    return copy.deepcopy(value)
+
+
+def _source_pull_rebind_completed_history(
+    item: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Compact one validated ACK receipt before the singleton row is reused."""
+
+    if item.get("state") != COOPERATIVE_REPLAY_ACKNOWLEDGED:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_NOT_ACKNOWLEDGED"
+        )
+    marker = _validated_source_pull_rebind_remediation_marker(
+        item.get(COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD),
+        item,
+    )
+    receipt = _validated_persisted_replay_receipt(item)
+    progress = item.get("terminal_replay_progress")
+    request_epoch = int(item["requested_at_epoch"])
+    request_id = str(item.get("request_id") or "")
+    try:
+        acknowledged_at_text = str(
+            item.get("acknowledged_at_utc") or ""
+        )
+        acknowledged_at = datetime.fromisoformat(acknowledged_at_text)
+        acknowledged_epoch_number = Decimal(
+            str(item.get("acknowledged_at_epoch"))
+        )
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_INVALID"
+        ) from exc
+    if (
+        not isinstance(progress, dict)
+        or str(progress.get("slateDateEt") or "")
+        != str(item.get("slate_date_et") or "")
+        or progress.get("requestEpoch") != request_epoch
+        or str(progress.get("requestId") or "") != request_id
+        or receipt.get("checkpointFingerprint")
+        != progress.get("checkpointFingerprint")
+        or isinstance(item.get("acknowledged_at_epoch"), bool)
+        or not acknowledged_epoch_number.is_finite()
+        or acknowledged_epoch_number <= 0
+        or acknowledged_epoch_number
+        != acknowledged_epoch_number.to_integral_value()
+        or acknowledged_at.tzinfo is None
+        or acknowledged_at.utcoffset() != timedelta(0)
+        or acknowledged_at.isoformat() != acknowledged_at_text
+        or int(acknowledged_at.timestamp())
+        != int(acknowledged_epoch_number)
+        or int(acknowledged_epoch_number)
+        < int(Decimal(str(marker["appliedAtEpoch"])))
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_INVALID"
+        )
+    history = {
+        "version": COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_VERSION,
+        "remediationVersion": (
+            COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_VERSION
+        ),
+        "sourcePullRebindVersion": (
+            COOPERATIVE_SOURCE_PULL_REBIND_REQUIRED_VERSION
+        ),
+        "slateDateEt": str(item.get("slate_date_et") or ""),
+        "requestEpoch": request_epoch,
+        "requestIdFingerprint": hashlib.sha256(
+            request_id.encode("utf-8")
+        ).hexdigest(),
+        "reviewCheckpointFingerprint": str(
+            marker.get("checkpointFingerprint") or ""
+        ),
+        "completionCheckpointFingerprint": str(
+            receipt.get("checkpointFingerprint") or ""
+        ),
+        "completionReceiptFingerprint": (
+            _source_pull_rebind_compact_fingerprint(receipt)
+        ),
+        "errorCode": COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_ERROR,
+        "stage": COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_STAGE,
+        "acknowledgedAtUtc": acknowledged_at_text,
+        "acknowledgedAtEpoch": int(acknowledged_epoch_number),
+        "state": COOPERATIVE_REPLAY_ACKNOWLEDGED,
+        "oneShot": True,
+    }
+    history["proofFingerprint"] = (
+        _source_pull_rebind_compact_fingerprint(history)
+    )
+    return _validated_source_pull_rebind_remediation_history(history)
+
+
+def _source_pull_rebind_history_for_replacement(
+    item: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Validate and carry at most one incident proof into the next queue row."""
+
+    # Every row eligible to replace the singleton ACK slot must still have the
+    # full owner-fenced receipt that justified ACKNOWLEDGED.
+    _validated_persisted_replay_receipt(item)
+    raw_history = item.get(
+        COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD
+    )
+    history = (
+        _validated_source_pull_rebind_remediation_history(raw_history)
+        if raw_history is not None
+        else None
+    )
+    marker = item.get(
+        COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
+    )
+    if marker is not None:
+        completed = _source_pull_rebind_completed_history(item)
+        if history is not None and history != completed:
+            raise RuntimeError(
+                "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_CONFLICT"
+            )
+        history = completed
+    return copy.deepcopy(history) if history is not None else None
+
+
+def _source_pull_rebind_history_response(
+    history: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Return a redacted ACK projection without touching the active queue row."""
+
+    history = _validated_source_pull_rebind_remediation_history(history)
+    slate_date = str(history["slateDateEt"])
+    public = {
+        "version": COOPERATIVE_TERMINAL_REPLAY_VERSION,
+        "state": COOPERATIVE_REPLAY_ACKNOWLEDGED,
+        "slateDateEt": slate_date,
+        "automaticExecutionOwner": "eventbridge_daily_lock_schedule",
+        "currentSlateRunsFirst": True,
+        "freshPriorOwnerProofMayCarryAcrossInvocation": True,
+        "currentSlateSuccessProofPresent": False,
+        "activeLeaseMutationAllowed": False,
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "directWorkflowTableWrite": False,
+        "productionAuthorityChanged": False,
+        "ownerIdentifierExposed": False,
+        "terminalChunkProgress": None,
+        "durableRemediationHistory": True,
+        "failClosed": True,
+    }
+    status = "ACKNOWLEDGED_COMPLETION"
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "slateDateEt": slate_date,
+        "status": status,
+        "reason": status,
+        "skipped": True,
+        "mutatingRunAttempted": False,
+        "cooperativeTerminalReplayCompleted": True,
+        "cooperativeTerminalReplay": public,
+        "sourcePullRebindReviewRemediationApplied": True,
+        "sourcePullRebindReviewRemediationIdempotent": True,
+        "sourcePullRebindReviewRemediationVersion": (
+            COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_VERSION
+        ),
+        "sourcePullRebindVersion": (
+            COOPERATIVE_SOURCE_PULL_REBIND_REQUIRED_VERSION
+        ),
+        "sourcePullRebindReviewRemediationDurableHistory": True,
+        "activeLeaseMutationAllowed": False,
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "directWorkflowTableWrite": False,
+        "productionAuthorityChanged": False,
+    }
+
+
+def _validated_source_pull_rebind_review_checkpoint(
+    item: Dict[str, Any],
+) -> Dict[str, Any]:
+    slate_date = str(item.get("slate_date_et") or "")
+    request_id = str(item.get("request_id") or "").strip()
+    request_epoch = int(item["requested_at_epoch"])
+    progress = item.get("terminal_replay_progress")
+    last_attempt = (
+        progress.get("lastAttempt")
+        if isinstance(progress, dict)
+        else None
+    )
+    public_progress = _cooperative_terminal_progress_public(item)
+    if (
+        not request_id
+        or item.get("state") != COOPERATIVE_REPLAY_REVIEW_REQUIRED
+        or _cooperative_review_reason(item)
+        != COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_ERROR
+        or item.get("last_chunk_stage")
+        != COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_STAGE
+        or item.get("last_chunk_status") != "FAILED_CLOSED"
+        or not isinstance(public_progress, dict)
+        or public_progress.get("valid") is not True
+        or not isinstance(progress, dict)
+        or progress.get("version") != COOPERATIVE_TERMINAL_CHUNK_VERSION
+        or str(progress.get("slateDateEt") or "") != slate_date
+        or progress.get("requestEpoch") != request_epoch
+        or str(progress.get("requestId") or "") != request_id
+        or str(progress.get("phase") or "") != "PROCESS"
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(progress.get("manifestFingerprint") or ""),
+        )
+        is None
+        or not isinstance(progress.get("manifestAuthority"), Mapping)
+        or progress.get("processedGames") != []
+        or progress.get("verificationComplete") is not False
+        or progress.get("postStartPredictionCreationAllowed") is not False
+        or progress.get("immutablePredictionRewriteAllowed") is not False
+        or progress.get("productionAuthorityChanged") is not False
+        or not isinstance(last_attempt, dict)
+        or last_attempt.get("status") != "FAILED_CLOSED"
+        or last_attempt.get("stage")
+        != COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_STAGE
+        or last_attempt.get("phase") != "PROCESS"
+        or last_attempt.get("errorCode")
+        != COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_ERROR
+        or not str(last_attempt.get("gameIdentity") or "").strip()
+        or str(last_attempt.get("atUtc") or "")
+        != str(progress.get("updatedAtUtc") or "")
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_CHECKPOINT_INVALID"
+        )
+
+    zero_fields = (
+        "nextGameIndex",
+        "processedGameCount",
+        "terminalCount",
+        "canonicalCount",
+        "noPredictionDataCount",
+        "missedLockValidPrelockQuarantineCount",
+        "reconciledCount",
+        "verificationIndex",
+        "verifiedGameCount",
+    )
+    if any(
+        public_progress.get(field) != 0
+        for field in zero_fields
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_CHECKPOINT_NOT_ZERO_WORK"
+        )
+    if (
+        public_progress.get("manifestGameCount", 0) < 1
+        or public_progress.get("attemptCount", 0) < 1
+        or (public_progress.get("lastAttempt") or {}).get("gameIndex")
+        != 0
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_CHECKPOINT_INVALID"
+        )
+    checkpoint_fingerprint = str(
+        progress.get("checkpointFingerprint") or ""
+    )
+    if (
+        re.fullmatch(r"[0-9a-f]{64}", checkpoint_fingerprint) is None
+        or checkpoint_fingerprint
+        != _source_pull_rebind_checkpoint_fingerprint(progress)
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_CHECKPOINT_INVALID"
+        )
+    return copy.deepcopy(progress)
+
+
+def _source_pull_rebind_review_response(
+    item: Dict[str, Any],
+    *,
+    idempotent: bool,
+) -> Dict[str, Any]:
+    state = str(item.get("state") or "")
+    status_by_state = {
+        COOPERATIVE_REPLAY_QUEUED: "QUEUED_FOR_EVENTBRIDGE_LOCK_OWNER",
+        COOPERATIVE_REPLAY_CLAIMED: "CLAIMED_BY_EVENTBRIDGE_LOCK_OWNER",
+        COOPERATIVE_REPLAY_COMPLETED: "COMPLETED_BY_EVENTBRIDGE_LOCK_OWNER",
+        COOPERATIVE_REPLAY_ACKNOWLEDGED: "ACKNOWLEDGED_COMPLETION",
+    }
+    status = status_by_state.get(state)
+    if status is None:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_STATE_INVALID"
+        )
+    completed = state in {
+        COOPERATIVE_REPLAY_COMPLETED,
+        COOPERATIVE_REPLAY_ACKNOWLEDGED,
+    }
+    if completed:
+        # A marker proves only that the one-shot requeue was consumed.  Never
+        # let that marker upgrade a corrupt or missing terminal receipt into a
+        # completed operational proof.
+        _validated_persisted_replay_receipt(item)
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "slateDateEt": str(item.get("slate_date_et") or ""),
+        "status": status,
+        "reason": status,
+        "skipped": True,
+        "mutatingRunAttempted": False,
+        "cooperativeTerminalReplayCompleted": completed,
+        "cooperativeTerminalReplay": _cooperative_public_state(item),
+        "sourcePullRebindReviewRemediationApplied": True,
+        "sourcePullRebindReviewRemediationIdempotent": bool(idempotent),
+        "sourcePullRebindReviewRemediationVersion": (
+            COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_VERSION
+        ),
+        "sourcePullRebindVersion": (
+            COOPERATIVE_SOURCE_PULL_REBIND_REQUIRED_VERSION
+        ),
+        "activeLeaseMutationAllowed": False,
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "directWorkflowTableWrite": False,
+        "productionAuthorityChanged": False,
+    }
+
+
+def _requeue_source_pull_proof_review_after_rebind(
+    event: Dict[str, Any],
+) -> Dict[str, Any]:
+    slate_date = _strict_historical_slate_date(event)
+    if (
+        event.get(COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_EVENT_FLAG)
+        is not True
+        or set(event) != COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_EVENT_KEYS
+        or event.get("acknowledgeCooperativeCompletion") is True
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_FLAG_MISSING"
+        )
+    if slate_date != COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_SLATE_DATE:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_SLATE_INVALID"
+        )
+    if not _status_source_pull_rebind_ready:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_NOT_READY"
+        )
+
+    raw = _read_cooperative_replay()
+    if not raw or not str(raw.get("request_id") or "").strip():
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_RECORD_INVALID"
+        )
+    current_slate_date = str(raw.get("slate_date_et") or "")
+    current_item = _cooperative_record(raw, current_slate_date)
+    raw_history = current_item.get(
+        COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD
+    )
+    if raw_history is not None:
+        history = _validated_source_pull_rebind_remediation_history(
+            raw_history
+        )
+        if history.get("slateDateEt") == slate_date:
+            if current_slate_date == slate_date:
+                # A compact history is evidence for a prior consumed request,
+                # never authority to hide a second active row for that same
+                # incident date.
+                raise RuntimeError(
+                    "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_"
+                    "HISTORY_ACTIVE_REQUEST_CONFLICT"
+                )
+            return _source_pull_rebind_history_response(history)
+        # This remediation version is intentionally one incident only. A
+        # compact proof for another slate cannot be displaced or expanded.
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_CONFLICT"
+        )
+    item = _cooperative_record(current_item, slate_date)
+    existing_marker = item.get(
+        COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
+    )
+    if existing_marker is not None:
+        _validated_source_pull_rebind_remediation_marker(
+            existing_marker,
+            item,
+        )
+        if item.get("state") == COOPERATIVE_REPLAY_REVIEW_REQUIRED:
+            # The same request failed again after consuming its one permitted
+            # source-rebind retry. Never turn that second defect into a loop.
+            raise RuntimeError(
+                "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_RETRY_CONSUMED"
+            )
+        return _source_pull_rebind_review_response(
+            item,
+            idempotent=True,
+        )
+
+    progress = _validated_source_pull_rebind_review_checkpoint(item)
+    request_epoch = int(item["requested_at_epoch"])
+    request_id = str(item.get("request_id") or "")
+    checkpoint_fingerprint = str(progress["checkpointFingerprint"])
+    now = _utc_now()
+    marker = {
+        "version": (
+            COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_VERSION
+        ),
+        "sourcePullRebindVersion": (
+            COOPERATIVE_SOURCE_PULL_REBIND_REQUIRED_VERSION
+        ),
+        "slateDateEt": slate_date,
+        "requestEpoch": request_epoch,
+        "requestIdFingerprint": hashlib.sha256(
+            request_id.encode("utf-8")
+        ).hexdigest(),
+        "checkpointFingerprint": checkpoint_fingerprint,
+        "errorCode": COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_ERROR,
+        "stage": COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_STAGE,
+        "appliedAtUtc": now.isoformat(),
+        "appliedAtEpoch": int(now.timestamp()),
+        "oneShot": True,
+    }
+    names = {
+        "#state": "state",
+        "#progress": "terminal_replay_progress",
+        "#checkpoint": "checkpointFingerprint",
+        "#attempt": "lastAttempt",
+        "#error": "errorCode",
+        "#stage": "stage",
+        "#remediation": (
+            COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
+        ),
+    }
+    values = {
+        ":record_type": COOPERATIVE_TERMINAL_REPLAY_RECORD_TYPE,
+        ":version": COOPERATIVE_TERMINAL_REPLAY_VERSION,
+        ":slate_date": slate_date,
+        ":request_epoch": request_epoch,
+        ":request_id": request_id,
+        ":review_required": COOPERATIVE_REPLAY_REVIEW_REQUIRED,
+        ":queued": COOPERATIVE_REPLAY_QUEUED,
+        ":progress": progress,
+        ":checkpoint": checkpoint_fingerprint,
+        ":error": COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_ERROR,
+        ":stage": COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_STAGE,
+        ":remediation": marker,
+    }
+    try:
+        updated = _cooperative_replay_table().update_item(
+            Key=_cooperative_replay_key(),
+            ConditionExpression=(
+                "record_type = :record_type AND "
+                "coordination_version = :version AND "
+                "slate_date_et = :slate_date AND "
+                "requested_at_epoch = :request_epoch AND "
+                "request_id = :request_id AND "
+                "#state = :review_required AND "
+                "#progress = :progress AND "
+                "#progress.#checkpoint = :checkpoint AND "
+                "#progress.#attempt.#error = :error AND "
+                "#progress.#attempt.#stage = :stage AND "
+                "attribute_not_exists(#remediation)"
+            ),
+            UpdateExpression=(
+                "SET #state = :queued, #remediation = :remediation "
+                "REMOVE claim_owner, claim_acquired_at_utc, "
+                "claim_acquired_at_epoch, claim_expires_at_utc, "
+                "claim_expires_at_epoch"
+            ),
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
+            ReturnValues="ALL_NEW",
+        ).get("Attributes")
+    except BaseException as exc:
+        # A lost response is accepted only when the same request is still
+        # exactly QUEUED with the exact one-shot marker and unchanged progress.
+        observed = _cooperative_record(
+            _read_cooperative_replay(),
+            slate_date,
+        )
+        if (
+            observed.get("state") == COOPERATIVE_REPLAY_QUEUED
+            and observed.get("requested_at_epoch") == request_epoch
+            and str(observed.get("request_id") or "") == request_id
+            and observed.get("terminal_replay_progress") == progress
+            and observed.get(
+                COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
+            )
+            == marker
+        ):
+            updated = observed
+        else:
+            raise RuntimeError(
+                "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REQUEUE_FAILED"
+            ) from exc
+
+    requeued = _cooperative_record(dict(updated or {}), slate_date)
+    if (
+        requeued.get("state") != COOPERATIVE_REPLAY_QUEUED
+        or requeued.get("requested_at_epoch") != request_epoch
+        or str(requeued.get("request_id") or "") != request_id
+        or requeued.get("terminal_replay_progress") != progress
+        or requeued.get(
+            COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
+        )
+        != marker
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REQUEUE_INVALID"
+        )
+    return _source_pull_rebind_review_response(
+        requeued,
+        idempotent=False,
+    )
+
+
 def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]:
     slate_date = _strict_historical_slate_date(event)
     now = _utc_now()
@@ -1532,9 +2368,30 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
     }
     existing = _read_cooperative_replay()
     replace_acknowledged_date: Optional[str] = None
+    replace_acknowledged_item: Optional[Dict[str, Any]] = None
+    carried_remediation_history: Optional[Dict[str, Any]] = None
     if existing:
         existing_date = str(existing.get("slate_date_et") or "")
         validated = _cooperative_record(existing, existing_date)
+        raw_history = validated.get(
+            COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD
+        )
+        if raw_history is not None:
+            remediation_history = (
+                _validated_source_pull_rebind_remediation_history(
+                    raw_history
+                )
+            )
+            if remediation_history.get("slateDateEt") == slate_date:
+                # The one incident-specific retry has already completed and
+                # been compacted. A normal replay request cannot route around
+                # that durable one-shot fence by replacing the singleton row.
+                # Return the same compact completion projection so the normal
+                # v5 client can bind it to a fresh official read without any
+                # queue, lease, or historical mutation.
+                return _source_pull_rebind_history_response(
+                    remediation_history
+                )
         if existing_date == slate_date:
             # Returning a completed receipt is itself the durable observation
             # made by legacy v5.7.  Auto-acknowledge before returning while
@@ -1557,6 +2414,14 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
         if validated.get("state") != COOPERATIVE_REPLAY_ACKNOWLEDGED:
             raise RuntimeError("MLB_COOPERATIVE_REPLAY_DIFFERENT_REQUEST_ACTIVE")
         replace_acknowledged_date = existing_date
+        replace_acknowledged_item = validated
+        carried_remediation_history = (
+            _source_pull_rebind_history_for_replacement(validated)
+        )
+        if carried_remediation_history is not None:
+            item[COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD] = (
+                copy.deepcopy(carried_remediation_history)
+            )
 
     table = _cooperative_replay_table()
     try:
@@ -1568,21 +2433,81 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
                 ),
             )
         else:
+            if replace_acknowledged_item is None:
+                raise RuntimeError(
+                    "MLB_COOPERATIVE_REPLAY_REPLACEMENT_PROOF_MISSING"
+                )
+            previous_history = replace_acknowledged_item.get(
+                COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD
+            )
+            previous_marker = replace_acknowledged_item.get(
+                COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
+            )
+            replacement_condition = (
+                "record_type = :record_type AND "
+                "coordination_version = :version AND "
+                "slate_date_et = :previous_slate_date AND "
+                "requested_at_epoch = :previous_request_epoch AND "
+                "request_id = :previous_request_id AND "
+                "#state = :acknowledged AND "
+                "terminal_replay_progress = :previous_progress AND "
+                "replay_receipt = :previous_receipt AND "
+                "acknowledged_at_utc = :previous_acknowledged_at_utc AND "
+                "acknowledged_at_epoch = :previous_acknowledged_at_epoch AND "
+                + (
+                    "attribute_not_exists(#history) AND "
+                    if previous_history is None
+                    else "#history = :previous_history AND "
+                )
+                + (
+                    "attribute_not_exists(#remediation)"
+                    if previous_marker is None
+                    else "#remediation = :previous_remediation"
+                )
+            )
+            replacement_values = {
+                ":record_type": COOPERATIVE_TERMINAL_REPLAY_RECORD_TYPE,
+                ":version": COOPERATIVE_TERMINAL_REPLAY_VERSION,
+                ":previous_slate_date": replace_acknowledged_date,
+                ":previous_request_epoch": replace_acknowledged_item.get(
+                    "requested_at_epoch"
+                ),
+                ":previous_request_id": replace_acknowledged_item.get(
+                    "request_id"
+                ),
+                ":acknowledged": COOPERATIVE_REPLAY_ACKNOWLEDGED,
+                ":previous_progress": replace_acknowledged_item.get(
+                    "terminal_replay_progress"
+                ),
+                ":previous_receipt": replace_acknowledged_item.get(
+                    "replay_receipt"
+                ),
+                ":previous_acknowledged_at_utc": (
+                    replace_acknowledged_item.get("acknowledged_at_utc")
+                ),
+                ":previous_acknowledged_at_epoch": (
+                    replace_acknowledged_item.get("acknowledged_at_epoch")
+                ),
+            }
+            if previous_history is not None:
+                replacement_values[":previous_history"] = previous_history
+            if previous_marker is not None:
+                replacement_values[":previous_remediation"] = (
+                    previous_marker
+                )
             table.put_item(
                 Item=item,
-                ConditionExpression=(
-                    "record_type = :record_type AND "
-                    "coordination_version = :version AND "
-                    "slate_date_et = :previous_slate_date AND "
-                    "#state = :acknowledged"
-                ),
-                ExpressionAttributeNames={"#state": "state"},
-                ExpressionAttributeValues={
-                    ":record_type": COOPERATIVE_TERMINAL_REPLAY_RECORD_TYPE,
-                    ":version": COOPERATIVE_TERMINAL_REPLAY_VERSION,
-                    ":previous_slate_date": replace_acknowledged_date,
-                    ":acknowledged": COOPERATIVE_REPLAY_ACKNOWLEDGED,
+                ConditionExpression=replacement_condition,
+                ExpressionAttributeNames={
+                    "#state": "state",
+                    "#history": (
+                        COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD
+                    ),
+                    "#remediation": (
+                        COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
+                    ),
                 },
+                ExpressionAttributeValues=replacement_values,
             )
         return _cooperative_request_response(item)
     except BaseException as exc:
@@ -1592,6 +2517,27 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
         if observed:
             try:
                 validated = _cooperative_record(observed, slate_date)
+                observed_history = validated.get(
+                    COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD
+                )
+                if (
+                    validated.get("requested_at_epoch")
+                    != item.get("requested_at_epoch")
+                    or str(validated.get("request_id") or "")
+                    != str(item.get("request_id") or "")
+                    or validated.get(
+                        COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
+                    )
+                    is not None
+                    or observed_history != carried_remediation_history
+                ):
+                    raise RuntimeError(
+                        "MLB_COOPERATIVE_REPLAY_QUEUE_CONFLICT"
+                    )
+                if observed_history is not None:
+                    _validated_source_pull_rebind_remediation_history(
+                        observed_history
+                    )
                 if validated.get("state") == COOPERATIVE_REPLAY_COMPLETED:
                     _acknowledge_cooperative_replay(
                         event,
@@ -1619,7 +2565,15 @@ def _acknowledge_cooperative_replay(
         else _read_cooperative_replay(),
         slate_date,
     )
-    if item.get("state") == COOPERATIVE_REPLAY_ACKNOWLEDGED:
+    state = item.get("state")
+    if state in {
+        COOPERATIVE_REPLAY_COMPLETED,
+        COOPERATIVE_REPLAY_ACKNOWLEDGED,
+    }:
+        receipt = _validated_persisted_replay_receipt(item)
+    else:
+        receipt = None
+    if state == COOPERATIVE_REPLAY_ACKNOWLEDGED:
         return {
             "ok": True,
             "sport": "mlb",
@@ -1627,8 +2581,12 @@ def _acknowledge_cooperative_replay(
             "cooperativeTerminalReplayAcknowledged": True,
             "cooperativeTerminalReplay": _cooperative_public_state(item),
         }
-    if item.get("state") != COOPERATIVE_REPLAY_COMPLETED:
+    if state != COOPERATIVE_REPLAY_COMPLETED or receipt is None:
         raise RuntimeError("MLB_COOPERATIVE_REPLAY_NOT_COMPLETE")
+    request_epoch = int(item["requested_at_epoch"])
+    request_id = str(item.get("request_id") or "")
+    expected_progress = copy.deepcopy(item.get("terminal_replay_progress"))
+    expected_receipt = copy.deepcopy(receipt)
     now = _utc_now()
     table = _cooperative_replay_table()
     try:
@@ -1637,17 +2595,30 @@ def _acknowledge_cooperative_replay(
             ConditionExpression=(
                 "record_type = :record_type AND "
                 "coordination_version = :version AND "
-                "slate_date_et = :slate_date AND #state = :completed"
+                "slate_date_et = :slate_date AND "
+                "requested_at_epoch = :request_epoch AND "
+                "request_id = :request_id AND "
+                "#progress = :expected_progress AND "
+                "#receipt = :expected_receipt AND "
+                "#state = :completed"
             ),
             UpdateExpression=(
                 "SET #state = :acknowledged, acknowledged_at_utc = :now_utc, "
                 "acknowledged_at_epoch = :now_epoch"
             ),
-            ExpressionAttributeNames={"#state": "state"},
+            ExpressionAttributeNames={
+                "#state": "state",
+                "#progress": "terminal_replay_progress",
+                "#receipt": "replay_receipt",
+            },
             ExpressionAttributeValues={
                 ":record_type": COOPERATIVE_TERMINAL_REPLAY_RECORD_TYPE,
                 ":version": COOPERATIVE_TERMINAL_REPLAY_VERSION,
                 ":slate_date": slate_date,
+                ":request_epoch": request_epoch,
+                ":request_id": request_id,
+                ":expected_progress": expected_progress,
+                ":expected_receipt": expected_receipt,
                 ":completed": COOPERATIVE_REPLAY_COMPLETED,
                 ":acknowledged": COOPERATIVE_REPLAY_ACKNOWLEDGED,
                 ":now_utc": now.isoformat(),
@@ -1660,10 +2631,19 @@ def _acknowledge_cooperative_replay(
         observed_date = str(observed_raw.get("slate_date_et") or "")
         if observed_date == slate_date:
             observed = _cooperative_record(observed_raw, slate_date)
-            if observed.get("state") != COOPERATIVE_REPLAY_ACKNOWLEDGED:
+            if (
+                observed.get("state")
+                != COOPERATIVE_REPLAY_ACKNOWLEDGED
+                or observed.get("requested_at_epoch") != request_epoch
+                or str(observed.get("request_id") or "") != request_id
+                or observed.get("terminal_replay_progress")
+                != expected_progress
+                or observed.get("replay_receipt") != expected_receipt
+            ):
                 raise RuntimeError(
                     "MLB_COOPERATIVE_REPLAY_ACKNOWLEDGE_FAILED"
                 ) from exc
+            _validated_persisted_replay_receipt(observed)
             updated = observed
         else:
             # Replacing this single slot with a different request is allowed
@@ -1682,13 +2662,24 @@ def _acknowledge_cooperative_replay(
             )
             updated = dict(item)
             updated["state"] = COOPERATIVE_REPLAY_ACKNOWLEDGED
+    acknowledged = _cooperative_record(dict(updated or {}), slate_date)
+    if (
+        acknowledged.get("state") != COOPERATIVE_REPLAY_ACKNOWLEDGED
+        or acknowledged.get("requested_at_epoch") != request_epoch
+        or str(acknowledged.get("request_id") or "") != request_id
+        or acknowledged.get("terminal_replay_progress")
+        != expected_progress
+        or acknowledged.get("replay_receipt") != expected_receipt
+    ):
+        raise RuntimeError("MLB_COOPERATIVE_REPLAY_ACKNOWLEDGE_FAILED")
+    _validated_persisted_replay_receipt(acknowledged)
     return {
         "ok": True,
         "sport": "mlb",
         "slateDateEt": slate_date,
         "cooperativeTerminalReplayAcknowledged": True,
         "cooperativeTerminalReplay": _cooperative_public_state(
-            dict(updated or item)
+            acknowledged
         ),
     }
 
@@ -3456,13 +4447,47 @@ def lambda_handler(event, context):
     if auth_error is not None:
         return auth_error
 
+    source_pull_rebind_event_present = (
+        COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_EVENT_FLAG in event
+    )
+    if source_pull_rebind_event_present and (
+        event.get(COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_EVENT_FLAG)
+        is not True
+        or set(event) != COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_EVENT_KEYS
+        or not _is_cooperative_replay_request(event, method)
+    ):
+        return _failure_response(
+            event,
+            500,
+            {
+                "ok": False,
+                "sport": "mlb",
+                "error": (
+                    "MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_CLOSED"
+                ),
+                "errorCode": (
+                    "MLB_COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_"
+                    "EVENT_INVALID"
+                ),
+                "mutatingRunAttempted": False,
+                "activeLeaseMutationAllowed": False,
+                "postStartPredictionCreationAllowed": False,
+                "immutablePredictionRewriteAllowed": False,
+                "directWorkflowTableWrite": False,
+            },
+        )
+
     # A manually invoked exact historical repair never contests or mutates the
     # active execution lease.  It writes one bounded control-plane request and
     # polls that same record.  Only a normal EventBridge daily owner can claim
     # and execute it later under the existing lease.
     if _is_cooperative_replay_request(event, method):
         try:
-            if event.get("acknowledgeCooperativeCompletion") is True:
+            if source_pull_rebind_event_present:
+                cooperative = (
+                    _requeue_source_pull_proof_review_after_rebind(event)
+                )
+            elif event.get("acknowledgeCooperativeCompletion") is True:
                 cooperative = _acknowledge_cooperative_replay(event)
             else:
                 cooperative = _enqueue_or_read_cooperative_replay(event)

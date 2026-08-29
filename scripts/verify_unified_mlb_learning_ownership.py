@@ -267,8 +267,13 @@ def verify(root: Path = Path(".")) -> dict[str, object]:
         recovery_trigger = _trigger_block(recovery)
         if "for outer in" in recovery:
             errors.append("ambiguous_outer_transport_retry_still_present")
-        if "MIN_ACCEPTED_ROWS: '33'" not in recovery:
+        if "MIN_ACCEPTED_ROWS: '39'" not in recovery:
             errors.append("recovery_minimum_row_gate_missing")
+        if (
+            "accepted > before_accepted" not in recovery
+            or "train_count > before_train_count" not in recovery
+        ):
+            errors.append("recovery_before_after_advancement_gate_missing")
         if "TARGET_SLATE_DATE: '2026-08-25'" not in recovery:
             errors.append("recovery_exact_target_slate_missing")
         for required in (

@@ -4,7 +4,7 @@ import importlib.util
 import sys
 import uuid
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -13,6 +13,88 @@ INSTALLER = ROOT / "hello_world" / "mlb_ml_runtime_install_v3.py"
 
 def _module(name: str) -> ModuleType:
     return ModuleType(name)
+
+
+def test_fundamentals_runtime_health_requires_complete_shadow_attestation() -> None:
+    spec = importlib.util.spec_from_file_location(
+        f"_test_mlb_runtime_health_{uuid.uuid4().hex}",
+        INSTALLER,
+    )
+    assert spec is not None and spec.loader is not None
+    installer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(installer)
+    scoring_bridge = SimpleNamespace(
+        VERSION="test-scoring-bridge-v2",
+        AUTHORITY_MODE="SHADOW_ONLY_NO_LIVE_SCORING_AUTHORITY",
+        SNAPSHOT_DETERMINISM_VERSION="test-determinism-v1",
+    )
+    engine = SimpleNamespace(
+        _INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V1_APPLIED=True,
+        _INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED=True,
+        _INQSI_MLB_FUNDAMENTALS_SCORING_SHADOW_V2_INSTALLED=True,
+        _INQSI_MLB_FUNDAMENTALS_SNAPSHOT_SHADOW_V2_INSTALLED=True,
+        _INQSI_MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_V1_INSTALLED=True,
+        MLB_FUNDAMENTALS_SCORING_BRIDGE_VERSION=scoring_bridge.VERSION,
+        MLB_FUNDAMENTALS_SCORING_BRIDGE_AUTHORITY_MODE=(
+            scoring_bridge.AUTHORITY_MODE
+        ),
+        MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_VERSION=(
+            scoring_bridge.SNAPSHOT_DETERMINISM_VERSION
+        ),
+        MLB_FUNDAMENTALS_SCORING_BRIDGE_SHADOW_ONLY=True,
+        MLB_FUNDAMENTALS_SCORING_BRIDGE_CAN_INFLUENCE_LIVE_PICK=False,
+        MLB_FUNDAMENTALS_SCORING_BRIDGE_INSTALL_ERROR=None,
+    )
+
+    assert installer._fundamentals_shadow_health(engine, scoring_bridge) is True
+    engine._INQSI_MLB_FUNDAMENTALS_SCORING_SHADOW_V2_INSTALLED = False
+    assert installer._fundamentals_shadow_health(engine, scoring_bridge) is False
+    engine._INQSI_MLB_FUNDAMENTALS_SCORING_SHADOW_V2_INSTALLED = True
+    engine.MLB_FUNDAMENTALS_SCORING_BRIDGE_INSTALL_ERROR = "install failed"
+    assert installer._fundamentals_shadow_health(engine, scoring_bridge) is False
+
+
+def test_fundamentals_runtime_health_rejects_identity_mismatch() -> None:
+    spec = importlib.util.spec_from_file_location(
+        f"_test_mlb_runtime_identity_{uuid.uuid4().hex}",
+        INSTALLER,
+    )
+    assert spec is not None and spec.loader is not None
+    installer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(installer)
+    scoring_bridge = SimpleNamespace(
+        VERSION="expected-scoring-bridge-v2",
+        AUTHORITY_MODE="SHADOW_ONLY_NO_LIVE_SCORING_AUTHORITY",
+        SNAPSHOT_DETERMINISM_VERSION="expected-determinism-v1",
+    )
+    exact = {
+        "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V1_APPLIED": True,
+        "_INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED": True,
+        "_INQSI_MLB_FUNDAMENTALS_SCORING_SHADOW_V2_INSTALLED": True,
+        "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_SHADOW_V2_INSTALLED": True,
+        "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_V1_INSTALLED": True,
+        "MLB_FUNDAMENTALS_SCORING_BRIDGE_VERSION": scoring_bridge.VERSION,
+        "MLB_FUNDAMENTALS_SCORING_BRIDGE_AUTHORITY_MODE": (
+            scoring_bridge.AUTHORITY_MODE
+        ),
+        "MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_VERSION": (
+            scoring_bridge.SNAPSHOT_DETERMINISM_VERSION
+        ),
+        "MLB_FUNDAMENTALS_SCORING_BRIDGE_SHADOW_ONLY": True,
+        "MLB_FUNDAMENTALS_SCORING_BRIDGE_CAN_INFLUENCE_LIVE_PICK": False,
+        "MLB_FUNDAMENTALS_SCORING_BRIDGE_INSTALL_ERROR": None,
+    }
+    for attribute in (
+        "MLB_FUNDAMENTALS_SCORING_BRIDGE_VERSION",
+        "MLB_FUNDAMENTALS_SCORING_BRIDGE_AUTHORITY_MODE",
+        "MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_VERSION",
+    ):
+        mismatched = dict(exact)
+        mismatched[attribute] = "wrong-runtime-identity"
+        assert installer._fundamentals_shadow_health(
+            SimpleNamespace(**mismatched),
+            scoring_bridge,
+        ) is False
 
 
 def test_installer_disables_legacy_authority_and_installs_ranked_winner_without_sitecustomize() -> None:
@@ -30,9 +112,31 @@ def test_installer_disables_legacy_authority_and_installs_ranked_winner_without_
     safety.apply = lambda module: events.append("runtime_safety")
 
     fundamentals = _module("mlb_fundamentals_snapshot_v1")
-    fundamentals.apply = lambda module: setattr(
-        module, "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V1_APPLIED", True
+    scoring_bridge = _module("mlb_fundamentals_scoring_bridge_v1")
+    scoring_bridge.VERSION = "test-scoring-bridge-v2"
+    scoring_bridge.AUTHORITY_MODE = (
+        "SHADOW_ONLY_NO_LIVE_SCORING_AUTHORITY"
     )
+    scoring_bridge.SNAPSHOT_DETERMINISM_VERSION = "test-determinism-v1"
+
+    def apply_fundamentals(module: ModuleType) -> None:
+        module._INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V1_APPLIED = True
+        module._INQSI_MLB_FUNDAMENTALS_SCORING_BRIDGE_V1_INSTALLED = True
+        module._INQSI_MLB_FUNDAMENTALS_SCORING_SHADOW_V2_INSTALLED = True
+        module._INQSI_MLB_FUNDAMENTALS_SNAPSHOT_SHADOW_V2_INSTALLED = True
+        module._INQSI_MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_V1_INSTALLED = True
+        module.MLB_FUNDAMENTALS_SCORING_BRIDGE_VERSION = scoring_bridge.VERSION
+        module.MLB_FUNDAMENTALS_SCORING_BRIDGE_AUTHORITY_MODE = (
+            scoring_bridge.AUTHORITY_MODE
+        )
+        module.MLB_FUNDAMENTALS_SNAPSHOT_DETERMINISM_VERSION = (
+            scoring_bridge.SNAPSHOT_DETERMINISM_VERSION
+        )
+        module.MLB_FUNDAMENTALS_SCORING_BRIDGE_SHADOW_ONLY = True
+        module.MLB_FUNDAMENTALS_SCORING_BRIDGE_CAN_INFLUENCE_LIVE_PICK = False
+        module.MLB_FUNDAMENTALS_SCORING_BRIDGE_INSTALL_ERROR = None
+
+    fundamentals.apply = apply_fundamentals
     fundamentals_v2 = _module("mlb_fundamentals_snapshot_v2")
     fundamentals_v2.VERSION = "test-fundamentals-v2"
 
@@ -172,6 +276,7 @@ def test_installer_disables_legacy_authority_and_installs_ranked_winner_without_
             safety,
             engine,
             fundamentals,
+            scoring_bridge,
             fundamentals_v2,
             champion,
             semantics,
