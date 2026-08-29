@@ -158,6 +158,7 @@ COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_FIELD = (
     "terminal_replay_review_evidence"
 )
 COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_MAX_BYTES = 2048
+_COOPERATIVE_TERMINAL_PRESENT_NULL_CHECKPOINT = object()
 COOPERATIVE_TERMINAL_PRECHECKPOINT_REVIEW_STAGES = frozenset(
     {"BIND_REQUEST", "RESOLVE_MANIFEST", "BIND_MANIFEST_AUTHORITY"}
 )
@@ -6002,6 +6003,7 @@ def _checkpoint_cooperative_replay(
     request_epoch = _nonnegative_receipt_integer(
         item.get("requested_at_epoch"), "request_epoch"
     )
+    prior_progress_present = "terminal_replay_progress" in item
     prior_progress = item.get("terminal_replay_progress")
     if review_required:
         if failed is not True:
@@ -6100,7 +6102,7 @@ def _checkpoint_cooperative_replay(
         ":chunk_stage": stage,
         ":chunk_status": status,
     }
-    if prior_progress is not None:
+    if prior_progress_present:
         expression_values[":prior_progress"] = prior_progress
     try:
         updated = _cooperative_replay_table().update_item(
@@ -6113,7 +6115,7 @@ def _checkpoint_cooperative_replay(
                 "request_id = :request_id AND "
                 + (
                     "terminal_replay_progress = :prior_progress AND "
-                    if prior_progress is not None
+                    if prior_progress_present
                     else "attribute_not_exists(terminal_replay_progress) AND "
                 )
                 + "#state = :claimed AND claim_owner = :owner"
@@ -6655,6 +6657,24 @@ def lambda_handler(event, context):
                         "MLB_COOPERATIVE_TERMINAL_CHUNK_RUNNER_NOT_READY"
                     )
                 if callable(chunk_runner):
+                    claimed_progress_present = (
+                        "terminal_replay_progress" in claimed
+                    )
+                    claimed_progress = claimed.get(
+                        "terminal_replay_progress"
+                    )
+                    claimed_progress_non_object = bool(
+                        claimed_progress_present
+                        and not isinstance(claimed_progress, dict)
+                    )
+                    runtime_checkpoint = claimed_progress
+                    if (
+                        claimed_progress_present
+                        and claimed_progress is None
+                    ):
+                        runtime_checkpoint = (
+                            _COOPERATIVE_TERMINAL_PRESENT_NULL_CHECKPOINT
+                        )
                     chunk_result = chunk_runner(
                         slate_date=str(
                             claimed.get("slate_date_et") or ""
@@ -6663,9 +6683,7 @@ def lambda_handler(event, context):
                             "requested_at_epoch"
                         ),
                         request_id=claimed.get("request_id"),
-                        checkpoint=claimed.get(
-                            "terminal_replay_progress"
-                        ),
+                        checkpoint=runtime_checkpoint,
                         context=context,
                     )
                     if not isinstance(chunk_result, dict):
@@ -6706,6 +6724,21 @@ def lambda_handler(event, context):
                     ):
                         raise RuntimeError(
                             "MLB_COOPERATIVE_TERMINAL_CHUNK_CONTRACT_INVALID"
+                        )
+
+                    if (
+                        claimed_progress_non_object
+                        and (
+                            chunk_result.get("checkpoint") is not None
+                            or chunk_result.get(
+                                "checkpointWriteAllowed"
+                            )
+                            is not False
+                        )
+                    ):
+                        raise RuntimeError(
+                            "MLB_COOPERATIVE_TERMINAL_"
+                            "NON_OBJECT_CHECKPOINT_RESULT_INVALID"
                         )
 
                     if chunk_result.get("complete") is True:
