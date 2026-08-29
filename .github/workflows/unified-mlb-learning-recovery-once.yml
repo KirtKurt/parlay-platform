@@ -825,16 +825,23 @@ jobs:
           durable_history = application.get(
               'prelockCandidateReviewV2DurableHistory'
           )
+          nested_durable_history = replay.get(
+              'durableRemediationHistory'
+          )
           if (
               expected_status is None
               or not isinstance(idempotent, bool)
               or durable_history not in (None, True)
               or (
+                  durable_history is None
+                  and nested_durable_history is not None
+              )
+              or (
                   durable_history is True
                   and (
                       idempotent is not True
                       or replay_state != 'ACKNOWLEDGED'
-                      or replay.get('durableRemediationHistory') is not True
+                      or nested_durable_history is not True
                   )
               )
               or (not idempotent and replay_state != 'QUEUED')
@@ -924,7 +931,7 @@ jobs:
                       'immutablePredictionRewriteAllowed': False,
                       'directWorkflowTableWrite': False,
                       'durableRemediationHistory': (
-                          replay.get('durableRemediationHistory') is True
+                          nested_durable_history is True
                       ),
                       'failClosed': True,
                   },
