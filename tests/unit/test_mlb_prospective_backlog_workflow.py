@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "mlb-prospective-backlog-reconcile-once.yml"
@@ -12,6 +14,7 @@ UNIFIED_RECOVERY = (
 SOURCE_CONTRACT = (
     ROOT / ".github" / "workflows" / "mlb-production-source-contract.yml"
 )
+DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
 
 
 def test_workflow_runs_bounded_reconciliation_before_training():
@@ -116,6 +119,12 @@ def test_unified_recovery_source_rebind_review_requeue_is_explicit_and_bounded()
     assert "nested_durable_history = replay.get(" in remediation
     assert "nested_durable_history is not None" in remediation
     assert "nested_durable_history is not True" in remediation
+    assert (
+        "durable_history is not None\n"
+        "              and durable_history is not True"
+        in remediation
+    )
+    assert "durable_history not in (None, True)" not in source
     assert "official-read-bound no-op path" in remediation
     assert "durably fences every duplicate queue" in remediation
     assert "expected_completed = replay_state in COMPLETED_STATES" in remediation
@@ -145,6 +154,229 @@ def test_unified_recovery_source_rebind_review_requeue_is_explicit_and_bounded()
     ):
         assert forbidden not in remediation
 
+
+def test_unified_recovery_prelock_review_v2_is_internal_proof_bound():
+    source = UNIFIED_RECOVERY.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(source)
+    deploy_workflow = yaml.safe_load(
+        DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    )
+    assert workflow["concurrency"] == {
+        "group": "unified-mlb-learning",
+        "cancel-in-progress": False,
+    }
+    recovery_job = workflow["jobs"]["recover-and-verify"]
+    assert recovery_job["concurrency"] == {
+        "group": "parlay-platform-deploy",
+        "cancel-in-progress": False,
+    }
+    assert recovery_job["concurrency"] == deploy_workflow["concurrency"]
+    workflow_dispatch = workflow["on"]["workflow_dispatch"]
+    input_config = workflow_dispatch["inputs"][
+        "requeue_prelock_candidate_review_after_installed_runtime_proof_v2"
+    ]
+    assert {
+        key: input_config.get(key)
+        for key in ("required", "default", "type")
+    } == {
+        "required": False,
+        "default": False,
+        "type": "boolean",
+    }
+
+    steps = workflow["jobs"]["recover-and-verify"]["steps"]
+    reject_ambiguous = next(
+        step
+        for step in steps
+        if step.get("name") == "Reject ambiguous remediation flags"
+    )
+    assert reject_ambiguous["env"] == {
+        "REQUEUE_SOURCE_PULL_V1": (
+            "${{ inputs.requeue_source_pull_proof_review_after_rebind }}"
+        ),
+        "REQUEUE_PRELOCK_V2": (
+            "${{ inputs."
+            "requeue_prelock_candidate_review_after_installed_runtime_proof_v2 }}"
+        ),
+    }
+    remediation_guard = reject_ambiguous["run"]
+    assert (
+        'if [[ "$REQUEUE_SOURCE_PULL_V1" == "true" ]]; then'
+        in remediation_guard
+    )
+    assert (
+        "The v1 source-pull remediation is durably consumed and disabled"
+        in remediation_guard
+    )
+    assert remediation_guard.count("exit 1") == 2
+    v2_step = next(
+        step
+        for step in steps
+        if step.get("name")
+        == "Requeue protected prelock review after installed-runtime proof v2"
+    )
+    assert v2_step["if"] == (
+        "${{ inputs."
+        "requeue_prelock_candidate_review_after_installed_runtime_proof_v2 }}"
+    )
+    assert v2_step["env"] == {"GH_TOKEN": "${{ github.token }}"}
+    run = v2_step["run"]
+    embedded = run.split("python - <<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+    compile(embedded, "<prelock-review-v2-workflow>", "exec")
+
+    remediation_guard_at = source.index(
+        "Reject ambiguous remediation flags"
+    )
+    credentials_at = source.index("Configure AWS credentials")
+    readiness_at = source.index(
+        "Wait for a quiet deploy queue and stable AWS runtime"
+    )
+    v1_at = source.index("Requeue protected source-binding review once")
+    v2_at = source.index(
+        "Requeue protected prelock review after installed-runtime proof v2"
+    )
+    reconcile_at = source.index(
+        "Reconcile protected prospective settlement backlog"
+    )
+    remediation = source[v2_at:reconcile_at]
+
+    assert (
+        remediation_guard_at
+        < credentials_at
+        < readiness_at
+        < v1_at
+        < v2_at
+        < reconcile_at
+    )
+    readiness = source[readiness_at:v1_at]
+    assert "noncompleted_runs = [" in readiness
+    assert "if noncompleted_runs:" in readiness
+    assert (
+        "A deploy run became queued or active while "
+        in readiness
+    )
+    assert "recovery owns the shared deploy lock" in readiness
+    assert "not active_runs" not in readiness
+    assert "Reject ambiguous remediation flags" in source
+    assert (
+        'REQUEUE_SOURCE_PULL_V1" == "true" && '
+        '"$REQUEUE_PRELOCK_V2" == "true"'
+        in source
+    )
+    assert (
+        'if [[ "$REQUEUE_SOURCE_PULL_V1" == "true" ]]; then'
+        in source
+    )
+    assert (
+        "The v1 source-pull remediation is durably consumed and disabled"
+        in source
+    )
+    assert "LOGICAL_RESOURCE_ID = 'MLBDailyPickLockFunction'" in remediation
+    assert (
+        "EXPECTED_HANDLER = 'mlb_daily_pick_lock_protected.lambda_handler'"
+        in remediation
+    )
+    assert "INCIDENT_SLATE_DATE = '2026-08-04'" in remediation
+    assert (
+        "'requeuePrelockCandidateReviewAfterInstalledRuntimeProofV2'"
+        in remediation
+    )
+    assert "'force': True" in remediation
+    assert "'installedRuntimePositiveProofBound': True" in remediation
+    assert (
+        "'priorSourcePullRebindRemediationValidated': True"
+        in remediation
+    )
+    assert "'automaticRetryAllowed': False" in remediation
+    assert "'rawLambdaPayloadPersisted': False" in remediation
+    assert "'requestIdentifierExposed': False" in remediation
+    assert "'checkpointMaterialExposed': False" in remediation
+    assert "'positiveProofMaterialExposed': False" in remediation
+    assert "'automaticRequeueAllowed': False" in remediation
+    assert "prelock-candidate-review-remediation-v2.json" in remediation
+    assert "github_ref != 'refs/heads/main'" in remediation
+    assert "deploy.yml/runs?branch=main&per_page=100" in remediation
+    assert "status=success" not in remediation
+    assert "main_ref.get('object')" in remediation
+    assert "main_object.get('sha') != commit_sha" in remediation
+    assert "latest.get('head_sha') != commit_sha" in remediation
+    assert "latest.get('status') != 'completed'" in remediation
+    assert "latest.get('conclusion') != 'success'" in remediation
+    assert "parameters.get('DeployGitSha') != commit_sha" in remediation
+    assert (
+        "parameters.get('DeployRunId')\n"
+        "                  != expected_deploy_run_id"
+        in remediation
+    )
+    assert "INQSI_DEPLOY_GIT_SHA" in remediation
+    assert "INQSI_DEPLOY_RUN_ID" in remediation
+    assert remediation.count("latest_exact_deploy()") >= 4
+    assert remediation.count("require_exact_stack_deployment()") >= 4
+    assert "def exact_deploy_identity(" in remediation
+    assert "type(run_id) is not int" in remediation
+    assert "type(run_attempt) is not int" in remediation
+    assert "get('run_attempt') or 1" not in remediation
+    assert "latest_before_invoke_identity" in remediation
+    assert "latest_after_invoke_identity" in remediation
+    assert "post_invocation_configuration" in remediation
+    invoke_at = remediation.index("invocation = lambda_client.invoke(")
+    pre_configuration_at = remediation.index(
+        "invocation_configuration ="
+    )
+    pre_latest_at = remediation.index("latest_before_invoke =")
+    pre_stack_at = remediation.rindex(
+        "require_exact_stack_deployment()",
+        0,
+        invoke_at,
+    )
+    post_configuration_at = remediation.index(
+        "post_invocation_configuration =",
+        invoke_at,
+    )
+    post_latest_at = remediation.index(
+        "latest_after_invoke =",
+        invoke_at,
+    )
+    post_stack_at = remediation.index(
+        "require_exact_stack_deployment()",
+        post_latest_at,
+    )
+    assert (
+        pre_configuration_at
+        < pre_latest_at
+        < pre_stack_at
+        < invoke_at
+        < post_configuration_at
+        < post_latest_at
+        < post_stack_at
+    )
+    assert "type(lambda_status) is not int" in remediation
+    assert "type(application_status) is not int" in remediation
+    assert "application_status = int(" not in remediation
+    assert "sameCommitDeploySuccessRequired': True" in remediation
+    assert "pinned_revision_id" in remediation
+    assert "pinned_code_sha256" in remediation
+    assert "'RevisionId': pinned_revision_id" in remediation
+    assert "'CodeSha256': pinned_code_sha256" in remediation
+    assert (
+        "durable_history is not None\n"
+        "                  and durable_history is not True"
+        in remediation
+    )
+    assert "durable_history not in (None, True)" not in source
+    assert remediation.count("lambda_client.invoke(") == 1
+    assert "dynamodb" not in remediation.lower()
+    for forbidden in (
+        "candidateSnapshotFingerprint",
+        "predictionSourcePullFingerprint",
+        ".update_item(",
+        ".put_item(",
+        ".delete_item(",
+        "transact_write_items(",
+        "while ",
+        "for attempt in",
+    ):
+        assert forbidden not in remediation
 
 def test_unified_recovery_binds_numeric_proof_to_requested_run_evidence():
     source = UNIFIED_RECOVERY.read_text(encoding="utf-8")

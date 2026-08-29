@@ -146,6 +146,71 @@ COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_ERROR = (
 COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_STAGE = (
     "WRITE_VALID_PRELOCK_MISSED_LOCK_QUARANTINE"
 )
+COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_GUARD_VERSION = (
+    "MLB-COOPERATIVE-TERMINAL-REVIEW-CHECKPOINT-GUARD-"
+    "v1-fresh-failed-checkpoint"
+)
+COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_VERSION = (
+    "MLB-COOPERATIVE-TERMINAL-REVIEW-EVIDENCE-"
+    "v1-claimed-runtime-result"
+)
+COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_FIELD = (
+    "terminal_replay_review_evidence"
+)
+COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_MAX_BYTES = 2048
+_COOPERATIVE_TERMINAL_PRESENT_NULL_CHECKPOINT = object()
+COOPERATIVE_TERMINAL_PRECHECKPOINT_REVIEW_STAGES = frozenset(
+    {"BIND_REQUEST", "RESOLVE_MANIFEST", "BIND_MANIFEST_AUTHORITY"}
+)
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_EVENT_FLAG = (
+    "requeuePrelockCandidateReviewAfterInstalledRuntimeProofV2"
+)
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_EVENT_KEYS = frozenset(
+    {
+        "sport",
+        "run",
+        "slateDateEt",
+        "force",
+        COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_EVENT_FLAG,
+    }
+)
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_REMEDIATION_VERSION = (
+    "MLB-COOPERATIVE-PRELOCK-CANDIDATE-REVIEW-REMEDIATION-"
+    "v2-one-shot-installed-runtime-proof"
+)
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_PROOF_VERSION = (
+    "MLB-COOPERATIVE-PRELOCK-CANDIDATE-REVIEW-PROOF-"
+    "v1-strong-installed-runtime"
+)
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_FIELD = (
+    "prelock_candidate_review_remediation_v2"
+)
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_FIELD = (
+    "prelock_candidate_review_remediation_v2_history"
+)
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_VERSION = (
+    "MLB-COOPERATIVE-PRELOCK-CANDIDATE-REVIEW-HISTORY-"
+    "v1-compact-acknowledged"
+)
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_MAX_BYTES = 3072
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_SLATE = "2026-08-04"
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_MANIFEST_COUNT = 15
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_GAME_INDEX = 1
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_PRIOR_GAME_INDEX = 0
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_ATTEMPT_COUNT = 1007
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_BOUND_PULL_COUNT = 68
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_GAME_IDENTITY_FINGERPRINT = (
+    "8b80aefe782634bd4a89bd51c6a043d8687ad625085c79a910f6c0bde68c3242"
+)
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_REASON = (
+    "PRELOCK_CANDIDATE_REQUIRES_REVIEW"
+)
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_STALE_STAGE = (
+    "PROCESS_CHECKPOINT_READY"
+)
+COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_STALE_STATUS = (
+    "TERMINAL_CHECKPOINT_READY"
+)
 # The normal current-slate run always executes first.  A historical replay is
 # attempted only when Lambda still has a conservative ten-minute execution
 # budget plus the same one-minute release margin used by the global lease.
@@ -156,7 +221,7 @@ COOPERATIVE_TERMINAL_CHUNK_V3_VERSION = (
 COOPERATIVE_TERMINAL_CHUNK_VERSION = (
     "MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine"
 )
-COOPERATIVE_REPLAY_PERMANENT_REVIEW_ERRORS = frozenset(
+COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_V1_PERMANENT_ERRORS = frozenset(
     {
         "PRELOCK_CANDIDATE_REQUIRES_REVIEW",
         "COOPERATIVE_TERMINAL_CHUNK_V3_MIGRATION_NOT_ZERO_WORK",
@@ -281,6 +346,11 @@ COOPERATIVE_REPLAY_PERMANENT_REVIEW_ERRORS = frozenset(
         "COOPERATIVE_TERMINAL_CHUNK_VERIFICATION_INDEX_INVALID",
         "COOPERATIVE_TERMINAL_CHUNK_VERIFIED_GAME_COUNT_INVALID",
     }
+)
+# New runtime classifiers may grow independently. Persisted v1 review
+# evidence always validates against the frozen contract above.
+COOPERATIVE_REPLAY_PERMANENT_REVIEW_ERRORS = (
+    COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_V1_PERMANENT_ERRORS
 )
 COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION = (
     "MLB-COOPERATIVE-TERMINAL-COMPLETION-HANDOFF-v1"
@@ -1387,6 +1457,14 @@ def _cooperative_terminal_progress_public(
 
 
 def _cooperative_review_reason(item: Dict[str, Any]) -> str:
+    evidence = item.get(COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_FIELD)
+    if evidence is not None:
+        validated_evidence = _validated_cooperative_review_evidence(
+            evidence,
+            item,
+        )
+        return str(validated_evidence["errorCode"])
+
     progress = item.get("terminal_replay_progress")
     attempt = (
         progress.get("lastAttempt")
@@ -1428,7 +1506,6 @@ def _cooperative_review_reason(item: Dict[str, Any]) -> str:
         if progress_is_bound and safe_code
         else "PRELOCK_CANDIDATE_REQUIRES_REVIEW"
     )
-
 
 def _cooperative_public_state(item: Dict[str, Any]) -> Dict[str, Any]:
     state = str(item.get("state") or "")
@@ -1730,6 +1807,493 @@ def _source_pull_rebind_compact_fingerprint(value: Any) -> str:
             default=str,
         ).encode("utf-8")
     ).hexdigest()
+
+
+def _cooperative_review_prior_progress_fingerprint(
+    value: Any,
+) -> str:
+    """Fingerprint every DynamoDB value with stable type-preserving encoding."""
+
+    def canonical_number(number: Decimal) -> str:
+        if not number.is_finite():
+            raise RuntimeError(
+                "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+            )
+        if number == number.to_integral_value():
+            return str(int(number))
+        rendered = format(number.normalize(), "f")
+        return rendered.rstrip("0").rstrip(".")
+
+    def normalize(child: Any) -> Dict[str, Any]:
+        if child is None:
+            return {"type": "NULL", "value": None}
+        if type(child) is bool:
+            return {"type": "BOOL", "value": child}
+        if isinstance(child, str):
+            return {"type": "S", "value": child}
+        if isinstance(child, Decimal):
+            return {"type": "N", "value": canonical_number(child)}
+        if type(child) is int:
+            return {
+                "type": "N",
+                "value": canonical_number(Decimal(child)),
+            }
+        if isinstance(child, (bytes, bytearray, memoryview)):
+            return {"type": "B", "value": bytes(child).hex()}
+        child_type = type(child)
+        if (
+            child_type.__module__ == "boto3.dynamodb.types"
+            and child_type.__name__ == "Binary"
+        ):
+            try:
+                binary_value = bytes(child)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+                ) from exc
+            return {"type": "B", "value": binary_value.hex()}
+        if isinstance(child, Mapping):
+            if any(not isinstance(key, str) for key in child):
+                raise RuntimeError(
+                    "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+                )
+            return {
+                "type": "M",
+                "value": [
+                    [key, normalize(child[key])]
+                    for key in sorted(child)
+                ],
+            }
+        if isinstance(child, list):
+            return {
+                "type": "L",
+                "value": [normalize(nested) for nested in child],
+            }
+        if isinstance(child, (set, frozenset)):
+            normalized_members = [normalize(nested) for nested in child]
+            normalized_members.sort(
+                key=lambda nested: json.dumps(
+                    nested,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            )
+            return {"type": "SET", "value": normalized_members}
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+        )
+
+    return hashlib.sha256(
+        json.dumps(
+            normalize(value),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _cooperative_terminal_review_evidence_v1_requires_review(
+    stage: Any,
+    error_code: Any,
+) -> bool:
+    """Validate persisted v1 evidence against its frozen classifier."""
+
+    stage_value = str(stage or "")
+    code_value = str(error_code or "")
+    if (
+        code_value
+        not in COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_V1_PERMANENT_ERRORS
+    ):
+        return False
+    if code_value == "PRELOCK_CANDIDATE_REQUIRES_REVIEW":
+        return False
+    if (
+        code_value
+        == "COOPERATIVE_TERMINAL_CHUNK_V3_MIGRATION_NOT_ZERO_WORK"
+    ):
+        return stage_value == "BIND_MANIFEST_AUTHORITY"
+    return stage_value in COOPERATIVE_TERMINAL_PRECHECKPOINT_REVIEW_STAGES
+
+
+def _validated_cooperative_review_evidence(
+    value: Any,
+    item: Dict[str, Any],
+    *,
+    owner: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Validate a review transition that has no writable chunk checkpoint."""
+
+    expected_keys = {
+        "version",
+        "slateDateEt",
+        "requestEpoch",
+        "requestIdFingerprint",
+        "priorProgressPresent",
+        "priorProgressFingerprint",
+        "stage",
+        "errorCode",
+        "status",
+        "chunkVersion",
+        "claimAcquiredAtUtc",
+        "claimAcquiredAtEpoch",
+        "claimOwnerFingerprint",
+        "recordedAtUtc",
+        "recordedAtEpoch",
+        "postStartPredictionCreationAllowed",
+        "immutablePredictionRewriteAllowed",
+        "directWorkflowTableWrite",
+        "productionAuthorityChanged",
+        "evidenceFingerprint",
+    }
+    if not isinstance(value, dict) or set(value) != expected_keys:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+        )
+    prior_present = "terminal_replay_progress" in item
+    prior = item.get("terminal_replay_progress")
+    request_id = str(item.get("request_id") or "")
+    claim_at_text = str(value.get("claimAcquiredAtUtc") or "")
+    recorded_at_text = str(value.get("recordedAtUtc") or "")
+    try:
+        request_epoch = _nonnegative_receipt_integer(
+            item.get("requested_at_epoch"),
+            "review_evidence_request_epoch",
+        )
+        bound_request_epoch = _nonnegative_receipt_integer(
+            value.get("requestEpoch"),
+            "review_evidence_bound_request_epoch",
+        )
+        claim_epoch = _nonnegative_receipt_integer(
+            value.get("claimAcquiredAtEpoch"),
+            "review_evidence_claim_epoch",
+        )
+        recorded_epoch = _nonnegative_receipt_integer(
+            value.get("recordedAtEpoch"),
+            "review_evidence_recorded_epoch",
+        )
+        claim_at = datetime.fromisoformat(claim_at_text)
+        recorded_at = datetime.fromisoformat(recorded_at_text)
+    except (RuntimeError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+        ) from exc
+
+    stage = str(value.get("stage") or "")
+    error_code = str(value.get("errorCode") or "")
+    expected_prior_fingerprint = (
+        _cooperative_review_prior_progress_fingerprint(prior)
+        if prior_present
+        else None
+    )
+    material = {
+        key: child
+        for key, child in value.items()
+        if key != "evidenceFingerprint"
+    }
+    encoded_size = len(
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    )
+    owner_matches = True
+    if owner is not None:
+        owner_value = str(owner or "")
+        owner_matches = bool(
+            owner_value
+            and str(item.get("claim_owner") or "") == owner_value
+            and value.get("claimOwnerFingerprint")
+            == hashlib.sha256(owner_value.encode("utf-8")).hexdigest()
+            and value.get("claimAcquiredAtUtc")
+            == item.get("claim_acquired_at_utc")
+            and claim_epoch
+            == _nonnegative_receipt_integer(
+                item.get("claim_acquired_at_epoch"),
+                "review_evidence_item_claim_epoch",
+            )
+        )
+    fingerprint_fields = (
+        "requestIdFingerprint",
+        "claimOwnerFingerprint",
+        "evidenceFingerprint",
+    )
+    if (
+        not request_id
+        or request_epoch <= 0
+        or bound_request_epoch != request_epoch
+        or str(value.get("slateDateEt") or "")
+        != str(item.get("slate_date_et") or "")
+        or value.get("requestIdFingerprint")
+        != hashlib.sha256(request_id.encode("utf-8")).hexdigest()
+        or value.get("version")
+        != COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_VERSION
+        or value.get("priorProgressPresent") is not prior_present
+        or value.get("priorProgressFingerprint")
+        != expected_prior_fingerprint
+        or not _cooperative_terminal_review_evidence_v1_requires_review(
+            stage,
+            error_code,
+        )
+        or value.get("status") != "FAILED_CLOSED"
+        or value.get("chunkVersion")
+        != COOPERATIVE_TERMINAL_CHUNK_VERSION
+        or claim_at.tzinfo is None
+        or claim_at.utcoffset() != timedelta(0)
+        or claim_at.isoformat() != claim_at_text
+        or int(claim_at.timestamp()) != claim_epoch
+        or recorded_at.tzinfo is None
+        or recorded_at.utcoffset() != timedelta(0)
+        or recorded_at.isoformat() != recorded_at_text
+        or int(recorded_at.timestamp()) != recorded_epoch
+        or recorded_at < claim_at
+        or value.get("postStartPredictionCreationAllowed") is not False
+        or value.get("immutablePredictionRewriteAllowed") is not False
+        or value.get("directWorkflowTableWrite") is not False
+        or value.get("productionAuthorityChanged") is not False
+        or not owner_matches
+        or any(
+            re.fullmatch(r"[0-9a-f]{64}", str(value.get(field) or ""))
+            is None
+            for field in fingerprint_fields
+        )
+        or (
+            prior_present
+            and re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(value.get("priorProgressFingerprint") or ""),
+            )
+            is None
+        )
+        or value.get("evidenceFingerprint")
+        != _source_pull_rebind_compact_fingerprint(material)
+        or encoded_size > COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_MAX_BYTES
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+        )
+    return copy.deepcopy(value)
+
+
+def _cooperative_review_evidence_from_claimed_result(
+    item: Dict[str, Any],
+    owner: str,
+    chunk_result: Any,
+) -> Dict[str, Any]:
+    """Bind one in-process permanent failure to the exact claimed row."""
+
+    stage = (
+        str(chunk_result.get("stage") or "")
+        if isinstance(chunk_result, dict)
+        else ""
+    )
+    error_code = (
+        str(chunk_result.get("errorCode") or "")
+        if isinstance(chunk_result, dict)
+        else ""
+    )
+    if (
+        not isinstance(chunk_result, dict)
+        or chunk_result.get("ok") is not False
+        or chunk_result.get("complete") is not False
+        or chunk_result.get("deferred") is not False
+        or chunk_result.get("checkpoint") is not None
+        or chunk_result.get("checkpointWriteAllowed") is not False
+        or chunk_result.get("terminalChunkVersion")
+        != COOPERATIVE_TERMINAL_CHUNK_VERSION
+        or chunk_result.get("postStartPredictionCreationAllowed") is not False
+        or chunk_result.get("immutablePredictionRewriteAllowed") is not False
+        or chunk_result.get("productionAuthorityChanged") is not False
+        or stage not in COOPERATIVE_TERMINAL_PRECHECKPOINT_REVIEW_STAGES
+        or not _cooperative_replay_requires_review(stage, error_code)
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+        )
+    if (
+        item.get("state") != COOPERATIVE_REPLAY_CLAIMED
+        or str(item.get("claim_owner") or "") != str(owner or "")
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_INVALID"
+        )
+    prior_present = "terminal_replay_progress" in item
+    prior = item.get("terminal_replay_progress")
+    request_epoch = _nonnegative_receipt_integer(
+        item.get("requested_at_epoch"),
+        "review_evidence_request_epoch",
+    )
+    claim_epoch = _nonnegative_receipt_integer(
+        item.get("claim_acquired_at_epoch"),
+        "review_evidence_claim_epoch",
+    )
+    request_id = str(item.get("request_id") or "")
+    owner_value = str(owner or "")
+    claim_at_utc = str(item.get("claim_acquired_at_utc") or "")
+    now = _utc_now()
+    evidence = {
+        "version": COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_VERSION,
+        "slateDateEt": str(item.get("slate_date_et") or ""),
+        "requestEpoch": request_epoch,
+        "requestIdFingerprint": hashlib.sha256(
+            request_id.encode("utf-8")
+        ).hexdigest(),
+        "priorProgressPresent": prior_present,
+        "priorProgressFingerprint": (
+            _cooperative_review_prior_progress_fingerprint(prior)
+            if prior_present
+            else None
+        ),
+        "stage": stage,
+        "errorCode": error_code,
+        "status": "FAILED_CLOSED",
+        "chunkVersion": COOPERATIVE_TERMINAL_CHUNK_VERSION,
+        "claimAcquiredAtUtc": claim_at_utc,
+        "claimAcquiredAtEpoch": claim_epoch,
+        "claimOwnerFingerprint": hashlib.sha256(
+            owner_value.encode("utf-8")
+        ).hexdigest(),
+        "recordedAtUtc": now.isoformat(),
+        "recordedAtEpoch": int(now.timestamp()),
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "directWorkflowTableWrite": False,
+        "productionAuthorityChanged": False,
+    }
+    evidence["evidenceFingerprint"] = (
+        _source_pull_rebind_compact_fingerprint(evidence)
+    )
+    return _validated_cooperative_review_evidence(
+        evidence,
+        item,
+        owner=owner_value,
+    )
+
+
+def _review_cooperative_replay_without_checkpoint(
+    *,
+    item: Dict[str, Any],
+    owner: str,
+    chunk_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Persist a request-bound review outcome while preserving prior progress."""
+
+    evidence = _cooperative_review_evidence_from_claimed_result(
+        item,
+        owner,
+        chunk_result,
+    )
+    slate_date = str(item.get("slate_date_et") or "")
+    request_id = str(item.get("request_id") or "")
+    request_epoch = _nonnegative_receipt_integer(
+        item.get("requested_at_epoch"),
+        "review_evidence_request_epoch",
+    )
+    prior_present = "terminal_replay_progress" in item
+    prior = item.get("terminal_replay_progress")
+    expression_values = {
+        ":record_type": COOPERATIVE_TERMINAL_REPLAY_RECORD_TYPE,
+        ":version": COOPERATIVE_TERMINAL_REPLAY_VERSION,
+        ":slate_date": slate_date,
+        ":request_epoch": request_epoch,
+        ":request_id": request_id,
+        ":claimed": COOPERATIVE_REPLAY_CLAIMED,
+        ":review_required": COOPERATIVE_REPLAY_REVIEW_REQUIRED,
+        ":owner": owner,
+        ":evidence": evidence,
+        ":now_utc": evidence["recordedAtUtc"],
+        ":now_epoch": evidence["recordedAtEpoch"],
+        ":chunk_stage": evidence["stage"],
+        ":chunk_status": evidence["status"],
+    }
+    if prior_present:
+        expression_values[":prior_progress"] = prior
+    try:
+        updated = _cooperative_replay_table().update_item(
+            Key=_cooperative_replay_key(),
+            ConditionExpression=(
+                "record_type = :record_type AND "
+                "coordination_version = :version AND "
+                "slate_date_et = :slate_date AND "
+                "requested_at_epoch = :request_epoch AND "
+                "request_id = :request_id AND "
+                + (
+                    "terminal_replay_progress = :prior_progress AND "
+                    if prior_present
+                    else "attribute_not_exists(terminal_replay_progress) AND "
+                )
+                + "#state = :claimed AND claim_owner = :owner AND "
+                "attribute_not_exists(#review_evidence)"
+            ),
+            UpdateExpression=(
+                "SET #state = :review_required, "
+                "#review_evidence = :evidence, "
+                "last_chunk_at_utc = :now_utc, "
+                "last_chunk_at_epoch = :now_epoch, "
+                "last_chunk_stage = :chunk_stage, "
+                "last_chunk_status = :chunk_status, "
+                "last_failure_at_utc = :now_utc, "
+                "last_failure_at_epoch = :now_epoch "
+                "REMOVE current_slate_success_proof, claim_owner, "
+                "claim_acquired_at_utc, claim_acquired_at_epoch, "
+                "claim_expires_at_utc, claim_expires_at_epoch"
+            ),
+            ExpressionAttributeNames={
+                "#state": "state",
+                "#review_evidence": (
+                    COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_FIELD
+                ),
+            },
+            ExpressionAttributeValues=expression_values,
+            ReturnValues="ALL_NEW",
+        ).get("Attributes")
+    except BaseException as exc:
+        observed = _cooperative_record(
+            _read_cooperative_replay(),
+            slate_date,
+        )
+        observed_prior_present = "terminal_replay_progress" in observed
+        if (
+            observed.get("state") == COOPERATIVE_REPLAY_REVIEW_REQUIRED
+            and observed.get("requested_at_epoch") == request_epoch
+            and str(observed.get("request_id") or "") == request_id
+            and observed_prior_present is prior_present
+            and (
+                not prior_present
+                or observed.get("terminal_replay_progress") == prior
+            )
+            and observed.get(
+                COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_FIELD
+            )
+            == evidence
+        ):
+            _validated_cooperative_review_evidence(evidence, observed)
+            updated = observed
+        else:
+            raise RuntimeError(
+                "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_WRITE_FAILED"
+            ) from exc
+
+    reviewed = _cooperative_record(dict(updated or {}), slate_date)
+    reviewed_prior_present = "terminal_replay_progress" in reviewed
+    if (
+        reviewed.get("state") != COOPERATIVE_REPLAY_REVIEW_REQUIRED
+        or reviewed.get("requested_at_epoch") != request_epoch
+        or str(reviewed.get("request_id") or "") != request_id
+        or reviewed_prior_present is not prior_present
+        or (
+            prior_present
+            and reviewed.get("terminal_replay_progress") != prior
+        )
+        or reviewed.get(COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_FIELD)
+        != evidence
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_STATE_INVALID"
+        )
+    _validated_cooperative_review_evidence(evidence, reviewed)
+    return _cooperative_public_state(reviewed)
 
 
 def _validated_source_pull_rebind_remediation_history(
@@ -2346,6 +2910,1048 @@ def _requeue_source_pull_proof_review_after_rebind(
     )
 
 
+def _prelock_candidate_review_v2_integer(
+    value: Any,
+    field: str,
+) -> int:
+    if isinstance(value, bool):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_"
+            f"{field.upper()}_INVALID"
+        )
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_"
+            f"{field.upper()}_INVALID"
+        ) from exc
+    if (
+        not number.is_finite()
+        or number < 0
+        or number != number.to_integral_value()
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_"
+            f"{field.upper()}_INVALID"
+        )
+    return int(number)
+
+
+def _prelock_candidate_review_v2_progress_fingerprint(
+    progress: Any,
+) -> str:
+    """Hash the complete checkpoint, including attempt metadata."""
+
+    return _source_pull_rebind_compact_fingerprint(progress)
+
+
+def _validated_prelock_candidate_review_v2_stale_checkpoint(
+    item: Dict[str, Any],
+) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    progress = item.get("terminal_replay_progress")
+    public = _cooperative_terminal_progress_public(item)
+    attempt = (
+        progress.get("lastAttempt")
+        if isinstance(progress, dict)
+        else None
+    )
+    manifest_authority = (
+        progress.get("manifestAuthority")
+        if isinstance(progress, dict)
+        else None
+    )
+    roster = (
+        manifest_authority.get("gameRoster")
+        if isinstance(manifest_authority, Mapping)
+        else None
+    )
+    processed = (
+        progress.get("processedGames")
+        if isinstance(progress, dict)
+        else None
+    )
+    prior_marker = _validated_source_pull_rebind_remediation_marker(
+        item.get(COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD),
+        item,
+    )
+    request_id = str(item.get("request_id") or "")
+    request_epoch = _prelock_candidate_review_v2_integer(
+        item.get("requested_at_epoch"),
+        "request_epoch",
+    )
+    expected_counters = {
+        "manifestGameCount": COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_MANIFEST_COUNT,
+        "nextGameIndex": COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_GAME_INDEX,
+        "processedGameCount": 1,
+        "terminalCount": 1,
+        "canonicalCount": 0,
+        "noPredictionDataCount": 0,
+        "missedLockValidPrelockQuarantineCount": 1,
+        "reconciledCount": 1,
+        "verificationIndex": 0,
+        "verifiedGameCount": 0,
+        "attemptCount": COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_ATTEMPT_COUNT,
+    }
+    counters_match = bool(
+        isinstance(public, dict)
+        and public.get("valid") is True
+        and all(
+            public.get(field) == value
+            for field, value in expected_counters.items()
+        )
+    )
+    processed_entry = (
+        processed[0]
+        if isinstance(processed, list)
+        and len(processed) == 1
+        and isinstance(processed[0], dict)
+        else None
+    )
+    roster_zero = (
+        roster[0]
+        if isinstance(roster, list)
+        and len(roster)
+        == COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_MANIFEST_COUNT
+        and isinstance(roster[0], Mapping)
+        else None
+    )
+    roster_one = (
+        roster[1]
+        if isinstance(roster, list)
+        and len(roster)
+        == COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_MANIFEST_COUNT
+        and isinstance(roster[1], Mapping)
+        else None
+    )
+    checkpoint_fingerprint = (
+        str(progress.get("checkpointFingerprint") or "")
+        if isinstance(progress, dict)
+        else ""
+    )
+    at_utc = (
+        str(attempt.get("atUtc") or "")
+        if isinstance(attempt, dict)
+        else ""
+    )
+    try:
+        parsed_at = datetime.fromisoformat(at_utc)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_"
+            "CHECKPOINT_INVALID"
+        ) from exc
+    forbidden_claim_fields = (
+        "claim_owner",
+        "claim_acquired_at_utc",
+        "claim_acquired_at_epoch",
+        "claim_expires_at_utc",
+        "claim_expires_at_epoch",
+    )
+    if (
+        not request_id
+        or request_epoch <= 0
+        or item.get("state") != COOPERATIVE_REPLAY_REVIEW_REQUIRED
+        or str(item.get("slate_date_et") or "")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_SLATE
+        or _cooperative_review_reason(item)
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_REASON
+        or item.get("last_chunk_stage")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_STALE_STAGE
+        or item.get("last_chunk_status")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_STALE_STATUS
+        or any(field in item for field in forbidden_claim_fields)
+        or not isinstance(progress, dict)
+        or progress.get("version") != COOPERATIVE_TERMINAL_CHUNK_VERSION
+        or str(progress.get("slateDateEt") or "")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_SLATE
+        or progress.get("requestEpoch") != request_epoch
+        or str(progress.get("requestId") or "") != request_id
+        or progress.get("phase") != "PROCESS"
+        or progress.get("verificationComplete") is not False
+        or progress.get("postStartPredictionCreationAllowed") is not False
+        or progress.get("immutablePredictionRewriteAllowed") is not False
+        or progress.get("productionAuthorityChanged") is not False
+        or not counters_match
+        or not isinstance(processed_entry, dict)
+        or processed_entry.get("terminalState")
+        != "MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED"
+        or processed_entry.get("reconciled") is not True
+        or not isinstance(roster_zero, Mapping)
+        or not isinstance(roster_one, Mapping)
+        or processed_entry.get("gameIdentity")
+        != roster_zero.get("gameIdentity")
+        or processed_entry.get("durableIdentity")
+        not in list(roster_zero.get("identityOptions") or [])
+        or not isinstance(attempt, dict)
+        or set(attempt)
+        != {
+            "status",
+            "stage",
+            "atUtc",
+            "phase",
+            "gameIndex",
+            "gameIdentity",
+            "durableIdentity",
+        }
+        or attempt.get("status")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_STALE_STATUS
+        or attempt.get("stage")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_STALE_STAGE
+        or attempt.get("phase") != "PROCESS"
+        or attempt.get("gameIndex")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_PRIOR_GAME_INDEX
+        or attempt.get("gameIdentity")
+        != processed_entry.get("gameIdentity")
+        or attempt.get("durableIdentity")
+        != processed_entry.get("durableIdentity")
+        or at_utc != str(progress.get("updatedAtUtc") or "")
+        or parsed_at.tzinfo is None
+        or parsed_at.utcoffset() != timedelta(0)
+        or parsed_at.isoformat() != at_utc
+        or re.fullmatch(r"[0-9a-f]{64}", checkpoint_fingerprint) is None
+        or checkpoint_fingerprint
+        != _source_pull_rebind_checkpoint_fingerprint(progress)
+        or checkpoint_fingerprint
+        == str(prior_marker.get("checkpointFingerprint") or "")
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(progress.get("manifestFingerprint") or ""),
+        )
+        is None
+        or not isinstance(manifest_authority, Mapping)
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(
+                manifest_authority.get(
+                    "authorityEvidenceFingerprint"
+                )
+                or ""
+            ),
+        )
+        is None
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            hashlib.sha256(
+                str(roster_one.get("gameIdentity") or "").encode("utf-8")
+            ).hexdigest(),
+        )
+        is None
+        or hashlib.sha256(
+            str(roster_one.get("gameIdentity") or "").encode("utf-8")
+        ).hexdigest()
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_GAME_IDENTITY_FINGERPRINT
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_"
+            "CHECKPOINT_INVALID"
+        )
+    return copy.deepcopy(progress), copy.deepcopy(prior_marker)
+
+
+def _validated_prelock_candidate_review_v2_positive_proof(
+    value: Any,
+    item: Dict[str, Any],
+    *,
+    review_progress: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    expected_keys = {
+        "version",
+        "slateDateEt",
+        "requestEpoch",
+        "requestIdFingerprint",
+        "checkpointFingerprint",
+        "progressFingerprint",
+        "manifestFingerprint",
+        "manifestAuthorityEvidenceFingerprint",
+        "manifestGameCount",
+        "gameIndex",
+        "gameIdentityFingerprint",
+        "identityBindingMode",
+        "boundScoringPullCount",
+        "candidateAuthorityVersion",
+        "candidateAuthorityFingerprint",
+        "candidateProofFingerprint",
+        "candidateSnapshotFingerprint",
+        "candidateRowFingerprint",
+        "candidateSelectionFingerprint",
+        "predictionPayloadFingerprint",
+        "predictionSourcePullFingerprint",
+        "boundScoringFingerprint",
+        "terminalAbsent",
+        "rejectedNewerCandidateCount",
+        "modelOrSignalRecomputedAtLock",
+        "predictionAdopted",
+        "postStartPredictionCreationAllowed",
+        "immutablePredictionRewriteAllowed",
+        "productionAuthorityChanged",
+        "proofFingerprint",
+    }
+    if not isinstance(value, dict) or set(value) != expected_keys:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_PROOF_INVALID"
+        )
+    request_id = str(item.get("request_id") or "")
+    request_epoch = _prelock_candidate_review_v2_integer(
+        item.get("requested_at_epoch"),
+        "proof_request_epoch",
+    )
+    fingerprint_fields = (
+        "requestIdFingerprint",
+        "checkpointFingerprint",
+        "progressFingerprint",
+        "manifestFingerprint",
+        "manifestAuthorityEvidenceFingerprint",
+        "gameIdentityFingerprint",
+        "candidateAuthorityFingerprint",
+        "candidateProofFingerprint",
+        "candidateSnapshotFingerprint",
+        "candidateRowFingerprint",
+        "candidateSelectionFingerprint",
+        "predictionPayloadFingerprint",
+        "predictionSourcePullFingerprint",
+        "boundScoringFingerprint",
+        "proofFingerprint",
+    )
+    proof_material = {
+        key: child
+        for key, child in value.items()
+        if key != "proofFingerprint"
+    }
+    expected_authority_version = getattr(
+        mlb_daily_per_game_lock_patch,
+        "VALID_PRELOCK_QUARANTINE_AUTHORITY_VERSION",
+        None,
+    )
+    if (
+        not request_id
+        or value.get("version")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_PROOF_VERSION
+        or str(value.get("slateDateEt") or "")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_SLATE
+        or _prelock_candidate_review_v2_integer(
+            value.get("requestEpoch"),
+            "proof_bound_request_epoch",
+        )
+        != request_epoch
+        or value.get("requestIdFingerprint")
+        != hashlib.sha256(request_id.encode("utf-8")).hexdigest()
+        or _prelock_candidate_review_v2_integer(
+            value.get("manifestGameCount"),
+            "proof_manifest_count",
+        )
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_MANIFEST_COUNT
+        or _prelock_candidate_review_v2_integer(
+            value.get("gameIndex"),
+            "proof_game_index",
+        )
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_GAME_INDEX
+        or value.get("gameIdentityFingerprint")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_GAME_IDENTITY_FINGERPRINT
+        or value.get("identityBindingMode") != "exact_identity"
+        or _prelock_candidate_review_v2_integer(
+            value.get("boundScoringPullCount"),
+            "proof_bound_pull_count",
+        )
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_BOUND_PULL_COUNT
+        or not expected_authority_version
+        or value.get("candidateAuthorityVersion")
+        != expected_authority_version
+        or value.get("terminalAbsent") is not True
+        or _prelock_candidate_review_v2_integer(
+            value.get("rejectedNewerCandidateCount"),
+            "proof_rejected_count",
+        )
+        != 0
+        or value.get("modelOrSignalRecomputedAtLock") is not False
+        or value.get("predictionAdopted") is not False
+        or value.get("postStartPredictionCreationAllowed") is not False
+        or value.get("immutablePredictionRewriteAllowed") is not False
+        or value.get("productionAuthorityChanged") is not False
+        or any(
+            re.fullmatch(r"[0-9a-f]{64}", str(value.get(field) or ""))
+            is None
+            for field in fingerprint_fields
+        )
+        or value.get("proofFingerprint")
+        != _source_pull_rebind_compact_fingerprint(proof_material)
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_PROOF_INVALID"
+        )
+    if review_progress is not None:
+        manifest_authority = review_progress.get("manifestAuthority")
+        if (
+            value.get("checkpointFingerprint")
+            != review_progress.get("checkpointFingerprint")
+            or value.get("progressFingerprint")
+            != _prelock_candidate_review_v2_progress_fingerprint(
+                review_progress
+            )
+            or value.get("manifestFingerprint")
+            != review_progress.get("manifestFingerprint")
+            or not isinstance(manifest_authority, Mapping)
+            or value.get("manifestAuthorityEvidenceFingerprint")
+            != manifest_authority.get("authorityEvidenceFingerprint")
+        ):
+            raise RuntimeError(
+                "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_PROOF_INVALID"
+            )
+    return copy.deepcopy(value)
+
+
+def _validated_prelock_candidate_review_v2_marker(
+    value: Any,
+    item: Dict[str, Any],
+) -> Dict[str, Any]:
+    expected_keys = {
+        "version",
+        "proofVersion",
+        "reviewCheckpointGuardVersion",
+        "priorRemediationVersion",
+        "slateDateEt",
+        "requestEpoch",
+        "requestIdFingerprint",
+        "checkpointFingerprint",
+        "reviewProgressFingerprint",
+        "priorRemediationFingerprint",
+        "positiveProof",
+        "reviewReason",
+        "staleCheckpointStage",
+        "staleCheckpointStatus",
+        "appliedAtUtc",
+        "appliedAtEpoch",
+        "oneShot",
+    }
+    if not isinstance(value, dict) or set(value) != expected_keys:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_MARKER_INVALID"
+        )
+    prior = _validated_source_pull_rebind_remediation_marker(
+        item.get(COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD),
+        item,
+    )
+    proof = _validated_prelock_candidate_review_v2_positive_proof(
+        value.get("positiveProof"),
+        item,
+    )
+    try:
+        applied_text = str(value.get("appliedAtUtc") or "")
+        applied_at = datetime.fromisoformat(applied_text)
+        applied_epoch = _prelock_candidate_review_v2_integer(
+            value.get("appliedAtEpoch"),
+            "marker_applied_epoch",
+        )
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_MARKER_INVALID"
+        ) from exc
+    request_epoch = _prelock_candidate_review_v2_integer(
+        item.get("requested_at_epoch"),
+        "marker_request_epoch",
+    )
+    request_id = str(item.get("request_id") or "")
+    if (
+        value.get("version")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_REMEDIATION_VERSION
+        or value.get("proofVersion")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_PROOF_VERSION
+        or value.get("reviewCheckpointGuardVersion")
+        != COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_GUARD_VERSION
+        or value.get("priorRemediationVersion")
+        != COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_VERSION
+        or str(value.get("slateDateEt") or "")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_SLATE
+        or _prelock_candidate_review_v2_integer(
+            value.get("requestEpoch"),
+            "marker_bound_request_epoch",
+        )
+        != request_epoch
+        or not request_id
+        or value.get("requestIdFingerprint")
+        != hashlib.sha256(request_id.encode("utf-8")).hexdigest()
+        or value.get("checkpointFingerprint")
+        != proof.get("checkpointFingerprint")
+        or value.get("reviewProgressFingerprint")
+        != proof.get("progressFingerprint")
+        or value.get("priorRemediationFingerprint")
+        != _source_pull_rebind_compact_fingerprint(prior)
+        or value.get("reviewReason")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_REASON
+        or value.get("staleCheckpointStage")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_STALE_STAGE
+        or value.get("staleCheckpointStatus")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_STALE_STATUS
+        or applied_at.tzinfo is None
+        or applied_at.utcoffset() != timedelta(0)
+        or applied_at.isoformat() != applied_text
+        or int(applied_at.timestamp()) != applied_epoch
+        or value.get("oneShot") is not True
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_MARKER_INVALID"
+        )
+    return copy.deepcopy(value)
+
+
+def _validated_prelock_candidate_review_v2_history(
+    value: Any,
+) -> Dict[str, Any]:
+    expected_keys = {
+        "version",
+        "remediationVersion",
+        "proofVersion",
+        "reviewCheckpointGuardVersion",
+        "priorRemediationVersion",
+        "slateDateEt",
+        "requestEpoch",
+        "requestIdFingerprint",
+        "reviewCheckpointFingerprint",
+        "reviewProgressFingerprint",
+        "positiveProofFingerprint",
+        "completionCheckpointFingerprint",
+        "completionReceiptFingerprint",
+        "acknowledgedAtUtc",
+        "acknowledgedAtEpoch",
+        "state",
+        "oneShot",
+        "proofFingerprint",
+    }
+    if not isinstance(value, dict) or set(value) != expected_keys:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_INVALID"
+        )
+    try:
+        request_epoch = _prelock_candidate_review_v2_integer(
+            value.get("requestEpoch"),
+            "history_request_epoch",
+        )
+        acknowledged_epoch = _prelock_candidate_review_v2_integer(
+            value.get("acknowledgedAtEpoch"),
+            "history_acknowledged_epoch",
+        )
+        acknowledged_text = str(value.get("acknowledgedAtUtc") or "")
+        acknowledged_at = datetime.fromisoformat(acknowledged_text)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_INVALID"
+        ) from exc
+    fingerprint_fields = (
+        "requestIdFingerprint",
+        "reviewCheckpointFingerprint",
+        "reviewProgressFingerprint",
+        "positiveProofFingerprint",
+        "completionCheckpointFingerprint",
+        "completionReceiptFingerprint",
+        "proofFingerprint",
+    )
+    material = {
+        key: child
+        for key, child in value.items()
+        if key != "proofFingerprint"
+    }
+    encoded_size = len(
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    )
+    if (
+        request_epoch <= 0
+        or acknowledged_epoch <= 0
+        or value.get("version")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_VERSION
+        or value.get("remediationVersion")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_REMEDIATION_VERSION
+        or value.get("proofVersion")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_PROOF_VERSION
+        or value.get("reviewCheckpointGuardVersion")
+        != COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_GUARD_VERSION
+        or value.get("priorRemediationVersion")
+        != COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_VERSION
+        or value.get("slateDateEt")
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_SLATE
+        or acknowledged_at.tzinfo is None
+        or acknowledged_at.utcoffset() != timedelta(0)
+        or acknowledged_at.isoformat() != acknowledged_text
+        or int(acknowledged_at.timestamp()) != acknowledged_epoch
+        or value.get("state") != COOPERATIVE_REPLAY_ACKNOWLEDGED
+        or value.get("oneShot") is not True
+        or any(
+            re.fullmatch(r"[0-9a-f]{64}", str(value.get(field) or ""))
+            is None
+            for field in fingerprint_fields
+        )
+        or value.get("proofFingerprint")
+        != _source_pull_rebind_compact_fingerprint(material)
+        or encoded_size
+        > COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_MAX_BYTES
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_INVALID"
+        )
+    return copy.deepcopy(value)
+
+
+def _prelock_candidate_review_v2_completed_history(
+    item: Dict[str, Any],
+) -> Dict[str, Any]:
+    if item.get("state") != COOPERATIVE_REPLAY_ACKNOWLEDGED:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_"
+            "HISTORY_NOT_ACKNOWLEDGED"
+        )
+    marker = _validated_prelock_candidate_review_v2_marker(
+        item.get(COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_FIELD),
+        item,
+    )
+    receipt = _validated_persisted_replay_receipt(item)
+    try:
+        acknowledged_text = str(item.get("acknowledged_at_utc") or "")
+        acknowledged_at = datetime.fromisoformat(acknowledged_text)
+        acknowledged_epoch = _prelock_candidate_review_v2_integer(
+            item.get("acknowledged_at_epoch"),
+            "completed_history_acknowledged_epoch",
+        )
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_INVALID"
+        ) from exc
+    if (
+        acknowledged_at.tzinfo is None
+        or acknowledged_at.utcoffset() != timedelta(0)
+        or acknowledged_at.isoformat() != acknowledged_text
+        or int(acknowledged_at.timestamp()) != acknowledged_epoch
+        or acknowledged_epoch
+        < _prelock_candidate_review_v2_integer(
+            marker.get("appliedAtEpoch"),
+            "completed_history_applied_epoch",
+        )
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_INVALID"
+        )
+    proof = marker["positiveProof"]
+    history = {
+        "version": COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_VERSION,
+        "remediationVersion": (
+            COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_REMEDIATION_VERSION
+        ),
+        "proofVersion": COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_PROOF_VERSION,
+        "reviewCheckpointGuardVersion": (
+            COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_GUARD_VERSION
+        ),
+        "priorRemediationVersion": (
+            COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_VERSION
+        ),
+        "slateDateEt": COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_SLATE,
+        "requestEpoch": _prelock_candidate_review_v2_integer(
+            item.get("requested_at_epoch"),
+            "completed_history_request_epoch",
+        ),
+        "requestIdFingerprint": marker["requestIdFingerprint"],
+        "reviewCheckpointFingerprint": marker["checkpointFingerprint"],
+        "reviewProgressFingerprint": marker["reviewProgressFingerprint"],
+        "positiveProofFingerprint": proof["proofFingerprint"],
+        "completionCheckpointFingerprint": str(
+            receipt.get("checkpointFingerprint") or ""
+        ),
+        "completionReceiptFingerprint": (
+            _source_pull_rebind_compact_fingerprint(receipt)
+        ),
+        "acknowledgedAtUtc": acknowledged_text,
+        "acknowledgedAtEpoch": acknowledged_epoch,
+        "state": COOPERATIVE_REPLAY_ACKNOWLEDGED,
+        "oneShot": True,
+    }
+    history["proofFingerprint"] = (
+        _source_pull_rebind_compact_fingerprint(history)
+    )
+    return _validated_prelock_candidate_review_v2_history(history)
+
+
+def _prelock_candidate_review_v2_history_for_replacement(
+    item: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    _validated_persisted_replay_receipt(item)
+    raw_history = item.get(
+        COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_FIELD
+    )
+    history = (
+        _validated_prelock_candidate_review_v2_history(raw_history)
+        if raw_history is not None
+        else None
+    )
+    marker = item.get(COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_FIELD)
+    if marker is not None:
+        completed = _prelock_candidate_review_v2_completed_history(item)
+        if history is not None and history != completed:
+            raise RuntimeError(
+                "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_"
+                "HISTORY_CONFLICT"
+            )
+        history = completed
+    return copy.deepcopy(history) if history is not None else None
+
+
+def _prelock_candidate_review_v2_response(
+    item: Dict[str, Any],
+    *,
+    idempotent: bool,
+) -> Dict[str, Any]:
+    state = str(item.get("state") or "")
+    status_by_state = {
+        COOPERATIVE_REPLAY_QUEUED: "QUEUED_FOR_EVENTBRIDGE_LOCK_OWNER",
+        COOPERATIVE_REPLAY_CLAIMED: "CLAIMED_BY_EVENTBRIDGE_LOCK_OWNER",
+        COOPERATIVE_REPLAY_COMPLETED: "COMPLETED_BY_EVENTBRIDGE_LOCK_OWNER",
+        COOPERATIVE_REPLAY_ACKNOWLEDGED: "ACKNOWLEDGED_COMPLETION",
+    }
+    status = status_by_state.get(state)
+    if status is None:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_STATE_INVALID"
+        )
+    if state in {
+        COOPERATIVE_REPLAY_COMPLETED,
+        COOPERATIVE_REPLAY_ACKNOWLEDGED,
+    }:
+        _validated_persisted_replay_receipt(item)
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "slateDateEt": str(item.get("slate_date_et") or ""),
+        "status": status,
+        "reason": status,
+        "skipped": True,
+        "mutatingRunAttempted": False,
+        "cooperativeTerminalReplayCompleted": state
+        in {COOPERATIVE_REPLAY_COMPLETED, COOPERATIVE_REPLAY_ACKNOWLEDGED},
+        "cooperativeTerminalReplay": _cooperative_public_state(item),
+        "prelockCandidateReviewV2RemediationApplied": True,
+        "prelockCandidateReviewV2RemediationIdempotent": bool(idempotent),
+        "prelockCandidateReviewV2RemediationVersion": (
+            COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_REMEDIATION_VERSION
+        ),
+        "installedRuntimePositiveProofBound": True,
+        "priorSourcePullRebindRemediationValidated": True,
+        "automaticRetryAllowed": False,
+        "activeLeaseMutationAllowed": False,
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "directWorkflowTableWrite": False,
+        "productionAuthorityChanged": False,
+    }
+
+
+def _prelock_candidate_review_v2_history_response(
+    history: Dict[str, Any],
+) -> Dict[str, Any]:
+    history = _validated_prelock_candidate_review_v2_history(history)
+    slate_date = str(history["slateDateEt"])
+    public = {
+        "version": COOPERATIVE_TERMINAL_REPLAY_VERSION,
+        "state": COOPERATIVE_REPLAY_ACKNOWLEDGED,
+        "slateDateEt": slate_date,
+        "automaticExecutionOwner": "eventbridge_daily_lock_schedule",
+        "currentSlateRunsFirst": True,
+        "freshPriorOwnerProofMayCarryAcrossInvocation": True,
+        "currentSlateSuccessProofPresent": False,
+        "activeLeaseMutationAllowed": False,
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "directWorkflowTableWrite": False,
+        "productionAuthorityChanged": False,
+        "ownerIdentifierExposed": False,
+        "terminalChunkProgress": None,
+        "durableRemediationHistory": True,
+        "failClosed": True,
+    }
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "slateDateEt": slate_date,
+        "status": "ACKNOWLEDGED_COMPLETION",
+        "reason": "ACKNOWLEDGED_COMPLETION",
+        "skipped": True,
+        "mutatingRunAttempted": False,
+        "cooperativeTerminalReplayCompleted": True,
+        "cooperativeTerminalReplay": public,
+        "prelockCandidateReviewV2RemediationApplied": True,
+        "prelockCandidateReviewV2RemediationIdempotent": True,
+        "prelockCandidateReviewV2RemediationVersion": (
+            COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_REMEDIATION_VERSION
+        ),
+        "installedRuntimePositiveProofBound": True,
+        "priorSourcePullRebindRemediationValidated": True,
+        "prelockCandidateReviewV2DurableHistory": True,
+        "automaticRetryAllowed": False,
+        "activeLeaseMutationAllowed": False,
+        "postStartPredictionCreationAllowed": False,
+        "immutablePredictionRewriteAllowed": False,
+        "directWorkflowTableWrite": False,
+        "productionAuthorityChanged": False,
+    }
+
+
+def _requeue_prelock_candidate_review_after_installed_runtime_proof_v2(
+    event: Dict[str, Any],
+) -> Dict[str, Any]:
+    slate_date = _strict_historical_slate_date(event)
+    if (
+        event.get(COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_EVENT_FLAG)
+        is not True
+        or set(event)
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_EVENT_KEYS
+        or event.get("acknowledgeCooperativeCompletion") is True
+        or COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_EVENT_FLAG in event
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_FLAG_MISSING"
+        )
+    if slate_date != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_SLATE:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_SLATE_INVALID"
+        )
+    prover = getattr(
+        mlb_daily_pick_lock,
+        "prove_cooperative_prelock_candidate_review_v2",
+        None,
+    )
+    if (
+        not callable(prover)
+        or getattr(
+            mlb_daily_pick_lock,
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_VERSION",
+            None,
+        )
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_PROOF_VERSION
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_"
+            "INSTALLED_RUNTIME_NOT_READY"
+        )
+
+    raw = _read_cooperative_replay()
+    if not raw or not str(raw.get("request_id") or "").strip():
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_RECORD_INVALID"
+        )
+    current_date = str(raw.get("slate_date_et") or "")
+    current_item = _cooperative_record(raw, current_date)
+    raw_history = current_item.get(
+        COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_FIELD
+    )
+    if raw_history is not None:
+        history = _validated_prelock_candidate_review_v2_history(raw_history)
+        if history.get("slateDateEt") == slate_date:
+            if current_date == slate_date:
+                raise RuntimeError(
+                    "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_"
+                    "HISTORY_ACTIVE_REQUEST_CONFLICT"
+                )
+            return _prelock_candidate_review_v2_history_response(history)
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_CONFLICT"
+        )
+
+    item = _cooperative_record(current_item, slate_date)
+    existing_marker = item.get(
+        COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_FIELD
+    )
+    if existing_marker is not None:
+        _validated_prelock_candidate_review_v2_marker(
+            existing_marker,
+            item,
+        )
+        if item.get("state") == COOPERATIVE_REPLAY_REVIEW_REQUIRED:
+            raise RuntimeError(
+                "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_RETRY_CONSUMED"
+            )
+        return _prelock_candidate_review_v2_response(
+            item,
+            idempotent=True,
+        )
+
+    progress, prior_marker = (
+        _validated_prelock_candidate_review_v2_stale_checkpoint(item)
+    )
+    request_epoch = _prelock_candidate_review_v2_integer(
+        item.get("requested_at_epoch"),
+        "requeue_request_epoch",
+    )
+    request_id = str(item.get("request_id") or "")
+    positive_proof = prover(
+        slate_date=slate_date,
+        request_epoch=request_epoch,
+        request_id=request_id,
+        checkpoint=copy.deepcopy(progress),
+    )
+    positive_proof = (
+        _validated_prelock_candidate_review_v2_positive_proof(
+            positive_proof,
+            item,
+            review_progress=progress,
+        )
+    )
+    now = _utc_now()
+    marker = {
+        "version": (
+            COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_REMEDIATION_VERSION
+        ),
+        "proofVersion": (
+            COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_PROOF_VERSION
+        ),
+        "reviewCheckpointGuardVersion": (
+            COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_GUARD_VERSION
+        ),
+        "priorRemediationVersion": (
+            COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_VERSION
+        ),
+        "slateDateEt": slate_date,
+        "requestEpoch": request_epoch,
+        "requestIdFingerprint": hashlib.sha256(
+            request_id.encode("utf-8")
+        ).hexdigest(),
+        "checkpointFingerprint": str(
+            progress.get("checkpointFingerprint") or ""
+        ),
+        "reviewProgressFingerprint": (
+            _prelock_candidate_review_v2_progress_fingerprint(progress)
+        ),
+        "priorRemediationFingerprint": (
+            _source_pull_rebind_compact_fingerprint(prior_marker)
+        ),
+        "positiveProof": copy.deepcopy(positive_proof),
+        "reviewReason": COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_REASON,
+        "staleCheckpointStage": (
+            COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_STALE_STAGE
+        ),
+        "staleCheckpointStatus": (
+            COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_STALE_STATUS
+        ),
+        "appliedAtUtc": now.isoformat(),
+        "appliedAtEpoch": int(now.timestamp()),
+        "oneShot": True,
+    }
+    _validated_prelock_candidate_review_v2_marker(marker, item)
+    names = {
+        "#state": "state",
+        "#progress": "terminal_replay_progress",
+        "#checkpoint": "checkpointFingerprint",
+        "#attempt": "lastAttempt",
+        "#error": "errorCode",
+        "#attempt_stage": "stage",
+        "#attempt_status": "status",
+        "#last_stage": "last_chunk_stage",
+        "#last_status": "last_chunk_status",
+        "#prior": COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD,
+        "#remediation": COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_FIELD,
+    }
+    values = {
+        ":record_type": COOPERATIVE_TERMINAL_REPLAY_RECORD_TYPE,
+        ":version": COOPERATIVE_TERMINAL_REPLAY_VERSION,
+        ":slate_date": slate_date,
+        ":request_epoch": request_epoch,
+        ":request_id": request_id,
+        ":review_required": COOPERATIVE_REPLAY_REVIEW_REQUIRED,
+        ":queued": COOPERATIVE_REPLAY_QUEUED,
+        ":progress": progress,
+        ":checkpoint": progress["checkpointFingerprint"],
+        ":stale_stage": COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_STALE_STAGE,
+        ":stale_status": COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_STALE_STATUS,
+        ":prior": prior_marker,
+        ":remediation": marker,
+    }
+    try:
+        updated = _cooperative_replay_table().update_item(
+            Key=_cooperative_replay_key(),
+            ConditionExpression=(
+                "record_type = :record_type AND "
+                "coordination_version = :version AND "
+                "slate_date_et = :slate_date AND "
+                "requested_at_epoch = :request_epoch AND "
+                "request_id = :request_id AND "
+                "#state = :review_required AND "
+                "#progress = :progress AND "
+                "#progress.#checkpoint = :checkpoint AND "
+                "#progress.#attempt.#attempt_stage = :stale_stage AND "
+                "#progress.#attempt.#attempt_status = :stale_status AND "
+                "attribute_not_exists(#progress.#attempt.#error) AND "
+                "#last_stage = :stale_stage AND "
+                "#last_status = :stale_status AND "
+                "#prior = :prior AND "
+                "attribute_not_exists(#remediation) AND "
+                "attribute_not_exists(claim_owner) AND "
+                "attribute_not_exists(claim_acquired_at_epoch) AND "
+                "attribute_not_exists(claim_expires_at_epoch)"
+            ),
+            UpdateExpression=(
+                "SET #state = :queued, #remediation = :remediation "
+                "REMOVE claim_owner, claim_acquired_at_utc, "
+                "claim_acquired_at_epoch, claim_expires_at_utc, "
+                "claim_expires_at_epoch"
+            ),
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
+            ReturnValues="ALL_NEW",
+        ).get("Attributes")
+    except BaseException as exc:
+        observed = _cooperative_record(
+            _read_cooperative_replay(),
+            slate_date,
+        )
+        if (
+            observed.get("requested_at_epoch") == request_epoch
+            and str(observed.get("request_id") or "") == request_id
+            and observed.get(
+                COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
+            )
+            == prior_marker
+            and observed.get(
+                COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_FIELD
+            )
+            == marker
+        ):
+            _validated_prelock_candidate_review_v2_marker(marker, observed)
+            if observed.get("state") == COOPERATIVE_REPLAY_REVIEW_REQUIRED:
+                raise RuntimeError(
+                    "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_"
+                    "RETRY_CONSUMED"
+                ) from exc
+            return _prelock_candidate_review_v2_response(
+                observed,
+                idempotent=True,
+            )
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_REQUEUE_FAILED"
+        ) from exc
+
+    requeued = _cooperative_record(dict(updated or {}), slate_date)
+    if (
+        requeued.get("state") != COOPERATIVE_REPLAY_QUEUED
+        or requeued.get("requested_at_epoch") != request_epoch
+        or str(requeued.get("request_id") or "") != request_id
+        or requeued.get("terminal_replay_progress") != progress
+        or requeued.get(
+            COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
+        )
+        != prior_marker
+        or requeued.get(
+            COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_FIELD
+        )
+        != marker
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_REQUEUE_INVALID"
+        )
+    return _prelock_candidate_review_v2_response(
+        requeued,
+        idempotent=False,
+    )
+
+
 def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]:
     slate_date = _strict_historical_slate_date(event)
     now = _utc_now()
@@ -2370,9 +3976,23 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
     replace_acknowledged_date: Optional[str] = None
     replace_acknowledged_item: Optional[Dict[str, Any]] = None
     carried_remediation_history: Optional[Dict[str, Any]] = None
+    carried_prelock_v2_history: Optional[Dict[str, Any]] = None
     if existing:
         existing_date = str(existing.get("slate_date_et") or "")
         validated = _cooperative_record(existing, existing_date)
+        raw_prelock_v2_history = validated.get(
+            COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_FIELD
+        )
+        if raw_prelock_v2_history is not None:
+            prelock_v2_history = (
+                _validated_prelock_candidate_review_v2_history(
+                    raw_prelock_v2_history
+                )
+            )
+            if prelock_v2_history.get("slateDateEt") == slate_date:
+                return _prelock_candidate_review_v2_history_response(
+                    prelock_v2_history
+                )
         raw_history = validated.get(
             COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD
         )
@@ -2418,10 +4038,19 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
         carried_remediation_history = (
             _source_pull_rebind_history_for_replacement(validated)
         )
+        carried_prelock_v2_history = (
+            _prelock_candidate_review_v2_history_for_replacement(
+                validated
+            )
+        )
         if carried_remediation_history is not None:
             item[COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD] = (
                 copy.deepcopy(carried_remediation_history)
             )
+        if carried_prelock_v2_history is not None:
+            item[
+                COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_FIELD
+            ] = copy.deepcopy(carried_prelock_v2_history)
 
     table = _cooperative_replay_table()
     try:
@@ -2443,6 +4072,12 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
             previous_marker = replace_acknowledged_item.get(
                 COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
             )
+            previous_v2_history = replace_acknowledged_item.get(
+                COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_FIELD
+            )
+            previous_v2_marker = replace_acknowledged_item.get(
+                COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_FIELD
+            )
             replacement_condition = (
                 "record_type = :record_type AND "
                 "coordination_version = :version AND "
@@ -2460,9 +4095,19 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
                     else "#history = :previous_history AND "
                 )
                 + (
-                    "attribute_not_exists(#remediation)"
+                    "attribute_not_exists(#remediation) AND "
                     if previous_marker is None
-                    else "#remediation = :previous_remediation"
+                    else "#remediation = :previous_remediation AND "
+                )
+                + (
+                    "attribute_not_exists(#v2_history) AND "
+                    if previous_v2_history is None
+                    else "#v2_history = :previous_v2_history AND "
+                )
+                + (
+                    "attribute_not_exists(#v2_remediation)"
+                    if previous_v2_marker is None
+                    else "#v2_remediation = :previous_v2_remediation"
                 )
             )
             replacement_values = {
@@ -2495,6 +4140,14 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
                 replacement_values[":previous_remediation"] = (
                     previous_marker
                 )
+            if previous_v2_history is not None:
+                replacement_values[":previous_v2_history"] = (
+                    previous_v2_history
+                )
+            if previous_v2_marker is not None:
+                replacement_values[":previous_v2_remediation"] = (
+                    previous_v2_marker
+                )
             table.put_item(
                 Item=item,
                 ConditionExpression=replacement_condition,
@@ -2505,6 +4158,12 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
                     ),
                     "#remediation": (
                         COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
+                    ),
+                    "#v2_history": (
+                        COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_FIELD
+                    ),
+                    "#v2_remediation": (
+                        COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_FIELD
                     ),
                 },
                 ExpressionAttributeValues=replacement_values,
@@ -2520,6 +4179,9 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
                 observed_history = validated.get(
                     COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_HISTORY_FIELD
                 )
+                observed_v2_history = validated.get(
+                    COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_FIELD
+                )
                 if (
                     validated.get("requested_at_epoch")
                     != item.get("requested_at_epoch")
@@ -2529,7 +4191,12 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
                         COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
                     )
                     is not None
+                    or validated.get(
+                        COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_FIELD
+                    )
+                    is not None
                     or observed_history != carried_remediation_history
+                    or observed_v2_history != carried_prelock_v2_history
                 ):
                     raise RuntimeError(
                         "MLB_COOPERATIVE_REPLAY_QUEUE_CONFLICT"
@@ -2537,6 +4204,10 @@ def _enqueue_or_read_cooperative_replay(event: Dict[str, Any]) -> Dict[str, Any]
                 if observed_history is not None:
                     _validated_source_pull_rebind_remediation_history(
                         observed_history
+                    )
+                if observed_v2_history is not None:
+                    _validated_prelock_candidate_review_v2_history(
+                        observed_v2_history
                     )
                 if validated.get("state") == COOPERATIVE_REPLAY_COMPLETED:
                     _acknowledge_cooperative_replay(
@@ -4074,6 +5745,249 @@ def _complete_cooperative_replay(
 
 
 
+def _validated_cooperative_review_checkpoint_transition(
+    item: Dict[str, Any],
+    progress: Any,
+    *,
+    expected_stage: Any,
+    expected_error_code: Any,
+) -> Dict[str, Any]:
+    """Require a fresh producer failure checkpoint before REVIEW_REQUIRED."""
+
+    prior_present = "terminal_replay_progress" in item
+    prior = item.get("terminal_replay_progress")
+    prior_absent = not prior_present
+    slate_date = str(item.get("slate_date_et") or "")
+    request_id = str(item.get("request_id") or "")
+    try:
+        request_epoch = _nonnegative_receipt_integer(
+            item.get("requested_at_epoch"),
+            "review_request_epoch",
+        )
+        prior_attempt_count = (
+            0
+            if prior_absent
+            else _nonnegative_receipt_integer(
+                prior.get("attemptCount")
+                if isinstance(prior, dict)
+                else None,
+                "prior_review_attempt_count",
+            )
+        )
+        attempt_count = _nonnegative_receipt_integer(
+            progress.get("attemptCount")
+            if isinstance(progress, dict)
+            else None,
+            "review_attempt_count",
+        )
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_CONTRACT_INVALID"
+        ) from exc
+    stage = str(expected_stage or "")
+    error_code = str(expected_error_code or "")
+    attempt = (
+        progress.get("lastAttempt")
+        if isinstance(progress, dict)
+        else None
+    )
+    manifest_authority = (
+        progress.get("manifestAuthority")
+        if isinstance(progress, dict)
+        else None
+    )
+    roster = (
+        manifest_authority.get("gameRoster")
+        if isinstance(manifest_authority, Mapping)
+        else None
+    )
+    phase = str(progress.get("phase") or "") if isinstance(progress, dict) else ""
+    counter_fields = (
+        "processedGameCount",
+        "terminalCount",
+        "canonicalCount",
+        "noPredictionDataCount",
+        "missedLockValidPrelockQuarantineCount",
+        "reconciledCount",
+        "verificationIndex",
+        "verifiedGameCount",
+    )
+    try:
+        cursor = _nonnegative_receipt_integer(
+            (
+                progress.get("nextGameIndex")
+                if phase == "PROCESS"
+                else progress.get("verificationIndex")
+            )
+            if isinstance(progress, dict)
+            else None,
+            "review_cursor",
+        )
+        manifest_count = _nonnegative_receipt_integer(
+            progress.get("manifestGameCount")
+            if isinstance(progress, dict)
+            else None,
+            "review_manifest_count",
+        )
+        attempt_game_index = _nonnegative_receipt_integer(
+            attempt.get("gameIndex")
+            if isinstance(attempt, dict)
+            else None,
+            "review_attempt_game_index",
+        )
+        counters = {
+            field: _nonnegative_receipt_integer(
+                progress.get(field)
+                if isinstance(progress, dict)
+                else None,
+                f"review_{field}",
+            )
+            for field in counter_fields
+        }
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_CONTRACT_INVALID"
+        ) from exc
+
+    expected_identity = ""
+    identity_options: Any = None
+    if (
+        isinstance(roster, list)
+        and 0 <= cursor < len(roster)
+        and isinstance(roster[cursor], Mapping)
+    ):
+        expected_identity = str(
+            roster[cursor].get("gameIdentity") or ""
+        )
+        identity_options = roster[cursor].get("identityOptions")
+
+    at_utc = str(attempt.get("atUtc") or "") if isinstance(attempt, dict) else ""
+    claim_at_utc = str(item.get("claim_acquired_at_utc") or "")
+    prior_updated_at_utc = (
+        str(prior.get("updatedAtUtc") or "")
+        if isinstance(prior, dict)
+        else ""
+    )
+    try:
+        parsed_at = datetime.fromisoformat(at_utc)
+        parsed_claim_at = datetime.fromisoformat(claim_at_utc)
+        parsed_prior_updated_at = (
+            datetime.fromisoformat(prior_updated_at_utc)
+            if isinstance(prior, dict)
+            else None
+        )
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_CONTRACT_INVALID"
+        ) from exc
+
+    prior_fingerprint = (
+        str(prior.get("checkpointFingerprint") or "")
+        if isinstance(prior, dict)
+        else ""
+    )
+    progress_fingerprint = (
+        str(progress.get("checkpointFingerprint") or "")
+        if isinstance(progress, dict)
+        else ""
+    )
+    initial_review_shape = bool(
+        prior_absent
+        and phase == "PROCESS"
+        and cursor == 0
+        and attempt_count == 1
+        and all(counters[field] == 0 for field in counter_fields)
+        and progress.get("processedGames") == []
+        and progress.get("verificationComplete") is False
+    )
+    continuing_review_shape = bool(
+        isinstance(prior, dict)
+        and prior.get("version") == COOPERATIVE_TERMINAL_CHUNK_VERSION
+        and str(prior.get("slateDateEt") or "") == slate_date
+        and prior.get("requestEpoch") == request_epoch
+        and str(prior.get("requestId") or "") == request_id
+        and phase == str(prior.get("phase") or "")
+        and progress_fingerprint == prior_fingerprint
+        and prior_fingerprint
+        == _source_pull_rebind_checkpoint_fingerprint(prior)
+        and parsed_prior_updated_at is not None
+        and parsed_prior_updated_at.tzinfo is not None
+        and parsed_prior_updated_at.utcoffset() == timedelta(0)
+        and parsed_prior_updated_at.isoformat() == prior_updated_at_utc
+        and parsed_at > parsed_prior_updated_at
+    )
+    valid_cursor_identity = bool(
+        (
+            cursor < manifest_count
+            and isinstance(roster, list)
+            and len(roster) == manifest_count
+            and expected_identity
+            and isinstance(identity_options, list)
+            and identity_options
+            and str(identity_options[0] or "") == expected_identity
+            and isinstance(attempt, dict)
+            and str(attempt.get("gameIdentity") or "")
+            == expected_identity
+            and (
+                "durableIdentity" not in attempt
+                or str(attempt.get("durableIdentity") or "")
+                in {str(value) for value in identity_options}
+            )
+        )
+        or (
+            phase == "VERIFY"
+            and cursor == manifest_count
+            and isinstance(attempt, dict)
+            and "gameIdentity" not in attempt
+            and "durableIdentity" not in attempt
+        )
+    )
+    if (
+        not request_id
+        or request_epoch <= 0
+        or (prior_present and not isinstance(prior, dict))
+        or not isinstance(progress, dict)
+        or progress.get("version") != COOPERATIVE_TERMINAL_CHUNK_VERSION
+        or str(progress.get("slateDateEt") or "") != slate_date
+        or progress.get("requestEpoch") != request_epoch
+        or str(progress.get("requestId") or "") != request_id
+        or phase not in {"PROCESS", "VERIFY"}
+        or not _cooperative_replay_requires_review(stage, error_code)
+        or not (initial_review_shape or continuing_review_shape)
+        or manifest_count < 1
+        or cursor > manifest_count
+        or not valid_cursor_identity
+        or attempt_count != prior_attempt_count + 1
+        or not isinstance(attempt, dict)
+        or attempt.get("status") != "FAILED_CLOSED"
+        or str(attempt.get("stage") or "") != stage
+        or str(attempt.get("errorCode") or "") != error_code
+        or str(attempt.get("phase") or "") != phase
+        or attempt_game_index != cursor
+        or at_utc != str(progress.get("updatedAtUtc") or "")
+        or parsed_at.tzinfo is None
+        or parsed_at.utcoffset() != timedelta(0)
+        or parsed_at.isoformat() != at_utc
+        or parsed_claim_at.tzinfo is None
+        or parsed_claim_at.utcoffset() != timedelta(0)
+        or parsed_claim_at.isoformat() != claim_at_utc
+        or parsed_at < parsed_claim_at
+        or progress.get("postStartPredictionCreationAllowed") is not False
+        or progress.get("immutablePredictionRewriteAllowed") is not False
+        or progress.get("productionAuthorityChanged") is not False
+        or re.fullmatch(r"[0-9a-f]{64}", progress_fingerprint) is None
+        or progress_fingerprint
+        != _source_pull_rebind_checkpoint_fingerprint(progress)
+        or (
+            stage == "PROVE_PRELOCK_ABSENCE"
+            and "durableIdentity" in attempt
+        )
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_CONTRACT_INVALID"
+        )
+    return copy.deepcopy(progress)
+
 def _checkpoint_cooperative_replay(
     *,
     item: Dict[str, Any],
@@ -4081,13 +5995,27 @@ def _checkpoint_cooperative_replay(
     progress: Dict[str, Any],
     failed: bool,
     review_required: bool = False,
+    review_stage: Optional[str] = None,
+    review_error_code: Optional[str] = None,
 ) -> Dict[str, Any]:
     slate_date = str(item.get("slate_date_et") or "")
     request_id = str(item.get("request_id") or "")
     request_epoch = _nonnegative_receipt_integer(
         item.get("requested_at_epoch"), "request_epoch"
     )
+    prior_progress_present = "terminal_replay_progress" in item
     prior_progress = item.get("terminal_replay_progress")
+    if review_required:
+        if failed is not True:
+            raise RuntimeError(
+                "MLB_COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_CONTRACT_INVALID"
+            )
+        progress = _validated_cooperative_review_checkpoint_transition(
+            item,
+            progress,
+            expected_stage=review_stage,
+            expected_error_code=review_error_code,
+        )
     review_progress = bool(
         review_required
         and isinstance(progress, dict)
@@ -4174,7 +6102,7 @@ def _checkpoint_cooperative_replay(
         ":chunk_stage": stage,
         ":chunk_status": status,
     }
-    if prior_progress is not None:
+    if prior_progress_present:
         expression_values[":prior_progress"] = prior_progress
     try:
         updated = _cooperative_replay_table().update_item(
@@ -4187,7 +6115,7 @@ def _checkpoint_cooperative_replay(
                 "request_id = :request_id AND "
                 + (
                     "terminal_replay_progress = :prior_progress AND "
-                    if prior_progress is not None
+                    if prior_progress_present
                     else "attribute_not_exists(terminal_replay_progress) AND "
                 )
                 + "#state = :claimed AND claim_owner = :owner"
@@ -4450,6 +6378,9 @@ def lambda_handler(event, context):
     source_pull_rebind_event_present = (
         COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_EVENT_FLAG in event
     )
+    prelock_candidate_review_v2_event_present = (
+        COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_EVENT_FLAG in event
+    )
     if source_pull_rebind_event_present and (
         event.get(COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_EVENT_FLAG)
         is not True
@@ -4477,13 +6408,47 @@ def lambda_handler(event, context):
             },
         )
 
+    if prelock_candidate_review_v2_event_present and (
+        event.get(COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_EVENT_FLAG)
+        is not True
+        or set(event)
+        != COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_EVENT_KEYS
+        or not _is_cooperative_replay_request(event, method)
+    ):
+        return _failure_response(
+            event,
+            500,
+            {
+                "ok": False,
+                "sport": "mlb",
+                "error": (
+                    "MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_CLOSED"
+                ),
+                "errorCode": (
+                    "MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_"
+                    "EVENT_INVALID"
+                ),
+                "mutatingRunAttempted": False,
+                "activeLeaseMutationAllowed": False,
+                "postStartPredictionCreationAllowed": False,
+                "immutablePredictionRewriteAllowed": False,
+                "directWorkflowTableWrite": False,
+            },
+        )
+
     # A manually invoked exact historical repair never contests or mutates the
     # active execution lease.  It writes one bounded control-plane request and
     # polls that same record.  Only a normal EventBridge daily owner can claim
     # and execute it later under the existing lease.
     if _is_cooperative_replay_request(event, method):
         try:
-            if source_pull_rebind_event_present:
+            if prelock_candidate_review_v2_event_present:
+                cooperative = (
+                    _requeue_prelock_candidate_review_after_installed_runtime_proof_v2(
+                        event
+                    )
+                )
+            elif source_pull_rebind_event_present:
                 cooperative = (
                     _requeue_source_pull_proof_review_after_rebind(event)
                 )
@@ -4692,6 +6657,24 @@ def lambda_handler(event, context):
                         "MLB_COOPERATIVE_TERMINAL_CHUNK_RUNNER_NOT_READY"
                     )
                 if callable(chunk_runner):
+                    claimed_progress_present = (
+                        "terminal_replay_progress" in claimed
+                    )
+                    claimed_progress = claimed.get(
+                        "terminal_replay_progress"
+                    )
+                    claimed_progress_non_object = bool(
+                        claimed_progress_present
+                        and not isinstance(claimed_progress, dict)
+                    )
+                    runtime_checkpoint = claimed_progress
+                    if (
+                        claimed_progress_present
+                        and claimed_progress is None
+                    ):
+                        runtime_checkpoint = (
+                            _COOPERATIVE_TERMINAL_PRESENT_NULL_CHECKPOINT
+                        )
                     chunk_result = chunk_runner(
                         slate_date=str(
                             claimed.get("slate_date_et") or ""
@@ -4700,9 +6683,7 @@ def lambda_handler(event, context):
                             "requested_at_epoch"
                         ),
                         request_id=claimed.get("request_id"),
-                        checkpoint=claimed.get(
-                            "terminal_replay_progress"
-                        ),
+                        checkpoint=runtime_checkpoint,
                         context=context,
                     )
                     if not isinstance(chunk_result, dict):
@@ -4743,6 +6724,21 @@ def lambda_handler(event, context):
                     ):
                         raise RuntimeError(
                             "MLB_COOPERATIVE_TERMINAL_CHUNK_CONTRACT_INVALID"
+                        )
+
+                    if (
+                        claimed_progress_non_object
+                        and (
+                            chunk_result.get("checkpoint") is not None
+                            or chunk_result.get(
+                                "checkpointWriteAllowed"
+                            )
+                            is not False
+                        )
+                    ):
+                        raise RuntimeError(
+                            "MLB_COOPERATIVE_TERMINAL_"
+                            "NON_OBJECT_CHECKPOINT_RESULT_INVALID"
                         )
 
                     if chunk_result.get("complete") is True:
@@ -4906,35 +6902,46 @@ def lambda_handler(event, context):
                             )
                         )
                         if (
-                            candidate_review_required
-                            and not isinstance(progress, dict)
-                        ):
-                            progress = claimed.get(
-                                "terminal_replay_progress"
-                            )
-                        if (
                             isinstance(progress, dict)
-                            and (
-                                chunk_result.get(
-                                    "checkpointWriteAllowed"
-                                )
-                                is True
-                                or candidate_review_required
+                            and chunk_result.get(
+                                "checkpointWriteAllowed"
                             )
+                            is True
                         ):
-                            review_required = (
-                                candidate_review_required
-                            )
+                            review_required = candidate_review_required
                             checkpointed = _checkpoint_cooperative_replay(
                                 item=claimed,
                                 owner=owner,
                                 progress=progress,
                                 failed=chunk_result.get("ok") is not True,
                                 review_required=review_required,
+                                review_stage=(
+                                    chunk_stage
+                                    if review_required
+                                    else None
+                                ),
+                                review_error_code=(
+                                    chunk_error_code
+                                    if review_required
+                                    else None
+                                ),
                             )
                             # A REVIEW_REQUIRED CAS is a completed claim
                             # transition too; the exception path must not
                             # turn it back into a hot-looping QUEUED state.
+                            claim_requeued = True
+                        elif (
+                            candidate_review_required
+                            and chunk_stage
+                            in COOPERATIVE_TERMINAL_PRECHECKPOINT_REVIEW_STAGES
+                        ):
+                            checkpointed = (
+                                _review_cooperative_replay_without_checkpoint(
+                                    item=claimed,
+                                    owner=owner,
+                                    chunk_result=chunk_result,
+                                )
+                            )
                             claim_requeued = True
                         else:
                             claim_requeued = _requeue_cooperative_replay(

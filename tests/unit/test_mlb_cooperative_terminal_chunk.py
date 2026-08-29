@@ -1062,6 +1062,151 @@ def test_real_cooperative_quarantine_rebinds_multigame_immutable_source():
     assert authority["predictionAdopted"] is False
 
 
+
+def test_installed_prelock_review_prover_is_positive_read_only_and_bound():
+    first_game = real_lock_fixtures.official_game(
+        "provider-first",
+        "2026-07-13T18:00:00+00:00",
+        "991556",
+    )
+    review_game = real_lock_fixtures.official_game(
+        "provider-review",
+        "2026-07-13T19:00:00+00:00",
+        "991557",
+    )
+    source = real_lock_fixtures.pull(
+        "2026-07-13T16:45:00+00:00",
+        [first_game, review_game],
+        "cooperative-review-proof-source",
+    )
+    module = real_lock_fixtures.build_module(
+        [source],
+        "2026-07-14T12:00:00+00:00",
+        seed=False,
+    )
+    module._today_et = lambda: "2026-07-14"
+    real_lock_fixtures.persist_candidate(
+        module,
+        review_game,
+        source,
+        mutate=lambda row: row.update(
+            {
+                "officialGamePk": "991557",
+                "officialGameId": "mlb_statsapi:991557",
+            }
+        ),
+    )
+    repair.install_prospective_row_repair(module, real_patch)
+    assert (
+        module.MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_VERSION
+        == repair.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_VERSION
+    )
+
+    first = module.run_cooperative_terminal_chunk(
+        slate_date=real_lock_fixtures.SLATE,
+        request_epoch=REQUEST_EPOCH,
+        request_id=REQUEST_ID,
+        checkpoint=None,
+        context=BudgetContext(900_000),
+    )
+    checkpoint = first["checkpoint"]
+    assert checkpoint["nextGameIndex"] == 1
+    assert checkpoint["processedGameCount"] == 1
+    assert checkpoint["processedGames"][0]["terminalState"] == (
+        "LOCKED_NO_PREDICTION_DATA"
+    )
+
+    before_proof = copy.deepcopy(module.TABLE.items)
+    proof = module.prove_cooperative_prelock_candidate_review_v2(
+        slate_date=real_lock_fixtures.SLATE,
+        request_epoch=REQUEST_EPOCH,
+        request_id=REQUEST_ID,
+        checkpoint=copy.deepcopy(checkpoint),
+    )
+    assert module.TABLE.items == before_proof
+    assert proof["version"] == (
+        repair.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_VERSION
+    )
+    assert proof["slateDateEt"] == real_lock_fixtures.SLATE
+    assert proof["requestEpoch"] == REQUEST_EPOCH
+    assert proof["requestIdFingerprint"] == hashlib.sha256(
+        REQUEST_ID.encode("utf-8")
+    ).hexdigest()
+    assert proof["checkpointFingerprint"] == checkpoint[
+        "checkpointFingerprint"
+    ]
+    assert proof["progressFingerprint"] == (
+        repair._cooperative_prelock_candidate_review_fingerprint(
+            checkpoint
+        )
+    )
+    assert proof["manifestFingerprint"] == checkpoint[
+        "manifestFingerprint"
+    ]
+    assert proof["manifestAuthorityEvidenceFingerprint"] == checkpoint[
+        "manifestAuthority"
+    ]["authorityEvidenceFingerprint"]
+    assert proof["manifestGameCount"] == 2
+    assert proof["gameIndex"] == 1
+    assert proof["gameIdentityFingerprint"] == hashlib.sha256(
+        real_patch.game_identity(review_game).encode("utf-8")
+    ).hexdigest()
+    assert proof["identityBindingMode"] == "exact_identity"
+    assert proof["boundScoringPullCount"] == 1
+    assert proof["candidateAuthorityVersion"] == (
+        real_patch.VALID_PRELOCK_QUARANTINE_AUTHORITY_VERSION
+    )
+    assert proof["terminalAbsent"] is True
+    assert proof["rejectedNewerCandidateCount"] == 0
+    assert proof["modelOrSignalRecomputedAtLock"] is False
+    assert proof["predictionAdopted"] is False
+    assert proof["postStartPredictionCreationAllowed"] is False
+    assert proof["immutablePredictionRewriteAllowed"] is False
+    assert proof["productionAuthorityChanged"] is False
+    proof_material = {
+        key: value
+        for key, value in proof.items()
+        if key != "proofFingerprint"
+    }
+    assert proof["proofFingerprint"] == (
+        repair._cooperative_prelock_candidate_review_fingerprint(
+            proof_material
+        )
+    )
+
+    with pytest.raises(RuntimeError):
+        module.prove_cooperative_prelock_candidate_review_v2(
+            slate_date=real_lock_fixtures.SLATE,
+            request_epoch=REQUEST_EPOCH,
+            request_id=REQUEST_ID + "-mutated",
+            checkpoint=copy.deepcopy(checkpoint),
+        )
+    assert module.TABLE.items == before_proof
+
+    second = module.run_cooperative_terminal_chunk(
+        slate_date=real_lock_fixtures.SLATE,
+        request_epoch=REQUEST_EPOCH,
+        request_id=REQUEST_ID,
+        checkpoint=copy.deepcopy(checkpoint),
+        context=BudgetContext(900_000),
+    )
+    assert second["checkpoint"]["nextGameIndex"] == 2
+    after_terminal = copy.deepcopy(module.TABLE.items)
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_"
+            "TERMINAL_NOT_ABSENT"
+        ),
+    ):
+        module.prove_cooperative_prelock_candidate_review_v2(
+            slate_date=real_lock_fixtures.SLATE,
+            request_epoch=REQUEST_EPOCH,
+            request_id=REQUEST_ID,
+            checkpoint=copy.deepcopy(checkpoint),
+        )
+    assert module.TABLE.items == after_terminal
+
 def test_real_cooperative_quarantine_rejects_retained_invalid_raw_source():
     target = real_lock_fixtures.official_game(
         "provider-target",
