@@ -1,0 +1,175 @@
+name: Probe public Tennis market coverage
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/probe-sofascore-tennis-market.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - name: Inspect scheduled Tennis events and pre-match odds
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet requests
+          mkdir -p evidence/raw
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from typing import Any
+
+          import requests
+
+          session = requests.Session()
+          session.headers.update({
+              "accept": "application/json",
+              "user-agent": "parlay-platform-tennis-market-probe/1.0",
+          })
+          hosts = ["https://www.sofascore.com", "https://api.sofascore.com"]
+          dates = ["2026-07-23", "2026-07-24", "2026-07-25"]
+          report: dict[str, Any] = {
+              "checkedAtUtc": datetime.now(timezone.utc).isoformat(),
+              "hosts": {},
+          }
+
+          def request_json(url: str):
+              response = session.get(url, timeout=30)
+              try:
+                  payload = response.json()
+              except Exception:
+                  payload = None
+              return response, payload
+
+          for host in hosts:
+              host_report: dict[str, Any] = {"dates": {}}
+              all_events: list[dict[str, Any]] = []
+              for day in dates:
+                  url = f"{host}/api/v1/sport/tennis/scheduled-events/{day}"
+                  try:
+                      response, payload = request_json(url)
+                      events = (payload or {}).get("events") if isinstance(payload, dict) else None
+                      events = events if isinstance(events, list) else []
+                      normalized = []
+                      for event in events:
+                          tournament = event.get("tournament") or {}
+                          category = tournament.get("category") or {}
+                          home = event.get("homeTeam") or {}
+                          away = event.get("awayTeam") or {}
+                          normalized.append({
+                              "id": event.get("id"),
+                              "startTimestamp": event.get("startTimestamp"),
+                              "home": home.get("name") or home.get("shortName"),
+                              "away": away.get("name") or away.get("shortName"),
+                              "tournament": tournament.get("name"),
+                              "category": category.get("name"),
+                              "status": (event.get("status") or {}).get("type"),
+                              "roundInfo": event.get("roundInfo"),
+                          })
+                      host_report["dates"][day] = {
+                          "status": response.status_code,
+                          "eventCount": len(events),
+                          "sample": normalized[:20],
+                          "topLevelKeys": sorted(payload.keys()) if isinstance(payload, dict) else [],
+                          "bodyPrefix": None if isinstance(payload, dict) else response.text[:250],
+                      }
+                      all_events.extend(event for event in events if isinstance(event, dict))
+                      if isinstance(payload, dict):
+                          Path(f"evidence/raw/{host.split('//')[1]}-{day}-scheduled.json").write_text(
+                              json.dumps(payload, indent=2, sort_keys=True)
+                          )
+                  except Exception as exc:
+                      host_report["dates"][day] = {
+                          "errorType": type(exc).__name__,
+                          "error": str(exc)[:300],
+                      }
+
+              unique: dict[str, dict[str, Any]] = {}
+              for event in all_events:
+                  event_id = str(event.get("id") or "")
+                  if event_id:
+                      unique[event_id] = event
+              odds_results = []
+              # Prefer future/not-started events, then most recent, and keep request volume bounded.
+              now_ts = int(datetime.now(timezone.utc).timestamp())
+              ordered = sorted(
+                  unique.values(),
+                  key=lambda event: (
+                      0 if int(event.get("startTimestamp") or 0) >= now_ts else 1,
+                      int(event.get("startTimestamp") or 0),
+                      str(event.get("id") or ""),
+                  ),
+              )[:24]
+              for event in ordered:
+                  event_id = str(event.get("id") or "")
+                  if not event_id:
+                      continue
+                  event_row: dict[str, Any] = {
+                      "eventId": event_id,
+                      "startTimestamp": event.get("startTimestamp"),
+                      "home": (event.get("homeTeam") or {}).get("name"),
+                      "away": (event.get("awayTeam") or {}).get("name"),
+                      "tournament": (event.get("tournament") or {}).get("name"),
+                      "endpoints": {},
+                  }
+                  for endpoint in ("all", "featured"):
+                      url = f"{host}/api/v1/event/{event_id}/odds/1/{endpoint}"
+                      try:
+                          response, payload = request_json(url)
+                          markets = []
+                          if isinstance(payload, dict):
+                              for key in ("markets", "odds", "items"):
+                                  value = payload.get(key)
+                                  if isinstance(value, list):
+                                      markets = value
+                                      break
+                          endpoint_row = {
+                              "status": response.status_code,
+                              "topLevelKeys": sorted(payload.keys()) if isinstance(payload, dict) else [],
+                              "marketCount": len(markets),
+                              "hasPayload": bool(payload),
+                              "bodyPrefix": None if isinstance(payload, dict) else response.text[:250],
+                          }
+                          if isinstance(payload, dict) and payload:
+                              endpoint_row["payload"] = payload
+                              Path(
+                                  f"evidence/raw/{host.split('//')[1]}-{event_id}-{endpoint}.json"
+                              ).write_text(json.dumps(payload, indent=2, sort_keys=True))
+                          event_row["endpoints"][endpoint] = endpoint_row
+                      except Exception as exc:
+                          event_row["endpoints"][endpoint] = {
+                              "errorType": type(exc).__name__,
+                              "error": str(exc)[:300],
+                          }
+                  odds_results.append(event_row)
+              host_report["odds"] = odds_results
+              host_report["eventsProbed"] = len(odds_results)
+              host_report["eventsWithAnyOddsPayload"] = sum(
+                  1
+                  for row in odds_results
+                  if any((endpoint or {}).get("hasPayload") for endpoint in row["endpoints"].values())
+              )
+              report["hosts"][host] = host_report
+
+          Path("evidence/sofascore-market-report.json").write_text(
+              json.dumps(report, indent=2, sort_keys=True)
+          )
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tennis-public-market-probe-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: evidence/
