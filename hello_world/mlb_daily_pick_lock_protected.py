@@ -744,6 +744,30 @@ def _error_code(exc: BaseException) -> str:
     return type(exc).__name__
 
 
+_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_SAFE_ERROR_CODE = re.compile(
+    r"(?:COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF|"
+    r"MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2)_"
+    r"[A-Z0-9_]{1,120}"
+)
+
+
+def _cooperative_prelock_candidate_review_v2_error_code(
+    exc: BaseException,
+) -> str:
+    """Expose only fixed v2 predicate codes, never exception material."""
+
+    value = str(exc)
+    if (
+        isinstance(exc, RuntimeError)
+        and _COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_SAFE_ERROR_CODE.fullmatch(
+            value
+        )
+        is not None
+    ):
+        return value
+    return _error_code(exc)
+
+
 def _lease_key() -> Dict[str, str]:
     return {"PK": LOCK_EXECUTION_LEASE_PK, "SK": LOCK_EXECUTION_LEASE_SK}
 
@@ -6464,7 +6488,13 @@ def lambda_handler(event, context):
                     "ok": False,
                     "sport": "mlb",
                     "error": "MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_CLOSED",
-                    "errorCode": _error_code(exc),
+                    "errorCode": (
+                        _cooperative_prelock_candidate_review_v2_error_code(
+                            exc
+                        )
+                        if prelock_candidate_review_v2_event_present
+                        else _error_code(exc)
+                    ),
                     "mutatingRunAttempted": False,
                     "activeLeaseMutationAllowed": False,
                     "postStartPredictionCreationAllowed": False,
