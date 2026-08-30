@@ -345,6 +345,61 @@ def _status_query_pulls(module: Any, slate: str) -> List[Dict[str, Any]]:
     return canonical
 
 
+def _post_window_scoped_status_inputs(
+    module: Any,
+    slate: str,
+    expected_pulls: Iterable[Dict[str, Any]],
+    expected_manifest: Iterable[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Seed post-window proof from one unchanged strong pull query.
+
+    The scheduled lock runner discovers the action window before entering its
+    isolated read-only reconciliation scope. Re-read that exact append-only
+    history through the status query so every returned pull item is available
+    to downstream validators without hundreds of sequential point reads. A
+    concurrent append or roster change is retryable authority drift, never
+    permission to reconcile from the earlier snapshot. Live cutoff and writer
+    phases intentionally retain their existing read paths.
+    """
+    expected_pull_rows = list(expected_pulls)
+    expected_manifest_rows = list(expected_manifest)
+    history_table = getattr(module.history, "PULLS", None)
+    item_reader = getattr(module.history, "_query_pull_items", None)
+    canonicalize = getattr(module.history, "canonicalize_pull_slots", None)
+    if (
+        history_table is None
+        or not callable(item_reader)
+        or not callable(canonicalize)
+    ):
+        # Injected/legacy adapters cannot seed exact outer DynamoDB items, so
+        # retain their single discovery read and original behavior.
+        return expected_pull_rows, expected_manifest_rows
+    scoped_pulls = sorted(
+        _status_query_pulls(module, slate),
+        key=lambda pull: _pull_at(module, pull)
+        or datetime.min.replace(tzinfo=timezone.utc),
+    )
+    if _pull_history_identity(module, scoped_pulls) != _pull_history_identity(
+        module,
+        expected_pull_rows,
+    ):
+        raise RuntimeError("STATUS_SCOPE_PULL_HISTORY_CHANGED")
+    scoped_manifest = module._latest_games_for_date(slate, scoped_pulls)
+    if [game_identity(game) for game in scoped_manifest] != [
+        game_identity(game) for game in expected_manifest_rows
+    ]:
+        raise RuntimeError("STATUS_SCOPE_MANIFEST_IDENTITY_CHANGED")
+    if _post_window_manifest_fingerprint(
+        module,
+        scoped_manifest,
+    ) != _post_window_manifest_fingerprint(
+        module,
+        expected_manifest_rows,
+    ):
+        raise RuntimeError("STATUS_SCOPE_MANIFEST_SCHEDULE_CHANGED")
+    return scoped_pulls, scoped_manifest
+
+
 def _status_batch_resource(table: Any, *owners: Any) -> Optional[Any]:
     """Find the boto3 DynamoDB resource that owns a named production table."""
     table_name = getattr(table, "name", None) or getattr(table, "table_name", None)
@@ -7942,22 +7997,32 @@ def apply(module: Any) -> Any:
                 # even a valid pre-start stage cannot be promoted to canonical
                 # storage after the game has started.
                 with _status_read_scope():
+                    scoped_pulls, scoped_manifest = (
+                        _post_window_scoped_status_inputs(
+                            module,
+                            slate,
+                            pulls,
+                            manifest,
+                        )
+                    )
                     _prime_status_manifest_items(
                         module,
                         module.TABLE,
                         slate,
-                        manifest,
+                        scoped_manifest,
                         lock_minutes=module.LOCK_MINUTES,
                     )
                     reconciled = _progress(
                         module,
                         slate,
-                        pulls,
-                        manifest,
+                        scoped_pulls,
+                        scoped_manifest,
                         now,
                         ensure_canonical=False,
                         defer_playability_lifecycle=True,
                     )
+                pulls = scoped_pulls
+                manifest = scoped_manifest
                 authority_errors = (
                     _daily_authority_errors(
                         module,

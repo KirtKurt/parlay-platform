@@ -58,6 +58,28 @@ def _install_batch_reader(module):
     return resource
 
 
+def _install_production_pull_query(module):
+    """Expose the strong outer-item query used by the production history module."""
+    calls = []
+
+    def query_pull_items(sport, slate, limit):
+        calls.append((sport, slate, limit))
+        return [
+            copy.deepcopy(item)
+            for item in module.history.PULLS.items.values()
+            if item.get("record_type") == "pull_run"
+            and item.get("sport") == sport
+            and item.get("slate_date") == slate
+        ][:limit]
+
+    module.history._query_pull_items = query_pull_items
+    module.history._production_pull_query_calls = calls
+    module.history.canonicalize_pull_slots = (
+        history_contract.canonicalize_pull_slots
+    )
+    module.history._parse_utc = history_contract._parse_utc
+
+
 def _games(start: str):
     return [game(f"scale-{index}", start) for index in range(GAME_COUNT)]
 
@@ -212,6 +234,101 @@ def test_scheduled_cutoff_batch_primes_both_read_only_progress_phases():
     assert all(
         next(iter(call.values())).get("ConsistentRead") is True
         for call in resource.calls
+    )
+
+
+def test_postwindow_runner_reuses_strong_pull_query_rows_without_point_reads():
+    games = _games("2026-07-13T18:00:00+00:00")
+    first = datetime.fromisoformat("2026-07-13T00:45:00+00:00")
+    pulls = [
+        pull(
+            (first + timedelta(minutes=15 * index)).isoformat(),
+            games,
+            f"postwindow-{index:03d}",
+        )
+        for index in range(92)
+    ]
+    module = build_module(
+        pulls,
+        "2026-07-13T17:15:05+00:00",
+        seed=False,
+    )
+    module.history.ddb_safe = staticmethod(history_contract.ddb_safe)
+    persist_latest_prelock_candidates(module, module.history.pulls)
+    resource = _install_batch_reader(module)
+    # The discovery read materializes the exact outer rows. Production's
+    # private query then returns those same strongly consistent DynamoDB items.
+    module._pulls_for_date(SLATE)
+    _install_production_pull_query(module)
+
+    locked = module.run_lock(SLATE, scheduled=True)
+    assert locked["locked"] is True
+
+    module.now = datetime.fromisoformat("2026-07-13T20:00:00+00:00")
+    batch_start = len(resource.calls)
+    source_point_reads = []
+    original_get_item = module.history.PULLS.get_item
+
+    def counted_get_item(*, Key, ConsistentRead=False):
+        if str(Key.get("PK") or "").startswith("PULLS#mlb#"):
+            source_point_reads.append(copy.deepcopy(Key))
+        return original_get_item(Key=Key, ConsistentRead=ConsistentRead)
+
+    module.history.PULLS.get_item = counted_get_item
+    try:
+        reconciled = module.run_lock(SLATE, scheduled=True)
+    finally:
+        module.history.PULLS.get_item = original_get_item
+
+    postwindow_batches = resource.calls[batch_start:]
+    batched_source_keys = [
+        key
+        for call in postwindow_batches
+        for request in call.values()
+        for key in request.get("Keys") or []
+        if str(key.get("PK") or "").startswith("PULLS#mlb#")
+    ]
+    assert reconciled["ok"] is True
+    assert reconciled["reason"] == "POST_WINDOW_TERMINAL_STATUS_RECONCILED"
+    assert reconciled["perGameLockProgress"]["lockOutcomeCount"] == GAME_COUNT
+    assert module.history._production_pull_query_calls == [
+        ("mlb", SLATE, 500)
+    ]
+    assert source_point_reads == []
+    assert batched_source_keys == []
+
+
+def test_postwindow_runner_rejects_pull_append_before_reconciliation_marker():
+    games = [game("postwindow-drift", "2026-07-13T18:00:00+00:00")]
+    initial = pull("2026-07-13T17:00:00+00:00", games, "before-drift")
+    appended = pull("2026-07-13T19:15:00+00:00", games, "after-drift")
+    module = build_module(
+        [initial],
+        "2026-07-13T20:00:00+00:00",
+        seed=False,
+    )
+    module.history.ddb_safe = staticmethod(history_contract.ddb_safe)
+    _install_production_pull_query(module)
+    original_discovery = module._pulls_for_date
+    appended_during_discovery = False
+
+    def discover_then_append(slate):
+        nonlocal appended_during_discovery
+        discovered = original_discovery(slate)
+        if not appended_during_discovery:
+            module.history.pulls.append(appended)
+            original_discovery(slate)
+            appended_during_discovery = True
+        return discovered
+
+    module._pulls_for_date = discover_then_append
+    with pytest.raises(RuntimeError, match="STATUS_SCOPE_PULL_HISTORY_CHANGED"):
+        module.run_lock(SLATE, scheduled=True)
+
+    assert not any(
+        item.get("record_type")
+        == "mlb_lock_post_window_terminal_reconciliation"
+        for item in module.TABLE.items.values()
     )
 
 
