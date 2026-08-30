@@ -1,0 +1,354 @@
+name: Bootstrap MLB historical+live R8
+run-name: Bootstrap MLB historical+live R8 ${{ github.run_id }}
+
+"on":
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/bootstrap-mlb-historical-live-r8.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unified-mlb-learning
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  MLB_ROOT_STACK: parlay-platform-dev
+  EXPECTED_EXPERIMENT_ID: mlb-v2-2026-08-31-historical-live-r8
+  EXPECTED_RELEASE_CONTRACT_ID: mlb-v2-2026-08-31-historical-live-release-r8
+  EXPECTED_RELEASE_CUTOFF_UTC: '2026-08-31T04:00:00+00:00'
+  MIN_HISTORICAL_ACCEPTED_ROWS: '400'
+  MIN_TRAIN_ROWS: '300'
+  MIN_VALIDATION_ROWS: '100'
+
+jobs:
+  bootstrap-and-prove:
+    concurrency:
+      group: parlay-platform-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact bootstrap source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install bounded invocation runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          python -m py_compile scripts/invoke_mlb_trainer_with_retry.py
+          mkdir -p /tmp/mlb-r8-bootstrap
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve and attest the exact R8 trainer runtime
+        run: |
+          set -euo pipefail
+          TRAINER_FN="$(aws cloudformation describe-stack-resource \
+            --stack-name "$MLB_ROOT_STACK" \
+            --logical-resource-id MLBMLTrainingFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)"
+          test -n "$TRAINER_FN"
+          test "$TRAINER_FN" != "None"
+          echo "TRAINER_FN=$TRAINER_FN" >> "$GITHUB_ENV"
+          aws lambda get-function-configuration \
+            --function-name "$TRAINER_FN" \
+            --region "$AWS_REGION" \
+            --output json > /tmp/mlb-r8-bootstrap/trainer-config.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          value = json.loads(
+              Path('/tmp/mlb-r8-bootstrap/trainer-config.json').read_text()
+          )
+          variables = ((value.get('Environment') or {}).get('Variables') or {})
+          expected = {
+              'MLB_ML_EXPERIMENT_ID': os.environ['EXPECTED_EXPERIMENT_ID'],
+              'MLB_ML_RELEASE_CONTRACT_ID': os.environ[
+                  'EXPECTED_RELEASE_CONTRACT_ID'
+              ],
+              'MLB_ML_RELEASE_CUTOFF_UTC': os.environ[
+                  'EXPECTED_RELEASE_CUTOFF_UTC'
+              ],
+              'MLB_R7_HISTORICAL_TRAINING_ENABLED': 'true',
+          }
+          mismatched = {
+              key: variables.get(key)
+              for key, expected_value in expected.items()
+              if variables.get(key) != expected_value
+          }
+          proof = {
+              'ok': (
+                  value.get('State') == 'Active'
+                  and value.get('LastUpdateStatus') == 'Successful'
+                  and value.get('Handler')
+                  == 'mlb_ml_aws_training_v1_compat.lambda_handler'
+                  and int(value.get('Timeout') or 0) == 900
+                  and not mismatched
+              ),
+              'functionName': value.get('FunctionName'),
+              'state': value.get('State'),
+              'lastUpdateStatus': value.get('LastUpdateStatus'),
+              'handler': value.get('Handler'),
+              'timeout': value.get('Timeout'),
+              'experimentId': variables.get('MLB_ML_EXPERIMENT_ID'),
+              'releaseContractId': variables.get('MLB_ML_RELEASE_CONTRACT_ID'),
+              'releaseCutoffUtc': variables.get('MLB_ML_RELEASE_CUTOFF_UTC'),
+              'historicalTrainingEnabled': variables.get(
+                  'MLB_R7_HISTORICAL_TRAINING_ENABLED'
+              ),
+              'historicalMaximumRows': variables.get(
+                  'MLB_R7_HISTORICAL_MAX_ROWS'
+              ),
+              'mismatchedEnvironment': mismatched,
+          }
+          Path('/tmp/mlb-r8-bootstrap/runtime-proof.json').write_text(
+              json.dumps(proof, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(proof, indent=2, sort_keys=True))
+          assert proof['ok'] is True, proof
+          PY
+
+      - name: Capture the exact pre-bootstrap R8 baseline
+        run: |
+          set -euo pipefail
+          aws lambda invoke \
+            --function-name "$TRAINER_FN" \
+            --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"sport":"mlb","mode":"status"}' \
+            /tmp/mlb-r8-bootstrap/status-before.json \
+            > /tmp/mlb-r8-bootstrap/status-before-invocation.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          invocation = json.loads(
+              Path(
+                  '/tmp/mlb-r8-bootstrap/status-before-invocation.json'
+              ).read_text()
+          )
+          status = json.loads(
+              Path('/tmp/mlb-r8-bootstrap/status-before.json').read_text()
+          )
+          latest = status.get('latestStatus') or {}
+          counts = latest.get('partitionCounts') or (
+              (latest.get('milestones') or {}).get('counts') or {}
+          )
+          accepted = int(latest.get('acceptedRowCount') or 0)
+          train = int(counts.get('train') or 0)
+          proof = {
+              'ok': (
+                  int(invocation.get('StatusCode') or 0) == 200
+                  and not invocation.get('FunctionError')
+                  and status.get('experimentId')
+                  == os.environ['EXPECTED_EXPERIMENT_ID']
+                  and (
+                      not latest
+                      or latest.get('experimentId')
+                      == os.environ['EXPECTED_EXPERIMENT_ID']
+                  )
+                  and latest.get('productionAuthorityChanged') is not True
+                  and latest.get('liveInferenceAuthority') is not True
+              ),
+              'statusOverallOk': status.get('ok'),
+              'manifestPresent': isinstance(status.get('manifest'), dict),
+              'acceptedRowCount': accepted,
+              'trainCount': train,
+              'latestRunId': latest.get('runId'),
+              'trainingHealthErrors': (
+                  (status.get('trainingHealth') or {}).get('errors') or []
+              ),
+          }
+          Path('/tmp/mlb-r8-bootstrap/baseline.json').write_text(
+              json.dumps(proof, indent=2, sort_keys=True) + '\n'
+          )
+          with Path(os.environ['GITHUB_ENV']).open('a') as stream:
+              stream.write(f'BASELINE_ACCEPTED_ROWS={accepted}\n')
+              stream.write(f'BASELINE_TRAIN_ROWS={train}\n')
+          print(json.dumps(proof, indent=2, sort_keys=True))
+          assert proof['ok'] is True, proof
+          PY
+
+      - name: Run the canonical lease-safe historical and live trainer
+        env:
+          PYTHONPATH: .
+          AWS_MAX_ATTEMPTS: '1'
+        run: |
+          set -euo pipefail
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_FN" \
+            --region "$AWS_REGION" \
+            --payload "{\"sport\":\"mlb\",\"mode\":\"scheduled\",\"run\":\"historical_live_r8_bootstrap_${GITHUB_RUN_ID}\"}" \
+            --response /tmp/mlb-r8-bootstrap/training.json \
+            --invocation /tmp/mlb-r8-bootstrap/training-invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 2400 \
+            --retry-delay-seconds 20
+
+      - name: Capture prospective selections without activating authority
+        env:
+          PYTHONPATH: .
+          AWS_MAX_ATTEMPTS: '1'
+        run: |
+          set -euo pipefail
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_FN" \
+            --region "$AWS_REGION" \
+            --payload "{\"sport\":\"mlb\",\"mode\":\"selection_capture\",\"run\":\"historical_live_r8_selection_${GITHUB_RUN_ID}\"}" \
+            --response /tmp/mlb-r8-bootstrap/selection.json \
+            --invocation /tmp/mlb-r8-bootstrap/selection-invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 1200 \
+            --retry-delay-seconds 20
+
+      - name: Bind exact run evidence and prove material advancement
+        env:
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_FN" \
+            --region "$AWS_REGION" \
+            --status-training-result /tmp/mlb-r8-bootstrap/training.json \
+            --status-selection-capture-result /tmp/mlb-r8-bootstrap/selection.json \
+            --response /tmp/mlb-r8-bootstrap/status-after.json \
+            --invocation /tmp/mlb-r8-bootstrap/status-after-invocation.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          training = json.loads(
+              Path('/tmp/mlb-r8-bootstrap/training.json').read_text()
+          )
+          selection = json.loads(
+              Path('/tmp/mlb-r8-bootstrap/selection.json').read_text()
+          )
+          status = json.loads(
+              Path('/tmp/mlb-r8-bootstrap/status-after.json').read_text()
+          )
+          baseline_accepted = int(os.environ['BASELINE_ACCEPTED_ROWS'])
+          baseline_train = int(os.environ['BASELINE_TRAIN_ROWS'])
+          minimum_accepted = int(os.environ['MIN_HISTORICAL_ACCEPTED_ROWS'])
+          minimum_train = int(os.environ['MIN_TRAIN_ROWS'])
+          minimum_validation = int(os.environ['MIN_VALIDATION_ROWS'])
+          requested = status.get('requestedRunEvidence') or {}
+          training_evidence = requested.get('training') or {}
+          selection_evidence = requested.get('selectionCapture') or {}
+          latest = training_evidence.get('run') or {}
+          latest_selection = selection_evidence.get('run') or {}
+          counts = latest.get('partitionCounts') or (
+              (latest.get('milestones') or {}).get('counts') or {}
+          )
+          accepted = int(latest.get('acceptedRowCount') or 0)
+          train = int(counts.get('train') or 0)
+          validation = int(counts.get('validation') or 0)
+          prospective = int(counts.get('prospectiveTest') or 0)
+          accepted_advanced = accepted > baseline_accepted
+          train_advanced = train > baseline_train
+          already_bootstrapped = (
+              baseline_accepted >= minimum_accepted
+              and baseline_train >= minimum_train
+          )
+          material_progress = (
+              (accepted_advanced and train_advanced)
+              or already_bootstrapped
+          )
+          proof = {
+              'ok': (
+                  training.get('ok') is True
+                  and selection.get('ok') is True
+                  and status.get('ok') is True
+                  and training_evidence.get('ok') is True
+                  and selection_evidence.get('ok') is True
+                  and latest.get('experimentId')
+                  == os.environ['EXPECTED_EXPERIMENT_ID']
+                  and latest.get('runId') == training.get('runId')
+                  and latest_selection.get('runId') == selection.get('runId')
+                  and training_evidence.get('deploymentIdentityMatches') is True
+                  and selection_evidence.get('deploymentIdentityMatches') is True
+                  and material_progress
+                  and accepted >= minimum_accepted
+                  and train >= minimum_train
+                  and validation >= minimum_validation
+                  and prospective == 0
+                  and latest.get('modelTrained') is True
+                  and latest.get('automaticPromotionEnabled') is False
+                  and latest.get('championChanged') is False
+                  and latest.get('liveInferenceAuthority') is False
+                  and latest.get('productionAuthorityChanged') is False
+                  and latest.get('immutablePredictionRewriteAllowed') is False
+                  and latest.get('postStartPredictionCreationAllowed') is False
+                  and latest.get('otherSportChanged') is False
+              ),
+              'experimentId': latest.get('experimentId'),
+              'status': latest.get('status'),
+              'acceptedRowCountBefore': baseline_accepted,
+              'acceptedRowCount': accepted,
+              'acceptedRowCountAdvanced': accepted_advanced,
+              'trainCountBefore': baseline_train,
+              'partitionCounts': counts,
+              'trainCountAdvanced': train_advanced,
+              'historicalAcceptedMinimum': minimum_accepted,
+              'materialProgress': material_progress,
+              'alreadyBootstrappedBeforeRun': already_bootstrapped,
+              'rejectedRowCount': latest.get('rejectedRowCount'),
+              'modelTrained': latest.get('modelTrained'),
+              'trainingRunId': latest.get('runId'),
+              'selectionCaptureRunId': latest_selection.get('runId'),
+              'selectionCaptureStatus': latest_selection.get('status'),
+              'selectionCapturedCount': (
+                  (latest_selection.get('selectionCapture') or {}).get(
+                      'capturedCount'
+                  )
+              ),
+              'productionAuthorityChanged': latest.get(
+                  'productionAuthorityChanged'
+              ),
+              'liveInferenceAuthority': latest.get('liveInferenceAuthority'),
+              'automaticPromotionEnabled': latest.get(
+                  'automaticPromotionEnabled'
+              ),
+              'canonicalSlateContinuity': latest.get(
+                  'canonicalSlateContinuity'
+              ),
+          }
+          Path('/tmp/mlb-r8-bootstrap/advancement-proof.json').write_text(
+              json.dumps(proof, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(proof, indent=2, sort_keys=True))
+          assert proof['ok'] is True, proof
+          PY
+
+      - name: Upload complete R8 bootstrap evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-historical-live-r8-bootstrap-${{ github.run_id }}
+          path: /tmp/mlb-r8-bootstrap
+          if-no-files-found: error
+          retention-days: 90
