@@ -37,6 +37,7 @@ on:
     paths:
       - '.github/workflows/mlb-30m-progress-pulse.yml'
       - 'scripts/report_mlb_30m_progress.py'
+      - 'scripts/report_mlb_30m_progress_active.py'
       - 'scripts/check_mlb_progress_pulse_staleness.py'
       - 'tests/unit/test_report_mlb_30m_progress.py'
       - 'tests/unit/test_mlb_progress_pulse_watchdog.py'
@@ -63,6 +64,8 @@ env:
   # A strict >28m gate plus a punctual five-minute watchdog observes staleness
   # by 33m; the observed sub-minute reporter leaves margin inside 35m.
   MLB_PROGRESS_STALE_AFTER_MINUTES: '28'
+  # Legacy environment-key name retained for reporter compatibility; value is
+  # always the exact deployed learning-cohort identity.
   MLB_R7_EXPERIMENT_ID: mlb-v2-2026-08-31-historical-live-r8
 
 jobs:
@@ -159,16 +162,19 @@ jobs:
       - name: Validate pulse cannot invoke mutation modes
         run: |
           set -euo pipefail
-          python -m py_compile scripts/report_mlb_30m_progress.py
+          python -m py_compile \
+            scripts/report_mlb_30m_progress.py \
+            scripts/report_mlb_30m_progress_active.py
           grep -q '"mode": "status"' scripts/report_mlb_30m_progress.py
           ! grep -Eq '"mode": "(scheduled|selection_capture|manual_review)"' scripts/report_mlb_30m_progress.py
           ! grep -Ei 'aws[^[:alnum:]]+dynamodb' scripts/report_mlb_30m_progress.py
           ! grep -Eq 'put_item|update_item|delete_item|promote_candidate|manual_review\(' scripts/report_mlb_30m_progress.py
           grep -q 'UNSAFE_RETIRED_V15_10_AUTHORITY_LEAK' scripts/report_mlb_30m_progress.py
+          grep -q 'report_mlb_30m_progress as reporter' scripts/report_mlb_30m_progress_active.py
 
       - name: Collect AWS runtime evidence and post numeric issue pulse
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python scripts/report_mlb_30m_progress.py
+          python scripts/report_mlb_30m_progress_active.py
