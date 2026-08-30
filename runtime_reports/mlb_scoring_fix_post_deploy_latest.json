@@ -8,8 +8,8 @@
     "lifecycle_storage_disposition_incomplete",
     "new_scheduled_scoring_failure_after_deploy"
   ],
-  "createdAtUtc": "2026-08-30T03:20:34.241961Z",
-  "deployedCommit": "0a6511efe7de365f6d46606532f81a3ad7b9d54b",
+  "createdAtUtc": "2026-08-30T03:50:49.620829Z",
+  "deployedCommit": "ffede11c99f67203f50cf3fdb7b83948066a8090",
   "deploymentBlockers": [
     "scheduled_pull_observation_failed",
     "timeout_not_600",
@@ -24,7 +24,7 @@
   "lambdaConfiguration": {
     "failure": {
       "code": "fresh_scheduled_pull_failed",
-      "message": "fresh_scheduled_pull_failed:[ERROR] RuntimeError: MLB_SCHEDULED_PULL_FAILED:{\"asof\": \"2026-08-30T03:15:26.681619+00:00\", \"audit\": [{\"errors\": [], \"feature_version\": \"full_capture_items_1_to_14_v1\", \"game_date_et\": \"2026-08-29\", \"ok\": true, \"stored\": 17}], \"available_book_keys\": [\"betmgm\", \"betrivers\", \"bovada\", \"draftkings\", \"fanatics\", \"fanduel\", \"mybookieag\", \"williamhill_us\"], \"bbs_shadow_capture\": [{\"game_date_et\": \"2026-08-29\", \"ok\": true, \"shadowOnly\": true, \"status\": \"DISABLED\"}], \"candidatePersistenceFailures\": [\"winner_prediction_failed:2026-08-29\"], \"canonical_pull_history\": [{\"canonicalManifestValidatedAgainstPersistedPull\": true, \"canonicalPullId\": \"mlb_v1_2026-08-29_2026_08_30T03_15_26_681619_00_00\", \"canonicalPullPayloadFingerprint\": \"fbe4cc42ed49175171c4b101f49187ef4750574cf6ff6e2ec3d3c6400bfb6a0b\", \"canonicalPullPk\": \"PULLS#mlb#2026-08-29\", \"canonicalPullSk\": \"PULL#SLOT#2026-08-30T03:15:00+00:00\", \"canonicalPulledAtUtc\": \"2026-08-30T03:15:26.681619+00:00\", \"canonicalSlotStartUtc\": \"2026-08-30T03:15:00+00:00\", \"error\": null, \"game_date_et\": \"2026-08-29\", \"games\": 17, \"officialScheduleAuthorityBound\": true, \"officialScheduleAuthorityFingerprint\": \"103e9e16726a5c28a09a0b9b9da243e48577b00a4aae64e978815cfe1730c563\", \"officialScheduleAuthorityVersion\": \"MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date\", \"officialScheduleBacked\": true, \"officialScheduleGameCount\": 17, \"ok\": true, \"pk\": \"PULLS#mlb#2026-08-29\", \"providerManifestBound\": true, \"providerManifestFingerprint\": \"7b52343889855ec8d19aa4cb8aa7c4534801afc37a965b31b4db0fe86885f04a\", \"providerManifestFullSchedule\": true, \"providerManifestGameCount\": 17, \"providerManifestImmutable\": true, \"providerManifestPk\": \"PROVIDER_MANIFEST#mlb#2026-08-29\", \"providerManifestSk\": \"OBSERVED#2026-08-30T03:15:26.681619+00:00#PULL#mlb_v1_2026-08-29_2026_08_30T03_15_26_681619_00_00\", \"providerManifestValidationErrors\": [], \"providerManifestVersion\": \"INQSI-PROVIDER-SCHEDULE-MANIFEST-v1\", \"pull_id\": \"mlb_v1_2026-08-29_2026_08_30T03_15_26_681619_00_00\", \"retryReturnedExistingCanonicalPull\": false, \"sameSlotRetryAuthorityRebound\": false, \"stored\": {\"game_count\": 17, \"pk\": \"PULLS#mlb#2026-08-29\", \"provider_manifest\": {\"created\": true, \"fingerprint\": \"7b52343889855ec8d19aa4cb8aa7c4534801afc37a965b31b4db0fe86885f04a\", \"full_provider_schedule\": true, \"game_count\": 17, \"immutable\": true, \"official_schedule_authority_fingerprint\": \"103e9e16726a5c28a09a0b9b9da243e48577b00a4aae64e978815cfe1730c563\", \"official_schedule_authority_version\": \"MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date\", \"official_schedule_backed\": true, \"official_schedule_game_count\": 17, \"pk\": \"PROVIDER_MANIFEST#mlb#2026-08-29\", \"sk\": \"OBSERVED#2026-08-30T03:15:26.681619+00:00#PULL#mlb_v1_2026-08-29_2026_08_30T03_15_26_681619_00_00\", \"version\": \"INQSI-PROVIDER-SCHEDULE-MANIFEST-v1\"}, \"pull_id\": \"mlb_v1_2026-08-29_2026_08_30T03_15_26_681619_00_00\", \"sk\": \"PULL#SLOT#2026-08-30T03:15:00+00:00\"}}], \"count\": 17, \"data_isolation\": {\"date_partition_pk_pattern\": \"SPORT#mlb#DATE#YYYY-MM-DD\", \"enabled\": true, \"game_key_pattern\": \"mlb|YYYY-MM-DD|away|home\"}, \"date_isolated_stored\": [{\"count\": 17, \"game_date_et\": \"2026-08-29\", \"pk\": \"SPORT#mlb#DATE#2026-08-29\", \"sk\": \"HOT#GAME_DATE#2026-08-29#PULL_DATE#2026-08-29#ASOF#2026-08-30T03:15:26.681619+00:00#SLATE#MLB_DATE_2026-08-29_hot_pull_audited\"}], \"days_ahead\": 0, \"fallback_used\": false, \"game_dates_et\": [\"2026-08-29\"], \"game_winner_predictions\": [{\"accuracyTarget\": {\"accuracyTargetEligibleMeaning\": \"legacy playable/actionable accuracy subset\", \"actionablePickCount\": 0, \"allGamesHaveDisplayedWinnerPrediction\": true, \"blockedMeaning\": \"wagering release is blocked; the immutable winner remains official\", \"blockedOfficialPredictionCount\": 0, \"blockedPredictionCount\": 0, \"calibratedPredictionCount\": 17, \"calibrationEnabled\": true, \"calibrationPolicy\": \"Market-first probabilities, false-confirmation shrinkage, and limited actionable promotion only for clean market-confirmed leans.",
+      "message": "fresh_scheduled_pull_failed:[ERROR] RuntimeError: MLB_SCHEDULED_PULL_FAILED:{\"asof\": \"2026-08-30T03:45:26.663640+00:00\", \"audit\": [{\"errors\": [], \"feature_version\": \"full_capture_items_1_to_14_v1\", \"game_date_et\": \"2026-08-29\", \"ok\": true, \"stored\": 17}], \"available_book_keys\": [\"betmgm\", \"betrivers\", \"bovada\", \"draftkings\", \"fanatics\", \"fanduel\", \"mybookieag\", \"williamhill_us\"], \"bbs_shadow_capture\": [{\"game_date_et\": \"2026-08-29\", \"ok\": true, \"shadowOnly\": true, \"status\": \"DISABLED\"}], \"candidatePersistenceFailures\": [\"winner_prediction_failed:2026-08-29\"], \"canonical_pull_history\": [{\"canonicalManifestValidatedAgainstPersistedPull\": true, \"canonicalPullId\": \"mlb_v1_2026-08-29_2026_08_30T03_45_26_663640_00_00\", \"canonicalPullPayloadFingerprint\": \"58e0d24ab6f0709ee248fbce19c788b33ae37a071592ebe6516fbc10c8397a60\", \"canonicalPullPk\": \"PULLS#mlb#2026-08-29\", \"canonicalPullSk\": \"PULL#SLOT#2026-08-30T03:45:00+00:00\", \"canonicalPulledAtUtc\": \"2026-08-30T03:45:26.663640+00:00\", \"canonicalSlotStartUtc\": \"2026-08-30T03:45:00+00:00\", \"error\": null, \"game_date_et\": \"2026-08-29\", \"games\": 17, \"officialScheduleAuthorityBound\": true, \"officialScheduleAuthorityFingerprint\": \"7557e5a3ffb22365da3bc956757ec09f4575dc92d93285e192efc66f683f509f\", \"officialScheduleAuthorityVersion\": \"MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date\", \"officialScheduleBacked\": true, \"officialScheduleGameCount\": 17, \"ok\": true, \"pk\": \"PULLS#mlb#2026-08-29\", \"providerManifestBound\": true, \"providerManifestFingerprint\": \"59f45e0c5de73d1c911370b926ca310064f8768153c714d7fc726af702ee023f\", \"providerManifestFullSchedule\": true, \"providerManifestGameCount\": 17, \"providerManifestImmutable\": true, \"providerManifestPk\": \"PROVIDER_MANIFEST#mlb#2026-08-29\", \"providerManifestSk\": \"OBSERVED#2026-08-30T03:45:26.663640+00:00#PULL#mlb_v1_2026-08-29_2026_08_30T03_45_26_663640_00_00\", \"providerManifestValidationErrors\": [], \"providerManifestVersion\": \"INQSI-PROVIDER-SCHEDULE-MANIFEST-v1\", \"pull_id\": \"mlb_v1_2026-08-29_2026_08_30T03_45_26_663640_00_00\", \"retryReturnedExistingCanonicalPull\": false, \"sameSlotRetryAuthorityRebound\": false, \"stored\": {\"game_count\": 17, \"pk\": \"PULLS#mlb#2026-08-29\", \"provider_manifest\": {\"created\": true, \"fingerprint\": \"59f45e0c5de73d1c911370b926ca310064f8768153c714d7fc726af702ee023f\", \"full_provider_schedule\": true, \"game_count\": 17, \"immutable\": true, \"official_schedule_authority_fingerprint\": \"7557e5a3ffb22365da3bc956757ec09f4575dc92d93285e192efc66f683f509f\", \"official_schedule_authority_version\": \"MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date\", \"official_schedule_backed\": true, \"official_schedule_game_count\": 17, \"pk\": \"PROVIDER_MANIFEST#mlb#2026-08-29\", \"sk\": \"OBSERVED#2026-08-30T03:45:26.663640+00:00#PULL#mlb_v1_2026-08-29_2026_08_30T03_45_26_663640_00_00\", \"version\": \"INQSI-PROVIDER-SCHEDULE-MANIFEST-v1\"}, \"pull_id\": \"mlb_v1_2026-08-29_2026_08_30T03_45_26_663640_00_00\", \"sk\": \"PULL#SLOT#2026-08-30T03:45:00+00:00\"}}], \"count\": 17, \"data_isolation\": {\"date_partition_pk_pattern\": \"SPORT#mlb#DATE#YYYY-MM-DD\", \"enabled\": true, \"game_key_pattern\": \"mlb|YYYY-MM-DD|away|home\"}, \"date_isolated_stored\": [{\"count\": 17, \"game_date_et\": \"2026-08-29\", \"pk\": \"SPORT#mlb#DATE#2026-08-29\", \"sk\": \"HOT#GAME_DATE#2026-08-29#PULL_DATE#2026-08-29#ASOF#2026-08-30T03:45:26.663640+00:00#SLATE#MLB_DATE_2026-08-29_hot_pull_audited\"}], \"days_ahead\": 0, \"fallback_used\": false, \"game_dates_et\": [\"2026-08-29\"], \"game_winner_predictions\": [{\"accuracyTarget\": {\"accuracyTargetEligibleMeaning\": \"legacy playable/actionable accuracy subset\", \"actionablePickCount\": 0, \"allGamesHaveDisplayedWinnerPrediction\": true, \"blockedMeaning\": \"wagering release is blocked; the immutable winner remains official\", \"blockedOfficialPredictionCount\": 0, \"blockedPredictionCount\": 0, \"calibratedPredictionCount\": 17, \"calibrationEnabled\": true, \"calibrationPolicy\": \"Market-first probabilities, false-confirmation shrinkage, and limited actionable promotion only for clean market-confirmed leans.",
       "type": "RuntimeError"
     },
     "manualPullInvoked": false,
@@ -32,7 +32,7 @@
     "readOnly": true,
     "secretExposed": false,
     "status": "OBSERVATION_FAILED",
-    "targetDeploySha": "0a6511efe7de365f6d46606532f81a3ad7b9d54b",
+    "targetDeploySha": "ffede11c99f67203f50cf3fdb7b83948066a8090",
     "version": "MLB-POSTDEPLOY-SCHEDULED-PULL-OBSERVER-v1-no-manual-pull",
     "winnerResults": []
   },
@@ -40,22 +40,8 @@
   "lifecycleStorageDispositionComplete": false,
   "ok": false,
   "openPreLockCandidateCount": 0,
-  "postDeployScheduledFailureCount": 15,
+  "postDeployScheduledFailureCount": 17,
   "postDeployScheduledFailures": [
-    {
-      "classifications": [
-        "SCHEDULED_PULL_FAILED"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-30T01:35:16.056000+00:00"
-    },
-    {
-      "classifications": [
-        "SCHEDULED_PULL_FAILED"
-      ],
-      "requestId": null,
-      "timestampUtc": "2026-08-30T01:42:13.090000+00:00"
-    },
     {
       "classifications": [
         "SCHEDULED_PULL_FAILED"
@@ -146,6 +132,34 @@
       ],
       "requestId": null,
       "timestampUtc": "2026-08-30T03:20:13.070000+00:00"
+    },
+    {
+      "classifications": [
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-08-30T03:32:22.365000+00:00"
+    },
+    {
+      "classifications": [
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-08-30T03:35:16.277000+00:00"
+    },
+    {
+      "classifications": [
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-08-30T03:48:10.599000+00:00"
+    },
+    {
+      "classifications": [
+        "SCHEDULED_PULL_FAILED"
+      ],
+      "requestId": null,
+      "timestampUtc": "2026-08-30T03:50:18.852000+00:00"
     }
   ],
   "postDeployTimeoutCount": 0,
@@ -156,16 +170,16 @@
   "readinessBlockers": [],
   "recoveredPostDeployScheduledFailureCount": 0,
   "recoveredPostDeployScheduledFailures": [],
-  "runId": "33289642648",
+  "runId": "33290812110",
   "scheduledPullObservationFailure": {
     "code": "fresh_scheduled_pull_failed",
-    "message": "fresh_scheduled_pull_failed:[ERROR] RuntimeError: MLB_SCHEDULED_PULL_FAILED:{\"asof\": \"2026-08-30T03:15:26.681619+00:00\", \"audit\": [{\"errors\": [], \"feature_version\": \"full_capture_items_1_to_14_v1\", \"game_date_et\": \"2026-08-29\", \"ok\": true, \"stored\": 17}], \"available_book_keys\": [\"betmgm\", \"betrivers\", \"bovada\", \"draftkings\", \"fanatics\", \"fanduel\", \"mybookieag\", \"williamhill_us\"], \"bbs_shadow_capture\": [{\"game_date_et\": \"2026-08-29\", \"ok\": true, \"shadowOnly\": true, \"status\": \"DISABLED\"}], \"candidatePersistenceFailures\": [\"winner_prediction_failed:2026-08-29\"], \"canonical_pull_history\": [{\"canonicalManifestValidatedAgainstPersistedPull\": true, \"canonicalPullId\": \"mlb_v1_2026-08-29_2026_08_30T03_15_26_681619_00_00\", \"canonicalPullPayloadFingerprint\": \"fbe4cc42ed49175171c4b101f49187ef4750574cf6ff6e2ec3d3c6400bfb6a0b\", \"canonicalPullPk\": \"PULLS#mlb#2026-08-29\", \"canonicalPullSk\": \"PULL#SLOT#2026-08-30T03:15:00+00:00\", \"canonicalPulledAtUtc\": \"2026-08-30T03:15:26.681619+00:00\", \"canonicalSlotStartUtc\": \"2026-08-30T03:15:00+00:00\", \"error\": null, \"game_date_et\": \"2026-08-29\", \"games\": 17, \"officialScheduleAuthorityBound\": true, \"officialScheduleAuthorityFingerprint\": \"103e9e16726a5c28a09a0b9b9da243e48577b00a4aae64e978815cfe1730c563\", \"officialScheduleAuthorityVersion\": \"MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date\", \"officialScheduleBacked\": true, \"officialScheduleGameCount\": 17, \"ok\": true, \"pk\": \"PULLS#mlb#2026-08-29\", \"providerManifestBound\": true, \"providerManifestFingerprint\": \"7b52343889855ec8d19aa4cb8aa7c4534801afc37a965b31b4db0fe86885f04a\", \"providerManifestFullSchedule\": true, \"providerManifestGameCount\": 17, \"providerManifestImmutable\": true, \"providerManifestPk\": \"PROVIDER_MANIFEST#mlb#2026-08-29\", \"providerManifestSk\": \"OBSERVED#2026-08-30T03:15:26.681619+00:00#PULL#mlb_v1_2026-08-29_2026_08_30T03_15_26_681619_00_00\", \"providerManifestValidationErrors\": [], \"providerManifestVersion\": \"INQSI-PROVIDER-SCHEDULE-MANIFEST-v1\", \"pull_id\": \"mlb_v1_2026-08-29_2026_08_30T03_15_26_681619_00_00\", \"retryReturnedExistingCanonicalPull\": false, \"sameSlotRetryAuthorityRebound\": false, \"stored\": {\"game_count\": 17, \"pk\": \"PULLS#mlb#2026-08-29\", \"provider_manifest\": {\"created\": true, \"fingerprint\": \"7b52343889855ec8d19aa4cb8aa7c4534801afc37a965b31b4db0fe86885f04a\", \"full_provider_schedule\": true, \"game_count\": 17, \"immutable\": true, \"official_schedule_authority_fingerprint\": \"103e9e16726a5c28a09a0b9b9da243e48577b00a4aae64e978815cfe1730c563\", \"official_schedule_authority_version\": \"MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date\", \"official_schedule_backed\": true, \"official_schedule_game_count\": 17, \"pk\": \"PROVIDER_MANIFEST#mlb#2026-08-29\", \"sk\": \"OBSERVED#2026-08-30T03:15:26.681619+00:00#PULL#mlb_v1_2026-08-29_2026_08_30T03_15_26_681619_00_00\", \"version\": \"INQSI-PROVIDER-SCHEDULE-MANIFEST-v1\"}, \"pull_id\": \"mlb_v1_2026-08-29_2026_08_30T03_15_26_681619_00_00\", \"sk\": \"PULL#SLOT#2026-08-30T03:15:00+00:00\"}}], \"count\": 17, \"data_isolation\": {\"date_partition_pk_pattern\": \"SPORT#mlb#DATE#YYYY-MM-DD\", \"enabled\": true, \"game_key_pattern\": \"mlb|YYYY-MM-DD|away|home\"}, \"date_isolated_stored\": [{\"count\": 17, \"game_date_et\": \"2026-08-29\", \"pk\": \"SPORT#mlb#DATE#2026-08-29\", \"sk\": \"HOT#GAME_DATE#2026-08-29#PULL_DATE#2026-08-29#ASOF#2026-08-30T03:15:26.681619+00:00#SLATE#MLB_DATE_2026-08-29_hot_pull_audited\"}], \"days_ahead\": 0, \"fallback_used\": false, \"game_dates_et\": [\"2026-08-29\"], \"game_winner_predictions\": [{\"accuracyTarget\": {\"accuracyTargetEligibleMeaning\": \"legacy playable/actionable accuracy subset\", \"actionablePickCount\": 0, \"allGamesHaveDisplayedWinnerPrediction\": true, \"blockedMeaning\": \"wagering release is blocked; the immutable winner remains official\", \"blockedOfficialPredictionCount\": 0, \"blockedPredictionCount\": 0, \"calibratedPredictionCount\": 17, \"calibrationEnabled\": true, \"calibrationPolicy\": \"Market-first probabilities, false-confirmation shrinkage, and limited actionable promotion only for clean market-confirmed leans.",
+    "message": "fresh_scheduled_pull_failed:[ERROR] RuntimeError: MLB_SCHEDULED_PULL_FAILED:{\"asof\": \"2026-08-30T03:45:26.663640+00:00\", \"audit\": [{\"errors\": [], \"feature_version\": \"full_capture_items_1_to_14_v1\", \"game_date_et\": \"2026-08-29\", \"ok\": true, \"stored\": 17}], \"available_book_keys\": [\"betmgm\", \"betrivers\", \"bovada\", \"draftkings\", \"fanatics\", \"fanduel\", \"mybookieag\", \"williamhill_us\"], \"bbs_shadow_capture\": [{\"game_date_et\": \"2026-08-29\", \"ok\": true, \"shadowOnly\": true, \"status\": \"DISABLED\"}], \"candidatePersistenceFailures\": [\"winner_prediction_failed:2026-08-29\"], \"canonical_pull_history\": [{\"canonicalManifestValidatedAgainstPersistedPull\": true, \"canonicalPullId\": \"mlb_v1_2026-08-29_2026_08_30T03_45_26_663640_00_00\", \"canonicalPullPayloadFingerprint\": \"58e0d24ab6f0709ee248fbce19c788b33ae37a071592ebe6516fbc10c8397a60\", \"canonicalPullPk\": \"PULLS#mlb#2026-08-29\", \"canonicalPullSk\": \"PULL#SLOT#2026-08-30T03:45:00+00:00\", \"canonicalPulledAtUtc\": \"2026-08-30T03:45:26.663640+00:00\", \"canonicalSlotStartUtc\": \"2026-08-30T03:45:00+00:00\", \"error\": null, \"game_date_et\": \"2026-08-29\", \"games\": 17, \"officialScheduleAuthorityBound\": true, \"officialScheduleAuthorityFingerprint\": \"7557e5a3ffb22365da3bc956757ec09f4575dc92d93285e192efc66f683f509f\", \"officialScheduleAuthorityVersion\": \"MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date\", \"officialScheduleBacked\": true, \"officialScheduleGameCount\": 17, \"ok\": true, \"pk\": \"PULLS#mlb#2026-08-29\", \"providerManifestBound\": true, \"providerManifestFingerprint\": \"59f45e0c5de73d1c911370b926ca310064f8768153c714d7fc726af702ee023f\", \"providerManifestFullSchedule\": true, \"providerManifestGameCount\": 17, \"providerManifestImmutable\": true, \"providerManifestPk\": \"PROVIDER_MANIFEST#mlb#2026-08-29\", \"providerManifestSk\": \"OBSERVED#2026-08-30T03:45:26.663640+00:00#PULL#mlb_v1_2026-08-29_2026_08_30T03_45_26_663640_00_00\", \"providerManifestValidationErrors\": [], \"providerManifestVersion\": \"INQSI-PROVIDER-SCHEDULE-MANIFEST-v1\", \"pull_id\": \"mlb_v1_2026-08-29_2026_08_30T03_45_26_663640_00_00\", \"retryReturnedExistingCanonicalPull\": false, \"sameSlotRetryAuthorityRebound\": false, \"stored\": {\"game_count\": 17, \"pk\": \"PULLS#mlb#2026-08-29\", \"provider_manifest\": {\"created\": true, \"fingerprint\": \"59f45e0c5de73d1c911370b926ca310064f8768153c714d7fc726af702ee023f\", \"full_provider_schedule\": true, \"game_count\": 17, \"immutable\": true, \"official_schedule_authority_fingerprint\": \"7557e5a3ffb22365da3bc956757ec09f4575dc92d93285e192efc66f683f509f\", \"official_schedule_authority_version\": \"MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date\", \"official_schedule_backed\": true, \"official_schedule_game_count\": 17, \"pk\": \"PROVIDER_MANIFEST#mlb#2026-08-29\", \"sk\": \"OBSERVED#2026-08-30T03:45:26.663640+00:00#PULL#mlb_v1_2026-08-29_2026_08_30T03_45_26_663640_00_00\", \"version\": \"INQSI-PROVIDER-SCHEDULE-MANIFEST-v1\"}, \"pull_id\": \"mlb_v1_2026-08-29_2026_08_30T03_45_26_663640_00_00\", \"sk\": \"PULL#SLOT#2026-08-30T03:45:00+00:00\"}}], \"count\": 17, \"data_isolation\": {\"date_partition_pk_pattern\": \"SPORT#mlb#DATE#YYYY-MM-DD\", \"enabled\": true, \"game_key_pattern\": \"mlb|YYYY-MM-DD|away|home\"}, \"date_isolated_stored\": [{\"count\": 17, \"game_date_et\": \"2026-08-29\", \"pk\": \"SPORT#mlb#DATE#2026-08-29\", \"sk\": \"HOT#GAME_DATE#2026-08-29#PULL_DATE#2026-08-29#ASOF#2026-08-30T03:45:26.663640+00:00#SLATE#MLB_DATE_2026-08-29_hot_pull_audited\"}], \"days_ahead\": 0, \"fallback_used\": false, \"game_dates_et\": [\"2026-08-29\"], \"game_winner_predictions\": [{\"accuracyTarget\": {\"accuracyTargetEligibleMeaning\": \"legacy playable/actionable accuracy subset\", \"actionablePickCount\": 0, \"allGamesHaveDisplayedWinnerPrediction\": true, \"blockedMeaning\": \"wagering release is blocked; the immutable winner remains official\", \"blockedOfficialPredictionCount\": 0, \"blockedPredictionCount\": 0, \"calibratedPredictionCount\": 17, \"calibrationEnabled\": true, \"calibrationPolicy\": \"Market-first probabilities, false-confirmation shrinkage, and limited actionable promotion only for clean market-confirmed leans.",
     "type": "RuntimeError"
   },
   "scoringBlockers": [],
   "scoringGuardPassed": true,
   "scoringSummary": {
-    "canonicalPullCount": 90,
+    "canonicalPullCount": 92,
     "fundamentalsAppliedCount": 0,
     "fundamentalsNeutralOrSourceMissingCount": 0,
     "fundamentalsNotActiveCount": 17,
@@ -179,7 +193,7 @@
     "fundamentalsUpstreamAppliedDetectedCount": 0,
     "invalidMovementTeamCount": 0,
     "invalidPredictionTeamCount": 0,
-    "latestCanonicalPullAtUtc": "2026-08-30T03:15:26.681619+00:00",
+    "latestCanonicalPullAtUtc": "2026-08-30T03:45:26.663640+00:00",
     "missingMovementCount": 0,
     "missingPredictionCount": 0,
     "movementFeatureGameCount": 17,
@@ -188,20 +202,20 @@
     "scoreableGameCount": 17
   },
   "secretExposed": false,
-  "sourceDeployCreatedAtUtc": "2026-08-30T03:04:52Z",
+  "sourceDeployCreatedAtUtc": "2026-08-30T03:35:17Z",
   "sourceDeployHeadBranch": "main",
-  "sourceDeployHeadSha": "0a6511efe7de365f6d46606532f81a3ad7b9d54b",
+  "sourceDeployHeadSha": "ffede11c99f67203f50cf3fdb7b83948066a8090",
   "sourceDeployRunAttempt": 1,
-  "sourceDeployRunId": "33289443882",
-  "sourceDeployRunNumber": 2729,
-  "sourceDeployRunUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/33289443882",
-  "sourceDeploySamCompletedAtUtc": "2026-08-30T03:08:31Z",
+  "sourceDeployRunId": "33290606259",
+  "sourceDeployRunNumber": 2730,
+  "sourceDeployRunUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/33290606259",
+  "sourceDeploySamCompletedAtUtc": "2026-08-30T03:39:07Z",
   "sourceDeploySamStepConclusion": "success",
   "sourceDeploySamStepName": "Deploy exact canonical source",
   "sourceDeployWorkflowId": 231636316,
   "sourceDeployWorkflowName": "Deploy SAM to AWS",
   "sourceDeployWorkflowPath": ".github/workflows/deploy.yml",
-  "sourceSha": "82b4c81dbb854c88df805155caf078cb4c1b455c",
+  "sourceSha": "ffede11c99f67203f50cf3fdb7b83948066a8090",
   "status": "DEPLOYMENT_UNHEALTHY",
   "successfulScheduledObservationAtUtc": null,
   "version": "MLB-SCORING-FIX-POST-DEPLOY-v3-health-readiness-separated"
