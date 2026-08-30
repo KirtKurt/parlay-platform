@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import sys
+from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -101,6 +102,8 @@ class EvidenceTable:
 
 
 class ChunkModule:
+    LOCK_MINUTES = 45
+
     def __init__(self, game_count: int = 2):
         self.games = [_game(index) for index in range(game_count)]
         self.TABLE = EvidenceTable()
@@ -206,6 +209,55 @@ class ChunkPatch:
             f"test_cooperative_terminal_alias_limit_{id(self)}",
             default=None,
         )
+        self.prime_calls = []
+        self.read_cache_ids = []
+
+    @contextmanager
+    def _status_read_scope(self, *, fresh=False):
+        existing = self._STATUS_READ_CACHE.get()
+        if existing is not None and not fresh:
+            yield existing
+            return
+        canonical_pulls = (
+            existing.get("canonicalPulls", {})
+            if isinstance(existing, dict)
+            else {}
+        )
+        token = self._STATUS_READ_CACHE.set({
+            "consistentItems": {},
+            "canonicalPulls": canonical_pulls,
+            "pullFingerprints": {},
+        })
+        try:
+            yield self._STATUS_READ_CACHE.get()
+        finally:
+            self._STATUS_READ_CACHE.reset(token)
+
+    def _prime_status_manifest_items(
+        self,
+        owner,
+        table,
+        slate,
+        manifest,
+        *,
+        lock_minutes,
+    ):
+        assert owner is not None
+        assert table is owner.TABLE
+        assert slate == SLATE
+        assert lock_minutes == 45
+        request_cache = self._STATUS_READ_CACHE.get()
+        assert isinstance(request_cache, dict)
+        assert set(request_cache) == {
+            "consistentItems",
+            "canonicalPulls",
+            "pullFingerprints",
+        }
+        self.prime_calls.append({
+            "cacheId": id(request_cache),
+            "gameCount": len(list(manifest)),
+        })
+        return {"primary": True, "authority": True}
 
     @staticmethod
     def _cooperative_terminal_item_fingerprint(item):
@@ -229,7 +281,12 @@ class ChunkPatch:
         assert slate == SLATE
         request_cache = self._STATUS_READ_CACHE.get()
         assert isinstance(request_cache, dict)
-        assert set(request_cache) == {"canonicalPulls"}
+        assert set(request_cache) == {
+            "consistentItems",
+            "canonicalPulls",
+            "pullFingerprints",
+        }
+        self.read_cache_ids.append(id(request_cache))
         identity = self.game_identity(game)
         module.stage_reads.append(identity)
         return copy.deepcopy(module.stages.get(identity))
@@ -240,7 +297,12 @@ class ChunkPatch:
         assert slate == SLATE
         request_cache = self._STATUS_READ_CACHE.get()
         assert isinstance(request_cache, dict)
-        assert set(request_cache) == {"canonicalPulls"}
+        assert set(request_cache) == {
+            "consistentItems",
+            "canonicalPulls",
+            "pullFingerprints",
+        }
+        self.read_cache_ids.append(id(request_cache))
         identity = self.game_identity(game)
         module.outcome_reads.append(identity)
         item = copy.deepcopy(module.outcomes.get(identity))
@@ -708,6 +770,23 @@ def _process_then_verify_all(module):
         assert checkpoint["verificationIndex"] == index + 1
     assert checkpoint["verificationComplete"] is True
     return checkpoint, results
+
+
+def test_process_batch_primes_separate_prewrite_and_readback_phases():
+    module = _install(ChunkModule(game_count=1))
+
+    result = _invoke(module)
+
+    assert result["ok"] is True
+    assert result["stage"] == "PROCESS_CHECKPOINT_READY"
+    assert result["terminalWrittenThisInvocation"] is True
+    assert [call["gameCount"] for call in module.patch.prime_calls] == [1, 1]
+    assert (
+        module.patch.prime_calls[0]["cacheId"]
+        != module.patch.prime_calls[1]["cacheId"]
+    )
+    assert module.patch.read_cache_ids[0] != module.patch.read_cache_ids[-1]
+    assert module.patch._STATUS_READ_CACHE.get() is None
 
 
 def test_chunk_processes_and_verifies_one_target_per_owner_then_atomic_completes():

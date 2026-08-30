@@ -127,15 +127,23 @@ _STATUS_BATCH_MAX_RETRY_DELAY_SECONDS = 0.2
 
 
 @contextmanager
-def _status_read_scope():
+def _status_read_scope(*, fresh: bool = False):
     """Share immutable readbacks only within one read-only status request."""
     existing = _STATUS_READ_CACHE.get()
-    if existing is not None:
+    if existing is not None and not fresh:
         yield existing
         return
+    canonical_pulls = (
+        existing.get("canonicalPulls", {})
+        if isinstance(existing, dict)
+        else {}
+    )
     token = _STATUS_READ_CACHE.set({
         "consistentItems": {},
-        "canonicalPulls": {},
+        # Canonical pull material is immutable and may be shared across fresh
+        # authority phases. Strong row observations must never be shared
+        # across a possible write boundary.
+        "canonicalPulls": canonical_pulls,
         "pullFingerprints": {},
     })
     try:
