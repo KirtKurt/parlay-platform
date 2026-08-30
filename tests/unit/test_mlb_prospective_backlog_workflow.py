@@ -395,8 +395,23 @@ def test_unified_recovery_binds_numeric_proof_to_requested_run_evidence():
     assert "selection_run.get('runId') == selection_run_id" in source
     assert "health.get('latestRun')" not in source
     assert "selection_health.get('latestRun')" not in source
+    assert "counts_advanced = (" in source
     assert "accepted > before_accepted" in source
     assert "train_count > before_train_count" in source
+    assert "counts_unchanged = (" in source
+    assert "accepted == before_accepted" in source
+    assert "train_count == before_train_count" in source
+    assert "exact_slates_already_settled_before = (" in source
+    assert "target in before_finalized" in source
+    assert "target in before_processed" in source
+    assert "repair in before_finalized" in source
+    assert "repair in before_processed" in source
+    assert "numeric_progress_satisfied = (" in source
+    assert "assert accepted >= before_accepted" in source
+    assert "assert train_count >= before_train_count" in source
+    assert "assert numeric_progress_satisfied" in source
+    assert "assert accepted > before_accepted, proof" not in source
+    assert "assert train_count > before_train_count, proof" not in source
     assert "repair in finalized" in source
     assert "repair in processed" in source
     assert "before.get('champion') == status.get('champion')" in source
