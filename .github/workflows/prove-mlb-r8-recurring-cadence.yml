@@ -1,0 +1,330 @@
+name: Prove MLB R8 recurring cadence
+run-name: Prove MLB R8 recurring cadence ${{ github.run_id }}
+
+"on":
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/prove-mlb-r8-recurring-cadence.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-r8-recurring-cadence-proof
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  MLB_ROOT_STACK: parlay-platform-dev
+  EXPECTED_EXPERIMENT_ID: mlb-v2-2026-08-31-historical-live-r8
+  EXPECTED_RELEASE_CUTOFF_UTC: '2026-08-31T04:00:00+00:00'
+  MAX_SELECTION_HEARTBEAT_AGE_SECONDS: '1200'
+
+jobs:
+  prove-recurring-cadence:
+    concurrency:
+      group: parlay-platform-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact cadence proof
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve the deployed R8 trainer
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-r8-cadence/rules
+          TRAINER_FN="$(aws cloudformation describe-stack-resource \
+            --stack-name "$MLB_ROOT_STACK" \
+            --logical-resource-id MLBMLTrainingFunction \
+            --region "$AWS_REGION" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)"
+          test -n "$TRAINER_FN"
+          test "$TRAINER_FN" != "None"
+          TRAINER_ARN="$(aws lambda get-function \
+            --function-name "$TRAINER_FN" \
+            --region "$AWS_REGION" \
+            --query 'Configuration.FunctionArn' \
+            --output text)"
+          test -n "$TRAINER_ARN"
+          test "$TRAINER_ARN" != "None"
+          echo "TRAINER_FN=$TRAINER_FN" >> "$GITHUB_ENV"
+          echo "TRAINER_ARN=$TRAINER_ARN" >> "$GITHUB_ENV"
+          aws lambda get-function-configuration \
+            --function-name "$TRAINER_FN" \
+            --region "$AWS_REGION" \
+            --output json > /tmp/mlb-r8-cadence/trainer-config.json
+
+      - name: Prove enabled EventBridge owners and exact targets
+        run: |
+          set -euo pipefail
+          aws events list-rule-names-by-target \
+            --target-arn "$TRAINER_ARN" \
+            --region "$AWS_REGION" \
+            --output json > /tmp/mlb-r8-cadence/rule-names.json
+          python - <<'PY' > /tmp/mlb-r8-cadence/rule-names.txt
+          import json
+          from pathlib import Path
+
+          value = json.loads(
+              Path('/tmp/mlb-r8-cadence/rule-names.json').read_text()
+          )
+          for name in value.get('RuleNames') or []:
+              print(name)
+          PY
+          index=0
+          while IFS= read -r rule_name; do
+            test -n "$rule_name"
+            index=$((index + 1))
+            aws events describe-rule \
+              --name "$rule_name" \
+              --region "$AWS_REGION" \
+              --output json > "/tmp/mlb-r8-cadence/rules/${index}-rule.json"
+            aws events list-targets-by-rule \
+              --rule "$rule_name" \
+              --region "$AWS_REGION" \
+              --output json > "/tmp/mlb-r8-cadence/rules/${index}-targets.json"
+          done < /tmp/mlb-r8-cadence/rule-names.txt
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          trainer_arn = os.environ['TRAINER_ARN']
+          expected = {
+              'training': {
+                  'scheduleExpression': 'cron(11 1/6 * * ? *)',
+                  'input': {
+                      'sport': 'mlb',
+                      'mode': 'scheduled',
+                      'run': 'aws_native_fixed_prospective_shadow_training',
+                  },
+              },
+              'selectionCapture': {
+                  'scheduleExpression': 'cron(4/15 * * * ? *)',
+                  'input': {
+                      'sport': 'mlb',
+                      'mode': 'selection_capture',
+                      'run': 'aws_native_prospective_selection_capture',
+                  },
+              },
+          }
+          observed = []
+          rule_files = sorted(
+              Path('/tmp/mlb-r8-cadence/rules').glob('*-rule.json')
+          )
+          for rule_path in rule_files:
+              prefix = rule_path.name.removesuffix('-rule.json')
+              targets_path = (
+                  Path('/tmp/mlb-r8-cadence/rules')
+                  / f'{prefix}-targets.json'
+              )
+              rule = json.loads(rule_path.read_text())
+              targets = json.loads(targets_path.read_text()).get('Targets') or []
+              for target in targets:
+                  raw_input = target.get('Input')
+                  try:
+                      parsed_input = json.loads(raw_input) if raw_input else None
+                  except json.JSONDecodeError:
+                      parsed_input = None
+                  observed.append(
+                      {
+                          'ruleName': rule.get('Name'),
+                          'ruleArn': rule.get('Arn'),
+                          'state': rule.get('State'),
+                          'scheduleExpression': rule.get('ScheduleExpression'),
+                          'targetArn': target.get('Arn'),
+                          'targetId': target.get('Id'),
+                          'input': parsed_input,
+                      }
+                  )
+          matches = {}
+          for owner, contract in expected.items():
+              matches[owner] = [
+                  value
+                  for value in observed
+                  if value.get('state') == 'ENABLED'
+                  and value.get('scheduleExpression')
+                  == contract['scheduleExpression']
+                  and value.get('targetArn') == trainer_arn
+                  and value.get('input') == contract['input']
+              ]
+          proof = {
+              'ok': all(len(values) == 1 for values in matches.values()),
+              'trainerArn': trainer_arn,
+              'observedTargetCount': len(observed),
+              'matches': matches,
+              'observed': observed,
+          }
+          Path('/tmp/mlb-r8-cadence/eventbridge-proof.json').write_text(
+              json.dumps(proof, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(proof, indent=2, sort_keys=True))
+          assert proof['ok'] is True, proof
+          PY
+
+      - name: Capture current R8 runtime status
+        run: |
+          set -euo pipefail
+          aws lambda invoke \
+            --function-name "$TRAINER_FN" \
+            --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"sport":"mlb","mode":"status"}' \
+            /tmp/mlb-r8-cadence/status.json \
+            > /tmp/mlb-r8-cadence/status-invocation.json
+
+      - name: Prove fresh AWS-native selection heartbeat and trained state
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          invocation = json.loads(
+              Path('/tmp/mlb-r8-cadence/status-invocation.json').read_text()
+          )
+          status = json.loads(
+              Path('/tmp/mlb-r8-cadence/status.json').read_text()
+          )
+          latest = status.get('latestStatus') or {}
+          selection = status.get('latestSelectionCaptureStatus') or {}
+          training_health = status.get('trainingHealth') or {}
+          selection_health = status.get('selectionCaptureHealth') or {}
+          counts = latest.get('partitionCounts') or (
+              (latest.get('milestones') or {}).get('counts') or {}
+          )
+          created_raw = str(selection.get('createdAtUtc') or '')
+          created_at = datetime.fromisoformat(
+              created_raw.replace('Z', '+00:00')
+          )
+          age_seconds = max(
+              0.0,
+              (datetime.now(timezone.utc) - created_at).total_seconds(),
+          )
+          max_age = int(os.environ['MAX_SELECTION_HEARTBEAT_AGE_SECONDS'])
+          selection_capture = selection.get('selectionCapture') or {}
+          authority_fields = {
+              'automaticPromotionEnabled': latest.get(
+                  'automaticPromotionEnabled'
+              ),
+              'championChanged': latest.get('championChanged'),
+              'liveInferenceAuthority': latest.get(
+                  'liveInferenceAuthority'
+              ),
+              'productionAuthorityChanged': latest.get(
+                  'productionAuthorityChanged'
+              ),
+              'immutablePredictionRewriteAllowed': latest.get(
+                  'immutablePredictionRewriteAllowed'
+              ),
+              'postStartPredictionCreationAllowed': latest.get(
+                  'postStartPredictionCreationAllowed'
+              ),
+              'otherSportChanged': latest.get('otherSportChanged'),
+          }
+          proof = {
+              'ok': (
+                  int(invocation.get('StatusCode') or 0) == 200
+                  and not invocation.get('FunctionError')
+                  and status.get('experimentId')
+                  == os.environ['EXPECTED_EXPERIMENT_ID']
+                  and status.get('releaseCutoffUtc')
+                  == os.environ['EXPECTED_RELEASE_CUTOFF_UTC']
+                  and latest.get('experimentId')
+                  == os.environ['EXPECTED_EXPERIMENT_ID']
+                  and latest.get('ok') is True
+                  and latest.get('modelTrained') is True
+                  and int(latest.get('acceptedRowCount') or 0) >= 495
+                  and int(latest.get('rejectedRowCount') or 0) == 0
+                  and int(counts.get('train') or 0) >= 300
+                  and int(counts.get('validation') or 0) >= 100
+                  and int(counts.get('prospectiveTest') or 0) == 0
+                  and training_health.get('ok') is True
+                  and training_health.get('deploymentIdentityMatches')
+                  is True
+                  and selection.get('experimentId')
+                  == os.environ['EXPECTED_EXPERIMENT_ID']
+                  and selection.get('ok') is True
+                  and selection.get('executionMode') == 'selection_capture'
+                  and selection.get('requestRun')
+                  == 'aws_native_prospective_selection_capture'
+                  and selection.get('status')
+                  == 'PROSPECTIVE_SELECTION_CAPTURE_COMPLETE'
+                  and selection_capture.get('ok') is True
+                  and not (selection_capture.get('errors') or [])
+                  and selection_health.get('ok') is True
+                  and selection_health.get('deploymentIdentityMatches')
+                  is True
+                  and age_seconds <= max_age
+                  and all(value is False for value in authority_fields.values())
+              ),
+              'experimentId': status.get('experimentId'),
+              'releaseCutoffUtc': status.get('releaseCutoffUtc'),
+              'trainerStatus': latest.get('status'),
+              'trainingRunId': latest.get('runId'),
+              'acceptedRowCount': latest.get('acceptedRowCount'),
+              'rejectedRowCount': latest.get('rejectedRowCount'),
+              'partitionCounts': counts,
+              'modelTrained': latest.get('modelTrained'),
+              'processedThroughSlateDate': (
+                  (latest.get('canonicalSlateContinuity') or {}).get(
+                      'processedThroughSlateDate'
+                  )
+              ),
+              'selectionRunId': selection.get('runId'),
+              'selectionRequestRun': selection.get('requestRun'),
+              'selectionStatus': selection.get('status'),
+              'selectionCreatedAtUtc': created_raw,
+              'selectionHeartbeatAgeSeconds': round(age_seconds, 3),
+              'selectionCapture': selection_capture,
+              'trainingHealth': {
+                  'ok': training_health.get('ok'),
+                  'ageSeconds': training_health.get('ageSeconds'),
+                  'deploymentIdentityMatches': training_health.get(
+                      'deploymentIdentityMatches'
+                  ),
+                  'errors': training_health.get('errors') or [],
+              },
+              'selectionCaptureHealth': {
+                  'ok': selection_health.get('ok'),
+                  'ageSeconds': selection_health.get('ageSeconds'),
+                  'deploymentIdentityMatches': selection_health.get(
+                      'deploymentIdentityMatches'
+                  ),
+                  'errors': selection_health.get('errors') or [],
+              },
+              'authorityFields': authority_fields,
+          }
+          Path('/tmp/mlb-r8-cadence/runtime-cadence-proof.json').write_text(
+              json.dumps(proof, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(proof, indent=2, sort_keys=True))
+          assert proof['ok'] is True, proof
+          PY
+
+      - name: Upload recurring cadence proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-r8-recurring-cadence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/mlb-r8-cadence
+          if-no-files-found: error
+          retention-days: 90
