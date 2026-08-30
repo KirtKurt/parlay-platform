@@ -760,14 +760,28 @@ def _terminal_outcome_manifest_game_errors(
     )
     if str(item.get("slate_date") or "") != str(slate):
         errors.append("terminal_manifest_slate_mismatch")
-    if str(item.get("game_identity") or "") != expected_identity:
-        errors.append("terminal_manifest_game_identity_mismatch")
-    if str(item.get("game_id") or "") != expected_game_id:
-        errors.append("terminal_manifest_game_id_mismatch")
+    observed_official_pk = str(item.get("officialGamePk") or "")
+    terminal_official_pk_exact = bool(
+        expected_official_pk
+        and observed_official_pk == expected_official_pk
+    )
+    # MLB StatsAPI gamePk is the durable official game identity. Historical
+    # terminal rows can retain a pre-rebind provider alias in game_id /
+    # game_identity after the manifest moved to the canonical StatsAPI ID.
+    # Accept only those alias differences when the immutable official gamePk
+    # is an exact match. Start time, teams, manifest fingerprint, slate and
+    # every other terminal-authority check below remain fail-closed.
     if (
-        not expected_official_pk
-        or str(item.get("officialGamePk") or "") != expected_official_pk
+        not terminal_official_pk_exact
+        and str(item.get("game_identity") or "") != expected_identity
     ):
+        errors.append("terminal_manifest_game_identity_mismatch")
+    if (
+        not terminal_official_pk_exact
+        and str(item.get("game_id") or "") != expected_game_id
+    ):
+        errors.append("terminal_manifest_game_id_mismatch")
+    if not terminal_official_pk_exact:
         errors.append("terminal_manifest_official_game_pk_mismatch")
 
     expected_start = _strict_utc_instant(
