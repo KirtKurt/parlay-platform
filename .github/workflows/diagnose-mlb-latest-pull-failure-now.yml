@@ -51,22 +51,33 @@ jobs:
               LogicalResourceId='MLBAuditedPullFunction',
           )['StackResourceDetail']
           fn=res['PhysicalResourceId']
+          lock_res=cfn.describe_stack_resource(
+              StackName='parlay-platform-dev',
+              LogicalResourceId='MLBDailyPickLockFunction',
+          )['StackResourceDetail']
+          lock_fn=lock_res['PhysicalResourceId']
           logs=boto3.client('logs',region_name=region)
           start=int((datetime.now(timezone.utc)-timedelta(hours=4)).timestamp()*1000)
-          rows=[]; token=None
-          while True:
-              kw={
-                  'logGroupName':f'/aws/lambda/{fn}',
-                  'startTime':start,
-                  'interleaved':True,
-                  'limit':10000,
-              }
-              if token: kw['nextToken']=token
-              r=logs.filter_log_events(**kw)
-              rows.extend(r.get('events') or [])
-              nt=r.get('nextToken')
-              if not nt or nt==token: break
-              token=nt
+
+          def log_rows(function_name):
+              found=[]; token=None
+              while True:
+                  kw={
+                      'logGroupName':f'/aws/lambda/{function_name}',
+                      'startTime':start,
+                      'interleaved':True,
+                      'limit':10000,
+                  }
+                  if token: kw['nextToken']=token
+                  r=logs.filter_log_events(**kw)
+                  found.extend(r.get('events') or [])
+                  nt=r.get('nextToken')
+                  if not nt or nt==token: break
+                  token=nt
+              return found
+
+          rows=log_rows(fn)
+          lock_rows=log_rows(lock_fn)
 
           def redact(value):
               text=str(value or '')
@@ -158,6 +169,56 @@ jobs:
                   'message':redact(row.get('message')),
               })
 
+          request_start={}
+          lock_invocations=[]
+          lock_recent=[]
+          start_re=re.compile(r'^START RequestId:\s*([^\s]+)')
+          report_re=re.compile(
+              r'^REPORT RequestId:\s*([^\s]+).*?Duration:\s*([0-9.]+)\s*ms',
+          )
+          lock_signal=re.compile(
+              r'(?:COOPERATIVE|CURRENT_SLATE|LOCK_EXECUTION|OVERLAPPING|'
+              r'PER_GAME_LOCK|MISSED_LOCK|FAILED|ERROR|Task timed out)',
+              re.IGNORECASE,
+          )
+          for row in sorted(lock_rows,key=lambda item:int(item.get('timestamp') or 0)):
+              timestamp_ms=int(row.get('timestamp') or 0)
+              message=str(row.get('message') or '')
+              start_match=start_re.search(message)
+              if start_match:
+                  request_start[start_match.group(1)]=timestamp_ms
+              report_match=report_re.search(message)
+              if report_match:
+                  request_id=report_match.group(1)
+                  duration_ms=float(report_match.group(2))
+                  report_at=timestamp_ms
+                  started_at=request_start.get(
+                      request_id,
+                      max(0,int(report_at-duration_ms)),
+                  )
+                  lock_invocations.append({
+                      'requestId':request_id,
+                      'startedAtUtc':(
+                          datetime.fromtimestamp(started_at/1000,tz=timezone.utc)
+                          .isoformat().replace('+00:00','Z') if started_at else None
+                      ),
+                      'reportedAtUtc':(
+                          datetime.fromtimestamp(report_at/1000,tz=timezone.utc)
+                          .isoformat().replace('+00:00','Z') if report_at else None
+                      ),
+                      'durationMs':duration_ms,
+                      'report':redact(message),
+                  })
+              if lock_signal.search(message):
+                  lock_recent.append({
+                      'timestampUtc':(
+                          datetime.fromtimestamp(timestamp_ms/1000,tz=timezone.utc)
+                          .isoformat().replace('+00:00','Z') if timestamp_ms else None
+                      ),
+                      'logStreamName':row.get('logStreamName'),
+                      'message':redact(message),
+                  })
+
           streams=[]
           try:
               stream_resp=logs.describe_log_streams(
@@ -180,6 +241,7 @@ jobs:
               'proofType':'MLB_LATEST_SCHEDULED_PULL_FAILURE_DIAGNOSTIC_V2',
               'createdAtUtc':datetime.now(timezone.utc).isoformat().replace('+00:00','Z'),
               'functionName':fn,
+              'dailyLockFunctionName':lock_fn,
               'failureAtUtc':(
                   datetime.fromtimestamp(ts/1000,tz=timezone.utc)
                   .isoformat().replace('+00:00','Z') if ts else None
@@ -202,6 +264,9 @@ jobs:
               'winnerResults':keep,
               'recentLogEvents':recent,
               'recentLogStreams':streams,
+              'dailyLockRawLogEventCount':len(lock_rows),
+              'dailyLockInvocationReports':lock_invocations[-300:],
+              'dailyLockSignalEvents':lock_recent[-300:],
               'secretExposed':False,
           }
           Path('/tmp/mlb_latest_failure.json').write_text(
@@ -211,6 +276,9 @@ jobs:
               'parseableFailureFound':report['parseableFailureFound'],
               'parseableFailureCount':report['parseableFailureCount'],
               'rawLogEventCount':report['rawLogEventCount'],
+              'dailyLockRawLogEventCount':report['dailyLockRawLogEventCount'],
+              'dailyLockInvocationReportCount':len(report['dailyLockInvocationReports']),
+              'dailyLockSignalEventCount':len(report['dailyLockSignalEvents']),
               'failureAtUtc':report['failureAtUtc'],
               'candidatePersistenceFailures':report['candidatePersistenceFailures'],
               'readOnly':True,
