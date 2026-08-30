@@ -3926,6 +3926,12 @@ def _run_cooperative_terminal_chunk_impl(
                     not isinstance(atomic_proof, dict)
                     or atomic_proof.get("ok") is not True
                     or atomic_proof.get("atomicSnapshot") is not True
+                    or atomic_proof.get(
+                        "fullDependencyStrongReadVerified"
+                    ) is not True
+                    or atomic_proof.get(
+                        "immutableDependencyBindingsVerified"
+                    ) is not True
                     or _strict_chunk_integer(
                         atomic_proof.get("itemCount"),
                         "atomic_item_count",
@@ -3978,6 +3984,12 @@ def _run_cooperative_terminal_chunk_impl(
                     "atomicCompletionProof": {
                         "atomicSnapshot": True,
                         "itemCount": expected_atomic_items,
+                        "atomicAuthorityItemCount": int(
+                            atomic_proof.get("atomicAuthorityItemCount")
+                            or 0
+                        ),
+                        "fullDependencyStrongReadVerified": True,
+                        "immutableDependencyBindingsVerified": True,
                         "maxItemCount": (
                             COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS
                         ),
