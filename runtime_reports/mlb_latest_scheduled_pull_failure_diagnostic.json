@@ -44,23 +44,9 @@
     "v2RemediationPresent": true,
     "v2RemediationVersion": "MLB-COOPERATIVE-PRELOCK-CANDIDATE-REVIEW-REMEDIATION-v2-one-shot-installed-runtime-proof"
   },
-  "createdAtUtc": "2026-08-30T03:54:49.897530Z",
+  "createdAtUtc": "2026-08-30T03:57:02.520128Z",
   "dailyLockFunctionName": "parlay-platform-dev-MLBDailyPickLockFunction-BQIhMFw1k5YP",
   "dailyLockInvocationReports": [
-    {
-      "durationMs": 36.62,
-      "report": "REPORT RequestId: ded3cb87-6ce8-4b21-99a6-71a9d378f71e\tDuration: 36.62 ms\tBilled Duration: 37 ms\tMemory Size: 1024 MB\tMax Memory Used: 118 MB\t\n",
-      "reportedAtUtc": "2026-08-29T23:55:16.349000Z",
-      "requestId": "ded3cb87-6ce8-4b21-99a6-71a9d378f71e",
-      "startedAtUtc": "2026-08-29T23:55:16.312000Z"
-    },
-    {
-      "durationMs": 11.55,
-      "report": "REPORT RequestId: 32c5a73b-e51d-42e3-a743-b6ba63cde926\tDuration: 11.55 ms\tBilled Duration: 12 ms\tMemory Size: 1024 MB\tMax Memory Used: 118 MB\t\n",
-      "reportedAtUtc": "2026-08-29T23:56:16.305000Z",
-      "requestId": "32c5a73b-e51d-42e3-a743-b6ba63cde926",
-      "startedAtUtc": "2026-08-29T23:56:16.293000Z"
-    },
     {
       "durationMs": 11.34,
       "report": "REPORT RequestId: 0b9198dc-98d0-41e7-9355-f6a7f3cbe427\tDuration: 11.34 ms\tBilled Duration: 12 ms\tMemory Size: 1024 MB\tMax Memory Used: 118 MB\t\n",
@@ -1992,6 +1978,20 @@
       "reportedAtUtc": "2026-08-30T03:53:16.294000Z",
       "requestId": "1ea34a1a-5b76-42fa-99e6-96d3c320300c",
       "startedAtUtc": "2026-08-30T03:53:16.281000Z"
+    },
+    {
+      "durationMs": 38.34,
+      "report": "REPORT RequestId: 0e40ee77-9298-4c9d-9d19-57c1a1b77ae3\tDuration: 38.34 ms\tBilled Duration: 1142 ms\tMemory Size: 1024 MB\tMax Memory Used: 119 MB\tInit Duration: 1102.73 ms\t\n",
+      "reportedAtUtc": "2026-08-30T03:55:17.574000Z",
+      "requestId": "0e40ee77-9298-4c9d-9d19-57c1a1b77ae3",
+      "startedAtUtc": "2026-08-30T03:55:17.535000Z"
+    },
+    {
+      "durationMs": 11.68,
+      "report": "REPORT RequestId: ac8cd743-c4f6-4ba4-97f1-c7b87d6eb77d\tDuration: 11.68 ms\tBilled Duration: 12 ms\tMemory Size: 1024 MB\tMax Memory Used: 119 MB\t\n",
+      "reportedAtUtc": "2026-08-30T03:56:16.453000Z",
+      "requestId": "ac8cd743-c4f6-4ba4-97f1-c7b87d6eb77d",
+      "startedAtUtc": "2026-08-30T03:56:16.441000Z"
     }
   ],
   "dailyLockRawLogEventCount": 857,
@@ -2003,15 +2003,15 @@
     }
   ],
   "executionLeaseState": {
-    "active": false,
+    "active": true,
     "errorCode": null,
     "executionMode": "scheduled",
-    "expiresAtUtc": "2026-08-30T03:53:16.342104+00:00",
+    "expiresAtUtc": "2026-08-30T04:10:16.364527+00:00",
     "leaseVersion": "MLB-LOCK-EXECUTION-LEASE-v1",
     "ownerPresent": true,
     "readOk": true,
     "recordPresent": true,
-    "remainingSeconds": 0,
+    "remainingSeconds": 809,
     "slateDateEt": "2026-08-29"
   },
   "failureAtUtc": null,
@@ -2027,7 +2027,7 @@
   "proofType": "MLB_LATEST_SCHEDULED_PULL_FAILURE_DIAGNOSTIC_V2",
   "providerManifestBound": null,
   "providerScheduleManifestComplete": null,
-  "rawLogEventCount": 223,
+  "rawLogEventCount": 224,
   "readOnly": true,
   "recentLogEvents": [
     {
@@ -3144,9 +3144,20 @@
       "logStreamName": "2026/08/30/[$LATEST]02ad11c6d7fc41618cfed33a08efafba",
       "message": "REPORT RequestId: 2c37e181-ab6b-4998-936b-1a3d9e9686d1\tDuration: 292423.81 ms\tBilled Duration: 293418 ms\tMemory Size: 2048 MB\tMax Memory Used: 212 MB\tInit Duration: 993.66 ms\t\n",
       "timestampUtc": "2026-08-30T03:50:18.893000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]264b4b1ef9dc428b99589b3be5deb457",
+      "message": "INIT_START Runtime Version: python:3.11.mainlinev2.v31\tRuntime Version ARN: arn:aws:lambda:us-east-1::runtime:393e50a9c278329bf9672cf2702d851f3d3678eead7c8dbe43ff2d33d6c8d6af\n",
+      "timestampUtc": "2026-08-30T03:54:58.158000Z"
     }
   ],
   "recentLogStreams": [
+    {
+      "firstEventTimestamp": 1788062098158,
+      "lastEventTimestamp": 1788062098158,
+      "lastIngestionTime": 1788062100194,
+      "logStreamName": "2026/08/30/[$LATEST]264b4b1ef9dc428b99589b3be5deb457"
+    },
     {
       "firstEventTimestamp": 1788061525471,
       "lastEventTimestamp": 1788061526468,
@@ -3440,12 +3451,6 @@
       "lastEventTimestamp": 1788019320604,
       "lastIngestionTime": 1788019329623,
       "logStreamName": "2026/08/29/[$LATEST]c951575ce8e24245ae607a4b334a0aeb"
-    },
-    {
-      "firstEventTimestamp": 1788018325389,
-      "lastEventTimestamp": 1788018403044,
-      "lastIngestionTime": 1788018412060,
-      "logStreamName": "2026/08/29/[$LATEST]1d8ab6fde4984e4584e829b437ac2430"
     }
   ],
   "secretExposed": false,
