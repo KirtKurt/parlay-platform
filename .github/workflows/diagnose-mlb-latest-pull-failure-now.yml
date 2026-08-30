@@ -56,6 +56,118 @@ jobs:
               LogicalResourceId='MLBDailyPickLockFunction',
           )['StackResourceDetail']
           lock_fn=lock_res['PhysicalResourceId']
+          lock_config=boto3.client(
+              'lambda',region_name=region,
+          ).get_function_configuration(FunctionName=lock_fn)
+          snapshots_table=str(
+              ((lock_config.get('Environment') or {}).get('Variables') or {})
+              .get('SNAPSHOTS_TABLE') or ''
+          ).strip()
+          cooperative_state={
+              'readOk':False,
+              'recordPresent':False,
+              'errorCode':'SNAPSHOTS_TABLE_NOT_CONFIGURED',
+          }
+          if snapshots_table:
+              try:
+                  item=(
+                      boto3.resource('dynamodb',region_name=region)
+                      .Table(snapshots_table)
+                      .get_item(
+                          Key={
+                              'PK':'MLB_LOCK_EXECUTION#V1',
+                              'SK':'COOPERATIVE_TERMINAL_REPLAY#V1',
+                          },
+                          ConsistentRead=True,
+                      )
+                      .get('Item')
+                  )
+                  if not isinstance(item,dict):
+                      cooperative_state={
+                          'readOk':True,
+                          'recordPresent':False,
+                          'errorCode':None,
+                      }
+                  else:
+                      progress=item.get('terminal_replay_progress')
+                      progress=progress if isinstance(progress,dict) else {}
+                      attempt=progress.get('lastAttempt')
+                      attempt=attempt if isinstance(attempt,dict) else {}
+                      claim_expiry=int(item.get('claim_expires_at_epoch') or 0)
+                      now_epoch=int(datetime.now(timezone.utc).timestamp())
+                      marker=item.get(
+                          'prelock_candidate_review_remediation_v2'
+                      )
+                      marker=marker if isinstance(marker,dict) else {}
+                      history=item.get(
+                          'prelock_candidate_review_remediation_v2_history'
+                      )
+                      cooperative_state={
+                          'readOk':True,
+                          'recordPresent':True,
+                          'errorCode':None,
+                          'state':str(item.get('state') or ''),
+                          'slateDateEt':str(item.get('slate_date_et') or ''),
+                          'requestIdentityPresent':bool(
+                              str(item.get('request_id') or '').strip()
+                              and int(item.get('requested_at_epoch') or 0)>0
+                          ),
+                          'claimPresent':bool(
+                              str(item.get('claim_owner') or '').strip()
+                          ),
+                          'claimExpired':bool(
+                              claim_expiry and claim_expiry<=now_epoch
+                          ),
+                          'claimRemainingSeconds':max(
+                              0,claim_expiry-now_epoch
+                          ) if claim_expiry else 0,
+                          'v2RemediationPresent':bool(marker),
+                          'v2RemediationVersion':str(
+                              marker.get('version') or ''
+                          ),
+                          'v2OneShot':marker.get('oneShot') is True,
+                          'v2AppliedAtUtc':str(
+                              marker.get('appliedAtUtc') or ''
+                          ),
+                          'v2DurableHistoryPresent':isinstance(history,dict),
+                          'replayReceiptPresent':isinstance(
+                              item.get('replay_receipt'),dict
+                          ),
+                          'lastChunkStage':str(
+                              item.get('last_chunk_stage') or ''
+                          ),
+                          'lastChunkStatus':str(
+                              item.get('last_chunk_status') or ''
+                          ),
+                          'progress':{
+                              key:progress.get(key)
+                              for key in (
+                                  'version','phase','manifestGameCount',
+                                  'nextGameIndex','processedGameCount',
+                                  'terminalCount','canonicalCount',
+                                  'noPredictionDataCount',
+                                  'missedLockValidPrelockQuarantineCount',
+                                  'reconciledCount','verificationIndex',
+                                  'verificationComplete',
+                                  'verifiedGameCount','attemptCount',
+                                  'updatedAtUtc',
+                              )
+                              if key in progress
+                          },
+                          'lastAttempt':{
+                              key:attempt.get(key)
+                              for key in (
+                                  'gameIndex','stage','status','errorCode','atUtc'
+                              )
+                              if key in attempt
+                          },
+                      }
+              except Exception as exc:
+                  cooperative_state={
+                      'readOk':False,
+                      'recordPresent':False,
+                      'errorCode':type(exc).__name__,
+                  }
           logs=boto3.client('logs',region_name=region)
           start=int((datetime.now(timezone.utc)-timedelta(hours=4)).timestamp()*1000)
 
@@ -267,6 +379,7 @@ jobs:
               'dailyLockRawLogEventCount':len(lock_rows),
               'dailyLockInvocationReports':lock_invocations[-300:],
               'dailyLockSignalEvents':lock_recent[-300:],
+              'cooperativeReplayState':cooperative_state,
               'secretExposed':False,
           }
           Path('/tmp/mlb_latest_failure.json').write_text(
@@ -281,6 +394,7 @@ jobs:
               'dailyLockSignalEventCount':len(report['dailyLockSignalEvents']),
               'failureAtUtc':report['failureAtUtc'],
               'candidatePersistenceFailures':report['candidatePersistenceFailures'],
+              'cooperativeReplayState':report['cooperativeReplayState'],
               'readOnly':True,
           },indent=2,default=str))
           PY
