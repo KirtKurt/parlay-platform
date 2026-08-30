@@ -1236,6 +1236,9 @@ def _load_handler(
     daily_lock.validate_cooperative_terminal_completion_checkpoint = (
         COOPERATIVE_REPAIR._validated_cooperative_terminal_complete_checkpoint
     )
+    daily_lock.normalize_cooperative_terminal_completion_checkpoint = (
+        COOPERATIVE_REPAIR._cooperative_terminal_ddb_normalized
+    )
     daily_lock.validate_cooperative_terminal_completion_handoff = (
         lambda **kwargs: (
             COOPERATIVE_REPAIR._validate_cooperative_terminal_completion_handoff(
@@ -5567,6 +5570,30 @@ def test_completion_ambiguity_accepts_only_exact_committed_ack():
         assert receipt["manifestFingerprint"] == (
             checkpoint["manifestFingerprint"]
         )
+
+
+def test_completion_boundary_accepts_ddb_wrapped_checkpoint_numbers():
+    table = FakeLeaseTable()
+    with _load_handler(lease_table=table) as (handler, _, _):
+        claimed, checkpoint, response = _claimed_completion_fixture(
+            handler, table
+        )
+        persisted = _ddb_number_wrapped(checkpoint)
+        claimed["terminal_replay_progress"] = copy.deepcopy(persisted)
+        table.queue_item["terminal_replay_progress"] = copy.deepcopy(
+            persisted
+        )
+
+        completed = handler._complete_cooperative_replay(
+            item=claimed,
+            owner="completion-owner",
+            response=response,
+        )
+
+    assert completed["state"] == "COMPLETED"
+    assert table.queue_item["state"] == "COMPLETED"
+    assert table.queue_item["terminal_replay_progress"] == persisted
+    assert table.queue_item["replay_receipt"]["ok"] is True
 
 
 def test_completion_ambiguity_rejects_same_slate_replacement_completed_row():
