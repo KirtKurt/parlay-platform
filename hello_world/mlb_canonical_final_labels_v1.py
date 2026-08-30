@@ -397,6 +397,7 @@ def _validated_canonical_locks(
     )
     rows: List[Dict[str, Any]] = []
     rejected: List[Dict[str, Any]] = []
+    skipped_labeled: List[Dict[str, Any]] = []
     for item in items:
         data = item.get("data") if isinstance(item.get("data"), dict) else {}
         errors = rolling_audit._canonical_lock_item_errors(item, slate_date)
@@ -1423,12 +1424,24 @@ def load_canonical_locked_rows_without_labels(
                 if key in locked
             ]
             labels_at_lock = vector.get("labels") or {}
+            if official_pk in labels:
+                # A settled game is no longer a selection candidate. Exclude it
+                # without failing the independent heartbeat for later games.
+                skipped_labeled.append(
+                    {
+                        "slateDateEt": slate,
+                        "officialGamePk": official_pk,
+                        "reason": "official_label_already_present",
+                    }
+                )
+                continue
             if (
-                official_pk in labels
-                or forbidden
+                forbidden
                 or labels_at_lock.get("homeWon") is not None
                 or labels_at_lock.get("pickCorrect") is not None
             ):
+                # Outcome material embedded in an immutable lock remains a
+                # fail-closed integrity error and is never exposed for scoring.
                 rejected.append(
                     {
                         "slateDateEt": slate,
@@ -1472,7 +1485,9 @@ def load_canonical_locked_rows_without_labels(
         "rows": rows,
         "rowCount": len(rows),
         "rejected": rejected,
-        "policy": "Shadow selection may read immutable T-45 vectors before labels exist; it receives no outcome fields and cannot rewrite a lock.",
+        "skippedLabeled": skipped_labeled,
+        "skippedLabeledCount": len(skipped_labeled),
+        "policy": "Shadow selection may read immutable T-45 vectors before labels exist; already-labeled games are excluded independently, no outcome fields are exposed, and locks cannot be rewritten.",
     }
 
 
