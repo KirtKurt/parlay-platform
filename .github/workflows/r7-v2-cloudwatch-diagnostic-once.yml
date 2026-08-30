@@ -1,4 +1,4 @@
-name: R7 protected v2 CloudWatch diagnostic once
+name: R7 protected v2 source diagnostic once
 
 "on":
   push:
@@ -9,13 +9,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: r7-protected-v2-cloudwatch-diagnostic-once
+  group: r7-protected-v2-source-diagnostic-once
   cancel-in-progress: false
 
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,144 +23,61 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install diagnostic runtime
-        run: python -m pip install --quiet 'boto3>=1.34,<2'
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-      - name: Read and redact the exact failed invocation logs
-        env:
-          AWS_REGION: us-east-1
-          MLB_ROOT_STACK: parlay-platform-dev
+      - name: Extract exact remediation function and direct helpers
         run: |
           set -euo pipefail
           python - <<'PY'
           from __future__ import annotations
 
+          import ast
           import json
-          import os
-          import re
           from pathlib import Path
 
-          import boto3
-          from botocore.config import Config
-
-          START_MS = 1788051140000
-          END_MS = 1788051200000
-          LOGICAL_ID = 'MLBDailyPickLockFunction'
-          TOKENS = (
-              'error',
-              'exception',
-              'traceback',
-              'task timed out',
-              'prelock',
-              'review',
-              'requeue',
-              'functionerror',
-          )
-
-          region = os.environ['AWS_REGION']
-          stack = os.environ['MLB_ROOT_STACK']
-          config = Config(
-              connect_timeout=10,
-              read_timeout=60,
-              retries={'total_max_attempts': 3, 'mode': 'standard'},
-          )
-          cfn = boto3.client('cloudformation', region_name=region, config=config)
-          logs = boto3.client('logs', region_name=region, config=config)
-          detail = cfn.describe_stack_resource(
-              StackName=stack,
-              LogicalResourceId=LOGICAL_ID,
-          ).get('StackResourceDetail') or {}
-          function_name = str(detail.get('PhysicalResourceId') or '')
-          if not function_name:
-              raise SystemExit('protected lock Lambda could not be resolved')
-          log_group = f'/aws/lambda/{function_name}'
-
-          events = []
-          token = None
-          for _ in range(20):
-              request = {
-                  'logGroupName': log_group,
-                  'startTime': START_MS,
-                  'endTime': END_MS,
-                  'interleaved': True,
-                  'limit': 10000,
-              }
-              if token:
-                  request['nextToken'] = token
-              response = logs.filter_log_events(**request)
-              events.extend(response.get('events') or [])
-              next_token = response.get('nextToken')
-              if not next_token or next_token == token:
-                  break
-              token = next_token
-
-          def sanitize(text: str) -> str:
-              value = text
-              value = re.sub(r'arn:aws:[^\s]+', '<ARN_REDACTED>', value)
-              value = re.sub(r'\b\d{12}\b', '<ACCOUNT_REDACTED>', value)
-              value = re.sub(
-                  r'\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-'
-                  r'[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b',
-                  '<REQUEST_ID_REDACTED>',
-                  value,
-              )
-              value = re.sub(
-                  r'(?i)(aws_access_key_id|aws_secret_access_key|authorization)'
-                  r'\s*[:=]\s*[^\s,;]+',
-                  r'\1=<SECRET_REDACTED>',
-                  value,
-              )
-              return value.rstrip()
-
-          selected = []
-          for event in sorted(events, key=lambda item: int(item.get('timestamp') or 0)):
-              message = str(event.get('message') or '')
-              if any(token in message.lower() for token in TOKENS):
-                  selected.append({
-                      'timestamp': int(event.get('timestamp') or 0),
-                      'message': sanitize(message),
-                  })
-          if not selected:
-              selected = [
-                  {
-                      'timestamp': int(event.get('timestamp') or 0),
-                      'message': sanitize(str(event.get('message') or '')),
-                  }
-                  for event in sorted(
-                      events,
-                      key=lambda item: int(item.get('timestamp') or 0),
-                  )[-80:]
-              ]
-
-          report = {
-              'ok': bool(events),
-              'proofType': 'R7_PROTECTED_V2_CLOUDWATCH_FAILURE_DIAGNOSTIC',
-              'logicalResourceId': LOGICAL_ID,
-              'logGroupRole': 'protected_lock_lambda',
-              'startEpochMs': START_MS,
-              'endEpochMs': END_MS,
-              'eventCount': len(events),
-              'selectedEventCount': len(selected),
-              'events': selected[-200:],
-              'rawPayloadPersisted': False,
-              'secretsRedacted': True,
+          path = Path('hello_world/mlb_daily_pick_lock_protected.py')
+          source = path.read_text(encoding='utf-8')
+          lines = source.splitlines()
+          tree = ast.parse(source)
+          target = '_requeue_prelock_candidate_review_after_installed_runtime_proof_v2'
+          functions = {
+              node.name: node
+              for node in tree.body
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
           }
-          Path('/tmp/r7-v2-cloudwatch-diagnostic.json').write_text(
+          node = functions.get(target)
+          if node is None:
+              raise SystemExit(f'{target} not found')
+          direct_calls = sorted({
+              child.func.id
+              for child in ast.walk(node)
+              if isinstance(child, ast.Call)
+              and isinstance(child.func, ast.Name)
+              and child.func.id.startswith('_')
+          })
+          selected = [target]
+          selected.extend(name for name in direct_calls if name in functions)
+          report = {
+              'proofType': 'R7_PROTECTED_V2_SOURCE_DIAGNOSTIC',
+              'sourcePath': str(path),
+              'functions': {},
+          }
+          for name in selected:
+              current = functions[name]
+              start = current.lineno
+              end = current.end_lineno
+              report['functions'][name] = {
+                  'startLine': start,
+                  'endLine': end,
+                  'source': '\n'.join(lines[start - 1:end]),
+              }
+          print(json.dumps(report, indent=2, sort_keys=True))
+          Path('/tmp/r7-v2-source-diagnostic.json').write_text(
               json.dumps(report, indent=2, sort_keys=True) + '\n',
               encoding='utf-8',
           )
-          print(json.dumps(report, indent=2, sort_keys=True))
-          if not events:
-              raise SystemExit('no CloudWatch events found for failed invocation window')
           PY
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: r7-v2-cloudwatch-diagnostic-${{ github.run_id }}
-          path: /tmp/r7-v2-cloudwatch-diagnostic.json
+          name: r7-v2-source-diagnostic-${{ github.run_id }}
+          path: /tmp/r7-v2-source-diagnostic.json
           if-no-files-found: error
           retention-days: 14
