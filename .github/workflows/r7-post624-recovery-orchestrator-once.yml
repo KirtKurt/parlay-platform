@@ -1,0 +1,47 @@
+name: R7 post-624 recovery orchestrator once
+
+on:
+  push:
+    branches: [ops/r7-post624-recovery-20260829]
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  orchestrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Wait for exact deploy and dispatch recovery
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EXPECTED_DEPLOY_SHA: 893d546af9677ecf869ffa9d2aa689310da40740
+          DEPLOY_RUN_ID: '33289236216'
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 180); do
+            payload="$(gh api "repos/${REPOSITORY}/actions/runs/${DEPLOY_RUN_ID}")"
+            status="$(jq -r '.status' <<<"$payload")"
+            conclusion="$(jq -r '.conclusion // ""' <<<"$payload")"
+            head_sha="$(jq -r '.head_sha' <<<"$payload")"
+            [[ "$head_sha" == "$EXPECTED_DEPLOY_SHA" ]] || exit 1
+            if [[ "$status" == "completed" ]]; then
+              [[ "$conclusion" == "success" ]] || exit 1
+              break
+            fi
+            sleep 20
+          done
+          payload="$(gh api "repos/${REPOSITORY}/actions/runs/${DEPLOY_RUN_ID}")"
+          [[ "$(jq -r '.status' <<<"$payload")" == "completed" ]]
+          [[ "$(jq -r '.conclusion' <<<"$payload")" == "success" ]]
+          request_id="r7-post624-${DEPLOY_RUN_ID}-${EXPECTED_DEPLOY_SHA:0:12}"
+          gh api --method POST \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/${REPOSITORY}/actions/workflows/unified-mlb-learning-recovery-once.yml/dispatches" \
+            -f ref=main \
+            -f "inputs[request_id]=${request_id}" \
+            -f 'inputs[requeue_source_pull_proof_review_after_rebind]=false' \
+            -f 'inputs[requeue_prelock_candidate_review_after_installed_runtime_proof_v2]=false'
+          echo "Dispatched ${request_id}"
