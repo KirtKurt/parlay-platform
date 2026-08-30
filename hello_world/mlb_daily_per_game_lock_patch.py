@@ -98,6 +98,12 @@ _STATUS_READ_CACHE: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
     "inqsi_mlb_lock_status_request_read_cache",
     default=None,
 )
+_WRITER_IMMUTABLE_READ_CACHE: ContextVar[Optional[Dict[Any, Any]]] = (
+    ContextVar(
+        "inqsi_mlb_lock_writer_immutable_read_cache",
+        default=None,
+    )
+)
 # Cooperative historical terminal repair may inspect a large pull history, but
 # it must never translate provider-ID churn into unbounded DynamoDB query
 # fanout.  The ContextVar is unset for ordinary lock traffic and set only by
@@ -154,6 +160,45 @@ def _status_item_cache_key(table: Any, key: Dict[str, str]) -> Tuple[Any, ...]:
         str(key.get("PK") or ""),
         str(key.get("SK") or ""),
     )
+
+
+def _writer_cacheable_immutable_item(
+    item: Dict[str, Any],
+    key: Dict[str, str],
+) -> bool:
+    """Allow only exact, present write-once dependencies in writer cache.
+
+    Mutable stages, terminal outcomes, canonical predictions, daily cards,
+    diagnostics, leases, and every absent key are intentionally excluded.
+    """
+    pk = str(key.get("PK") or "")
+    sk = str(key.get("SK") or "")
+    if item.get("PK") != pk or item.get("SK") != sk:
+        return False
+    record_type = str(item.get("record_type") or "")
+    if record_type == history_contract.PROVIDER_MANIFEST_RECORD_TYPE:
+        return bool(
+            item.get("write_once") is True
+            and pk.startswith("PROVIDER_MANIFEST#mlb#")
+            and sk.startswith("OBSERVED#")
+            and "#PULL#" in sk
+        )
+    if record_type == PREGAME_SNAPSHOT_RECORD_TYPE:
+        return bool(
+            item.get("immutable_pregame") is True
+            and item.get("write_once") is True
+            and pk.startswith("GAME_WINNERS#mlb#")
+            and sk.startswith("PREGAME#GAME#")
+        )
+    if record_type == "pull_run":
+        data = item.get("data") or {}
+        return bool(
+            isinstance(data, dict)
+            and str(data.get("sport") or item.get("sport") or "") == "mlb"
+            and pk.startswith("PULLS#mlb#")
+            and sk.startswith("PULL#")
+        )
+    return False
 
 
 def _status_cached_item(
@@ -1116,6 +1161,49 @@ def _scheduled_lifecycle_timing(
         "closesAtUtc": last_action.isoformat(),
         "nextCheckpointAtUtc": next_checkpoint.isoformat() if next_checkpoint else None,
     }
+
+
+def _crossed_scheduled_prelock_boundary(
+    module: Any,
+    manifest: List[Dict[str, Any]],
+    evaluated_from: datetime,
+    evaluated_through: datetime,
+) -> bool:
+    """Return whether a progress read spanned a readiness or lock boundary."""
+    if evaluated_through <= evaluated_from:
+        return False
+    checkpoint_minutes = {
+        *READINESS_CHECKPOINT_MINUTES,
+        REQUIRED_LOCK_MINUTES,
+    }
+    for game in manifest:
+        start = _start(module, game)
+        if start is None:
+            continue
+        for minutes in checkpoint_minutes:
+            boundary = start - timedelta(minutes=minutes)
+            if evaluated_from < boundary <= evaluated_through:
+                return True
+    return False
+
+
+def _scheduled_cutoff_priority_active(
+    module: Any,
+    manifest: List[Dict[str, Any]],
+    now: datetime,
+) -> bool:
+    """Keep the live lock path ahead of diagnostics near an unresolved cutoff."""
+    priority_horizon = timedelta(seconds=LOCK_EXECUTION_LEASE_SECONDS)
+    for game in manifest:
+        start = _start(module, game)
+        lock_at = _lock_at(module, game)
+        if (
+            start is not None
+            and lock_at is not None
+            and lock_at - priority_horizon <= now < start
+        ):
+            return True
+    return False
 
 
 def _pull_at(module: Any, pull: Dict[str, Any]) -> Optional[datetime]:
@@ -2851,13 +2939,19 @@ def _ensure_playability_assessments(
     manifest: List[Dict[str, Any]],
     stages: Dict[str, Dict[str, Any]],
     now: datetime,
+    *,
+    include_time_checkpoints: bool = True,
 ) -> List[Dict[str, Any]]:
-    errors = _ensure_time_playability_assessments(
-        module,
-        slate,
-        manifest,
-        stages,
-        now,
+    errors = (
+        _ensure_time_playability_assessments(
+            module,
+            slate,
+            manifest,
+            stages,
+            now,
+        )
+        if include_time_checkpoints
+        else []
     )
     for game in manifest:
         stage = stages.get(game_identity(game))
@@ -3087,6 +3181,9 @@ def _consistent_item_result(
         str(key.get("PK") or ""),
         str(key.get("SK") or ""),
     )
+    writer_cache = _WRITER_IMMUTABLE_READ_CACHE.get()
+    if isinstance(writer_cache, dict) and cache_key in writer_cache:
+        return copy.deepcopy(writer_cache[cache_key]), None
     try:
         item = table.get_item(Key=key, ConsistentRead=True).get("Item")
     except Exception as exc:
@@ -3101,6 +3198,13 @@ def _consistent_item_result(
     if isinstance(item_cache, dict):
         # Authority rows reached through this helper are write-once.
         item_cache[cache_key] = copy.deepcopy(item)
+    if (
+        isinstance(writer_cache, dict)
+        and _writer_cacheable_immutable_item(item, key)
+    ):
+        # Writer phases cache only present immutable dependencies. Absences and
+        # every key that this invocation may create remain fresh point reads.
+        writer_cache[cache_key] = copy.deepcopy(item)
     return item, None
 
 
@@ -6710,6 +6814,142 @@ def _late_backfill_count(module: Any, stage: Optional[Dict[str, Any]], scoring: 
     return len(current_keys - bound_keys)
 
 
+def _progress_summary(
+    rows: List[Dict[str, Any]],
+    valid_stages: Dict[str, Dict[str, Any]],
+    canonical: Dict[str, Dict[str, Any]],
+    outcomes: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    return {
+        "games": rows,
+        "stages": valid_stages,
+        "canonical": canonical,
+        "outcomes": outcomes,
+        "stagedCount": len(valid_stages),
+        "canonicalCount": len(canonical),
+        "lockedPredictionCount": len(canonical),
+        "lockOutcomeCount": len(canonical) + len(outcomes),
+        "noPredictionDataCount": len([
+            outcome
+            for outcome in outcomes.values()
+            if outcome.get("lock_status") == "LOCKED_NO_PREDICTION_DATA"
+        ]),
+        "missedLockValidPrelockQuarantineCount": len([
+            outcome
+            for outcome in outcomes.values()
+            if outcome.get("lock_status")
+            == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+        ]),
+        "playableCount": len([
+            row for row in rows if row.get("playable") is True
+        ]),
+        "blockedCount": len([
+            row for row in rows if row.get("blocked") is True
+        ]),
+        "trainingEligibleCount": len([
+            row for row in rows if row.get("trainingEligible") is True
+        ]),
+        "playabilityValidationErrorCount": len([
+            row
+            for row in rows
+            if row.get("playabilityAssessmentValidationErrors")
+        ]),
+        "playabilityLifecycleErrorCount": len([
+            row
+            for row in rows
+            if row.get("playabilityAssessmentValidationErrors")
+            or row.get("historicalPlayabilityAssessmentValidationErrors")
+        ]),
+        "pendingCount": len([
+            row
+            for row in rows
+            if row["state"] in {"PENDING", "WAITING_FOR_CUTOFF_STABILIZATION"}
+        ]),
+        "stabilizingCount": len([
+            row
+            for row in rows
+            if row["state"] == "WAITING_FOR_CUTOFF_STABILIZATION"
+        ]),
+        "dueMissingCount": len([
+            row
+            for row in rows
+            if row["state"]
+            in {
+                "DUE_NOT_STAGED",
+                "STAGED_CANONICAL_WRITE_BLOCKED",
+                "INVALID_STAGE_BLOCKED",
+            }
+        ]),
+        "missedCount": len([
+            row for row in rows if row["state"] == "MISSED_NOT_BACKFILLED"
+        ]),
+    }
+
+
+def _reclassify_progress_at(
+    progress: Dict[str, Any],
+    evaluated_at: datetime,
+) -> Dict[str, Any]:
+    """Refresh only clock-dependent states from an already validated snapshot."""
+    rows = copy.deepcopy(progress.get("games") or [])
+    for row in rows:
+        if row.get("state") not in {
+            "PENDING",
+            "WAITING_FOR_CUTOFF_STABILIZATION",
+            "DUE_NOT_STAGED",
+        }:
+            continue
+        start = _parse_iso(row.get("commenceTime"))
+        lock_at = _parse_iso(row.get("scheduledLockAtUtc"))
+        stable_at = _parse_iso(row.get("sourceWindowStableAtUtc")) or lock_at
+        if start is not None and evaluated_at >= start:
+            state = "MISSED_NOT_BACKFILLED"
+        elif lock_at is not None and evaluated_at >= lock_at and (
+            stable_at is None or evaluated_at >= stable_at
+        ):
+            state = "DUE_NOT_STAGED"
+        elif lock_at is not None and evaluated_at >= lock_at:
+            state = "WAITING_FOR_CUTOFF_STABILIZATION"
+        else:
+            state = "PENDING"
+        row["state"] = state
+        row["lockStatus"] = state
+    return _progress_summary(
+        rows,
+        dict(progress.get("stages") or {}),
+        dict(progress.get("canonical") or {}),
+        dict(progress.get("outcomes") or {}),
+    )
+
+
+def _progress_state_boundary_crossed(
+    progress: Dict[str, Any],
+    evaluated_from: datetime,
+    evaluated_through: datetime,
+) -> bool:
+    if evaluated_through <= evaluated_from:
+        return False
+    for row in progress.get("games") or []:
+        if row.get("state") not in {
+            "PENDING",
+            "WAITING_FOR_CUTOFF_STABILIZATION",
+            "DUE_NOT_STAGED",
+        }:
+            continue
+        boundaries = {
+            _parse_iso(row.get("commenceTime")),
+            _parse_iso(row.get("scheduledLockAtUtc")),
+            _parse_iso(row.get("sourceWindowStableAtUtc")),
+        }
+        if any(
+            boundary is not None
+            and evaluated_from < boundary <= evaluated_through
+            for boundary in boundaries
+        ):
+            return True
+    return False
+
+
 def _progress(
     module: Any,
     slate: str,
@@ -6718,6 +6958,7 @@ def _progress(
     now: datetime,
     *,
     ensure_canonical: bool,
+    defer_playability_lifecycle: bool = False,
 ) -> Dict[str, Any]:
     rows: List[Dict[str, Any]] = []
     valid_stages: Dict[str, Dict[str, Any]] = {}
@@ -6804,18 +7045,33 @@ def _progress(
             or stage_row.get("playablePick") is True
             or stage_row.get("actionablePick") is True
         )
-        lifecycle = (
-            _resolved_playability_lifecycle(
-                module,
-                slate,
-                game,
-                stage_row,
-                now,
-                event_pending_required=_doubleheader_game_one(manifest, game) is not None,
-            )
-            if locked_prediction
-            else {}
-        )
+        lifecycle = {}
+        if locked_prediction:
+            if defer_playability_lifecycle:
+                # Selection authority stays immutable while wagering-release
+                # authority remains fail-closed until a later progress view
+                # reads the dedicated lifecycle evidence.
+                lifecycle = {
+                    "playable": False,
+                    "blocked": True,
+                    "status": "DEFERRED_DURING_LIVE_LOCK_PRIORITY",
+                    "reasons": [
+                        "PLAYABILITY_LIFECYCLE_DEFERRED_DURING_LIVE_LOCK_PRIORITY"
+                    ],
+                    "validationErrors": [],
+                    "historicalValidationErrors": [],
+                }
+            else:
+                lifecycle = _resolved_playability_lifecycle(
+                    module,
+                    slate,
+                    game,
+                    stage_row,
+                    now,
+                    event_pending_required=(
+                        _doubleheader_game_one(manifest, game) is not None
+                    ),
+                )
         assessment = lifecycle.get("assessment")
         playable = (
             lifecycle.get("playable") is True
@@ -6901,6 +7157,9 @@ def _progress(
             "releaseBlocked": blocked,
             "wagerReleaseBlocked": blocked,
             "playabilityStatus": lifecycle.get("status") or ("PLAYABLE" if playable else "BLOCKED" if lock_outcome_recorded else "PENDING"),
+            "playabilityLifecycleEvaluated": bool(
+                locked_prediction and not defer_playability_lifecycle
+            ),
             "playabilityBlockReasons": playability_reasons,
             "releaseBlockReasons": playability_reasons,
             "playabilityAssessment": copy.deepcopy(assessment) if assessment else None,
@@ -6925,45 +7184,7 @@ def _progress(
             "lateBackfillPullCount": late_backfill_count,
             "errors": errors,
         })
-    return {
-        "games": rows,
-        "stages": valid_stages,
-        "canonical": canonical,
-        "outcomes": outcomes,
-        "stagedCount": len(valid_stages),
-        "canonicalCount": len(canonical),
-        "lockedPredictionCount": len(canonical),
-        "lockOutcomeCount": len(canonical) + len(outcomes),
-        "noPredictionDataCount": len([
-            outcome
-            for outcome in outcomes.values()
-            if outcome.get("lock_status") == "LOCKED_NO_PREDICTION_DATA"
-        ]),
-        "missedLockValidPrelockQuarantineCount": len([
-            outcome
-            for outcome in outcomes.values()
-            if outcome.get("lock_status")
-            == MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
-        ]),
-        "playableCount": len([row for row in rows if row.get("playable") is True]),
-        "blockedCount": len([row for row in rows if row.get("blocked") is True]),
-        "trainingEligibleCount": len([row for row in rows if row.get("trainingEligible") is True]),
-        "playabilityValidationErrorCount": len([
-            row
-            for row in rows
-            if row.get("playabilityAssessmentValidationErrors")
-        ]),
-        "playabilityLifecycleErrorCount": len([
-            row
-            for row in rows
-            if row.get("playabilityAssessmentValidationErrors")
-            or row.get("historicalPlayabilityAssessmentValidationErrors")
-        ]),
-        "pendingCount": len([row for row in rows if row["state"] in {"PENDING", "WAITING_FOR_CUTOFF_STABILIZATION"}]),
-        "stabilizingCount": len([row for row in rows if row["state"] == "WAITING_FOR_CUTOFF_STABILIZATION"]),
-        "dueMissingCount": len([row for row in rows if row["state"] in {"DUE_NOT_STAGED", "STAGED_CANONICAL_WRITE_BLOCKED", "INVALID_STAGE_BLOCKED"}]),
-        "missedCount": len([row for row in rows if row["state"] == "MISSED_NOT_BACKFILLED"]),
-    }
+    return _progress_summary(rows, valid_stages, canonical, outcomes)
 
 
 def _daily_item(
@@ -7712,14 +7933,16 @@ def apply(module: Any) -> Any:
                 # missing stage is recorded only as MISSED_NOT_BACKFILLED, and
                 # even a valid pre-start stage cannot be promoted to canonical
                 # storage after the game has started.
-                reconciled = _progress(
-                    module,
-                    slate,
-                    pulls,
-                    manifest,
-                    now,
-                    ensure_canonical=False,
-                )
+                with _status_read_scope():
+                    reconciled = _progress(
+                        module,
+                        slate,
+                        pulls,
+                        manifest,
+                        now,
+                        ensure_canonical=False,
+                        defer_playability_lifecycle=True,
+                    )
                 authority_errors = (
                     _daily_authority_errors(
                         module,
@@ -7782,45 +8005,137 @@ def apply(module: Any) -> Any:
                 "lifecycleTiming": lifecycle_timing,
             }
 
+        readiness_pulls = pulls
+        readiness_manifest = manifest
+        crossed_boundary_readiness_allowed = True
+
         def record_lifecycle_diagnostics(
             progress: Dict[str, Any],
             evaluated_at: datetime,
+            *,
+            include_readiness: bool = True,
+            include_playability: bool = True,
         ) -> None:
-            """Best-effort diagnostics that can never interrupt lock writes."""
-            try:
-                lifecycle_diagnostic_errors.extend(
-                    _ensure_readiness_checkpoints(
-                        module,
-                        slate,
-                        pulls,
-                        manifest,
-                        evaluated_at,
-                    )
-                )
-            except Exception as exc:
-                lifecycle_diagnostic_errors.append({
-                    "checkpoint": "READINESS_ALL_GAMES",
-                    "error": f"{type(exc).__name__}:{exc}",
-                })
-            try:
-                lifecycle_diagnostic_errors.extend(
-                    _ensure_playability_assessments(
-                        module,
-                        slate,
-                        manifest,
-                        progress.get("stages") or {},
-                        evaluated_at,
-                    )
-                )
-            except Exception as exc:
-                lifecycle_diagnostic_errors.append({
-                    "checkpoint": "PLAYABILITY_ALL_GAMES",
-                    "error": f"{type(exc).__name__}:{exc}",
-                })
+            """Best-effort lifecycle evidence that cannot interrupt lock writes.
 
-        # Read current authority before any write. Readiness and release
-        # diagnostics run only after the immutable lock path has had its chance.
-        observed = _progress(module, slate, pulls, manifest, now, ensure_canonical=False)
+            T-30/T-15 playability has a dedicated minute-aligned Lambda, so a
+            cutoff-priority owner retains only doubleheader event checkpoints.
+            Missing evidence remains fail-closed in the public resolver.
+            """
+            if include_readiness:
+                if crossed_boundary_readiness_allowed:
+                    try:
+                        lifecycle_diagnostic_errors.extend(
+                            _ensure_readiness_checkpoints(
+                                module,
+                                slate,
+                                readiness_pulls,
+                                readiness_manifest,
+                                evaluated_at,
+                            )
+                        )
+                    except Exception as exc:
+                        lifecycle_diagnostic_errors.append({
+                            "checkpoint": "READINESS_ALL_GAMES",
+                            "error": f"{type(exc).__name__}:{exc}",
+                        })
+            if include_playability:
+                try:
+                    lifecycle_diagnostic_errors.extend(
+                        _ensure_playability_assessments(
+                            module,
+                            slate,
+                            manifest,
+                            progress.get("stages") or {},
+                            evaluated_at,
+                            include_time_checkpoints=not cutoff_priority_active,
+                        )
+                    )
+                except Exception as exc:
+                    lifecycle_diagnostic_errors.append({
+                        "checkpoint": "PLAYABILITY_ALL_GAMES",
+                        "error": f"{type(exc).__name__}:{exc}",
+                    })
+
+        # Read current authority before any write. Lifecycle diagnostics run
+        # only after the immutable lock path has had its chance; the dedicated
+        # playability scheduler owns the time-aligned T-30/T-15 sweep.
+        cutoff_priority_active = bool(
+            scheduled
+            and not force
+            and _scheduled_cutoff_priority_active(module, manifest, now)
+        )
+        with _status_read_scope():
+            observed = _progress(
+                module,
+                slate,
+                pulls,
+                manifest,
+                now,
+                ensure_canonical=False,
+                defer_playability_lifecycle=cutoff_priority_active,
+            )
+        progress_read_finished_at = module._now_utc().astimezone(timezone.utc)
+        progress_reclassified_after_boundary = bool(
+            scheduled
+            and not force
+            and _crossed_scheduled_prelock_boundary(
+                module,
+                manifest,
+                now,
+                progress_read_finished_at,
+            )
+        )
+        if progress_read_finished_at > now:
+            # Authority was fully validated at the original instant. Only its
+            # clock-dependent PENDING/DUE/MISSED classification is recomputed;
+            # repeating all immutable source reads here can exhaust the Lambda
+            # before the first T-45 write.
+            if (
+                progress_reclassified_after_boundary
+                or _progress_state_boundary_crossed(
+                    observed,
+                    now,
+                    progress_read_finished_at,
+                )
+            ):
+                observed = _reclassify_progress_at(
+                    observed,
+                    progress_read_finished_at,
+                )
+            now = progress_read_finished_at
+        if progress_reclassified_after_boundary:
+            try:
+                refreshed_readiness_pulls = sorted(
+                    module._pulls_for_date(slate),
+                    key=lambda pull: _pull_at(module, pull)
+                    or datetime.min.replace(tzinfo=timezone.utc),
+                )
+                refreshed_readiness_manifest = module._latest_games_for_date(
+                    slate,
+                    refreshed_readiness_pulls,
+                )
+                expected_identities = [
+                    game_identity(game) for game in manifest
+                ]
+                refreshed_identities = [
+                    game_identity(game)
+                    for game in refreshed_readiness_manifest
+                ]
+                if refreshed_identities != expected_identities:
+                    raise RuntimeError(
+                        "CROSSED_BOUNDARY_READINESS_MANIFEST_IDENTITY_CHANGED"
+                    )
+                readiness_pulls = refreshed_readiness_pulls
+                readiness_manifest = refreshed_readiness_manifest
+            except Exception as exc:
+                # Never seal an immutable checkpoint from the stale pre-scan
+                # pull snapshot. Missing readiness remains fail-closed.
+                crossed_boundary_readiness_allowed = False
+                lifecycle_diagnostic_errors.append({
+                    "checkpoint": "CROSSED_BOUNDARY_READINESS_REFRESH",
+                    "error": f"{type(exc).__name__}:{exc}",
+                })
         if raw_existing:
             authority_errors = _daily_authority_errors(
                 module,
@@ -7902,6 +8217,7 @@ def apply(module: Any) -> Any:
                 "reason": "ALL_GAME_LOCK_OUTCOMES_RECORDED_WITH_NO_PREDICTION_DATA",
                 "scheduledInvocation": True,
                 "singleProgressSnapshot": True,
+                "progressClockReclassified": progress_reclassified_after_boundary,
                 "perGameLockProgress": observed,
                 "lifecycleDiagnosticErrors": lifecycle_diagnostic_errors,
             }
@@ -7923,6 +8239,7 @@ def apply(module: Any) -> Any:
                 "reason": "PER_GAME_LOCKS_STAGED_WAITING_FOR_REMAINDER",
                 "scheduledInvocation": True,
                 "singleProgressSnapshot": True,
+                "progressClockReclassified": progress_reclassified_after_boundary,
                 "perGameLockProgress": observed,
                 "lifecycleDiagnosticErrors": lifecycle_diagnostic_errors,
             }
@@ -7991,13 +8308,60 @@ def apply(module: Any) -> Any:
             out["lifecycleDiagnosticErrors"] = copy.deepcopy(lifecycle_diagnostic_errors)
             return out
 
+        writer_cache_token = _WRITER_IMMUTABLE_READ_CACHE.set({})
         try:
-            pre = _progress(module, slate, pulls, manifest, now, ensure_canonical=True)
+            defect_states = {
+                str(row.get("state") or "")
+                for row in observed.get("games") or []
+                if str(row.get("state") or "") in _DIAGNOSTIC_STATES
+            }
+            terminal_observation_complete = bool(
+                not defect_states
+                and int(observed.get("lockOutcomeCount") or 0) == len(manifest)
+                and int(observed.get("canonicalCount") or 0) == len(manifest)
+            )
+            reuse_validated_observation = bool(
+                cutoff_priority_active
+                and (
+                    (defect_states and defect_states <= {"DUE_NOT_STAGED"})
+                    or terminal_observation_complete
+                )
+            )
+            pre = (
+                observed
+                if reuse_validated_observation
+                else _progress(
+                    module,
+                    slate,
+                    pulls,
+                    manifest,
+                    now,
+                    ensure_canonical=True,
+                )
+            )
             latest_progress = pre
-            for game_status in pre.get("games") or []:
+            for initial_game_status in list(pre.get("games") or []):
+                current_now = module._now_utc().astimezone(timezone.utc)
+                if current_now > now:
+                    if _progress_state_boundary_crossed(
+                        pre,
+                        now,
+                        current_now,
+                    ):
+                        pre = _reclassify_progress_at(pre, current_now)
+                        latest_progress = pre
+                    now = current_now
+                identity = str(initial_game_status.get("gameIdentity") or "")
+                game_status = next(
+                    (
+                        row
+                        for row in pre.get("games") or []
+                        if str(row.get("gameIdentity") or "") == identity
+                    ),
+                    initial_game_status,
+                )
                 if game_status.get("state") != "DUE_NOT_STAGED":
                     continue
-                identity = game_status["gameIdentity"]
                 try:
                     game = next(entry for entry in manifest if game_identity(entry) == identity)
                     scoring = _scoring_pulls(module, pulls, game)
@@ -8045,12 +8409,30 @@ def apply(module: Any) -> Any:
                         break
                     if errors or not item:
                         if _is_no_prediction_candidate_failure(errors):
+                            terminal_now = (
+                                module._now_utc().astimezone(timezone.utc)
+                            )
+                            game_start = _start(module, game)
+                            if game_start is None or terminal_now >= game_start:
+                                failures.append({
+                                    "gameIdentity": identity,
+                                    "reason": (
+                                        "TERMINAL_LOCK_OUTCOME_WRITE_BLOCKED_"
+                                        "GAME_ALREADY_STARTED"
+                                    ),
+                                    "errors": [
+                                        "late_terminal_outcome_blocked_"
+                                        "game_already_started"
+                                    ],
+                                })
+                                failed = True
+                                break
                             try:
                                 outcome = _put_no_prediction_outcome(
                                     module,
                                     slate,
                                     game,
-                                    now,
+                                    terminal_now,
                                     errors or ["PERSISTED_PRELOCK_PREDICTION_MISSING"],
                                     manifest_authority,
                                 )
@@ -8171,6 +8553,15 @@ def apply(module: Any) -> Any:
                     failures.append({"gameIdentity": identity, "reason": "SOURCE_WINDOW_CHANGED_REPEATEDLY_NOT_STAGED"})
                     continue
 
+                write_now = module._now_utc().astimezone(timezone.utc)
+                game_start = _start(module, game)
+                if game_start is None or write_now >= game_start:
+                    failures.append({
+                        "gameIdentity": identity,
+                        "reason": "PER_GAME_STAGE_WRITE_BLOCKED_GAME_ALREADY_STARTED",
+                        "errors": ["late_stage_blocked_game_already_started"],
+                    })
+                    continue
                 try:
                     stored = _put_stage(module, stable_item, slate, game)
                     stored_errors = _validate_stage(module, stored, slate, game, manifest, scoring)
@@ -8192,7 +8583,21 @@ def apply(module: Any) -> Any:
                     )
                 except Exception as exc:
                     failures.append({"gameIdentity": identity, "reason": "CANONICAL_IMMUTABLE_GAME_WRITE_FAILED", "errors": [str(exc)]})
+                    # Preserve the former final canonicalizing pass's one
+                    # bounded retry without repeating full-slate authority
+                    # validation. The first failure remains fatal for this
+                    # invocation even if the idempotent write retry succeeds.
+                    try:
+                        _canonical_store_before_game_start(
+                            module,
+                            (stored.get("data") or {}).get("row") or {},
+                            game,
+                        )
+                    except Exception:
+                        pass
 
+            _WRITER_IMMUTABLE_READ_CACHE.reset(writer_cache_token)
+            writer_cache_token = None
             final_pulls = sorted(module._pulls_for_date(slate), key=lambda pull: _pull_at(module, pull) or datetime.min.replace(tzinfo=timezone.utc))
             final_history_unchanged = (
                 _pull_history_identity(module, final_pulls)
@@ -8201,10 +8606,16 @@ def apply(module: Any) -> Any:
             pulls = final_pulls
             if not final_history_unchanged:
                 manifest = module._latest_games_for_date(slate, pulls)
+            readiness_pulls = pulls
+            readiness_manifest = manifest
+            readiness_now = module._now_utc().astimezone(timezone.utc)
+            record_lifecycle_diagnostics(
+                latest_progress,
+                readiness_now,
+                include_playability=False,
+            )
             final_now = module._now_utc().astimezone(timezone.utc)
-            progress = _progress(module, slate, pulls, manifest, final_now, ensure_canonical=True)
-            record_lifecycle_diagnostics(progress, final_now)
-            try:
+            with _status_read_scope():
                 progress = _progress(
                     module,
                     slate,
@@ -8212,12 +8623,25 @@ def apply(module: Any) -> Any:
                     manifest,
                     final_now,
                     ensure_canonical=False,
+                    defer_playability_lifecycle=cutoff_priority_active,
                 )
-            except Exception as exc:
-                lifecycle_diagnostic_errors.append({
-                    "checkpoint": "POST_DIAGNOSTIC_PROGRESS_READ",
-                    "error": f"{type(exc).__name__}:{exc}",
-                })
+            final_progress_finished_at = (
+                module._now_utc().astimezone(timezone.utc)
+            )
+            if _progress_state_boundary_crossed(
+                progress,
+                final_now,
+                final_progress_finished_at,
+            ):
+                progress = _reclassify_progress_at(
+                    progress,
+                    final_progress_finished_at,
+                )
+            record_lifecycle_diagnostics(
+                progress,
+                final_progress_finished_at,
+                include_readiness=False,
+            )
             latest_progress = progress
             if progress.get("missedCount"):
                 return respond({"ok": False, "sport": "mlb", "modelVersion": VERSION, "slateDateEt": slate, "locked": False, "reason": "MISSED_PER_GAME_LOCK_NOT_BACKFILLED", "failClosed": True, "forceIgnoredForSafety": bool(force), "failures": failures, "perGameLockProgress": progress}, progress)
@@ -8239,6 +8663,27 @@ def apply(module: Any) -> Any:
             if progress.get("stagedCount") < len(manifest) or progress.get("canonicalCount") < len(manifest):
                 return respond({"ok": True, "sport": "mlb", "modelVersion": VERSION, "slateDateEt": slate, "locked": False, "skipped": True, "reason": "PER_GAME_LOCKS_STAGED_WAITING_FOR_REMAINDER", "forceIgnoredForSafety": bool(force), "perGameLockProgress": progress}, progress)
 
+            pre_daily_pulls = sorted(
+                module._pulls_for_date(slate),
+                key=lambda pull: _pull_at(module, pull)
+                or datetime.min.replace(tzinfo=timezone.utc),
+            )
+            if (
+                _pull_history_identity(module, pre_daily_pulls)
+                != _pull_history_identity(module, pulls)
+            ):
+                return respond({
+                    "ok": False,
+                    "sport": "mlb",
+                    "modelVersion": VERSION,
+                    "slateDateEt": slate,
+                    "locked": False,
+                    "reason": "PULL_HISTORY_CHANGED_BEFORE_DAILY_LOCK_NOT_WRITTEN",
+                    "failClosed": True,
+                    "retryable": True,
+                    "dailyLockWriteAttempted": False,
+                    "perGameLockProgress": progress,
+                }, progress)
             item = _daily_item(module, slate, pulls, manifest, progress)
             try:
                 module.TABLE.put_item(Item=item, ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)")
@@ -8264,6 +8709,8 @@ def apply(module: Any) -> Any:
                     return respond({"ok": False, "sport": "mlb", "modelVersion": VERSION, "slateDateEt": slate, "locked": False, "reason": "EXISTING_DAILY_LOCK_NOT_PER_GAME_AUTHORITY", "failClosed": True, "dailyLockAuthorityErrors": authority_errors, "perGameLockProgress": progress}, progress)
                 raise
         except Exception as exc:
+            if writer_cache_token is not None:
+                _WRITER_IMMUTABLE_READ_CACHE.reset(writer_cache_token)
             try:
                 _finish_attempt_diagnostics(
                     module,
