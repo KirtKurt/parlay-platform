@@ -5589,9 +5589,12 @@ def test_completion_boundary_accepts_ddb_wrapped_checkpoint_numbers():
             owner="completion-owner",
             response=response,
         )
+        acknowledged = handler._acknowledge_cooperative_replay(
+            _cooperative_event(acknowledge=True)
+        )
 
     assert completed["state"] == "COMPLETED"
-    assert table.queue_item["state"] == "COMPLETED"
+    assert table.queue_item["state"] == "ACKNOWLEDGED"
     assert table.queue_item["terminal_replay_progress"] == persisted
     assert table.queue_item["replay_receipt"]["ok"] is True
     observed = handler._cooperative_request_response(table.queue_item)
@@ -5599,6 +5602,19 @@ def test_completion_boundary_accepts_ddb_wrapped_checkpoint_numbers():
     assert observed["checkpointFingerprint"] == (
         checkpoint["checkpointFingerprint"]
     )
+    public_progress = observed["cooperativeTerminalReplay"][
+        "terminalChunkProgress"
+    ]
+    assert public_progress["valid"] is True
+    assert public_progress["manifestGameCount"] == 1
+    assert public_progress["processedGameCount"] == 1
+    assert public_progress["terminalCount"] == 1
+    assert public_progress["verifiedGameCount"] == 1
+    assert public_progress["verificationComplete"] is True
+    acknowledged_progress = acknowledged["cooperativeTerminalReplay"][
+        "terminalChunkProgress"
+    ]
+    assert acknowledged_progress == public_progress
 
 
 def test_completion_ambiguity_rejects_same_slate_replacement_completed_row():
