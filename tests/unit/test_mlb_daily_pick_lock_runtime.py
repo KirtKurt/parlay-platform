@@ -5594,6 +5594,11 @@ def test_completion_boundary_accepts_ddb_wrapped_checkpoint_numbers():
     assert table.queue_item["state"] == "COMPLETED"
     assert table.queue_item["terminal_replay_progress"] == persisted
     assert table.queue_item["replay_receipt"]["ok"] is True
+    observed = handler._cooperative_request_response(table.queue_item)
+    assert observed["cooperativeTerminalReplayCompleted"] is True
+    assert observed["checkpointFingerprint"] == (
+        checkpoint["checkpointFingerprint"]
+    )
 
 
 def test_completion_ambiguity_rejects_same_slate_replacement_completed_row():
