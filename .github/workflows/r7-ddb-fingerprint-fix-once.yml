@@ -1,0 +1,190 @@
+name: R7 durable-evidence fingerprint repair once
+
+"on":
+  push:
+    branches:
+      - fix/r7-durable-evidence-ddb-fingerprint-20260829
+
+permissions:
+  contents: write
+
+concurrency:
+  group: r7-durable-evidence-fingerprint-repair-once
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/r7-durable-evidence-ddb-fingerprint-20260829
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply minimal DDB-roundtrip repair and regression test
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('hello_world/mlb_prospective_row_repair.py')
+          source = source_path.read_text(encoding='utf-8')
+          old = '''def _cooperative_terminal_evidence_fingerprint(
+              evidence: Dict[str, Any],
+          ) -> str:
+              material = {
+                  str(key): value
+                  for key, value in evidence.items()
+                  if key != "evidenceFingerprint"
+              }
+              return hashlib.sha256(
+                  json.dumps(
+                      material,
+                      sort_keys=True,
+                      separators=(",", ":"),
+                      default=str,
+                  ).encode("utf-8")
+              ).hexdigest()
+          '''
+          new = '''def _cooperative_terminal_evidence_fingerprint(
+              evidence: Dict[str, Any],
+          ) -> str:
+              """Hash evidence identically before and after a DynamoDB round trip."""
+
+              def ddb_number_normalized(value: Any) -> Any:
+                  if isinstance(value, Decimal):
+                      if value.is_finite() and value == value.to_integral_value():
+                          return int(value)
+                      return str(value)
+                  if isinstance(value, dict):
+                      return {
+                          str(key): ddb_number_normalized(child)
+                          for key, child in value.items()
+                      }
+                  if isinstance(value, list):
+                      return [ddb_number_normalized(child) for child in value]
+                  return value
+
+              material = {
+                  str(key): ddb_number_normalized(value)
+                  for key, value in evidence.items()
+                  if key != "evidenceFingerprint"
+              }
+              return hashlib.sha256(
+                  json.dumps(
+                      material,
+                      sort_keys=True,
+                      separators=(",", ":"),
+                      default=str,
+                  ).encode("utf-8")
+              ).hexdigest()
+          '''
+          if source.count(old) != 1:
+              raise SystemExit(
+                  f'exact evidence fingerprint block count was {source.count(old)}, expected 1'
+              )
+          source_path.write_text(source.replace(old, new, 1), encoding='utf-8')
+
+          test_path = Path('tests/unit/test_mlb_cooperative_terminal_chunk.py')
+          tests = test_path.read_text(encoding='utf-8')
+          marker = 'test_durable_evidence_fingerprint_survives_dynamodb_decimal_roundtrip'
+          if marker not in tests:
+              tests += '''
+
+
+def test_durable_evidence_fingerprint_survives_dynamodb_decimal_roundtrip():
+    evidence = {
+        "durableIdentity": "provider:game-0",
+        "terminalState": (
+            repair.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+        ),
+        "authorityItemCount": 3,
+        "dependencyItemCount": 1,
+        "manifestAuthorityEvidenceFingerprint": "a" * 64,
+        "items": [
+            {
+                "tableRole": "LOCK_TABLE",
+                "PK": "LOCK#0",
+                "SK": "OUTCOME#0",
+                "itemFingerprint": "1" * 64,
+            },
+            {
+                "tableRole": "PULLS_TABLE",
+                "PK": "PULL#candidate",
+                "SK": "SNAPSHOT#candidate",
+                "itemFingerprint": "2" * 64,
+            },
+            {
+                "tableRole": "PULLS_TABLE",
+                "PK": "PULL#source",
+                "SK": "SOURCE#pull",
+                "itemFingerprint": "3" * 64,
+            },
+            {
+                "tableRole": "PULLS_TABLE",
+                "PK": "PULL#manifest",
+                "SK": "MANIFEST#authority",
+                "itemFingerprint": "4" * 64,
+            },
+        ],
+    }
+    evidence["evidenceFingerprint"] = (
+        repair._cooperative_terminal_evidence_fingerprint(evidence)
+    )
+    ddb_roundtrip = copy.deepcopy(evidence)
+    ddb_roundtrip["authorityItemCount"] = Decimal("3")
+    ddb_roundtrip["dependencyItemCount"] = Decimal("1")
+
+    assert repair._cooperative_terminal_evidence_fingerprint(
+        ddb_roundtrip
+    ) == evidence["evidenceFingerprint"]
+    validated = repair._validated_cooperative_terminal_evidence(
+        ddb_roundtrip,
+        durable_identity="provider:game-0",
+        terminal_state=(
+            repair.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+        ),
+    )
+    assert validated["evidenceFingerprint"] == evidence["evidenceFingerprint"]
+
+    tampered = copy.deepcopy(ddb_roundtrip)
+    tampered["dependencyItemCount"] = Decimal("2")
+    with pytest.raises(
+        RuntimeError,
+        match="COOPERATIVE_TERMINAL_CHUNK_DURABLE_EVIDENCE_INVALID",
+    ):
+        repair._validated_cooperative_terminal_evidence(
+            tampered,
+            durable_identity="provider:game-0",
+            terminal_state=(
+                repair.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+            ),
+        )
+'''
+              test_path.write_text(tests, encoding='utf-8')
+          PY
+          rm .github/workflows/r7-ddb-fingerprint-fix-once.yml
+      - name: Verify focused production contracts
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+          PYTHONPATH: hello_world:tests/unit
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+          python -m py_compile hello_world/mlb_prospective_row_repair.py
+          python -m pytest -q tests/unit/test_mlb_cooperative_terminal_chunk.py
+      - name: Commit verified repair and remove one-shot workflow
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add hello_world/mlb_prospective_row_repair.py \
+            tests/unit/test_mlb_cooperative_terminal_chunk.py \
+            .github/workflows/r7-ddb-fingerprint-fix-once.yml
+          git commit -m 'Fix R7 durable evidence fingerprint roundtrip'
+          git push origin HEAD:fix/r7-durable-evidence-ddb-fingerprint-20260829
