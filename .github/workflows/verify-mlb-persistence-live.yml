@@ -1,0 +1,240 @@
+name: Verify MLB Persistence Live
+
+on:
+  push:
+    branches: [agent/fix-mlb-persistence-v2]
+    paths:
+      - '.github/workflows/verify-mlb-persistence-live.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-mlb-persistence-live.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install read-only verification runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verify live predictions, snapshots, runtime, and lock lifecycle
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
+          PYTHONPATH: ${{ github.workspace }}/hello_world
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-persistence-live
+          SLATE_DATE=$(TZ=America/New_York date +%F)
+          python scripts/mlb_scoring_guard_status.py \
+            --slate-date "$SLATE_DATE" \
+            --output /tmp/mlb-persistence-live/scoring_guard.json
+          python scripts/diagnose_mlb_pull_lambda_runtime.py \
+            --hours 2 \
+            --output /tmp/mlb-persistence-live/runtime.json
+
+          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --region "$AWS_REGION" \
+            --logical-resource-id MLBProductionVerifierFunction \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"sport":"mlb","mode":"continuous","run":"persistence_fix_live_acceptance"}' \
+            /tmp/mlb-persistence-live/verifier_envelope.json \
+            > /tmp/mlb-persistence-live/verifier_meta.json
+
+          SLATE_DATE="$SLATE_DATE" python - <<'PY'
+          import json, os
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          import boto3
+          from boto3.dynamodb.conditions import Key
+
+          root=Path('/tmp/mlb-persistence-live')
+          scoring=json.loads((root/'scoring_guard.json').read_text())
+          runtime=json.loads((root/'runtime.json').read_text())
+          envelope=json.loads((root/'verifier_envelope.json').read_text())
+          body=envelope.get('body') if isinstance(envelope,dict) else None
+          verifier=json.loads(body) if isinstance(body,str) else envelope
+          slate=os.environ['SLATE_DATE']
+          region=os.environ['AWS_REGION']
+          table=boto3.resource('dynamodb',region_name=region).Table(os.environ['SNAPSHOTS_TABLE'])
+          response=table.query(
+              KeyConditionExpression=Key('PK').eq(f'GAME_WINNERS#mlb#{slate}'),
+              ConsistentRead=True,
+          )
+          items=response.get('Items') or []
+          while response.get('LastEvaluatedKey'):
+              response=table.query(
+                  KeyConditionExpression=Key('PK').eq(f'GAME_WINNERS#mlb#{slate}'),
+                  ConsistentRead=True,
+                  ExclusiveStartKey=response['LastEvaluatedKey'],
+              )
+              items.extend(response.get('Items') or [])
+          live=[row for row in items if row.get('record_type')=='mlb_single_game_moneyline_prediction']
+          snapshots=[row for row in items if row.get('record_type')=='mlb_immutable_prelock_prediction_snapshot']
+          live_by_identity={str(row.get('game_identity') or row.get('game_id')):row for row in live}
+          snapshot_ids={str(row.get('game_identity') or row.get('game_id')) for row in snapshots}
+          expected_ids={str(row.get('gameIdentity')) for row in scoring.get('games') or []}
+          policy_errors=[]
+          for identity,row in live_by_identity.items():
+              data=row.get('data') or {}
+              policy=data.get('signalPolicyV13') or {}
+              if not policy.get('version'):
+                  policy_errors.append(f'{identity}:signal_policy_version_missing')
+              if data.get('predictedWinner') != row.get('predicted_winner'):
+                  policy_errors.append(f'{identity}:live_payload_winner_mismatch')
+          latest_pull_raw=(scoring.get('summary') or {}).get('latestCanonicalPullAtUtc')
+          latest_pull=datetime.fromisoformat(str(latest_pull_raw).replace('Z','+00:00')) if latest_pull_raw else None
+          if latest_pull and latest_pull.tzinfo is None:
+              latest_pull=latest_pull.replace(tzinfo=timezone.utc)
+          post_pull_errors=[]
+          for row in runtime.get('classifiedErrors') or []:
+              stamp=datetime.fromisoformat(str(row.get('timestampUtc')).replace('Z','+00:00'))
+              if stamp.tzinfo is None: stamp=stamp.replace(tzinfo=timezone.utc)
+              if latest_pull and stamp >= latest_pull:
+                  post_pull_errors.append(row)
+          post_pull_failures=[]
+          for row in runtime.get('scheduledFailureDetails') or []:
+              stamp=datetime.fromisoformat(str(row.get('timestampUtc')).replace('Z','+00:00'))
+              if stamp.tzinfo is None: stamp=stamp.replace(tzinfo=timezone.utc)
+              if latest_pull and stamp >= latest_pull:
+                  post_pull_failures.append(row)
+
+          cfn=boto3.client('cloudformation',region_name=region)
+          lamb=boto3.client('lambda',region_name=region)
+          resource=cfn.describe_stack_resource(
+              StackName='parlay-platform-dev',LogicalResourceId='MLBAuditedPullFunction'
+          )['StackResourceDetail']
+          config=lamb.get_function_configuration(FunctionName=resource['PhysicalResourceId'])
+          env=(config.get('Environment') or {}).get('Variables') or {}
+          deployed_sha=env.get('INQSI_DEPLOY_GIT_SHA')
+
+          now=datetime.now(timezone.utc)
+          starts=[]
+          for game in scoring.get('games') or []:
+              raw=game.get('commenceTime')
+              if raw:
+                  dt=datetime.fromisoformat(str(raw).replace('Z','+00:00'))
+                  if dt.tzinfo is None: dt=dt.replace(tzinfo=timezone.utc)
+                  starts.append(dt)
+          earliest=min(starts) if starts else None
+          earliest_lock=earliest-timedelta(minutes=45) if earliest else None
+          before_first_lock=bool(earliest_lock and now < earliest_lock)
+          verifier_blockers=list(verifier.get('blockers') or []) if isinstance(verifier,dict) else ['VERIFIER_RESPONSE_INVALID']
+          lock_only_tokens=('LOCK_STATUS','PER_GAME_LOCK','LOCK_DUE','CANONICAL_LOCK')
+          verifier_non_lock_blockers=[b for b in verifier_blockers if not any(t in str(b) for t in lock_only_tokens)]
+          verifier_premature_lock_blockers=[b for b in verifier_blockers if any(t in str(b) for t in lock_only_tokens)] if before_first_lock else []
+
+          blockers=[]
+          summary=scoring.get('summary') or {}
+          if scoring.get('guardPassed') is not True: blockers.append('SCORING_GUARD_FAILED')
+          if int(summary.get('persistedPredictionGameCount') or 0) != int(summary.get('officialGameCount') or -1): blockers.append('PERSISTED_PREDICTION_COVERAGE_INCOMPLETE')
+          if int(summary.get('movementFeatureGameCount') or 0) != int(summary.get('officialGameCount') or -1): blockers.append('MOVEMENT_COVERAGE_INCOMPLETE')
+          if expected_ids - set(live_by_identity): blockers.append('LIVE_PREDICTION_IDENTITIES_MISSING')
+          if expected_ids - snapshot_ids: blockers.append('IMMUTABLE_PREGAME_SNAPSHOT_IDENTITIES_MISSING')
+          if policy_errors: blockers.append('SIGNAL_POLICY_PERSISTENCE_INVALID')
+          if runtime.get('timeouts'): blockers.append('RECENT_TIMEOUT')
+          if post_pull_errors: blockers.append('ERROR_AFTER_ACCEPTED_PULL')
+          if post_pull_failures: blockers.append('SCHEDULED_FAILURE_AFTER_ACCEPTED_PULL')
+          if verifier_non_lock_blockers: blockers.append('PRODUCTION_VERIFIER_NON_LOCK_FAILURE')
+          if verifier_premature_lock_blockers: blockers.append('PRODUCTION_VERIFIER_PREMATURE_LOCK_FAILURE')
+          if int(config.get('Timeout') or 0)<600: blockers.append('LAMBDA_TIMEOUT_REGRESSION')
+          if int(config.get('MemorySize') or 0)<2048: blockers.append('LAMBDA_MEMORY_REGRESSION')
+
+          report={
+              'ok':not blockers,
+              'proofType':'MLB_PERSISTENCE_FIX_LIVE_ACCEPTANCE',
+              'createdAtUtc':now.isoformat().replace('+00:00','Z'),
+              'createdAtEt':now.astimezone(ZoneInfo('America/New_York')).isoformat(),
+              'slateDateEt':slate,
+              'readOnly':True,
+              'productionWritesPerformed':False,
+              'deployedGitSha':deployed_sha,
+              'lambda':{
+                  'functionName':resource['PhysicalResourceId'],
+                  'timeoutSeconds':config.get('Timeout'),
+                  'memorySizeMb':config.get('MemorySize'),
+                  'lastModified':config.get('LastModified'),
+                  'environmentValuesExposed':False,
+              },
+              'schedule':{
+                  'officialGameCount':summary.get('officialGameCount'),
+                  'earliestStartUtc':earliest.isoformat() if earliest else None,
+                  'earliestTMinus45Utc':earliest_lock.isoformat() if earliest_lock else None,
+                  'beforeFirstLockWindow':before_first_lock,
+              },
+              'persistence':{
+                  'livePredictionCount':len(live),
+                  'livePredictionIdentityCount':len(live_by_identity),
+                  'immutablePregameSnapshotCount':len(snapshots),
+                  'immutablePregameSnapshotIdentityCount':len(snapshot_ids),
+                  'expectedIdentities':sorted(expected_ids),
+                  'missingLiveIdentities':sorted(expected_ids-set(live_by_identity)),
+                  'missingSnapshotIdentities':sorted(expected_ids-snapshot_ids),
+                  'policyErrors':policy_errors,
+              },
+              'scoringSummary':summary,
+              'scoringGuardPassed':scoring.get('guardPassed') is True,
+              'runtime':{
+                  'timeoutCount':len(runtime.get('timeouts') or []),
+                  'postAcceptedPullErrorCount':len(post_pull_errors),
+                  'postAcceptedPullScheduledFailureCount':len(post_pull_failures),
+                  'postAcceptedPullErrors':post_pull_errors,
+                  'postAcceptedPullScheduledFailures':post_pull_failures,
+              },
+              'productionVerifier':{
+                  'ok':verifier.get('ok') if isinstance(verifier,dict) else False,
+                  'blockers':verifier_blockers,
+                  'nonLockBlockers':verifier_non_lock_blockers,
+                  'prematureLockBlockers':verifier_premature_lock_blockers,
+                  'raw':verifier,
+              },
+              'blockers':blockers,
+          }
+          (root/'acceptance.json').write_text(json.dumps(report,indent=2,sort_keys=True,default=str)+'\n')
+          print(json.dumps({
+              'ok':report['ok'],
+              'blockers':blockers,
+              'persistence':report['persistence'],
+              'scoringSummary':summary,
+              'verifierBlockers':verifier_blockers,
+              'postAcceptedPullErrorCount':len(post_pull_errors),
+          },indent=2,default=str))
+          if blockers:
+              raise SystemExit('MLB live persistence acceptance failed: '+json.dumps(blockers))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-persistence-live-${{ github.run_id }}
+          path: /tmp/mlb-persistence-live/
+          if-no-files-found: error
