@@ -1,4 +1,4 @@
-name: R7 protected v2 checkpoint validator once
+name: R7 protected v2 deployed checkpoint validator once
 
 "on":
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: r7-protected-v2-checkpoint-validator-once
+  group: r7-protected-v2-deployed-checkpoint-validator-once
   cancel-in-progress: false
 
 jobs:
@@ -30,11 +30,12 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
-      - name: Validate exact live checkpoint without mutation
+      - name: Validate exact deployed live checkpoint without mutation
         env:
           AWS_REGION: us-east-1
           AWS_DEFAULT_REGION: us-east-1
           AWS_EC2_METADATA_DISABLED: 'true'
+          MLB_ROOT_STACK: parlay-platform-dev
           PYTHONPATH: hello_world
         run: |
           set -euo pipefail
@@ -43,17 +44,52 @@ jobs:
 
           import hashlib
           import json
+          import os
           from pathlib import Path
+
+          import boto3
+          from botocore.config import Config
+
+          region = os.environ['AWS_REGION']
+          stack = os.environ['MLB_ROOT_STACK']
+          config = Config(
+              connect_timeout=10,
+              read_timeout=60,
+              retries={'total_max_attempts': 3, 'mode': 'standard'},
+          )
+          cfn = boto3.client('cloudformation', region_name=region, config=config)
+          lambda_client = boto3.client('lambda', region_name=region, config=config)
+          detail = cfn.describe_stack_resource(
+              StackName=stack,
+              LogicalResourceId='MLBDailyPickLockFunction',
+          ).get('StackResourceDetail') or {}
+          function_name = str(detail.get('PhysicalResourceId') or '')
+          if not function_name:
+              raise SystemExit('deployed protected lock Lambda could not be resolved')
+          function = lambda_client.get_function_configuration(
+              FunctionName=function_name,
+          )
+          deployed_environment = (
+              (function.get('Environment') or {}).get('Variables') or {}
+          )
+          for key, value in deployed_environment.items():
+              os.environ[str(key)] = str(value)
 
           import mlb_daily_pick_lock_protected as protected
 
           report = {
-              'proofType': 'R7_PROTECTED_V2_CHECKPOINT_VALIDATOR_DIAGNOSTIC',
+              'proofType': 'R7_PROTECTED_V2_DEPLOYED_CHECKPOINT_VALIDATOR',
               'readOnly': True,
               'directTableWrite': False,
               'postStartPredictionCreationAllowed': False,
               'immutablePredictionRewriteAllowed': False,
               'productionAuthorityChanged': False,
+              'deployedFunction': {
+                  'state': function.get('State'),
+                  'lastUpdateStatus': function.get('LastUpdateStatus'),
+                  'handler': function.get('Handler'),
+                  'timeout': function.get('Timeout'),
+              },
               'stages': [],
           }
 
@@ -143,7 +179,7 @@ jobs:
               )
 
           print(json.dumps(report, indent=2, sort_keys=True, default=str))
-          Path('/tmp/r7-v2-checkpoint-validator.json').write_text(
+          Path('/tmp/r7-v2-deployed-checkpoint-validator.json').write_text(
               json.dumps(report, indent=2, sort_keys=True, default=str) + '\n',
               encoding='utf-8',
           )
@@ -151,7 +187,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: r7-v2-checkpoint-validator-${{ github.run_id }}
-          path: /tmp/r7-v2-checkpoint-validator.json
+          name: r7-v2-deployed-checkpoint-validator-${{ github.run_id }}
+          path: /tmp/r7-v2-deployed-checkpoint-validator.json
           if-no-files-found: error
           retention-days: 14
