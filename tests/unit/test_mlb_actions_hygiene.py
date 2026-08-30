@@ -138,6 +138,14 @@ def _triggers(path: Path) -> dict[str, Any]:
     return triggers
 
 
+def _non_trigger_source(path: Path) -> str:
+    """Serialize executable workflow scope without trigger path filters."""
+
+    document = dict(_load(path))
+    document.pop("on", None)
+    return yaml.safe_dump(document, sort_keys=True)
+
+
 def _mlb_workflows() -> list[Path]:
     return sorted(
         path
@@ -192,13 +200,61 @@ def test_all_r7_recovery_mutators_and_dispatchers_are_manual_only() -> None:
         "unified-mlb-learning-recovery-once.yml",
     }
     for workflow in WORKFLOWS.glob("*.yml"):
-        source = workflow.read_text(encoding="utf-8")
+        source = _non_trigger_source(workflow)
         matched = sorted(marker for marker in recovery_markers if marker in source)
         if not matched:
             continue
         assert set(_triggers(workflow)) == {"workflow_dispatch"}, (
             f"{workflow.name} has automatic R7 recovery marker(s): {matched}"
         )
+
+
+def test_r7_recovery_marker_in_trigger_path_is_not_execution(
+    tmp_path: Path,
+) -> None:
+    workflow = tmp_path / "source-contract.yml"
+    workflow.write_text(
+        """\
+name: Source contract
+on:
+  push:
+    paths:
+      - .github/workflows/unified-mlb-learning-recovery-once.yml
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo verify-only
+""",
+        encoding="utf-8",
+    )
+
+    assert "unified-mlb-learning-recovery-once.yml" not in (
+        _non_trigger_source(workflow)
+    )
+
+
+def test_r7_recovery_marker_in_job_remains_execution(
+    tmp_path: Path,
+) -> None:
+    workflow = tmp_path / "dispatcher.yml"
+    workflow.write_text(
+        """\
+name: Dispatcher
+on:
+  workflow_dispatch:
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh workflow run unified-mlb-learning-recovery-once.yml
+""",
+        encoding="utf-8",
+    )
+
+    assert "unified-mlb-learning-recovery-once.yml" in (
+        _non_trigger_source(workflow)
+    )
 
 
 def test_no_mlb_workflow_has_an_unscoped_push_trigger() -> None:
