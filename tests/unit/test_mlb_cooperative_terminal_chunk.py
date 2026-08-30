@@ -698,6 +698,9 @@ class ChunkPatch:
             "ok": True,
             "atomicSnapshot": True,
             "itemCount": len(requests),
+            "atomicAuthorityItemCount": len(requests),
+            "fullDependencyStrongReadVerified": True,
+            "immutableDependencyBindingsVerified": True,
             "maxItemCount": 100,
             "readSetFingerprint": _fingerprint(requests),
             "postStartPredictionCreationAllowed": False,
@@ -1835,9 +1838,15 @@ class AtomicReadClient:
         self.items = copy.deepcopy(items)
         self.calls = []
         self.mode = "ok"
+        self.maximum_transaction_items = None
 
     def transact_get_items(self, *, TransactItems, ReturnConsumedCapacity):
         assert ReturnConsumedCapacity == "NONE"
+        if (
+            self.maximum_transaction_items is not None
+            and len(TransactItems) > self.maximum_transaction_items
+        ):
+            raise RuntimeError("injected transaction capacity cancellation")
         self.calls.append(copy.deepcopy(TransactItems))
         deserializer = real_patch.TypeDeserializer()
         serializer = real_patch.TypeSerializer()
@@ -1870,6 +1879,20 @@ class AtomicReadClient:
         if self.mode == "short":
             responses = responses[:-1]
         return {"Responses": responses}
+
+
+class AtomicTable:
+    def __init__(self, name, client):
+        self.name = name
+        self.meta = SimpleNamespace(client=client)
+        self.client = client
+
+    def get_item(self, *, Key, ConsistentRead):
+        assert ConsistentRead is True
+        item = self.client.items.get(
+            (self.name, Key["PK"], Key["SK"])
+        )
+        return {"Item": copy.deepcopy(item)} if item is not None else {}
 
 
 def _real_atomic_fixture():
@@ -1906,14 +1929,8 @@ def _real_atomic_fixture():
         (pulls_name, manifest["PK"], manifest["SK"]): manifest,
     }
     client = AtomicReadClient(items)
-    lock_table = SimpleNamespace(
-        name=lock_name,
-        meta=SimpleNamespace(client=client),
-    )
-    pulls_table = SimpleNamespace(
-        name=pulls_name,
-        meta=SimpleNamespace(client=client),
-    )
+    lock_table = AtomicTable(lock_name, client)
+    pulls_table = AtomicTable(pulls_name, client)
     module = SimpleNamespace(
         TABLE=lock_table,
         history=SimpleNamespace(PULLS=pulls_table),
@@ -1993,7 +2010,10 @@ def test_real_atomic_verify_dedupes_mixed_authority_and_uses_exact_tables():
 
     assert result["ok"] is True
     assert result["atomicSnapshot"] is True
+    assert result["fullDependencyStrongReadVerified"] is True
+    assert result["immutableDependencyBindingsVerified"] is True
     assert result["itemCount"] == 4
+    assert result["atomicAuthorityItemCount"] == 4
     assert result["maxItemCount"] == 100
     assert len(result["readSetFingerprint"]) == 64
     assert len(client.calls) == 1
@@ -2138,15 +2158,9 @@ def _real_all_quarantine_atomic_fixture(
 
     client = AtomicReadClient(items)
     module = SimpleNamespace(
-        TABLE=SimpleNamespace(
-            name=lock_name,
-            meta=SimpleNamespace(client=client),
-        ),
+        TABLE=AtomicTable(lock_name, client),
         history=SimpleNamespace(
-            PULLS=SimpleNamespace(
-                name=pulls_name,
-                meta=SimpleNamespace(client=client),
-            )
+            PULLS=AtomicTable(pulls_name, client)
         ),
     )
     return module, client, processed, {
@@ -2154,7 +2168,7 @@ def _real_all_quarantine_atomic_fixture(
     }
 
 
-def test_real_atomic_verify_accepts_all_fifteen_quarantines_with_46_reads():
+def test_real_atomic_verify_compacts_fifteen_quarantines_to_16_atomic_reads():
     module, client, processed, authority = (
         _real_all_quarantine_atomic_fixture()
     )
@@ -2168,10 +2182,30 @@ def test_real_atomic_verify_accepts_all_fifteen_quarantines_with_46_reads():
     assert proof["ok"] is True
     assert proof["atomicSnapshot"] is True
     assert proof["itemCount"] == 46
+    assert proof["atomicAuthorityItemCount"] == 16
+    assert proof["fullDependencyStrongReadVerified"] is True
+    assert proof["immutableDependencyBindingsVerified"] is True
     assert proof["maxItemCount"] == 100
     assert len(proof["readSetFingerprint"]) == 64
     assert len(client.calls) == 1
-    assert len(client.calls[0]) == 46
+    assert len(client.calls[0]) == 16
+
+
+def test_compact_authority_transaction_avoids_full_dependency_burst():
+    module, client, processed, authority = (
+        _real_all_quarantine_atomic_fixture()
+    )
+    client.maximum_transaction_items = 20
+
+    proof = real_patch._cooperative_terminal_atomic_verify(
+        module,
+        processed,
+        authority,
+    )
+
+    assert proof["itemCount"] == 46
+    assert proof["atomicAuthorityItemCount"] == 16
+    assert len(client.calls[0]) == 16
 
 
 def test_real_atomic_verify_accepts_two_manifest_roots_and_47_reads():
@@ -2189,8 +2223,9 @@ def test_real_atomic_verify_accepts_two_manifest_roots_and_47_reads():
 
     assert proof["ok"] is True
     assert proof["itemCount"] == 47
+    assert proof["atomicAuthorityItemCount"] == 17
     assert proof["maxItemCount"] == 100
-    assert len(client.calls[0]) == 47
+    assert len(client.calls[0]) == 17
 
 
 @pytest.mark.parametrize(

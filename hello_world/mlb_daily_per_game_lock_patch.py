@@ -6713,7 +6713,17 @@ def _cooperative_terminal_atomic_verify(
     processed_games: List[Dict[str, Any]],
     manifest_authority: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Atomically reread every exact terminal dependency before completion."""
+    """Verify every immutable dependency, then atomically bind authorities.
+
+    Full quarantine source rows can make one TransactGet consume an
+    unsustainable provisioned-capacity burst even while remaining below the
+    service's item-count and response-size ceilings. Every dependency is first
+    reread strongly and compared byte-for-byte by fingerprint while the global
+    writer lease is held. The compact immutable terminal authority rows plus
+    manifest roots are then reread in one transaction. Terminal authority rows
+    bind the previously verified candidate/source fingerprints, so completion
+    never depends on an oversized all-dependency transaction.
+    """
 
     requests_by_key: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
     for item in (manifest_authority or {}).get("atomicItems") or []:
@@ -6785,8 +6795,73 @@ def _cooperative_terminal_atomic_verify(
             "COOPERATIVE_TERMINAL_ATOMIC_TABLE_ROLE_INVALID"
         )
 
+    # Strongly validate the complete dependency set before the compact atomic
+    # authority read. Deliberately bypass request caches so completion always
+    # observes fresh durable rows.
+    for expected in requests:
+        table = table_for(str(expected.get("tableRole") or ""))
+        raw_item = table.get_item(
+            Key={
+                "PK": str(expected["PK"]),
+                "SK": str(expected["SK"]),
+            },
+            ConsistentRead=True,
+        ).get("Item")
+        if not isinstance(raw_item, dict) or not raw_item:
+            raise RuntimeError(
+                "COOPERATIVE_TERMINAL_ATOMIC_ITEM_MISSING"
+            )
+        if (
+            _cooperative_terminal_item_fingerprint(raw_item)
+            != expected.get("itemFingerprint")
+        ):
+            raise RuntimeError(
+                "COOPERATIVE_TERMINAL_ATOMIC_ITEM_MISMATCH"
+            )
+
+    compact_by_key: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    for item in (manifest_authority or {}).get("atomicItems") or []:
+        key = (
+            str(item.get("tableRole") or ""),
+            str(item.get("PK") or ""),
+            str(item.get("SK") or ""),
+        )
+        compact_by_key[key] = copy.deepcopy(item)
+    for entry in processed_games:
+        evidence = entry.get("durableEvidence") or {}
+        terminal_state = str(evidence.get("terminalState") or "")
+        authority_count = 2 if terminal_state == "LOCKED_CANONICAL" else 1
+        authority_items = list(evidence.get("items") or [])[:authority_count]
+        if len(authority_items) != authority_count:
+            raise RuntimeError(
+                "COOPERATIVE_TERMINAL_ATOMIC_EVIDENCE_INVALID"
+            )
+        for item in authority_items:
+            key = (
+                str(item.get("tableRole") or ""),
+                str(item.get("PK") or ""),
+                str(item.get("SK") or ""),
+            )
+            prior = compact_by_key.get(key)
+            if (
+                prior is not None
+                and prior.get("itemFingerprint")
+                != item.get("itemFingerprint")
+            ):
+                raise RuntimeError(
+                    "COOPERATIVE_TERMINAL_ATOMIC_EVIDENCE_CONFLICT"
+                )
+            compact_by_key[key] = copy.deepcopy(item)
+    compact_requests = [
+        compact_by_key[key] for key in sorted(compact_by_key)
+    ]
+    if not compact_requests or len(compact_requests) > len(requests):
+        raise RuntimeError(
+            "COOPERATIVE_TERMINAL_ATOMIC_AUTHORITY_SET_INVALID"
+        )
+
     transact_items: List[Dict[str, Any]] = []
-    for request in requests:
+    for request in compact_requests:
         table = table_for(str(request.get("tableRole") or ""))
         table_name = str(
             getattr(table, "name", None)
@@ -6811,11 +6886,11 @@ def _cooperative_terminal_atomic_verify(
         ReturnConsumedCapacity="NONE",
     )
     observed = list(response.get("Responses") or [])
-    if len(observed) != len(requests):
+    if len(observed) != len(compact_requests):
         raise RuntimeError(
             "COOPERATIVE_TERMINAL_ATOMIC_RESPONSE_COUNT_MISMATCH"
         )
-    for expected, raw in zip(requests, observed):
+    for expected, raw in zip(compact_requests, observed):
         raw_item = raw.get("Item") if isinstance(raw, dict) else None
         if not isinstance(raw_item, dict) or not raw_item:
             raise RuntimeError(
@@ -6836,6 +6911,9 @@ def _cooperative_terminal_atomic_verify(
         "ok": True,
         "atomicSnapshot": True,
         "itemCount": len(requests),
+        "atomicAuthorityItemCount": len(compact_requests),
+        "fullDependencyStrongReadVerified": True,
+        "immutableDependencyBindingsVerified": True,
         "maxItemCount": COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS,
         "readSetFingerprint": read_set_fingerprint,
         "postStartPredictionCreationAllowed": False,
