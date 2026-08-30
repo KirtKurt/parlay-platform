@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -20,6 +21,21 @@ from zoneinfo import ZoneInfo
 
 import boto3
 from boto3.dynamodb.conditions import Key
+
+
+# This script is invoked by Actions as ``python scripts/<name>.py``.  In that
+# mode Python adds ``scripts/`` rather than the repository root to sys.path, so
+# the repository-owned fundamentals contract is otherwise unreachable.  Add
+# only its exact sibling directory after interpreter startup; this avoids
+# PYTHONPATH startup hooks while keeping malformed attestations fail closed.
+TRUSTED_CONTRACT_DIR = (
+    Path(__file__).resolve().parents[1] / "hello_world"
+).resolve()
+trusted_contract_path = str(TRUSTED_CONTRACT_DIR)
+if trusted_contract_path in sys.path:
+    sys.path.remove(trusted_contract_path)
+sys.path.insert(0, trusted_contract_path)
+
 
 PROOF_TYPE = "MLB_SCORING_GUARD_READ_ONLY_PROOF"
 PROOF_VERSION = "MLB-SCORING-GUARD-v3-movement-team-integrity"
