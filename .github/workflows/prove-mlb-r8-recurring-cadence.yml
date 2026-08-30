@@ -178,6 +178,51 @@ jobs:
           assert proof['ok'] is True, proof
           PY
 
+      - name: Capture exact selection contract failure
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          set +e
+          aws lambda invoke \
+            --function-name "$TRAINER_FN" \
+            --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --log-type Tail \
+            --payload "{\"sport\":\"mlb\",\"mode\":\"selection_capture\",\"run\":\"r8_selection_contract_trace_${GITHUB_RUN_ID}\"}" \
+            /tmp/mlb-r8-cadence/selection-trace.json \
+            > /tmp/mlb-r8-cadence/selection-trace-invocation.json
+          invoke_exit=$?
+          set -e
+          INVOKE_EXIT="$invoke_exit" python - <<'PY'
+          import base64
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path('/tmp/mlb-r8-cadence')
+          invocation = json.loads(
+              (root / 'selection-trace-invocation.json').read_text()
+          )
+          response = json.loads((root / 'selection-trace.json').read_text())
+          encoded_log = str(invocation.get('LogResult') or '')
+          tail = (
+              base64.b64decode(encoded_log).decode('utf-8', errors='replace')
+              if encoded_log
+              else ''
+          )
+          proof = {
+              'invokeExit': int(os.environ['INVOKE_EXIT']),
+              'statusCode': invocation.get('StatusCode'),
+              'functionError': invocation.get('FunctionError'),
+              'response': response,
+              'lambdaTail': tail,
+          }
+          (root / 'selection-contract-trace.json').write_text(
+              json.dumps(proof, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(proof, indent=2, sort_keys=True))
+          PY
+
       - name: Capture current R8 runtime status
         run: |
           set -euo pipefail
