@@ -107,6 +107,8 @@ jobs:
           keep=[]
           fields=(
               'game_date_et','ok','operationalDefect','gameCount','allGamesPredicted',
+              'operationalDefectScopeVersion','operationalDefectScopes',
+              'winnerLifecycleOperationalDefect','releasePlayabilityOperationalDefect',
               'displayStatusCoverageComplete','lifecycleCoverageComplete',
               'preLockStorageLifecycleAware','preLockStorageCandidateCount',
               'preLockStoredCount','preLockStorageComplete','preLockStorageErrors',
@@ -115,12 +117,34 @@ jobs:
               'preLockStorageLifecycleSkippedStatuses','canonicalLockedStorageCandidateCount',
               'canonicalLockedStoredCount','canonicalLockedStorageComplete',
               'canonicalLockedStorageErrors','canonicalLockedStorageSuppressedUnauthorizedCount',
+              'invalidTerminalLifecycleRows','invalidPlayabilityReleaseRows',
+              'canonicalPredictionComplete','lockStatusComplete',
           )
           payload={}; ts=None
           if candidates:
               ts,payload=max(candidates,key=lambda x:x[0])
               for w in payload.get('game_winner_predictions') or []:
-                  if isinstance(w,dict): keep.append({k:w.get(k) for k in fields if k in w})
+                  if not isinstance(w,dict):
+                      continue
+                  winner={k:w.get(k) for k in fields if k in w}
+                  for name in ('slatePredictionLock','slateCoverage'):
+                      value=w.get(name)
+                      if not isinstance(value,dict):
+                          continue
+                      winner[name]={
+                          key:value.get(key)
+                          for key in (
+                              'lockStatus','canonicalReadOperational','canonicalReadError',
+                              'canonicalLockedGameCount','pendingCanonicalGameCount',
+                              'lockDueCanonicalMissingCount','missedLockCount',
+                              'pendingCanonicalStatuses','canonicalCoverageComplete',
+                              'canonicalPredictionComplete','invalidCanonicalRows',
+                              'invalidLifecycleStatusRows','invalidTerminalLifecycleRows',
+                              'invalidPlayabilityReleaseRows',
+                          )
+                          if key in value
+                      }
+                  keep.append(winner)
 
           recent=[]
           for row in sorted(rows,key=lambda item:int(item.get('timestamp') or 0))[-300:]:
