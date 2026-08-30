@@ -5599,8 +5599,14 @@ def _complete_cooperative_replay(
         "validate_cooperative_terminal_completion_checkpoint",
         None,
     )
+    checkpoint_normalizer = getattr(
+        mlb_daily_pick_lock,
+        "normalize_cooperative_terminal_completion_checkpoint",
+        None,
+    )
     if (
         not callable(checkpoint_validator)
+        or not callable(checkpoint_normalizer)
         or getattr(
             mlb_daily_pick_lock,
             "MLB_COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION",
@@ -5612,7 +5618,12 @@ def _complete_cooperative_replay(
             "MLB_COOPERATIVE_REPLAY_COMPLETE_VALIDATOR_NOT_READY"
         )
     try:
-        validated_progress = checkpoint_validator(expected_progress)
+        # The completion CAS must retain the raw DynamoDB checkpoint as its
+        # condition value. Structural validation uses the installed runtime's
+        # type-preserving normalization so integral Decimal wrappers cannot
+        # create false nested authority fingerprint drift.
+        normalized_progress = checkpoint_normalizer(expected_progress)
+        validated_progress = checkpoint_validator(normalized_progress)
     except BaseException as exc:
         raise RuntimeError(
             "MLB_COOPERATIVE_REPLAY_COMPLETE_PROGRESS_INVALID"
@@ -5620,7 +5631,7 @@ def _complete_cooperative_replay(
     if (
         not isinstance(validated_progress, tuple)
         or len(validated_progress) != 3
-        or validated_progress[0] != expected_progress
+        or validated_progress[0] != normalized_progress
         or not isinstance(validated_progress[1], list)
         or re.fullmatch(
             r"[0-9a-f]{64}",
