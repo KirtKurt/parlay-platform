@@ -899,11 +899,13 @@ Resources:
           MLB_ML_ARTIFACTS_BUCKET: !Ref MLBMLArtifactsBucket
           SNAPSHOTS_TABLE: !Ref SnapshotsTable
           OUTCOMES_TABLE: !Ref OutcomesTable
-          MLB_ML_EXPERIMENT_ID: 'mlb-v2-2026-08-03-future-prospective-r7'
-          MLB_ML_RELEASE_CONTRACT_ID: 'mlb-v2-2026-08-03-future-prospective-r7'
-          MLB_ML_RELEASE_CUTOFF_UTC: '2026-08-03T04:00:00+00:00'
+          MLB_ML_EXPERIMENT_ID: 'mlb-v2-2026-08-31-historical-live-r8'
+          MLB_ML_RELEASE_CONTRACT_ID: 'mlb-v2-2026-08-31-historical-live-r8'
+          MLB_ML_RELEASE_CUTOFF_UTC: '2026-08-31T04:00:00+00:00'
           MLB_ML_FEATURE_VECTOR_VERSION: 'MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness'
           MLB_ML_EXECUTION_LEASE_SECONDS: '960'
+          MLB_R7_HISTORICAL_TRAINING_ENABLED: 'true'
+          MLB_R7_HISTORICAL_MAX_ROWS: '500'
           INQSI_MLB_ML_AUTO_PROMOTE: 'false'
       Policies:
         - DynamoDBCrudPolicy:
@@ -926,6 +928,11 @@ Resources:
                 - s3:GetObjectVersion
                 - s3:PutObject
               Resource: !Sub '${MLBMLArtifactsBucket.Arn}/mlb/experiments/*'
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:GetObjectVersion
+              Resource: 'arn:aws:s3:::*/mlb/historical-daily-v1/*'
       Events:
         MLBMLTrainingEvery6Hours:
           Type: Schedule
