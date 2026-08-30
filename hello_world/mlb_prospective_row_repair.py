@@ -1153,25 +1153,43 @@ def _validated_cooperative_terminal_evidence(
     return out
 
 
+def _cooperative_terminal_ddb_normalized(value: Any) -> Any:
+    """Canonicalize only DynamoDB number wrappers, preserving bool types."""
+    if isinstance(value, Decimal):
+        if value.is_finite() and value == value.to_integral_value():
+            return int(value)
+        return str(value)
+    if isinstance(value, dict):
+        return {
+            str(key): _cooperative_terminal_ddb_normalized(child)
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _cooperative_terminal_ddb_normalized(child)
+            for child in value
+        ]
+    return value
+
+
+def _cooperative_terminal_ddb_equivalent(left: Any, right: Any) -> bool:
+    def canonical(value: Any) -> str:
+        return json.dumps(
+            _cooperative_terminal_ddb_normalized(value),
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+
+    return canonical(left) == canonical(right)
+
+
 def _cooperative_terminal_checkpoint_fingerprint(
     checkpoint: Dict[str, Any],
 ) -> str:
-    def ddb_number_normalized(value: Any) -> Any:
-        if isinstance(value, Decimal):
-            if value.is_finite() and value == value.to_integral_value():
-                return int(value)
-            return str(value)
-        if isinstance(value, dict):
-            return {
-                str(key): ddb_number_normalized(child)
-                for key, child in value.items()
-            }
-        if isinstance(value, list):
-            return [ddb_number_normalized(child) for child in value]
-        return value
 
     material = {
-        str(key): ddb_number_normalized(value)
+        str(key): _cooperative_terminal_ddb_normalized(value)
         for key, value in checkpoint.items()
         if key
         not in {
@@ -2776,8 +2794,28 @@ def _validate_cooperative_terminal_completion_handoff(
         request_epoch, "request_epoch"
     )
     bound_request_id = str(request_id or "")
+    runner_checkpoint = (
+        chunk_result.get("checkpoint")
+        if isinstance(chunk_result, dict)
+        else None
+    )
+    if not _cooperative_terminal_ddb_equivalent(
+        checkpoint,
+        runner_checkpoint,
+    ):
+        raise RuntimeError(
+            "COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_INVALID"
+        )
+    # The queue record is a DynamoDB-deserialized checkpoint whose integral
+    # numbers are Decimal wrappers. The installed chunk runner returns the
+    # same request-bound checkpoint in its validated in-memory shape. Validate
+    # that runner-owned shape after proving exact DDB-normalized equivalence;
+    # re-hashing raw Decimal wrappers would falsely invalidate authority
+    # fingerprints that were correctly computed before persistence.
     validated_checkpoint, requests, read_set_fingerprint = (
-        _validated_cooperative_terminal_complete_checkpoint(checkpoint)
+        _validated_cooperative_terminal_complete_checkpoint(
+            runner_checkpoint
+        )
     )
     if (
         str(validated_checkpoint.get("slateDateEt") or "") != slate
