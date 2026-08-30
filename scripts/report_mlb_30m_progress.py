@@ -30,7 +30,7 @@ ROOT_STACK = os.environ.get("MLB_ROOT_STACK", "parlay-platform-dev")
 AUTO_STACK = os.environ.get("MLB_AUTO_STACK", "parlay-platform-mlb-auto-llm")
 ISSUE_NUMBER = int(os.environ.get("MLB_PROGRESS_ISSUE_NUMBER", "567"))
 R7_EXPERIMENT_ID = os.environ.get(
-    "MLB_R7_EXPERIMENT_ID", "mlb-v2-2026-08-03-future-prospective-r7"
+    "MLB_R7_EXPERIMENT_ID", "mlb-v2-2026-08-31-historical-live-r8"
 )
 REPO = os.environ.get("GITHUB_REPOSITORY", "KirtKurt/parlay-platform")
 RUN_ID = os.environ.get("GITHUB_RUN_ID", "")
