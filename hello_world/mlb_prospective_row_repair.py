@@ -4775,6 +4775,9 @@ def install_prospective_row_repair(module: Any, patch: Any) -> Any:
     module.validate_cooperative_terminal_completion_checkpoint = (
         _validated_cooperative_terminal_complete_checkpoint
     )
+    module.normalize_cooperative_terminal_completion_checkpoint = (
+        _cooperative_terminal_ddb_normalized
+    )
     module.validate_cooperative_terminal_completion_handoff = (
         functools.partial(
             _validate_cooperative_terminal_completion_handoff,
