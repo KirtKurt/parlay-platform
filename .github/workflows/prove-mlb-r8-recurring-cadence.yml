@@ -295,6 +295,7 @@ jobs:
               'selectionCreatedAtUtc': created_raw,
               'selectionHeartbeatAgeSeconds': round(age_seconds, 3),
               'selectionCapture': selection_capture,
+              'selectionFailure': selection.get('failure'),
               'trainingHealth': {
                   'ok': training_health.get('ok'),
                   'ageSeconds': training_health.get('ageSeconds'),
