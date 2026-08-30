@@ -941,6 +941,9 @@ def _fixture_completion_chunk_result(
             "readSetFingerprint": read_set_fingerprint,
             "itemCount": len(atomic_requests),
             "verifiedAtEpoch": 1_785_000_000,
+            "snapshotMode": "SINGLE_TRANSACTION_ATOMIC",
+            "singleTransactionAtomicSnapshot": True,
+            "stableImmutableSnapshot": True,
         },
         "postStartPredictionCreationAllowed": False,
         "immutablePredictionRewriteAllowed": False,
@@ -7357,7 +7360,8 @@ def test_all_quarantine_completion_response_crosses_protected_receipt_boundary()
         quarantine_count=15,
     )
     produced = COOPERATIVE_REPAIR._cooperative_terminal_completion_response(
-        checkpoint
+        checkpoint,
+        snapshot_mode="FULL_STRONG_IMMUTABLE_LEASE_BOUND",
     )
 
     assert produced["atomicDurableItemCount"] == 46
@@ -7373,6 +7377,11 @@ def test_all_quarantine_completion_response_crosses_protected_receipt_boundary()
         )
 
     assert receipt["atomicDurableItemCount"] == 46
+    assert receipt["singleTransactionAtomicSnapshot"] is False
+    assert receipt["stableImmutableSnapshot"] is True
+    assert receipt["durableSnapshotMode"] == (
+        "FULL_STRONG_IMMUTABLE_LEASE_BOUND"
+    )
     assert receipt["missedLockTerminalReconciliation"][
         "missedLockValidPrelockQuarantineCount"
     ] == 15

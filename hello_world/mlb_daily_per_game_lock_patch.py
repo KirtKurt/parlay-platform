@@ -6721,8 +6721,10 @@ def _cooperative_terminal_atomic_verify(
     reread strongly and compared byte-for-byte by fingerprint while the global
     writer lease is held. The compact immutable terminal authority rows plus
     manifest roots are then reread in one transaction. Terminal authority rows
-    bind the previously verified candidate/source fingerprints, so completion
-    never depends on an oversized all-dependency transaction.
+    bind the previously verified candidate/source fingerprints. If DynamoDB
+    explicitly cancels that read-only transaction, the already verified full
+    immutable read set remains usable only as a distinctly labelled stable,
+    lease-bound snapshot; no caller may report it as transactionally atomic.
     """
 
     requests_by_key: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
@@ -6881,35 +6883,56 @@ def _cooperative_terminal_atomic_verify(
         )
 
     client = module.TABLE.meta.client
-    response = client.transact_get_items(
-        TransactItems=transact_items,
-        ReturnConsumedCapacity="NONE",
-    )
-    observed = list(response.get("Responses") or [])
-    if len(observed) != len(compact_requests):
-        raise RuntimeError(
-            "COOPERATIVE_TERMINAL_ATOMIC_RESPONSE_COUNT_MISMATCH"
+    snapshot_mode = "SINGLE_TRANSACTION_ATOMIC"
+    try:
+        response = client.transact_get_items(
+            TransactItems=transact_items,
+            ReturnConsumedCapacity="NONE",
         )
-    for expected, raw in zip(compact_requests, observed):
-        raw_item = raw.get("Item") if isinstance(raw, dict) else None
-        if not isinstance(raw_item, dict) or not raw_item:
+    except Exception as exc:
+        error = getattr(exc, "response", {}).get("Error", {})
+        if error.get("Code") != "TransactionCanceledException":
+            raise
+        # The complete dependency set was already freshly strong-read and
+        # fingerprinted while the global all-writer lease was held. DynamoDB
+        # can still cancel the compact read-only transaction under contention
+        # or capacity pressure. Preserve that verified immutable snapshot as
+        # an explicitly non-atomic lease-bound completion proof.
+        snapshot_mode = "FULL_STRONG_IMMUTABLE_LEASE_BOUND"
+        response = None
+
+    if response is not None:
+        observed = list(response.get("Responses") or [])
+        if len(observed) != len(compact_requests):
             raise RuntimeError(
-                "COOPERATIVE_TERMINAL_ATOMIC_ITEM_MISSING"
+                "COOPERATIVE_TERMINAL_ATOMIC_RESPONSE_COUNT_MISMATCH"
             )
-        item = {
-            str(key): deserializer.deserialize(value)
-            for key, value in raw_item.items()
-        }
-        if (
-            _cooperative_terminal_item_fingerprint(item)
-            != expected.get("itemFingerprint")
-        ):
-            raise RuntimeError(
-                "COOPERATIVE_TERMINAL_ATOMIC_ITEM_MISMATCH"
-            )
+        for expected, raw in zip(compact_requests, observed):
+            raw_item = raw.get("Item") if isinstance(raw, dict) else None
+            if not isinstance(raw_item, dict) or not raw_item:
+                raise RuntimeError(
+                    "COOPERATIVE_TERMINAL_ATOMIC_ITEM_MISSING"
+                )
+            item = {
+                str(key): deserializer.deserialize(value)
+                for key, value in raw_item.items()
+            }
+            if (
+                _cooperative_terminal_item_fingerprint(item)
+                != expected.get("itemFingerprint")
+            ):
+                raise RuntimeError(
+                    "COOPERATIVE_TERMINAL_ATOMIC_ITEM_MISMATCH"
+                )
+    single_transaction_atomic = (
+        snapshot_mode == "SINGLE_TRANSACTION_ATOMIC"
+    )
     return {
         "ok": True,
-        "atomicSnapshot": True,
+        "atomicSnapshot": single_transaction_atomic,
+        "singleTransactionAtomicSnapshot": single_transaction_atomic,
+        "stableImmutableSnapshot": True,
+        "snapshotMode": snapshot_mode,
         "itemCount": len(requests),
         "atomicAuthorityItemCount": len(compact_requests),
         "fullDependencyStrongReadVerified": True,

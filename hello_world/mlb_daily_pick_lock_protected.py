@@ -353,7 +353,14 @@ COOPERATIVE_REPLAY_PERMANENT_REVIEW_ERRORS = (
     COOPERATIVE_TERMINAL_REVIEW_EVIDENCE_V1_PERMANENT_ERRORS
 )
 COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION = (
-    "MLB-COOPERATIVE-TERMINAL-COMPLETION-HANDOFF-v1"
+    "MLB-COOPERATIVE-TERMINAL-COMPLETION-HANDOFF-"
+    "v2-explicit-snapshot-mode"
+)
+COOPERATIVE_TERMINAL_SNAPSHOT_MODES = frozenset(
+    {
+        "SINGLE_TRANSACTION_ATOMIC",
+        "FULL_STRONG_IMMUTABLE_LEASE_BOUND",
+    }
 )
 COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS = 100
 COOPERATIVE_TERMINAL_PUBLIC_MAX_MANIFEST_GAMES = 15
@@ -5115,6 +5122,9 @@ def _terminal_replay_receipt(
     response: Any,
     slate_date: str,
 ) -> Dict[str, Any]:
+    # ``atomicDurable*`` fields are retained for receipt-schema compatibility.
+    # The explicit snapshot fields below are authoritative about whether the
+    # proof was transactionally atomic or stable/immutable/lease-bound.
     payload = _application_payload(response)
     if (
         payload.get("ok") is not True
@@ -5160,6 +5170,27 @@ def _terminal_replay_receipt(
         or payload_progress != progress
     ):
         raise RuntimeError("MLB_COOPERATIVE_REPLAY_PROGRESS_PROOF_MISSING")
+    snapshot_mode = str(payload.get("durableSnapshotMode") or "")
+    single_transaction_atomic = (
+        snapshot_mode == "SINGLE_TRANSACTION_ATOMIC"
+    )
+    if (
+        snapshot_mode not in COOPERATIVE_TERMINAL_SNAPSHOT_MODES
+        or payload.get("singleTransactionAtomicSnapshot")
+        is not single_transaction_atomic
+        or payload.get("stableImmutableSnapshot") is not True
+        or progress.get("durableSnapshotMode") != snapshot_mode
+        or progress.get("singleTransactionAtomicSnapshot")
+        is not single_transaction_atomic
+        or progress.get("stableImmutableSnapshot") is not True
+        or repair.get("durableSnapshotMode") != snapshot_mode
+        or repair.get("singleTransactionAtomicSnapshot")
+        is not single_transaction_atomic
+        or repair.get("stableImmutableSnapshot") is not True
+    ):
+        raise RuntimeError(
+            "MLB_COOPERATIVE_REPLAY_SNAPSHOT_PROOF_INVALID"
+        )
     unresolved = repair.get("unresolved")
     if not isinstance(unresolved, list) or unresolved:
         raise RuntimeError("MLB_COOPERATIVE_REPLAY_UNRESOLVED")
@@ -5353,6 +5384,9 @@ def _terminal_replay_receipt(
             atomic_read_set_fingerprint
         ),
         "atomicDurableProofRequired": True,
+        "durableSnapshotMode": snapshot_mode,
+        "singleTransactionAtomicSnapshot": single_transaction_atomic,
+        "stableImmutableSnapshot": True,
         "canonicalCount": canonical_count,
         "noPredictionDataCount": no_prediction_count,
         "missedLockValidPrelockQuarantineCount": quarantine_count,
@@ -5380,6 +5414,9 @@ def _terminal_replay_receipt(
         "verificationIndex": verification_index,
         "durableTerminalVerificationComplete": True,
         "atomicDurableProofRequired": True,
+        "durableSnapshotMode": snapshot_mode,
+        "singleTransactionAtomicSnapshot": single_transaction_atomic,
+        "stableImmutableSnapshot": True,
         "atomicDurableItemCount": atomic_item_count,
         "atomicDurableReadSetFingerprint": (
             atomic_read_set_fingerprint
@@ -5415,6 +5452,9 @@ def _terminal_replay_receipt(
         "verificationPhase": "VERIFY",
         "durableTerminalVerificationComplete": True,
         "atomicDurableProofRequired": True,
+        "durableSnapshotMode": snapshot_mode,
+        "singleTransactionAtomicSnapshot": single_transaction_atomic,
+        "stableImmutableSnapshot": True,
         "atomicDurableItemCount": atomic_item_count,
         "atomicDurableReadSetFingerprint": (
             atomic_read_set_fingerprint

@@ -39,7 +39,14 @@ COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS = 100
 COOPERATIVE_TERMINAL_MAX_MANIFEST_GAMES = 15
 COOPERATIVE_TERMINAL_COMPLETION_LEASE_MARGIN_SECONDS = 60
 COOPERATIVE_TERMINAL_COMPLETION_HANDOFF_VERSION = (
-    "MLB-COOPERATIVE-TERMINAL-COMPLETION-HANDOFF-v1"
+    "MLB-COOPERATIVE-TERMINAL-COMPLETION-HANDOFF-"
+    "v2-explicit-snapshot-mode"
+)
+COOPERATIVE_TERMINAL_SNAPSHOT_MODES = frozenset(
+    {
+        "SINGLE_TRANSACTION_ATOMIC",
+        "FULL_STRONG_IMMUTABLE_LEASE_BOUND",
+    }
 )
 COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_VERSION = (
     "MLB-COOPERATIVE-PRELOCK-CANDIDATE-REVIEW-PROOF-"
@@ -2166,7 +2173,16 @@ def _validated_cooperative_terminal_complete_checkpoint(
 
 def _cooperative_terminal_completion_response(
     checkpoint: Dict[str, Any],
+    *,
+    snapshot_mode: str = "SINGLE_TRANSACTION_ATOMIC",
 ) -> Dict[str, Any]:
+    if snapshot_mode not in COOPERATIVE_TERMINAL_SNAPSHOT_MODES:
+        raise RuntimeError(
+            "COOPERATIVE_TERMINAL_COMPLETION_SNAPSHOT_MODE_INVALID"
+        )
+    single_transaction_atomic = (
+        snapshot_mode == "SINGLE_TRANSACTION_ATOMIC"
+    )
     checkpoint, atomic_requests, atomic_read_set_fingerprint = (
         _validated_cooperative_terminal_complete_checkpoint(checkpoint)
     )
@@ -2232,6 +2248,9 @@ def _cooperative_terminal_completion_response(
             atomic_read_set_fingerprint
         ),
         "atomicDurableProofRequired": True,
+        "durableSnapshotMode": snapshot_mode,
+        "singleTransactionAtomicSnapshot": single_transaction_atomic,
+        "stableImmutableSnapshot": True,
         "canonicalCount": canonical_count,
         "noPredictionDataCount": no_prediction_count,
         "missedLockValidPrelockQuarantineCount": quarantine_count,
@@ -2276,6 +2295,9 @@ def _cooperative_terminal_completion_response(
         "verificationIndex": verification_index,
         "durableTerminalVerificationComplete": True,
         "atomicDurableProofRequired": True,
+        "durableSnapshotMode": snapshot_mode,
+        "singleTransactionAtomicSnapshot": single_transaction_atomic,
+        "stableImmutableSnapshot": True,
         "atomicDurableItemCount": atomic_item_count,
         "atomicDurableReadSetFingerprint": (
             atomic_read_set_fingerprint
@@ -2311,6 +2333,9 @@ def _cooperative_terminal_completion_response(
         "verificationPhase": "VERIFY",
         "durableTerminalVerificationComplete": True,
         "atomicDurableProofRequired": True,
+        "durableSnapshotMode": snapshot_mode,
+        "singleTransactionAtomicSnapshot": single_transaction_atomic,
+        "stableImmutableSnapshot": True,
         "atomicDurableItemCount": atomic_item_count,
         "atomicDurableReadSetFingerprint": (
             atomic_read_set_fingerprint
@@ -2783,8 +2808,15 @@ def _validate_cooperative_terminal_completion_handoff(
     )
     proof = chunk_result.get("_atomicCompletionProof")
     terminal_response = chunk_result.get("terminalReplayResponse")
+    snapshot_mode = str(
+        (proof or {}).get("snapshotMode") or ""
+    )
     expected_response = _cooperative_terminal_completion_response(
-        validated_checkpoint
+        validated_checkpoint,
+        snapshot_mode=snapshot_mode,
+    )
+    single_transaction_atomic = (
+        snapshot_mode == "SINGLE_TRANSACTION_ATOMIC"
     )
     if (
         not isinstance(proof, dict)
@@ -2812,6 +2844,10 @@ def _validate_cooperative_terminal_completion_handoff(
             proof.get("verifiedAtEpoch"), "proof_verified_at_epoch"
         )
         <= 0
+        or snapshot_mode not in COOPERATIVE_TERMINAL_SNAPSHOT_MODES
+        or proof.get("singleTransactionAtomicSnapshot")
+        is not single_transaction_atomic
+        or proof.get("stableImmutableSnapshot") is not True
         or terminal_response != expected_response
     ):
         raise RuntimeError(
@@ -3925,7 +3961,6 @@ def _run_cooperative_terminal_chunk_impl(
                 if (
                     not isinstance(atomic_proof, dict)
                     or atomic_proof.get("ok") is not True
-                    or atomic_proof.get("atomicSnapshot") is not True
                     or atomic_proof.get(
                         "fullDependencyStrongReadVerified"
                     ) is not True
@@ -3949,8 +3984,30 @@ def _run_cooperative_terminal_chunk_impl(
                         "ATOMIC_COMPLETION_PROOF_INVALID"
                     )
 
+                snapshot_mode = str(
+                    atomic_proof.get("snapshotMode") or ""
+                )
+                single_transaction_atomic = (
+                    snapshot_mode == "SINGLE_TRANSACTION_ATOMIC"
+                )
+                if (
+                    snapshot_mode not in COOPERATIVE_TERMINAL_SNAPSHOT_MODES
+                    or atomic_proof.get("atomicSnapshot")
+                    is not single_transaction_atomic
+                    or atomic_proof.get(
+                        "singleTransactionAtomicSnapshot"
+                    )
+                    is not single_transaction_atomic
+                    or atomic_proof.get("stableImmutableSnapshot") is not True
+                ):
+                    raise RuntimeError(
+                        "COOPERATIVE_TERMINAL_CHUNK_"
+                        "ATOMIC_COMPLETION_PROOF_INVALID"
+                    )
+
                 response = _cooperative_terminal_completion_response(
-                    current_checkpoint
+                    current_checkpoint,
+                    snapshot_mode=snapshot_mode,
                 )
                 verified_epoch = int(
                     module._now_utc().astimezone(timezone.utc).timestamp()
@@ -3971,6 +4028,11 @@ def _run_cooperative_terminal_chunk_impl(
                     "readSetFingerprint": expected_read_set_fingerprint,
                     "itemCount": expected_atomic_items,
                     "verifiedAtEpoch": verified_epoch,
+                    "snapshotMode": snapshot_mode,
+                    "singleTransactionAtomicSnapshot": (
+                        single_transaction_atomic
+                    ),
+                    "stableImmutableSnapshot": True,
                 }
                 remaining = _cooperative_chunk_remaining_seconds(context)
                 result = {
@@ -3982,7 +4044,12 @@ def _run_cooperative_terminal_chunk_impl(
                     "checkpoint": current_checkpoint,
                     "checkpointWriteAllowed": False,
                     "atomicCompletionProof": {
-                        "atomicSnapshot": True,
+                        "atomicSnapshot": single_transaction_atomic,
+                        "singleTransactionAtomicSnapshot": (
+                            single_transaction_atomic
+                        ),
+                        "stableImmutableSnapshot": True,
+                        "snapshotMode": snapshot_mode,
                         "itemCount": expected_atomic_items,
                         "atomicAuthorityItemCount": int(
                             atomic_proof.get("atomicAuthorityItemCount")

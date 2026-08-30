@@ -697,6 +697,9 @@ class ChunkPatch:
         return {
             "ok": True,
             "atomicSnapshot": True,
+            "singleTransactionAtomicSnapshot": True,
+            "stableImmutableSnapshot": True,
+            "snapshotMode": "SINGLE_TRANSACTION_ATOMIC",
             "itemCount": len(requests),
             "atomicAuthorityItemCount": len(requests),
             "fullDependencyStrongReadVerified": True,
@@ -860,6 +863,47 @@ def test_chunk_processes_and_verifies_one_target_per_owner_then_atomic_completes
     assert released["released"] is True
     assert len(module.lease_releases) == 5
     assert response["productionAuthorityChanged"] is False
+
+
+def test_explicit_stable_snapshot_completes_without_claiming_atomicity():
+    class StableSnapshotPatch(ChunkPatch):
+        def _cooperative_terminal_atomic_verify(
+            self, module, processed_games, manifest_authority=None
+        ):
+            proof = super()._cooperative_terminal_atomic_verify(
+                module,
+                processed_games,
+                manifest_authority,
+            )
+            proof.update(
+                {
+                    "atomicSnapshot": False,
+                    "singleTransactionAtomicSnapshot": False,
+                    "stableImmutableSnapshot": True,
+                    "snapshotMode": (
+                        "FULL_STRONG_IMMUTABLE_LEASE_BOUND"
+                    ),
+                }
+            )
+            return proof
+
+    module = _install(ChunkModule(game_count=2), StableSnapshotPatch())
+    checkpoint, _ = _process_then_verify_all(module)
+
+    final = _invoke(module, checkpoint)
+
+    assert final["ok"] is True
+    proof = final["atomicCompletionProof"]
+    assert proof["atomicSnapshot"] is False
+    assert proof["singleTransactionAtomicSnapshot"] is False
+    assert proof["stableImmutableSnapshot"] is True
+    assert proof["snapshotMode"] == "FULL_STRONG_IMMUTABLE_LEASE_BOUND"
+    response = final["terminalReplayResponse"]
+    assert response["singleTransactionAtomicSnapshot"] is False
+    assert response["stableImmutableSnapshot"] is True
+    assert response["durableSnapshotMode"] == (
+        "FULL_STRONG_IMMUTABLE_LEASE_BOUND"
+    )
 
 
 def test_deleted_prefix_after_first_verification_fails_atomic_completion():
@@ -1842,6 +1886,16 @@ class AtomicReadClient:
 
     def transact_get_items(self, *, TransactItems, ReturnConsumedCapacity):
         assert ReturnConsumedCapacity == "NONE"
+        if self.mode == "transaction_canceled":
+            error = RuntimeError("injected transaction cancellation")
+            error.response = {
+                "Error": {"Code": "TransactionCanceledException"}
+            }
+            raise error
+        if self.mode == "other_error":
+            error = RuntimeError("injected validation failure")
+            error.response = {"Error": {"Code": "ValidationException"}}
+            raise error
         if (
             self.maximum_transaction_items is not None
             and len(TransactItems) > self.maximum_transaction_items
@@ -2010,6 +2064,9 @@ def test_real_atomic_verify_dedupes_mixed_authority_and_uses_exact_tables():
 
     assert result["ok"] is True
     assert result["atomicSnapshot"] is True
+    assert result["singleTransactionAtomicSnapshot"] is True
+    assert result["stableImmutableSnapshot"] is True
+    assert result["snapshotMode"] == "SINGLE_TRANSACTION_ATOMIC"
     assert result["fullDependencyStrongReadVerified"] is True
     assert result["immutableDependencyBindingsVerified"] is True
     assert result["itemCount"] == 4
@@ -2023,6 +2080,37 @@ def test_real_atomic_verify_dedupes_mixed_authority_and_uses_exact_tables():
     ]
     assert table_names.count("lock-authority-table") == 2
     assert table_names.count("pull-authority-table") == 2
+
+
+def test_real_atomic_verify_uses_explicit_stable_snapshot_on_cancellation():
+    module, client, processed, authority = _real_atomic_fixture()
+    client.mode = "transaction_canceled"
+
+    result = real_patch._cooperative_terminal_atomic_verify(
+        module,
+        processed,
+        authority,
+    )
+
+    assert result["ok"] is True
+    assert result["atomicSnapshot"] is False
+    assert result["singleTransactionAtomicSnapshot"] is False
+    assert result["stableImmutableSnapshot"] is True
+    assert result["snapshotMode"] == "FULL_STRONG_IMMUTABLE_LEASE_BOUND"
+    assert result["fullDependencyStrongReadVerified"] is True
+    assert result["immutableDependencyBindingsVerified"] is True
+
+
+def test_real_atomic_verify_does_not_fallback_for_other_aws_errors():
+    module, client, processed, authority = _real_atomic_fixture()
+    client.mode = "other_error"
+
+    with pytest.raises(RuntimeError, match="injected validation failure"):
+        real_patch._cooperative_terminal_atomic_verify(
+            module,
+            processed,
+            authority,
+        )
 
 
 @pytest.mark.parametrize(
