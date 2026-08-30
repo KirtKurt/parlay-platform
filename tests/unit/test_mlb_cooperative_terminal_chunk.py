@@ -2248,3 +2248,75 @@ def test_fifteen_canonical_games_plus_two_manifest_roots_fit_under_max100():
 
     assert len(requests) == 32
     assert len(requests) < repair.COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS == 100
+
+
+def test_durable_evidence_fingerprint_survives_dynamodb_decimal_roundtrip():
+    from decimal import Decimal
+
+    evidence = {
+        "durableIdentity": "provider:game-0",
+        "terminalState": (
+            repair.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+        ),
+        "authorityItemCount": 3,
+        "dependencyItemCount": 1,
+        "manifestAuthorityEvidenceFingerprint": "a" * 64,
+        "items": [
+            {
+                "tableRole": "LOCK_TABLE",
+                "PK": "LOCK#0",
+                "SK": "OUTCOME#0",
+                "itemFingerprint": "1" * 64,
+            },
+            {
+                "tableRole": "PULLS_TABLE",
+                "PK": "PULL#candidate",
+                "SK": "SNAPSHOT#candidate",
+                "itemFingerprint": "2" * 64,
+            },
+            {
+                "tableRole": "PULLS_TABLE",
+                "PK": "PULL#source",
+                "SK": "SOURCE#pull",
+                "itemFingerprint": "3" * 64,
+            },
+            {
+                "tableRole": "PULLS_TABLE",
+                "PK": "PULL#manifest",
+                "SK": "MANIFEST#authority",
+                "itemFingerprint": "4" * 64,
+            },
+        ],
+    }
+    evidence["evidenceFingerprint"] = (
+        repair._cooperative_terminal_evidence_fingerprint(evidence)
+    )
+    ddb_roundtrip = copy.deepcopy(evidence)
+    ddb_roundtrip["authorityItemCount"] = Decimal("3")
+    ddb_roundtrip["dependencyItemCount"] = Decimal("1")
+
+    assert repair._cooperative_terminal_evidence_fingerprint(
+        ddb_roundtrip
+    ) == evidence["evidenceFingerprint"]
+    validated = repair._validated_cooperative_terminal_evidence(
+        ddb_roundtrip,
+        durable_identity="provider:game-0",
+        terminal_state=(
+            repair.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+        ),
+    )
+    assert validated["evidenceFingerprint"] == evidence["evidenceFingerprint"]
+
+    tampered = copy.deepcopy(ddb_roundtrip)
+    tampered["dependencyItemCount"] = Decimal("2")
+    with pytest.raises(
+        RuntimeError,
+        match="COOPERATIVE_TERMINAL_CHUNK_DURABLE_EVIDENCE_INVALID",
+    ):
+        repair._validated_cooperative_terminal_evidence(
+            tampered,
+            durable_identity="provider:game-0",
+            terminal_state=(
+                repair.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
+            ),
+        )

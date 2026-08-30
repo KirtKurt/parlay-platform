@@ -1024,8 +1024,24 @@ def _bind_cooperative_terminal_manifest_evidence(
 def _cooperative_terminal_evidence_fingerprint(
     evidence: Dict[str, Any],
 ) -> str:
+    """Hash evidence identically before and after a DynamoDB round trip."""
+
+    def ddb_number_normalized(value: Any) -> Any:
+        if isinstance(value, Decimal):
+            if value.is_finite() and value == value.to_integral_value():
+                return int(value)
+            return str(value)
+        if isinstance(value, dict):
+            return {
+                str(key): ddb_number_normalized(child)
+                for key, child in value.items()
+            }
+        if isinstance(value, list):
+            return [ddb_number_normalized(child) for child in value]
+        return value
+
     material = {
-        str(key): value
+        str(key): ddb_number_normalized(value)
         for key, value in evidence.items()
         if key != "evidenceFingerprint"
     }
