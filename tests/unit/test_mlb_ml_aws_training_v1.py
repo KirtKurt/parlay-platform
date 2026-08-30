@@ -1676,7 +1676,10 @@ def test_scheduled_training_does_not_block_independent_selection_capture(
         },
     )()
 
-    result = aws_training.lambda_handler({"mode": "scheduled"}, outer_context)
+    result = aws_training.lambda_handler(
+        {"mode": "scheduled", "run": "unified_mlb_recovery_123"},
+        outer_context,
+    )
 
     assert len(capture_results) == 1
     assert capture_results[0]["ok"] is True
@@ -1691,6 +1694,7 @@ def test_scheduled_training_does_not_block_independent_selection_capture(
         "selectionWritesIdempotent": True,
         "manifestConditionCheckRequired": True,
     }
+    assert result["requestRun"] == "unified_mlb_recovery_123"
     assert result["statusFingerprint"] == aws_training._status_fingerprint(result)
     assert store.latest_statuses["training"] == result
     assert store.lease_owner is None

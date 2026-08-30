@@ -1636,6 +1636,7 @@ class TrainingService:
         self._execution_lease_context: Optional[Dict[str, Any]] = None
         self._selection_capture_before_training: Optional[Dict[str, Any]] = None
         self._scheduled_selection_capture_status: Optional[Dict[str, Any]] = None
+        self._invocation_run: Optional[str] = None
 
     def attest_execution_lease_acquired(
         self,
@@ -2323,6 +2324,9 @@ class TrainingService:
                 "templateSha256": self.config.deployment_template_sha256,
             },
         }
+        invocation_run = getattr(self, "_invocation_run", None)
+        if invocation_run:
+            result.setdefault("requestRun", invocation_run)
         if (
             str(result.get("executionMode") or "").strip().lower() == "training"
             and self._selection_capture_before_training is not None
@@ -2889,6 +2893,10 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
         )
     if mode not in {"scheduled", "selection_capture", "manual_review"}:
         raise TrainingContractError(f"unsupported training mode: {mode}")
+    request_run = str(request.get("run") or "").strip()
+    if request_run:
+        _validated_status_run_id(request_run)
+        service._invocation_run = request_run
     execution_mode = {
         "scheduled": "training",
         "selection_capture": "selection_capture",
