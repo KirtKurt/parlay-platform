@@ -3,7 +3,7 @@ name: Tennis Status Activity Backstop
 on:
   workflow_dispatch:
   schedule:
-    # Independent five-minute cadence closes gaps when GitHub delays the primary publisher schedule.
+    # Independent five-minute cadence closes gaps when GitHub delays primary schedules.
     - cron: '*/5 * * * *'
   workflow_run:
     # Bot-authored evidence commits do not reliably emit new push-triggered workflows.
@@ -43,4 +43,18 @@ jobs:
           gh workflow run publish-tennis-autonomy-status-backstop.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref main
-# ops refresh trigger 2026-08-25
+
+      - name: Dispatch stale-gated MLB production progress pulse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # workflow_dispatch is explicitly allowed to chain from GITHUB_TOKEN.
+          # force=false preserves the MLB reporter's own staleness gate, so this
+          # five-minute backstop cannot create duplicate issue pulses while still
+          # recovering from delayed/dropped schedule and workflow_run events.
+          gh workflow run mlb-30m-progress-pulse.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f force=false
+# ops refresh trigger 2026-08-30
