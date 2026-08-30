@@ -1,4 +1,4 @@
-name: R7 protected v2 deployed table binding diagnostic once
+name: R7 protected v2 installed-runtime proof diagnostic once
 
 "on":
   push:
@@ -9,13 +9,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: r7-protected-v2-deployed-table-binding-diagnostic-once
+  group: r7-protected-v2-installed-runtime-proof-diagnostic-once
   cancel-in-progress: false
 
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,93 +30,34 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
-      - name: Verify deployed table binding and validate live checkpoint
+      - name: Probe exact installed-runtime proof without mutation
         env:
           AWS_REGION: us-east-1
           AWS_DEFAULT_REGION: us-east-1
           AWS_EC2_METADATA_DISABLED: 'true'
           MLB_ROOT_STACK: parlay-platform-dev
-          PYTHONPATH: hello_world
         run: |
           set -euo pipefail
-          python - <<'PY'
+          cat > /tmp/r7_v2_proof_probe.py <<'PY'
           from __future__ import annotations
 
+          import copy
           import hashlib
           import json
-          import os
           from pathlib import Path
-
-          import boto3
-          from botocore.config import Config
-
-          region = os.environ['AWS_REGION']
-          stack = os.environ['MLB_ROOT_STACK']
-          config = Config(
-              connect_timeout=10,
-              read_timeout=60,
-              retries={'total_max_attempts': 3, 'mode': 'standard'},
-          )
-          cfn = boto3.client('cloudformation', region_name=region, config=config)
-          lambda_client = boto3.client('lambda', region_name=region, config=config)
-          lambda_detail = cfn.describe_stack_resource(
-              StackName=stack,
-              LogicalResourceId='MLBDailyPickLockFunction',
-          ).get('StackResourceDetail') or {}
-          function_name = str(lambda_detail.get('PhysicalResourceId') or '')
-          table_detail = cfn.describe_stack_resource(
-              StackName=stack,
-              LogicalResourceId='SnapshotsTable',
-          ).get('StackResourceDetail') or {}
-          table_name = str(table_detail.get('PhysicalResourceId') or '')
-          if not function_name or not table_name:
-              raise SystemExit('deployed Lambda or snapshots table could not be resolved')
-          function = lambda_client.get_function_configuration(
-              FunctionName=function_name,
-          )
-          deployed_environment = (
-              (function.get('Environment') or {}).get('Variables') or {}
-          )
-          snapshots_env = str(deployed_environment.get('SNAPSHOTS_TABLE') or '')
-          for key, value in deployed_environment.items():
-              os.environ[str(key)] = str(value)
 
           import mlb_daily_pick_lock_protected as protected
 
-          module_table_before = getattr(
-              protected.mlb_daily_pick_lock,
-              'TABLE',
-              None,
-          )
-          diagnostic_binding_applied = module_table_before is None
-          if diagnostic_binding_applied:
-              protected.mlb_daily_pick_lock.TABLE = boto3.resource(
-                  'dynamodb',
-                  region_name=region,
-                  config=config,
-              ).Table(table_name)
-
           report = {
-              'proofType': 'R7_PROTECTED_V2_DEPLOYED_TABLE_BINDING_DIAGNOSTIC',
+              'proofType': 'R7_PROTECTED_V2_INSTALLED_RUNTIME_PROOF_DIAGNOSTIC',
               'readOnly': True,
               'directTableWrite': False,
               'postStartPredictionCreationAllowed': False,
               'immutablePredictionRewriteAllowed': False,
               'productionAuthorityChanged': False,
-              'deployedFunction': {
-                  'state': function.get('State'),
-                  'lastUpdateStatus': function.get('LastUpdateStatus'),
-                  'handler': function.get('Handler'),
-                  'timeout': function.get('Timeout'),
-                  'snapshotsTableEnvironmentPresent': bool(snapshots_env),
-                  'snapshotsTableEnvironmentMatchesPhysical': (
-                      snapshots_env == table_name
-                  ),
-                  'moduleTableConfiguredAfterImport': module_table_before is not None,
-                  'diagnosticReadOnlyTableBindingApplied': (
-                      diagnostic_binding_applied
-                  ),
-              },
+              'moduleTableConfiguredAtStartup': (
+                  getattr(protected.mlb_daily_pick_lock, 'TABLE', None) is not None
+              ),
               'stages': [],
           }
 
@@ -141,29 +82,130 @@ jobs:
           raw = stage('read_cooperative_replay', protected._read_cooperative_replay)
           if not isinstance(raw, dict):
               raw = {}
+          slate = str(raw.get('slate_date_et') or '')
+          item = stage(
+              'cooperative_record_validation',
+              lambda: protected._cooperative_record(raw, slate),
+          )
+          checkpoint_result = None
+          if isinstance(item, dict):
+              checkpoint_result = stage(
+                  'stale_checkpoint_validation',
+                  lambda: protected._validated_prelock_candidate_review_v2_stale_checkpoint(
+                      item
+                  ),
+              )
+
+          prover = getattr(
+              protected.mlb_daily_pick_lock,
+              'prove_cooperative_prelock_candidate_review_v2',
+              None,
+          )
+          report['installedRuntime'] = {
+              'proverCallable': callable(prover),
+              'proofVersion': getattr(
+                  protected.mlb_daily_pick_lock,
+                  'MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_VERSION',
+                  None,
+              ),
+              'expectedProofVersion': (
+                  protected.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_PROOF_VERSION
+              ),
+          }
+
+          if (
+              isinstance(item, dict)
+              and isinstance(checkpoint_result, tuple)
+              and len(checkpoint_result) == 2
+              and callable(prover)
+          ):
+              checkpoint, prior_marker = checkpoint_result
+              request_epoch = protected._prelock_candidate_review_v2_integer(
+                  item.get('requested_at_epoch'),
+                  'diagnostic_request_epoch',
+              )
+              request_id = str(item.get('request_id') or '')
+              proof = stage(
+                  'installed_runtime_positive_proof',
+                  lambda: prover(
+                      slate_date=slate,
+                      request_epoch=request_epoch,
+                      request_id=request_id,
+                      checkpoint=copy.deepcopy(checkpoint),
+                  ),
+              )
+              validated_proof = None
+              if isinstance(proof, dict):
+                  validated_proof = stage(
+                      'positive_proof_validation',
+                      lambda: protected._validated_prelock_candidate_review_v2_positive_proof(
+                          proof,
+                          item,
+                          review_progress=checkpoint,
+                      ),
+                  )
+              if isinstance(validated_proof, dict):
+                  now = protected._utc_now()
+                  marker = {
+                      'version': (
+                          protected.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_REMEDIATION_VERSION
+                      ),
+                      'proofVersion': (
+                          protected.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_PROOF_VERSION
+                      ),
+                      'reviewCheckpointGuardVersion': (
+                          protected.COOPERATIVE_TERMINAL_REVIEW_CHECKPOINT_GUARD_VERSION
+                      ),
+                      'priorRemediationVersion': (
+                          protected.COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_VERSION
+                      ),
+                      'slateDateEt': slate,
+                      'requestEpoch': request_epoch,
+                      'requestIdFingerprint': hashlib.sha256(
+                          request_id.encode('utf-8')
+                      ).hexdigest(),
+                      'checkpointFingerprint': str(
+                          checkpoint.get('checkpointFingerprint') or ''
+                      ),
+                      'reviewProgressFingerprint': (
+                          protected._prelock_candidate_review_v2_progress_fingerprint(
+                              checkpoint
+                          )
+                      ),
+                      'priorRemediationFingerprint': (
+                          protected._source_pull_rebind_compact_fingerprint(
+                              prior_marker
+                          )
+                      ),
+                      'positiveProof': copy.deepcopy(validated_proof),
+                      'reviewReason': (
+                          protected.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_REASON
+                      ),
+                      'staleCheckpointStage': (
+                          protected.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_STALE_STAGE
+                      ),
+                      'staleCheckpointStatus': (
+                          protected.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_STALE_STATUS
+                      ),
+                      'appliedAtUtc': now.isoformat(),
+                      'appliedAtEpoch': int(now.timestamp()),
+                      'oneShot': True,
+                  }
+                  stage(
+                      'remediation_marker_validation',
+                      lambda: protected._validated_prelock_candidate_review_v2_marker(
+                          marker,
+                          item,
+                      ),
+                  )
+
           progress = raw.get('terminal_replay_progress') or {}
           report['liveSummary'] = {
               'state': raw.get('state'),
-              'slateDateEt': raw.get('slate_date_et'),
-              'requestEpoch': raw.get('requested_at_epoch'),
-              'requestIdFingerprint': hashlib.sha256(
-                  str(raw.get('request_id') or '').encode('utf-8')
-              ).hexdigest(),
+              'slateDateEt': slate,
+              'attemptCount': progress.get('attemptCount'),
               'lastChunkStage': raw.get('last_chunk_stage'),
               'lastChunkStatus': raw.get('last_chunk_status'),
-              'claimFieldsPresent': sorted(
-                  field for field in (
-                      'claim_owner',
-                      'claim_acquired_at_utc',
-                      'claim_acquired_at_epoch',
-                      'claim_expires_at_utc',
-                      'claim_expires_at_epoch',
-                  ) if field in raw
-              ),
-              'priorRemediationPresent': (
-                  protected.COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
-                  in raw
-              ),
               'v2RemediationPresent': (
                   protected.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_FIELD in raw
               ),
@@ -171,50 +213,58 @@ jobs:
                   protected.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_FIELD
                   in raw
               ),
-              'progressVersion': progress.get('version'),
-              'progressPhase': progress.get('phase'),
-              'attemptCount': progress.get('attemptCount'),
-              'expectedAttemptCount': (
-                  protected.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_ATTEMPT_COUNT
-              ),
-              'nextGameIndex': progress.get('nextGameIndex'),
-              'processedGameCount': progress.get('processedGameCount'),
-              'terminalCount': progress.get('terminalCount'),
-              'canonicalCount': progress.get('canonicalCount'),
-              'noPredictionDataCount': progress.get('noPredictionDataCount'),
-              'missedLockValidPrelockQuarantineCount': progress.get(
-                  'missedLockValidPrelockQuarantineCount'
-              ),
-              'reconciledCount': progress.get('reconciledCount'),
-              'verificationIndex': progress.get('verificationIndex'),
-              'verifiedGameCount': progress.get('verifiedGameCount'),
-              'lastAttempt': progress.get('lastAttempt'),
           }
-          current = stage(
-              'cooperative_record_validation',
-              lambda: protected._cooperative_record(
-                  raw,
-                  str(raw.get('slate_date_et') or ''),
-              ),
-          )
-          if isinstance(current, dict):
-              stage(
-                  'stale_checkpoint_validation',
-                  lambda: protected._validated_prelock_candidate_review_v2_stale_checkpoint(
-                      current
-                  ),
-              )
-
           print(json.dumps(report, indent=2, sort_keys=True, default=str))
-          Path('/tmp/r7-v2-deployed-table-binding-diagnostic.json').write_text(
+          Path('/tmp/r7-v2-installed-runtime-proof-diagnostic.json').write_text(
               json.dumps(report, indent=2, sort_keys=True, default=str) + '\n',
               encoding='utf-8',
           )
           PY
+          python - <<'PY'
+          from __future__ import annotations
+
+          import os
+          import subprocess
+          import sys
+
+          import boto3
+          from botocore.config import Config
+
+          region = os.environ['AWS_REGION']
+          stack = os.environ['MLB_ROOT_STACK']
+          config = Config(
+              connect_timeout=10,
+              read_timeout=60,
+              retries={'total_max_attempts': 3, 'mode': 'standard'},
+          )
+          cfn = boto3.client('cloudformation', region_name=region, config=config)
+          lambda_client = boto3.client('lambda', region_name=region, config=config)
+          detail = cfn.describe_stack_resource(
+              StackName=stack,
+              LogicalResourceId='MLBDailyPickLockFunction',
+          ).get('StackResourceDetail') or {}
+          function_name = str(detail.get('PhysicalResourceId') or '')
+          if not function_name:
+              raise SystemExit('deployed protected lock Lambda could not be resolved')
+          function = lambda_client.get_function_configuration(
+              FunctionName=function_name,
+          )
+          deployed = (function.get('Environment') or {}).get('Variables') or {}
+          child_env = dict(os.environ)
+          child_env.update({str(key): str(value) for key, value in deployed.items()})
+          child_env['PYTHONPATH'] = os.path.abspath('hello_world')
+          completed = subprocess.run(
+              [sys.executable, '/tmp/r7_v2_proof_probe.py'],
+              env=child_env,
+              check=False,
+              text=True,
+          )
+          raise SystemExit(completed.returncode)
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: r7-v2-deployed-table-binding-diagnostic-${{ github.run_id }}
-          path: /tmp/r7-v2-deployed-table-binding-diagnostic.json
+          name: r7-v2-installed-runtime-proof-diagnostic-${{ github.run_id }}
+          path: /tmp/r7-v2-installed-runtime-proof-diagnostic.json
           if-no-files-found: error
           retention-days: 14
