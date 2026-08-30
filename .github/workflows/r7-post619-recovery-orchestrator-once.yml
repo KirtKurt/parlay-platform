@@ -1,0 +1,63 @@
+name: R7 post-619 recovery orchestrator once
+
+on:
+  push:
+    branches:
+      - ops/r7-post619-recovery-20260829
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  orchestrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Wait for exact #619 deploy and dispatch protected R7 recovery
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EXPECTED_MAIN_SHA: 4a29c092bcb2445605c81bb15986ca708e070611
+          DEPLOY_RUN_ID: '33288523251'
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 180); do
+            payload="$(gh api "repos/${REPOSITORY}/actions/runs/${DEPLOY_RUN_ID}")"
+            status="$(jq -r '.status' <<<"$payload")"
+            conclusion="$(jq -r '.conclusion // ""' <<<"$payload")"
+            head_sha="$(jq -r '.head_sha' <<<"$payload")"
+            [[ "$head_sha" == "$EXPECTED_MAIN_SHA" ]] || {
+              echo "Deploy run head changed: $head_sha" >&2
+              exit 1
+            }
+            if [[ "$status" == "completed" ]]; then
+              [[ "$conclusion" == "success" ]] || {
+                echo "Exact deploy failed: $conclusion" >&2
+                exit 1
+              }
+              break
+            fi
+            sleep 20
+          done
+          payload="$(gh api "repos/${REPOSITORY}/actions/runs/${DEPLOY_RUN_ID}")"
+          [[ "$(jq -r '.status' <<<"$payload")" == "completed" ]] || {
+            echo 'Exact deploy did not complete before deadline' >&2
+            exit 1
+          }
+          [[ "$(jq -r '.conclusion' <<<"$payload")" == "success" ]] || exit 1
+          main_sha="$(gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$main_sha" == "$EXPECTED_MAIN_SHA" ]] || {
+            echo "Main advanced before protected recovery: $main_sha" >&2
+            exit 1
+          }
+          request_id="r7-post619-${DEPLOY_RUN_ID}-${EXPECTED_MAIN_SHA:0:12}"
+          gh api \
+            --method POST \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/${REPOSITORY}/actions/workflows/unified-mlb-learning-recovery-once.yml/dispatches" \
+            -f ref=main \
+            -f "inputs[request_id]=${request_id}" \
+            -f 'inputs[requeue_source_pull_proof_review_after_rebind]=false' \
+            -f 'inputs[requeue_prelock_candidate_review_after_installed_runtime_proof_v2]=true'
+          echo "Dispatched ${request_id}"
