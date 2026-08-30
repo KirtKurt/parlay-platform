@@ -8,10 +8,6 @@ name: R7 durable-evidence fingerprint repair once
 permissions:
   contents: write
 
-concurrency:
-  group: r7-durable-evidence-fingerprint-repair-once
-  cancel-in-progress: false
-
 jobs:
   repair:
     runs-on: ubuntu-latest
@@ -25,64 +21,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Apply minimal DDB-roundtrip repair and regression test
+      - name: Apply minimal repair and regression test
+        env:
+          OLD_B64: ZGVmIF9jb29wZXJhdGl2ZV90ZXJtaW5hbF9ldmlkZW5jZV9maW5nZXJwcmludCgKICAgIGV2aWRlbmNlOiBEaWN0W3N0ciwgQW55XSwKKSAtPiBzdHI6CiAgICBtYXRlcmlhbCA9IHsKICAgICAgICBzdHIoa2V5KTogdmFsdWUKICAgICAgICBmb3Iga2V5LCB2YWx1ZSBpbiBldmlkZW5jZS5pdGVtcygpCiAgICAgICAgaWYga2V5ICE9ICJldmlkZW5jZUZpbmdlcnByaW50IgogICAgfQogICAgcmV0dXJuIGhhc2hsaWIuc2hhMjU2KAogICAgICAgIGpzb24uZHVtcHMoCiAgICAgICAgICAgIG1hdGVyaWFsLAogICAgICAgICAgICBzb3J0X2tleXM9VHJ1ZSwKICAgICAgICAgICAgc2VwYXJhdG9ycz0oIiwiLCAiOiIpLAogICAgICAgICAgICBkZWZhdWx0PXN0ciwKICAgICAgICApLmVuY29kZSgidXRmLTgiKQogICAgKS5oZXhkaWdlc3QoKQo=
+          NEW_B64: ZGVmIF9jb29wZXJhdGl2ZV90ZXJtaW5hbF9ldmlkZW5jZV9maW5nZXJwcmludCgKICAgIGV2aWRlbmNlOiBEaWN0W3N0ciwgQW55XSwKKSAtPiBzdHI6CiAgICAiIiJIYXNoIGV2aWRlbmNlIGlkZW50aWNhbGx5IGJlZm9yZSBhbmQgYWZ0ZXIgYSBEeW5hbW9EQiByb3VuZCB0cmlwLiIiIgoKICAgIGRlZiBkZGJfbnVtYmVyX25vcm1hbGl6ZWQodmFsdWU6IEFueSkgLT4gQW55OgogICAgICAgIGlmIGlzaW5zdGFuY2UodmFsdWUsIERlY2ltYWwpOgogICAgICAgICAgICBpZiB2YWx1ZS5pc19maW5pdGUoKSBhbmQgdmFsdWUgPT0gdmFsdWUudG9faW50ZWdyYWxfdmFsdWUoKToKICAgICAgICAgICAgICAgIHJldHVybiBpbnQodmFsdWUpCiAgICAgICAgICAgIHJldHVybiBzdHIodmFsdWUpCiAgICAgICAgaWYgaXNpbnN0YW5jZSh2YWx1ZSwgZGljdCk6CiAgICAgICAgICAgIHJldHVybiB7CiAgICAgICAgICAgICAgICBzdHIoa2V5KTogZGRiX251bWJlcl9ub3JtYWxpemVkKGNoaWxkKQogICAgICAgICAgICAgICAgZm9yIGtleSwgY2hpbGQgaW4gdmFsdWUuaXRlbXMoKQogICAgICAgICAgICB9CiAgICAgICAgaWYgaXNpbnN0YW5jZSh2YWx1ZSwgbGlzdCk6CiAgICAgICAgICAgIHJldHVybiBbZGRiX251bWJlcl9ub3JtYWxpemVkKGNoaWxkKSBmb3IgY2hpbGQgaW4gdmFsdWVdCiAgICAgICAgcmV0dXJuIHZhbHVlCgogICAgbWF0ZXJpYWwgPSB7CiAgICAgICAgc3RyKGtleSk6IGRkYl9udW1iZXJfbm9ybWFsaXplZCh2YWx1ZSkKICAgICAgICBmb3Iga2V5LCB2YWx1ZSBpbiBldmlkZW5jZS5pdGVtcygpCiAgICAgICAgaWYga2V5ICE9ICJldmlkZW5jZUZpbmdlcnByaW50IgogICAgfQogICAgcmV0dXJuIGhhc2hsaWIuc2hhMjU2KAogICAgICAgIGpzb24uZHVtcHMoCiAgICAgICAgICAgIG1hdGVyaWFsLAogICAgICAgICAgICBzb3J0X2tleXM9VHJ1ZSwKICAgICAgICAgICAgc2VwYXJhdG9ycz0oIiwiLCAiOiIpLAogICAgICAgICAgICBkZWZhdWx0PXN0ciwKICAgICAgICApLmVuY29kZSgidXRmLTgiKQogICAgKS5oZXhkaWdlc3QoKQo=
+          TEST_B64: CgpkZWYgdGVzdF9kdXJhYmxlX2V2aWRlbmNlX2ZpbmdlcnByaW50X3N1cnZpdmVzX2R5bmFtb2RiX2RlY2ltYWxfcm91bmR0cmlwKCk6CiAgICBldmlkZW5jZSA9IHsKICAgICAgICAiZHVyYWJsZUlkZW50aXR5IjogInByb3ZpZGVyOmdhbWUtMCIsCiAgICAgICAgInRlcm1pbmFsU3RhdGUiOiAoCiAgICAgICAgICAgIHJlcGFpci5NSVNTRURfTE9DS19WQUxJRF9QUkVMT0NLX0NBTkRJREFURV9OT1RfUFJPTU9URUQKICAgICAgICApLAogICAgICAgICJhdXRob3JpdHlJdGVtQ291bnQiOiAzLAogICAgICAgICJkZXBlbmRlbmN5SXRlbUNvdW50IjogMSwKICAgICAgICAibWFuaWZlc3RBdXRob3JpdHlFdmlkZW5jZUZpbmdlcnByaW50IjogImEiICogNjQsCiAgICAgICAgIml0ZW1zIjogWwogICAgICAgICAgICB7CiAgICAgICAgICAgICAgICAidGFibGVSb2xlIjogIkxPQ0tfVEFCTEUiLAogICAgICAgICAgICAgICAgIlBLIjogIkxPQ0sjMCIsCiAgICAgICAgICAgICAgICAiU0siOiAiT1VUQ09NRSMwIiwKICAgICAgICAgICAgICAgICJpdGVtRmluZ2VycHJpbnQiOiAiMSIgKiA2NCwKICAgICAgICAgICAgfSwKICAgICAgICAgICAgewogICAgICAgICAgICAgICAgInRhYmxlUm9sZSI6ICJQVUxMU19UQUJMRSIsCiAgICAgICAgICAgICAgICAiUEsiOiAiUFVMTCNjYW5kaWRhdGUiLAogICAgICAgICAgICAgICAgIlNLIjogIlNOQVBTSE9UI2NhbmRpZGF0ZSIsCiAgICAgICAgICAgICAgICAiaXRlbUZpbmdlcnByaW50IjogIjIiICogNjQsCiAgICAgICAgICAgIH0sCiAgICAgICAgICAgIHsKICAgICAgICAgICAgICAgICJ0YWJsZVJvbGUiOiAiUFVMTFNfVEFCTEUiLAogICAgICAgICAgICAgICAgIlBLIjogIlBVTEwjc291cmNlIiwKICAgICAgICAgICAgICAgICJTSyI6ICJTT1VSQ0UjcHVsbCIsCiAgICAgICAgICAgICAgICAiaXRlbUZpbmdlcnByaW50IjogIjMiICogNjQsCiAgICAgICAgICAgIH0sCiAgICAgICAgICAgIHsKICAgICAgICAgICAgICAgICJ0YWJsZVJvbGUiOiAiUFVMTFNfVEFCTEUiLAogICAgICAgICAgICAgICAgIlBLIjogIlBVTEwjbWFuaWZlc3QiLAogICAgICAgICAgICAgICAgIlNLIjogIk1BTklGRVNUI2F1dGhvcml0eSIsCiAgICAgICAgICAgICAgICAiaXRlbUZpbmdlcnByaW50IjogIjQiICogNjQsCiAgICAgICAgICAgIH0sCiAgICAgICAgXSwKICAgIH0KICAgIGV2aWRlbmNlWyJldmlkZW5jZUZpbmdlcnByaW50Il0gPSAoCiAgICAgICAgcmVwYWlyLl9jb29wZXJhdGl2ZV90ZXJtaW5hbF9ldmlkZW5jZV9maW5nZXJwcmludChldmlkZW5jZSkKICAgICkKICAgIGRkYl9yb3VuZHRyaXAgPSBjb3B5LmRlZXBjb3B5KGV2aWRlbmNlKQogICAgZGRiX3JvdW5kdHJpcFsiYXV0aG9yaXR5SXRlbUNvdW50Il0gPSBEZWNpbWFsKCIzIikKICAgIGRkYl9yb3VuZHRyaXBbImRlcGVuZGVuY3lJdGVtQ291bnQiXSA9IERlY2ltYWwoIjEiKQoKICAgIGFzc2VydCByZXBhaXIuX2Nvb3BlcmF0aXZlX3Rlcm1pbmFsX2V2aWRlbmNlX2ZpbmdlcnByaW50KAogICAgICAgIGRkYl9yb3VuZHRyaXAKICAgICkgPT0gZXZpZGVuY2VbImV2aWRlbmNlRmluZ2VycHJpbnQiXQogICAgdmFsaWRhdGVkID0gcmVwYWlyLl92YWxpZGF0ZWRfY29vcGVyYXRpdmVfdGVybWluYWxfZXZpZGVuY2UoCiAgICAgICAgZGRiX3JvdW5kdHJpcCwKICAgICAgICBkdXJhYmxlX2lkZW50aXR5PSJwcm92aWRlcjpnYW1lLTAiLAogICAgICAgIHRlcm1pbmFsX3N0YXRlPSgKICAgICAgICAgICAgcmVwYWlyLk1JU1NFRF9MT0NLX1ZBTElEX1BSRUxPQ0tfQ0FORElEQVRFX05PVF9QUk9NT1RFRAogICAgICAgICksCiAgICApCiAgICBhc3NlcnQgdmFsaWRhdGVkWyJldmlkZW5jZUZpbmdlcnByaW50Il0gPT0gZXZpZGVuY2VbImV2aWRlbmNlRmluZ2VycHJpbnQiXQoKICAgIHRhbXBlcmVkID0gY29weS5kZWVwY29weShkZGJfcm91bmR0cmlwKQogICAgdGFtcGVyZWRbImRlcGVuZGVuY3lJdGVtQ291bnQiXSA9IERlY2ltYWwoIjIiKQogICAgd2l0aCBweXRlc3QucmFpc2VzKAogICAgICAgIFJ1bnRpbWVFcnJvciwKICAgICAgICBtYXRjaD0iQ09PUEVSQVRJVkVfVEVSTUlOQUxfQ0hVTktfRFVSQUJMRV9FVklERU5DRV9JTlZBTElEIiwKICAgICk6CiAgICAgICAgcmVwYWlyLl92YWxpZGF0ZWRfY29vcGVyYXRpdmVfdGVybWluYWxfZXZpZGVuY2UoCiAgICAgICAgICAgIHRhbXBlcmVkLAogICAgICAgICAgICBkdXJhYmxlX2lkZW50aXR5PSJwcm92aWRlcjpnYW1lLTAiLAogICAgICAgICAgICB0ZXJtaW5hbF9zdGF0ZT0oCiAgICAgICAgICAgICAgICByZXBhaXIuTUlTU0VEX0xPQ0tfVkFMSURfUFJFTE9DS19DQU5ESURBVEVfTk9UX1BST01PVEVECiAgICAgICAgICAgICksCiAgICAgICAgKQo=
         run: |
           set -euo pipefail
           python - <<'PY'
+          import base64
+          import os
           from pathlib import Path
 
           source_path = Path('hello_world/mlb_prospective_row_repair.py')
           source = source_path.read_text(encoding='utf-8')
-          old = '''def _cooperative_terminal_evidence_fingerprint(
-              evidence: Dict[str, Any],
-          ) -> str:
-              material = {
-                  str(key): value
-                  for key, value in evidence.items()
-                  if key != "evidenceFingerprint"
-              }
-              return hashlib.sha256(
-                  json.dumps(
-                      material,
-                      sort_keys=True,
-                      separators=(",", ":"),
-                      default=str,
-                  ).encode("utf-8")
-              ).hexdigest()
-          '''
-          new = '''def _cooperative_terminal_evidence_fingerprint(
-              evidence: Dict[str, Any],
-          ) -> str:
-              """Hash evidence identically before and after a DynamoDB round trip."""
-
-              def ddb_number_normalized(value: Any) -> Any:
-                  if isinstance(value, Decimal):
-                      if value.is_finite() and value == value.to_integral_value():
-                          return int(value)
-                      return str(value)
-                  if isinstance(value, dict):
-                      return {
-                          str(key): ddb_number_normalized(child)
-                          for key, child in value.items()
-                      }
-                  if isinstance(value, list):
-                      return [ddb_number_normalized(child) for child in value]
-                  return value
-
-              material = {
-                  str(key): ddb_number_normalized(value)
-                  for key, value in evidence.items()
-                  if key != "evidenceFingerprint"
-              }
-              return hashlib.sha256(
-                  json.dumps(
-                      material,
-                      sort_keys=True,
-                      separators=(",", ":"),
-                      default=str,
-                  ).encode("utf-8")
-              ).hexdigest()
-          '''
+          old = base64.b64decode(os.environ['OLD_B64']).decode('utf-8')
+          new = base64.b64decode(os.environ['NEW_B64']).decode('utf-8')
           if source.count(old) != 1:
               raise SystemExit(
                   f'exact evidence fingerprint block count was {source.count(old)}, expected 1'
@@ -93,78 +47,7 @@ jobs:
           tests = test_path.read_text(encoding='utf-8')
           marker = 'test_durable_evidence_fingerprint_survives_dynamodb_decimal_roundtrip'
           if marker not in tests:
-              tests += '''
-
-
-def test_durable_evidence_fingerprint_survives_dynamodb_decimal_roundtrip():
-    evidence = {
-        "durableIdentity": "provider:game-0",
-        "terminalState": (
-            repair.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
-        ),
-        "authorityItemCount": 3,
-        "dependencyItemCount": 1,
-        "manifestAuthorityEvidenceFingerprint": "a" * 64,
-        "items": [
-            {
-                "tableRole": "LOCK_TABLE",
-                "PK": "LOCK#0",
-                "SK": "OUTCOME#0",
-                "itemFingerprint": "1" * 64,
-            },
-            {
-                "tableRole": "PULLS_TABLE",
-                "PK": "PULL#candidate",
-                "SK": "SNAPSHOT#candidate",
-                "itemFingerprint": "2" * 64,
-            },
-            {
-                "tableRole": "PULLS_TABLE",
-                "PK": "PULL#source",
-                "SK": "SOURCE#pull",
-                "itemFingerprint": "3" * 64,
-            },
-            {
-                "tableRole": "PULLS_TABLE",
-                "PK": "PULL#manifest",
-                "SK": "MANIFEST#authority",
-                "itemFingerprint": "4" * 64,
-            },
-        ],
-    }
-    evidence["evidenceFingerprint"] = (
-        repair._cooperative_terminal_evidence_fingerprint(evidence)
-    )
-    ddb_roundtrip = copy.deepcopy(evidence)
-    ddb_roundtrip["authorityItemCount"] = Decimal("3")
-    ddb_roundtrip["dependencyItemCount"] = Decimal("1")
-
-    assert repair._cooperative_terminal_evidence_fingerprint(
-        ddb_roundtrip
-    ) == evidence["evidenceFingerprint"]
-    validated = repair._validated_cooperative_terminal_evidence(
-        ddb_roundtrip,
-        durable_identity="provider:game-0",
-        terminal_state=(
-            repair.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
-        ),
-    )
-    assert validated["evidenceFingerprint"] == evidence["evidenceFingerprint"]
-
-    tampered = copy.deepcopy(ddb_roundtrip)
-    tampered["dependencyItemCount"] = Decimal("2")
-    with pytest.raises(
-        RuntimeError,
-        match="COOPERATIVE_TERMINAL_CHUNK_DURABLE_EVIDENCE_INVALID",
-    ):
-        repair._validated_cooperative_terminal_evidence(
-            tampered,
-            durable_identity="provider:game-0",
-            terminal_state=(
-                repair.MISSED_LOCK_VALID_PRELOCK_CANDIDATE_NOT_PROMOTED
-            ),
-        )
-'''
+              tests += base64.b64decode(os.environ['TEST_B64']).decode('utf-8')
               test_path.write_text(tests, encoding='utf-8')
           PY
           rm .github/workflows/r7-ddb-fingerprint-fix-once.yml
@@ -183,8 +66,6 @@ def test_durable_evidence_fingerprint_survives_dynamodb_decimal_roundtrip():
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add hello_world/mlb_prospective_row_repair.py \
-            tests/unit/test_mlb_cooperative_terminal_chunk.py \
-            .github/workflows/r7-ddb-fingerprint-fix-once.yml
+          git add -A
           git commit -m 'Fix R7 durable evidence fingerprint roundtrip'
           git push origin HEAD:fix/r7-durable-evidence-ddb-fingerprint-20260829
