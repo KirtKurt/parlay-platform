@@ -987,12 +987,22 @@ def _cooperative_terminal_progress_public(
             "validate_cooperative_terminal_completion_checkpoint",
             None,
         )
+        normalizer = getattr(
+            mlb_daily_pick_lock,
+            "normalize_cooperative_terminal_completion_checkpoint",
+            None,
+        )
         try:
-            validated = validator(progress) if callable(validator) else None
+            if not callable(validator) or not callable(normalizer):
+                raise RuntimeError(
+                    "MLB_COOPERATIVE_REPLAY_COMPLETE_PROGRESS_INVALID"
+                )
+            normalized_progress = normalizer(progress)
+            validated = validator(normalized_progress)
             if (
                 not isinstance(validated, tuple)
                 or len(validated) != 3
-                or validated[0] != progress
+                or validated[0] != normalized_progress
                 or not isinstance(validated[1], list)
                 or len(validated[1]) > COOPERATIVE_TERMINAL_ATOMIC_MAX_ITEMS
                 or re.fullmatch(
@@ -1005,19 +1015,19 @@ def _cooperative_terminal_progress_public(
                     "MLB_COOPERATIVE_REPLAY_COMPLETE_PROGRESS_INVALID"
                 )
             terminal_games, terminal_game_set_fingerprint = (
-                _checkpoint_terminal_game_receipt(progress)
+                _checkpoint_terminal_game_receipt(normalized_progress)
             )
-            authority = progress.get("manifestAuthority")
+            authority = normalized_progress.get("manifestAuthority")
             if not isinstance(authority, Mapping):
                 raise RuntimeError(
                     "MLB_COOPERATIVE_REPLAY_COMPLETE_PROGRESS_INVALID"
                 )
             fingerprint_values = {
                 "manifestFingerprint": str(
-                    progress.get("manifestFingerprint") or ""
+                    normalized_progress.get("manifestFingerprint") or ""
                 ),
                 "checkpointFingerprint": str(
-                    progress.get("checkpointFingerprint") or ""
+                    normalized_progress.get("checkpointFingerprint") or ""
                 ),
                 "manifestAuthorityEvidenceFingerprint": str(
                     authority.get("authorityEvidenceFingerprint") or ""
