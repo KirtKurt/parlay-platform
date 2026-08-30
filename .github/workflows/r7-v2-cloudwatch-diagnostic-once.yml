@@ -1,4 +1,4 @@
-name: R7 durable-evidence proof source diagnostic once
+name: R7 exact proof implementation source diagnostic once
 
 "on":
   push:
@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Extract exact proof builder and durable-evidence validators
+      - name: Extract exact proof implementation and recursive helper graph
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -39,7 +39,8 @@ jobs:
               if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
           }
           requested = [
-              'prove_cooperative_prelock_candidate_review_v2',
+              '_prove_cooperative_prelock_candidate_review_v2_impl',
+              '_prove_cooperative_prelock_candidate_review_v2',
               '_validated_cooperative_terminal_evidence',
               '_cooperative_terminal_authority_evidence',
               '_cooperative_terminal_evidence_fingerprint',
@@ -55,16 +56,16 @@ jobs:
               selected.append(name)
               node = functions[name]
               for child in ast.walk(node):
-                  if (
-                      isinstance(child, ast.Call)
-                      and isinstance(child.func, ast.Name)
-                      and child.func.id.startswith('_cooperative_terminal')
-                      and child.func.id in functions
-                      and child.func.id not in selected
-                  ):
-                      queue.append(child.func.id)
+                  if isinstance(child, ast.Call) and isinstance(child.func, ast.Name):
+                      called = child.func.id
+                      if called in functions and called not in selected and called not in queue:
+                          if any(token in called for token in (
+                              'cooperative', 'terminal', 'manifest', 'candidate',
+                              'proof', 'evidence', 'strong_read', 'identity',
+                          )):
+                              queue.append(called)
           report = {
-              'proofType': 'R7_DURABLE_EVIDENCE_SOURCE_DIAGNOSTIC',
+              'proofType': 'R7_EXACT_PROOF_IMPLEMENTATION_SOURCE_DIAGNOSTIC',
               'sourcePath': str(path),
               'functions': {},
           }
@@ -76,14 +77,14 @@ jobs:
                   'source': '\n'.join(lines[node.lineno - 1:node.end_lineno]),
               }
           print(json.dumps(report, indent=2, sort_keys=True))
-          Path('/tmp/r7-durable-evidence-source.json').write_text(
+          Path('/tmp/r7-exact-proof-source.json').write_text(
               json.dumps(report, indent=2, sort_keys=True) + '\n',
               encoding='utf-8',
           )
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: r7-durable-evidence-source-${{ github.run_id }}
-          path: /tmp/r7-durable-evidence-source.json
+          name: r7-exact-proof-source-${{ github.run_id }}
+          path: /tmp/r7-exact-proof-source.json
           if-no-files-found: error
           retention-days: 14
