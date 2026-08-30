@@ -45,6 +45,10 @@ SOURCE_PULL_REBIND_REMEDIATION_VERSION = (
 SOURCE_PULL_REBIND_VERSION = (
     "MLB-STATUS-SOURCE-PULL-REBIND-v1-strong-immutable-row"
 )
+PRELOCK_CANDIDATE_REVIEW_V2_REMEDIATION_VERSION = (
+    "MLB-COOPERATIVE-PRELOCK-CANDIDATE-REVIEW-REMEDIATION-"
+    "v2-one-shot-installed-runtime-proof"
+)
 COOPERATIVE_REPLAY_REVIEW_FALLBACK_REASON = (
     "PRELOCK_CANDIDATE_REQUIRES_REVIEW"
 )
@@ -805,11 +809,18 @@ def _validated_durable_remediation_history_noop(
 ) -> bool:
     """Validate a compact consumed-incident receipt with no queue authority."""
 
-    durable = replay.get(
+    source_pull_durable = replay.get(
         "sourcePullRebindReviewRemediationDurableHistory"
     )
+    prelock_v2_durable = replay.get(
+        "prelockCandidateReviewV2DurableHistory"
+    )
     nested_durable = cooperative.get("durableRemediationHistory")
-    if durable is None and nested_durable is None:
+    if (
+        source_pull_durable is None
+        and prelock_v2_durable is None
+        and nested_durable is None
+    ):
         return False
     safety_fields = (
         "activeLeaseMutationAllowed",
@@ -818,8 +829,8 @@ def _validated_durable_remediation_history_noop(
         "directWorkflowTableWrite",
         "productionAuthorityChanged",
     )
-    valid = bool(
-        durable is True
+    common_valid = bool(
+        (source_pull_durable is True) != (prelock_v2_durable is True)
         and nested_durable is True
         and replay.get("ok") is True
         and replay.get("sport") == "mlb"
@@ -829,12 +840,6 @@ def _validated_durable_remediation_history_noop(
         and replay.get("skipped") is True
         and replay.get("mutatingRunAttempted") is False
         and replay.get("cooperativeTerminalReplayCompleted") is True
-        and replay.get("sourcePullRebindReviewRemediationApplied") is True
-        and replay.get("sourcePullRebindReviewRemediationIdempotent") is True
-        and replay.get("sourcePullRebindReviewRemediationVersion")
-        == SOURCE_PULL_REBIND_REMEDIATION_VERSION
-        and replay.get("sourcePullRebindVersion")
-        == SOURCE_PULL_REBIND_VERSION
         and all(replay.get(field) is False for field in safety_fields)
         and cooperative.get("version")
         == COOPERATIVE_TERMINAL_REPLAY_VERSION
@@ -850,6 +855,28 @@ def _validated_durable_remediation_history_noop(
             for field in safety_fields
         )
     )
+    source_pull_valid = bool(
+        source_pull_durable is True
+        and prelock_v2_durable is None
+        and replay.get("sourcePullRebindReviewRemediationApplied") is True
+        and replay.get("sourcePullRebindReviewRemediationIdempotent") is True
+        and replay.get("sourcePullRebindReviewRemediationVersion")
+        == SOURCE_PULL_REBIND_REMEDIATION_VERSION
+        and replay.get("sourcePullRebindVersion")
+        == SOURCE_PULL_REBIND_VERSION
+    )
+    prelock_v2_valid = bool(
+        prelock_v2_durable is True
+        and source_pull_durable is None
+        and replay.get("prelockCandidateReviewV2RemediationApplied") is True
+        and replay.get("prelockCandidateReviewV2RemediationIdempotent") is True
+        and replay.get("prelockCandidateReviewV2RemediationVersion")
+        == PRELOCK_CANDIDATE_REVIEW_V2_REMEDIATION_VERSION
+        and replay.get("installedRuntimePositiveProofBound") is True
+        and replay.get("priorSourcePullRebindRemediationValidated") is True
+        and replay.get("automaticRetryAllowed") is False
+    )
+    valid = common_valid and (source_pull_valid or prelock_v2_valid)
     if not valid:
         raise base.ReconciliationError(
             "protected_terminal_replay_durable_history_contract_invalid"
