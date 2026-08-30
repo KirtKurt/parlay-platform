@@ -155,9 +155,9 @@ def _missing_fundamentals(
         "recordType": "mlb_historical_missingness_only_fundamentals_snapshot",
         "schemaCohort": "MLB-ML-FUNDAMENTALS-v2",
         "snapshotRole": "HISTORICAL_POINT_IN_TIME_EXPLICIT_MISSINGNESS_ONLY",
-        "createdAtUtc": source_at,
+        "createdAtUtc": None,
         "evidenceCutoffUtc": source_at,
-        "sourcePullAtUtc": source_at,
+        "sourcePullAtUtc": None,
         "sourcePullId": None,
         "game": {
             "gameId": str(record.get("officialGamePk") or ""),
@@ -187,6 +187,7 @@ def _missing_fundamentals(
         "snapshotRef": artifact_ref,
         "historicalMissingnessOnly": True,
         "fabricatedValues": False,
+        "captureTimeUnavailable": True,
     }
     snapshot["fingerprint"] = fundamentals.fingerprint_for_snapshot(snapshot)
     return snapshot
@@ -392,8 +393,8 @@ def materialize_record(
         "correct": bool(correct),
         "pickCorrect": bool(correct),
         "labelStatus": "FINAL",
-        "labelFinalAtUtc": commence.isoformat(),
         "labelSource": "immutable_historical_optimizer_final_settlement_join",
+        "labelObservationTimeUnavailable": True,
         "r7HistoricalWalkForward": True,
         "historicalTrainingOnly": True,
         "selectionUsedOutcomes": False,
@@ -627,7 +628,6 @@ def validate_historical_record(
     source_at = _parse_dt(
         vector.get("sourcePullAtUtc") if isinstance(vector, Mapping) else None
     )
-    label_at = _parse_dt(row.get("labelFinalAtUtc"))
     if (
         row.get("r7HistoricalWalkForward") is not True
         or row.get("historicalTrainingOnly") is not True
@@ -668,8 +668,19 @@ def validate_historical_record(
         or not (source_at <= lock_at < commence)
     ):
         reasons.append("historical_feature_chronology_invalid")
-    if not label_at or not commence or label_at < commence:
-        reasons.append("historical_label_chronology_invalid")
+    if (
+        row.get("labelObservationTimeUnavailable") is not True
+        or any(
+            row.get(field)
+            for field in (
+                "labelFinalAtUtc",
+                "labelRetrievedAtUtc",
+                "outcomeFinalAtUtc",
+                "settledAtUtc",
+            )
+        )
+    ):
+        reasons.append("historical_label_time_must_remain_unstated")
     if (
         not isinstance(snapshot, Mapping)
         or snapshot.get("version") != FUNDAMENTALS_VERSION
@@ -677,6 +688,7 @@ def validate_historical_record(
         != FUNDAMENTALS_FINGERPRINT_VERSION
         or snapshot.get("historicalMissingnessOnly") is not True
         or snapshot.get("fabricatedValues") is not False
+        or snapshot.get("captureTimeUnavailable") is not True
         or snapshot.get("fingerprint")
         != fundamentals.fingerprint_for_snapshot(dict(snapshot))
     ):
