@@ -917,6 +917,23 @@ def test_status_cache_is_nested_exception_safe_and_returns_independent_copies():
     assert patch._STATUS_READ_CACHE.get() is None
 
 
+def test_fresh_nested_status_scope_separates_strong_rows_and_restores_outer():
+    with patch._status_read_scope() as outer:
+        outer["canonicalPulls"]["slate"] = ["immutable-pull"]
+        outer["consistentItems"]["prewrite"] = "missing"
+
+        with patch._status_read_scope(fresh=True) as fresh:
+            assert fresh is not outer
+            assert fresh["consistentItems"] == {}
+            assert fresh["canonicalPulls"] is outer["canonicalPulls"]
+            fresh["consistentItems"]["postwrite"] = "present"
+
+        assert patch._STATUS_READ_CACHE.get() is outer
+        assert outer["consistentItems"] == {"prewrite": "missing"}
+
+    assert patch._STATUS_READ_CACHE.get() is None
+
+
 def test_exact_batch_cache_chunks_native_keys_and_proves_absence():
     class Table:
         name = "parlay_platform_snapshots"

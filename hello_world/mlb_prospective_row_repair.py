@@ -3249,6 +3249,13 @@ def _execute_cooperative_terminal_target(
         else "VERIFY_DURABLE_TERMINAL"
     )
     try:
+        status_scope = getattr(patch, "_status_read_scope", None)
+        prime_status = getattr(patch, "_prime_status_manifest_items", None)
+        if not callable(status_scope) or not callable(prime_status):
+            raise RuntimeError(
+                "COOPERATIVE_TERMINAL_CHUNK_"
+                "PHASE_LOCAL_STATUS_READ_NOT_READY"
+            )
         remaining = _cooperative_chunk_remaining_seconds(context)
         _cooperative_chunk_telemetry(
             slate=slate,
@@ -3258,12 +3265,24 @@ def _execute_cooperative_terminal_target(
             game_identity=identity,
             phase=phase,
         )
-        (
-            terminal_state,
-            durable_identity,
-            durable_evidence,
-            terminal_error,
-        ) = _cooperative_terminal_observed_state(
+        # The outer cooperative context intentionally shares only immutable
+        # canonical pull material. Install a fresh strong-read phase here so
+        # exact terminal/stage/authority rows are batch-primed without letting
+        # a pre-write absence survive into the readback phase below.
+        with status_scope(fresh=True):
+            prime_status(
+                module,
+                module.TABLE,
+                slate,
+                manifest=manifest,
+                lock_minutes=getattr(module, "LOCK_MINUTES", 45),
+            )
+            (
+                terminal_state,
+                durable_identity,
+                durable_evidence,
+                terminal_error,
+            ) = _cooperative_terminal_observed_state(
                 module,
                 patch,
                 slate=slate,
@@ -3500,22 +3519,30 @@ def _execute_cooperative_terminal_target(
                     authority=authority,
                 )
                 stage = "READBACK_NO_PREDICTION_TERMINAL"
-            (
-                readback_state,
-                readback_identity,
-                readback_evidence,
-                readback_error,
-            ) = _cooperative_terminal_observed_state(
-                module,
-                patch,
-                slate=slate,
-                pulls=pulls,
-                manifest=manifest,
-                game_index=game_index,
-                identity_options=identity_options[game_index],
-                selected_manifest_authority=selected_manifest_authority,
-                manifest_authority=manifest_authority,
-            )
+            with status_scope(fresh=True):
+                prime_status(
+                    module,
+                    module.TABLE,
+                    slate,
+                    manifest=manifest,
+                    lock_minutes=getattr(module, "LOCK_MINUTES", 45),
+                )
+                (
+                    readback_state,
+                    readback_identity,
+                    readback_evidence,
+                    readback_error,
+                ) = _cooperative_terminal_observed_state(
+                    module,
+                    patch,
+                    slate=slate,
+                    pulls=pulls,
+                    manifest=manifest,
+                    game_index=game_index,
+                    identity_options=identity_options[game_index],
+                    selected_manifest_authority=selected_manifest_authority,
+                    manifest_authority=manifest_authority,
+                )
             if (
                 readback_error
                 or readback_state != expected_readback_state
