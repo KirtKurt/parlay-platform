@@ -397,7 +397,6 @@ def _validated_canonical_locks(
     )
     rows: List[Dict[str, Any]] = []
     rejected: List[Dict[str, Any]] = []
-    skipped_labeled: List[Dict[str, Any]] = []
     for item in items:
         data = item.get("data") if isinstance(item.get("data"), dict) else {}
         errors = rolling_audit._canonical_lock_item_errors(item, slate_date)
@@ -1402,6 +1401,7 @@ def load_canonical_locked_rows_without_labels(
     """Expose immutable pregame vectors for shadow selection, never outcomes."""
     rows: List[Dict[str, Any]] = []
     rejected: List[Dict[str, Any]] = []
+    skipped_labeled: List[Dict[str, Any]] = []
     for slate in _requested_slate_dates(slate_date, slate_dates):
         locks, lock_rejections = _validated_canonical_locks(slate)
         lock_by_pk, duplicates = _lock_index(locks)
