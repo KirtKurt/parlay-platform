@@ -68,12 +68,19 @@ jobs:
               'recordPresent':False,
               'errorCode':'SNAPSHOTS_TABLE_NOT_CONFIGURED',
           }
+          execution_lease_state={
+              'readOk':False,
+              'recordPresent':False,
+              'errorCode':'SNAPSHOTS_TABLE_NOT_CONFIGURED',
+          }
           if snapshots_table:
+              snapshots=(
+                  boto3.resource('dynamodb',region_name=region)
+                  .Table(snapshots_table)
+              )
               try:
                   item=(
-                      boto3.resource('dynamodb',region_name=region)
-                      .Table(snapshots_table)
-                      .get_item(
+                      snapshots.get_item(
                           Key={
                               'PK':'MLB_LOCK_EXECUTION#V1',
                               'SK':'COOPERATIVE_TERMINAL_REPLAY#V1',
@@ -164,6 +171,61 @@ jobs:
                       }
               except Exception as exc:
                   cooperative_state={
+                      'readOk':False,
+                      'recordPresent':False,
+                      'errorCode':type(exc).__name__,
+                  }
+              try:
+                  lease=(
+                      snapshots.get_item(
+                          Key={
+                              'PK':'MLB_LOCK_EXECUTION#V1',
+                              'SK':'LEASE',
+                          },
+                          ConsistentRead=True,
+                      )
+                      .get('Item')
+                  )
+                  if not isinstance(lease,dict):
+                      execution_lease_state={
+                          'readOk':True,
+                          'recordPresent':False,
+                          'errorCode':None,
+                          'active':False,
+                      }
+                  else:
+                      lease_expiry=int(
+                          lease.get('lease_expires_at_epoch') or 0
+                      )
+                      lease_now=int(
+                          datetime.now(timezone.utc).timestamp()
+                      )
+                      execution_lease_state={
+                          'readOk':True,
+                          'recordPresent':True,
+                          'errorCode':None,
+                          'active':bool(lease_expiry>lease_now),
+                          'remainingSeconds':max(
+                              0,lease_expiry-lease_now
+                          ) if lease_expiry else 0,
+                          'expiresAtUtc':str(
+                              lease.get('lease_expires_at_utc') or ''
+                          ),
+                          'executionMode':str(
+                              lease.get('execution_mode') or ''
+                          ),
+                          'slateDateEt':str(
+                              lease.get('slate_date_et') or ''
+                          ),
+                          'leaseVersion':str(
+                              lease.get('lease_version') or ''
+                          ),
+                          'ownerPresent':bool(
+                              str(lease.get('lease_owner') or '').strip()
+                          ),
+                      }
+              except Exception as exc:
+                  execution_lease_state={
                       'readOk':False,
                       'recordPresent':False,
                       'errorCode':type(exc).__name__,
@@ -380,6 +442,7 @@ jobs:
               'dailyLockInvocationReports':lock_invocations[-300:],
               'dailyLockSignalEvents':lock_recent[-300:],
               'cooperativeReplayState':cooperative_state,
+              'executionLeaseState':execution_lease_state,
               'secretExposed':False,
           }
           Path('/tmp/mlb_latest_failure.json').write_text(
@@ -395,6 +458,7 @@ jobs:
               'failureAtUtc':report['failureAtUtc'],
               'candidatePersistenceFailures':report['candidatePersistenceFailures'],
               'cooperativeReplayState':report['cooperativeReplayState'],
+              'executionLeaseState':report['executionLeaseState'],
               'readOnly':True,
           },indent=2,default=str))
           PY
