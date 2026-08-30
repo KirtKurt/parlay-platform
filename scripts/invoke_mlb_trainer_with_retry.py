@@ -8,6 +8,7 @@ import json
 import re
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
@@ -165,6 +166,99 @@ def _payload_mode(payload: str) -> str:
     return mode
 
 
+def _payload_request_run(payload: str) -> Optional[str]:
+    parsed = _parse_json_object(payload, error="trainer_payload_json_invalid")
+    value = str(parsed.get("run") or "").strip()
+    if not value:
+        return None
+    return _validated_run_id(value, field="trainer_request_run")
+
+
+def _recover_training_result_from_status(
+    *,
+    client: Any,
+    function_name: str,
+    request_run: str,
+    started_at: datetime,
+) -> Optional[Tuple[bytes, Dict[str, Any]]]:
+    """Recover a completed admitted run after its response channel closed."""
+    try:
+        response = client.invoke(
+            FunctionName=function_name,
+            InvocationType="RequestResponse",
+            Payload=json.dumps(
+                {"sport": "mlb", "mode": STATUS_MODE},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8"),
+        )
+        if not isinstance(response, dict):
+            return None
+        response_body = _read_payload_stream(response)
+    except (
+        ClientError,
+        ConnectionClosedError,
+        EndpointConnectionError,
+        ReadTimeoutError,
+        TrainerInvocationResponseError,
+    ):
+        return None
+    metadata = {
+        key: response[key]
+        for key in ("StatusCode", "FunctionError", "ExecutedVersion")
+        if key in response
+    }
+    if metadata.get("StatusCode") != 200 or metadata.get("FunctionError"):
+        return None
+    status = _function_error_payload(response_body)
+    health = status.get("trainingHealth") if isinstance(status, dict) else None
+    run = health.get("latestRun") if isinstance(health, dict) else None
+    if not isinstance(run, dict):
+        return None
+    try:
+        created_at = datetime.fromisoformat(
+            str(run.get("createdAtUtc") or "").replace("Z", "+00:00")
+        )
+    except (TypeError, ValueError):
+        return None
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    exact_negative_authority = all(
+        run.get(field) is False
+        for field in (
+            "productionAuthorityChanged",
+            "liveInferenceAuthority",
+            "immutablePredictionRewriteAllowed",
+            "postStartPredictionCreationAllowed",
+            "automaticPromotionEnabled",
+        )
+    )
+    if (
+        health.get("ok") is not True
+        or health.get("latestRun") != run
+        or run.get("ok") is not True
+        or run.get("executionMode") != "training"
+        or run.get("requestRun") != request_run
+        or created_at.astimezone(timezone.utc) < started_at
+        or not exact_negative_authority
+        or not isinstance(status.get("deploymentIdentity"), dict)
+        or run.get("deploymentIdentity") != status.get("deploymentIdentity")
+    ):
+        return None
+    recovered_body = json.dumps(
+        run, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return recovered_body, {
+        **metadata,
+        "InvocationStatusRecovery": {
+            "version": RETRY_CONTROL_VERSION,
+            "requestRun": request_run,
+            "durableStatusRecovered": True,
+            "newerThanInvocationStart": True,
+        },
+    }
+
+
 def _validate_compatibility_policy(
     *,
     mode: str,
@@ -288,6 +382,7 @@ def invoke_with_retry(
     """Retry only failures proven safe before any state write."""
 
     mode = _payload_mode(payload)
+    request_run = _payload_request_run(payload)
     _validate_compatibility_policy(
         mode=mode,
         max_attempts=max_attempts,
@@ -303,8 +398,25 @@ def invoke_with_retry(
     lease_contention_failures = 0
     transport_failures = 0
     lease_deadline: Optional[float] = None
+    invocation_started_at = datetime.now(timezone.utc)
 
     while True:
+        if transport_failures and mode == "scheduled" and request_run:
+            recovered = _recover_training_result_from_status(
+                client=client,
+                function_name=function_name,
+                request_run=request_run,
+                started_at=invocation_started_at,
+            )
+            if recovered is not None:
+                response_body, invocation_metadata = recovered
+                invocation_metadata["InvocationRetryControl"] = _retry_evidence(
+                    mode=mode,
+                    invocation_attempts=invocation_attempts,
+                    pre_admission_failures=pre_admission_failures,
+                    lease_contention_failures=lease_contention_failures,
+                )
+                return response_body, invocation_metadata
         invocation_attempts += 1
         try:
             response = client.invoke(
