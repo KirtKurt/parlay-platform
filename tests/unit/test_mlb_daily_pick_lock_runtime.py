@@ -950,6 +950,67 @@ def _fixture_completion_chunk_result(
         "productionAuthorityChanged": False,
     }
 
+
+def _ddb_number_wrapped(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return Decimal(value)
+    if isinstance(value, dict):
+        return {
+            key: _ddb_number_wrapped(child)
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [_ddb_number_wrapped(child) for child in value]
+    return value
+
+
+def test_completion_handoff_validates_runner_shape_after_ddb_equivalence():
+    slate_date = "2026-07-20"
+    request_epoch = 1_785_000_000
+    request_id = "ddb-normalized-handoff"
+    context = FakeContext(request_id="ddb-handoff-owner")
+    with _load_handler() as (handler, _, _):
+        checkpoint = _complete_terminal_checkpoint(
+            slate_date=slate_date,
+            request_epoch=request_epoch,
+            request_id=request_id,
+            game_count=1,
+        )
+        chunk_result = _fixture_completion_chunk_result(
+            module=handler.mlb_daily_pick_lock,
+            patch=handler.mlb_daily_per_game_lock_patch,
+            slate_date=slate_date,
+            request_epoch=request_epoch,
+            request_id=request_id,
+            context=context,
+            game_count=1,
+            checkpoint=checkpoint,
+        )
+
+        handoff = (
+            COOPERATIVE_REPAIR._validate_cooperative_terminal_completion_handoff(
+                handler.mlb_daily_pick_lock,
+                handler.mlb_daily_per_game_lock_patch,
+                slate_date=slate_date,
+                request_epoch=request_epoch,
+                request_id=request_id,
+                checkpoint=_ddb_number_wrapped(checkpoint),
+                chunk_result=chunk_result,
+            )
+        )
+
+    assert handoff["ok"] is True
+    assert handoff["itemCount"] == 2
+
+
+def test_ddb_handoff_equivalence_does_not_treat_number_as_boolean():
+    assert not COOPERATIVE_REPAIR._cooperative_terminal_ddb_equivalent(
+        {"verificationComplete": Decimal(1)},
+        {"verificationComplete": True},
+    )
+
 def _successful_current_slate_payload(slate_date: str = "2026-07-21") -> dict:
     return {
         "ok": True,
