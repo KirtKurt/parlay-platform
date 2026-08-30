@@ -355,6 +355,32 @@ def durable_remediation_history_noop(slate_date="2026-08-04"):
         },
     }
 
+
+def prelock_v2_durable_history_noop(slate_date="2026-08-04"):
+    response = durable_remediation_history_noop(slate_date)
+    for key in (
+        "sourcePullRebindReviewRemediationApplied",
+        "sourcePullRebindReviewRemediationIdempotent",
+        "sourcePullRebindReviewRemediationVersion",
+        "sourcePullRebindVersion",
+        "sourcePullRebindReviewRemediationDurableHistory",
+    ):
+        response.pop(key)
+    response.update(
+        {
+            "prelockCandidateReviewV2RemediationApplied": True,
+            "prelockCandidateReviewV2RemediationIdempotent": True,
+            "prelockCandidateReviewV2RemediationVersion": (
+                subject.PRELOCK_CANDIDATE_REVIEW_V2_REMEDIATION_VERSION
+            ),
+            "installedRuntimePositiveProofBound": True,
+            "priorSourcePullRebindRemediationValidated": True,
+            "prelockCandidateReviewV2DurableHistory": True,
+            "automaticRetryAllowed": False,
+        }
+    )
+    return response
+
 def replay_required(slate_date="2026-08-04"):
     detail = subject._terminal_replay_detail(
         409,
@@ -1016,6 +1042,92 @@ def test_durable_history_rerun_is_official_read_bound_noop_without_requeue(
     ] == 1
     assert result["directWorkflowTableWrite"] is False
     assert result["activeLeaseMutationAllowed"] is False
+
+
+def test_prelock_v2_durable_history_is_official_read_bound_noop(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        base,
+        "resolve_stack_functions",
+        lambda *args: base.StackFunctions("lock", "results", "trainer"),
+    )
+    calls = []
+
+    def fake_invoke(client, function, event):
+        del client, function
+        calls.append(dict(event))
+        if event.get("httpMethod") == "GET":
+            return official_terminal_status()
+        return prelock_v2_durable_history_noop()
+
+    monkeypatch.setattr(v4, "invoke_json_with_backpressure", fake_invoke)
+
+    result = subject._execute_protected_terminal_replay(
+        object(),
+        object(),
+        stack_name="stack",
+        request=replay_required(),
+        sleep=lambda _seconds: None,
+        max_attempts=2,
+    )
+
+    assert len(calls) == 2
+    assert calls[1].get("httpMethod") == "GET"
+    assert not any(
+        call.get("acknowledgeCooperativeCompletion") is True
+        for call in calls
+    )
+    assert result[
+        "protectedLockReplayDurableRemediationHistoryNoOp"
+    ] is True
+    assert result["protectedLockReplayCooperativeReceiptVerified"] is True
+    assert result["directWorkflowTableWrite"] is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("installedRuntimePositiveProofBound", False),
+        ("priorSourcePullRebindRemediationValidated", False),
+        ("automaticRetryAllowed", True),
+        ("prelockCandidateReviewV2RemediationVersion", "wrong-version"),
+    ],
+)
+def test_prelock_v2_durable_history_tampering_fails_before_status_read(
+    monkeypatch,
+    field,
+    value,
+):
+    monkeypatch.setattr(
+        base,
+        "resolve_stack_functions",
+        lambda *args: base.StackFunctions("lock", "results", "trainer"),
+    )
+    calls = []
+    response = prelock_v2_durable_history_noop()
+    response[field] = value
+
+    def fake_invoke(client, function, event):
+        del client, function, event
+        calls.append(True)
+        return response
+
+    monkeypatch.setattr(v4, "invoke_json_with_backpressure", fake_invoke)
+
+    with pytest.raises(
+        base.ReconciliationError,
+        match="durable_history_contract_invalid",
+    ):
+        subject._execute_protected_terminal_replay(
+            object(),
+            object(),
+            stack_name="stack",
+            request=replay_required(),
+            sleep=lambda _seconds: None,
+            max_attempts=2,
+        )
+    assert calls == [True]
 
 
 @pytest.mark.parametrize(
