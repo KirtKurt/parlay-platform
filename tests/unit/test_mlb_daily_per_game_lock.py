@@ -46,11 +46,16 @@ class ConditionalCollision(Exception):
 class FakeTable:
     def __init__(self):
         self.items = {}
+        self.get_requests = []
         self.put_calls = []
         self.put_requests = []
         self.diagnostic_write_failures_remaining = 0
 
     def get_item(self, Key, ConsistentRead=False):
+        self.get_requests.append({
+            "key": (Key["PK"], Key["SK"]),
+            "consistent": ConsistentRead,
+        })
         item = self.items.get((Key["PK"], Key["SK"]))
         return {"Item": copy.deepcopy(item)} if item is not None else {}
 
@@ -1316,9 +1321,434 @@ def test_scheduled_tminus45_keeps_full_lock_path(monkeypatch):
 
     assert result["reason"] == "PER_GAME_LOCKS_STAGED_WAITING_FOR_REMAINDER"
     assert result.get("singleProgressSnapshot") is not True
-    assert True in progress_calls
+    assert progress_calls == [False, False]
     assert len(staged_items(module)) == 1
     assert staged_items(module)[0]["scheduled_lock_at_utc"] == "2026-07-13T17:15:00+00:00"
+
+
+def test_scheduled_progress_crossing_tminus50_resamples_before_waiting(monkeypatch):
+    module = build_module(EARLY_PULLS, "2026-07-13T17:09:59+00:00")
+    progress_evaluations = []
+    original_progress = patch._progress
+
+    def slow_initial_progress(*args, **kwargs):
+        progress_evaluations.append((args[4], kwargs.get("ensure_canonical")))
+        result = original_progress(*args, **kwargs)
+        if len(progress_evaluations) == 1:
+            module.now = dt("2026-07-13T17:10:00+00:00")
+        return result
+
+    monkeypatch.setattr(patch, "_progress", slow_initial_progress)
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["ok"] is True
+    assert result["reason"] == "PER_GAME_LOCKS_STAGED_WAITING_FOR_REMAINDER"
+    assert result["singleProgressSnapshot"] is True
+    assert result["progressClockReclassified"] is True
+    assert progress_evaluations == [
+        (dt("2026-07-13T17:09:59+00:00"), False),
+    ]
+    tminus50 = next(
+        item
+        for item in module.TABLE.items.values()
+        if item.get("record_type") == patch.READINESS_RECORD_TYPE
+        and item.get("checkpoint") == "T_MINUS_50"
+    )
+    assert tminus50["checkpoint_timing_status"] == "ON_TIME"
+    assert tminus50["evaluated_at_utc"] == "2026-07-13T17:10:00+00:00"
+    assert staged_items(module) == []
+
+
+def test_crossed_tminus50_readiness_refreshes_pull_and_candidate_evidence(
+    monkeypatch,
+):
+    target = game("fresh-readiness", "2026-07-13T18:10:00+00:00")
+    initial = pull(
+        "2026-07-13T17:00:00+00:00",
+        [target],
+        "fresh-readiness-initial",
+    )
+    arrived_during_scan = pull(
+        "2026-07-13T17:15:00+00:00",
+        [target],
+        "fresh-readiness-arrived",
+    )
+    module = build_module(
+        [initial],
+        "2026-07-13T17:19:59+00:00",
+    )
+    original_progress = patch._progress
+
+    def progress_with_concurrent_pull(*args, **kwargs):
+        result = original_progress(*args, **kwargs)
+        module.history.pulls.append(arrived_during_scan)
+        persist_latest_prelock_candidates(module, [arrived_during_scan])
+        module.now = dt("2026-07-13T17:20:00+00:00")
+        return result
+
+    monkeypatch.setattr(patch, "_progress", progress_with_concurrent_pull)
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["ok"] is True
+    assert result["reason"] == "PER_GAME_LOCKS_STAGED_WAITING_FOR_REMAINDER"
+    tminus50 = next(
+        item
+        for item in module.TABLE.items.values()
+        if item.get("record_type") == patch.READINESS_RECORD_TYPE
+        and item.get("checkpoint") == "T_MINUS_50"
+    )
+    assert tminus50["evaluated_at_utc"] == "2026-07-13T17:20:00+00:00"
+    assert tminus50["pull_depth"] == 2
+    assert tminus50["candidate_source_at_utc"] == (
+        "2026-07-13T17:15:00+00:00"
+    )
+    assert tminus50["candidate_ready"] is True
+
+
+def test_scheduled_progress_crossing_tminus45_resamples_before_staging(monkeypatch):
+    module = build_module(EARLY_PULLS, "2026-07-13T17:14:59+00:00")
+    progress_evaluations = []
+    original_progress = patch._progress
+
+    def slow_initial_progress(*args, **kwargs):
+        progress_evaluations.append((args[4], kwargs.get("ensure_canonical")))
+        result = original_progress(*args, **kwargs)
+        if len(progress_evaluations) == 1:
+            module.now = dt("2026-07-13T17:15:00+00:00")
+        return result
+
+    monkeypatch.setattr(patch, "_progress", slow_initial_progress)
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["ok"] is True
+    assert result["reason"] == "PER_GAME_LOCKS_STAGED_WAITING_FOR_REMAINDER"
+    assert progress_evaluations[:2] == [
+        (dt("2026-07-13T17:14:59+00:00"), False),
+        (dt("2026-07-13T17:15:00+00:00"), False),
+    ]
+    assert len(staged_items(module)) == 1
+    assert staged_items(module)[0]["scheduled_lock_at_utc"] == (
+        "2026-07-13T17:15:00+00:00"
+    )
+    assert module.mlb_game_winner_engine.canonical_new_writes == 1
+
+
+def test_due_path_readiness_uses_pull_discovered_during_source_close(monkeypatch):
+    target = game("due-readiness", "2026-07-13T18:10:00+00:00")
+    initial = pull(
+        "2026-07-13T17:00:00+00:00",
+        [target],
+        "due-readiness-initial",
+    )
+    arrived_during_close = pull(
+        "2026-07-13T17:15:00+00:00",
+        [target],
+        "due-readiness-arrived",
+    )
+    module = build_module([initial], "2026-07-13T17:25:00+00:00")
+    original_pulls_for_date = module._pulls_for_date
+    pull_reads = 0
+
+    def pulls_with_concurrent_candidate(slate):
+        nonlocal pull_reads
+        pull_reads += 1
+        if pull_reads == 2:
+            module.history.pulls.append(arrived_during_close)
+            persist_latest_prelock_candidates(module, [arrived_during_close])
+        return original_pulls_for_date(slate)
+
+    module._pulls_for_date = pulls_with_concurrent_candidate
+    monkeypatch.setattr(patch, "CHECKPOINT_MAX_LATE_SECONDS", 10 * 60)
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["ok"] is True
+    assert result["locked"] is True
+    assert result["perGameLockProgress"]["canonicalCount"] == 1
+    tminus50 = next(
+        item
+        for item in module.TABLE.items.values()
+        if item.get("record_type") == patch.READINESS_RECORD_TYPE
+        and item.get("checkpoint") == "T_MINUS_50"
+    )
+    assert tminus50["checkpoint_timing_status"] == "ON_TIME"
+    assert tminus50["pull_depth"] == 2
+    assert tminus50["candidate_source_at_utc"] == (
+        "2026-07-13T17:15:00+00:00"
+    )
+    assert tminus50["candidate_ready"] is True
+
+
+def test_long_first_progress_crosses_incident_cutoffs_and_stages_all_three(
+    monkeypatch,
+):
+    first = game("incident-a", "2026-07-13T02:05:00+00:00")
+    second = game("incident-b", "2026-07-13T02:05:00+00:00")
+    third = game("incident-c", "2026-07-13T02:07:00+00:00")
+    shared_pulls = [
+        pull(
+            (
+                dt("2026-07-12T10:15:00+00:00")
+                + timedelta(minutes=15 * index)
+            ).isoformat(),
+            [first, second, third],
+            f"incident-three-{index:02d}",
+        )
+        for index in range(60)
+    ]
+    module = build_module(
+        shared_pulls,
+        "2026-07-13T01:14:16+00:00",
+    )
+    shared_pull_keys = {
+        (
+            item["canonicalPullStorage"]["pk"],
+            item["canonicalPullStorage"]["sk"],
+        )
+        for item in module._pulls_for_date(SLATE)
+    }
+    assert len(shared_pull_keys) == 60
+    module.TABLE.get_requests.clear()
+    original_put_item = module.TABLE.put_item
+    status_cache_ids = []
+
+    def put_outside_read_scope(*args, **kwargs):
+        assert patch._STATUS_READ_CACHE.get() is None
+        return original_put_item(*args, **kwargs)
+
+    module.TABLE.put_item = put_outside_read_scope
+    progress_evaluations = []
+    original_progress = patch._progress
+    original_generate_stage = patch._generate_stage
+    original_playability = patch._ensure_playability_assessments
+    generation_count = 0
+    playability_calls = []
+
+    def long_initial_progress(*args, **kwargs):
+        status_cache = patch._STATUS_READ_CACHE.get()
+        assert isinstance(status_cache, dict)
+        status_cache_ids.append(id(status_cache))
+        progress_evaluations.append((
+            args[4],
+            kwargs.get("ensure_canonical"),
+            len(staged_items(module)),
+        ))
+        result = original_progress(*args, **kwargs)
+        if len(progress_evaluations) == 1:
+            # The observed production owner ran for 440 seconds, spanning the
+            # 01:20 cutoff while its immutable authority snapshot was valid.
+            module.now = dt("2026-07-13T01:21:36+00:00")
+        return result
+
+    def stage_across_second_cutoff(*args, **kwargs):
+        nonlocal generation_count
+        result = original_generate_stage(*args, **kwargs)
+        generation_count += 1
+        if generation_count == 1:
+            module.now = dt("2026-07-13T01:22:00+00:00")
+        return result
+
+    def capture_playability(*args, **kwargs):
+        playability_calls.append({
+            "stageCount": len(args[3]),
+            "includeTime": kwargs.get("include_time_checkpoints"),
+            "statusReadScope": patch._STATUS_READ_CACHE.get(),
+        })
+        return original_playability(*args, **kwargs)
+
+    monkeypatch.setattr(patch, "_progress", long_initial_progress)
+    monkeypatch.setattr(patch, "_generate_stage", stage_across_second_cutoff)
+    monkeypatch.setattr(
+        patch,
+        "_ensure_playability_assessments",
+        capture_playability,
+    )
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["ok"] is True
+    assert result["locked"] is True
+    assert result["perGameLockProgress"]["canonicalCount"] == 3
+    assert len(staged_items(module)) == 3
+    assert module.mlb_game_winner_engine.canonical_new_writes == 3
+    # The first full progress phase is reused for due selection. Every T-45
+    # write completes before the one fresh post-write validation phase.
+    assert progress_evaluations == [
+        (dt("2026-07-13T01:14:16+00:00"), False, 0),
+        (dt("2026-07-13T01:22:00+00:00"), False, 3),
+    ]
+    assert len(set(status_cache_ids)) == 2
+    assert playability_calls == [{
+        "stageCount": 3,
+        "includeTime": False,
+        "statusReadScope": None,
+    }]
+    assert all(
+        row["playabilityLifecycleEvaluated"] is False
+        and row["wagerAllowed"] is False
+        and row["blocked"] is True
+        for row in result["perGameLockProgress"]["games"]
+    )
+    assert {
+        item["game_id"]: item["scheduled_lock_at_utc"]
+        for item in staged_items(module)
+    } == {
+        "incident-a": "2026-07-13T01:20:00+00:00",
+        "incident-b": "2026-07-13T01:20:00+00:00",
+        "incident-c": "2026-07-13T01:22:00+00:00",
+    }
+    tminus50 = [
+        item
+        for item in module.TABLE.items.values()
+        if item.get("record_type") == patch.READINESS_RECORD_TYPE
+        and item.get("checkpoint") == "T_MINUS_50"
+    ]
+    assert len(tminus50) == 3
+    assert {item["evaluated_at_utc"] for item in tminus50} == {
+        "2026-07-13T01:22:00+00:00"
+    }
+    immutable_pull_reads = [
+        request["key"]
+        for request in module.TABLE.get_requests
+        if request["key"] in shared_pull_keys
+    ]
+    # One writer phase plus one fresh post-write proof phase; 60 shared pulls
+    # are never reread once per due game or once per validator call.
+    assert len(immutable_pull_reads) <= 2 * len(shared_pull_keys)
+    assert max(immutable_pull_reads.count(key) for key in shared_pull_keys) <= 2
+
+
+def test_writer_loop_microsecond_clock_ticks_do_not_reclassify_full_slate(
+    monkeypatch,
+):
+    first = game("micro-00", "2026-07-13T18:00:00+00:00")
+    future = [
+        game(
+            f"micro-{index:02d}",
+            (
+                dt("2026-07-13T20:00:00+00:00")
+                + timedelta(minutes=index)
+            ).isoformat(),
+        )
+        for index in range(1, 17)
+    ]
+    source = pull(
+        "2026-07-13T17:00:00+00:00",
+        [first, *future],
+        "microsecond-clock",
+    )
+    module = build_module([source], "2026-07-13T17:15:00+00:00")
+    clock = module.now
+    reclassifications = 0
+    original_reclassify = patch._reclassify_progress_at
+
+    def ticking_now():
+        nonlocal clock
+        clock += timedelta(microseconds=1)
+        return clock
+
+    def counted_reclassify(*args, **kwargs):
+        nonlocal reclassifications
+        reclassifications += 1
+        return original_reclassify(*args, **kwargs)
+
+    module._now_utc = ticking_now
+    monkeypatch.setattr(patch, "_reclassify_progress_at", counted_reclassify)
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["ok"] is True
+    assert result["reason"] == "PER_GAME_LOCKS_STAGED_WAITING_FOR_REMAINDER"
+    assert result["perGameLockProgress"]["canonicalCount"] == 1
+    assert len(result["perGameLockProgress"]["games"]) == 17
+    assert reclassifications == 0
+
+
+def test_read_only_progress_phase_deduplicates_shared_immutable_pull_reads():
+    module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    module.run_lock(SLATE)
+    module.history.pulls.extend(LATE_PULLS)
+    persist_latest_prelock_candidates(module, LATE_PULLS)
+    module.now = dt("2026-07-13T19:15:00+00:00")
+    assert module.run_lock(SLATE)["locked"] is True
+
+    pulls = sorted(
+        module._pulls_for_date(SLATE),
+        key=lambda item: dt(item["pulled_at"]),
+    )
+    manifest = module._latest_games_for_date(SLATE, pulls)
+    shared_pull_key = (
+        pulls[0]["canonicalPullStorage"]["pk"],
+        pulls[0]["canonicalPullStorage"]["sk"],
+    )
+    module.TABLE.get_requests.clear()
+
+    with patch._status_read_scope():
+        progress = patch._progress(
+            module,
+            SLATE,
+            pulls,
+            manifest,
+            module.now,
+            ensure_canonical=False,
+        )
+
+    assert progress["canonicalCount"] == 2
+    assert sum(
+        request["key"] == shared_pull_key
+        for request in module.TABLE.get_requests
+    ) == 1
+
+
+def test_writer_cache_allows_only_present_immutable_authority_dependencies():
+    table = FakeTable()
+    pull_key = ("PULLS#mlb#2026-07-13", "PULL#SLOT#2026-07-13T01:00:00+00:00")
+    stage_key = ("LOCKED_PICKS#mlb#2026-07-13", "GAME_LOCK#mutable")
+    missing_key = ("PULLS#mlb#2026-07-13", "PULL#missing")
+    table.items[pull_key] = {
+        "PK": pull_key[0],
+        "SK": pull_key[1],
+        "record_type": "pull_run",
+        "sport": "mlb",
+        "data": {"sport": "mlb", "pull_id": "immutable"},
+    }
+    table.items[stage_key] = {
+        "PK": stage_key[0],
+        "SK": stage_key[1],
+        "record_type": patch.STAGE_RECORD_TYPE,
+        "immutable_staged": True,
+        "write_once": True,
+    }
+    token = patch._WRITER_IMMUTABLE_READ_CACHE.set({})
+    try:
+        for _ in range(2):
+            assert patch._consistent_item(
+                table,
+                {"PK": pull_key[0], "SK": pull_key[1]},
+            ) is not None
+            assert patch._consistent_item(
+                table,
+                {"PK": stage_key[0], "SK": stage_key[1]},
+            ) is not None
+            assert patch._consistent_item(
+                table,
+                {"PK": missing_key[0], "SK": missing_key[1]},
+            ) is None
+    finally:
+        patch._WRITER_IMMUTABLE_READ_CACHE.reset(token)
+
+    counts = {
+        key: sum(request["key"] == key for request in table.get_requests)
+        for key in (pull_key, stage_key, missing_key)
+    }
+    assert counts == {
+        pull_key: 1,
+        stage_key: 2,
+        missing_key: 2,
+    }
 
 
 def test_scheduled_completed_daily_card_uses_one_progress_snapshot(monkeypatch):
@@ -1478,6 +1908,41 @@ def test_post_window_reconciliation_records_last_game_missed_without_prediction(
     cached = module.run_lock(SLATE, scheduled=True)
     assert cached["reason"] == "POST_WINDOW_TERMINAL_STATUS_ALREADY_RECONCILED"
     assert cached["missedGameCount"] == 1
+
+
+def test_post_window_reconciliation_scopes_shared_authority_reads_and_never_writes_prediction():
+    module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    first = module.run_lock(SLATE)
+    assert first["perGameLockProgress"]["canonicalCount"] == 1
+    assert len(staged_items(module)) == 1
+    assert module.mlb_game_winner_engine.canonical_new_writes == 1
+
+    persisted_pulls = module._pulls_for_date(SLATE)
+    pull_keys = {
+        (
+            item["canonicalPullStorage"]["pk"],
+            item["canonicalPullStorage"]["sk"],
+        )
+        for item in persisted_pulls
+    }
+    module.TABLE.get_requests.clear()
+    module.now = dt("2026-07-13T20:02:01+00:00")
+
+    reconciled = module.run_lock(SLATE, scheduled=True)
+
+    assert reconciled["ok"] is True
+    assert reconciled["reason"] == "POST_WINDOW_TERMINAL_STATUS_RECONCILED"
+    assert reconciled["perGameLockProgress"]["canonicalCount"] == 1
+    assert reconciled["perGameLockProgress"]["missedCount"] == 1
+    assert reconciled["postStartPredictionCreationAllowed"] is False
+    assert len(staged_items(module)) == 1
+    assert module.mlb_game_winner_engine.canonical_new_writes == 1
+    scoped_pull_reads = [
+        request["key"]
+        for request in module.TABLE.get_requests
+        if request["key"] in pull_keys
+    ]
+    assert max(scoped_pull_reads.count(key) for key in pull_keys) <= 1
 
 
 def test_post_window_reconciliation_cannot_canonicalize_a_prestart_stage():
@@ -2852,6 +3317,77 @@ def test_no_stage_or_canonical_write_before_due_or_after_game_start():
     assert repeated["perGameLockAttemptDiagnostics"]["attemptedGameCount"] == 0
 
 
+def test_source_window_close_crossing_first_pitch_blocks_stage_write():
+    source = pull("2026-07-13T17:15:00+00:00", [G1], "close-crosses-start")
+    module = build_module([source], "2026-07-13T17:17:00+00:00")
+    original_pulls_for_date = module._pulls_for_date
+    pull_reads = 0
+
+    def advancing_pulls_for_date(slate):
+        nonlocal pull_reads
+        pull_reads += 1
+        result = original_pulls_for_date(slate)
+        if pull_reads == 2:
+            # The source-window refresh finishes at first pitch, after the
+            # generated item captured its earlier staged-at timestamp.
+            module.now = dt("2026-07-13T18:00:00+00:00")
+        return result
+
+    module._pulls_for_date = advancing_pulls_for_date
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["ok"] is False
+    assert result["reason"] == "MISSED_PER_GAME_LOCK_NOT_BACKFILLED"
+    assert any(
+        failure.get("reason")
+        == "PER_GAME_STAGE_WRITE_BLOCKED_GAME_ALREADY_STARTED"
+        for failure in result["failures"]
+    )
+    assert staged_items(module) == []
+    assert module.mlb_game_winner_engine.canonical_new_writes == 0
+
+
+def test_no_prediction_generation_crossing_first_pitch_writes_no_terminal_outcome(
+    monkeypatch,
+):
+    source = pull(
+        "2026-07-13T17:15:00+00:00",
+        [G1],
+        "no-prediction-crosses-start",
+    )
+    module = build_module(
+        [source],
+        "2026-07-13T17:15:00+00:00",
+        seed=False,
+    )
+    original_generate_stage = patch._generate_stage
+
+    def generation_finishes_at_first_pitch(*args, **kwargs):
+        result = original_generate_stage(*args, **kwargs)
+        module.now = dt("2026-07-13T18:00:00+00:00")
+        return result
+
+    monkeypatch.setattr(
+        patch,
+        "_generate_stage",
+        generation_finishes_at_first_pitch,
+    )
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["ok"] is False
+    assert result["reason"] == "MISSED_PER_GAME_LOCK_NOT_BACKFILLED"
+    assert any(
+        failure.get("reason")
+        == "TERMINAL_LOCK_OUTCOME_WRITE_BLOCKED_GAME_ALREADY_STARTED"
+        for failure in result["failures"]
+    )
+    assert lock_outcome_items(module) == []
+    assert staged_items(module) == []
+    assert module.mlb_game_winner_engine.canonical_new_writes == 0
+
+
 def test_manifest_drift_after_first_stage_fails_closed_without_daily_card():
     module = build_module(EARLY_PULLS, "2026-07-13T17:17:00+00:00")
     module.run_lock(SLATE)
@@ -2866,6 +3402,50 @@ def test_manifest_drift_after_first_stage_fails_closed_without_daily_card():
     assert any("manifest_changed_after_game_lock" in row.get("errors", []) for row in result["perGameLockProgress"]["games"])
     assert daily_item(module) is None
     assert module.mlb_game_winner_engine.canonical_new_writes == 1
+
+
+def test_pull_history_change_after_final_progress_blocks_daily_card(monkeypatch):
+    initial = pull("2026-07-13T17:15:00+00:00", [G1], "daily-race-initial")
+    expanded = pull(
+        "2026-07-13T17:15:00+00:00",
+        [G1, G2],
+        "daily-race-expanded",
+    )
+    module = build_module([initial], "2026-07-13T17:15:00+00:00")
+    original_progress = patch._progress
+    progress_calls = 0
+
+    def progress_then_expand(*args, **kwargs):
+        nonlocal progress_calls
+        progress_calls += 1
+        result = original_progress(*args, **kwargs)
+        if progress_calls == 2:
+            module.history.pulls.append(expanded)
+            persist_candidate(module, G2, expanded)
+        return result
+
+    monkeypatch.setattr(patch, "_progress", progress_then_expand)
+
+    first = module.run_lock(SLATE, scheduled=True)
+
+    assert first["ok"] is False
+    assert first["reason"] == (
+        "PULL_HISTORY_CHANGED_BEFORE_DAILY_LOCK_NOT_WRITTEN"
+    )
+    assert first["failClosed"] is True
+    assert first["retryable"] is True
+    assert first["dailyLockWriteAttempted"] is False
+    assert daily_item(module) is None
+    assert len(staged_items(module)) == 1
+
+    monkeypatch.setattr(patch, "_progress", original_progress)
+    module.now = dt("2026-07-13T19:15:00+00:00")
+    second = module.run_lock(SLATE, scheduled=True)
+
+    assert len(second["perGameLockProgress"]["games"]) == 2
+    assert second["ok"] is False
+    assert second["reason"] == "PER_GAME_LOCK_DUE_BUT_NOT_CANONICAL"
+    assert daily_item(module) is None
 
 
 def test_vectorless_prelock_candidate_is_frozen_at_lock_without_rescoring():
