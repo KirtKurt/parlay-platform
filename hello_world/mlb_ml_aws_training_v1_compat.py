@@ -33,10 +33,11 @@ from typing import Any, Dict
 
 import mlb_prospective_trainer_read_repair as prospective_trainer_read_repair
 import mlb_r7_source_honest_training_repair as r7_source_honest_training_repair
+import mlb_r7_historical_walkforward_bridge as r7_historical_walkforward_bridge
 
 
 COMPAT_VERSION = (
-    "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v6-source-honest-r7-admission"
+    "MLB-TRAINER-CANONICAL-CONTINUITY-WAIT-v7-historical-live-r7-admission"
 )
 _BASE_MODULE_NAME = "_inqsi_mlb_ml_aws_training_v1_canonical"
 _BASE_PATH = Path(__file__).resolve().with_name("mlb_ml_aws_training_v1.py")
@@ -130,6 +131,10 @@ prospective_trainer_read_repair.install()
 r7_source_honest_training_repair.install(
     experiment=canonical.experiment,
     dual_model=canonical.dual_model,
+)
+r7_historical_walkforward_bridge.install(
+    canonical=canonical,
+    experiment=canonical.experiment,
 )
 
 _original_save_run_status = canonical.TrainingService._save_run_status
