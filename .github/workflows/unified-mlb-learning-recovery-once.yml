@@ -1394,7 +1394,7 @@ jobs:
             --deadline-seconds 1200 \
             --retry-delay-seconds 20
 
-      - name: Bind fresh status and require numeric advancement
+      - name: Bind fresh status and require numeric continuity
         env:
           PYTHONPATH: .
         run: |
@@ -1445,6 +1445,34 @@ jobs:
           )
           before_accepted = int(before_latest.get('acceptedRowCount') or 0)
           before_train_count = int(before_counts.get('train') or 0)
+          before_continuity = before_latest.get('canonicalSlateContinuity') or {}
+          before_finalized = set(
+              before_continuity.get('finalizedGameSlateDates') or []
+          )
+          before_processed = set(
+              before_continuity.get('processedSlateDates') or []
+          )
+          counts_advanced = (
+              accepted > before_accepted
+              and train_count > before_train_count
+          )
+          counts_unchanged = (
+              accepted == before_accepted
+              and train_count == before_train_count
+          )
+          exact_slates_already_settled_before = (
+              target in before_finalized
+              and target in before_processed
+              and repair in before_finalized
+              and repair in before_processed
+          )
+          numeric_progress_satisfied = (
+              counts_advanced
+              or (
+                  counts_unchanged
+                  and exact_slates_already_settled_before
+              )
+          )
           proof = {
               'ok': (
                   settlement.get('ok') is True
@@ -1464,9 +1492,16 @@ jobs:
               'acceptedRowCount': accepted,
               'acceptedRowCountBefore': before_accepted,
               'acceptedRowCountAdvanced': accepted > before_accepted,
+              'acceptedRowCountNonRegressed': accepted >= before_accepted,
               'partitionCounts': counts,
               'trainCountBefore': before_train_count,
               'trainCountAdvanced': train_count > before_train_count,
+              'trainCountNonRegressed': train_count >= before_train_count,
+              'countsUnchanged': counts_unchanged,
+              'exactSlatesAlreadySettledBefore': (
+                  exact_slates_already_settled_before
+              ),
+              'numericProgressSatisfied': numeric_progress_satisfied,
               'championUnchanged': before.get('champion') == status.get('champion'),
               'noQualifiedChampion': status.get('champion') in (None, {}),
               'targetSlateDate': target,
@@ -1517,8 +1552,9 @@ jobs:
           assert selection_evidence.get('deploymentIdentityMatches') is True, proof
           assert accepted >= minimum, proof
           assert train_count >= minimum, proof
-          assert accepted > before_accepted, proof
-          assert train_count > before_train_count, proof
+          assert accepted >= before_accepted, proof
+          assert train_count >= before_train_count, proof
+          assert numeric_progress_satisfied, proof
           assert before.get('champion') == status.get('champion'), proof
           assert status.get('champion') in (None, {}), proof
           assert before.get('automaticPromotionEnabled') is False, proof

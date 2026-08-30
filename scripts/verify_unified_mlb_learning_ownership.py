@@ -269,11 +269,20 @@ def verify(root: Path = Path(".")) -> dict[str, object]:
             errors.append("ambiguous_outer_transport_retry_still_present")
         if "MIN_ACCEPTED_ROWS: '39'" not in recovery:
             errors.append("recovery_minimum_row_gate_missing")
-        if (
-            "accepted > before_accepted" not in recovery
-            or "train_count > before_train_count" not in recovery
+        for numeric_contract in (
+            "counts_advanced = (",
+            "counts_unchanged = (",
+            "exact_slates_already_settled_before = (",
+            "numeric_progress_satisfied = (",
+            "assert accepted >= before_accepted",
+            "assert train_count >= before_train_count",
+            "assert numeric_progress_satisfied",
         ):
-            errors.append("recovery_before_after_advancement_gate_missing")
+            if numeric_contract not in recovery:
+                errors.append(
+                    "recovery_before_after_continuity_gate_missing:"
+                    + numeric_contract
+                )
         if "TARGET_SLATE_DATE: '2026-08-25'" not in recovery:
             errors.append("recovery_exact_target_slate_missing")
         for required in (
