@@ -1560,12 +1560,22 @@ def _validated_persisted_replay_receipt(
         "validate_cooperative_terminal_completion_checkpoint",
         None,
     )
-    if not isinstance(expected_progress, dict) or not callable(validator):
+    normalizer = getattr(
+        mlb_daily_pick_lock,
+        "normalize_cooperative_terminal_completion_checkpoint",
+        None,
+    )
+    if (
+        not isinstance(expected_progress, dict)
+        or not callable(validator)
+        or not callable(normalizer)
+    ):
         raise RuntimeError(
             "MLB_COOPERATIVE_REPLAY_PERSISTED_RECEIPT_INVALID"
         )
     try:
-        validated = validator(expected_progress)
+        normalized_progress = normalizer(expected_progress)
+        validated = validator(normalized_progress)
     except BaseException as exc:
         raise RuntimeError(
             "MLB_COOPERATIVE_REPLAY_PERSISTED_RECEIPT_INVALID"
@@ -1573,7 +1583,7 @@ def _validated_persisted_replay_receipt(
     if (
         not isinstance(validated, tuple)
         or len(validated) != 3
-        or validated[0] != expected_progress
+        or validated[0] != normalized_progress
         or not isinstance(validated[1], list)
         or re.fullmatch(r"[0-9a-f]{64}", str(validated[2] or ""))
         is None
