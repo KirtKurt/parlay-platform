@@ -7934,6 +7934,13 @@ def apply(module: Any) -> Any:
                 # even a valid pre-start stage cannot be promoted to canonical
                 # storage after the game has started.
                 with _status_read_scope():
+                    _prime_status_manifest_items(
+                        module,
+                        module.TABLE,
+                        slate,
+                        manifest,
+                        lock_minutes=module.LOCK_MINUTES,
+                    )
                     reconciled = _progress(
                         module,
                         slate,
@@ -8066,6 +8073,13 @@ def apply(module: Any) -> Any:
             and _scheduled_cutoff_priority_active(module, manifest, now)
         )
         with _status_read_scope():
+            _prime_status_manifest_items(
+                module,
+                module.TABLE,
+                slate,
+                manifest,
+                lock_minutes=module.LOCK_MINUTES,
+            )
             observed = _progress(
                 module,
                 slate,
@@ -8616,6 +8630,13 @@ def apply(module: Any) -> Any:
             )
             final_now = module._now_utc().astimezone(timezone.utc)
             with _status_read_scope():
+                _prime_status_manifest_items(
+                    module,
+                    module.TABLE,
+                    slate,
+                    manifest,
+                    lock_minutes=module.LOCK_MINUTES,
+                )
                 progress = _progress(
                     module,
                     slate,

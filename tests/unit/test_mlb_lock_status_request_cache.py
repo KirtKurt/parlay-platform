@@ -187,6 +187,34 @@ def test_prelock_status_15_games_65_pulls_has_bounded_reads():
     assert len(resource.calls) == 2
 
 
+def test_scheduled_cutoff_batch_primes_both_read_only_progress_phases():
+    games = _games("2026-07-13T18:00:00+00:00")
+    module = build_module(
+        _pulls(games),
+        "2026-07-13T17:15:05+00:00",
+        seed=False,
+    )
+    module.history.ddb_safe = staticmethod(history_contract.ddb_safe)
+    persist_latest_prelock_candidates(module, module.history.pulls)
+    resource = _install_batch_reader(module)
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["ok"] is True
+    assert result["locked"] is True
+    assert result["perGameLockProgress"]["lockedPredictionCount"] == (
+        GAME_COUNT
+    )
+    # One exact-key batch phase validates the pre-write observation and a
+    # separate fresh phase proves the post-write state. Mutable/absent rows
+    # never cross that boundary, and every batch remains strongly consistent.
+    assert len(resource.calls) >= 4
+    assert all(
+        next(iter(call.values())).get("ConsistentRead") is True
+        for call in resource.calls
+    )
+
+
 def test_batch_status_snapshot_failure_falls_back_without_changing_payload(
     locked_scale_module,
     monkeypatch,
