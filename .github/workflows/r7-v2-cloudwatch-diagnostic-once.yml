@@ -1,4 +1,4 @@
-name: R7 protected v2 source diagnostic once
+name: R7 protected v2 live checkpoint diagnostic once
 
 "on":
   push:
@@ -9,13 +9,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: r7-protected-v2-source-diagnostic-once
+  group: r7-protected-v2-live-checkpoint-diagnostic-once
   cancel-in-progress: false
 
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,61 +23,213 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Extract exact remediation function and direct helpers
+      - name: Install diagnostic runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Validate live checkpoint and positive proof without mutation
+        env:
+          AWS_REGION: us-east-1
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+          PYTHONPATH: hello_world
         run: |
           set -euo pipefail
           python - <<'PY'
           from __future__ import annotations
 
-          import ast
+          import copy
+          import hashlib
+          import inspect
           import json
+          import re
           from pathlib import Path
 
-          path = Path('hello_world/mlb_daily_pick_lock_protected.py')
-          source = path.read_text(encoding='utf-8')
-          lines = source.splitlines()
-          tree = ast.parse(source)
-          target = '_requeue_prelock_candidate_review_after_installed_runtime_proof_v2'
-          functions = {
-              node.name: node
-              for node in tree.body
-              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+          import mlb_daily_pick_lock_protected as protected
+
+          event = {
+              'sport': 'mlb',
+              'run': protected.COOPERATIVE_TERMINAL_REPLAY_RUN,
+              'slateDateEt': protected.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_SLATE,
+              'force': True,
+              protected.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_EVENT_FLAG: True,
           }
-          node = functions.get(target)
-          if node is None:
-              raise SystemExit(f'{target} not found')
-          direct_calls = sorted({
-              child.func.id
-              for child in ast.walk(node)
-              if isinstance(child, ast.Call)
-              and isinstance(child.func, ast.Name)
-              and child.func.id.startswith('_')
-          })
-          selected = [target]
-          selected.extend(name for name in direct_calls if name in functions)
           report = {
-              'proofType': 'R7_PROTECTED_V2_SOURCE_DIAGNOSTIC',
-              'sourcePath': str(path),
-              'functions': {},
+              'proofType': 'R7_PROTECTED_V2_LIVE_CHECKPOINT_READ_ONLY_DIAGNOSTIC',
+              'readOnly': True,
+              'directTableWrite': False,
+              'postStartPredictionCreationAllowed': False,
+              'immutablePredictionRewriteAllowed': False,
+              'productionAuthorityChanged': False,
+              'stages': [],
           }
-          for name in selected:
-              current = functions[name]
-              start = current.lineno
-              end = current.end_lineno
-              report['functions'][name] = {
-                  'startLine': start,
-                  'endLine': end,
-                  'source': '\n'.join(lines[start - 1:end]),
-              }
+
+          def stage(name, callback):
+              try:
+                  value = callback()
+                  report['stages'].append({
+                      'name': name,
+                      'ok': True,
+                      'value': value,
+                  })
+                  return value
+              except BaseException as exc:
+                  report['stages'].append({
+                      'name': name,
+                      'ok': False,
+                      'exceptionType': type(exc).__name__,
+                      'exceptionMessage': str(exc),
+                  })
+                  return None
+
+          slate = stage(
+              'strict_historical_slate_date',
+              lambda: protected._strict_historical_slate_date(event),
+          )
+          raw = stage('read_cooperative_replay', protected._read_cooperative_replay)
+          if not isinstance(raw, dict):
+              raw = {}
+          progress = raw.get('terminal_replay_progress') or {}
+          public_progress = stage(
+              'public_progress_validation',
+              lambda: protected._cooperative_terminal_progress_public(raw),
+          )
+          summary = {
+              'state': raw.get('state'),
+              'slateDateEt': raw.get('slate_date_et'),
+              'requestEpoch': raw.get('requested_at_epoch'),
+              'requestIdFingerprint': hashlib.sha256(
+                  str(raw.get('request_id') or '').encode('utf-8')
+              ).hexdigest(),
+              'lastChunkStage': raw.get('last_chunk_stage'),
+              'lastChunkStatus': raw.get('last_chunk_status'),
+              'claimFieldsPresent': sorted(
+                  field for field in (
+                      'claim_owner',
+                      'claim_acquired_at_utc',
+                      'claim_acquired_at_epoch',
+                      'claim_expires_at_utc',
+                      'claim_expires_at_epoch',
+                  ) if field in raw
+              ),
+              'priorRemediationPresent': (
+                  protected.COOPERATIVE_SOURCE_PULL_REBIND_REVIEW_REMEDIATION_FIELD
+                  in raw
+              ),
+              'v2RemediationPresent': (
+                  protected.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_FIELD in raw
+              ),
+              'v2HistoryPresent': (
+                  protected.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_HISTORY_FIELD
+                  in raw
+              ),
+              'progressVersion': progress.get('version'),
+              'progressPhase': progress.get('phase'),
+              'attemptCount': progress.get('attemptCount'),
+              'nextGameIndex': progress.get('nextGameIndex'),
+              'processedGameCount': progress.get('processedGameCount'),
+              'terminalCount': progress.get('terminalCount'),
+              'canonicalCount': progress.get('canonicalCount'),
+              'noPredictionDataCount': progress.get('noPredictionDataCount'),
+              'missedLockValidPrelockQuarantineCount': progress.get(
+                  'missedLockValidPrelockQuarantineCount'
+              ),
+              'reconciledCount': progress.get('reconciledCount'),
+              'verificationIndex': progress.get('verificationIndex'),
+              'verifiedGameCount': progress.get('verifiedGameCount'),
+              'lastAttempt': progress.get('lastAttempt'),
+          }
+          report['liveSummary'] = summary
+
+          current = stage(
+              'cooperative_record_validation',
+              lambda: protected._cooperative_record(
+                  raw,
+                  str(raw.get('slate_date_et') or ''),
+              ),
+          )
+          checkpoint_result = stage(
+              'stale_checkpoint_validation',
+              lambda: protected._validated_prelock_candidate_review_v2_stale_checkpoint(
+                  current
+              ),
+          ) if isinstance(current, dict) else None
+
+          prover = getattr(
+              protected.mlb_daily_pick_lock,
+              'prove_cooperative_prelock_candidate_review_v2',
+              None,
+          )
+          prover_version = getattr(
+              protected.mlb_daily_pick_lock,
+              'MLB_COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_PROOF_VERSION',
+              None,
+          )
+          report['prover'] = {
+              'callable': callable(prover),
+              'version': prover_version,
+              'expectedVersion': (
+                  protected.COOPERATIVE_PRELOCK_CANDIDATE_REVIEW_V2_PROOF_VERSION
+              ),
+          }
+          if callable(prover):
+              prover_source = inspect.getsource(prover)
+              forbidden = sorted({
+                  token for token in (
+                      'put_item',
+                      'update_item',
+                      'delete_item',
+                      'transact_write_items',
+                      'batch_write_item',
+                  ) if token in prover_source
+              })
+              report['prover']['forbiddenMutationTokens'] = forbidden
+              if not forbidden and checkpoint_result is not None:
+                  checkpoint, _prior = checkpoint_result
+                  request_epoch = protected._prelock_candidate_review_v2_integer(
+                      current.get('requested_at_epoch'),
+                      'diagnostic_request_epoch',
+                  )
+                  request_id = str(current.get('request_id') or '')
+                  proof = stage(
+                      'installed_runtime_positive_proof',
+                      lambda: prover(
+                          slate_date=slate,
+                          request_epoch=request_epoch,
+                          request_id=request_id,
+                          checkpoint=copy.deepcopy(checkpoint),
+                      ),
+                  )
+                  if isinstance(proof, dict):
+                      stage(
+                          'positive_proof_validation',
+                          lambda: protected._validated_prelock_candidate_review_v2_positive_proof(
+                              proof,
+                              current,
+                              review_progress=checkpoint,
+                          ),
+                      )
+
+          def sanitized(value):
+              text = json.dumps(value, sort_keys=True, default=str)
+              text = re.sub(r'arn:aws:[^\\s\"]+', '<ARN_REDACTED>', text)
+              text = re.sub(r'\\b\\d{12}\\b', '<ACCOUNT_REDACTED>', text)
+              return json.loads(text)
+
+          report = sanitized(report)
           print(json.dumps(report, indent=2, sort_keys=True))
-          Path('/tmp/r7-v2-source-diagnostic.json').write_text(
+          Path('/tmp/r7-v2-live-checkpoint-diagnostic.json').write_text(
               json.dumps(report, indent=2, sort_keys=True) + '\n',
               encoding='utf-8',
           )
           PY
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: r7-v2-source-diagnostic-${{ github.run_id }}
-          path: /tmp/r7-v2-source-diagnostic.json
+          name: r7-v2-live-checkpoint-diagnostic-${{ github.run_id }}
+          path: /tmp/r7-v2-live-checkpoint-diagnostic.json
           if-no-files-found: error
           retention-days: 14
