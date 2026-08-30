@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
+import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,6 +21,37 @@ SPEC = importlib.util.spec_from_file_location("mlb_scoring_guard_status", MODULE
 assert SPEC and SPEC.loader
 GUARD = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(GUARD)
+
+
+def test_guard_loads_trusted_contract_when_run_from_scripts_path(tmp_path):
+    """Match Actions script-mode imports without relying on pytest sys.path."""
+    program = "\n".join(
+        (
+            "import importlib.util",
+            "import json",
+            f"path = {str(MODULE_PATH)!r}",
+            "spec = importlib.util.spec_from_file_location('isolated_guard', path)",
+            "module = importlib.util.module_from_spec(spec)",
+            "spec.loader.exec_module(module)",
+            "errors = module._shadow_attestation_errors({'version': 'invalid'}, {})",
+            "print(json.dumps(errors))",
+        )
+    )
+    environment = os.environ.copy()
+    environment.pop("PYTHONPATH", None)
+
+    completed = subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=tmp_path,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    errors = json.loads(completed.stdout)
+
+    assert "shadow_version_invalid" in errors
+    assert "shadow_attestation_validator_failed" not in errors
 
 
 def game(pk: str, provider_id: str, game_key: str, start: str):
@@ -182,7 +217,7 @@ def bind_production_passive_shadow(prediction_item: dict) -> None:
     ]
     data["fundamentalsScoringShadow"] = shadow
 
-    persisted = inqsi_pull_history.ddb_safe(prediction_item)
+    persisted = GUARD._plain(inqsi_pull_history.ddb_safe(prediction_item))
     prediction_item.clear()
     prediction_item.update(persisted)
 
