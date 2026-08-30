@@ -41,6 +41,7 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import boto3,json,os,re
+          from boto3.dynamodb.types import TypeSerializer
           from pathlib import Path
           from datetime import datetime,timezone,timedelta
 
@@ -66,6 +67,10 @@ jobs:
           cooperative_state={
               'readOk':False,
               'recordPresent':False,
+              'errorCode':'SNAPSHOTS_TABLE_NOT_CONFIGURED',
+          }
+          atomic_completion_state={
+              'readOk':False,
               'errorCode':'SNAPSHOTS_TABLE_NOT_CONFIGURED',
           }
           execution_lease_state={
@@ -169,6 +174,114 @@ jobs:
                               if key in attempt
                           },
                       }
+                      try:
+                          logical={}
+                          conflicts=0
+
+                          def add_atomic(value):
+                              if not isinstance(value,dict):
+                                  return False
+                              role=str(value.get('tableRole') or '')
+                              pk=str(value.get('PK') or '')
+                              sk=str(value.get('SK') or '')
+                              fingerprint=str(
+                                  value.get('itemFingerprint') or ''
+                              )
+                              if role not in {'LOCK_TABLE','PULLS_TABLE'}:
+                                  return False
+                              if not pk or not sk or len(fingerprint)!=64:
+                                  return False
+                              key=(role,pk,sk)
+                              prior=logical.get(key)
+                              logical[key]=fingerprint
+                              return bool(prior and prior!=fingerprint)
+
+                          authority=progress.get('manifestAuthority')
+                          authority=(
+                              authority if isinstance(authority,dict) else {}
+                          )
+                          for value in authority.get('atomicItems') or []:
+                              conflicts+=bool(add_atomic(value))
+                          processed=progress.get('processedGames')
+                          processed=(
+                              processed if isinstance(processed,list) else []
+                          )
+                          for game in processed:
+                              evidence=(
+                                  game.get('durableEvidence')
+                                  if isinstance(game,dict) else None
+                              )
+                              evidence=(
+                                  evidence
+                                  if isinstance(evidence,dict) else {}
+                              )
+                              for value in evidence.get('items') or []:
+                                  conflicts+=bool(add_atomic(value))
+
+                          physical={}
+                          for (role,pk,sk),fingerprint in logical.items():
+                              physical.setdefault((pk,sk),[]).append(
+                                  (role,fingerprint)
+                              )
+                          serializer=TypeSerializer()
+                          sizes=[]
+                          missing=0
+                          for pk,sk in sorted(physical):
+                              observed=(
+                                  snapshots.get_item(
+                                      Key={'PK':pk,'SK':sk},
+                                      ConsistentRead=True,
+                                  ).get('Item')
+                              )
+                              if not isinstance(observed,dict):
+                                  missing+=1
+                                  continue
+                              wire={
+                                  key:serializer.serialize(value)
+                                  for key,value in observed.items()
+                              }
+                              sizes.append(len(json.dumps(
+                                  wire,
+                                  sort_keys=True,
+                                  separators=(',',':'),
+                              ).encode('utf-8')))
+                          transaction_limit=4*1024*1024
+                          estimated=sum(sizes)
+                          atomic_completion_state={
+                              'readOk':True,
+                              'errorCode':None,
+                              'logicalItemCount':len(logical),
+                              'physicalItemCount':len(physical),
+                              'processedGameCount':len(processed),
+                              'logicalEvidenceConflictCount':conflicts,
+                              'samePhysicalKeyMultipleRoleCount':sum(
+                                  len(values)>1
+                                  for values in physical.values()
+                              ),
+                              'missingPhysicalItemCount':missing,
+                              'estimatedSerializedItemBytes':estimated,
+                              'maximumSerializedItemBytes':max(sizes or [0]),
+                              'transactionResponseLimitBytes':(
+                                  transaction_limit
+                              ),
+                              'estimatedResponseOverLimit':bool(
+                                  estimated>transaction_limit
+                              ),
+                              'estimatedResponseHeadroomBytes':(
+                                  transaction_limit-estimated
+                              ),
+                              'keysExposed':False,
+                              'itemContentsExposed':False,
+                              'readOnly':True,
+                          }
+                      except Exception as exc:
+                          atomic_completion_state={
+                              'readOk':False,
+                              'errorCode':type(exc).__name__,
+                              'keysExposed':False,
+                              'itemContentsExposed':False,
+                              'readOnly':True,
+                          }
               except Exception as exc:
                   cooperative_state={
                       'readOk':False,
@@ -442,6 +555,7 @@ jobs:
               'dailyLockInvocationReports':lock_invocations[-300:],
               'dailyLockSignalEvents':lock_recent[-300:],
               'cooperativeReplayState':cooperative_state,
+              'cooperativeAtomicCompletionState':atomic_completion_state,
               'executionLeaseState':execution_lease_state,
               'secretExposed':False,
           }
@@ -458,6 +572,9 @@ jobs:
               'failureAtUtc':report['failureAtUtc'],
               'candidatePersistenceFailures':report['candidatePersistenceFailures'],
               'cooperativeReplayState':report['cooperativeReplayState'],
+              'cooperativeAtomicCompletionState':(
+                  report['cooperativeAtomicCompletionState']
+              ),
               'executionLeaseState':report['executionLeaseState'],
               'readOnly':True,
           },indent=2,default=str))
