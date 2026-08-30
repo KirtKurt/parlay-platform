@@ -1371,7 +1371,7 @@ jobs:
           python scripts/invoke_mlb_trainer_with_retry.py \
             --function-name "$TRAINER_FN" \
             --region "$AWS_REGION" \
-            --payload '{"sport":"mlb","mode":"scheduled","run":"unified_mlb_single_owner_settlement_recovery"}' \
+            --payload "{\"sport\":\"mlb\",\"mode\":\"scheduled\",\"run\":\"unified_mlb_recovery_${GITHUB_RUN_ID}\"}" \
             --response /tmp/unified-mlb-recovery/training.json \
             --invocation /tmp/unified-mlb-recovery/training-invocation.json \
             --retry-execution-lease \
