@@ -1006,7 +1006,35 @@ def test_training_loader_requires_complete_final_slate_and_exact_labels(monkeypa
         slate_date=SLATE
     )
     assert no_longer_pregame["rowCount"] == 0
-    assert no_longer_pregame["ok"] is False
+    assert no_longer_pregame["ok"] is True
+    assert no_longer_pregame["rejected"] == []
+    assert no_longer_pregame["skippedLabeledCount"] == 1
+    assert no_longer_pregame["skippedLabeled"] == [
+        {
+            "slateDateEt": SLATE,
+            "officialGamePk": "700070",
+            "reason": "official_label_already_present",
+        }
+    ]
+
+
+def test_shadow_loader_still_fails_closed_on_outcome_tainted_lock(monkeypatch):
+    lock = canonical_lock("700073")
+    lock["winner"] = "New York Yankees"
+    install_inputs(monkeypatch, [lock], [official_game("700073")])
+
+    report = labels.load_canonical_locked_rows_without_labels(slate_date=SLATE)
+
+    assert report["ok"] is False
+    assert report["rows"] == []
+    assert report["skippedLabeled"] == []
+    assert report["rejected"]
+    errors = {
+        error
+        for rejected in report["rejected"]
+        for error in rejected.get("errors") or []
+    }
+    assert "lock_not_unlabeled_pregame_shadow_candidate" in errors
 
 
 def test_terminal_only_full_final_slate_finalizes_without_training_rows(monkeypatch):
