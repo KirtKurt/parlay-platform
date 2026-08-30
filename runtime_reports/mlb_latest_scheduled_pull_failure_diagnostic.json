@@ -22,11 +22,11 @@
   },
   "cooperativeReplayState": {
     "claimExpired": false,
-    "claimPresent": false,
-    "claimRemainingSeconds": 0,
+    "claimPresent": true,
+    "claimRemainingSeconds": 948,
     "errorCode": null,
     "lastAttempt": {
-      "atUtc": "2026-08-30T05:04:31.737371+00:00",
+      "atUtc": "2026-08-30T05:20:32.228262+00:00",
       "errorCode": "ATOMIC_COMPLETION_PROOF_TransactionCanceledException",
       "gameIndex": "15",
       "stage": "ATOMIC_COMPLETION_PROOF",
@@ -35,7 +35,7 @@
     "lastChunkStage": "ATOMIC_COMPLETION_PROOF",
     "lastChunkStatus": "FAILED_CLOSED",
     "progress": {
-      "attemptCount": "1062",
+      "attemptCount": "1078",
       "canonicalCount": "0",
       "manifestGameCount": "15",
       "missedLockValidPrelockQuarantineCount": "15",
@@ -45,7 +45,7 @@
       "processedGameCount": "15",
       "reconciledCount": "15",
       "terminalCount": "15",
-      "updatedAtUtc": "2026-08-30T05:04:31.737371+00:00",
+      "updatedAtUtc": "2026-08-30T05:20:32.228262+00:00",
       "verificationComplete": true,
       "verificationIndex": "15",
       "verifiedGameCount": "15",
@@ -56,149 +56,16 @@
     "replayReceiptPresent": false,
     "requestIdentityPresent": true,
     "slateDateEt": "2026-08-04",
-    "state": "QUEUED",
+    "state": "CLAIMED",
     "v2AppliedAtUtc": "2026-08-30T02:48:51.498677+00:00",
     "v2DurableHistoryPresent": false,
     "v2OneShot": true,
     "v2RemediationPresent": true,
     "v2RemediationVersion": "MLB-COOPERATIVE-PRELOCK-CANDIDATE-REVIEW-REMEDIATION-v2-one-shot-installed-runtime-proof"
   },
-  "createdAtUtc": "2026-08-30T05:05:05.104070Z",
+  "createdAtUtc": "2026-08-30T05:22:49.497929Z",
   "dailyLockFunctionName": "parlay-platform-dev-MLBDailyPickLockFunction-BQIhMFw1k5YP",
   "dailyLockInvocationReports": [
-    {
-      "durationMs": 9.77,
-      "report": "REPORT RequestId: eee96545-ffae-42e1-8c80-31fa25282b2f\tDuration: 9.77 ms\tBilled Duration: 10 ms\tMemory Size: 1024 MB\tMax Memory Used: 171 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:05:16.196000Z",
-      "requestId": "eee96545-ffae-42e1-8c80-31fa25282b2f",
-      "startedAtUtc": "2026-08-30T01:05:16.186000Z"
-    },
-    {
-      "durationMs": 67.18,
-      "report": "REPORT RequestId: def18cfc-3764-43fe-9c16-cbdd52a32382\tDuration: 67.18 ms\tBilled Duration: 68 ms\tMemory Size: 1024 MB\tMax Memory Used: 171 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:05:30.341000Z",
-      "requestId": "def18cfc-3764-43fe-9c16-cbdd52a32382",
-      "startedAtUtc": "2026-08-30T01:05:30.274000Z"
-    },
-    {
-      "durationMs": 445425.19,
-      "report": "REPORT RequestId: 239b3dec-c088-479d-97f3-3b98c608aed4\tDuration: 445425.19 ms\tBilled Duration: 445426 ms\tMemory Size: 1024 MB\tMax Memory Used: 222 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:05:41.755000Z",
-      "requestId": "239b3dec-c088-479d-97f3-3b98c608aed4",
-      "startedAtUtc": "2026-08-30T00:58:16.329000Z"
-    },
-    {
-      "durationMs": 37.37,
-      "report": "REPORT RequestId: f11079c6-3256-4978-8a67-d999003f266a\tDuration: 37.37 ms\tBilled Duration: 38 ms\tMemory Size: 1024 MB\tMax Memory Used: 171 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:07:16.395000Z",
-      "requestId": "f11079c6-3256-4978-8a67-d999003f266a",
-      "startedAtUtc": "2026-08-30T01:07:16.357000Z"
-    },
-    {
-      "durationMs": 12.01,
-      "report": "REPORT RequestId: 9b940830-4dd2-476e-8343-223b2be67b19\tDuration: 12.01 ms\tBilled Duration: 13 ms\tMemory Size: 1024 MB\tMax Memory Used: 171 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:08:16.217000Z",
-      "requestId": "9b940830-4dd2-476e-8343-223b2be67b19",
-      "startedAtUtc": "2026-08-30T01:08:16.205000Z"
-    },
-    {
-      "durationMs": 13.25,
-      "report": "REPORT RequestId: 29ac682d-eac2-4bb8-9f78-efe9772f660c\tDuration: 13.25 ms\tBilled Duration: 14 ms\tMemory Size: 1024 MB\tMax Memory Used: 171 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:09:16.386000Z",
-      "requestId": "29ac682d-eac2-4bb8-9f78-efe9772f660c",
-      "startedAtUtc": "2026-08-30T01:09:16.372000Z"
-    },
-    {
-      "durationMs": 13.7,
-      "report": "REPORT RequestId: 47474b4b-5f5a-4158-a574-f977ac3e48a0\tDuration: 13.70 ms\tBilled Duration: 14 ms\tMemory Size: 1024 MB\tMax Memory Used: 171 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:10:16.236000Z",
-      "requestId": "47474b4b-5f5a-4158-a574-f977ac3e48a0",
-      "startedAtUtc": "2026-08-30T01:10:16.222000Z"
-    },
-    {
-      "durationMs": 12.14,
-      "report": "REPORT RequestId: 6c7b8b8d-4125-4345-b29b-eb84602c9474\tDuration: 12.14 ms\tBilled Duration: 13 ms\tMemory Size: 1024 MB\tMax Memory Used: 171 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:11:16.352000Z",
-      "requestId": "6c7b8b8d-4125-4345-b29b-eb84602c9474",
-      "startedAtUtc": "2026-08-30T01:11:16.339000Z"
-    },
-    {
-      "durationMs": 12.6,
-      "report": "REPORT RequestId: 27289fc3-87a0-48b2-82be-72722bda07f8\tDuration: 12.60 ms\tBilled Duration: 13 ms\tMemory Size: 1024 MB\tMax Memory Used: 171 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:12:16.223000Z",
-      "requestId": "27289fc3-87a0-48b2-82be-72722bda07f8",
-      "startedAtUtc": "2026-08-30T01:12:16.210000Z"
-    },
-    {
-      "durationMs": 13.16,
-      "report": "REPORT RequestId: cc1aff99-71cd-40e4-a3c1-3505adadf8ac\tDuration: 13.16 ms\tBilled Duration: 14 ms\tMemory Size: 1024 MB\tMax Memory Used: 171 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:13:16.329000Z",
-      "requestId": "cc1aff99-71cd-40e4-a3c1-3505adadf8ac",
-      "startedAtUtc": "2026-08-30T01:13:16.315000Z"
-    },
-    {
-      "durationMs": 467827.07,
-      "report": "REPORT RequestId: 27a9382c-9847-4305-b004-157998c61260\tDuration: 467827.07 ms\tBilled Duration: 467828 ms\tMemory Size: 1024 MB\tMax Memory Used: 222 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:14:04.214000Z",
-      "requestId": "27a9382c-9847-4305-b004-157998c61260",
-      "startedAtUtc": "2026-08-30T01:06:16.386000Z"
-    },
-    {
-      "durationMs": 35.37,
-      "report": "REPORT RequestId: 354c1353-90ad-4883-8695-816b0fbf099e\tDuration: 35.37 ms\tBilled Duration: 36 ms\tMemory Size: 1024 MB\tMax Memory Used: 171 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:15:16.255000Z",
-      "requestId": "354c1353-90ad-4883-8695-816b0fbf099e",
-      "startedAtUtc": "2026-08-30T01:15:16.219000Z"
-    },
-    {
-      "durationMs": 9.55,
-      "report": "REPORT RequestId: 1fc3d4ab-0d96-42da-902c-e297b943ba31\tDuration: 9.55 ms\tBilled Duration: 10 ms\tMemory Size: 1024 MB\tMax Memory Used: 171 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:16:16.202000Z",
-      "requestId": "1fc3d4ab-0d96-42da-902c-e297b943ba31",
-      "startedAtUtc": "2026-08-30T01:16:16.192000Z"
-    },
-    {
-      "durationMs": 9.88,
-      "report": "REPORT RequestId: b6a54390-5dc6-496a-ad18-4e273ab62b09\tDuration: 9.88 ms\tBilled Duration: 10 ms\tMemory Size: 1024 MB\tMax Memory Used: 171 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:17:16.265000Z",
-      "requestId": "b6a54390-5dc6-496a-ad18-4e273ab62b09",
-      "startedAtUtc": "2026-08-30T01:17:16.255000Z"
-    },
-    {
-      "durationMs": 15.29,
-      "report": "REPORT RequestId: 77679ce6-94d0-4aff-8ced-08de86c50a37\tDuration: 15.29 ms\tBilled Duration: 16 ms\tMemory Size: 1024 MB\tMax Memory Used: 171 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:18:16.397000Z",
-      "requestId": "77679ce6-94d0-4aff-8ced-08de86c50a37",
-      "startedAtUtc": "2026-08-30T01:18:16.381000Z"
-    },
-    {
-      "durationMs": 8.91,
-      "report": "REPORT RequestId: 0920c720-f6cc-4b22-b393-fc9a5cab2688\tDuration: 8.91 ms\tBilled Duration: 9 ms\tMemory Size: 1024 MB\tMax Memory Used: 171 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:19:16.267000Z",
-      "requestId": "0920c720-f6cc-4b22-b393-fc9a5cab2688",
-      "startedAtUtc": "2026-08-30T01:19:16.258000Z"
-    },
-    {
-      "durationMs": 9.19,
-      "report": "REPORT RequestId: 1f25ef0e-7840-45df-bf82-a3376d52de88\tDuration: 9.19 ms\tBilled Duration: 10 ms\tMemory Size: 1024 MB\tMax Memory Used: 171 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:20:16.284000Z",
-      "requestId": "1f25ef0e-7840-45df-bf82-a3376d52de88",
-      "startedAtUtc": "2026-08-30T01:20:16.274000Z"
-    },
-    {
-      "durationMs": 8.94,
-      "report": "REPORT RequestId: 39a7efb3-a1e1-4911-b293-530805aa48b4\tDuration: 8.94 ms\tBilled Duration: 9 ms\tMemory Size: 1024 MB\tMax Memory Used: 171 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:21:16.432000Z",
-      "requestId": "39a7efb3-a1e1-4911-b293-530805aa48b4",
-      "startedAtUtc": "2026-08-30T01:21:16.422000Z"
-    },
-    {
-      "durationMs": 440366.22,
-      "report": "REPORT RequestId: c8c02626-ec95-4f9f-bab9-2d2cda49174a\tDuration: 440366.22 ms\tBilled Duration: 440367 ms\tMemory Size: 1024 MB\tMax Memory Used: 224 MB\t\n",
-      "reportedAtUtc": "2026-08-30T01:21:36.750000Z",
-      "requestId": "c8c02626-ec95-4f9f-bab9-2d2cda49174a",
-      "startedAtUtc": "2026-08-30T01:14:16.383000Z"
-    },
     {
       "durationMs": 34.09,
       "report": "REPORT RequestId: eb2dbdef-8308-4033-9b94-81e273c22c9e\tDuration: 34.09 ms\tBilled Duration: 35 ms\tMemory Size: 1024 MB\tMax Memory Used: 171 MB\t\n",
@@ -302,7 +169,7 @@
       "report": "REPORT RequestId: b99f6dc9-18ad-4211-88ad-6caca68b45b5\tDuration: 900000.00 ms\tBilled Duration: 900000 ms\tMemory Size: 1024 MB\tMax Memory Used: 264 MB\tStatus: timeout\n",
       "reportedAtUtc": "2026-08-30T01:37:16.287000Z",
       "requestId": "b99f6dc9-18ad-4211-88ad-6caca68b45b5",
-      "startedAtUtc": "2026-08-30T01:22:16.252000Z"
+      "startedAtUtc": "2026-08-30T01:22:16.287000Z"
     },
     {
       "durationMs": 742.75,
@@ -2067,630 +1934,164 @@
       "reportedAtUtc": "2026-08-30T05:04:31.846000Z",
       "requestId": "0dc8c310-a20d-437e-ab10-535ce4a2f7d9",
       "startedAtUtc": "2026-08-30T05:04:16.448000Z"
+    },
+    {
+      "durationMs": 15259.49,
+      "report": "REPORT RequestId: 668ce19c-fc5b-4eda-b433-64920342d7ed\tDuration: 15259.49 ms\tBilled Duration: 15260 ms\tMemory Size: 1024 MB\tMax Memory Used: 176 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:05:31.511000Z",
+      "requestId": "668ce19c-fc5b-4eda-b433-64920342d7ed",
+      "startedAtUtc": "2026-08-30T05:05:16.251000Z"
+    },
+    {
+      "durationMs": 15473.26,
+      "report": "REPORT RequestId: 3e5a385d-fb26-4ef5-a8d8-8a1bcc6da500\tDuration: 15473.26 ms\tBilled Duration: 15474 ms\tMemory Size: 1024 MB\tMax Memory Used: 176 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:06:31.813000Z",
+      "requestId": "3e5a385d-fb26-4ef5-a8d8-8a1bcc6da500",
+      "startedAtUtc": "2026-08-30T05:06:16.339000Z"
+    },
+    {
+      "durationMs": 15568.69,
+      "report": "REPORT RequestId: 673d2c64-b02d-48ab-837d-669abe4ffca0\tDuration: 15568.69 ms\tBilled Duration: 15569 ms\tMemory Size: 1024 MB\tMax Memory Used: 176 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:07:31.805000Z",
+      "requestId": "673d2c64-b02d-48ab-837d-669abe4ffca0",
+      "startedAtUtc": "2026-08-30T05:07:16.236000Z"
+    },
+    {
+      "durationMs": 15828.23,
+      "report": "REPORT RequestId: 9a15a28f-28b7-4bce-bf58-22eee04c2fc4\tDuration: 15828.23 ms\tBilled Duration: 15829 ms\tMemory Size: 1024 MB\tMax Memory Used: 176 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:08:32.168000Z",
+      "requestId": "9a15a28f-28b7-4bce-bf58-22eee04c2fc4",
+      "startedAtUtc": "2026-08-30T05:08:16.339000Z"
+    },
+    {
+      "durationMs": 15567.52,
+      "report": "REPORT RequestId: f77ab33c-12b1-4828-a36a-a816395e0da8\tDuration: 15567.52 ms\tBilled Duration: 15568 ms\tMemory Size: 1024 MB\tMax Memory Used: 176 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:09:31.765000Z",
+      "requestId": "f77ab33c-12b1-4828-a36a-a816395e0da8",
+      "startedAtUtc": "2026-08-30T05:09:16.197000Z"
+    },
+    {
+      "durationMs": 15679.41,
+      "report": "REPORT RequestId: 143da3ab-2671-4d16-9f38-55a3073405d6\tDuration: 15679.41 ms\tBilled Duration: 15680 ms\tMemory Size: 1024 MB\tMax Memory Used: 176 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:10:31.967000Z",
+      "requestId": "143da3ab-2671-4d16-9f38-55a3073405d6",
+      "startedAtUtc": "2026-08-30T05:10:16.287000Z"
+    },
+    {
+      "durationMs": 15568.59,
+      "report": "REPORT RequestId: 0441501d-f75c-4235-bb58-4700bbc6a75a\tDuration: 15568.59 ms\tBilled Duration: 15569 ms\tMemory Size: 1024 MB\tMax Memory Used: 176 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:11:31.908000Z",
+      "requestId": "0441501d-f75c-4235-bb58-4700bbc6a75a",
+      "startedAtUtc": "2026-08-30T05:11:16.339000Z"
+    },
+    {
+      "durationMs": 35.1,
+      "report": "REPORT RequestId: c6a2a5e4-4429-474e-a99e-5850bc808896\tDuration: 35.10 ms\tBilled Duration: 843 ms\tMemory Size: 1024 MB\tMax Memory Used: 120 MB\tInit Duration: 807.89 ms\t\nXRAY TraceId: 1-6a93bbb7-1362c2353a73218a71f7ec08\tSampled: true\t\n",
+      "reportedAtUtc": "2026-08-30T05:12:24.840000Z",
+      "requestId": "c6a2a5e4-4429-474e-a99e-5850bc808896",
+      "startedAtUtc": "2026-08-30T05:12:24.805000Z"
+    },
+    {
+      "durationMs": 15888.56,
+      "report": "REPORT RequestId: ea85ef22-cd15-4d83-85e2-474b373c9ac4\tDuration: 15888.56 ms\tBilled Duration: 15889 ms\tMemory Size: 1024 MB\tMax Memory Used: 176 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:12:32.145000Z",
+      "requestId": "ea85ef22-cd15-4d83-85e2-474b373c9ac4",
+      "startedAtUtc": "2026-08-30T05:12:16.251000Z"
+    },
+    {
+      "durationMs": 15844.98,
+      "report": "REPORT RequestId: cc9b9f42-34d0-4dbb-878a-85a4e9b029ad\tDuration: 15844.98 ms\tBilled Duration: 15845 ms\tMemory Size: 1024 MB\tMax Memory Used: 176 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:13:32.131000Z",
+      "requestId": "cc9b9f42-34d0-4dbb-878a-85a4e9b029ad",
+      "startedAtUtc": "2026-08-30T05:13:16.285000Z"
+    },
+    {
+      "durationMs": 15770.23,
+      "report": "REPORT RequestId: c11c8301-7e1b-4208-9142-23b22c1d3a29\tDuration: 15770.23 ms\tBilled Duration: 15771 ms\tMemory Size: 1024 MB\tMax Memory Used: 176 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:14:31.927000Z",
+      "requestId": "c11c8301-7e1b-4208-9142-23b22c1d3a29",
+      "startedAtUtc": "2026-08-30T05:14:16.157000Z"
+    },
+    {
+      "durationMs": 15723.89,
+      "report": "REPORT RequestId: 6151e1db-5e43-4b83-927d-6b6dbb53b254\tDuration: 15723.89 ms\tBilled Duration: 15724 ms\tMemory Size: 1024 MB\tMax Memory Used: 176 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:15:32.047000Z",
+      "requestId": "6151e1db-5e43-4b83-927d-6b6dbb53b254",
+      "startedAtUtc": "2026-08-30T05:15:16.323000Z"
+    },
+    {
+      "durationMs": 13.75,
+      "report": "REPORT RequestId: 3cb5956c-c900-48e9-85a9-2d1d87d4dc26\tDuration: 13.75 ms\tBilled Duration: 14 ms\tMemory Size: 1024 MB\tMax Memory Used: 176 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:15:45.462000Z",
+      "requestId": "3cb5956c-c900-48e9-85a9-2d1d87d4dc26",
+      "startedAtUtc": "2026-08-30T05:15:45.448000Z"
+    },
+    {
+      "durationMs": 16074.1,
+      "report": "REPORT RequestId: b6242fcc-99ee-477a-9383-53ada021fc10\tDuration: 16074.10 ms\tBilled Duration: 16075 ms\tMemory Size: 1024 MB\tMax Memory Used: 176 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:16:32.467000Z",
+      "requestId": "b6242fcc-99ee-477a-9383-53ada021fc10",
+      "startedAtUtc": "2026-08-30T05:16:16.392000Z"
+    },
+    {
+      "durationMs": 16228.85,
+      "report": "REPORT RequestId: dfba1b92-ef2d-404e-a845-aa20bf0bdc49\tDuration: 16228.85 ms\tBilled Duration: 16229 ms\tMemory Size: 1024 MB\tMax Memory Used: 176 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:17:32.427000Z",
+      "requestId": "dfba1b92-ef2d-404e-a845-aa20bf0bdc49",
+      "startedAtUtc": "2026-08-30T05:17:16.198000Z"
+    },
+    {
+      "durationMs": 15987.79,
+      "report": "REPORT RequestId: 58d520c8-eaba-4723-86fc-052c72487797\tDuration: 15987.79 ms\tBilled Duration: 15988 ms\tMemory Size: 1024 MB\tMax Memory Used: 176 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:18:32.277000Z",
+      "requestId": "58d520c8-eaba-4723-86fc-052c72487797",
+      "startedAtUtc": "2026-08-30T05:18:16.289000Z"
+    },
+    {
+      "durationMs": 15960.61,
+      "report": "REPORT RequestId: e17ecfe8-8dcd-42e7-8742-6b7f2535441a\tDuration: 15960.61 ms\tBilled Duration: 15961 ms\tMemory Size: 1024 MB\tMax Memory Used: 176 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:19:32.115000Z",
+      "requestId": "e17ecfe8-8dcd-42e7-8742-6b7f2535441a",
+      "startedAtUtc": "2026-08-30T05:19:16.154000Z"
+    },
+    {
+      "durationMs": 16133.08,
+      "report": "REPORT RequestId: 0f27da93-e126-46df-8a58-f0a3e42fc8ec\tDuration: 16133.08 ms\tBilled Duration: 16134 ms\tMemory Size: 1024 MB\tMax Memory Used: 176 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:20:32.348000Z",
+      "requestId": "0f27da93-e126-46df-8a58-f0a3e42fc8ec",
+      "startedAtUtc": "2026-08-30T05:20:16.215000Z"
+    },
+    {
+      "durationMs": 43.8,
+      "report": "REPORT RequestId: 6db37131-b4e9-4b83-9182-54cca2f27c6e\tDuration: 43.80 ms\tBilled Duration: 1094 ms\tMemory Size: 1024 MB\tMax Memory Used: 120 MB\tInit Duration: 1049.97 ms\t\n",
+      "reportedAtUtc": "2026-08-30T05:21:30.433000Z",
+      "requestId": "6db37131-b4e9-4b83-9182-54cca2f27c6e",
+      "startedAtUtc": "2026-08-30T05:21:30.389000Z"
+    },
+    {
+      "durationMs": 15.42,
+      "report": "REPORT RequestId: 60bc21ca-fe38-4ecb-a436-3794cbaa91bc\tDuration: 15.42 ms\tBilled Duration: 16 ms\tMemory Size: 1024 MB\tMax Memory Used: 120 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:21:30.644000Z",
+      "requestId": "60bc21ca-fe38-4ecb-a436-3794cbaa91bc",
+      "startedAtUtc": "2026-08-30T05:21:30.628000Z"
+    },
+    {
+      "durationMs": 15789.75,
+      "report": "REPORT RequestId: 747b0290-e8d5-4d58-bc76-32a7ee9ceb76\tDuration: 15789.75 ms\tBilled Duration: 16885 ms\tMemory Size: 1024 MB\tMax Memory Used: 175 MB\tInit Duration: 1094.91 ms\t\n",
+      "reportedAtUtc": "2026-08-30T05:21:33.381000Z",
+      "requestId": "747b0290-e8d5-4d58-bc76-32a7ee9ceb76",
+      "startedAtUtc": "2026-08-30T05:21:17.590000Z"
+    },
+    {
+      "durationMs": 15809.14,
+      "report": "REPORT RequestId: ad8058e2-aa94-4dea-b263-ec8c8dec8ad3\tDuration: 15809.14 ms\tBilled Duration: 15810 ms\tMemory Size: 1024 MB\tMax Memory Used: 177 MB\t\n",
+      "reportedAtUtc": "2026-08-30T05:22:32.049000Z",
+      "requestId": "ad8058e2-aa94-4dea-b263-ec8c8dec8ad3",
+      "startedAtUtc": "2026-08-30T05:22:16.239000Z"
     }
   ],
-  "dailyLockRawLogEventCount": 1249,
+  "dailyLockRawLogEventCount": 1385,
   "dailyLockSignalEvents": [
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:20:16.413000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 11, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:20:30.388000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:8d270beb38a7f10433d0b54d64dfcc06\", \"gameIndex\": 11, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:20:30.388000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:8d270beb38a7f10433d0b54d64dfcc06\", \"gameIndex\": 11, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"READ_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:20:30.410000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:8d270beb38a7f10433d0b54d64dfcc06\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:8d270beb38a7f10433d0b54d64dfcc06\", \"gameIndex\": 11, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 874, \"slateDateEt\": \"2026-08-04\", \"stage\": \"WRITE_VALID_PRELOCK_MISSED_LOCK_QUARANTINE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:20:41.511000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:8d270beb38a7f10433d0b54d64dfcc06\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:8d270beb38a7f10433d0b54d64dfcc06\", \"gameIndex\": 11, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 871, \"slateDateEt\": \"2026-08-04\", \"stage\": \"PROCESS_CHECKPOINT_READY\", \"status\": \"TERMINAL_CHECKPOINT_READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:20:44.429000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:8d270beb38a7f10433d0b54d64dfcc06\", \"gameIndex\": 11, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 871, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:20:44.433000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:21:16.288000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 12, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:21:30.331000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:5137c54e299ea7c31dbd7cf26b6bf6e2\", \"gameIndex\": 12, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:21:30.332000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:5137c54e299ea7c31dbd7cf26b6bf6e2\", \"gameIndex\": 12, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"READ_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:21:30.355000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:5137c54e299ea7c31dbd7cf26b6bf6e2\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:5137c54e299ea7c31dbd7cf26b6bf6e2\", \"gameIndex\": 12, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 874, \"slateDateEt\": \"2026-08-04\", \"stage\": \"WRITE_VALID_PRELOCK_MISSED_LOCK_QUARANTINE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:21:41.747000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:5137c54e299ea7c31dbd7cf26b6bf6e2\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:5137c54e299ea7c31dbd7cf26b6bf6e2\", \"gameIndex\": 12, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 871, \"slateDateEt\": \"2026-08-04\", \"stage\": \"PROCESS_CHECKPOINT_READY\", \"status\": \"TERMINAL_CHECKPOINT_READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:21:44.495000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:5137c54e299ea7c31dbd7cf26b6bf6e2\", \"gameIndex\": 12, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 871, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:21:44.498000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:22:16.461000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 13, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:22:30.429000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:21df82e501e6c1d230d9c511b814ed68\", \"gameIndex\": 13, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:22:30.429000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:21df82e501e6c1d230d9c511b814ed68\", \"gameIndex\": 13, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"READ_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:22:30.455000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:21df82e501e6c1d230d9c511b814ed68\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:21df82e501e6c1d230d9c511b814ed68\", \"gameIndex\": 13, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 874, \"slateDateEt\": \"2026-08-04\", \"stage\": \"WRITE_VALID_PRELOCK_MISSED_LOCK_QUARANTINE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:22:41.653000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:21df82e501e6c1d230d9c511b814ed68\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:21df82e501e6c1d230d9c511b814ed68\", \"gameIndex\": 13, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 871, \"slateDateEt\": \"2026-08-04\", \"stage\": \"PROCESS_CHECKPOINT_READY\", \"status\": \"TERMINAL_CHECKPOINT_READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:22:44.658000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:21df82e501e6c1d230d9c511b814ed68\", \"gameIndex\": 13, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 871, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:22:44.669000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:23:16.474000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 14, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:23:30.376000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:631ee681c6e2c9bbf696b0564c11bd30\", \"gameIndex\": 14, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:23:30.376000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:631ee681c6e2c9bbf696b0564c11bd30\", \"gameIndex\": 14, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"READ_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:23:30.398000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:631ee681c6e2c9bbf696b0564c11bd30\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:631ee681c6e2c9bbf696b0564c11bd30\", \"gameIndex\": 14, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 874, \"slateDateEt\": \"2026-08-04\", \"stage\": \"WRITE_VALID_PRELOCK_MISSED_LOCK_QUARANTINE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:23:41.573000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:631ee681c6e2c9bbf696b0564c11bd30\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:631ee681c6e2c9bbf696b0564c11bd30\", \"gameIndex\": 14, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 871, \"slateDateEt\": \"2026-08-04\", \"stage\": \"PROCESS_CHECKPOINT_READY\", \"status\": \"TERMINAL_CHECKPOINT_READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:23:44.531000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:631ee681c6e2c9bbf696b0564c11bd30\", \"gameIndex\": 14, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"PROCESS\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 871, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:23:44.534000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:24:16.326000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 0, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:24:30.427000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:fadc6a3080af39afc5de586f3e2945a3\", \"gameIndex\": 0, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:24:30.427000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:fadc6a3080af39afc5de586f3e2945a3\", \"gameIndex\": 0, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFY_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:24:30.452000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:fadc6a3080af39afc5de586f3e2945a3\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:fadc6a3080af39afc5de586f3e2945a3\", \"gameIndex\": 0, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFICATION_CHECKPOINT_READY\", \"status\": \"DURABLE_TERMINAL_VERIFIED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:24:30.722000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:fadc6a3080af39afc5de586f3e2945a3\", \"gameIndex\": 0, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:24:30.722000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:25:16.409000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 1, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:25:30.440000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:9d696e41666e6fc76dc4b83ced2e8996\", \"gameIndex\": 1, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:25:30.440000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:9d696e41666e6fc76dc4b83ced2e8996\", \"gameIndex\": 1, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFY_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:25:30.473000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:9d696e41666e6fc76dc4b83ced2e8996\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:9d696e41666e6fc76dc4b83ced2e8996\", \"gameIndex\": 1, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFICATION_CHECKPOINT_READY\", \"status\": \"DURABLE_TERMINAL_VERIFIED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:25:30.884000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:9d696e41666e6fc76dc4b83ced2e8996\", \"gameIndex\": 1, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:25:30.884000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:26:16.452000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 2, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:26:30.534000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:c242db575b7b666cd549f31569266d89\", \"gameIndex\": 2, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:26:30.534000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:c242db575b7b666cd549f31569266d89\", \"gameIndex\": 2, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFY_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:26:30.566000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:c242db575b7b666cd549f31569266d89\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:c242db575b7b666cd549f31569266d89\", \"gameIndex\": 2, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFICATION_CHECKPOINT_READY\", \"status\": \"DURABLE_TERMINAL_VERIFIED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:26:30.970000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:c242db575b7b666cd549f31569266d89\", \"gameIndex\": 2, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:26:30.970000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:27:16.371000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 3, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:27:30.352000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:f79dec5ded280dbf4ef07225e03ccd7e\", \"gameIndex\": 3, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:27:30.352000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:f79dec5ded280dbf4ef07225e03ccd7e\", \"gameIndex\": 3, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFY_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:27:30.376000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:f79dec5ded280dbf4ef07225e03ccd7e\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:f79dec5ded280dbf4ef07225e03ccd7e\", \"gameIndex\": 3, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFICATION_CHECKPOINT_READY\", \"status\": \"DURABLE_TERMINAL_VERIFIED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:27:30.780000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:f79dec5ded280dbf4ef07225e03ccd7e\", \"gameIndex\": 3, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:27:30.780000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:28:16.454000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 4, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:28:30.081000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:2279edd120dc52c88defa2a54e0e107d\", \"gameIndex\": 4, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:28:30.081000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:2279edd120dc52c88defa2a54e0e107d\", \"gameIndex\": 4, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFY_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:28:30.114000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:2279edd120dc52c88defa2a54e0e107d\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:2279edd120dc52c88defa2a54e0e107d\", \"gameIndex\": 4, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFICATION_CHECKPOINT_READY\", \"status\": \"DURABLE_TERMINAL_VERIFIED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:28:30.503000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:2279edd120dc52c88defa2a54e0e107d\", \"gameIndex\": 4, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:28:30.503000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:29:16.296000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 5, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:29:30.115000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:00828e81b6bef980ada2777528d99f93\", \"gameIndex\": 5, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:29:30.115000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:00828e81b6bef980ada2777528d99f93\", \"gameIndex\": 5, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFY_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:29:30.142000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:00828e81b6bef980ada2777528d99f93\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:00828e81b6bef980ada2777528d99f93\", \"gameIndex\": 5, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFICATION_CHECKPOINT_READY\", \"status\": \"DURABLE_TERMINAL_VERIFIED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:29:30.537000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:00828e81b6bef980ada2777528d99f93\", \"gameIndex\": 5, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:29:30.537000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:30:16.410000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 6, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:30:30.234000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:b78e7c3194121b22ad94556a6db3048c\", \"gameIndex\": 6, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:30:30.234000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:b78e7c3194121b22ad94556a6db3048c\", \"gameIndex\": 6, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFY_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:30:30.256000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:b78e7c3194121b22ad94556a6db3048c\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:b78e7c3194121b22ad94556a6db3048c\", \"gameIndex\": 6, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFICATION_CHECKPOINT_READY\", \"status\": \"DURABLE_TERMINAL_VERIFIED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:30:30.638000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:b78e7c3194121b22ad94556a6db3048c\", \"gameIndex\": 6, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:30:30.638000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:31:16.273000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 7, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:31:30.162000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:9981a2df41e94c5547e84ff3f9979beb\", \"gameIndex\": 7, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:31:30.162000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:9981a2df41e94c5547e84ff3f9979beb\", \"gameIndex\": 7, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFY_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:31:30.196000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:9981a2df41e94c5547e84ff3f9979beb\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:9981a2df41e94c5547e84ff3f9979beb\", \"gameIndex\": 7, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFICATION_CHECKPOINT_READY\", \"status\": \"DURABLE_TERMINAL_VERIFIED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:31:30.595000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:9981a2df41e94c5547e84ff3f9979beb\", \"gameIndex\": 7, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:31:30.595000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:32:16.394000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 8, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:32:30.223000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:9c77a3a4edfe3bf897bbe0330b1edbb7\", \"gameIndex\": 8, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:32:30.223000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:9c77a3a4edfe3bf897bbe0330b1edbb7\", \"gameIndex\": 8, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFY_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:32:30.255000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:9c77a3a4edfe3bf897bbe0330b1edbb7\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:9c77a3a4edfe3bf897bbe0330b1edbb7\", \"gameIndex\": 8, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFICATION_CHECKPOINT_READY\", \"status\": \"DURABLE_TERMINAL_VERIFIED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:32:30.653000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:9c77a3a4edfe3bf897bbe0330b1edbb7\", \"gameIndex\": 8, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:32:30.653000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:33:16.439000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 9, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:33:30.327000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:6473ba72a414bbd4449567e4ff83e076\", \"gameIndex\": 9, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:33:30.327000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:6473ba72a414bbd4449567e4ff83e076\", \"gameIndex\": 9, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFY_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:33:30.357000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:6473ba72a414bbd4449567e4ff83e076\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:6473ba72a414bbd4449567e4ff83e076\", \"gameIndex\": 9, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFICATION_CHECKPOINT_READY\", \"status\": \"DURABLE_TERMINAL_VERIFIED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:33:30.753000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:6473ba72a414bbd4449567e4ff83e076\", \"gameIndex\": 9, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:33:30.753000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:34:16.310000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 10, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:34:30.004000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:c6a02f59db24e462163d3092b8ab79f8\", \"gameIndex\": 10, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:34:30.004000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:c6a02f59db24e462163d3092b8ab79f8\", \"gameIndex\": 10, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFY_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:34:30.034000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:c6a02f59db24e462163d3092b8ab79f8\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:c6a02f59db24e462163d3092b8ab79f8\", \"gameIndex\": 10, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFICATION_CHECKPOINT_READY\", \"status\": \"DURABLE_TERMINAL_VERIFIED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:34:30.414000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:c6a02f59db24e462163d3092b8ab79f8\", \"gameIndex\": 10, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:34:30.414000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:35:16.380000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 11, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:35:30.205000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:8d270beb38a7f10433d0b54d64dfcc06\", \"gameIndex\": 11, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:35:30.205000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:8d270beb38a7f10433d0b54d64dfcc06\", \"gameIndex\": 11, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFY_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:35:30.239000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:8d270beb38a7f10433d0b54d64dfcc06\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:8d270beb38a7f10433d0b54d64dfcc06\", \"gameIndex\": 11, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFICATION_CHECKPOINT_READY\", \"status\": \"DURABLE_TERMINAL_VERIFIED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:35:30.628000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:8d270beb38a7f10433d0b54d64dfcc06\", \"gameIndex\": 11, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:35:30.628000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:36:16.449000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 12, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:36:30.308000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:5137c54e299ea7c31dbd7cf26b6bf6e2\", \"gameIndex\": 12, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 886, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:36:30.308000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:5137c54e299ea7c31dbd7cf26b6bf6e2\", \"gameIndex\": 12, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFY_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:36:30.335000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:5137c54e299ea7c31dbd7cf26b6bf6e2\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:5137c54e299ea7c31dbd7cf26b6bf6e2\", \"gameIndex\": 12, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFICATION_CHECKPOINT_READY\", \"status\": \"DURABLE_TERMINAL_VERIFIED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:36:30.592000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:5137c54e299ea7c31dbd7cf26b6bf6e2\", \"gameIndex\": 12, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:36:30.592000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:37:16.334000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 13, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:37:30.356000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:21df82e501e6c1d230d9c511b814ed68\", \"gameIndex\": 13, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:37:30.356000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:21df82e501e6c1d230d9c511b814ed68\", \"gameIndex\": 13, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFY_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:37:30.381000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"durableIdentity\": \"provider:21df82e501e6c1d230d9c511b814ed68\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:21df82e501e6c1d230d9c511b814ed68\", \"gameIndex\": 13, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFICATION_CHECKPOINT_READY\", \"status\": \"DURABLE_TERMINAL_VERIFIED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:37:30.630000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]785a87ed91234f839cf0477ffc98dd92",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:21df82e501e6c1d230d9c511b814ed68\", \"gameIndex\": 13, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:37:30.630000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]7aac6e5c4e5147ff98c818e301f2818d",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:38:17.722000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]7aac6e5c4e5147ff98c818e301f2818d",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 14, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:38:31.804000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]7aac6e5c4e5147ff98c818e301f2818d",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:631ee681c6e2c9bbf696b0564c11bd30\", \"gameIndex\": 14, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ACQUIRE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:38:31.804000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]7aac6e5c4e5147ff98c818e301f2818d",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:631ee681c6e2c9bbf696b0564c11bd30\", \"gameIndex\": 14, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"VERIFY_DURABLE_TERMINAL\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:38:31.843000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]7aac6e5c4e5147ff98c818e301f2818d",
-      "message": "{\"durableIdentity\": \"provider:631ee681c6e2c9bbf696b0564c11bd30\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:631ee681c6e2c9bbf696b0564c11bd30\", \"gameIndex\": 14, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"COMPLETE_READY\", \"status\": \"DURABLE_TERMINAL_VERIFIED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:38:32.106000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]7aac6e5c4e5147ff98c818e301f2818d",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIdentity\": \"provider:631ee681c6e2c9bbf696b0564c11bd30\", \"gameIndex\": 14, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:38:32.106000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]7aac6e5c4e5147ff98c818e301f2818d",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:39:16.510000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]7aac6e5c4e5147ff98c818e301f2818d",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:39:30.621000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]7aac6e5c4e5147ff98c818e301f2818d",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:39:30.650000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]7aac6e5c4e5147ff98c818e301f2818d",
-      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:39:30.689000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]7aac6e5c4e5147ff98c818e301f2818d",
-      "message": "{\"errorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"FAILED_CLOSED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:39:30.714000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]7aac6e5c4e5147ff98c818e301f2818d",
-      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"terminalChunkStage\": \"ATOMIC_COMPLETION_PROOF\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
-      "timestampUtc": "2026-08-30T04:39:30.819000Z"
-    },
     {
       "logStreamName": "2026/08/30/[$LATEST]7aac6e5c4e5147ff98c818e301f2818d",
       "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
@@ -3570,13 +2971,639 @@
       "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
       "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
       "timestampUtc": "2026-08-30T05:04:31.844000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:05:16.824000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:05:30.569000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:05:30.595000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:05:31.382000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"errorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"FAILED_CLOSED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:05:31.403000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"terminalChunkStage\": \"ATOMIC_COMPLETION_PROOF\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:05:31.498000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
+      "timestampUtc": "2026-08-30T05:05:31.509000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:06:16.931000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:06:30.847000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:06:30.869000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:06:31.677000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"errorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"FAILED_CLOSED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:06:31.699000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"terminalChunkStage\": \"ATOMIC_COMPLETION_PROOF\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:06:31.799000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
+      "timestampUtc": "2026-08-30T05:06:31.811000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:07:16.776000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:07:30.829000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:07:30.860000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:07:31.673000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"errorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"FAILED_CLOSED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:07:31.696000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"terminalChunkStage\": \"ATOMIC_COMPLETION_PROOF\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:07:31.796000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
+      "timestampUtc": "2026-08-30T05:07:31.803000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:08:16.937000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:08:31.185000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:08:31.207000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:08:32.033000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"errorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"FAILED_CLOSED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:08:32.059000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"terminalChunkStage\": \"ATOMIC_COMPLETION_PROOF\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:08:32.159000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
+      "timestampUtc": "2026-08-30T05:08:32.166000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:09:16.795000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:09:30.774000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:09:30.802000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:09:31.620000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"errorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"FAILED_CLOSED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:09:31.642000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"terminalChunkStage\": \"ATOMIC_COMPLETION_PROOF\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:09:31.751000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
+      "timestampUtc": "2026-08-30T05:09:31.758000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:10:16.896000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:10:30.971000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:10:31.002000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:10:31.822000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"errorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"FAILED_CLOSED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:10:31.845000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"terminalChunkStage\": \"ATOMIC_COMPLETION_PROOF\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:10:31.954000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
+      "timestampUtc": "2026-08-30T05:10:31.961000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:11:16.882000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:11:30.899000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:11:30.926000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:11:31.761000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"errorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"FAILED_CLOSED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:11:31.783000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"terminalChunkStage\": \"ATOMIC_COMPLETION_PROOF\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:11:31.891000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
+      "timestampUtc": "2026-08-30T05:11:31.906000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:12:16.912000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:12:31.149000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:12:31.177000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:12:32Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"errorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"FAILED_CLOSED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:12:32.023000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"terminalChunkStage\": \"ATOMIC_COMPLETION_PROOF\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:12:32.132000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
+      "timestampUtc": "2026-08-30T05:12:32.138000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:13:16.877000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:13:31.146000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:13:31.172000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:13:32Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"errorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"FAILED_CLOSED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:13:32.023000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"terminalChunkStage\": \"ATOMIC_COMPLETION_PROOF\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:13:32.121000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
+      "timestampUtc": "2026-08-30T05:13:32.128000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:14:16.756000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:14:30.925000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:14:30.944000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:14:31.785000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"errorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"FAILED_CLOSED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:14:31.808000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"terminalChunkStage\": \"ATOMIC_COMPLETION_PROOF\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:14:31.915000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
+      "timestampUtc": "2026-08-30T05:14:31.926000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:15:16.876000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:15:31.049000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:15:31.073000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:15:31.903000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"errorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"FAILED_CLOSED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:15:31.933000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"terminalChunkStage\": \"ATOMIC_COMPLETION_PROOF\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:15:32.036000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
+      "timestampUtc": "2026-08-30T05:15:32.044000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:16:17.378000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:16:31.470000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:16:31.498000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:16:32.327000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"errorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"FAILED_CLOSED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:16:32.349000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"terminalChunkStage\": \"ATOMIC_COMPLETION_PROOF\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:16:32.454000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
+      "timestampUtc": "2026-08-30T05:16:32.461000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 898, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:17:17.229000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:17:31.310000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:17:31.337000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 883, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:17:32.281000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"errorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 883, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"FAILED_CLOSED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:17:32.304000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"terminalChunkStage\": \"ATOMIC_COMPLETION_PROOF\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:17:32.414000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
+      "timestampUtc": "2026-08-30T05:17:32.421000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:18:17.277000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:18:31.316000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:18:31.343000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:18:32.143000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"errorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"FAILED_CLOSED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:18:32.167000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"terminalChunkStage\": \"ATOMIC_COMPLETION_PROOF\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:18:32.268000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
+      "timestampUtc": "2026-08-30T05:18:32.275000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:19:17.147000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:19:31.158000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:19:31.189000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:19:31.980000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"errorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"FAILED_CLOSED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:19:32.002000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"terminalChunkStage\": \"ATOMIC_COMPLETION_PROOF\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:19:32.107000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
+      "timestampUtc": "2026-08-30T05:19:32.113000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 898, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:20:17.248000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:20:31.256000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:20:31.283000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"RELEASE_MUTATION_LEASE\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:20:32.208000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"errorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 883, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"FAILED_CLOSED\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:20:32.230000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"ATOMIC_COMPLETION_PROOF_TransactionCanceledException\", \"terminalChunkStage\": \"ATOMIC_COMPLETION_PROOF\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:20:32.334000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]8fe5784adb684ed9a18693bed9af2a65",
+      "message": "[ERROR] RuntimeError: MLB_COOPERATIVE_TERMINAL_CHUNK_FAILED_CLOSED:stage=ATOMIC_COMPLETION_PROOF:errorCode=ATOMIC_COMPLETION_PROOF_TransactionCanceledException\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7103, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6956, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(",
+      "timestampUtc": "2026-08-30T05:20:32.341000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]d606c12c32f2451d90bca2f96ce55d04",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:21:18.582000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]d606c12c32f2451d90bca2f96ce55d04",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:21:32.441000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]d606c12c32f2451d90bca2f96ce55d04",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:21:32.469000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]d606c12c32f2451d90bca2f96ce55d04",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"COMPLETE\", \"status\": \"COMPLETE_LEASE_HANDOFF\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:21:33.291000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]d606c12c32f2451d90bca2f96ce55d04",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"RuntimeError\", \"terminalChunkStage\": \"COMPLETE\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:21:33.335000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]d606c12c32f2451d90bca2f96ce55d04",
+      "message": "[ERROR] RuntimeError: COOPERATIVE_TERMINAL_CHUNK_NOT_COMPLETE\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7143, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6869, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0handoff = validator(\n\u00a0\u00a0File \"/var/task/mlb_prospective_row_repair.py\", line 2780, in _validate_cooperative_terminal_completion_handoff\n\u00a0\u00a0\u00a0\u00a0_validated_cooperative_terminal_complete_checkpoint(checkpoint)\n\u00a0\u00a0File \"/var/task/mlb_prospective_row_repair.py\", line 2084, in _validated_cooperative_terminal_complete_checkpoint\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(\"COOPERATIVE_TERMINAL_CHUNK_NOT_COMPLETE\")",
+      "timestampUtc": "2026-08-30T05:21:33.378000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]d606c12c32f2451d90bca2f96ce55d04",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"immutablePredictionRewriteAllowed\": false, \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 899, \"slateDateEt\": \"2026-08-04\", \"stage\": \"INITIAL_BUDGET\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:22:17.199000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]d606c12c32f2451d90bca2f96ce55d04",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"MANIFEST_READY\", \"status\": \"READY\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:22:30.984000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]d606c12c32f2451d90bca2f96ce55d04",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 885, \"slateDateEt\": \"2026-08-04\", \"stage\": \"ATOMIC_COMPLETION_PROOF\", \"status\": \"IN_PROGRESS\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:22:31.016000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]d606c12c32f2451d90bca2f96ce55d04",
+      "message": "{\"event\": \"MLB_COOPERATIVE_TERMINAL_CHUNK_PROGRESS\", \"gameIndex\": 15, \"immutablePredictionRewriteAllowed\": false, \"phase\": \"VERIFY\", \"postStartPredictionCreationAllowed\": false, \"productionAuthorityChanged\": false, \"remainingSeconds\": 884, \"slateDateEt\": \"2026-08-04\", \"stage\": \"COMPLETE\", \"status\": \"COMPLETE_LEASE_HANDOFF\", \"version\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:22:31.954000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]d606c12c32f2451d90bca2f96ce55d04",
+      "message": "{\"activeLeaseMutationAllowed\": false, \"event\": \"MLB_COOPERATIVE_TERMINAL_REPLAY_FAILED_RETAINED_FAIL_CLOSED\", \"requestRequeued\": true, \"slateDateEt\": \"2026-08-04\", \"staleClaimReclaimable\": false, \"terminalChunkErrorCode\": \"RuntimeError\", \"terminalChunkStage\": \"COMPLETE\", \"terminalChunkVersion\": \"MLB-COOPERATIVE-TERMINAL-CHUNK-v4-valid-prelock-quarantine\"}\n",
+      "timestampUtc": "2026-08-30T05:22:32.006000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]d606c12c32f2451d90bca2f96ce55d04",
+      "message": "[ERROR] RuntimeError: COOPERATIVE_TERMINAL_CHUNK_NOT_COMPLETE\nTraceback (most recent call last):\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 7143, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0raise primary_error\n\u00a0\u00a0File \"/var/task/mlb_daily_pick_lock_protected.py\", line 6869, in lambda_handler\n\u00a0\u00a0\u00a0\u00a0handoff = validator(\n\u00a0\u00a0File \"/var/task/mlb_prospective_row_repair.py\", line 2780, in _validate_cooperative_terminal_completion_handoff\n\u00a0\u00a0\u00a0\u00a0_validated_cooperative_terminal_complete_checkpoint(checkpoint)\n\u00a0\u00a0File \"/var/task/mlb_prospective_row_repair.py\", line 2084, in _validated_cooperative_terminal_complete_checkpoint\n\u00a0\u00a0\u00a0\u00a0raise RuntimeError(\"COOPERATIVE_TERMINAL_CHUNK_NOT_COMPLETE\")",
+      "timestampUtc": "2026-08-30T05:22:32.047000Z"
     }
   ],
   "executionLeaseState": {
-    "active": false,
+    "active": true,
     "errorCode": null,
+    "executionMode": "scheduled",
+    "expiresAtUtc": "2026-08-30T05:38:16.240269+00:00",
+    "leaseVersion": "MLB-LOCK-EXECUTION-LEASE-v1",
+    "ownerPresent": true,
     "readOk": true,
-    "recordPresent": false
+    "recordPresent": true,
+    "remainingSeconds": 949,
+    "slateDateEt": "2026-08-30"
   },
   "failureAtUtc": null,
   "functionName": "parlay-platform-dev-MLBAuditedPullFunction-xYdYJJKZMe4M",
@@ -3591,39 +3618,9 @@
   "proofType": "MLB_LATEST_SCHEDULED_PULL_FAILURE_DIAGNOSTIC_V2",
   "providerManifestBound": null,
   "providerScheduleManifestComplete": null,
-  "rawLogEventCount": 238,
+  "rawLogEventCount": 236,
   "readOnly": true,
   "recentLogEvents": [
-    {
-      "logStreamName": "2026/08/30/[$LATEST]65f731688731460fb2e77682b3c0e62d",
-      "message": "END RequestId: 45d9bf8d-4a56-421c-a5ee-2dc4744305ae\n",
-      "timestampUtc": "2026-08-30T01:05:10.473000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]65f731688731460fb2e77682b3c0e62d",
-      "message": "REPORT RequestId: 45d9bf8d-4a56-421c-a5ee-2dc4744305ae\tDuration: 283882.19 ms\tBilled Duration: 284828 ms\tMemory Size: 2048 MB\tMax Memory Used: 211 MB\tInit Duration: 945.34 ms\t\n",
-      "timestampUtc": "2026-08-30T01:05:10.473000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]2606c0bfe38b40779c26b11fc710ec7d",
-      "message": "INIT_START Runtime Version: python:3.11.mainlinev2.v31\tRuntime Version ARN: arn:aws:lambda:us-east-1::runtime:393e50a9c278329bf9672cf2702d851f3d3678eead7c8dbe43ff2d33d6c8d6af\n",
-      "timestampUtc": "2026-08-30T01:15:25.542000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]2606c0bfe38b40779c26b11fc710ec7d",
-      "message": "START RequestId: eb109679-3e5a-4ea7-9500-39adf9e07219 Version: $LATEST\n",
-      "timestampUtc": "2026-08-30T01:15:26.518000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]2606c0bfe38b40779c26b11fc710ec7d",
-      "message": "END RequestId: eb109679-3e5a-4ea7-9500-39adf9e07219\n",
-      "timestampUtc": "2026-08-30T01:20:16.873000Z"
-    },
-    {
-      "logStreamName": "2026/08/30/[$LATEST]2606c0bfe38b40779c26b11fc710ec7d",
-      "message": "REPORT RequestId: eb109679-3e5a-4ea7-9500-39adf9e07219\tDuration: 290354.83 ms\tBilled Duration: 291328 ms\tMemory Size: 2048 MB\tMax Memory Used: 208 MB\tInit Duration: 972.50 ms\t\n",
-      "timestampUtc": "2026-08-30T01:20:16.873000Z"
-    },
     {
       "logStreamName": "2026/08/30/[$LATEST]cbffe877ad534b86a4e1cc8283b4a71a",
       "message": "INIT_START Runtime Version: python:3.11.mainlinev2.v31\tRuntime Version ARN: arn:aws:lambda:us-east-1::runtime:393e50a9c278329bf9672cf2702d851f3d3678eead7c8dbe43ff2d33d6c8d6af\n",
@@ -4783,9 +4780,35 @@
       "logStreamName": "2026/08/30/[$LATEST]04813444e8164676b4d7d4e6c6d5dd3a",
       "message": "REPORT RequestId: f3ff787f-d9d3-4446-b4f4-a5bab93f0ec6\tDuration: 4146.07 ms\tBilled Duration: 5083 ms\tMemory Size: 2048 MB\tMax Memory Used: 126 MB\tInit Duration: 936.08 ms\t\n",
       "timestampUtc": "2026-08-30T05:00:30.532000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]492f92f73c694e77b441066d256851f0",
+      "message": "INIT_START Runtime Version: python:3.11.mainlinev2.v31\tRuntime Version ARN: arn:aws:lambda:us-east-1::runtime:393e50a9c278329bf9672cf2702d851f3d3678eead7c8dbe43ff2d33d6c8d6af\n",
+      "timestampUtc": "2026-08-30T05:15:25.470000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]492f92f73c694e77b441066d256851f0",
+      "message": "START RequestId: 4643b74a-9109-4de2-8d35-fc3f7a15ec8e Version: $LATEST\n",
+      "timestampUtc": "2026-08-30T05:15:26.447000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]492f92f73c694e77b441066d256851f0",
+      "message": "END RequestId: 4643b74a-9109-4de2-8d35-fc3f7a15ec8e\n",
+      "timestampUtc": "2026-08-30T05:15:32.603000Z"
+    },
+    {
+      "logStreamName": "2026/08/30/[$LATEST]492f92f73c694e77b441066d256851f0",
+      "message": "REPORT RequestId: 4643b74a-9109-4de2-8d35-fc3f7a15ec8e\tDuration: 6155.05 ms\tBilled Duration: 7129 ms\tMemory Size: 2048 MB\tMax Memory Used: 135 MB\tInit Duration: 973.74 ms\t\n",
+      "timestampUtc": "2026-08-30T05:15:32.603000Z"
     }
   ],
   "recentLogStreams": [
+    {
+      "firstEventTimestamp": 1788066925470,
+      "lastEventTimestamp": 1788066926447,
+      "lastIngestionTime": 1788066932063,
+      "logStreamName": "2026/08/30/[$LATEST]492f92f73c694e77b441066d256851f0"
+    },
     {
       "firstEventTimestamp": 1788066025446,
       "lastEventTimestamp": 1788066030532,
@@ -4836,8 +4859,8 @@
     },
     {
       "firstEventTimestamp": 1788060443651,
-      "lastEventTimestamp": 1788060444597,
-      "lastIngestionTime": 1788060452156,
+      "lastEventTimestamp": 1788060742401,
+      "lastIngestionTime": 1788060751396,
       "logStreamName": "2026/08/30/[$LATEST]e068df11b82e4f5b9b1c334b29a46293"
     },
     {
@@ -5079,12 +5102,6 @@
       "lastEventTimestamp": 1788022931621,
       "lastIngestionTime": 1788022940641,
       "logStreamName": "2026/08/29/[$LATEST]51c794e249f14cfd90eed650592dae7c"
-    },
-    {
-      "firstEventTimestamp": 1788021925455,
-      "lastEventTimestamp": 1788022159140,
-      "lastIngestionTime": 1788022168170,
-      "logStreamName": "2026/08/29/[$LATEST]71cba5954e1549cc948a72a3035d1d1d"
     }
   ],
   "secretExposed": false,
