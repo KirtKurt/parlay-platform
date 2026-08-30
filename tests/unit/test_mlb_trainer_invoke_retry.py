@@ -395,6 +395,119 @@ def test_ambiguous_payload_read_timeout_is_not_retried_and_stream_is_closed():
     assert stream.closed is True
 
 
+def test_scheduled_transport_loss_recovers_exact_fresh_durable_status():
+    request_run = "unified_mlb_recovery_123"
+    deployment = {"gitSha": "a" * 40, "templateSha256": "b" * 64}
+    durable_run = {
+        "ok": True,
+        "executionMode": "training",
+        "requestRun": request_run,
+        "createdAtUtc": "2099-08-30T07:22:08+00:00",
+        "deploymentIdentity": deployment,
+        "productionAuthorityChanged": False,
+        "liveInferenceAuthority": False,
+        "immutablePredictionRewriteAllowed": False,
+        "postStartPredictionCreationAllowed": False,
+        "automaticPromotionEnabled": False,
+    }
+    status, status_stream = _response(
+        json.dumps(
+            {
+                "ok": True,
+                "deploymentIdentity": deployment,
+                "trainingHealth": {
+                    "ok": True,
+                    "latestRun": durable_run,
+                },
+            }
+        ).encode("utf-8")
+    )
+    client = FakeLambda(
+        [
+            ReadTimeoutError(
+                endpoint_url="https://lambda.test", error="timeout"
+            ),
+            status,
+        ]
+    )
+    sleeps = []
+
+    body, metadata = invoke_retry.invoke_with_retry(
+        client=client,
+        function_name="trainer",
+        payload=json.dumps(
+            {"sport": "mlb", "mode": "scheduled", "run": request_run}
+        ),
+        retry_execution_lease=True,
+        sleep=sleeps.append,
+    )
+
+    assert json.loads(body) == durable_run
+    assert sleeps == [5]
+    assert len(client.calls) == 2
+    assert json.loads(client.calls[1]["Payload"])["mode"] == "status"
+    assert status_stream.closed is True
+    assert metadata["InvocationStatusRecovery"] == {
+        "version": invoke_retry.RETRY_CONTROL_VERSION,
+        "requestRun": request_run,
+        "durableStatusRecovered": True,
+        "newerThanInvocationStart": True,
+    }
+    assert metadata["InvocationRetryControl"]["invocationAttempts"] == 1
+
+
+def test_transport_status_recovery_rejects_wrong_request_binding():
+    deployment = {"gitSha": "a" * 40, "templateSha256": "b" * 64}
+    wrong_run = {
+        "ok": True,
+        "executionMode": "training",
+        "requestRun": "different_request",
+        "createdAtUtc": "2099-08-30T07:22:08+00:00",
+        "deploymentIdentity": deployment,
+        "productionAuthorityChanged": False,
+        "liveInferenceAuthority": False,
+        "immutablePredictionRewriteAllowed": False,
+        "postStartPredictionCreationAllowed": False,
+        "automaticPromotionEnabled": False,
+    }
+    status, _ = _response(
+        json.dumps(
+            {
+                "deploymentIdentity": deployment,
+                "trainingHealth": {"ok": True, "latestRun": wrong_run},
+            }
+        ).encode("utf-8")
+    )
+    success, _ = _response()
+    client = FakeLambda(
+        [
+            ReadTimeoutError(
+                endpoint_url="https://lambda.test", error="timeout"
+            ),
+            status,
+            success,
+        ]
+    )
+
+    body, metadata = invoke_retry.invoke_with_retry(
+        client=client,
+        function_name="trainer",
+        payload=json.dumps(
+            {
+                "sport": "mlb",
+                "mode": "scheduled",
+                "run": "unified_mlb_recovery_123",
+            }
+        ),
+        retry_execution_lease=True,
+        sleep=lambda _seconds: None,
+    )
+
+    assert json.loads(body) == {"ok": True}
+    assert len(client.calls) == 3
+    assert "InvocationStatusRecovery" not in metadata
+
+
 @pytest.mark.parametrize(
     "response",
     (
