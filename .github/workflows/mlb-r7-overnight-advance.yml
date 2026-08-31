@@ -1,80 +1,78 @@
-name: MLB R7 Overnight Advancement Queue Control
-run-name: "MLB R7 queue control ${{ github.event_name }} #${{ github.run_number }}"
+name: MLB R8 Overnight Advancement Evidence Queue
+run-name: "MLB R8 overnight evidence queue ${{ github.event_name }} #${{ github.run_number }}"
 
+# Compatibility path retained so old bookmarks/manual aliases keep working.
+# The active learning owner is R8; this workflow no longer dispatches the
+# retired R7 one-shot recovery contract.
 "on":
   workflow_dispatch:
     inputs:
       force:
-        description: Dispatch even after the 33-row recovery has succeeded
+        description: Seed the durable R8 evidence watchdog even after a recent success
         required: false
         default: false
         type: boolean
+  schedule:
+    # Two off-boundary wake-ups per hour. The job itself admits only 00:00-06:59 ET.
+    - cron: '7,37 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-r7-overnight-advance.yml'
+      - 'tests/unit/test_mlb_r7_overnight_queue_control.py'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-r7-overnight-advance.yml'
+      - 'tests/unit/test_mlb_r7_overnight_queue_control.py'
 
 permissions:
-  actions: write
   contents: read
 
-# Queue control is an explicit operator action. It never invokes AWS directly.
-# The canonical recovery owns GitHub-side recovery serialization; EventBridge
-# remains the only automatic trainer invocation owner.
 concurrency:
-  group: mlb-r7-overnight-queue-control
+  group: mlb-r8-overnight-evidence-queue
   cancel-in-progress: false
 
 env:
-  RECOVERY_EPOCH_UTC: '2026-08-26T23:45:00Z'
-  RECOVERY_TARGET_SLATE_DATE: '2026-08-25'
-  RECOVERY_MIN_ACCEPTED_ROWS: '33'
+  MLB_ACTIVE_EXPERIMENT_ID: mlb-v2-2026-08-31-historical-live-r8
+  MLB_DURABLE_WATCHDOG_WORKFLOW: mlb-progress-pulse-watchdog.yml
+  MLB_PROGRESS_WORKFLOW: mlb-30m-progress-pulse.yml
+  MLB_DURABLE_WATCHDOG_RECENT_MINUTES: '12'
 
 jobs:
-  queue-canonical-recovery:
+  validate-source:
     runs-on: ubuntu-latest
-    timeout-minutes: 105
+    timeout-minutes: 3
     steps:
-      - name: Checkout queue-control contract
+      - name: Checkout exact queue-control contract
         uses: actions/checkout@v4
 
-      - name: Prove scheduled single-owner queue-control contract
+      - name: Prove active-R8 overnight evidence contract
         run: python tests/unit/test_mlb_r7_overnight_queue_control.py
 
-      - name: Drain legacy bootstrap and queue one canonical recovery
+  queue-active-r8-evidence:
+    needs: validate-source
+    if: github.event_name != 'pull_request'
+    permissions:
+      actions: write
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Seed durable R8 evidence and request one stale-gated pulse
         uses: actions/github-script@v7
+        env:
+          FORCE_INPUT: ${{ inputs.force }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const recoveryWorkflow = 'unified-mlb-learning-recovery-once.yml';
-            const bootstrapWorkflow = 'bootstrap-unified-mlb-r7-recovery-now.yml';
-            const activeStatuses = new Set([
-              'queued',
-              'in_progress',
-              'waiting',
-              'pending',
-              'requested',
-            ]);
+            const eventName = context.eventName;
             const force = (
-              context.eventName === 'workflow_dispatch'
-              && String(context.payload.inputs?.force || '').toLowerCase() === 'true'
+              eventName === 'workflow_dispatch'
+              && String(process.env.FORCE_INPUT || '').toLowerCase() === 'true'
             );
-
-            const sleep = (milliseconds) => new Promise(
-              (resolve) => setTimeout(resolve, milliseconds)
-            );
-
-            async function listRuns(workflowId) {
-              return await github.paginate(
-                github.rest.actions.listWorkflowRuns,
-                {
-                  owner,
-                  repo,
-                  workflow_id: workflowId,
-                  branch: 'main',
-                  per_page: 100,
-                },
-              );
-            }
-
             const now = new Date();
             const newYorkHourPart = new Intl.DateTimeFormat(
               'en-US',
@@ -87,125 +85,127 @@ jobs:
             const nyHour = Number(newYorkHourPart?.value);
 
             if (
-              context.eventName === 'schedule'
+              eventName === 'schedule'
               && !(Number.isInteger(nyHour) && nyHour >= 0 && nyHour < 7)
             ) {
               core.notice(
-                `Scheduled queue pulse skipped outside 00:00-06:59 America/New_York; hour=${nyHour}`
+                `Scheduled R8 evidence pulse skipped outside 00:00-06:59 America/New_York; hour=${nyHour}`
               );
               return;
             }
 
-            // A legacy bootstrap run created before this repair may still be
-            // waiting on a deploy. Let it drain before deciding whether another
-            // canonical recovery is needed, preventing a duplicate dispatch race.
-            const bootstrapDrainDeadline = Date.now() + (95 * 60 * 1000);
-            let lastBootstrapNoticeAt = 0;
-            while (true) {
-              const bootstrapRuns = await listRuns(bootstrapWorkflow);
-              const activeBootstrap = bootstrapRuns.find(
-                (run) => activeStatuses.has(String(run.status || ''))
-              );
-              if (!activeBootstrap) {
-                break;
-              }
-              if (Date.now() >= bootstrapDrainDeadline) {
-                throw new Error(
-                  `legacy_bootstrap_did_not_drain:${activeBootstrap.html_url}`
-                );
-              }
-              if (Date.now() - lastBootstrapNoticeAt >= 60_000) {
-                core.notice(`Waiting for legacy bootstrap to drain: ${activeBootstrap.html_url}`);
-                lastBootstrapNoticeAt = Date.now();
-              }
-              await sleep(20_000);
+            const activeStatuses = new Set([
+              'queued',
+              'in_progress',
+              'waiting',
+              'pending',
+              'requested',
+            ]);
+            const watchdogWorkflow = process.env.MLB_DURABLE_WATCHDOG_WORKFLOW;
+            const progressWorkflow = process.env.MLB_PROGRESS_WORKFLOW;
+            const recentMinutes = Number(
+              process.env.MLB_DURABLE_WATCHDOG_RECENT_MINUTES
+            );
+            if (!Number.isFinite(recentMinutes) || recentMinutes <= 0) {
+              throw new Error('invalid_durable_watchdog_recent_minutes');
             }
 
-            const recoveryRuns = await listRuns(recoveryWorkflow);
-            const activeRecovery = recoveryRuns.find(
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRuns,
+              {
+                owner,
+                repo,
+                workflow_id: watchdogWorkflow,
+                branch: 'main',
+                per_page: 100,
+              },
+            );
+            const active = runs.find(
               (run) => activeStatuses.has(String(run.status || ''))
             );
-            if (activeRecovery) {
-              core.notice(`Canonical recovery already active: ${activeRecovery.html_url}`);
-              return;
-            }
-
-            const recoveryEpoch = new Date(process.env.RECOVERY_EPOCH_UTC);
-            const successfulRecovery = recoveryRuns.find((run) => (
+            const recentCutoff = Date.now() - (recentMinutes * 60 * 1000);
+            const recentSuccess = runs.find((run) => (
               run.status === 'completed'
               && run.conclusion === 'success'
-              && new Date(run.created_at) >= recoveryEpoch
+              && new Date(run.created_at).getTime() >= recentCutoff
             ));
-            if (successfulRecovery && !force) {
-              core.notice(
-                `R7 recovery target already satisfied by ${successfulRecovery.html_url}`
-              );
-              return;
-            }
 
-            const stamp = now.toISOString()
-              .replace(/[-:.]/g, '')
-              .replace('Z', 'z')
-              .toLowerCase();
-            const requestId = [
-              'mlb-r7-overnight',
-              process.env.RECOVERY_TARGET_SLATE_DATE.replaceAll('-', ''),
-              `min${process.env.RECOVERY_MIN_ACCEPTED_ROWS}`,
-              stamp,
-              context.runId,
-            ].join('-');
+            let watchdogDispatch = 'not_required';
+            if (active) {
+              watchdogDispatch = `already_active:${active.id}`;
+            } else if (recentSuccess && !force) {
+              watchdogDispatch = `recent_success:${recentSuccess.id}`;
+            } else {
+              const baselineIds = new Set(runs.map((run) => Number(run.id)));
+              await github.rest.actions.createWorkflowDispatch({
+                owner,
+                repo,
+                workflow_id: watchdogWorkflow,
+                ref: 'main',
+              });
+              let observed = null;
+              for (let attempt = 0; attempt < 18; attempt += 1) {
+                await new Promise((resolve) => setTimeout(resolve, 5000));
+                const refreshed = await github.paginate(
+                  github.rest.actions.listWorkflowRuns,
+                  {
+                    owner,
+                    repo,
+                    workflow_id: watchdogWorkflow,
+                    branch: 'main',
+                    per_page: 100,
+                  },
+                );
+                observed = refreshed.find((run) => (
+                  run.event === 'workflow_dispatch'
+                  && !baselineIds.has(Number(run.id))
+                ));
+                if (observed) {
+                  break;
+                }
+              }
+              if (!observed) {
+                throw new Error('durable_r8_watchdog_seed_not_observable');
+              }
+              watchdogDispatch = `seeded:${observed.id}`;
+            }
 
             await github.rest.actions.createWorkflowDispatch({
               owner,
               repo,
-              workflow_id: recoveryWorkflow,
+              workflow_id: progressWorkflow,
               ref: 'main',
               inputs: {
-                request_id: requestId,
+                force: 'false',
               },
             });
 
-            let observedRun = null;
-            for (let attempt = 0; attempt < 36; attempt += 1) {
-              await sleep(5_000);
-              const refreshed = await listRuns(recoveryWorkflow);
-              observedRun = refreshed.find(
-                (run) => String(run.display_title || '').includes(requestId)
-              );
-              if (observedRun) {
-                break;
-              }
-            }
-            if (!observedRun) {
-              throw new Error(`canonical_recovery_dispatch_not_observable:${requestId}`);
-            }
-
             const result = {
               ok: true,
-              eventName: context.eventName,
+              eventName,
               newYorkHour: nyHour,
               force,
-              requestId,
-              targetSlateDate: process.env.RECOVERY_TARGET_SLATE_DATE,
-              minimumAcceptedRows: Number(process.env.RECOVERY_MIN_ACCEPTED_ROWS),
-              canonicalRecoveryRunId: observedRun.id,
-              canonicalRecoveryRunUrl: observedRun.html_url,
+              activeExperimentId: process.env.MLB_ACTIVE_EXPERIMENT_ID,
+              watchdogDispatch,
+              progressWorkflow,
+              reporterForce: false,
               automaticTrainerOwner: 'eventbridge_schedule',
+              legacyR7RecoveryDispatched: false,
               awsInvocation: false,
-              cloudFormationAction: false,
-              dynamoDbLeaseMutation: false,
+              dynamoDbMutation: false,
+              predictionOrLockMutation: false,
               productionAuthorityChanged: false,
               otherSportChanged: false,
             };
             core.info(JSON.stringify(result, null, 2));
             await core.summary
-              .addHeading('MLB R7 overnight queue control')
+              .addHeading('MLB R8 overnight advancement evidence queue')
               .addTable([
                 [{data: 'Field', header: true}, {data: 'Value', header: true}],
-                ['Request', requestId],
-                ['Target slate', process.env.RECOVERY_TARGET_SLATE_DATE],
-                ['Minimum accepted rows', process.env.RECOVERY_MIN_ACCEPTED_ROWS],
-                ['Recovery run', observedRun.html_url],
+                ['Active experiment', process.env.MLB_ACTIVE_EXPERIMENT_ID],
+                ['Durable watchdog', watchdogDispatch],
+                ['Progress pulse', `${progressWorkflow} force=false`],
                 ['Automatic trainer owner', 'eventbridge_schedule'],
+                ['Legacy R7 recovery dispatched', 'false'],
               ])
               .write();
