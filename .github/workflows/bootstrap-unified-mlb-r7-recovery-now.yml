@@ -1,5 +1,5 @@
-name: Bootstrap canonical unified MLB R7 recovery now
-run-name: "Manual MLB R7 recovery bootstrap #${{ github.run_number }}"
+name: Bootstrap active MLB R8 evidence watchdog now
+run-name: "Manual MLB R8 evidence bootstrap #${{ github.run_number }}"
 
 "on":
   workflow_dispatch:
@@ -8,11 +8,11 @@ permissions:
   actions: write
   contents: read
 
-# Manual alias only. It dispatches the manual queue-control workflow; neither
-# workflow owns automatic retries. EventBridge remains the only automatic
-# trainer invoker. This workflow performs no deploy or AWS call.
+# Manual compatibility alias only. It dispatches the active-R8 evidence queue;
+# neither workflow invokes AWS directly. EventBridge remains the only automatic
+# trainer invoker, and model/promotion authority remains fail closed.
 concurrency:
-  group: mlb-r7-recovery-bootstrap-dispatch
+  group: mlb-r8-evidence-bootstrap-dispatch
   cancel-in-progress: false
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Dispatch canonical queue control with force
+      - name: Dispatch active-R8 evidence queue with force
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -50,7 +50,7 @@ jobs:
               (run) => activeStatuses.has(String(run.status || ''))
             );
             if (active) {
-              core.notice(`R7 queue control already active: ${active.html_url}`);
+              core.notice(`R8 evidence queue already active: ${active.html_url}`);
               return;
             }
 
@@ -63,4 +63,4 @@ jobs:
                 force: 'true',
               },
             });
-            core.notice(`Dispatched ${workflowId} with force=true`);
+            core.notice(`Dispatched active-R8 evidence queue ${workflowId} with force=true`);
