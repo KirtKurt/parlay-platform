@@ -1,0 +1,61 @@
+name: MLB Progress Pulse Watchdog
+run-name: MLB progress pulse watchdog ${{ github.event_name }} #${{ github.run_number }}
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Independent five-minute GitHub-side evidence watchdog. The downstream
+    # reporter owns the strict stale gate, so frequent checks cannot spam issue #567.
+    - cron: '*/5 * * * *'
+  workflow_run:
+    # Independent successful/failed completions provide extra wake-up signals
+    # when GitHub's cron service is delayed. This watchdog never invokes AWS.
+    workflows:
+      - MLB Canonical Runtime Health Watch
+      - MLB Fresh Audit Publisher
+      - Record MLB Fresh Audit Status
+      - MLB Scoring Guard
+      - Deploy SAM to AWS
+    types: [completed]
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-progress-pulse-watchdog.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: mlb-progress-pulse-watchdog
+  cancel-in-progress: true
+
+jobs:
+  dispatch-stale-gated-pulse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch stale-gated MLB production progress pulse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-30m-progress-pulse.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f force=false
+
+      - name: Record fail-closed watchdog contract
+        run: |
+          {
+            echo '## MLB progress pulse watchdog'
+            echo
+            echo '- Dispatch target: mlb-30m-progress-pulse.yml'
+            echo '- Reporter force: false'
+            echo '- AWS invocation: false'
+            echo '- DynamoDB mutation: false'
+            echo '- Prediction/lock mutation: false'
+            echo '- Promotion authority mutation: false'
+            echo '- Other-sport mutation: false'
+          } >> "$GITHUB_STEP_SUMMARY"
