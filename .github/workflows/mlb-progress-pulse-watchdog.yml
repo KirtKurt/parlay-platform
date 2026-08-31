@@ -1,61 +1,163 @@
-name: MLB Progress Pulse Watchdog
-run-name: MLB progress pulse watchdog ${{ github.event_name }} #${{ github.run_number }}
+name: MLB Progress Pulse Durable Watchdog
+run-name: "MLB durable progress watchdog ${{ github.event_name }} #${{ github.run_number }}"
 
-on:
+"on":
   workflow_dispatch:
-  schedule:
-    # Independent five-minute GitHub-side evidence watchdog. The downstream
-    # reporter owns the strict stale gate, so frequent checks cannot spam issue #567.
-    - cron: '*/5 * * * *'
-  workflow_run:
-    # Independent successful/failed completions provide extra wake-up signals
-    # when GitHub's cron service is delayed. This watchdog never invokes AWS.
-    workflows:
-      - MLB Canonical Runtime Health Watch
-      - MLB Fresh Audit Publisher
-      - Record MLB Fresh Audit Status
-      - MLB Scoring Guard
-      - Deploy SAM to AWS
-    types: [completed]
-    branches: [main]
   push:
     branches: [main]
     paths:
       - '.github/workflows/mlb-progress-pulse-watchdog.yml'
+      - 'tests/unit/test_mlb_progress_pulse_durable_watchdog.py'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-progress-pulse-watchdog.yml'
+      - 'tests/unit/test_mlb_progress_pulse_durable_watchdog.py'
 
+# Validation is read-only. Only the two fixed dispatch jobs receive actions:write.
 permissions:
-  actions: write
   contents: read
 
+# Exactly one durable chain may run at a time. A successor is queued before the
+# current run exits, so the chain does not depend on GitHub's schedule service.
 concurrency:
-  group: mlb-progress-pulse-watchdog
-  cancel-in-progress: true
+  group: mlb-progress-pulse-durable-watchdog
+  cancel-in-progress: false
+
+env:
+  MLB_DURABLE_WATCHDOG_INTERVAL_SECONDS: '240'
+  MLB_DURABLE_WATCHDOG_SEED_INTERVAL_SECONDS: '15'
+  MLB_DURABLE_WATCHDOG_WORKFLOW: mlb-progress-pulse-watchdog.yml
+  MLB_PROGRESS_WORKFLOW: mlb-30m-progress-pulse.yml
 
 jobs:
-  dispatch-stale-gated-pulse:
+  validate-source:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 3
     steps:
-      - name: Dispatch stale-gated MLB production progress pulse
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+
+      - name: Prove durable watchdog safety contract
+        run: python tests/unit/test_mlb_progress_pulse_durable_watchdog.py
+
+  dispatch-stale-gated-pulse:
+    needs: validate-source
+    if: github.event_name != 'pull_request'
+    permissions:
+      actions: write
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Dispatch fixed stale-gated MLB progress reporter
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh workflow run mlb-30m-progress-pulse.yml \
+          test "$GITHUB_REF_NAME" = 'main'
+          gh workflow run "$MLB_PROGRESS_WORKFLOW" \
             --repo "$GITHUB_REPOSITORY" \
             --ref main \
-            -f force=false
+            --field force=false
 
-      - name: Record fail-closed watchdog contract
+      - name: Record read-only pulse contract
         run: |
           {
-            echo '## MLB progress pulse watchdog'
+            echo '## Durable MLB progress watchdog'
             echo
-            echo '- Dispatch target: mlb-30m-progress-pulse.yml'
             echo '- Reporter force: false'
             echo '- AWS invocation: false'
             echo '- DynamoDB mutation: false'
             echo '- Prediction/lock mutation: false'
             echo '- Promotion authority mutation: false'
             echo '- Other-sport mutation: false'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  continue-durable-loop:
+    needs: [validate-source, dispatch-stale-gated-pulse]
+    if: ${{ always() && github.event_name != 'pull_request' && needs.validate-source.result == 'success' }}
+    permissions:
+      actions: write
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Select bounded continuation delay
+        id: delay
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          delay="$MLB_DURABLE_WATCHDOG_INTERVAL_SECONDS"
+          if [ "$EVENT_NAME" = 'push' ]; then
+            delay="$MLB_DURABLE_WATCHDOG_SEED_INTERVAL_SECONDS"
+          fi
+          case "$delay" in
+            ''|*[!0-9]*)
+              echo "Invalid watchdog delay: $delay" >&2
+              exit 1
+              ;;
+          esac
+          test "$delay" -ge 10
+          test "$delay" -le 300
+          echo "seconds=$delay" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the next bounded evidence check
+        env:
+          DELAY_SECONDS: ${{ steps.delay.outputs.seconds }}
+        run: sleep "$DELAY_SECONDS"
+
+      - name: Queue exactly one observable successor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'main'
+          active_statuses='["queued","in_progress","waiting","pending","requested"]'
+          runs="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/${MLB_DURABLE_WATCHDOG_WORKFLOW}/runs?branch=main&per_page=30")"
+          active_other="$(jq -r \
+            --arg current "$GITHUB_RUN_ID" \
+            --argjson statuses "$active_statuses" \
+            '[.workflow_runs[] | select((.status as $status | $statuses | index($status)) != null and ((.id | tostring) != $current))] | length' \
+            <<<"$runs")"
+          if [ "$active_other" -gt 0 ]; then
+            echo "A queued/active durable successor already exists; no duplicate dispatch." \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          gh workflow run "$MLB_DURABLE_WATCHDOG_WORKFLOW" \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+
+          successor_url=''
+          for attempt in $(seq 1 18); do
+            sleep 5
+            runs="$(gh api \
+              -H 'Accept: application/vnd.github+json' \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${MLB_DURABLE_WATCHDOG_WORKFLOW}/runs?branch=main&per_page=30")"
+            successor_url="$(jq -r \
+              --argjson current "$GITHUB_RUN_ID" \
+              '[.workflow_runs[] | select(.event == "workflow_dispatch" and .id > $current)] | sort_by(.id) | reverse | .[0].html_url // empty' \
+              <<<"$runs")"
+            if [ -n "$successor_url" ]; then
+              break
+            fi
+          done
+          test -n "$successor_url" || {
+            echo 'durable_watchdog_successor_not_observable' >&2
+            exit 1
+          }
+
+          {
+            echo '## Durable continuation proof'
+            echo
+            echo "- Successor: ${successor_url}"
+            echo "- Interval seconds: ${{ steps.delay.outputs.seconds }}"
+            echo '- Schedule dependency: none'
+            echo '- External credential dependency: none'
+            echo '- AWS/model authority mutation: none'
           } >> "$GITHUB_STEP_SUMMARY"
