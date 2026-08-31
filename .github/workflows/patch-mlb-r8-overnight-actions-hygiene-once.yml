@@ -1,0 +1,125 @@
+name: Patch MLB R8 overnight Actions hygiene once
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/patch-mlb-r8-overnight-actions-hygiene-once.yml'
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: patch-mlb-r8-overnight-actions-hygiene-once
+  cancel-in-progress: false
+
+jobs:
+  patch-test-and-prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact main source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install bounded test runtime
+        run: python -m pip install --quiet 'pytest>=8,<9' 'PyYAML>=6,<7'
+
+      - name: Patch only the scheduled-workflow inventory contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('tests/unit/test_mlb_actions_hygiene.py')
+          source = path.read_text(encoding='utf-8')
+
+          manual_line = '    "mlb-r7-overnight-advance.yml",\n'
+          manual_block, remainder = source.split('RETIRED_WORKFLOWS = {', 1)
+          if manual_block.count(manual_line) != 1:
+              raise SystemExit('unexpected overnight MANUAL_ONLY inventory shape')
+          manual_block = manual_block.replace(manual_line, '', 1)
+          source = manual_block + 'RETIRED_WORKFLOWS = {' + remainder
+
+          scheduled_anchor = (
+              '    "mlb-progress-pulse-cadence-watchdog.yml",\n'
+              '    "mlb-scoring-guard.yml",\n'
+          )
+          scheduled_replacement = (
+              '    "mlb-progress-pulse-cadence-watchdog.yml",\n'
+              '    "mlb-r7-overnight-advance.yml",\n'
+              '    "mlb-scoring-guard.yml",\n'
+          )
+          if source.count(scheduled_anchor) != 1:
+              raise SystemExit('unexpected scheduled workflow inventory shape')
+          source = source.replace(scheduled_anchor, scheduled_replacement, 1)
+
+          cron_anchor = (
+              '        "mlb-progress-pulse-cadence-watchdog.yml": '
+              '["4/5 * * * *"],\n'
+              '        "mlb-scoring-guard.yml": ["7/15 * * * *"],\n'
+          )
+          cron_replacement = (
+              '        "mlb-progress-pulse-cadence-watchdog.yml": '
+              '["4/5 * * * *"],\n'
+              '        "mlb-r7-overnight-advance.yml": ["7,37 * * * *"],\n'
+              '        "mlb-scoring-guard.yml": ["7/15 * * * *"],\n'
+          )
+          if source.count(cron_anchor) != 1:
+              raise SystemExit('unexpected expected-cron inventory shape')
+          source = source.replace(cron_anchor, cron_replacement, 1)
+
+          old_comment = (
+              '    # 531 MLB-scoped runs/day plus the existing shared official '
+              'hourly job.\n'
+          )
+          new_comment = (
+              '    # 579 MLB-scoped schedule events/day before the R8 overnight '
+              'workflow applies its fail-closed 00:00-06:59 ET admission gate, '
+              'plus the existing shared official hourly job.\n'
+          )
+          if source.count(old_comment) != 1:
+              raise SystemExit('unexpected scheduled-run inventory comment')
+          source = source.replace(old_comment, new_comment, 1)
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Prove the exact overnight and Actions-hygiene contracts
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/unit/test_mlb_actions_hygiene.py \
+            tests/unit/test_mlb_r7_overnight_queue_control.py
+
+      - name: Commit the proven repair and remove this one-shot workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/patch-mlb-r8-overnight-actions-hygiene-once.yml
+          git add tests/unit/test_mlb_actions_hygiene.py
+          git diff --cached --check
+          git commit -m 'Align MLB Actions hygiene with scheduled R8 evidence queue [skip ci]'
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      - name: Dispatch full MLB source verification on repaired main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-production-source-contract.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
