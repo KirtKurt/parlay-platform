@@ -31,7 +31,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  dispatch:
+  dispatch-tennis:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -44,17 +44,30 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --ref main
 
+  dispatch-mlb-fallback:
+    # Intentionally independent from dispatch-tennis. A tennis dispatch failure
+    # must never suppress the MLB progress evidence watchdog.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
       - name: Dispatch stale-gated MLB production progress pulse
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # workflow_dispatch is explicitly allowed to chain from GITHUB_TOKEN.
-          # force=false preserves the MLB reporter's own staleness gate, so this
-          # five-minute backstop cannot create duplicate issue pulses while still
-          # recovering from delayed/dropped schedule and workflow_run events.
+          # force=false preserves the reporter's fail-closed staleness gate and
+          # duplicate suppression. This job never invokes AWS or mutates model state.
           gh workflow run mlb-30m-progress-pulse.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref main \
             -f force=false
-# ops refresh trigger 2026-08-30
+
+      - name: Record MLB fallback safety contract
+        run: |
+          {
+            echo '## MLB fallback isolation'
+            echo
+            echo '- Independent from Tennis dispatch: true'
+            echo '- Reporter force: false'
+            echo '- AWS/model/lock mutation: false'
+          } >> "$GITHUB_STEP_SUMMARY"
