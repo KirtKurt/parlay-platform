@@ -1,0 +1,109 @@
+name: Inspect MLB R8 unscorable live lock
+
+on:
+  push:
+    branches:
+      - diagnose/mlb-r8-selection-function-error-20260831
+    paths:
+      - .github/workflows/inspect-mlb-r8-unscorable-lock.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Inspect only immutable probability provenance for the failed game
+        env:
+          TARGET_GAME_ID: 07d39d9ad653030c4c89d9a08c4071f5
+        run: |
+          set -euo pipefail
+          TRAINER_FN="$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id MLBMLTrainingFunction \
+            --region us-east-1 \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)"
+          export SNAPSHOTS_TABLE="$(aws lambda get-function-configuration \
+            --function-name "$TRAINER_FN" \
+            --region us-east-1 \
+            --query 'Environment.Variables.SNAPSHOTS_TABLE' \
+            --output text)"
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import math
+          import os
+          from decimal import Decimal
+
+          import boto3
+          from boto3.dynamodb.conditions import Key
+
+          table = boto3.resource('dynamodb', region_name='us-east-1').Table(
+              os.environ['SNAPSHOTS_TABLE']
+          )
+          response = table.query(
+              KeyConditionExpression=(
+                  Key('PK').eq('GAME_WINNERS#mlb#2026-08-31')
+                  & Key('SK').begins_with('LOCKED#GAME#')
+              ),
+              ConsistentRead=True,
+          )
+          target = os.environ['TARGET_GAME_ID']
+          matches = []
+          for item in response.get('Items') or []:
+              data = item.get('data') if isinstance(item.get('data'), dict) else {}
+              if str(data.get('gameId') or data.get('gameIdentity') or '') != target:
+                  continue
+              vector = data.get('frozenFeatureVector') or {}
+              features = vector.get('features') or {}
+              def plain(value):
+                  if isinstance(value, Decimal):
+                      return int(value) if value == value.to_integral_value() else float(value)
+                  if isinstance(value, dict):
+                      return {str(k): plain(v) for k, v in value.items()}
+                  if isinstance(value, list):
+                      return [plain(v) for v in value]
+                  return value
+              matches.append(plain({
+                  'PK': item.get('PK'),
+                  'SK': item.get('SK'),
+                  'gameId': target,
+                  'commenceTime': data.get('commenceTime'),
+                  'predictedSide': data.get('predictedSide'),
+                  'trainingEligible': data.get('trainingEligible'),
+                  'learningEligible': (data.get('canonicalLockAuthority') or {}).get('learningEligible'),
+                  'topLevel': {
+                      'homeMarketDeVigProbability': data.get('homeMarketDeVigProbability'),
+                      'awayMarketDeVigProbability': data.get('awayMarketDeVigProbability'),
+                      'marketProbabilitySourceAtUtc': data.get('marketProbabilitySourceAtUtc'),
+                      'marketProbabilityVersion': data.get('marketProbabilityVersion'),
+                      'marketProbabilityFingerprint': data.get('marketProbabilityFingerprint'),
+                  },
+                  'vectorRoot': {
+                      'homeMarketDeVigProbability': vector.get('homeMarketDeVigProbability'),
+                      'awayMarketDeVigProbability': vector.get('awayMarketDeVigProbability'),
+                      'marketProbabilitySourceAtUtc': vector.get('marketProbabilitySourceAtUtc'),
+                      'marketProbabilityVersion': vector.get('marketProbabilityVersion'),
+                      'marketProbabilityFingerprint': vector.get('marketProbabilityFingerprint'),
+                  },
+                  'vectorFeatures': {
+                      'homeMarketDeVigProbability': features.get('homeMarketDeVigProbability'),
+                      'awayMarketDeVigProbability': features.get('awayMarketDeVigProbability'),
+                      'selectedMarketDeVigProbability': features.get('selectedMarketDeVigProbability'),
+                  },
+                  'probabilityContract': data.get('probabilityContract'),
+              }))
+          print(json.dumps({'matchCount': len(matches), 'matches': matches}, indent=2, sort_keys=True))
+          if len(matches) != 1:
+              raise SystemExit(f'expected one immutable lock, found {len(matches)}')
+          PY
