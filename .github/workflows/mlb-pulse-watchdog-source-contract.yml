@@ -1,0 +1,118 @@
+name: MLB Pulse Watchdog Source Contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-progress-pulse-watchdog.yml'
+      - '.github/workflows/mlb-progress-pulse-cadence-watchdog.yml'
+      - '.github/workflows/mlb-pulse-watchdog-source-contract.yml'
+      - 'scripts/check_mlb_progress_pulse_staleness.py'
+      - 'tests/unit/test_mlb_progress_pulse_watchdog.py'
+      - 'tests/unit/test_mlb_actions_hygiene.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-progress-pulse-watchdog.yml'
+      - '.github/workflows/mlb-progress-pulse-cadence-watchdog.yml'
+      - '.github/workflows/mlb-pulse-watchdog-source-contract.yml'
+      - 'scripts/check_mlb_progress_pulse_staleness.py'
+      - 'tests/unit/test_mlb_progress_pulse_watchdog.py'
+      - 'tests/unit/test_mlb_actions_hygiene.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-pulse-watchdog-source-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install bounded verification runtime
+        run: python -m pip install --quiet 'pytest>=8,<9' 'PyYAML>=6,<7'
+
+      - name: Prove continuous and scheduled watchdog ownership contracts
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          root = Path('.github/workflows')
+          continuous_path = root / 'mlb-progress-pulse-watchdog.yml'
+          cadence_path = root / 'mlb-progress-pulse-cadence-watchdog.yml'
+
+          continuous_source = continuous_path.read_text(encoding='utf-8')
+          cadence_source = cadence_path.read_text(encoding='utf-8')
+          continuous = yaml.load(continuous_source, Loader=yaml.BaseLoader)
+          cadence = yaml.load(cadence_source, Loader=yaml.BaseLoader)
+
+          assert set(continuous['on']) == {'workflow_dispatch', 'push'}
+          assert 'schedule' not in continuous['on']
+          assert continuous['on']['push']['branches'] == ['main']
+          assert continuous['on']['push']['paths'] == [
+              '.github/workflows/mlb-progress-pulse-watchdog.yml'
+          ]
+          assert continuous['permissions'] == {
+              'actions': 'write',
+              'contents': 'read',
+          }
+          assert continuous['concurrency'] == {
+              'group': 'mlb-progress-pulse-watchdog-continuous',
+              'cancel-in-progress': 'false',
+          }
+          assert 'gh workflow run mlb-30m-progress-pulse.yml' in continuous_source
+          assert '-f force=false' in continuous_source
+          assert 'gh workflow run mlb-progress-pulse-watchdog.yml' in continuous_source
+          assert '-f iterations=46' in continuous_source
+          assert '-f sleep_seconds=300' in continuous_source
+          assert 'Three consecutive MLB pulse dispatch failures' in continuous_source
+          assert 'aws-actions/configure-aws-credentials' not in continuous_source
+          assert 'AWS_ACCESS_KEY_ID' not in continuous_source
+          for forbidden in (
+              'aws lambda invoke',
+              'aws dynamodb',
+              'put_item',
+              'update_item',
+              'delete_item',
+              'promote_candidate',
+          ):
+              assert forbidden not in continuous_source.lower()
+
+          assert cadence['on']['schedule'] == [{'cron': '4/5 * * * *'}]
+          assert cadence['on']['push']['branches'] == ['main']
+          assert cadence['on']['push']['paths'] == [
+              '.github/workflows/mlb-progress-pulse-cadence-watchdog.yml'
+          ]
+          assert 'seed-continuous-owner:' in cadence_source
+          assert 'gh workflow run mlb-progress-pulse-watchdog.yml' in cadence_source
+          assert '--field iterations=46' in cadence_source
+          assert '--field sleep_seconds=300' in cadence_source
+          assert 'needs.decide.outputs.dispatch_required == \'true\'' in cadence_source
+          assert '--field force=false' in cadence_source
+          assert 'aws-actions/configure-aws-credentials' not in cadence_source
+          assert 'issues: write' not in cadence_source
+          PY
+
+      - name: Run focused watchdog and Actions-hygiene tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/unit/test_mlb_progress_pulse_watchdog.py \
+            tests/unit/test_mlb_actions_hygiene.py
+
+      - name: Compile the stale-gate checker
+        run: python -m py_compile scripts/check_mlb_progress_pulse_staleness.py
