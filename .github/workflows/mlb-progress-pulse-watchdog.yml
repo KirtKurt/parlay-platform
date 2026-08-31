@@ -3,21 +3,21 @@ run-name: MLB progress pulse watchdog ${{ github.event_name }} #${{ github.run_n
 
 on:
   workflow_dispatch:
+    inputs:
+      iterations:
+        description: Number of five-minute stale-gated checks in this bounded run
+        required: false
+        default: '46'
+        type: string
+      sleep_seconds:
+        description: Seconds between stale-gated checks
+        required: false
+        default: '300'
+        type: string
   schedule:
-    # Independent five-minute GitHub-side evidence watchdog. The downstream
-    # reporter owns the strict stale gate, so frequent checks cannot spam issue #567.
-    - cron: '*/5 * * * *'
-  workflow_run:
-    # Independent successful/failed completions provide extra wake-up signals
-    # when GitHub's cron service is delayed. This watchdog never invokes AWS.
-    workflows:
-      - MLB Canonical Runtime Health Watch
-      - MLB Fresh Audit Publisher
-      - Record MLB Fresh Audit Status
-      - MLB Scoring Guard
-      - Deploy SAM to AWS
-    types: [completed]
-    branches: [main]
+    # Recovery seed only. The workflow normally hands off to itself before its
+    # bounded runner window ends, avoiding dependence on GitHub cron delivery.
+    - cron: '17 */4 * * *'
   push:
     branches: [main]
     paths:
@@ -27,35 +27,120 @@ permissions:
   actions: write
   contents: read
 
+# One running loop and at most one pending handoff. A recovery seed cannot run
+# concurrently with the active owner or create duplicate issue pulses.
 concurrency:
-  group: mlb-progress-pulse-watchdog
-  cancel-in-progress: true
+  group: mlb-progress-pulse-watchdog-continuous
+  cancel-in-progress: false
 
 jobs:
-  dispatch-stale-gated-pulse:
+  continuous-stale-gated-dispatch:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 235
+    env:
+      # A source push performs one immediate proof cycle, then hands off to the
+      # normal bounded workflow_dispatch loop. Scheduled/manual runs use inputs.
+      LOOP_ITERATIONS: ${{ github.event_name == 'push' && '1' || inputs.iterations || '46' }}
+      LOOP_SLEEP_SECONDS: ${{ github.event_name == 'push' && '0' || inputs.sleep_seconds || '300' }}
     steps:
-      - name: Dispatch stale-gated MLB production progress pulse
+      - name: Run bounded continuous stale-gated dispatch loop
+        id: loop
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+
+          case "$LOOP_ITERATIONS" in
+            ''|*[!0-9]*) echo "::error::iterations must be an integer"; exit 2 ;;
+          esac
+          case "$LOOP_SLEEP_SECONDS" in
+            ''|*[!0-9]*) echo "::error::sleep_seconds must be an integer"; exit 2 ;;
+          esac
+          if [ "$LOOP_ITERATIONS" -lt 1 ] || [ "$LOOP_ITERATIONS" -gt 46 ]; then
+            echo "::error::iterations must be between 1 and 46"
+            exit 2
+          fi
+          if [ "$LOOP_SLEEP_SECONDS" -lt 0 ] || [ "$LOOP_SLEEP_SECONDS" -gt 300 ]; then
+            echo "::error::sleep_seconds must be between 0 and 300"
+            exit 2
+          fi
+
+          consecutive_failures=0
+          total_failures=0
+          loop_failed=false
+
+          for iteration in $(seq 1 "$LOOP_ITERATIONS"); do
+            checked_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "[$checked_at] stale-gated dispatch check ${iteration}/${LOOP_ITERATIONS}"
+
+            if gh workflow run mlb-30m-progress-pulse.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref main \
+              -f force=false; then
+              consecutive_failures=0
+            else
+              total_failures=$((total_failures + 1))
+              consecutive_failures=$((consecutive_failures + 1))
+              echo "::warning::MLB pulse dispatch failed (${consecutive_failures} consecutive)"
+            fi
+
+            if [ "$consecutive_failures" -ge 3 ]; then
+              loop_failed=true
+              echo "::error::Three consecutive MLB pulse dispatch failures"
+              break
+            fi
+
+            if [ "$iteration" -lt "$LOOP_ITERATIONS" ] && [ "$LOOP_SLEEP_SECONDS" -gt 0 ]; then
+              sleep "$LOOP_SLEEP_SECONDS"
+            fi
+          done
+
+          echo "loop_failed=$loop_failed" >> "$GITHUB_OUTPUT"
+          echo "total_failures=$total_failures" >> "$GITHUB_OUTPUT"
+
+      - name: Hand off to the next bounded watchdog owner
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh workflow run mlb-30m-progress-pulse.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref main \
-            -f force=false
+          for attempt in 1 2 3; do
+            if gh workflow run mlb-progress-pulse-watchdog.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref main \
+              -f iterations=46 \
+              -f sleep_seconds=300; then
+              echo "Queued the next bounded watchdog owner on attempt ${attempt}."
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "::error::Unable to queue the next watchdog owner"
+          exit 1
 
       - name: Record fail-closed watchdog contract
+        if: always()
+        env:
+          LOOP_FAILED: ${{ steps.loop.outputs.loop_failed }}
+          TOTAL_FAILURES: ${{ steps.loop.outputs.total_failures }}
         run: |
           {
-            echo '## MLB progress pulse watchdog'
+            echo '## MLB progress pulse continuous watchdog'
             echo
+            echo "- Loop failed: ${LOOP_FAILED:-unknown}"
+            echo "- Dispatch failures: ${TOTAL_FAILURES:-unknown}"
             echo '- Dispatch target: mlb-30m-progress-pulse.yml'
             echo '- Reporter force: false'
+            echo '- Self-handoff target: mlb-progress-pulse-watchdog.yml'
             echo '- AWS invocation: false'
             echo '- DynamoDB mutation: false'
             echo '- Prediction/lock mutation: false'
             echo '- Promotion authority mutation: false'
             echo '- Other-sport mutation: false'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail closed on repeated dispatch failure
+        if: steps.loop.outputs.loop_failed == 'true'
+        run: |
+          echo 'The next watchdog owner was queued, but this run observed repeated dispatch failure.' >&2
+          exit 1
