@@ -14,10 +14,6 @@ on:
         required: false
         default: '300'
         type: string
-  schedule:
-    # Recovery seed only. The workflow normally hands off to itself before its
-    # bounded runner window ends, avoiding dependence on GitHub cron delivery.
-    - cron: '17 */4 * * *'
   push:
     branches: [main]
     paths:
@@ -27,8 +23,9 @@ permissions:
   actions: write
   contents: read
 
-# One running loop and at most one pending handoff. A recovery seed cannot run
-# concurrently with the active owner or create duplicate issue pulses.
+# One running loop and at most one pending handoff. The separate scheduled
+# cadence watchdog is the recovery seed; this workflow self-hands off between
+# bounded runs and therefore does not add a second recurring cron owner.
 concurrency:
   group: mlb-progress-pulse-watchdog-continuous
   cancel-in-progress: false
@@ -39,7 +36,7 @@ jobs:
     timeout-minutes: 235
     env:
       # A source push performs one immediate proof cycle, then hands off to the
-      # normal bounded workflow_dispatch loop. Scheduled/manual runs use inputs.
+      # normal bounded workflow_dispatch loop. Manual runs use bounded inputs.
       LOOP_ITERATIONS: ${{ github.event_name == 'push' && '1' || inputs.iterations || '46' }}
       LOOP_SLEEP_SECONDS: ${{ github.event_name == 'push' && '0' || inputs.sleep_seconds || '300' }}
     steps:
