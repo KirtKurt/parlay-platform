@@ -8,6 +8,10 @@ on:
     # one minute, preserving margin inside the 35-minute visible-gap objective.
     - cron: '4/5 * * * *'
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-progress-pulse-cadence-watchdog.yml'
 
 permissions:
   actions: read
@@ -87,3 +91,37 @@ jobs:
             --ref main \
             --field force=false
           echo 'Dispatched stale-gated mlb-30m-progress-pulse.yml on main.' >> "$GITHUB_STEP_SUMMARY"
+
+  seed-continuous-owner:
+    # This independent job is a recovery seed only. The continuous owner uses
+    # its own concurrency group and stale-gates every downstream reporter run.
+    # Repeated seeds can replace only the single pending owner; they cannot run
+    # multiple loops concurrently or create duplicate issue pulses.
+    permissions:
+      actions: write
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Seed the bounded self-handing MLB watchdog owner
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-progress-pulse-watchdog.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            --field iterations=46 \
+            --field sleep_seconds=300
+
+      - name: Record continuous-owner seed contract
+        run: |
+          {
+            echo '## MLB continuous watchdog seed'
+            echo
+            echo '- Fixed target: mlb-progress-pulse-watchdog.yml on main'
+            echo '- Downstream reporter force: false'
+            echo '- Concurrent continuous owners: prohibited by target concurrency'
+            echo '- AWS invocation: false'
+            echo '- DynamoDB/model/prediction/lock mutation: false'
+          } >> "$GITHUB_STEP_SUMMARY"
