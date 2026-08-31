@@ -2173,7 +2173,7 @@ def verify_ml_training_protected_partition_isolation(
             )
         )
     return {
-        "selectionCaptureSchedule": "cron(4/15 * * * ? *)",
+        "selectionCaptureSchedule": "cron(1/2 * * * ? *)",
         "fullTrainingSchedule": "cron(11 1/6 * * ? *)",
         "writerStore": "AwsTrainingStore",
         "writerTableEnvironment": "SNAPSHOTS_TABLE",

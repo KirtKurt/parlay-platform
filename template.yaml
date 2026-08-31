@@ -942,10 +942,10 @@ Resources:
             RetryPolicy:
               MaximumEventAgeInSeconds: 3600
               MaximumRetryAttempts: 0
-        MLBMLSelectionCaptureEvery15Minutes:
+        MLBMLSelectionCaptureEvery2Minutes:
           Type: Schedule
           Properties:
-            Schedule: cron(4/15 * * * ? *)
+            Schedule: cron(1/2 * * * ? *)
             Input: '{"sport":"mlb","mode":"selection_capture","run":"aws_native_prospective_selection_capture"}'
             RetryPolicy:
               MaximumEventAgeInSeconds: 300

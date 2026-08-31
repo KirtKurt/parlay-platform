@@ -687,6 +687,26 @@ def _extract_state(
             finalized_dates = sorted(authorities)
 
     selection_capture = _first_mapping(selection_latest.get("selectionCapture"))
+    movement_coverage = _first_mapping(latest.get("movementCoverage"))
+    selection_new_count = _integer(selection_capture.get("capturedCount")) or 0
+    selection_existing_count = _integer(selection_capture.get("existingCount")) or 0
+    selection_covered_count = _integer(
+        selection_capture.get("ledgerCoveredCount")
+    )
+    if selection_covered_count is None:
+        selection_covered_count = selection_new_count + selection_existing_count
+    selection_eligible_count = _integer(
+        selection_capture.get("captureEligibleCount")
+    )
+    selection_coverage_rate = _number(selection_capture.get("coverageRate"))
+    if (
+        selection_coverage_rate is None
+        and selection_eligible_count
+        and selection_covered_count is not None
+    ):
+        selection_coverage_rate = (
+            selection_covered_count / selection_eligible_count
+        )
     model_id = model.get("model_version") or model.get("modelId")
     predictions = today.get("winner_predictions") or today.get("predictions") or []
     prediction_count = today.get("count")
@@ -954,7 +974,17 @@ def _extract_state(
             "promotionGatePassed": bool(gate_passed),
             "liveInferenceAuthority": live_authority,
             "productionAuthorityChanged": production_changed,
-            "selectionCapturedCount": _integer(selection_capture.get("capturedCount")) or 0,
+            "movementCoveredRowCount": _integer(movement_coverage.get("coveredRowCount")),
+            "movementAcceptedRowCount": _integer(movement_coverage.get("acceptedRowCount")),
+            "movementCoverageRate": _number(movement_coverage.get("coverageRate")),
+            "movementMeanSelectedCoverageRatioFull": _number(
+                movement_coverage.get("meanSelectedCoverageRatioFull")
+            ),
+            "selectionCapturedCount": selection_covered_count,
+            "selectionNewCount": selection_new_count,
+            "selectionExistingCount": selection_existing_count,
+            "selectionEligibleCount": selection_eligible_count,
+            "selectionCoverageRate": selection_coverage_rate,
             "selectionSelectedCount": _integer(selection_capture.get("selectedCount")) or 0,
             "workflowRun": dict(continuity_run),
             "functionName": r7_invocation.get("functionName"),
@@ -1215,6 +1245,7 @@ def _overall_direction(state: Mapping[str, Any], previous: Optional[Mapping[str,
         "r7.processedSlateCount",
         "r7.finalizedSlateCount",
         "r7.selectionCapturedCount",
+        "r7.movementCoveredRowCount",
     ):
         delta = _numeric_delta(state, previous, path)
         if delta is not None and delta > 0:
@@ -1338,7 +1369,9 @@ def _comment(state: Mapping[str, Any], previous: Optional[Mapping[str, Any]]) ->
         f"| Validation partition | {_progress(int(r7.get('validationCount') or 0), int(r7.get('validationTarget') or 100))} | {_fmt_delta(validation_delta)} | {_arrow(validation_delta)} |",
         f"| Prospective-test partition | {_progress(int(r7.get('prospectiveTestCount') or 0), int(r7.get('prospectiveTestTarget') or 100))} | {_fmt_delta(prospective_delta)} | {_arrow(prospective_delta)} |",
         f"| Processed / finalized slates | {_fmt_int(r7.get('processedSlateCount'))} / {_fmt_int(r7.get('finalizedSlateCount'))} | — | — |",
-        f"| Selection ledger captured / selected | {_fmt_int(r7.get('selectionCapturedCount'))} / {_fmt_int(r7.get('selectionSelectedCount'))} | — | — |",
+        f"| Movement-feature coverage | {_fmt_int(r7.get('movementCoveredRowCount'))} / {_fmt_int(r7.get('movementAcceptedRowCount'))} ({_fmt_pct(r7.get('movementCoverageRate'))}) · mean source ratio {_fmt_pct(r7.get('movementMeanSelectedCoverageRatioFull'))} | — | — |",
+        f"| Selection ledger covered / eligible / selected | {_fmt_int(r7.get('selectionCapturedCount'))} / {_fmt_int(r7.get('selectionEligibleCount'))} / {_fmt_int(r7.get('selectionSelectedCount'))} ({_fmt_pct(r7.get('selectionCoverageRate'))}) | — | — |",
+        f"| Selection capture new / existing | {_fmt_int(r7.get('selectionNewCount'))} / {_fmt_int(r7.get('selectionExistingCount'))} | — | — |",
         "",
         f"**Training state:** `{r7.get('trainingStatus') or 'unknown'}` · model trained **{r7.get('modelTrained')}** · candidate `{r7.get('candidateArtifactId') or 'none'}` · promotion `{r7.get('promotionDecision') or 'not evaluated'}` · gate passed **{r7.get('promotionGatePassed')}**.",
         f"**Out-of-sample metrics:** validation accuracy {_fmt_pct(r7.get('validationAccuracy'))}, Brier {_fmt_num(r7.get('validationBrier'))}, ECE {_fmt_num(r7.get('validationEce'))}; prospective accuracy {_fmt_pct(r7.get('prospectiveAccuracy'))}, Brier {_fmt_num(r7.get('prospectiveBrier'))}.",

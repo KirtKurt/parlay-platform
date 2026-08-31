@@ -44,7 +44,7 @@ EXPECTED_SCHEDULES = {
     "ingest": ["cron(0/15 * * * ? *)"],
     "lock": ["rate(1 minute)"],
     "playability": ["cron(* * * * ? *)"],
-    "trainer": ["cron(11 1/6 * * ? *)", "cron(4/15 * * * ? *)"],
+    "trainer": ["cron(11 1/6 * * ? *)", "cron(1/2 * * * ? *)"],
     # The old verifier is intentionally schedule-disabled until its runtime is
     # persisted-summary-only. It remains directly invocable for diagnostics.
     "verifier": [],
@@ -63,7 +63,7 @@ TRAINER_EXPECTED_INVOCATIONS = (
         },
     },
     {
-        "schedule": "cron(4/15 * * * ? *)",
+        "schedule": "cron(1/2 * * * ? *)",
         "input": {
             "sport": "mlb",
             "mode": "selection_capture",
@@ -175,7 +175,7 @@ SCHEDULE_RETRY_POLICIES = {
     },
     "trainer": {
         "cron(11 1/6 * * ? *)": dict(TRAINER_EVENTBRIDGE_RETRY_POLICY),
-        "cron(4/15 * * * ? *)": {
+        "cron(1/2 * * * ? *)": {
             "MaximumEventAgeInSeconds": 300,
             "MaximumRetryAttempts": 0,
         },

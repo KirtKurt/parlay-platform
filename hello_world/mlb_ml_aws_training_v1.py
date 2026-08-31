@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 import os
 import re
 import uuid
@@ -74,7 +75,7 @@ STATUS_FINGERPRINT_VERSION = (
 )
 STATUS_RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 TRAINING_STATUS_MAX_AGE = timedelta(hours=8)
-SELECTION_CAPTURE_STATUS_MAX_AGE = timedelta(minutes=45)
+SELECTION_CAPTURE_STATUS_MAX_AGE = timedelta(minutes=10)
 SLATE_TZ = ZoneInfo(os.environ.get("INQSI_SLATE_TIMEZONE", "America/New_York"))
 
 
@@ -267,6 +268,83 @@ def _json_bytes(payload: Any) -> bytes:
 
 def _sha256(payload: Any) -> str:
     return hashlib.sha256(_json_bytes(payload)).hexdigest()
+
+
+MOVEMENT_COVERAGE_FEATURES = (
+    "deltaGapHome",
+    "bookAgreementGapHome",
+    "reversalGapHome",
+    "homeAwayVelocityPpHr60mDiff",
+    "selectedDelta",
+    "selectedBookDivergence",
+    "selectedReversalCountFull",
+    "selectedCoverageRatioFull",
+    "selectedVolatilityPpPerPull180m",
+)
+
+
+def _movement_coverage(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    """Summarize source-honest movement availability on accepted rows."""
+    accepted_count = 0
+    covered_count = 0
+    source_coverage_ratios: List[float] = []
+    missing_feature_counts = {name: 0 for name in MOVEMENT_COVERAGE_FEATURES}
+    for row in rows or ():
+        if not isinstance(row, Mapping):
+            continue
+        accepted_count += 1
+        vector = row.get("featureSnapshot") or row.get("frozenFeatureVector") or {}
+        if not isinstance(vector, Mapping):
+            vector = {}
+        features = vector.get("features") or {}
+        if not isinstance(features, Mapping):
+            features = {}
+        values: Dict[str, float] = {}
+        missing: List[str] = []
+        for name in MOVEMENT_COVERAGE_FEATURES:
+            raw = features.get(name)
+            if raw in (None, ""):
+                raw = vector.get(name)
+            if raw in (None, ""):
+                raw = row.get(name)
+            try:
+                parsed = float(raw)
+            except (TypeError, ValueError):
+                missing.append(name)
+                continue
+            if not math.isfinite(parsed):
+                missing.append(name)
+                continue
+            values[name] = parsed
+        if missing:
+            for name in missing:
+                missing_feature_counts[name] += 1
+            continue
+        covered_count += 1
+        source_coverage_ratios.append(values["selectedCoverageRatioFull"])
+    missing_count = accepted_count - covered_count
+    return {
+        "version": "MLB-R8-MOVEMENT-COVERAGE-v1-accepted-lock-features",
+        "requiredFeatureNames": list(MOVEMENT_COVERAGE_FEATURES),
+        "acceptedRowCount": accepted_count,
+        "coveredRowCount": covered_count,
+        "missingRowCount": missing_count,
+        "coverageRate": (
+            round(covered_count / accepted_count, 6)
+            if accepted_count
+            else None
+        ),
+        "meanSelectedCoverageRatioFull": (
+            round(sum(source_coverage_ratios) / len(source_coverage_ratios), 6)
+            if source_coverage_ratios
+            else None
+        ),
+        "missingFeatureCounts": {
+            name: count
+            for name, count in sorted(missing_feature_counts.items())
+            if count
+        },
+    }
 
 
 def _status_fingerprint(status: Mapping[str, Any]) -> str:
@@ -2196,17 +2274,24 @@ class TrainingService:
                 "selectedCount": 0,
                 "errors": response.get("rejected") or ["canonical_lock_loader_unhealthy"],
             }
+        rows = [
+            row
+            for row in response.get("rows") or []
+            if isinstance(row, dict)
+        ]
         captured = 0
         existing = 0
         selected = 0
         skipped = 0
+        learning_eligible = 0
+        capture_eligible = 0
         skip_reasons: Dict[str, int] = {}
         errors: List[Any] = []
         cutover = _parse_status_datetime(manifest.get("prospectiveCutoverAtUtc"))
         initial_challenger_digest = str(
             (manifest.get("frozenChallenger") or {}).get("artifactDigest") or ""
         )
-        for row in response.get("rows") or []:
+        for row in rows:
             authority = row.get("canonicalLockAuthority") or {}
             if authority.get("learningEligible") is not True:
                 skipped += 1
@@ -2214,6 +2299,7 @@ class TrainingService:
                     skip_reasons.get("not_learning_eligible", 0) + 1
                 )
                 continue
+            learning_eligible += 1
             commence = _parse_status_datetime(
                 row.get("commenceTime")
                 or (row.get("featureSnapshot") or {}).get("commenceTime")
@@ -2224,6 +2310,8 @@ class TrainingService:
                 reason = "game_not_after_challenger_cutover"
                 skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
                 continue
+            if commence is not None and capture_at < commence:
+                capture_eligible += 1
             try:
                 current_manifest = manifest
                 result: Optional[Dict[str, Any]] = None
@@ -2299,10 +2387,20 @@ class TrainingService:
                         "error": str(exc),
                     }
                 )
+        ledger_covered = captured + existing
         return {
             "ok": not errors,
+            "lockedRowCount": len(rows),
+            "learningEligibleCount": learning_eligible,
+            "captureEligibleCount": capture_eligible,
             "capturedCount": captured,
             "existingCount": existing,
+            "ledgerCoveredCount": ledger_covered,
+            "coverageRate": (
+                round(ledger_covered / capture_eligible, 6)
+                if capture_eligible
+                else None
+            ),
             "selectedCount": selected,
             "skippedCount": skipped,
             "skipReasonCounts": dict(sorted(skip_reasons.items())),
@@ -2473,6 +2571,7 @@ class TrainingService:
         loaded_rows = list(loaded_result)
         filtered = experiment.filter_records(loaded_rows, manifest)
         accepted = filtered["acceptedRows"]
+        movement_coverage = _movement_coverage(accepted)
         today_et = self.now().astimezone(SLATE_TZ).date().isoformat()
         finalized_dates = sorted(
             {
@@ -2511,6 +2610,7 @@ class TrainingService:
                     "acceptedRowCount": filtered["acceptedRowCount"],
                     "rejectedRowCount": filtered["rejectedRowCount"],
                     "rejectionReasonCounts": filtered["rejectionReasonCounts"],
+                    "movementCoverage": movement_coverage,
                     "rowsRequired": experiment.PARTITION_MINIMUMS,
                     "canonicalSlateContinuity": slate_continuity,
                     "milestones": experiment.milestone_status(
@@ -2627,6 +2727,7 @@ class TrainingService:
             "acceptedRowCount": filtered["acceptedRowCount"],
             "rejectedRowCount": filtered["rejectedRowCount"],
             "rejectionReasonCounts": filtered["rejectionReasonCounts"],
+            "movementCoverage": movement_coverage,
             "rowsRequired": experiment.PARTITION_MINIMUMS,
             "selectionCapture": selection_capture,
             "prospectiveSelectionLedger": selection_evaluation,

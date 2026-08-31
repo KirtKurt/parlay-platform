@@ -295,7 +295,7 @@ jobs:
                   and accepted >= minimum_accepted
                   and train >= minimum_train
                   and validation >= minimum_validation
-                  and prospective == 0
+                  and 0 <= prospective <= accepted
                   and latest.get('modelTrained') is True
                   and latest.get('automaticPromotionEnabled') is False
                   and latest.get('championChanged') is False
@@ -312,6 +312,7 @@ jobs:
               'acceptedRowCountAdvanced': accepted_advanced,
               'trainCountBefore': baseline_train,
               'partitionCounts': counts,
+              'prospectiveAdvancementAllowed': True,
               'trainCountAdvanced': train_advanced,
               'historicalAcceptedMinimum': minimum_accepted,
               'materialProgress': material_progress,
