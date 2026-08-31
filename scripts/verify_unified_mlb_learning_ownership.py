@@ -307,8 +307,8 @@ def verify(root: Path = Path(".")) -> dict[str, object]:
             "MLBMLTrainingEvery6Hours",
             "aws_native_fixed_prospective_shadow_training",
             "cron(11 1/6 * * ? *)",
-            "MLBMLSelectionCaptureEvery15Minutes",
-            "cron(4/15 * * * ? *)",
+            "MLBMLSelectionCaptureEvery2Minutes",
+            "cron(1/2 * * * ? *)",
         ):
             if required not in template:
                 errors.append(f"aws_learning_schedule_missing:{required}")

@@ -358,7 +358,7 @@ def _verify(
 def test_verifies_trainer_identity_configuration_schedule_and_bucket(aws) -> None:
     assert deploy_identity.EXPECTED_SCHEDULES["trainer"] == [
         "cron(11 1/6 * * ? *)",
-        "cron(4/15 * * * ? *)",
+        "cron(1/2 * * * ? *)",
     ]
     assert deploy_identity.TRAINER_EXPECTED_ENVIRONMENT["MLB_ML_EXPERIMENT_ID"] == (
         "mlb-v2-2026-08-31-historical-live-r8"

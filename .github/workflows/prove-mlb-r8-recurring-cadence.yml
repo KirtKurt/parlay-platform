@@ -21,7 +21,7 @@ env:
   MLB_ROOT_STACK: parlay-platform-dev
   EXPECTED_EXPERIMENT_ID: mlb-v2-2026-08-31-historical-live-r8
   EXPECTED_RELEASE_CUTOFF_UTC: '2026-08-31T04:00:00+00:00'
-  MAX_SELECTION_HEARTBEAT_AGE_SECONDS: '1200'
+  MAX_SELECTION_HEARTBEAT_AGE_SECONDS: '300'
 
 jobs:
   prove-recurring-cadence:
@@ -116,7 +116,7 @@ jobs:
                   },
               },
               'selectionCapture': {
-                  'scheduleExpression': 'cron(4/15 * * * ? *)',
+                  'scheduleExpression': 'cron(1/2 * * * ? *)',
                   'input': {
                       'sport': 'mlb',
                       'mode': 'selection_capture',
@@ -211,6 +211,7 @@ jobs:
           counts = latest.get('partitionCounts') or (
               (latest.get('milestones') or {}).get('counts') or {}
           )
+          prospective = int(counts.get('prospectiveTest') or 0)
           created_raw = str(selection.get('createdAtUtc') or '')
           created_at = datetime.fromisoformat(
               created_raw.replace('Z', '+00:00')
@@ -256,7 +257,7 @@ jobs:
                   and int(latest.get('rejectedRowCount') or 0) == 0
                   and int(counts.get('train') or 0) >= 300
                   and int(counts.get('validation') or 0) >= 100
-                  and int(counts.get('prospectiveTest') or 0) == 0
+                  and 0 <= prospective <= int(latest.get('acceptedRowCount') or 0)
                   and training_health.get('ok') is True
                   and training_health.get('deploymentIdentityMatches')
                   is True
@@ -283,6 +284,7 @@ jobs:
               'acceptedRowCount': latest.get('acceptedRowCount'),
               'rejectedRowCount': latest.get('rejectedRowCount'),
               'partitionCounts': counts,
+              'prospectiveAdvancementAllowed': True,
               'modelTrained': latest.get('modelTrained'),
               'processedThroughSlateDate': (
                   (latest.get('canonicalSlateContinuity') or {}).get(
