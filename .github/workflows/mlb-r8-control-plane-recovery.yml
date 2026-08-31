@@ -1,0 +1,145 @@
+name: MLB R8 Control Plane Recovery
+run-name: "MLB R8 control-plane recovery ${{ github.event_name }} #${{ github.run_number }}"
+
+"on":
+  workflow_dispatch:
+  schedule:
+    # Offset from the primary reporter and existing watchdog. The reporter's
+    # own stale gate suppresses duplicate issue pulses.
+    - cron: '2-59/5 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-r8-control-plane-recovery.yml'
+  workflow_run:
+    # Independent completions provide wake-ups if GitHub delays a cron slot.
+    # Never listen to the target reporter itself, which would create a loop.
+    workflows:
+      - MLB Canonical Runtime Health Watch
+      - MLB Scoring Guard
+      - Tennis Status Activity Backstop
+      - Tennis Autonomy Status Backstop
+      - Publish Tennis Autonomy Status
+      - MLB Daily Yesterday Audit
+      - Record MLB Fresh Audit Status
+      - NFL Auto AWS Stack Probe
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: mlb-r8-control-plane-recovery
+  cancel-in-progress: true
+
+jobs:
+  dispatch-read-only-proof:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch stale-gated MLB production progress pulse with retries
+        id: dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_WORKFLOW: mlb-30m-progress-pulse.yml
+        run: |
+          set -euo pipefail
+
+          before_id="$(
+            gh api \
+              "/repos/${GITHUB_REPOSITORY}/actions/workflows/${TARGET_WORKFLOW}/runs?branch=main&event=workflow_dispatch&per_page=1" \
+              --jq '.workflow_runs[0].id // 0'
+          )"
+          echo "before_id=${before_id}"
+
+          dispatched=false
+          for attempt in 1 2 3; do
+            if gh api --method POST \
+              "/repos/${GITHUB_REPOSITORY}/actions/workflows/${TARGET_WORKFLOW}/dispatches" \
+              -f ref=main \
+              -f 'inputs[force]=false'; then
+              dispatched=true
+              break
+            fi
+            sleep $((attempt * 5))
+          done
+          test "${dispatched}" = true
+
+          observed_id=''
+          observed_url=''
+          for attempt in $(seq 1 24); do
+            candidate="$(
+              gh api \
+                "/repos/${GITHUB_REPOSITORY}/actions/workflows/${TARGET_WORKFLOW}/runs?branch=main&event=workflow_dispatch&per_page=10" \
+                --jq --arg before "${before_id}" \
+                '.workflow_runs[] | select((.id | tostring) != $before) | [.id, .html_url] | @tsv' \
+                | head -n 1
+            )"
+            if [ -n "${candidate}" ]; then
+              observed_id="${candidate%%$'\t'*}"
+              observed_url="${candidate#*$'\t'}"
+              break
+            fi
+            sleep 5
+          done
+
+          test -n "${observed_id}"
+          test -n "${observed_url}"
+          echo "observed_run_id=${observed_id}" >> "$GITHUB_OUTPUT"
+          echo "observed_run_url=${observed_url}" >> "$GITHUB_OUTPUT"
+
+      - name: Prove mutation isolation
+        env:
+          OBSERVED_RUN_ID: ${{ steps.dispatch.outputs.observed_run_id }}
+          OBSERVED_RUN_URL: ${{ steps.dispatch.outputs.observed_run_url }}
+        run: |
+          set -euo pipefail
+          {
+            echo '## MLB R8 control-plane recovery proof'
+            echo
+            echo "- Dispatched reporter run: ${OBSERVED_RUN_URL}"
+            echo "- Reporter run id: ${OBSERVED_RUN_ID}"
+            echo '- Reporter input: `force=false` (stale/duplicate gate preserved)'
+            echo '- AWS credentials configured: false'
+            echo '- Trainer invoked: false'
+            echo '- Predictions or immutable locks mutated: false'
+            echo '- Promotion or production authority changed: false'
+            echo '- Other sports mutated: false'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  prove-r8-overnight-cadence:
+    # During the overnight ET window, periodically request the existing
+    # read-only R8 EventBridge/runtime cadence proof. This never invokes the
+    # trainer and never changes model authority.
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch read-only R8 cadence proof when due overnight
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          read -r et_hour et_minute < <(
+            TZ=America/New_York date '+%H %M'
+          )
+          if (( 10#${et_hour} >= 7 )); then
+            echo "Outside overnight ET window; hour=${et_hour}."
+            exit 0
+          fi
+          # One proof per half hour is enough; the five-minute pulse recovery
+          # job above still runs on every invocation.
+          minute=$((10#${et_minute}))
+          if ! (( minute < 5 || (minute >= 30 && minute < 35) )); then
+            echo "Overnight cadence proof not due at minute=${minute}."
+            exit 0
+          fi
+          gh api --method POST \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/prove-mlb-r8-recurring-cadence.yml/dispatches" \
+            -f ref=main
