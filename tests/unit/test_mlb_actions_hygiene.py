@@ -20,7 +20,6 @@ MANUAL_ONLY = {
     "mlb-historical-status-snapshot.yml",
     "mlb-historical-supervised-v9-shadow.yml",
     "mlb-historical-watchdog.yml",
-    "mlb-r7-overnight-advance.yml",
     "mlb-rolling-24h-audit.yml",
     "mlb-trainer-function-error-diagnostic.yml",
     "mlb-v1-pull-guard.yml",
@@ -107,6 +106,7 @@ SCHEDULED_MLB_WORKFLOWS = {
     "mlb-daily-yesterday-audit.yml",
     "mlb-fresh-audit-publisher.yml",
     "mlb-progress-pulse-cadence-watchdog.yml",
+    "mlb-r7-overnight-advance.yml",
     "mlb-scoring-guard.yml",
     "mlb-three-source-runtime-watch-v3.yml",
 }
@@ -298,6 +298,7 @@ def test_only_pulse_and_independent_producers_keep_recurring_mlb_schedules() -> 
         "mlb-daily-yesterday-audit.yml": ["0 9 * * *"],
         "mlb-fresh-audit-publisher.yml": ["35 5 * * *", "35 6 * * *"],
         "mlb-progress-pulse-cadence-watchdog.yml": ["4/5 * * * *"],
+        "mlb-r7-overnight-advance.yml": ["7,37 * * * *"],
         "mlb-scoring-guard.yml": ["7/15 * * * *"],
         "mlb-three-source-runtime-watch-v3.yml": ["*/15 * * * *"],
     }
@@ -305,7 +306,7 @@ def test_only_pulse_and_independent_producers_keep_recurring_mlb_schedules() -> 
         schedule = _triggers(WORKFLOWS / filename)["schedule"]
         assert [entry["cron"] for entry in schedule] == crons
 
-    # 531 MLB-scoped runs/day plus the existing shared official hourly job.
+    # 579 MLB-scoped schedule events/day before the R8 overnight workflow applies its fail-closed 00:00-06:59 ET admission gate, plus the existing shared official hourly job.
     assert _triggers(WORKFLOWS / "official-hourly-parlays.yml")["schedule"] == [
         {"cron": "7 * * * *"}
     ]
